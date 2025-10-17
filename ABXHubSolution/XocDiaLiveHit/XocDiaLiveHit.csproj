@@ -134,6 +134,11 @@
   <ItemGroup>
     <ProjectReference Include="..\ABX.Core\ABX.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Update="Views\XocDiaLiveHitPanel.xaml.cs">
+      <DependentUpon>XocDiaLiveHitPanel.xaml</DependentUpon>
+    </Compile>
+  </ItemGroup>
 
   <!-- === Sau khi Build: copy plugin vào thư mục Plugins cạnh exe của Hub (Debug/Release) === -->
   <Target Name="CopyPluginToHubBin" AfterTargets="Build" Condition=" '$(SolutionDir)' != '' and Exists('$(SolutionDir)ABX.Hub') ">

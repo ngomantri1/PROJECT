@@ -199,7 +199,7 @@ namespace XocDiaLiveHit.Tasks
                 while (true)
                 {
                     ct.ThrowIfCancellationRequested();
-                    await WaitUntilBetWindow(ctx, ct);
+                    await WaitUntilNewRoundStart(ctx, ct);
 
                     // ===== Lấy chuỗi trước khi đặt & CẮT VỀ 50 =====
                     var preSnap = ctx.GetSnap();
