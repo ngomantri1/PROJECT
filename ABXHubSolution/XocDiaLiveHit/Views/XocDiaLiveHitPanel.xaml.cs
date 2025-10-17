@@ -1,14 +1,12 @@
 ﻿using System.Windows.Controls;
-using ABX.Core;
 
-namespace XocDiaLiveHit
+namespace XocDiaLiveHit.Views
 {
-    public class XocDiaLiveHitPlugin : IGamePlugin
+    public partial class XocDiaLiveHitPanel : UserControl
     {
-        public string Name => "Xóc Đĩa Live";
-        public string Slug => "xoc-dia-live";
-
-        public UserControl CreateView(IGameHostContext host)
-            => new XocDiaLiveHit.Views.XocDiaLiveHitPanel();
+        public XocDiaLiveHitPanel()
+        {
+            InitializeComponent();
+        }
     }
 }

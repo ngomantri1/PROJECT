@@ -8,18 +8,39 @@
     Title="ABX – Hub"
     Width="1280"
     Height="800"
-    MinWidth="900"
-    MinHeight="600"
+    Background="#FFF7F9FB"
     WindowStartupLocation="CenterScreen"
     mc:Ignorable="d">
 
+    <!--
+        Bố cục:
+        - Lớp dưới: WebView2 (tải hub.html).
+        - Lớp trên: HostContainer (ẩn/hiện khi vào game), chứa ContentControl để nhét view plugin.
+        Các tên x:Name phải trùng với code-behind: web, HostContainer, HostContent.
+    -->
     <Grid>
-        <!--  WebView2 dùng trong code-behind: x:Name phải là 'web'  -->
+
+        <!--  WebView2 hiển thị hub.html  -->
         <wv2:WebView2
             x:Name="web"
+            Margin="0"
             HorizontalAlignment="Stretch"
-            VerticalAlignment="Stretch" />
-        <!--  Khu vực nhét UI của plugin (ẩn mặc định)  -->
-        <ContentControl x:Name="HostContent" Visibility="Collapsed" />
+            VerticalAlignment="Stretch"
+            Grid.ZIndex="1" />
+
+        <!--  Vùng hiển thị plugin, ẩn mặc định  -->
+        <Grid
+            x:Name="HostContainer"
+            Background="{x:Null}"
+            Grid.ZIndex="2"
+            Visibility="Collapsed">
+            <!--  Bạn có thể bọc ContentControl bằng Border/ScrollViewer nếu cần  -->
+            <ContentControl
+                x:Name="HostContent"
+                Margin="0"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch" />
+        </Grid>
+
     </Grid>
 </Window>

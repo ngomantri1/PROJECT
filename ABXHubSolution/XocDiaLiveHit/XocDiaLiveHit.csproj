@@ -1,25 +1,43 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
-    <OutputType>Library</OutputType>        <!-- QUAN TRỌNG: xuất DLL -->
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- tên assembly để ra đúng XocDiaLiveHit.dll -->
     <AssemblyName>XocDiaLiveHit</AssemblyName>
-    <RootNamespace>XocDiaLiveHit</RootNamespace>
   </PropertyGroup>
 
+  <!-- Dùng CHUNG project ABX.Core (tránh lệch interface IGamePlugin) -->
   <ItemGroup>
     <ProjectReference Include="..\ABX.Core\ABX.Core.csproj" />
   </ItemGroup>
 
-  <!-- Sau khi build, tự copy đúng thư mục Hub đang chạy -->
-  <Target Name="CopyPluginToHub" AfterTargets="Build">
+  <!-- Sau khi Build: copy plugin vào thư mục Plugins cạnh exe của Hub -->
+  <Target Name="CopyPluginToHubBin" AfterTargets="Build">
     <PropertyGroup>
-      <HubPluginsDir>$(SolutionDir)ABX.Hub\bin\$(Configuration)\$(TargetFramework)\Plugins\</HubPluginsDir>
+      <!-- đúng chỗ Hub đang nạp plugin -->
+      <HubPluginsDir>$(SolutionDir)ABX.Hub\bin\$(Configuration)\net8.0-windows\Plugins\</HubPluginsDir>
     </PropertyGroup>
-    <Message Text="Copy $(TargetPath) => $(HubPluginsDir)" Importance="high" />
+    <Message Importance="high" Text="Copy plugin to $(HubPluginsDir)" />
     <MakeDir Directories="$(HubPluginsDir)" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(HubPluginsDir)" SkipUnchangedFiles="true" />
+    <!-- copy pdb (nếu có) để debug dễ hơn -->
+    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb"
+          DestinationFolder="$(HubPluginsDir)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
   </Target>
+
+  <!-- Khi Publish Hub: cũng copy plugin vào thư mục publish/Plugins -->
+  <Target Name="CopyPluginToHubPublish" AfterTargets="Publish">
+    <PropertyGroup>
+      <HubPublishPluginsDir>$(SolutionDir)ABX.Hub\bin\$(Configuration)\net8.0-windows\publish\Plugins\</HubPublishPluginsDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(HubPublishPluginsDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(HubPublishPluginsDir)" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

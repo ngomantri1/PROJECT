@@ -4,9 +4,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.Loader;
-using ABX.Core;               // IGamePlugin
-using ABX.Hub.Services;       // LogService
+using ABX.Core;
+using ABX.Hub.Services;
 
 namespace ABX.Hub.Hosting
 {
@@ -16,6 +15,15 @@ namespace ABX.Hub.Hosting
         {
             var list = new List<IGamePlugin>();
 
+            log.Info($"[PluginLoader] Host IGamePlugin asm: {typeof(IGamePlugin).Assembly.FullName}");
+            try
+            {
+                var hostCoreLoc = typeof(IGamePlugin).Assembly.Location;
+                if (!string.IsNullOrEmpty(hostCoreLoc))
+                    log.Info($"[PluginLoader] Host IGamePlugin loc: {hostCoreLoc}");
+            }
+            catch { /* ignored */ }
+
             if (!Directory.Exists(pluginsDir))
             {
                 log.Warn($"[PluginLoader] Folder not found: {pluginsDir}");
@@ -23,54 +31,73 @@ namespace ABX.Hub.Hosting
             }
 
             log.Info($"[PluginLoader] Probe dir: {pluginsDir}");
-            log.Info($"[PluginLoader] Host IGamePlugin from: {typeof(IGamePlugin).Assembly.Location}");
-
             foreach (var dll in Directory.GetFiles(pluginsDir, "*.dll"))
             {
                 try
                 {
-                    var full = Path.GetFullPath(dll);
-                    log.Info($"[PluginLoader] Loading: {Path.GetFileName(full)}");
+                    log.Info($"[PluginLoader] === Probing: {Path.GetFileName(dll)} ===");
+                    var asm = Assembly.LoadFrom(dll);
+                    log.Info($"[PluginLoader] Assembly: {asm.FullName}");
+                    try { log.Info($"[PluginLoader] Location: {asm.Location}"); } catch { }
 
-                    // ✅ Nạp vào Default ALC để chia sẻ type identity với host
-                    var asm = AssemblyLoadContext.Default.LoadFromAssemblyPath(full);
-                    log.Info($"[PluginLoader] Loaded assembly: {asm.FullName}");
+                    var refCore = asm.GetReferencedAssemblies()
+                                     .FirstOrDefault(n => n.Name == typeof(IGamePlugin).Assembly.GetName().Name);
+                    if (refCore != null)
+                        log.Info($"[PluginLoader] References ABX.Core: {refCore.FullName}");
+                    else
+                        log.Warn($"[PluginLoader] Does NOT reference ABX.Core!");
 
-                    foreach (var t in asm.GetTypes())
+                    Type? candidate = null;
+
+                    Type[] types;
+                    try { types = asm.GetTypes(); }
+                    catch (ReflectionTypeLoadException rtle)
                     {
-                        // Log để soi lý do không match
-                        var ifaces = string.Join(", ", t.GetInterfaces().Select(i => i.FullName));
-                        log.Info($"[PluginLoader]   type: {t.FullName} | ifaces: [{ifaces}]");
+                        log.Error($"[PluginLoader] ReflectionTypeLoadException for {dll}.", rtle);
+                        foreach (var le in rtle.LoaderExceptions) log.Error("  LoaderException: " + le?.Message, le);
+                        continue;
+                    }
 
+                    foreach (var t in types)
+                    {
+                        var ifaceNames = string.Join(", ", t.GetInterfaces().Select(i => i.FullName));
+                        log.Info($"[PluginLoader]   type: {t.FullName} | ifaces: [{ifaceNames}]");
                         if (!t.IsClass || t.IsAbstract || !t.IsPublic) continue;
 
-                        // Cách 1: so sánh đúng kiểu (chuẩn)
-                        bool ok = typeof(IGamePlugin).IsAssignableFrom(t);
-
-                        // Cách 2 (fallback): so sánh theo tên interface để “sống sót” nếu vẫn lệch context
-                        if (!ok)
-                            ok = t.GetInterfaces().Any(i => i.FullName == "ABX.Core.IGamePlugin");
-
-                        if (!ok) continue;
-
-                        var pluginObj = Activator.CreateInstance(t);
-                        if (pluginObj is IGamePlugin p)         // vào nhánh “đẹp”
+                        // ✅ Chuẩn nhất: đúng identity của IGamePlugin
+                        if (typeof(IGamePlugin).IsAssignableFrom(t))
                         {
-                            log.Info($"[PluginLoader]   -> activated (strong): {p.Name} ({p.Slug})");
-                            list.Add(p);
+                            candidate = t;
+                            break;
                         }
-                        else                                    // vào nhánh fallback theo tên
+
+                        // 🔎 Fallback theo tên interface để phát hiện "mismatch" (khác assembly identity)
+                        if (t.GetInterfaces().Any(i => i.FullName == typeof(IGamePlugin).FullName))
                         {
-                            // Nếu bạn vẫn muốn chạy khi lệch context cực đoan:
-                            // có thể tạo adapter tại đây. Hiện tại mình chỉ log cho rõ.
-                            log.Warn($"[PluginLoader]   -> {t.FullName} implements by name but not castable to host IGamePlugin (ALC mismatch).");
+                            log.Warn($"[PluginLoader]   '{t.FullName}' implements IGamePlugin BY NAME but not by IDENTITY. ABX.Core mismatch suspected.");
+                            candidate = t;
+                            break;
                         }
                     }
-                }
-                catch (ReflectionTypeLoadException rtlex)
-                {
-                    var msgs = string.Join(" | ", rtlex.LoaderExceptions.Select(x => x.Message));
-                    log.Error($"[PluginLoader] ReflectionTypeLoadException while scanning {dll}: {msgs}", rtlex);
+
+                    if (candidate != null)
+                    {
+                        var obj = Activator.CreateInstance(candidate);
+                        if (obj is IGamePlugin p)
+                        {
+                            log.Info($"[PluginLoader] Activated plugin: {p.Name} ({p.Slug})");
+                            list.Add(p);
+                        }
+                        else
+                        {
+                            log.Error($"[PluginLoader] Instantiated {candidate.FullName} but cast to IGamePlugin FAILED. " +
+                                      $"Host ABX.Core: {typeof(IGamePlugin).Assembly.FullName}; Plugin ref: {refCore?.FullName ?? "<none>"}");
+                        }
+                    }
+                    else
+                    {
+                        log.Warn($"[PluginLoader] No IGamePlugin found in {Path.GetFileName(dll)}");
+                    }
                 }
                 catch (Exception ex)
                 {

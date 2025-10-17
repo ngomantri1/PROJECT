@@ -5,10 +5,12 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using Microsoft.Web.WebView2.Core;
 
 // Interfaces (ABX.Core)
 using ABX.Core;                 // IGamePlugin, IConfigService, ILogService, IWebViewService
+
 // Implementations / hosting (ABX.Hub)
 using ABX.Hub.Hosting;          // PluginLoader
 using ABX.Hub.Services;         // ConfigService, LogService, HostContext
@@ -24,10 +26,11 @@ namespace ABX.Hub
         private string _pluginsDir = "";
 
         // ==== Services / runtime ====
-        private readonly ConfigService _cfg;       // concrete
-        private readonly LogService _log;          // concrete
-        private HostContext _hostcx = default!;    // concrete
-        private List<IGamePlugin> _plugins = new(); // interface từ ABX.Core
+        private readonly ConfigService _cfg;   // concrete
+        private readonly LogService _log;   // concrete
+        private HostContext _hostcx = default!; // concrete
+
+        private List<IGamePlugin> _plugins = new();        // interface từ ABX.Core
         private IGamePlugin? _active;
 
         public MainWindow()
@@ -44,15 +47,15 @@ namespace ABX.Hub
                     _baseDir = AppContext.BaseDirectory;
                     _webDir = ResolveWebRoot();
                     _pluginsDir = Path.Combine(_baseDir, "Plugins");
+
                     _log.Info($"[Hub] BaseDir: {AppContext.BaseDirectory}");
                     _log.Info($"[Hub] PluginsDir: {_pluginsDir}");
+
                     if (!Directory.Exists(_pluginsDir))
                         _log.Warn("[Hub] Plugins folder not found!");
                     else
-                    {
                         foreach (var f in Directory.GetFiles(_pluginsDir, "*.dll"))
                             _log.Info($"[Hub] Plugin candidate: {Path.GetFileName(f)}");
-                    }
 
                     // Chuẩn bị WebView2
                     await web.EnsureCoreWebView2Async();
@@ -61,12 +64,16 @@ namespace ABX.Hub
                     // Adapter để khớp đúng ABX.Core.IWebViewService
                     var webAdapter = new WebViewAdapter(web);
 
-                    // HostContext của bạn nhận các interface ABX.Core ⇒ ép sang interface cho chắc
+                    // HostContext nhận các interface ABX.Core ⇒ truyền đúng interface
                     _hostcx = new HostContext(
                         (ABX.Core.IWebViewService)webAdapter,
                         (ABX.Core.IConfigService)_cfg,
                         (ABX.Core.ILogService)_log
                     );
+
+                    // Log chéo để xác nhận assembly type IGamePlugin đang dùng là cùng 1 bản
+                    _log.Info($"[Hub] Host IGamePlugin asm: {typeof(IGamePlugin).Assembly.FullName}");
+                    _log.Info($"[Hub] Host IGamePlugin loc: {typeof(IGamePlugin).Assembly.Location}");
 
                     // Nạp plugin
                     _plugins = PluginLoader.LoadAll(_pluginsDir, _log);
@@ -80,7 +87,8 @@ namespace ABX.Hub
                             _log.Info($"[Hub] Plugin registered: {p.Name} / {p.Slug}");
                     }
 
-                    // Mở hub
+                    // Mở hub lần đầu
+                    ShowHub();
                     NavigateFile("hub.html");
                 }
                 catch (Exception ex)
@@ -111,6 +119,7 @@ namespace ABX.Hub
 
                         case "goHome":        // { cmd:"goHome" }
                             DeactivatePlugin();
+                            ShowHub();
                             NavigateFile("hub.html");
                             break;
 
@@ -148,31 +157,39 @@ namespace ABX.Hub
             {
                 _active = p;
 
-                // tạo view và nhét vào khu hiển thị
+                // tạo view và hiển thị
                 var view = p.CreateView(_hostcx);
-                HostContent.Content = view;   // HostContent là ContentControl ở MainWindow.xaml
+                ShowPlugin(view);
+
+                // nếu sau này plugin có async init thì có thể await ở đây
+                await Task.CompletedTask;
             }
             catch (Exception ex)
             {
                 _log.Error($"Start plugin {p.Name} failed", ex);
                 MessageBox.Show(this, ex.ToString(), "Plugin start error");
                 _active = null;
+                ShowHub();
             }
         }
 
         private void DeactivatePlugin()
         {
             if (_active == null) return;
+
             try
             {
+                // thử gọi Stop() nếu có
                 var t = _active.GetType();
                 var miStop = t.GetMethod("Stop");
                 var ret = miStop?.Invoke(_active, null);
 
-                // Nếu plugin dùng Dispose thay cho Stop
-                if (miStop == null && _active is IDisposable d) d.Dispose();
+                // nếu plugin dùng Dispose thay cho Stop
+                if (miStop == null && _active is IDisposable d)
+                    d.Dispose();
 
-                if (ret is Task task) task.GetAwaiter().GetResult();
+                if (ret is Task task)
+                    task.GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {
@@ -182,6 +199,23 @@ namespace ABX.Hub
             {
                 _active = null;
             }
+        }
+
+        // ========== Hiển thị ==========
+        // Hiện hub.html – ẩn vùng plugin
+        private void ShowHub()
+        {
+            web.Visibility = Visibility.Visible;
+            HostContent.Content = null;
+            HostContainer.Visibility = Visibility.Collapsed;
+        }
+
+        // Hiện vùng plugin – ẩn hub.html
+        private void ShowPlugin(UserControl view)
+        {
+            HostContent.Content = view;
+            HostContainer.Visibility = Visibility.Visible;
+            web.Visibility = Visibility.Collapsed;
         }
 
         // ========== Helpers ==========
@@ -194,12 +228,13 @@ namespace ABX.Hub
                 return;
             }
 
-            var uri = new Uri(fullPath).AbsoluteUri; // tránh lỗi “Value does not fall…”
+            // Tránh lỗi “Value does not fall within the expected range”
+            var uri = new Uri(fullPath).AbsoluteUri;
             web.CoreWebView2.Navigate(uri);
         }
 
         /// <summary>
-        /// Tìm đường dẫn thư mục /web của project khi chạy debug/release.
+        /// Tìm đường dẫn thư mục /web của project khi chạy debug/publish.
         /// Ưu tiên {projectRoot}\web (có chứa hub.html). Nếu không tìm thấy,
         /// fallback về {AppContext.BaseDirectory}\web.
         /// </summary>
@@ -225,7 +260,6 @@ namespace ABX.Hub
             var fallback = Path.Combine(AppContext.BaseDirectory, "web");
             return Directory.Exists(fallback) ? fallback : AppContext.BaseDirectory;
         }
-
     }
 
     // ================= Adapter: khớp đúng ABX.Core.IWebViewService =================
@@ -247,7 +281,7 @@ namespace ABX.Hub
                 _core.Navigate(new Uri(Path.GetFullPath(urlOrFile)).AbsoluteUri);
         }
 
-        public Task<string> EvalAsync(string js) => _core.ExecuteScriptAsync(js);
+        public Task EvalAsync(string js) => _core.ExecuteScriptAsync(js);
 
         public void PostMessage(string message) => _core.PostWebMessageAsString(message);
     }

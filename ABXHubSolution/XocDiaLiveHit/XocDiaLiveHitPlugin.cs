@@ -9,9 +9,6 @@ namespace XocDiaLiveHit
         public string Slug => "xoc-dia-live";
 
         public UserControl CreateView(IGameHostContext host)
-        {
-            host.Log.Info($"CreateView for {Name}");
-            return new Views.XocDiaLiveHitPanel();
-        }
+            => new Views.XocDiaLiveHitPanel();
     }
 }
