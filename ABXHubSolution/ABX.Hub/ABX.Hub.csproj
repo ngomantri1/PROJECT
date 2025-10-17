@@ -1,0 +1,74 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- build dev -->
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishReadyToRun>false</PublishReadyToRun>
+
+    <!-- Cho phép dynamic loading -->
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <!-- Release: single-file + bundle content (tự extract vào thư mục tạm) -->
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\\ABX.Core\\ABX.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3537.50" />
+    <PackageReference Include="System.Text.Json" Version="9.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="AppConfig.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- ======== KHAI BÁO ĐƯỜNG DẪN PLUGIN (TUYỆT ĐỐI NHƯ BẠN CUNG CẤP) ======== -->
+  <PropertyGroup>
+    <Plugin_XocDiaLiveHit>D:\AUTO\AutoBetXocDiaLive_Hitclub\XocDiaLiveHit\bin\Debug\net8.0-windows</Plugin_XocDiaLiveHit>
+  </PropertyGroup>
+
+  <!-- (Nếu plugin nằm trong solution, có thể dùng tương đối:)
+  <PropertyGroup>
+    <Plugin_XocDiaLiveHit>$(MSBuildProjectDirectory)\..\XocDiaLiveHit\bin\$(Configuration)\net8.0-windows</Plugin_XocDiaLiveHit>
+  </PropertyGroup>
+  -->
+
+  <!-- ======== NHÚNG PLUGIN LÀ CONTENT VÀO GÓI (KHÔNG COPY RA CẠNH EXE) ======== -->
+  <ItemGroup>
+    <!-- Debug: copy vào bin\...\Plugins để chạy dev.
+         Release (Publish single-file): nhúng file vào EXE; khi chạy .NET sẽ extract về thư mục tạm,
+         giữ nguyên relative path Plugins\XocDiaLiveHit.dll -->
+    <Content Include="$(Plugin_XocDiaLiveHit)\XocDiaLiveHit.dll">
+      <Link>Plugins\XocDiaLiveHit.dll</Link>
+      <TargetPath>Plugins\XocDiaLiveHit.dll</TargetPath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- KHÔNG CÒN các Target CopyPluginsOnBuild/Publish ở bản này -->
+
+</Project>

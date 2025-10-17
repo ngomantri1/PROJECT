@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ABX.Core\ABX.Core.csproj" />
+  </ItemGroup>
+  <Target Name="CopyPlugin" AfterTargets="Build">
+    <PropertyGroup>
+      <HubPluginsDir>$(SolutionDir)ABX.Hub\Plugins\</HubPluginsDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(HubPluginsDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(HubPluginsDir)" />
+  </Target>
+</Project>
