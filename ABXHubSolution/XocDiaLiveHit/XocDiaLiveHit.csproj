@@ -130,39 +130,29 @@
     <EmbeddedResource Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
   </ItemGroup>
   
-    <!-- === Dùng CHUNG project ABX.Core (tránh lệch interface IGamePlugin) === -->
+  <!-- BẮT BUỘC: để IGamePlugin khớp đúng assembly ABX.Core của Hub -->
   <ItemGroup>
     <ProjectReference Include="..\ABX.Core\ABX.Core.csproj" />
   </ItemGroup>
+
+  <!-- (tuỳ chọn) gắn DependentUpon cho file-behind -->
   <ItemGroup>
     <Compile Update="Views\XocDiaLiveHitPanel.xaml.cs">
       <DependentUpon>XocDiaLiveHitPanel.xaml</DependentUpon>
     </Compile>
   </ItemGroup>
 
-  <!-- === Sau khi Build: copy plugin vào thư mục Plugins cạnh exe của Hub (Debug/Release) === -->
-  <Target Name="CopyPluginToHubBin" AfterTargets="Build" Condition=" '$(SolutionDir)' != '' and Exists('$(SolutionDir)ABX.Hub') ">
+  <!-- Copy DLL plugin sang thư mục Plugins cạnh ABX.Hub.exe -->
+  <Target Name="CopyPluginToHubBin" AfterTargets="Build"
+          Condition=" '$(SolutionDir)' != '' and Exists('$(SolutionDir)ABX.Hub') ">
     <PropertyGroup>
-      <!-- đúng chỗ Hub đang nạp plugin -->
       <HubPluginsDir>$(SolutionDir)ABX.Hub\bin\$(Configuration)\net8.0-windows\Plugins\</HubPluginsDir>
     </PropertyGroup>
-    <Message Importance="high" Text="Copy plugin to $(HubPluginsDir)" />
     <MakeDir Directories="$(HubPluginsDir)" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(HubPluginsDir)" SkipUnchangedFiles="true" />
-    <!-- copy PDB (nếu có) để debug cho sướng -->
-    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(HubPluginsDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(HubPluginsDir)"
+          Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
   </Target>
-
-  <!-- === Khi Publish Hub: cũng copy plugin vào thư mục publish/Plugins === -->
-  <Target Name="CopyPluginToHubPublish" AfterTargets="Publish" Condition=" '$(SolutionDir)' != '' and Exists('$(SolutionDir)ABX.Hub') ">
-    <PropertyGroup>
-      <HubPublishPluginsDir>$(SolutionDir)ABX.Hub\bin\$(Configuration)\net8.0-windows\publish\Plugins\</HubPublishPluginsDir>
-    </PropertyGroup>
-    <MakeDir Directories="$(HubPublishPluginsDir)" />
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(HubPublishPluginsDir)" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(HubPublishPluginsDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
-  </Target>
-
   
 
 </Project>

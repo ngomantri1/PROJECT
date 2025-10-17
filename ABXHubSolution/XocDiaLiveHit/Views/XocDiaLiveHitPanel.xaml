@@ -2,6 +2,5 @@
     x:Class="XocDiaLiveHit.Views.XocDiaLiveHitPanel"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <!--  Nơi nhúng UI rút từ MainWindow  -->
     <Grid x:Name="RootHost" />
 </UserControl>
