@@ -102,6 +102,9 @@
     <Copy SourceFiles="$(_DstExe)" DestinationFiles="$(_AliasExe)" Condition="'$(CreateDebugAlias)'=='true'" />
   </Target>
 
+  <ItemGroup>
+    <ProjectReference Include="..\ABX.Core\ABX.Core.csproj" />
+  </ItemGroup>
   <!-- Gói WebView2 -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
