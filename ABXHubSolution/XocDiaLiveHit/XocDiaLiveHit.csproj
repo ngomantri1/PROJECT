@@ -61,24 +61,8 @@
   </PropertyGroup>
 
   <!-- Khi Debug: luôn publish host EXE (Release) để F5 chạy -->
-  <Target Name="EnsureReleaseHost" BeforeTargets="Build"
-          Condition="'$(Configuration)'=='Debug'">
-    <MSBuild Projects="$(MSBuildProjectFullPath)"
-             Targets="Restore;Publish"
-             Properties="
-                Configuration=Release;
-                RuntimeIdentifier=win-x64;
-                SelfContained=true;
-                PublishSingleFile=true;
-                IncludeNativeLibrariesForSelfExtract=true;
-                EnableCompressionInSingleFile=true;
-                PublishReadyToRun=false;
-                PublishTrimmed=false;
-                DebugSymbols=true;
-                DebugType=portable;
-                Optimize=false;
-                BuildStamp=$(BuildStamp);
-                CreateDebugAlias=true" />
+  <Target Name="EnsureReleaseHost" BeforeTargets="Build" Condition="'$(Configuration)'=='Debug'">
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Restore;Publish" Properties="&#xD;&#xA;                Configuration=Release;&#xD;&#xA;                RuntimeIdentifier=win-x64;&#xD;&#xA;                SelfContained=true;&#xD;&#xA;                PublishSingleFile=true;&#xD;&#xA;                IncludeNativeLibrariesForSelfExtract=true;&#xD;&#xA;                EnableCompressionInSingleFile=true;&#xD;&#xA;                PublishReadyToRun=false;&#xD;&#xA;                PublishTrimmed=false;&#xD;&#xA;                DebugSymbols=true;&#xD;&#xA;                DebugType=portable;&#xD;&#xA;                Optimize=false;&#xD;&#xA;                BuildStamp=$(BuildStamp);&#xD;&#xA;                CreateDebugAlias=true" />
   </Target>
 
   <!-- Sau Publish: ĐỔI TÊN EXE chính theo Version + BuildStamp (không giữ XocDiaLiveHit.exe) -->
@@ -101,10 +85,6 @@
     <Delete Files="$(_AliasExe)" ContinueOnError="true" Condition="'$(CreateDebugAlias)'=='true'" />
     <Copy SourceFiles="$(_DstExe)" DestinationFiles="$(_AliasExe)" Condition="'$(CreateDebugAlias)'=='true'" />
   </Target>
-
-  <ItemGroup>
-    <ProjectReference Include="..\ABX.Core\ABX.Core.csproj" />
-  </ItemGroup>
   <!-- Gói WebView2 -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
@@ -149,5 +129,35 @@
     <!-- <Resource Remove="Assets\**\*.jpg" /> -->
     <EmbeddedResource Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
   </ItemGroup>
+  
+    <!-- === Dùng CHUNG project ABX.Core (tránh lệch interface IGamePlugin) === -->
+  <ItemGroup>
+    <ProjectReference Include="..\ABX.Core\ABX.Core.csproj" />
+  </ItemGroup>
+
+  <!-- === Sau khi Build: copy plugin vào thư mục Plugins cạnh exe của Hub (Debug/Release) === -->
+  <Target Name="CopyPluginToHubBin" AfterTargets="Build" Condition=" '$(SolutionDir)' != '' and Exists('$(SolutionDir)ABX.Hub') ">
+    <PropertyGroup>
+      <!-- đúng chỗ Hub đang nạp plugin -->
+      <HubPluginsDir>$(SolutionDir)ABX.Hub\bin\$(Configuration)\net8.0-windows\Plugins\</HubPluginsDir>
+    </PropertyGroup>
+    <Message Importance="high" Text="Copy plugin to $(HubPluginsDir)" />
+    <MakeDir Directories="$(HubPluginsDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(HubPluginsDir)" SkipUnchangedFiles="true" />
+    <!-- copy PDB (nếu có) để debug cho sướng -->
+    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(HubPluginsDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+  </Target>
+
+  <!-- === Khi Publish Hub: cũng copy plugin vào thư mục publish/Plugins === -->
+  <Target Name="CopyPluginToHubPublish" AfterTargets="Publish" Condition=" '$(SolutionDir)' != '' and Exists('$(SolutionDir)ABX.Hub') ">
+    <PropertyGroup>
+      <HubPublishPluginsDir>$(SolutionDir)ABX.Hub\bin\$(Configuration)\net8.0-windows\publish\Plugins\</HubPublishPluginsDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(HubPublishPluginsDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(HubPublishPluginsDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(HubPublishPluginsDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+  </Target>
+
+  
 
 </Project>
