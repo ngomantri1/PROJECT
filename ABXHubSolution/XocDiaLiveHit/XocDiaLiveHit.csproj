@@ -135,19 +135,12 @@
     <ProjectReference Include="..\ABX.Core\ABX.Core.csproj" />
   </ItemGroup>
 
-  <!-- (tuỳ chọn) gắn DependentUpon cho file-behind -->
-  <ItemGroup>
-    <Compile Update="Views\XocDiaLiveHitPanel.xaml.cs">
-      <DependentUpon>XocDiaLiveHitPanel.xaml</DependentUpon>
-    </Compile>
-  </ItemGroup>
-
-  <!-- Copy DLL plugin sang thư mục Plugins cạnh ABX.Hub.exe -->
   <Target Name="CopyPluginToHubBin" AfterTargets="Build"
           Condition=" '$(SolutionDir)' != '' and Exists('$(SolutionDir)ABX.Hub') ">
     <PropertyGroup>
       <HubPluginsDir>$(SolutionDir)ABX.Hub\bin\$(Configuration)\net8.0-windows\Plugins\</HubPluginsDir>
     </PropertyGroup>
+    <Message Importance="high" Text="Copy plugin: $(TargetPath) => $(HubPluginsDir)" />
     <MakeDir Directories="$(HubPluginsDir)" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(HubPluginsDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(HubPluginsDir)"
