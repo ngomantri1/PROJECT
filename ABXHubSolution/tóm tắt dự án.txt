@@ -1,0 +1,97 @@
+Bối cảnh
+
+Solution gồm ABX.Hub (WPF .NET 8) và plugin game XocDiaLiveHit.
+
+Mục tiêu:
+
+Debug: F5 chạy ngay, tự tạo môi trường WebView2 fixed và tự copy plugin DLL vào bin\Debug\net8.0-windows\Plugins.
+
+Release: Build/publish thành 1 file EXE duy nhất (giống XocDiaLiveHit trước đây), không rác DLL.
+
+Việc đã xử lý/chỉnh
+
+ABX.Hub.csproj
+
+Copy ThirdParty\WebView2Fixed_win-x64.zip ra output.
+
+Target ExpandWv2ZipDebug dùng PowerShell Expand-Archive bung ZIP vào bin\...\ThirdParty\WebView2Fixed_win-x64.
+
+Luôn tạo bin\...\Plugins.
+
+Khi Publish (Release): đổi tên exe kèm BuildStamp và dọn các DLL WebView2 rời (giữ single-file sạch).
+
+Wv2Bootstrapper.cs
+
+Hàm EnsureFixedEnv(baseDir):
+
+Debug: dùng thư mục đã bung ở ThirdParty\WebView2Fixed_win-x64.
+
+Release: fallback đọc ZIP EmbeddedResource rồi bung tạm.
+
+Set WEBVIEW2_BROWSER_EXECUTABLE_FOLDER và user-data folder cố định để WebView2 chạy độc lập.
+
+MainWindow.xaml.cs
+
+Window_Loaded gọi EnsureFixedEnv, tạo WebView2, bật settings cần thiết.
+
+Load hub.html từ bin\...\web\hub.html.
+
+Plugin hosting: scan DLL trong bin\...\Plugins, map theo Slug (ví dụ xoc-dia-live) và mở view.
+
+GetOrCreateHost() tạo HostContext(web, cfg, log) (fix đúng chữ ký ctor).
+
+hub.html
+
+UI danh sách game; bấm thẻ Xóc Đĩa Live sẽ postMessage enterGame (slug xoc-dia-live) về WPF.
+
+XocDiaLiveHit.csproj
+
+Debug: build kiểu Library, tham chiếu ABX.Core từ ABX.Hub\bin\Debug\...\ABX.Core.dll, guard “build Hub trước”, rồi copy plugin DLL + PDB sang ABX.Hub\bin\...\Plugins (xóa mọi ABX.Core*.dll trong Plugins để tránh mismatch).
+
+Release: publish single-file self-contained + nén native; nhúng ThirdParty\WebView2Fixed_win-x64.zip làm EmbeddedResource; dọn DLL thừa sau publish.
+
+Nhúng các file JS nội bộ (embed resource), icon giữ nguyên.
+
+Bỏ cấu hình flatten output/xóa DLL WebView2 ở Debug để tránh vỡ đường dẫn & intellisense task xung đột.
+
+Đã giải thích vì sao bỏ vài khối trong csproj (flatten output, Strip DLL ở Debug…) vì chúng gây lệch đường dẫn tài nguyên, làm VS/WPF báo lỗi ApplicationDefinition, và khiến Hub không tìm thấy web/plugin.
+
+Chuỗi lỗi đã gặp & cách fix
+
+MSB3073 khi bung ZIP: sai tên/đường dẫn file → chuẩn hóa tên WebView2Fixed_win-x64.zip và lệnh Expand-Archive.
+
+Missing plugin: không copy DLL sang bin\...\Plugins → thêm target copy trong XocDiaLiveHit.csproj.
+
+Màn hình đen/ trắng: chưa có runtime WebView2 hoặc chưa load đúng hub.html → thêm EnsureFixedEnv + load path file scheme.
+
+CS0246/CS1739 (WebViewService/HostContext ctor): thiếu using & sai chữ ký → thêm ABX.Hub.Services, tạo HostContext(web, cfg, log).
+
+Trạng thái hiện tại mong muốn
+
+F5 Debug ABX.Hub:
+
+Tự có bin\...\ThirdParty\WebView2Fixed_win-x64\msedgewebview2.exe.
+
+Có bin\...\Plugins\XocDiaLiveHit.dll.
+
+Hub mở hub.html, bấm thẻ game → vào màn hình Xóc Đĩa (WebView2 chạy từ fixed runtime).
+
+Publish Release ABX.Hub/XocDiaLiveHit:
+
+Ra 1 file EXE (đã đổi tên kèm stamp), không có net8.0-windows\ hay DLL WebView2 rời.
+
+File bạn sẽ cần trong chat mới
+
+ABX.Hub.csproj (đã có targets Expand ZIP, Ensure Plugins, Rename, Clean).
+
+Wv2Bootstrapper.cs (EnsureFixedEnv).
+
+MainWindow.xaml + MainWindow.xaml.cs (load web, host plugin, handle messages).
+
+hub.html (UI + postMessage).
+
+XocDiaLiveHit.csproj (Debug=Library & copy DLL sang Hub, Release=single-file).
+
+XocDiaLiveHitPlugin.cs (định nghĩa Name/Code/Slug="xoc-dia-live" + view).
+
+Nếu mở chat mới, chỉ cần nói: “Tiếp tục dự án ABX.Hub/XocDiaLiveHit theo summary này, mình muốn nhận lại các file trên ở phiên bản cuối cùng để thay thế toàn bộ.”

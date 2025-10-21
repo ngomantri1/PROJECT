@@ -2,7 +2,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using static XocDiaLiveHit.Tasks.TaskUtil;
@@ -10,48 +12,42 @@ using static XocDiaLiveHit.Tasks.TaskUtil;
 namespace XocDiaLiveHit.Tasks
 {
     /// <summary>
-    /// 14) AI học tại chỗ (n-gram) — chỉ thích nghi khi chuỗi thua ≥ 5.
-    /// - Warm-start 50 kết quả khi bật và lưu state ngay.
-    /// - Dự đoán: n-gram + Laplace + backoff; Hòa -> theo bệt; momentum guard cho bệt dài.
-    /// - Học online từng ván. THAM SỐ chỉ điều chỉnh khi lossStreak >= 5 (>=8 siết mạnh hơn).
-    /// - Lưu state n-gram & tham số để kế thừa lần chạy sau.
+    /// 14) AI học tại chỗ (n-gram) — đặt liên tục, học online, nâng có kiểm soát khi s≥SafetyTrigger/s≥8.
+    /// - Warm-start 50 kết quả khi bật, lưu state ngay.
+    /// - Quyết định: N-gram + Laplace + backoff; chỉ RANDOM khi undecidable.
+    /// - Escalate 1 lần/episode tại s≥SafetyTrigger (+1 lần nếu s≥8), ease-in theo tổng episode; auto-decay khi ổn định (lenient).
+    /// - Persist n-gram & tham số/state (v2) để kế thừa lần sau.
     /// </summary>
     public sealed class AiOnlineNGramTask : IBetTask
     {
         public string DisplayName => "14) AI học tại chỗ (n-gram)";
         public string Id => "ai-online-ngram";
 
-        private readonly NGramOnlineModel _model;
+        private readonly NGramModel _model;
         private readonly string _statePath;
         private readonly int _warmSteps;
         private readonly bool _saveAfterWarm;
 
-        // tham số động (persist)
-        private readonly AdaptiveParamController _ap;
+        // Tham số + trạng thái thích nghi (persist)
+        private readonly AdaptiveParams _ap;
+        private readonly AdaptiveState _st;
 
         // runtime
         private bool _warmed = false;
         private int _updatesSinceLastSave = 0;
         private int _lossStreak = 0;
-        private int _antiStreakRoundsLeft = 0;
 
-        // ngưỡng (chỉ dùng để kích hoạt điều chỉnh; <5 không điều chỉnh)
-        private const int SAFETY_TRIGGER = 5;  // kích hoạt siết
-        private const int SAFETY_STRONG = 8;  // siết mạnh hơn
         private const int SAVE_EVERY_UPDATES = 5;
-
         private static readonly Random _rng = new Random();
 
         public AiOnlineNGramTask() : this(null, warmStartSteps: 50, saveImmediatelyAfterWarm: true) { }
 
         public AiOnlineNGramTask(string statePath, int warmStartSteps = 50, bool saveImmediatelyAfterWarm = true)
         {
-            _model = new NGramOnlineModel(
+            _model = new NGramModel(
                 kMax: 6,
                 alpha: 1.0,
-                minSupport: 3,
-                rescaleThreshold: 1000,
-                tieUsesOppLast: false // HÒA -> THEO BỆT
+                rescaleThreshold: 600   // GIẢM từ 1000 xuống 600 để bám trend nhanh hơn
             );
 
             _statePath = !string.IsNullOrWhiteSpace(statePath) ? statePath : GetDefaultStatePath();
@@ -65,9 +61,11 @@ namespace XocDiaLiveHit.Tasks
                 catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[AI-NGram] Load state failed: {ex.Message}"); }
             }
 
-            // nạp tham số động
-            _ap = new AdaptiveParamController(GetParamPath());
-            ApplyAdaptiveParamsToModel();
+            // nạp params/state thích nghi (v2) & clamp
+            _ap = AdaptiveParams.LoadOrDefault(GetParamPath());
+            _st = AdaptiveState.LoadOrDefault(GetStatePathV2());
+            _ap.Clamp();
+            _st.Clamp();
         }
 
         // ===== đường dẫn =====
@@ -78,35 +76,30 @@ namespace XocDiaLiveHit.Tasks
         {
             var dir = AppLocalDir();
             Directory.CreateDirectory(dir);
-            return Path.Combine(dir, "ngram_state_v1.json");
+            return Path.Combine(dir, "ngram_state_v2.json");
         }
 
         private static string GetParamPath()
         {
             var dir = AppLocalDir();
             Directory.CreateDirectory(dir);
-            return Path.Combine(dir, "ngram_params_v1.json");
+            return Path.Combine(dir, "ngram_params_v2.json");
         }
 
-        private void ApplyAdaptiveParamsToModel()
+        private static string GetStatePathV2()
         {
-            var p = _ap.Current;
-            _model.SetHyperparams(
-                kUseMax: p.KUseMax,
-                alpha: p.Alpha,
-                minSupport: p.MinSupport,
-                rescaleThreshold: p.RescaleThreshold,
-                tieBand: p.TieBand,
-                momentumGuard: p.MomentumGuard
-            );
+            var dir = AppLocalDir();
+            Directory.CreateDirectory(dir);
+            return Path.Combine(dir, "ngram_adaptive_state_v2.json");
         }
 
         private static string ToSide(char c) => c == 'C' ? "CHAN" : "LE";
 
+        // ======================== RUN LOOP ========================
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
-            ctx.Log?.Invoke($"[AI-NGram] Start. state='{_statePath}', params='{GetParamPath()}'");
-            ctx.Log?.Invoke($"[AI-NGram] Using: {_ap.Current}");
+            ctx.Log?.Invoke($"[AI-NGram] Start. state='{_statePath}', params='{GetParamPath()}', ast='{GetStatePathV2()}'");
+            ctx.Log?.Invoke($"[AI-NGram] Base: {_ap.BaseCompact()} | SafetyTrigger={_ap.SafetyTrigger} | Caps S5/S8 | EaseIn τ={_ap.TauEaseIn}");
 
             // --- Warm-start 50 & lưu ngay (mỗi lần bật) ---
             if (!_warmed)
@@ -138,58 +131,48 @@ namespace XocDiaLiveHit.Tasks
                 var preSnap = ctx.GetSnap();
                 string preSeq = preSnap?.seq ?? "";
                 string preParity = SeqToParityString(preSeq);
-                char last = preParity.Length > 0 ? preParity[^1] : 'C';
 
-                // 1) Dự đoán có độ tự tin & k dùng
-                var (pick, conf, usedK) = _model.PredictWithConfidence(preParity);
+                // 1) Tính tham số hiệu lực (ease-in theo SafetyEscalations & S5/S8 flags)
+                var eff = EffectiveFrom(_ap, _st);
 
-                // 2) Gating & chống thua dây (không điều chỉnh tham số nếu s<5)
-                var par = _ap.Current;
-                char finalPick = pick;
+                // 2) Tính score/conf/kUsed/support theo N-gram
+                var (score, conf, usedK, support) = _model.ScoreAndConfidence(preParity, eff.KUseMax, eff.MinSupport);
 
-                if (_antiStreakRoundsLeft > 0)
+                // 3) Xác định undecidable (gating)
+                bool undecidable =
+                    usedK <= 0 || usedK > eff.KUseMax ||
+                    support < eff.MinSupport ||
+                    Math.Abs(score) < eff.TieBand ||
+                    conf < eff.ConfFollowThreshold ||
+                    double.IsNaN(score) || double.IsNaN(conf);
+
+                // 4) Chọn cửa: N-gram bình thường; chỉ random khi undecidable
+                char finalPick;
+                if (undecidable)
                 {
-                    finalPick = last; // trong anti-hold -> theo bệt
+                    finalPick = _rng.NextDouble() < 0.5 ? 'C' : 'L';
                 }
-                else if (conf < par.ConfFollowThreshold)
+                else
                 {
-                    finalPick = last; // p yếu -> theo bệt
-                }
-
-                // 3) Epsilon-greedy theo bệt (chỉ có tác dụng nếu EpsGreedyBase > 0 — do đã điều chỉnh ở s≥5)
-                if (par.EpsGreedyBase > 0 && _rng.NextDouble() < par.EpsGreedyBase)
-                {
-                    finalPick = last;
+                    finalPick = (score >= 0) ? 'C' : 'L';
                 }
 
                 string side = ToSide(finalPick);
                 long stake = money.GetStakeForThisBet();
 
-                ctx.Log?.Invoke($"[AI-NGram] k={usedK}, conf={conf:0.000}, raw={ToSide(pick)} -> final={side}, stake={stake:N0}, lossStreak={_lossStreak}, antiHold={_antiStreakRoundsLeft}; {par.Compact()}");
+                ctx.Log?.Invoke($"[AI-NGram] k={usedK}, sup={support}, score={score:0.000}, conf={conf:0.000} -> final={side}, stake={stake:N0}, lossStreak={_lossStreak}; Eff[{eff.Compact()}] Esc(E={_st.SafetyEscalations},S5={_st.DidEscS5ThisEpisode},S8={_st.DidEscS8ThisEpisode},Hold={_st.SafetyHoldLeft})");
 
                 await PlaceBet(ctx, side, stake, ct);
 
-                // 4) Kết quả ván
+                // 5) Kết quả ván
                 bool win = await WaitRoundFinishAndJudge(ctx, side, preSeq, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 money.OnRoundResult(win);
 
-                // 5) cập nhật loss streak & anti-hold
-                if (win)
-                {
-                    _lossStreak = 0;
-                    _antiStreakRoundsLeft = 0;
-                }
-                else
-                {
-                    _lossStreak++;
-                    if (_lossStreak >= par.AntiStreakTrigger)
-                        _antiStreakRoundsLeft = par.AntiStreakHold;
-                    else if (_antiStreakRoundsLeft > 0)
-                        _antiStreakRoundsLeft--;
-                }
+                // 6) cập nhật loss streak
+                _lossStreak = win ? 0 : _lossStreak + 1;
 
-                // 6) Học online từ kết quả thực
+                // 7) Học online từ kết quả thực
                 var postSnap = ctx.GetSnap?.Invoke();
                 string postParity = SeqToParityString(postSnap?.seq ?? "");
                 if (postParity.Length >= preParity.Length + 1)
@@ -208,18 +191,8 @@ namespace XocDiaLiveHit.Tasks
                     ctx.Log?.Invoke("[AI-NGram] warn: cannot observe actual parity for online update.");
                 }
 
-                // 7) CHỈ điều chỉnh tham số khi chuỗi thua >= 5
-                if (_lossStreak >= SAFETY_TRIGGER)
-                {
-                    bool changed = _ap.AdaptForLossStreak(_lossStreak, strong: _lossStreak >= SAFETY_STRONG);
-                    if (changed)
-                    {
-                        ApplyAdaptiveParamsToModel();
-                        ctx.Log?.Invoke($"[AI-NGram] Safety adapt (s={_lossStreak}) -> {_ap.Current}");
-                        _ap.Save(); // lưu ngay tham số để kế thừa
-                    }
-                }
-                // NOTE: s < 5 -> không điều chỉnh gì (giữ nguyên tham số), vẫn học n-gram bình thường.
+                // 8) Cập nhật thích nghi (episode escalate, auto-decay, persist)
+                OnJudgedAndAdapt(ctx, win, undecidable);
             }
         }
 
@@ -241,113 +214,226 @@ namespace XocDiaLiveHit.Tasks
             }
         }
 
-        // ================== MÔ HÌNH N-GRAM ==================
-        private sealed class NGramOnlineModel
+        // ================== THÍCH NGHI: escalate + ease-in + auto-decay ==================
+        private void OnJudgedAndAdapt(GameContext ctx, bool win, bool lastUndecidable)
+        {
+            // 1) Cửa sổ undecidable 50 ván (1=undecidable, 0=decidable)
+            PushUndBit(lastUndecidable, _ap.UndWindowLen);
+
+            // 2) Quản lý episode & escalate (1 lần S5, +1 lần S8 trong cùng episode)
+            if (win)
+            {
+                _st.LossStreak = 0;
+
+                if (_st.SafetyHoldLeft > 0)
+                {
+                    _st.SafetyHoldLeft--;
+                    if (_st.SafetyHoldLeft == 0)
+                    {
+                        _st.InEpisode = false;
+                        _st.DidEscS5ThisEpisode = false;
+                        _st.DidEscS8ThisEpisode = false;
+                        ctx.Log?.Invoke("[AI-NGram] Safety OFF.");
+                    }
+                }
+            }
+            else
+            {
+                _st.LossStreak++;
+
+                if (_st.LossStreak >= _ap.SafetyTrigger)   // dùng SafetyTrigger (mặc định 4)
+                {
+                    if (!_st.InEpisode)
+                    {
+                        _st.InEpisode = true;
+                        _st.DidEscS5ThisEpisode = false;
+                        _st.DidEscS8ThisEpisode = false;
+                    }
+
+                    if (!_st.DidEscS5ThisEpisode)
+                    {
+                        _st.SafetyEscalations++;
+                        _st.DidEscS5ThisEpisode = true;
+                        _st.SafetyHoldLeft = Math.Max(_st.SafetyHoldLeft, Math.Max(_ap.BaseAntiStreakHold, _ap.AntiStreakHoldMinS5));
+                        ctx.Log?.Invoke($"[AI-NGram] Escalate S5 (E={_st.SafetyEscalations}).");
+                    }
+
+                    if (_st.LossStreak >= 8 && !_st.DidEscS8ThisEpisode)
+                    {
+                        _st.SafetyEscalations++;
+                        _st.DidEscS8ThisEpisode = true;
+                        _st.SafetyHoldLeft = Math.Max(_st.SafetyHoldLeft, Math.Max(_ap.BaseAntiStreakHold, _ap.AntiStreakHoldMinS8));
+                        ctx.Log?.Invoke($"[AI-NGram] Escalate S8 (E={_st.SafetyEscalations}).");
+                    }
+                }
+            }
+
+            // 3) Auto-decay khi ổn định (lenient: LossStreak ≤ 1), có cooldown, và điều kiện phụ UndRate ≤ 30% (cửa sổ 50)
+            bool stableNow = !_st.InSafety && (_st.LossStreak <= _ap.LenientAllowLosses);
+            if (stableNow)
+            {
+                if (_st.SafeCooldownLeft > 0) _st.SafeCooldownLeft--;
+                else _st.SafeRounds++;
+            }
+            else
+            {
+                _st.SafeRounds = 0;
+                if (_st.InSafety) _st.SafeCooldownLeft = 0;
+            }
+
+            double undRate = GetUndRate();
+            bool okUnd = undRate <= _ap.TargetUndecidableRate;
+
+            if (_st.SafeRounds >= _ap.SafeRoundsToDecay && _st.SafetyEscalations > 0 && okUnd)
+            {
+                _st.SafetyEscalations--;
+                _st.SafeRounds = 0;
+                _st.SafeCooldownLeft = _ap.SafeDecayCooldown;
+                ctx.Log?.Invoke($"[AI-NGram] Auto-decay: Escalations → {_st.SafetyEscalations} (undRate={undRate:P0})");
+            }
+
+            // 4) Persist params/state mỗi ván (nhẹ)
+            _ap.SaveNow();
+            _st.SaveNow();
+        }
+
+        private void PushUndBit(bool undecidable, int maxLen)
+        {
+            if (maxLen <= 0) return;
+            char bit = undecidable ? '1' : '0';
+            if (string.IsNullOrEmpty(_st.UndWindowBits)) _st.UndWindowBits = new string(bit, 1);
+            else
+            {
+                _st.UndWindowBits = _st.UndWindowBits + bit;
+                if (_st.UndWindowBits.Length > maxLen)
+                    _st.UndWindowBits = _st.UndWindowBits[^maxLen..];
+            }
+        }
+        private double GetUndRate()
+        {
+            if (string.IsNullOrEmpty(_st.UndWindowBits)) return 0.0;
+            int ones = 0;
+            foreach (var c in _st.UndWindowBits) if (c == '1') ones++;
+            return (double)ones / _st.UndWindowBits.Length;
+        }
+
+        // ================== THAM SỐ HIỆU LỰC (ease-in) ==================
+        private sealed class Effective
+        {
+            public double TieBand;
+            public double ConfFollowThreshold;
+            public int MinSupport;
+            public int KUseMax;
+            public int AntiStreakHold;
+
+            public string Compact() =>
+                $"tb={TieBand:0.00},cg={ConfFollowThreshold:0.00},kMax={KUseMax},minSup={MinSupport},hold={AntiStreakHold}";
+        }
+
+        private static double EaseUp(double baseVal, double cap, int E, double tau)
+        {
+            if (cap <= baseVal) return baseVal;
+            return Math.Min(cap, baseVal + (cap - baseVal) * (1.0 - Math.Exp(-E / tau)));
+        }
+        private static int EaseDownInt(int baseVal, int capLower, int E, double tau)
+        {
+            if (capLower >= baseVal) return baseVal;
+            var v = baseVal - (baseVal - capLower) * (1.0 - Math.Exp(-E / tau));
+            return Math.Max(capLower, (int)Math.Round(v, MidpointRounding.AwayFromZero));
+        }
+
+        private static Effective EffectiveFrom(AdaptiveParams ap, AdaptiveState st)
+        {
+            bool useS8 = st.DidEscS8ThisEpisode || st.LossStreak >= 8;
+            bool useS5 = !useS8 && (st.DidEscS5ThisEpisode || st.LossStreak >= ap.SafetyTrigger); // dùng SafetyTrigger
+
+            int E = st.SafetyEscalations;
+            double tau = ap.TauEaseIn;
+
+            if (useS8)
+            {
+                return new Effective
+                {
+                    TieBand = EaseUp(ap.BaseTieBand, ap.TieBandCapS8, E, tau),
+                    ConfFollowThreshold = EaseUp(ap.BaseConfFollowThreshold, ap.ConfCapS8, E, tau),
+                    MinSupport = Math.Max(ap.MinSupportMinS8, ap.BaseMinSupport),
+                    KUseMax = EaseDownInt(ap.BaseKUseMax, ap.KUseMaxCapS8, E, tau),
+                    AntiStreakHold = Math.Max(ap.AntiStreakHoldMinS8, ap.BaseAntiStreakHold),
+                };
+            }
+            else if (useS5)
+            {
+                return new Effective
+                {
+                    TieBand = EaseUp(ap.BaseTieBand, ap.TieBandCapS5, E, tau),
+                    ConfFollowThreshold = EaseUp(ap.BaseConfFollowThreshold, ap.ConfCapS5, E, tau),
+                    MinSupport = Math.Max(ap.MinSupportMinS5, ap.BaseMinSupport),
+                    KUseMax = EaseDownInt(ap.BaseKUseMax, ap.KUseMaxCapS5, E, tau),
+                    AntiStreakHold = Math.Max(ap.AntiStreakHoldMinS5, ap.BaseAntiStreakHold),
+                };
+            }
+            else
+            {
+                return new Effective
+                {
+                    TieBand = ap.BaseTieBand,
+                    ConfFollowThreshold = ap.BaseConfFollowThreshold,
+                    MinSupport = ap.BaseMinSupport,
+                    KUseMax = ap.BaseKUseMax,
+                    AntiStreakHold = ap.BaseAntiStreakHold,
+                };
+            }
+        }
+
+        // ================== MÔ HÌNH N-GRAM (đếm & dự đoán) ==================
+        private sealed class NGramModel
         {
             private readonly int _kMax;
-            private int _kUseMax;
             private double _alpha;
-            private int _minSupport;
             private double _rescaleThreshold;
-            private readonly bool _tieUsesOppLast;
 
-            private int _momentumGuard = 5;
-            private double _tieBand = 0.02;
-
+            // tables[k][key] => (c:count_C, l:count_L)
             private readonly Dictionary<int, (double c, double l)>[] _tables;
 
-            public NGramOnlineModel(int kMax, double alpha, int minSupport, double rescaleThreshold, bool tieUsesOppLast)
+            public NGramModel(int kMax, double alpha, double rescaleThreshold)
             {
                 _kMax = Math.Max(1, kMax);
-                _kUseMax = _kMax;
                 _alpha = Math.Max(0.0, alpha);
-                _minSupport = Math.Max(0, minSupport);
                 _rescaleThreshold = Math.Max(10.0, rescaleThreshold);
-                _tieUsesOppLast = tieUsesOppLast;
 
                 _tables = new Dictionary<int, (double c, double l)>[_kMax + 1];
                 for (int k = 0; k <= _kMax; k++)
                     _tables[k] = new Dictionary<int, (double c, double l)>(capacity: 1 << Math.Min(k, 12));
             }
 
-            public void SetHyperparams(int kUseMax, double alpha, int minSupport, double rescaleThreshold, double tieBand, int momentumGuard)
+            public (double score, double conf, int usedK, int support) ScoreAndConfidence(string parity, int kUseMax, int minSupport)
             {
-                _kUseMax = Math.Max(1, Math.Min(kUseMax, _kMax));
-                _alpha = Math.Max(0.0, alpha);
-                _minSupport = Math.Max(0, minSupport);
-                _rescaleThreshold = Math.Max(10.0, rescaleThreshold);
-                _tieBand = Math.Clamp(tieBand, 0.0, 0.5);
-                _momentumGuard = Math.Max(1, momentumGuard);
-            }
+                if (string.IsNullOrEmpty(parity)) return (0.0, 0.0, 0, 0);
 
-            private static char Opp(char c) => c == 'C' ? 'L' : 'C';
-
-            private static int EncodeTailBits(ReadOnlySpan<char> p, int k)
-            {
-                int bits = 0, n = p.Length;
-                for (int i = Math.Max(0, n - k); i < n; i++)
-                    bits = (bits << 1) | (p[i] == 'L' ? 1 : 0); // C=0, L=1
-                return bits;
-            }
-
-            private static int TailRunLength(ReadOnlySpan<char> p)
-            {
-                int n = p.Length; if (n == 0) return 0;
-                char last = p[n - 1]; int run = 0;
-                for (int i = n - 1; i >= 0 && p[i] == last; i--) run++;
-                return run;
-            }
-
-            public char Predict(string parity)
-            {
-                var (next, _, _) = PredictWithConfidence(parity);
-                return next;
-            }
-
-            public (char next, double conf, int usedK) PredictWithConfidence(string parity)
-            {
-                if (string.IsNullOrEmpty(parity)) return ('C', 0.0, 0);
-                char last = parity[^1];
-
-                // bệt dài -> theo bệt
-                int run = TailRunLength(parity);
-                if (run >= _momentumGuard) return (last, 1.0, -1);
-
-                for (int k = Math.Min(_kUseMax, parity.Length); k >= 1; k--)
+                for (int k = Math.Min(Math.Min(kUseMax, _kMax), parity.Length); k >= 1; k--)
                 {
-                    if (parity.Length < k) continue;
                     int key = EncodeTailBits(parity, k);
                     var tab = _tables[k];
 
                     if (tab.TryGetValue(key, out var cnt))
                     {
-                        double total = cnt.c + cnt.l;
-                        if (total >= _minSupport)
+                        int sup = (int)(cnt.c + cnt.l);
+                        if (sup >= minSupport)
                         {
-                            double pC = (cnt.c + _alpha) / (total + 2.0 * _alpha);
-
-                            // hòa đúng 0.5
-                            if (Math.Abs(pC - 0.5) < 1e-12)
-                                return (_tieUsesOppLast ? Opp(last) : last, 0.5, k);
-
-                            // vùng hòa -> theo bệt
-                            if (Math.Abs(pC - 0.5) <= _tieBand)
-                                return (last, 0.5, k);
-
-                            double conf = Math.Abs(pC - 0.5) * 2.0; // 0..1
-                            return (pC >= 0.5) ? ('C', conf, k) : ('L', conf, k);
+                            double pC = (cnt.c + _alpha) / (sup + 2.0 * _alpha);
+                            double score = pC - 0.5;                                // [-0.5..+0.5]
+                            double conf = Math.Min(1.0, Math.Abs(score) * 2.0)     // 0..1 (theo edge)
+                                         * (1.0 - Math.Exp(-sup / 12.0));           // tăng theo support
+                            return (score, conf, k, sup);
                         }
                     }
                 }
-
-                // không đủ support -> theo bệt
-                return (last, 0.0, 0);
+                return (0.0, 0.0, 0, 0); // undecidable
             }
 
             public void Update(string preParity, char actual)
             {
                 if (preParity.Length == 0) return;
-
                 for (int k = 1; k <= _kMax; k++)
                 {
                     if (preParity.Length < k) break;
@@ -383,9 +469,7 @@ namespace XocDiaLiveHit.Tasks
             {
                 public int KMax { get; set; }
                 public double Alpha { get; set; }
-                public int MinSupport { get; set; }
                 public double RescaleThreshold { get; set; }
-                public bool TieUsesOppLast { get; set; }
                 public long UpdatedAtUtc { get; set; }
                 public List<TableDTO> Tables { get; set; } = new();
             }
@@ -396,9 +480,7 @@ namespace XocDiaLiveHit.Tasks
                 {
                     KMax = _kMax,
                     Alpha = _alpha,
-                    MinSupport = _minSupport,
                     RescaleThreshold = _rescaleThreshold,
-                    TieUsesOppLast = _tieUsesOppLast,
                     UpdatedAtUtc = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 };
 
@@ -432,134 +514,176 @@ namespace XocDiaLiveHit.Tasks
                         if (int.TryParse(kv.Key, out int key) && kv.Value is { Length: >= 2 })
                             _tables[k][key] = (kv.Value[0], kv.Value[1]);
                 }
+
+                // khôi phục tham số lõi
+                _alpha = dto.Alpha;
+                _rescaleThreshold = dto.RescaleThreshold;
+            }
+
+            private static int EncodeTailBits(string parity, int k)
+            {
+                int bits = 0, n = parity.Length;
+                for (int i = Math.Max(0, n - k); i < n; i++)
+                    bits = (bits << 1) | (parity[i] == 'L' ? 1 : 0); // C=0, L=1
+                return bits;
             }
         }
 
-        // ================== THAM SỐ ĐỘNG (persist) ==================
-        private sealed class AdaptiveParamController
+        // ================== PARAMS + STATE THÍCH NGHI (persist v2) ==================
+        private sealed class AdaptiveParams
         {
-            private readonly string _path;
-            private AdaptiveState _state;
+            // Base (khi chưa căng thẳng)
+            public double BaseTieBand { get; set; } = 0.02;
+            public double BaseConfFollowThreshold { get; set; } = 0.58;
+            public int BaseMinSupport { get; set; } = 3;
+            public int BaseKUseMax { get; set; } = 6;
+            public int BaseAntiStreakHold { get; set; } = 2;
 
-            public AdaptiveParamController(string path)
-            {
-                _path = path;
-                _state = LoadFromFile(path) ?? AdaptiveState.Default();
-                _state.Current.Clamp();
-                _state.Baseline.Clamp();
-            }
+            // Caps S5 / S8
+            public double TieBandCapS5 { get; set; } = 0.05;
+            public double TieBandCapS8 { get; set; } = 0.10;
+            public double ConfCapS5 { get; set; } = 0.62;
+            public double ConfCapS8 { get; set; } = 0.72;
+            public int MinSupportMinS5 { get; set; } = 4;
+            public int MinSupportMinS8 { get; set; } = 5;
+            public int KUseMaxCapS5 { get; set; } = 5;
+            public int KUseMaxCapS8 { get; set; } = 4;
+            public int AntiStreakHoldMinS5 { get; set; } = 3;
+            public int AntiStreakHoldMinS8 { get; set; } = 4;
 
-            public AdaptiveParams Current => _state.Current;
+            // Ease-in
+            public double TauEaseIn { get; set; } = 4.0;
 
-            /// <summary>
-            /// Chỉ điều chỉnh khi s >= 5. s>=8 siết mạnh hơn. s<5 -> không đổi.
-            /// </summary>
-            public bool AdaptForLossStreak(int lossStreak, bool strong)
-            {
-                if (lossStreak < 5) return false;
+            // Auto-decay & lenient & điều kiện phụ
+            public int LenientAllowLosses { get; set; } = 1;    // 0=strict, 1=lenient
+            public int SafeRoundsToDecay { get; set; } = 30;
+            public int SafeDecayCooldown { get; set; } = 10;
+            public int UndWindowLen { get; set; } = 50;
+            public double TargetUndecidableRate { get; set; } = 0.30;
 
-                var p = _state.Current;
-                var before = p.ToString();
+            // NEW: Ngưỡng kích hoạt safety (mặc định 4)
+            public int SafetyTrigger { get; set; } = 4;
 
-                if (strong) // s >= 8
-                {
-                    p.TieBand = Math.Min(0.10, Math.Max(p.TieBand, 0.08)); // mở rộng vùng hòa -> theo bệt
-                    p.ConfFollowThreshold = Math.Min(0.72, Math.Max(p.ConfFollowThreshold, 0.66));
-                    p.MomentumGuard = Math.Max(3, Math.Min(p.MomentumGuard, 4)); // theo bệt sớm hơn
-                    p.MinSupport = Math.Max(p.MinSupport, 5);
-                    p.KUseMax = Math.Min(p.KUseMax, 4);
-                    p.RescaleThreshold = Math.Min(p.RescaleThreshold, 500);
-                    p.AntiStreakHold = Math.Max(p.AntiStreakHold, 4);
-                    p.EpsGreedyBase = Math.Max(p.EpsGreedyBase, 0.10); // tăng xác suất theo bệt ngẫu nhiên nhẹ
-                }
-                else // 5 <= s < 8
-                {
-                    p.TieBand = Math.Min(0.07, Math.Max(p.TieBand, 0.05));
-                    p.ConfFollowThreshold = Math.Min(0.66, Math.Max(p.ConfFollowThreshold, 0.62));
-                    p.MomentumGuard = Math.Max(4, Math.Min(p.MomentumGuard, 5));
-                    p.MinSupport = Math.Max(p.MinSupport, 4);
-                    p.KUseMax = Math.Min(p.KUseMax, 5);
-                    p.RescaleThreshold = Math.Min(p.RescaleThreshold, 700);
-                    p.AntiStreakHold = Math.Max(p.AntiStreakHold, 3);
-                    p.EpsGreedyBase = Math.Max(p.EpsGreedyBase, 0.06);
-                }
+            [JsonIgnore] public string SavePath { get; set; }
 
-                p.Clamp();
-                bool changed = (before != p.ToString());
-                if (changed) Save();
-                return changed;
-            }
-
-            public void Save()
+            public static AdaptiveParams LoadOrDefault(string path)
             {
                 try
                 {
-                    Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-                    var tmp = _path + ".tmp";
-                    var json = JsonSerializer.Serialize(_state, new JsonSerializerOptions { WriteIndented = false });
-                    File.WriteAllText(tmp, json);
-                    if (File.Exists(_path)) File.Delete(_path);
-                    File.Move(tmp, _path);
+                    if (File.Exists(path))
+                    {
+                        var txt = File.ReadAllText(path);
+                        var obj = JsonSerializer.Deserialize<AdaptiveParams>(txt);
+                        if (obj != null) { obj.SavePath = path; return obj; }
+                    }
+                }
+                catch { /* ignore */ }
+                var p = new AdaptiveParams { SavePath = path }; p.Clamp(); return p;
+            }
+
+            public void SaveNow()
+            {
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(SavePath)!);
+                    File.WriteAllText(SavePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
                 }
                 catch { /* ignore */ }
             }
 
-            private static AdaptiveState? LoadFromFile(string path)
-            {
-                try
-                {
-                    if (!File.Exists(path)) return null;
-                    var json = File.ReadAllText(path);
-                    return JsonSerializer.Deserialize<AdaptiveState>(json);
-                }
-                catch { return null; }
-            }
-        }
-
-        private sealed class AdaptiveParams
-        {
-            // mô hình
-            public int KUseMax { get; set; } = 6;
-            public double Alpha { get; set; } = 1.0;
-            public int MinSupport { get; set; } = 3;
-            public double RescaleThreshold { get; set; } = 1000;
-            public double TieBand { get; set; } = 0.02;
-            public int MomentumGuard { get; set; } = 5;
-
-            // gating & chống thua dây
-            public double ConfFollowThreshold { get; set; } = 0.58;
-            public int AntiStreakTrigger { get; set; } = 3;
-            public int AntiStreakHold { get; set; } = 2;
-
-            // epsilon-greedy theo bệt (chỉ phát huy sau khi đã siết ở s>=5)
-            public double EpsGreedyBase { get; set; } = 0.0;
-
             public void Clamp()
             {
-                KUseMax = Math.Clamp(KUseMax, 1, 6);
-                Alpha = Math.Clamp(Alpha, 0.0, 3.0);
-                MinSupport = Math.Clamp(MinSupport, 1, 6);
-                RescaleThreshold = Math.Clamp(RescaleThreshold, 100, 10000);
-                TieBand = Math.Clamp(TieBand, 0.0, 0.2);
-                MomentumGuard = Math.Clamp(MomentumGuard, 1, 10);
-                ConfFollowThreshold = Math.Clamp(ConfFollowThreshold, 0.50, 0.80);
-                AntiStreakTrigger = Math.Clamp(AntiStreakTrigger, 2, 6);
-                AntiStreakHold = Math.Clamp(AntiStreakHold, 1, 5);
-                EpsGreedyBase = Math.Clamp(EpsGreedyBase, 0.0, 0.20);
+                BaseTieBand = Math.Clamp(BaseTieBand, 0.0, 0.2);
+                BaseConfFollowThreshold = Math.Clamp(BaseConfFollowThreshold, 0.50, 0.80);
+                BaseMinSupport = Math.Clamp(BaseMinSupport, 1, 8);
+                BaseKUseMax = Math.Clamp(BaseKUseMax, 2, 8);
+                BaseAntiStreakHold = Math.Clamp(BaseAntiStreakHold, 1, 6);
+
+                TieBandCapS5 = Math.Clamp(TieBandCapS5, BaseTieBand, 0.10);
+                TieBandCapS8 = Math.Clamp(TieBandCapS8, TieBandCapS5, 0.12);
+
+                ConfCapS5 = Math.Clamp(ConfCapS5, BaseConfFollowThreshold, 0.75);
+                ConfCapS8 = Math.Clamp(ConfCapS8, ConfCapS5, 0.80);
+
+                MinSupportMinS5 = Math.Clamp(MinSupportMinS5, BaseMinSupport, 8);
+                MinSupportMinS8 = Math.Clamp(MinSupportMinS8, MinSupportMinS5, 8);
+
+                KUseMaxCapS5 = Math.Clamp(KUseMaxCapS5, 2, BaseKUseMax);
+                KUseMaxCapS8 = Math.Clamp(KUseMaxCapS8, 2, KUseMaxCapS5);
+
+                AntiStreakHoldMinS5 = Math.Clamp(AntiStreakHoldMinS5, BaseAntiStreakHold, 6);
+                AntiStreakHoldMinS8 = Math.Clamp(AntiStreakHoldMinS8, AntiStreakHoldMinS5, 6);
+
+                TauEaseIn = Math.Clamp(TauEaseIn, 2.0, 8.0);
+
+                LenientAllowLosses = Math.Clamp(LenientAllowLosses, 0, 2);
+                SafeRoundsToDecay = Math.Clamp(SafeRoundsToDecay, 10, 100);
+                SafeDecayCooldown = Math.Clamp(SafeDecayCooldown, 5, 50);
+
+                UndWindowLen = Math.Clamp(UndWindowLen, 20, 200);
+                TargetUndecidableRate = Math.Clamp(TargetUndecidableRate, 0.10, 0.50);
+
+                SafetyTrigger = Math.Clamp(SafetyTrigger, 3, 6); // ràng buộc ngưỡng safety
             }
 
-            public override string ToString()
-                => $"kUseMax={KUseMax}, α={Alpha}, minSup={MinSupport}, rescale={RescaleThreshold}, tieBand={TieBand}, momGuard={MomentumGuard}, confGate={ConfFollowThreshold}, eps={EpsGreedyBase}, anti({AntiStreakTrigger},{AntiStreakHold})";
-
-            public string Compact()
-                => $"P[k={KUseMax},ms={MinSupport},rb={RescaleThreshold},tb={TieBand:0.00},mg={MomentumGuard},cg={ConfFollowThreshold:0.00},eg={EpsGreedyBase:0.00},as={AntiStreakTrigger}/{AntiStreakHold}]";
+            public string BaseCompact() =>
+                $"tb={BaseTieBand:0.00},cg={BaseConfFollowThreshold:0.00},kMax={BaseKUseMax},minSup={BaseMinSupport},hold={BaseAntiStreakHold}";
         }
 
         private sealed class AdaptiveState
         {
-            public AdaptiveParams Current { get; set; } = new AdaptiveParams();
-            public AdaptiveParams Baseline { get; set; } = new AdaptiveParams(); // mốc ban đầu (không tự động quay về khi s<5)
-            public static AdaptiveState Default() => new AdaptiveState();
+            public int LossStreak { get; set; } = 0;
+            public int SafetyHoldLeft { get; set; } = 0;
+
+            public bool InEpisode { get; set; } = false;
+            public bool DidEscS5ThisEpisode { get; set; } = false;
+            public bool DidEscS8ThisEpisode { get; set; } = false;
+
+            public int SafetyEscalations { get; set; } = 0;
+
+            public int SafeRounds { get; set; } = 0;
+            public int SafeCooldownLeft { get; set; } = 0;
+
+            public string UndWindowBits { get; set; } = "";
+
+            [JsonIgnore] public string SavePath { get; set; }
+
+            public static AdaptiveState LoadOrDefault(string path)
+            {
+                try
+                {
+                    if (File.Exists(path))
+                    {
+                        var txt = File.ReadAllText(path);
+                        var obj = JsonSerializer.Deserialize<AdaptiveState>(txt);
+                        if (obj != null) { obj.SavePath = path; obj.Clamp(); return obj; }
+                    }
+                }
+                catch { /* ignore */ }
+                var st = new AdaptiveState { SavePath = path }; st.Clamp(); return st;
+            }
+
+            public void SaveNow()
+            {
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(SavePath)!);
+                    File.WriteAllText(SavePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+                }
+                catch { /* ignore */ }
+            }
+
+            public void Clamp()
+            {
+                LossStreak = Math.Max(0, LossStreak);
+                SafetyHoldLeft = Math.Max(0, SafetyHoldLeft);
+                SafetyEscalations = Math.Max(0, SafetyEscalations);
+                SafeRounds = Math.Max(0, SafeRounds);
+                SafeCooldownLeft = Math.Max(0, SafeCooldownLeft);
+                if (UndWindowBits == null) UndWindowBits = "";
+            }
+
+            [JsonIgnore] public bool InSafety => SafetyHoldLeft > 0;
         }
     }
 }

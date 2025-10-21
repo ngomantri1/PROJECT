@@ -906,7 +906,7 @@ Ví dụ không hợp lệ:
 
                 }
                 if (CmbBetStrategy != null)
-                    CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 14) ? _cfg.BetStrategyIndex : 4;
+                    CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 15) ? _cfg.BetStrategyIndex : 15;
                 SyncStrategyFieldsToUI();
                 UpdateTooltips();
                 UpdateBetStrategyUi();
@@ -2107,7 +2107,8 @@ Ví dụ không hợp lệ:
                 11 => "12) KNN chuỗi con: So khớp gần đúng tail k (k=6..3) với Hamming ≤ 1; exact-match tính 2 điểm, near-match 1 điểm; chọn phía điểm cao hơn; hòa → đảo; không match → theo ván cuối; đánh liên tục.",
                 12 => "13) Lịch hai lớp: Lịch pha trộn 10 bước (1–3 theo-last, 4 đảo, 5–7 AI-stat, 8 đảo, 9 theo, 10 AI-stat); lặp lại; cân bằng giữa momentum/mean-revert/thống kê; đánh liên tục.",
                 13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
-                14 => "15) AI bandit n-gram (đa profile): TS chọn profile (10 nút) sau mỗi lần THUA; antiHold riêng -> theo bệt cưỡng bức; zigzag conf yếu -> bẻ; drift -> ưu tiên theo bệt; random khi yếu & phiếu 50–50; siết từng profile khi streak≥5.",
+                14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
+                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 C/L). Khởi tạo thống kê từ 50 kết quả đầu vào (C/L). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
                 _ => "Chiến lược chưa xác định."
             };
 
@@ -2129,19 +2130,22 @@ Ví dụ không hợp lệ:
         {
             return idx switch
             {
-                0 => "1) Chuỗi C/L tự nhập: So khớp chuỗi C/L cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định của chiến lược.",
-                1 => "2) Thế cầu C/L tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài hơn và khớp gần nhất; hỗ trợ phân tách bằng ',', ';', '|', hoặc xuống dòng.",
-                2 => "3) Chuỗi I/N: So khớp dãy Ít/Nhiều (I/N) cấu hình thủ công; khớp thì đặt theo chỉ định tương ứng; không khớp dùng logic mặc định.",
-                3 => "4) Thế cầu I/N: Ánh xạ mẫu I/N → cửa kế tiếp; ưu tiên mẫu dài, so khớp dãy gần nhất; linh hoạt nhiều luật trong cùng danh sách.",
-                4 => "5) Theo cầu trước (thông minh): Heuristics dựa trên ván gần nhất và một số tín hiệu nội bộ; đánh liên tục; quản lý vốn qua chuỗi tiền, cut_profit/cut_loss.",
-                5 => "6) Cửa đặt ngẫu nhiên: CHẴN/LẺ chọn ngẫu nhiên mỗi ván (không dựa lịch sử); vẫn tuân theo MoneyManager và các ngưỡng cắt lãi/lỗ.",
-                6 => "7) Bám cầu C/L (thống kê): Duyệt k từ lớn→nhỏ (mặc định k=6); đếm tần suất C/L sau các lần khớp đuôi; chọn bên nhiều hơn; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
-                7 => "8) Xu hướng chuyển trạng thái: Thống kê 6 chuyển gần nhất giữa các ván ('lặp' vs 'đảo'); nếu flip nhiều hơn → đánh ngược ván cuối, ngược lại → theo ván cuối; đánh liên tục.",
+                0 => "1) Chuỗi C/L tự nhập: So khớp chuỗi C/L cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
+                1 => "2) Thế cầu C/L tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
+                2 => "3) Chuỗi I/N: So khớp dãy Ít/Nhiều (I/N) cấu hình thủ công; khớp thì đặt theo chỉ định; không khớp dùng logic mặc định.",
+                3 => "4) Thế cầu I/N: Ánh xạ mẫu I/N → cửa kế tiếp; ưu tiên mẫu dài; cho phép nhiều luật trong cùng danh sách.",
+                4 => "5) Theo cầu trước (thông minh): Dựa vào ván gần nhất và heuristics nội bộ; đánh liên tục; quản lý vốn theo chuỗi tiền, cut_profit/cut_loss.",
+                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn CHẴN/LẺ ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
+                6 => "7) Bám cầu C/L (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất C/L sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
+                7 => "8) Xu hướng chuyển trạng thái: Thống kê 6 chuyển gần nhất giữa các ván ('lặp' vs 'đảo'); nếu 'đảo' nhiều hơn → đánh ngược ván cuối; ngược lại → theo ván cuối; đánh liên tục.",
                 8 => "9) Run-length (dài chuỗi): Tính độ dài chuỗi ký tự cuối; nếu run ≥ T (mặc định T=3) → đảo để mean-revert; nếu run ngắn → theo đà (momentum); đánh liên tục.",
                 9 => "10) Chuyên gia bỏ phiếu: Kết hợp 5 chuyên gia (theo-last, đảo-last, run-length, transition, AI-stat); chọn phía đa số; hòa → đảo; đánh liên tục để phủ nhiều kịch bản.",
-                10 => "11) Lịch chẻ 10 tay: Tay 1–5 theo ván cuối, tay 6–10 đảo ván cuối; lặp lại theo block 10 tay cố định; đơn giản, dễ dự báo nhịp; đánh liên tục.",
-                11 => "12) KNN chuỗi con: So khớp gần đúng tail k (k=6..3) với Hamming ≤ 1; exact-match tính 2 điểm, near-match 1 điểm; chọn phía có tổng điểm cao hơn; hòa → đảo; không match → theo ván cuối; đánh liên tục.",
+                10 => "11) Lịch chẻ 10 tay: Tay 1–5 theo ván cuối, tay 6–10 đảo ván cuối; lặp lại block cố định; đơn giản, dễ dự báo nhịp.",
+                11 => "12) KNN chuỗi con: So khớp gần đúng tail k (k=6..3) với Hamming ≤ 1; exact-match tính 2 điểm, near-match 1 điểm; chọn phía điểm cao hơn; hòa → đảo; không match → theo ván cuối; đánh liên tục.",
                 12 => "13) Lịch hai lớp: Lịch pha trộn 10 bước (1–3 theo-last, 4 đảo, 5–7 AI-stat, 8 đảo, 9 theo, 10 AI-stat); lặp lại; cân bằng giữa momentum/mean-revert/thống kê; đánh liên tục.",
+                13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
+                14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
+                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 C/L). Khởi tạo thống kê từ 50 kết quả đầu vào (C/L). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
                 _ => "Chiến lược chưa xác định."
             };
         }
@@ -3576,7 +3580,8 @@ Ví dụ không hợp lệ:
                     11 => new XocDiaLiveHit.Tasks.KnnSubsequenceTask(),     // 12
                     12 => new XocDiaLiveHit.Tasks.DualScheduleHedgeTask(),  // 13
                     13 => new XocDiaLiveHit.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
-                    14 => new XocDiaLiveHit.Tasks.AiBanditNGramTask(), // 15
+                    14 => new XocDiaLiveHit.Tasks.AiExpertPanelTask(), // 15
+                    15 => new XocDiaLiveHit.Tasks.Top10PatternFollowTask(), // 16
                     _ => new XocDiaLiveHit.Tasks.SmartPrevTask(),
                 };
 
