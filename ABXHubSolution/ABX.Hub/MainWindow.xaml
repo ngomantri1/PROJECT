@@ -2,35 +2,108 @@
     x:Class="ABX.Hub.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
     Title="ABX – Hub"
-    MinWidth="1024"
-    MinHeight="720"
-    Loaded="Window_Loaded"
+    Width="1280"
+    Height="800"
+    Background="#FFF7F9FB"
     WindowStartupLocation="CenterScreen"
-    WindowState="Maximized">
+    mc:Ignorable="d">
 
+    <!--
+        Bố cục:
+        - HdrChip: nút “Về trang chủ” kiểu chip nền sáng, CHỈ hiện khi vào plugin.
+        - HomeWebHost: bến đỗ WebView2 khi ở trang hub.
+        - HostContainer: vùng hiển thị plugin (UserControl).
+    -->
     <Grid>
-        <Grid.RowDefinitions>
-            <!--  Hàng header chứa hub.html (ban đầu full màn hình)  -->
-            <RowDefinition x:Name="HeaderRow" Height="*" />
-            <!--  Hàng plugin (ban đầu ẩn)  -->
-            <RowDefinition x:Name="ContentRow" Height="0" />
-        </Grid.RowDefinitions>
 
-        <!--  Header WebView2: KHÔNG đặt Height cố định, để Stretch theo HeaderRow  -->
-        <Border Grid.Row="0" Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}">
+        <!--  Header chip sáng (ẩn mặc định)  -->
+        <Border
+            x:Name="HdrChip"
+            Margin="0,10,0,0"
+            Padding="8"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Top"
+            Background="White"
+            BorderBrush="#E5E7EB"
+            BorderThickness="1"
+            CornerRadius="16"
+            Grid.ZIndex="5"
+            Visibility="Collapsed">
+            <!--  Thay SystemDropShadowChrome bằng DropShadowEffect chuẩn WPF  -->
+            <Border.Effect>
+                <DropShadowEffect
+                    BlurRadius="10"
+                    Opacity="0.18"
+                    ShadowDepth="1" />
+            </Border.Effect>
+
+            <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                <Border
+                    Width="20"
+                    Height="20"
+                    Margin="6,0,8,0"
+                    Background="#8B5CF6"
+                    CornerRadius="10" />
+                <TextBlock
+                    Margin="0,0,6,0"
+                    VerticalAlignment="Center"
+                    Text="Đang chạy:" />
+                <TextBlock
+                    x:Name="TxtRunningName"
+                    Margin="0,0,8,0"
+                    VerticalAlignment="Center"
+                    FontWeight="Bold" />
+                <TextBlock
+                    Margin="10,0,4,0"
+                    VerticalAlignment="Center"
+                    Foreground="#6B7280"
+                    Text="Mã:" />
+                <TextBlock
+                    x:Name="TxtRunningSlug"
+                    VerticalAlignment="Center"
+                    Foreground="#6B7280" />
+                <Button
+                    x:Name="BtnHome"
+                    Margin="12,0,0,0"
+                    Padding="10,4"
+                    Background="#F3F4F6"
+                    BorderBrush="#D1D5DB"
+                    BorderThickness="1"
+                    Click="BtnHome_Click"
+                    Content="← Về trang chủ"
+                    Cursor="Hand"
+                    Foreground="#111827" />
+            </StackPanel>
+        </Border>
+
+        <!--  Bến đỗ WebView2 ở trang home  -->
+        <Border
+            x:Name="HomeWebHost"
+            Background="{x:Null}"
+            Grid.ZIndex="1">
             <wv2:WebView2
-                x:Name="WvHeader"
+                x:Name="web"
+                Margin="0"
                 HorizontalAlignment="Stretch"
                 VerticalAlignment="Stretch" />
         </Border>
 
-        <!--  Vùng gắn UserControl của plugin  -->
-        <ContentControl
-            x:Name="PluginHost"
-            Grid.Row="1"
-            HorizontalContentAlignment="Stretch"
-            VerticalContentAlignment="Stretch" />
+        <!--  Vùng plugin (ẩn mặc định)  -->
+        <Grid
+            x:Name="HostContainer"
+            Background="{x:Null}"
+            Grid.ZIndex="2"
+            Visibility="Collapsed">
+            <ContentControl
+                x:Name="HostContent"
+                Margin="0"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch" />
+        </Grid>
+
     </Grid>
 </Window>

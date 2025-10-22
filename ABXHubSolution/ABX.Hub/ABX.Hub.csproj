@@ -41,48 +41,50 @@
     <ProjectReference Include="..\ABX.Core\ABX.Core.csproj" />
   </ItemGroup>
 
-  <!-- WebView2 control đúng version bạn đang dùng -->
+  <!-- WebView2 control -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
   </ItemGroup>
 
-  <!-- Copy khu web shell (hub.html) ra output; khi single-file sẽ được pack & tự bung -->
+  <!-- Copy web shell -->
   <ItemGroup>
     <None Remove="web\**\*" />
     <Content Include="web\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
 
-  <!-- Copy toàn bộ Plugins ra output; khi single-file sẽ được pack & tự bung
-       => PluginLoader có thể quét AppContext.BaseDirectory\Plugins cả ở Debug và Release -->
+  <!-- Copy Plugins -->
   <ItemGroup>
     <Content Include="Plugins\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
 
-  <!-- ZIP môi trường WebView2 “fixed” để dùng khi cần -->
+  <!-- ZIP fixed runtime -->
   <ItemGroup>
     <None Include="ThirdParty\WebView2Fixed_win-x64.zip">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
     </None>
   </ItemGroup>
 
-  <!-- Nhúng ZIP vào exe làm fallback ở Release -->
+  <!-- Embed ZIP ở Release (đồng bộ tên resource với ZipUtil) -->
   <ItemGroup Condition="'$(Configuration)'=='Release'">
     <EmbeddedResource Include="ThirdParty\WebView2Fixed_win-x64.zip">
-      <LogicalName>ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
+      <LogicalName>ABX.Hub.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 
-  <!-- Bảo đảm có thư mục ThirdParty & Plugins ở output (Debug) -->
+  <!-- Ensure dirs (Debug) -->
   <Target Name="EnsureOutDirs" BeforeTargets="Build">
     <MakeDir Directories="$(OutDir)ThirdParty" />
     <MakeDir Directories="$(OutDir)Plugins" />
   </Target>
 
-  <!-- Debug: tự bung ZIP vào bin\ThirdParty\WebView2Fixed_win-x64 (nếu có) -->
+  <!-- Debug: bung ZIP fixed runtime -->
   <Target Name="ExpandWv2ZipDebug"
           AfterTargets="Build"
           Condition="'$(Configuration)'=='Debug' and Exists('$(OutDir)ThirdParty\WebView2Fixed_win-x64.zip')">
@@ -100,7 +102,7 @@
     <Move SourceFiles="$(PublishedExe)" DestinationFiles="$(StampedExe)" Condition="Exists('$(PublishedExe)')" />
   </Target>
 
-  <!-- Release: dọn DLL WebView2 rời (nếu có) để output chỉ còn 1 exe -->
+  <!-- Release: dọn DLL rời để còn 1 exe -->
   <Target Name="CleanWebView2LooseDlls" AfterTargets="Publish" Condition="'$(Configuration)'=='Release'">
     <ItemGroup>
       <_Wv2Loose Include="$(PublishDir)Microsoft.Web.WebView2*.dll" />

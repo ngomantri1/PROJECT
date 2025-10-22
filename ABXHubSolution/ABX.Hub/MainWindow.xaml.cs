@@ -1,527 +1,503 @@
 using System;
-using System.Diagnostics;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
-using ABX.Core;
+using System.Windows.Media;
 using Microsoft.Web.WebView2.Core;
-using Microsoft.Web.WebView2.Wpf;
+
+using ABX.Core;                 // IGamePlugin, IConfigService, ILogService, IWebViewService
+using ABX.Hub.Hosting;          // PluginLoader
+using ABX.Hub.Services;         // ConfigService, LogService, HostContext
 
 namespace ABX.Hub
 {
     public partial class MainWindow : Window
     {
-        // WebView2 cho header (hub.html)
-        private CoreWebView2Environment? _env;
-        private bool _headerReady;
+        private string _baseDir = "";
+        private string _webDir = "";
+        private string _pluginsDir = "";
 
-        // WebView2 dành riêng cho plugin
-        private WebView2? _wvPlugin;
-        private IWebViewService? _wvSvc;
+        private readonly ConfigService _cfg;
+        private readonly LogService _log;
+        private HostContext _hostcx = default!;
 
-        // Plugin hiện hành
-        private IGamePlugin? _activePlugin;
-        private UserControl? _activeView;
+        private List<IGamePlugin> _plugins = new();
+        private IGamePlugin? _active;
+
+        private bool _navEventsHooked;
+        private bool _activating;
+        private string? _activatingSlug;
 
         public MainWindow()
         {
             InitializeComponent();
-            // Phím tắt ép kích hoạt plugin để debug đường dẫn Hub->Plugin
-            this.KeyDown += MainWindow_KeyDown;
-        }
 
-        private async void Window_Loaded(object sender, RoutedEventArgs e)
-        {
-            try
+            _cfg = new ConfigService(Path.Combine(AppContext.BaseDirectory, "AppConfig.json"));
+            _log = new LogService(Path.Combine(AppContext.BaseDirectory, "logs"));
+
+            Loaded += async (_, __) =>
             {
-                await InitHeaderWebViewAsync();
-                await LoadHubAsync();
-
-                // Layout ban đầu: hub.html full screen
-                EnterHomeLayout();
-
-                Debug.WriteLine("[Hub] Window loaded. Press Ctrl+Alt+X to force-load 'xoc-dia-live' for debugging.");
-                DumpPlugins(); // in thử danh sách DLL trong Plugins
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine("[Hub] Window_Loaded error: " + ex);
-                MessageBox.Show(ex.Message, "Init Hub failed");
-            }
-        }
-
-        #region Header WebView2 (hub.html)
-
-        private async Task InitHeaderWebViewAsync()
-        {
-            if (_headerReady && WvHeader.CoreWebView2 != null) return;
-
-            // Dùng user-data folder cố định để cookie/state không reset
-            var userData = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "ABX.Hub", "WebView2");
-
-            _env ??= await CoreWebView2Environment.CreateAsync(userDataFolder: userData);
-            await WvHeader.EnsureCoreWebView2Async(_env);
-
-            var core = WvHeader.CoreWebView2;
-            var st = core.Settings;
-            st.IsScriptEnabled = true;
-            st.IsWebMessageEnabled = true;
-            st.AreDevToolsEnabled = Debugger.IsAttached;
-            st.AreDefaultContextMenusEnabled = false;
-            st.IsStatusBarEnabled = false;
-
-            // Lắng nghe thông điệp từ hub.html
-            core.WebMessageReceived -= Core_WebMessageReceived;
-            core.WebMessageReceived += Core_WebMessageReceived;
-
-#if DEBUG
-            try { core.OpenDevToolsWindow(); } catch { /* ignore */ }
-#endif
-
-            // Cho trang biết host đã sẵn sàng
-            await core.AddScriptToExecuteOnDocumentCreatedAsync(
-                "window._hubReady = true; console.debug('[Hub] WPF host ready');");
-
-            _headerReady = true;
-        }
-
-        private async Task LoadHubAsync()
-        {
-            if (WvHeader.CoreWebView2 == null)
-                await InitHeaderWebViewAsync();
-
-            var core = WvHeader.CoreWebView2!;
-            var webFolder = Path.Combine(AppContext.BaseDirectory, "web");
-
-            if (Directory.Exists(webFolder))
-            {
-                // Map virtual host để tránh hạn chế file://
-                core.SetVirtualHostNameToFolderMapping(
-                    "app.local", webFolder, CoreWebView2HostResourceAccessKind.Allow);
-
-                WvHeader.Source = new Uri("https://app.local/hub.html");
-                Debug.WriteLine("[Hub] Load hub.html via https://app.local/hub.html");
-            }
-            else
-            {
-                // Fallback: file://
-                var htmlPath = Path.Combine(AppContext.BaseDirectory, "web", "hub.html").Replace("\\", "/");
-                WvHeader.Source = new Uri($"file:///{htmlPath}");
-                Debug.WriteLine("[Hub] Load hub.html via file:///...");
-            }
-        }
-
-        private void Core_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
-        {
-            try
-            {
-                var json = e.WebMessageAsJson;
-                Debug.WriteLine($"[Bridge] recv raw: {json}");
-
-                if (string.IsNullOrWhiteSpace(json)) return;
-
-                using var doc = JsonDocument.Parse(json);
-                if (!doc.RootElement.TryGetProperty("cmd", out var c)) return;
-                var cmd = c.GetString();
-
-                switch (cmd)
+                try
                 {
-                    case "enterGame":
-                        {
-                            var slug = doc.RootElement.TryGetProperty("slug", out var s) ? s.GetString() : null;
-                            Debug.WriteLine($"[Bridge] enterGame -> {slug}");
-                            if (!string.IsNullOrWhiteSpace(slug))
-                                _ = ActivatePluginAsync(slug!);
-                        }
-                        break;
+                    _baseDir = AppContext.BaseDirectory;
+                    _webDir = ResolveWebRoot();
+                    _pluginsDir = Path.Combine(_baseDir, "Plugins");
 
-                    case "goHome":
-                        Debug.WriteLine("[Bridge] goHome");
-                        _ = GoHomeAsync();
-                        break;
+                    _log.Info($"[Hub] BaseDir: {AppContext.BaseDirectory}");
+                    _log.Info($"[Hub] PluginsDir: {_pluginsDir}");
 
-                    default:
-                        Debug.WriteLine($"[Bridge] Unknown cmd: {cmd} | {json}");
-                        break;
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine("[Hub] WebMessage error: " + ex);
-            }
-        }
+                    if (!Directory.Exists(_pluginsDir))
+                        _log.Warn("[Hub] Plugins folder not found!");
+                    else
+                        foreach (var f in Directory.GetFiles(_pluginsDir, "*.dll"))
+                            _log.Info($"[Hub] Plugin candidate: {Path.GetFileName(f)}");
 
-        #endregion
-
-        #region Layout switching (Home <-> Plugin)
-
-        /// <summary>
-        /// Home layout: hub.html full-screen, ẩn vùng plugin.
-        /// </summary>
-        private void EnterHomeLayout()
-        {
-            HeaderRow.Height = new GridLength(1, GridUnitType.Star);   // header full
-            WvHeader.ClearValue(FrameworkElement.HeightProperty);       // Stretch theo Row
-            ContentRow.Height = new GridLength(0);                      // ẩn plugin
-        }
-
-        /// <summary>
-        /// Plugin layout: header 64px ở trên, plugin chiếm phần dưới.
-        /// </summary>
-        private void EnterPluginLayout()
-        {
-            HeaderRow.Height = GridLength.Auto;
-            WvHeader.Height = 64;
-            ContentRow.Height = new GridLength(1, GridUnitType.Star);
-        }
-
-        #endregion
-
-        #region Plugin activation
-
-        private async Task ActivatePluginAsync(string slug)
-        {
-            Debug.WriteLine($"[Hub] ActivatePluginAsync('{slug}')");
-
-            try
-            {
-                Debug.WriteLine("[Hub] [1] GoHome (clearHeader=false)...");
-                await GoHomeAsync(clearHeader: false);
-            }
-            catch (Exception ex)
-            {
-                LogStageError("1-GoHome", ex);
-                throw;
-            }
-
-            // ===== [2] Tạo WebView2 cho plugin & mount ẩn để có HWND =====
-            try
-            {
-                Debug.WriteLine("[Hub] [2] Create WebView2 for plugin (hidden mount to get HWND)...");
-                _wvPlugin = new WebView2
-                {
-                    Width = 1,
-                    Height = 1,
-                    Visibility = Visibility.Collapsed,
-                    HorizontalAlignment = HorizontalAlignment.Left,
-                    VerticalAlignment = VerticalAlignment.Top
-                };
-
-                // Mount ẩn vào PluginHost để WebView2 có HWND trước khi EnsureCoreWebView2Async
-                var tmpShell = new Border
-                {
-                    Width = 1,
-                    Height = 1,
-                    Visibility = Visibility.Collapsed,
-                    Child = _wvPlugin
-                };
-                PluginHost.Content = tmpShell;
-
-                // Bắt đầu ensure với cùng environment header (_env đã tạo khi init header)
-                Debug.WriteLine("[Hub] [2.1] EnsureCoreWebView2Async start...");
-                await _wvPlugin.EnsureCoreWebView2Async(_env);
-                Debug.WriteLine("[Hub] [2.2] EnsureCoreWebView2Async done.");
-
-                var s = _wvPlugin.CoreWebView2.Settings;
-                s.IsScriptEnabled = true;
-                s.IsWebMessageEnabled = true;
-                s.AreDevToolsEnabled = Debugger.IsAttached;
-                s.AreDefaultContextMenusEnabled = false;
-                s.IsStatusBarEnabled = false;
-
-                // Hook thêm vài event để soi sự cố sau này
-                _wvPlugin.CoreWebView2.ProcessFailed += (sdr, ev) =>
-                    Debug.WriteLine($"[WV2][Plugin] ProcessFailed: {ev.ProcessFailedKind}");
-                _wvPlugin.NavigationCompleted += (sdr, ev) =>
-                    Debug.WriteLine($"[WV2][Plugin] NavigationCompleted IsSuccess={ev.IsSuccess} Error={ev.WebErrorStatus}");
-
-                Debug.WriteLine("[Hub] [2] OK");
-            }
-            catch (Exception ex)
-            {
-                LogStageError("2-WebView2", ex);
-                MessageBox.Show("Lỗi tạo WebView2 cho plugin:\n" + ex.Message);
-                return;
-            }
-
-            try
-            {
-                Debug.WriteLine("[Hub] [3] Create WebViewService...");
-                _wvSvc = CreateWebViewService(_wvPlugin);
-                Debug.WriteLine("[Hub] [3] OK");
-            }
-            catch (Exception ex)
-            {
-                LogStageError("3-WebViewService", ex);
-                MessageBox.Show("Lỗi tạo WebViewService:\n" + ex.Message);
-                return;
-            }
-
-            IGamePlugin? plugin = null;
-            try
-            {
-                Debug.WriteLine("[Hub] [4] Probe & load plugin by slug...");
-                DumpPlugins(); // liệt kê file trong Plugins để chắc chắn
-                plugin = LoadPluginBySlug(slug);
-                if (plugin == null)
-                {
-                    Debug.WriteLine($"[Hub] [4] Plugin not found: {slug}");
-                    MessageBox.Show($"Plugin not found: {slug}", "Hub");
-                    return;
-                }
-                _activePlugin = plugin;
-                Debug.WriteLine($"[Hub] [4] OK -> {plugin.Name} ({plugin.Slug})");
-            }
-            catch (Exception ex)
-            {
-                LogStageError("4-LoadPluginBySlug", ex);
-                MessageBox.Show("Lỗi load plugin:\n" + ex.Message);
-                return;
-            }
-
-            try
-            {
-                Debug.WriteLine("[Hub] [5] Create HostContext...");
-                var host = GetOrCreateHost(_wvSvc!);
-                Debug.WriteLine("[Hub] [5] OK");
-
-                Debug.WriteLine("[Hub] [6] plugin.CreateView(host)...");
-                var view = plugin.CreateView(host); // phải trả về UserControl
-                _activeView = view;
-                Debug.WriteLine("[Hub] [6] OK -> view=" + view.GetType().FullName);
-
-                Debug.WriteLine("[Hub] [7] Put view into PluginHost...");
-                PluginHost.Content = view;
-                Debug.WriteLine("[Hub] [7] OK");
-
-                Debug.WriteLine("[Hub] [8] Attach WebView2 into view (placeholder='AutoWebViewHost_Full')...");
-                _wvSvc!.AttachTo(view);
-                // Sau khi đã attach vào view, cho nó hiện ra (nếu bạn có hiển thị UI riêng trong plugin)
-                _wvPlugin.Visibility = Visibility.Visible;
-                Debug.WriteLine("[Hub] [8] OK");
-
-                EnterPluginLayout();
-
-                Debug.WriteLine($"[Hub] [DONE] Activated plugin: {plugin.Name} ({plugin.Slug})");
-            }
-            catch (Exception ex)
-            {
-                LogStageError("5..8-CreateView/Attach/Layout", ex);
-                MessageBox.Show("Lỗi dựng view plugin:\n" + ex.Message);
-            }
-        }
-
-
-        private static void LogStageError(string stage, Exception ex)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine($"[Hub][ERR] Stage={stage} :: {ex.GetType().Name} :: {ex.Message}");
-            sb.AppendLine(ex.StackTrace);
-
-            if (ex is ReflectionTypeLoadException rtle && rtle.LoaderExceptions != null)
-            {
-                sb.AppendLine("LoaderExceptions:");
-                foreach (var le in rtle.LoaderExceptions)
-                {
-                    if (le == null) continue;
-                    sb.AppendLine($"  - {le.GetType().Name}: {le.Message}");
-                }
-            }
-
-            Debug.WriteLine(sb.ToString());
-            try
-            {
-                File.AppendAllText(
-                    Path.Combine(AppContext.BaseDirectory, "hub.plugin.err.log"),
-                    DateTime.Now.ToString("HH:mm:ss ") + sb + Environment.NewLine);
-            }
-            catch { /* ignore */ }
-        }
-
-
-        private async Task GoHomeAsync(bool clearHeader = false)
-        {
-            try
-            {
-                // Dỡ view plugin
-                PluginHost.Content = null;
-
-                // Dispose plugin nếu nó có implement IDisposable
-                (_activePlugin as IDisposable)?.Dispose();
-                _activeView = null;
-                _activePlugin = null;
-
-                // Tháo WebView2 plugin (nếu đang gắn)
-                if (_wvPlugin != null)
-                {
+                    // Chuẩn bị WebView2 cho home
+                    await web.EnsureCoreWebView2Async();
                     try
                     {
-                        if (_wvPlugin.Parent is Border b) b.Child = null;
-                        else if (_wvPlugin.Parent is ContentControl cc) cc.Content = null;
+                        var ver = CoreWebView2Environment.GetAvailableBrowserVersionString(null);
+                        _log.Info($"[Home] WebView2 ready. Version(Evergreen)={ver ?? "-"}");
                     }
-                    catch { /* ignore */ }
+                    catch (Exception ex)
+                    {
+                        _log.Warn("[Home] Probe WebView2 version failed: " + ex.Message);
+                    }
 
-                    _wvPlugin.Dispose();
-                    _wvPlugin = null;
+                    HookWebMessages();
+                    HookHomeNavEvents();
+
+                    // Adapter IWebViewService cho plugin
+                    var webAdapter = new WebViewAdapter(web, _log);
+
+                    _hostcx = new HostContext(
+                        (IConfigService)_cfg,
+                        (ILogService)_log,
+                        (IWebViewService)webAdapter
+                    );
+
+                    _log.Info($"[Hub] Host IGamePlugin asm: {typeof(IGamePlugin).Assembly.FullName}");
+                    _log.Info($"[Hub] Host IGamePlugin loc: {typeof(IGamePlugin).Assembly.Location}");
+
+                    _plugins = PluginLoader.LoadAll(_pluginsDir, _log);
+                    if (_plugins.Count == 0)
+                        _log.Warn("[Hub] No plugins registered.");
+                    else
+                        foreach (var p in _plugins)
+                            _log.Info($"[Hub] Plugin registered: {p.Name} / {p.Slug}");
+
+                    // Mở hub lần đầu
+                    ShowHub();
+                    NavigateFile("hub.html");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, ex.ToString(), "Init error");
+                }
+            };
+        }
+
+        // ========== WebView2 <-> hub.html ==========
+        private sealed record WebMsg(string cmd, string? slug, string? file);
+
+        private void HookWebMessages()
+        {
+            web.CoreWebView2.WebMessageReceived += async (_, e) =>
+            {
+                _log.Info("[Hub] WebMessageReceived: " + e.WebMessageAsJson);
+                try
+                {
+                    var msg = JsonSerializer.Deserialize<WebMsg>(e.WebMessageAsJson);
+                    if (msg == null) return;
+
+                    switch (msg.cmd)
+                    {
+                        case "enterGame":
+                            if (_activating) { _log.Info("[Hub] enterGame ignored (activating)"); return; }
+                            if (!string.IsNullOrWhiteSpace(msg.slug) &&
+                                _active != null &&
+                                string.Equals(_active.Slug, msg.slug, StringComparison.OrdinalIgnoreCase))
+                            {
+                                _log.Info("[Hub] enterGame ignored (already active).");
+                                return;
+                            }
+                            _log.Info($"[Hub] enterGame slug={msg.slug}");
+                            await ActivatePluginAsync(msg.slug);
+                            break;
+
+                        case "goHome":
+                            _log.Info("[Hub] goHome received.");
+                            GoHome();
+                            NavigateFile("hub.html");
+                            break;
+
+                        case "navigateLocal":
+                            if (!string.IsNullOrWhiteSpace(msg.file))
+                                NavigateFile(msg.file!);
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log.Error("WebMessageReceived error", ex);
+                }
+            };
+        }
+
+        private void HookHomeNavEvents()
+        {
+            if (_navEventsHooked || web.CoreWebView2 == null) return;
+            _navEventsHooked = true;
+
+            web.CoreWebView2.NavigationStarting += (_, e) =>
+                _log.Info($"[Home] Starting: {e.Uri}");
+            web.CoreWebView2.NavigationCompleted += (_, e) =>
+                _log.Info($"[Home] Completed: ok={e.IsSuccess} err={e.WebErrorStatus}");
+        }
+
+        // ========== Plugin lifecycle ==========
+        private async Task ActivatePluginAsync(string? slug)
+        {
+            if (string.IsNullOrWhiteSpace(slug)) return;
+            if (_activating) { _log.Info("[Hub] Activate ignored: already activating."); return; }
+
+            _activating = true;
+            _activatingSlug = slug;
+            _log.Info($"[Hub] Activate start: slug='{slug}'");
+
+            try
+            {
+                DeactivatePlugin();
+
+                var p = _plugins.FirstOrDefault(x =>
+                    string.Equals(x.Slug, slug, StringComparison.OrdinalIgnoreCase));
+                if (p == null)
+                {
+                    _log.Warn($"Plugin not found for slug: {slug}");
+                    MessageBox.Show(this, $"Không tìm thấy plugin cho “{slug}”.", "Missing plugin");
+                    return;
                 }
 
-                _wvSvc = null;
+                _active = p;
+                _log.Info($"[Hub] Creating view for plugin: {p.Name} ({p.Slug})");
 
-                // Trả layout về Home
-                EnterHomeLayout();
+                var view = p.CreateView(_hostcx);
+                ShowPlugin(view); // bật header & vùng plugin
 
-                // (tuỳ chọn) điều hướng lại hub.html
-                if (clearHeader)
-                    await LoadHubAsync();
+                try
+                {
+                    // Tìm host đặt WebView2 trong view của plugin
+                    var attached = WebViewAdapter.TryAttachToAnyNamedHost(
+                        _hostcx.Web, view, _log,
+                        "AutoWebViewHost_Full", "AutoWebViewHost", "WebHost", "WebViewHost");
+
+                    if (attached)
+                    {
+                        _log.Info("[Hub] Shared WebView2 attached to plugin view.");
+
+                        // Xoá nội dung cũ bằng trang trắng (tránh thấy hub “nháy”)
+                        var blankHtml =
+                            "<!doctype html><meta charset='utf-8'>" +
+                            "<style>html,body{height:100%;margin:0;background:#ffffff}</style>" +
+                            "<body></body>";
+                        _hostcx.Web.NavigateToString(blankHtml, "https://app.local/");
+                        _log.Info("[Hub] Cleared WebView2 content with blank page (white).");
+                    }
+                    else
+                    {
+                        _log.Warn("[Hub] No known WebView host found inside plugin. WebView2 stays parked at Home.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log.Warn("[Hub] Attach/clear WebView2 for plugin failed: " + ex.Message);
+                }
+
+                await Task.CompletedTask;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("[Hub] GoHome error: " + ex);
+                _log.Error("Activate plugin failed", ex);
+                MessageBox.Show(this, ex.ToString(), "Plugin start error");
+                _active = null;
+                ShowHub();
+            }
+            finally
+            {
+                _activating = false;
+                _activatingSlug = null;
             }
         }
 
-        private IGamePlugin? LoadPluginBySlug(string slug)
+        private void DeactivatePlugin()
         {
+            if (_active == null) return;
+
             try
             {
-                var dir = Path.Combine(AppContext.BaseDirectory, "Plugins");
-                if (!Directory.Exists(dir))
+                var t = _active.GetType();
+                var miStop = t.GetMethod("Stop");
+                var ret = miStop?.Invoke(_active, null);
+
+                if (miStop == null && _active is IDisposable d)
+                    d.Dispose();
+
+                if (ret is Task task)
+                    task.GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                _log.Error("Stop plugin error", ex);
+            }
+            finally
+            {
+                _active = null;
+            }
+        }
+
+        private void GoHome(bool navigateHome = false)
+        {
+            _log.Info("[Hub] GoHome start.");
+            DeactivatePlugin();
+
+            // Đưa WebView2 về bến đỗ Home
+            try
+            {
+                var homeHost = this.FindName("HomeWebHost") as FrameworkElement;
+                if (homeHost != null)
                 {
-                    Debug.WriteLine($"[Hub] Plugins dir not found: {dir}");
-                    return null;
+                    WebViewAdapter.TryAttachToAnyNamedHost(_hostcx.Web, homeHost, _log, "HomeWebHost");
+                    _log.Info("[Hub] WebView2 parked to HomeWebHost.");
                 }
-
-                foreach (var file in Directory.EnumerateFiles(dir, "*.dll"))
+                else
                 {
-                    Assembly asm;
-                    try { asm = Assembly.LoadFrom(file); }
-                    catch (Exception loadEx)
-                    {
-                        Debug.WriteLine($"[Hub] LoadFrom failed: {file} -> {loadEx.Message}");
-                        continue;
-                    }
-
-                    var types = Enumerable.Empty<Type>();
-                    try { types = asm.GetTypes(); }
-                    catch (ReflectionTypeLoadException rtle)
-                    {
-                        types = rtle.Types.Where(t => t != null)!;
-                        Debug.WriteLine("[Hub] ReflectionTypeLoadException while reading types.");
-                    }
-
-                    foreach (var t in types)
-                    {
-                        if (t == null) continue;
-                        if (!typeof(IGamePlugin).IsAssignableFrom(t)) continue;
-                        if (t.IsAbstract || t.IsInterface) continue;
-
-                        IGamePlugin? inst = null;
-                        try { inst = (IGamePlugin?)Activator.CreateInstance(t); }
-                        catch (Exception newEx)
-                        {
-                            Debug.WriteLine($"[Hub] CreateInstance failed: {t.FullName} -> {newEx.Message}");
-                            continue;
-                        }
-
-                        if (inst == null) continue;
-                        Debug.WriteLine($"[Hub] Probed plugin: {inst.Name} ({inst.Slug}) from {Path.GetFileName(file)}");
-
-                        if (string.Equals(inst.Slug, slug, StringComparison.OrdinalIgnoreCase))
-                            return inst;
-
-                        (inst as IDisposable)?.Dispose();
-                    }
+                    _log.Info("[Hub] No HomeWebHost found (optional).");
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("[Hub] LoadPluginBySlug error: " + ex);
+                _log.Warn("[Hub] Park WebView2 to home failed: " + ex.Message);
+            }
+
+            HostContent.Content = null;
+            _log.Info("[Hub] Cleared HostContent.");
+
+            ShowHub();
+
+            if (!navigateHome)
+                _log.Info("[Hub] GoHome partial (no hub navigation).");
+        }
+
+        private void BtnHome_Click(object sender, RoutedEventArgs e)
+        {
+            _log.Info("[Hub] BtnHome_Click");
+            GoHome();
+            NavigateFile("hub.html");
+        }
+
+        // ========== Hiển thị ==========
+        private void ShowHub()
+        {
+            // Ẩn vùng plugin, ẩn chip header, hiện WebView ở Home
+            HdrChip.Visibility = Visibility.Collapsed;
+            web.Visibility = Visibility.Visible;
+            HostContent.Content = null;
+            HostContainer.Visibility = Visibility.Collapsed;
+            LogLayout("[After ShowHub]", HostContainer);
+        }
+
+        private void ShowPlugin(UserControl view)
+        {
+            // 1) Ẩn WebView đang đỗ ở Home để tránh overlay trong lúc chuyển
+            web.Visibility = Visibility.Collapsed;
+
+            HostContent.Content = view;
+            HostContainer.Visibility = Visibility.Visible;
+
+            // Header chip hiển thị ở nền sáng (nếu bạn đang bật tính năng này)
+            HdrChip.Visibility = Visibility.Visible;
+        }
+
+
+        // ========== Helpers ==========
+        private void NavigateFile(string fileName)
+        {
+            var fullPath = Path.Combine(_webDir, fileName);
+            if (!File.Exists(fullPath))
+            {
+                MessageBox.Show(this, $"Không tìm thấy {fileName}\n{fullPath}", "404 – File missing");
+                return;
+            }
+
+            var uri = new Uri(fullPath).AbsoluteUri;
+            _log.Info($"[Home] Navigate file: {uri}");
+
+            try
+            {
+                if (web.CoreWebView2 == null)
+                {
+                    web.EnsureCoreWebView2Async().GetAwaiter().GetResult();
+                    HookHomeNavEvents();
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Warn("[Home] EnsureCoreWebView2Async on navigate failed: " + ex.Message);
+            }
+
+            web.CoreWebView2.Navigate(uri);
+        }
+
+        private static string ResolveWebRoot()
+        {
+            var probe = AppContext.BaseDirectory;
+
+            for (int i = 0; i < 10; i++)
+            {
+                var candidate = Path.Combine(probe, "web");
+                var hub = Path.Combine(candidate, "hub.html");
+                if (File.Exists(hub))
+                    return candidate;
+
+                var parent = Directory.GetParent(probe);
+                if (parent == null) break;
+                probe = parent.FullName;
+            }
+
+            var fallback = Path.Combine(AppContext.BaseDirectory, "web");
+            return Directory.Exists(fallback) ? fallback : AppContext.BaseDirectory;
+        }
+
+        private void LogLayout(string tag, FrameworkElement fe)
+        {
+            try
+            {
+                var parent = VisualTreeHelper.GetParent(fe) as FrameworkElement;
+                _log.Info($"{tag}: {fe.GetType().Name} size={fe.ActualWidth:0}x{fe.ActualHeight:0} " +
+                          $"vis={fe.Visibility} parent={(parent?.GetType().Name ?? "null")} " +
+                          $"psize={(parent != null ? $"{parent.ActualWidth:0}x{parent.ActualHeight:0}" : "-")}");
+            }
+            catch { }
+        }
+    }
+
+    // ================= Adapter: khớp đúng ABX.Core.IWebViewService =================
+    public sealed class WebViewAdapter : ABX.Core.IWebViewService
+    {
+        private readonly Microsoft.Web.WebView2.Wpf.WebView2 _view;
+        private readonly ABX.Core.ILogService _log;
+
+        public WebViewAdapter(Microsoft.Web.WebView2.Wpf.WebView2 view, ABX.Core.ILogService log)
+        {
+            _view = view;
+            _log = log;
+        }
+
+        public object? Core => _view.CoreWebView2;
+        public bool CoreReady => _view.CoreWebView2 != null;
+
+        public void Navigate(string url) => _view.CoreWebView2?.Navigate(url);
+
+        public void NavigateToString(string html, string? baseUrl = null)
+        {
+            if (!string.IsNullOrWhiteSpace(baseUrl))
+            {
+                int idx = html.IndexOf("<head", StringComparison.OrdinalIgnoreCase);
+                if (idx >= 0)
+                {
+                    int closeIdx = html.IndexOf('>', idx);
+                    if (closeIdx >= 0)
+                        html = html.Insert(closeIdx + 1, $"<base href=\"{baseUrl}\">");
+                    else
+                        html = $"<head><base href=\"{baseUrl}\"></head>{html}";
+                }
+                else
+                {
+                    html = $"<head><base href=\"{baseUrl}\"></head>{html}";
+                }
+            }
+            _view.NavigateToString(html);
+        }
+
+        public void MapFolder(string hostName, string folderFullPath)
+        {
+            if (!Directory.Exists(folderFullPath)) throw new DirectoryNotFoundException(folderFullPath);
+            _view.CoreWebView2?.SetVirtualHostNameToFolderMapping(
+                hostName, folderFullPath, CoreWebView2HostResourceAccessKind.DenyCors);
+        }
+
+        // ——— Helpers to attach ———
+        public void AttachTo(FrameworkElement root)
+        {
+            TryAttachToAnyNamedHost(this, root, _log, "AutoWebViewHost_Full", "AutoWebViewHost", "WebHost", "WebViewHost");
+        }
+
+        public static bool TryAttachToAnyNamedHost(ABX.Core.IWebViewService svc, FrameworkElement rootOrHost, ABX.Core.ILogService log, params string[] names)
+        {
+            if (names == null || names.Length == 0)
+                names = new[] { "AutoWebViewHost_Full" };
+
+            foreach (var n in names)
+            {
+                if (TryAttachToNamedHost(svc, rootOrHost, n, log))
+                    return true;
+            }
+            log.Warn("[WvAdapter] No named host matched.");
+            return false;
+        }
+
+        public static bool TryAttachToNamedHost(ABX.Core.IWebViewService svc, FrameworkElement rootOrHost, string hostName, ABX.Core.ILogService log)
+        {
+            if (svc is not WebViewAdapter self) return false;
+
+            FrameworkElement host;
+
+            if (rootOrHost is FrameworkElement fe && fe.Name == hostName)
+                host = fe;
+            else
+                host = FindChild<FrameworkElement>(rootOrHost, hostName);
+
+            if (host == null)
+            {
+                log.Warn($"[WvAdapter] Host '{hostName}' NOT FOUND. Skip attaching to avoid overlay.");
+                return false;
+            }
+
+            if (self._view.Parent is Border oldB) { oldB.Child = null; log.Info("[WvAdapter] Detach from Border"); }
+            else if (self._view.Parent is Panel oldP) { oldP.Children.Remove(self._view); log.Info("[WvAdapter] Detach from Panel"); }
+
+            self._view.HorizontalAlignment = HorizontalAlignment.Stretch;
+            self._view.VerticalAlignment = VerticalAlignment.Stretch;
+            self._view.Visibility = Visibility.Visible;
+
+            if (host is Border b) { b.Child = self._view; log.Info("[WvAdapter] Attached to Border (named host)"); }
+            else if (host is Panel p) { p.Children.Add(self._view); log.Info("[WvAdapter] Attached to Panel (named host)"); }
+            else
+            {
+                log.Warn("[WvAdapter] Named host is not a Panel/Border. Skip attach.");
+                return false;
+            }
+
+            log.Info($"[WvAdapter] Host size={host.ActualWidth:0}x{host.ActualHeight:0} name={host.Name}");
+            return true;
+        }
+
+        private static T? FindChild<T>(DependencyObject root, string name) where T : FrameworkElement
+        {
+            if (root == null) return null;
+            int n = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < n; i++)
+            {
+                var child = VisualTreeHelper.GetChild(root, i);
+                if (child is T c && c.Name == name) return c;
+                var found = FindChild<T>(child, name);
+                if (found != null) return found;
             }
             return null;
         }
-
-        private static IWebViewService CreateWebViewService(WebView2 wv)
-        {
-            // WebViewService của bạn ở ABX.Hub/Services
-            return new Services.WebViewService(wv);
-        }
-
-        private IGameHostContext GetOrCreateHost(IWebViewService wvSvc)
-        {
-            // Nếu IGameHostContext của bạn yêu cầu Cfg/Log thật sự, truyền ở đây.
-            return new HostContext(
-                web: wvSvc,
-                cfg: null,
-                log: null
-            );
-        }
-
-        private sealed class HostContext : IGameHostContext
-        {
-            public HostContext(IWebViewService web, IConfigService? cfg, ILogService? log)
-            {
-                _web = web; _cfg = cfg; _log = log;
-            }
-
-            private readonly IWebViewService _web;
-            private readonly IConfigService? _cfg;
-            private readonly ILogService? _log;
-
-            public IWebViewService Web => _web;
-            public IConfigService Cfg => _cfg!;
-            public ILogService Log => _log!;
-        }
-
-        #endregion
-
-        #region Debug helpers
-
-        private void MainWindow_KeyDown(object sender, KeyEventArgs e)
-        {
-            // Ctrl + Alt + X  => ép kích hoạt plugin xoc-dia-live (bỏ qua hub.html)
-            if (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
-            {
-                if (Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt))
-                {
-                    if (e.Key == Key.X)
-                    {
-                        Debug.WriteLine("[Hub] Hotkey Ctrl+Alt+X -> Activate 'xoc-dia-live'");
-                        _ = ActivatePluginAsync("xoc-dia-live");
-                        e.Handled = true;
-                    }
-                }
-            }
-        }
-
-        private void DumpPlugins()
-        {
-            try
-            {
-                var dir = Path.Combine(AppContext.BaseDirectory, "Plugins");
-                if (!Directory.Exists(dir))
-                {
-                    Debug.WriteLine($"[Hub] Plugins dir not found: {dir}");
-                    return;
-                }
-
-                var list = Directory.EnumerateFiles(dir, "*.dll").ToArray();
-                Debug.WriteLine("[Hub] Plugins dir listing:");
-                foreach (var f in list) Debug.WriteLine("  - " + f);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine("[Hub] DumpPlugins error: " + ex);
-            }
-        }
-
-        #endregion
     }
 }
