@@ -15,13 +15,8 @@
 //
 // Giữ nguyên khung IBetTask, TaskUtil, MoneyManager… như file gốc dự án.
 
-using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using static XocDiaLiveHit.Tasks.TaskUtil;
 
 namespace XocDiaLiveHit.Tasks
@@ -440,7 +435,7 @@ namespace XocDiaLiveHit.Tasks
                                  && beautyWindowOk;
 
             // X–Y–X (độ dài 1..4 bằng nhau 2 đầu) → theo block giữa (prevSide)
-            string cand = null; int candSide = -1;
+            string? cand = null; int candSide = -1;
             if (IsBeautyLen(prev2Len) && IsBeautyLen(prevLen) && IsBeautyLen(curLen) && prev2Len == curLen)
             {
                 cand = $"PAT{prev2Len}-{prevLen}-{curLen}";
