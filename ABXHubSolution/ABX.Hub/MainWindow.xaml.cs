@@ -71,7 +71,7 @@ namespace ABX.Hub
                     HookWebMessages();
                     HookHomeNavEvents();
 
-                    // Adapter IWebViewService cho plugin (shared WebView2)
+                    // Adapter IWebViewService cho plugin
                     var webAdapter = new WebViewAdapter(web, _log);
 
                     _hostcx = new HostContext(
@@ -188,10 +188,35 @@ namespace ABX.Hub
                 var view = p.CreateView(_hostcx);
                 ShowPlugin(view); // bật header & vùng plugin
 
-                // Gắn WebView2 chia sẻ vào view của plugin theo hướng "defer attach":
-                // - Thử ngay 1 lần (nếu cây visual đã sẵn sàng)
-                // - Nếu chưa thấy host, đợi Loaded/Dispatcher rồi thử lại
-                DeferredAttachSharedWebView(view);
+                try
+                {
+                    // Tìm host đặt WebView2 trong view của plugin
+                    var attached = WebViewAdapter.TryAttachToAnyNamedHost(
+                        _hostcx.Web, view, _log,
+                        "AutoWebViewHost_Full", "AutoWebViewHost", "WebHost", "WebViewHost");
+
+                    if (attached)
+                    {
+                        _log.Info("[Hub] Shared WebView2 attached to plugin view.");
+
+                        // Xoá nội dung cũ bằng trang trắng (tránh thấy hub “nháy”)
+                        var blankHtml =
+                            "<!doctype html><meta charset='utf-8'>" +
+                            "<style>html,body{height:100%;margin:0;background:#ffffff}</style>" +
+                            "<body></body>";
+                        _hostcx.Web.NavigateToString(blankHtml, "https://app.local/");
+                        _log.Info("[Hub] Cleared WebView2 content with blank page (white).");
+                    }
+                    else
+                    {
+                        _log.Warn("[Hub] No known WebView host found inside plugin. WebView2 stays parked at Home.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log.Warn("[Hub] Attach/clear WebView2 for plugin failed: " + ex.Message);
+                }
+
                 await Task.CompletedTask;
             }
             catch (Exception ex)
@@ -206,65 +231,6 @@ namespace ABX.Hub
                 _activating = false;
                 _activatingSlug = null;
             }
-        }
-
-        private void DeferredAttachSharedWebView(FrameworkElement view)
-        {
-            void ClearToBlank()
-            {
-                // Xoá nội dung cũ = trang trắng nền trắng để tránh nháy hub
-                var blankHtml =
-                    "<!doctype html><meta charset='utf-8'>" +
-                    "<style>html,body{height:100%;margin:0;background:#ffffff}</style><body></body>";
-                _hostcx.Web.NavigateToString(blankHtml, "https://app.local/");
-                _log.Info("[Hub] Cleared WebView2 content with blank page (white).");
-            }
-
-            bool attachedNow = WebViewAdapter.TryAttachToAnyNamedHost(
-                _hostcx.Web, view, _log,
-                "AutoWebViewHost_Full", "AutoWebViewHost", "WebHost", "WebViewHost");
-
-            if (attachedNow)
-            {
-                _log.Info("[Hub] Shared WebView2 attached to plugin view (immediate).");
-                ClearToBlank();
-                return;
-            }
-
-            _log.Info("[Hub] Defer attach: wait for view.Loaded/dispatcher; plugin may also self-attach.");
-
-            // Thử lại khi Loaded
-            RoutedEventHandler? onLoaded = null;
-            onLoaded = (_, __) =>
-            {
-                view.Loaded -= onLoaded;
-                var ok = WebViewAdapter.TryAttachToAnyNamedHost(
-                    _hostcx.Web, view, _log,
-                    "AutoWebViewHost_Full", "AutoWebViewHost", "WebHost", "WebViewHost");
-                if (ok)
-                {
-                    _log.Info("[Hub] Shared WebView2 attached to plugin view (on Loaded).");
-                    ClearToBlank();
-                }
-                else
-                {
-                    _log.Info("[Hub] Attach still not found after Loaded; plugin is expected to attach itself.");
-                }
-            };
-            view.Loaded += onLoaded;
-
-            // Và một lượt Dispatcher để đảm bảo template đã inflate
-            view.Dispatcher.BeginInvoke(new Action(() =>
-            {
-                var ok2 = WebViewAdapter.TryAttachToAnyNamedHost(
-                    _hostcx.Web, view, _log,
-                    "AutoWebViewHost_Full", "AutoWebViewHost", "WebHost", "WebViewHost");
-                if (ok2)
-                {
-                    _log.Info("[Hub] Shared WebView2 attached to plugin view (dispatcher pass).");
-                    ClearToBlank();
-                }
-            }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         private void DeactivatePlugin()
@@ -355,6 +321,7 @@ namespace ABX.Hub
             // Header chip hiển thị ở nền sáng (nếu bạn đang bật tính năng này)
             HdrChip.Visibility = Visibility.Visible;
         }
+
 
         // ========== Helpers ==========
         private void NavigateFile(string fileName)
