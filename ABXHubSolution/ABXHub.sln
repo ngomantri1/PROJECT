@@ -4,7 +4,7 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ABX.Core", "ABX.Core\ABX.Core.csproj", "{8C287CED-8934-49B7-BEB2-B7C13E8D8C72}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ABX.Hub", "ABX.Hub\ABX.Hub.csproj", "{71643416-943F-4DD8-BF96-98B36AF68A7C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutoBetHub", "AutoBetHub\AutoBetHub.csproj", "{71643416-943F-4DD8-BF96-98B36AF68A7C}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XocDiaLiveHit", "XocDiaLiveHit\XocDiaLiveHit.csproj", "{CE3267C7-ABFE-4AAC-A08A-6300028619F9}"
 EndProject

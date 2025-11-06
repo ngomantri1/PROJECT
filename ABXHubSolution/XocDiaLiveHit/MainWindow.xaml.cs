@@ -2418,15 +2418,33 @@ Ví dụ không hợp lệ:
 
 
         // ====== ExecJs string ======
+        private bool IsWebAlive =>
+    Web != null && Web.CoreWebView2 != null;
+
         private async Task<string> ExecJsAsyncStr(string js)
         {
+            // nếu cửa sổ đã bị host đóng thì Web sẽ = null
+            if (!IsWebAlive)
+            {
+                Log("**Web** was null. Skip ExecJsAsyncStr.");
+                return "";
+            }
+
             await EnsureWebReadyAsync();
+
+            if (!IsWebAlive)
+            {
+                Log("**Web** lost after EnsureWebReadyAsync. Skip.");
+                return "";
+            }
+
             var raw = await Web.ExecuteScriptAsync(js);
             if (string.IsNullOrEmpty(raw)) return "";
-            if (raw.Length >= 2 && raw[0] == '\"')
-                raw = Regex.Unescape(raw).Trim('\"');
+            if (raw.Length >= 2 && raw[0] == '"')
+                raw = Regex.Unescape(raw).Trim('"');
             return raw;
         }
+
 
         // ====== CDP tap ======
         private async Task EnableCdpNetworkTapAsync()
@@ -3798,32 +3816,70 @@ Ví dụ không hợp lệ:
             return (s.Length <= take) ? s : s.Substring(s.Length - take, take);
         }
 
-        // load 1 ảnh resource
-        private static ImageSource LoadImg(string packUri)
+        // đặt trong MainWindow.xaml.cs (project XocDiaLiveHit)
+
+        // load thử lần lượt các uri, cái nào được thì dùng, không được thì trả về null
+        private static ImageSource? LoadImgSafe(params string[] uris)
         {
-            var bi = new BitmapImage();
-            bi.BeginInit();
-            bi.UriSource = new Uri(packUri, UriKind.RelativeOrAbsolute);
-            bi.CacheOption = BitmapCacheOption.OnLoad;
-            bi.EndInit();
-            bi.Freeze();
-            return bi;
+            foreach (var uri in uris)
+            {
+                try
+                {
+                    var bi = new BitmapImage();
+                    bi.BeginInit();
+                    bi.UriSource = new Uri(uri, UriKind.RelativeOrAbsolute);
+                    bi.CacheOption = BitmapCacheOption.OnLoad;
+                    bi.EndInit();
+                    bi.Freeze();
+                    return bi;
+                }
+                catch
+                {
+                    // thử uri tiếp theo
+                }
+            }
+            return null;
         }
 
-        // Gọi 1 lần
+
         private void InitSeqIcons()
         {
-            if (_seqIconMap.Count > 0) return; // đã có
+            // đã có rồi thì thôi
+            if (_seqIconMap.Count > 0)
+                return;
 
-            _seqIconMap['0'] = LoadImg("pack://application:,,,/Assets/Seq/ball0.png");
-            _seqIconMap['1'] = LoadImg("pack://application:,,,/Assets/Seq/ball1.png");
-            _seqIconMap['2'] = LoadImg("pack://application:,,,/Assets/Seq/ball2.png");
-            _seqIconMap['3'] = LoadImg("pack://application:,,,/Assets/Seq/ball3.png");
-            _seqIconMap['4'] = LoadImg("pack://application:,,,/Assets/Seq/ball4.png");
-            // (tuỳ chọn)
-            // _seqIconMap['C'] = LoadImg("pack://application:,,,/Assets/Seq/ballC.png");
-            // _seqIconMap['L'] = LoadImg("pack://application:,,,/Assets/Seq/ballL.png");
+            // tên assembly thực tế của DLL hiện tại
+            string asm = GetType().Assembly.GetName().Name!;
+
+            // mỗi cái cho 2-3 đường dẫn để chạy được cả khi làm plugin và khi chạy độc lập
+            _seqIconMap['0'] = LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/ball0.png",
+                "pack://application:,,,/Assets/Seq/ball0.png",
+                "pack://application:,/Assets/Seq/ball0.png"
+            );
+            _seqIconMap['1'] = LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/ball1.png",
+                "pack://application:,,,/Assets/Seq/ball1.png",
+                "pack://application:,/Assets/Seq/ball1.png"
+            );
+            _seqIconMap['2'] = LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/ball2.png",
+                "pack://application:,,,/Assets/Seq/ball2.png",
+                "pack://application:,/Assets/Seq/ball2.png"
+            );
+            _seqIconMap['3'] = LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/ball3.png",
+                "pack://application:,,,/Assets/Seq/ball3.png",
+                "pack://application:,/Assets/Seq/ball3.png"
+            );
+            _seqIconMap['4'] = LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/ball4.png",
+                "pack://application:,,,/Assets/Seq/ball4.png",
+                "pack://application:,/Assets/Seq/ball4.png"
+            );
         }
+
+
 
         void UpdateSeqUI(string fullSeq)
         {
@@ -3841,6 +3897,8 @@ Ví dụ không hợp lệ:
             SeqIcons.ToolTip = fullSeq;
             _lastSeqTailShown = tail;
         }
+
+
 
         private void SetLastResultUI(string? result)
         {
@@ -4627,9 +4685,14 @@ Ví dụ không hợp lệ:
         {
             try
             {
+                StopLogPump();
                 try { _uiModeTimer?.Stop(); _uiModeTimer = null; } catch { }
                 StopLeaseHeartbeat();
-                StopExpiryCountdown();                 // <— THÊM DÒNG NÀY
+                StopExpiryCountdown();
+
+                // 🔴 thêm dòng này
+                CleanupWebStuff();
+
                 var uname = (_homeUsername ?? "").Trim().ToLowerInvariant();
                 if (!string.IsNullOrWhiteSpace(uname))
                     _ = ReleaseLeaseAsync(uname);
@@ -4637,6 +4700,77 @@ Ví dụ không hợp lệ:
             catch { }
             base.OnClosing(e);
         }
+
+        private readonly CancellationTokenSource _shutdownCts = new();
+        public CancellationToken ShutdownToken => _shutdownCts.Token;
+
+        public void ShutdownFromHost()
+        {
+            try
+            {
+                _shutdownCts.Cancel();   // bạn đã có
+                CleanupWebStuff();       // 🔴 thêm
+            }
+            catch { }
+        }
+
+
+
+        private void CleanupWebStuff()
+        {
+            // 1) hủy các CTS liên quan đến web / auto login
+            try { _navCts?.Cancel(); } catch { }
+            _navCts = null;
+
+            try { _userCts?.Cancel(); } catch { }
+            _userCts = null;
+
+            try { _passCts?.Cancel(); } catch { }
+            _passCts = null;
+
+            try { _stakeCts?.Cancel(); } catch { }
+            _stakeCts = null;
+
+            try { _autoLoginWatchCts?.Cancel(); } catch { }
+            _autoLoginWatchCts = null;
+
+            // 2) tắt timer license nếu có
+            try { _licenseCheckTimer?.Dispose(); } catch { }
+            _licenseCheckTimer = null;
+
+            // 3) gỡ được cái nào có tên thì gỡ cái đó
+            try
+            {
+                if (Web != null)
+                {
+                    // cái này CÓ tên nên gỡ được
+                    try { Web.NavigationCompleted -= Web_NavigationCompleted; } catch { }
+
+                    // đẩy web về trắng trước khi dispose để nó ngưng mấy request nền
+                    try
+                    {
+                        if (Web.CoreWebView2 != null)
+                            Web.CoreWebView2.Navigate("about:blank");
+                    }
+                    catch { }
+
+                    // dispose hẳn control
+                    try { Web.Dispose(); } catch { }
+                    Web = null;
+                }
+            }
+            catch { }
+
+            // 4) reset các cờ đã hook để nếu mở lại thì hook lại từ đầu
+            _webHooked = false;
+            _webMsgHooked = false;
+            _frameHooked = false;
+            _domHooked = false;
+        }
+
+
+
+
 
 
         private void SetStatusText(string? status)

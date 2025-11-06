@@ -32,7 +32,7 @@
     <PublishSingleFile>false</PublishSingleFile>
 
     <!-- Bind đúng bản ABX.Core.dll mà Hub đang chạy -->
-    <AbxCorePath>$(SolutionDir)ABX.Hub\bin\$(Configuration)\net8.0-windows\ABX.Core.dll</AbxCorePath>
+    <AbxCorePath>$(SolutionDir)AutoBetHub\bin\$(Configuration)\net8.0-windows\ABX.Core.dll</AbxCorePath>
   </PropertyGroup>
 
   <!-- ===== Release: 1-file EXE độc lập (giữ nguyên nghiệp vụ) ===== -->
@@ -114,7 +114,7 @@
 
   <!-- ===== Guard: bắt buộc build Hub trước để có ABX.Core.dll ===== -->
   <Target Name="CheckAbxCorePath" BeforeTargets="Build" Condition="'$(Configuration)'=='Debug'">
-    <Error Condition="!Exists('$(AbxCorePath)')" Text="ABX.Core.dll not found at '$(AbxCorePath)'. Build ABX.Hub (Debug) trước." />
+    <Error Condition="!Exists('$(AbxCorePath)')" Text="ABX.Core.dll not found at '$(AbxCorePath)'. Build AutoBetHub (Debug) trước." />
   </Target>
 
   <!-- ===== Echo đường dẫn output để dễ kiểm tra ===== -->
@@ -125,8 +125,7 @@
   <!-- ===== Copy plugin sang Hub (ép overwrite + đóng dấu) ===== -->
   <Target Name="CopyPluginToHubDebug" AfterTargets="Build" Condition="'$(Configuration)'=='Debug'">
     <PropertyGroup>
-      <HubBin>$(SolutionDir)ABX.Hub\bin\$(Configuration)\net8.0-windows\</HubBin>
-      <HubPluginsDir>$(HubBin)Plugins\</HubPluginsDir>
+      <HubPluginsDir>$(SolutionDir)AutoBetHub\Plugins\</HubPluginsDir>
       <CopyStamp>$(HubPluginsDir)XocDiaLiveHit._copied.txt</CopyStamp>
     </PropertyGroup>
     <MakeDir Directories="$(HubPluginsDir)" />

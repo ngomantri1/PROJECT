@@ -5,6 +5,7 @@ namespace ABX.Core
         IConfigService Cfg { get; }
         ILogService Log { get; }
         IWebViewService Web { get; }
+        void OnPluginWindowClosed(string slug);
     }
 
     public interface IGamePlugin

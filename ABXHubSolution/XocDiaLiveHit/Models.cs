@@ -40,11 +40,4 @@ namespace XocDiaLiveHit
 
     }
 
-
-    public sealed class SeqIconVM
-    {
-        public ImageSource Img { get; init; }
-        public bool IsLatest { get; init; }
-    }
-
 }
