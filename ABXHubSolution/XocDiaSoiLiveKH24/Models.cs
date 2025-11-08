@@ -37,6 +37,9 @@ namespace XocDiaSoiLiveKH24
         public string? PreviousBetSide = null; // "CHAN"|"LE"
         public string? CurrentBetSide = null; // "CHAN"|"LE"
         public string? CurrentOutcome = null; // "CHAN"|"LE"
+        public int MoneyChainIndex { get; set; }      // đang ở chuỗi thứ mấy (0-based)
+        public int MoneyChainStep { get; set; }       // đang ở mức thứ mấy trong chuỗi đó (0-based)
+        public long MoneyChainProfit { get; set; }    // tiền đã gom được ở chuỗi hiện tại
 
     }
 

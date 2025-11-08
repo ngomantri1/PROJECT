@@ -158,7 +158,18 @@ namespace XocDiaSoiLiveKH24.Tasks
                 }
 
                 string side = ToSide(finalPick);
-                long stake = money.GetStakeForThisBet();
+                long stake;
+                if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
+                {
+                    stake = MoneyHelper.CalcAmountMultiChain(
+                        ctx.StakeChains,
+                        ctx.MoneyChainIndex,
+                        ctx.MoneyChainStep);
+                }
+                else
+                {
+                    stake = money.GetStakeForThisBet();
+                }
 
                 ctx.Log?.Invoke($"[AI-NGram] k={usedK}, sup={support}, score={score:0.000}, conf={conf:0.000} -> final={side}, stake={stake:N0}, lossStreak={_lossStreak}; Eff[{eff.Compact()}] Esc(E={_st.SafetyEscalations},S5={_st.DidEscS5ThisEpisode},S8={_st.DidEscS8ThisEpisode},Hold={_st.SafetyHoldLeft})");
 
@@ -167,7 +178,31 @@ namespace XocDiaSoiLiveKH24.Tasks
                 // 5) Kết quả ván
                 bool win = await WaitRoundFinishAndJudge(ctx, side, preSeq, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
-                money.OnRoundResult(win);
+                if (ctx.MoneyStrategyId == "MultiChain")
+                {
+                    // cần biến local để truyền ref
+                    int chainIndex = ctx.MoneyChainIndex;
+                    int chainStep = ctx.MoneyChainStep;
+                    long chainProfit = ctx.MoneyChainProfit;
+
+                    MoneyHelper.UpdateAfterRoundMultiChain(
+                        ctx.StakeChains,
+                        ctx.StakeChainTotals,
+                        ref chainIndex,
+                        ref chainStep,
+                        ref chainProfit,
+                        win);
+
+                    // gán ngược lại vào context
+                    ctx.MoneyChainIndex = chainIndex;
+                    ctx.MoneyChainStep = chainStep;
+                    ctx.MoneyChainProfit = chainProfit;
+                }
+                else
+                {
+                    // 4 kiểu cũ vẫn đi qua MoneyManager
+                    money.OnRoundResult(win);
+                }
 
                 // 6) cập nhật loss streak
                 _lossStreak = win ? 0 : _lossStreak + 1;

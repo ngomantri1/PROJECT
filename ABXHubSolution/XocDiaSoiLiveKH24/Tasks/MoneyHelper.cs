@@ -62,6 +62,118 @@ namespace XocDiaSoiLiveKH24.Tasks
             }
         }
 
+        // ====== NEW: kiểu 5. Đa tầng chuỗi tiền ======
+        // Lấy tiền sẽ đánh ở ván sắp tới, theo chuỗi & mức hiện tại
+        public static long CalcAmountMultiChain(long[][] chains, int chainIndex, int levelIndex)
+        {
+            if (chains == null || chains.Length == 0)
+                return 1000L;
+
+            chainIndex = Math.Clamp(chainIndex, 0, chains.Length - 1);
+            var chain = chains[chainIndex] ?? Array.Empty<long>();
+            if (chain.Length == 0) return 1000L;
+
+            levelIndex = Math.Clamp(levelIndex, 0, chain.Length - 1);
+            return chain[levelIndex];
+        }
+
+        // Cập nhật trạng thái sau khi biết win/lose
+        // chainTotals: tổng tiền của từng chuỗi (để so điều kiện quay về chuỗi trước)
+        public static void UpdateAfterRoundMultiChain(
+            long[][] chains,
+            long[] chainTotals,
+            ref int chainIndex,
+            ref int levelIndex,
+            ref long profitOnCurrentChain,
+            bool? win)
+        {
+            int chainCount = chains?.Length ?? 0;
+            if (chainCount == 0) return;
+
+            chainIndex = Math.Clamp(chainIndex, 0, chainCount - 1);
+            var curChain = chains[chainIndex] ?? Array.Empty<long>();
+            if (curChain.Length == 0)
+            {
+                // nếu chuỗi rỗng thì ép về chuỗi 0
+                chainIndex = 0;
+                curChain = chains[0] ?? Array.Empty<long>();
+            }
+
+            levelIndex = Math.Clamp(levelIndex, 0, curChain.Length - 1);
+
+            if (win == null)
+                return;
+
+            if (win == true)
+            {
+                // thắng: gom tiền cho chuỗi hiện tại
+                long justWon = curChain[levelIndex];
+                // trong 1 chuỗi: thắng → về mức 0
+                levelIndex = 0;
+
+                if (chainIndex > 0)
+                {
+                    // chỉ chuỗi > 0 mới cần gom tiền để về chuỗi trước
+                    profitOnCurrentChain += justWon;
+
+                    long need = 0;
+                    if (chainTotals != null && chainIndex - 1 < chainTotals.Length)
+                        need = chainTotals[chainIndex - 1];
+                    else
+                        need = SumChain(chains[chainIndex - 1]);
+
+                    if (profitOnCurrentChain >= need)
+                    {
+                        // đủ điều kiện quay về chuỗi trước
+                        chainIndex--;
+                        levelIndex = 0;
+                        profitOnCurrentChain = 0;
+                    }
+                }
+                else
+                {
+                    // chuỗi 0 thì không cần gom
+                    profitOnCurrentChain = 0;
+                }
+            }
+            else
+            {
+                // thua
+                if (levelIndex + 1 < curChain.Length)
+                {
+                    // thua nhưng chưa hết mức trong chuỗi -> lên mức trong cùng chuỗi
+                    levelIndex++;
+                }
+                else
+                {
+                    // thua hết chuỗi hiện tại
+                    if (chainIndex + 1 < chainCount)
+                    {
+                        // sang chuỗi kế tiếp
+                        chainIndex++;
+                        levelIndex = 0;
+                        profitOnCurrentChain = 0;
+                    }
+                    else
+                    {
+                        // đang ở chuỗi cao nhất mà cũng thua hết → quay về chuỗi 0
+                        chainIndex = 0;
+                        levelIndex = 0;
+                        profitOnCurrentChain = 0;
+                    }
+                }
+            }
+        }
+
+        private static long SumChain(long[] chain)
+        {
+            if (chain == null) return 0;
+            long s = 0;
+            foreach (var x in chain) s += x;
+            return s;
+        }
+
+        // ====== CÁC HÀM PHỤ CŨ (giữ nguyên) ======
         public static string DigitSeqToParity(string digits)  // "1234" -> "LCLC"
         {
             if (string.IsNullOrEmpty(digits)) return "";

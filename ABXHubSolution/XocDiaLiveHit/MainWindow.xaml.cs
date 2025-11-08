@@ -178,6 +178,9 @@ namespace XocDiaLiveHit
 
         private DecisionState _dec = new();
         private long[] _stakeSeq = Array.Empty<long>();
+        private System.Collections.Generic.List<long[]> _stakeChains = new();
+        private long[] _stakeChainTotals = Array.Empty<long>();
+
         private double _decisionPercent = 0.15; // 15% (0.15)
 
         // Chống bắn trùng khi vừa cược
@@ -324,17 +327,26 @@ Ví dụ không hợp lệ:
   IN -> I1";
 
 
-        const string TIP_STAKE_CSV =
+       const string TIP_STAKE_CSV =
         @"Chuỗi TIỀN (StakeCsv)
-• Nhập dãy tiền theo thứ tự đặt: ví dụ 1000,1000,2000,3000,5000
-• Phân tách được: dấu phẩy ',', dấu gạch '-', hoặc khoảng trắng.
+• Có thể nhập 1 chuỗi hoặc NHIỀU chuỗi tiền.
+• Nếu nhập NHIỀU chuỗi: MỖI CHUỖI 1 DÒNG. Ví dụ:
+  1000-2000-4000-8000
+  2000-4000-8000-16000
+  4000-8000-16000-32000
+• Nếu chỉ nhập 1 chuỗi thì dùng như cũ: 1000,1000,2000,3000,5000
+• Phân tách chấp nhận: dấu phẩy ',', dấu gạch '-', dấu chấm phẩy ';' hoặc khoảng trắng.
 • Đơn vị: VNĐ (số nguyên). Cho phép trùng giá trị.
 • Hết chuỗi sẽ quay lại đầu (nếu chiến lược dùng lặp).
+• Dùng cho quản lý vốn ""5. Đa tầng chuỗi tiền"": thua hết 1 dòng → sang dòng kế; chuỗi sau thắng đủ tổng chuỗi trước → quay về chuỗi trước.
 • Ví dụ hợp lệ:
   1000,1000,2000,3000,5000
-  1_000 - 1_000 - 2_000 - 3_000 - 5_000
+  1000-1000-2000-3000-5000
   1000 1000 2000 3000 5000
+  1000-2000-4000-8000
+  2000-4000-8000-16000
 • Ví dụ sai: 1k, 2k, 3k (không dùng chữ k).";
+
 
         const string TIP_CUT_PROFIT =
         @"CẮT LÃI
@@ -3116,29 +3128,57 @@ Ví dụ không hợp lệ:
 
 
 
-        private void RebuildStakeSeq(string csv)
+        private void RebuildStakeSeq(string? csv)
         {
-            try
+            _stakeChains.Clear();
+
+            csv ??= "";
+            // chuẩn hoá xuống dòng
+            var lines = csv.Replace("\r", "").Split('\n');
+
+            var flat = new System.Collections.Generic.List<long>();
+
+            foreach (var rawLine in lines)
             {
-                var parts = Regex.Split(csv ?? "", @"[,\s;\-;]+", RegexOptions.None);
-                var list = new List<long>();
+                var line = (rawLine ?? "").Trim();
+                if (line.Length == 0) continue;
+
+                // giống nghiệp vụ cũ: tách theo , ; - khoảng trắng
+                var parts = System.Text.RegularExpressions.Regex.Split(line, @"[,\s;\-]+");
+                var oneChain = new System.Collections.Generic.List<long>();
+
                 foreach (var p in parts)
                 {
-                    var raw = (p ?? "").Trim();
-                    if (raw.Length == 0) continue;
-
-                    // Cho phép viết 1_000, 2_500_000
-                    var cleaned = raw.Replace("_", "");
-                    if (long.TryParse(cleaned, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) && v > 0)
-                        list.Add(v);
+                    if (string.IsNullOrWhiteSpace(p)) continue;
+                    if (long.TryParse(p, out var v) && v >= 0)
+                    {
+                        oneChain.Add(v);
+                    }
+                    else
+                    {
+                        // nếu có số sai thì bỏ qua giống cách cũ, hoặc bạn có thể show lỗi ở LblSeqError
+                    }
                 }
-                _stakeSeq = list.Count > 0 ? list.ToArray() : new[] { 1000L };
+
+                if (oneChain.Count > 0)
+                {
+                    _stakeChains.Add(oneChain.ToArray());
+                    flat.AddRange(oneChain);
+                }
             }
-            catch
-            {
-                _stakeSeq = new[] { 1000L };
-            }
+
+            // nếu user chỉ nhập 1 dòng như cũ thì _stakeChains sẽ chỉ có 1 phần tử
+            _stakeSeq = flat.Count > 0 ? flat.ToArray() : new long[] { 1000 };
+
+            // tính tổng từng chuỗi để dùng cho điều kiện “chuỗi sau thắng >= tổng chuỗi trước”
+            _stakeChainTotals = _stakeChains
+                .Select(ch => ch.Aggregate(0L, (s, x) => s + x))
+                .ToArray();
+
+            // cập nhật UI hiển thị lỗi nếu cần
+            ShowSeqError(null);
         }
+
 
 
 
@@ -3197,7 +3237,11 @@ Ví dụ không hợp lệ:
                 GetSnap = () => { lock (_snapLock) return _lastSnap; },
                 EvalJsAsync = (js) => Dispatcher.InvokeAsync(() => Web.ExecuteScriptAsync(js)).Task.Unwrap(),
                 Log = (s) => Log(s),
+
                 StakeSeq = _stakeSeq,
+                StakeChains = _stakeChains.Select(a => a.ToArray()).ToArray(),
+                StakeChainTotals = _stakeChainTotals,
+
                 DecisionPercent = _decisionPercent,
                 State = _dec,
                 UiDispatcher = Dispatcher,
@@ -3254,6 +3298,7 @@ Ví dụ không hợp lệ:
                 }),
             };
         }
+
 
 
 

@@ -652,6 +652,7 @@
                                             <ComboBoxItem Content="2. Tăng mức tiền khi thắng, thua quay về mức ban đầu" Tag="IncreaseWhenWin" />
                                             <ComboBoxItem Content="3. Quản lý vốn Victor 2" Tag="Victor2" />
                                             <ComboBoxItem Content="4. Quản lý vốn Fibonaci ngược" Tag="ReverseFibo" />
+                                            <ComboBoxItem Content="5. Quản lý vốn đa tầng" Tag="MultiChain" />
                                         </ComboBox>
                                     </Grid>
                                     <!--  CHUỖI TIỀN (CSV)  -->

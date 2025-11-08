@@ -162,7 +162,18 @@ namespace XocDiaSoiLiveKH24.Tasks
                 // Đặt theo ký tự hiện tại của "chuỗi top" (C/L)
                 char ch = curPattern[curIdx];
                 string side = ParityCharToSide(ch);
-                var stake = money.GetStakeForThisBet();
+                long stake;
+                if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
+                {
+                    stake = MoneyHelper.CalcAmountMultiChain(
+                        ctx.StakeChains,
+                        ctx.MoneyChainIndex,
+                        ctx.MoneyChainStep);
+                }
+                else
+                {
+                    stake = money.GetStakeForThisBet();
+                }
 
                 ctx.Log?.Invoke($"[Top10-50] bet={side} (pat='{curPattern}', pos={curIdx + 1}/10, count={curCount})");
                 await PlaceBet(ctx, side, stake, ct);
@@ -170,7 +181,31 @@ namespace XocDiaSoiLiveKH24.Tasks
                 // Chờ KẾT QUẢ: WaitRoundFinishAndJudge so sánh chuỗi → phù hợp cửa sổ 50 trượt
                 bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
-                money.OnRoundResult(win);
+                if (ctx.MoneyStrategyId == "MultiChain")
+                {
+                    // cần biến local để truyền ref
+                    int chainIndex = ctx.MoneyChainIndex;
+                    int chainStep = ctx.MoneyChainStep;
+                    long chainProfit = ctx.MoneyChainProfit;
+
+                    MoneyHelper.UpdateAfterRoundMultiChain(
+                        ctx.StakeChains,
+                        ctx.StakeChainTotals,
+                        ref chainIndex,
+                        ref chainStep,
+                        ref chainProfit,
+                        win);
+
+                    // gán ngược lại vào context
+                    ctx.MoneyChainIndex = chainIndex;
+                    ctx.MoneyChainStep = chainStep;
+                    ctx.MoneyChainProfit = chainProfit;
+                }
+                else
+                {
+                    // 4 kiểu cũ vẫn đi qua MoneyManager
+                    money.OnRoundResult(win);
+                }
 
                 // Sau khi có kết quả: cập nhật CL50 & +1 cho "10 mới về" (41..50)
                 var sAfter = ctx.GetSnap?.Invoke();

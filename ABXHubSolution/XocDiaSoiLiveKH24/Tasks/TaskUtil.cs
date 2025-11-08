@@ -21,6 +21,8 @@ namespace XocDiaSoiLiveKH24.Tasks
         public static char DigitToParity(char d) => (d == '0' || d == '2' || d == '4') ? 'C' : 'L';
         // TaskUtil.cs (trong class TaskUtil)
         private static readonly object _betLock = new object();
+        private static string _lastBetSeq = "";
+        private static long _lastBetMs = 0;
         // Reset UI 1 lần ngay khi vào cửa sổ đặt (p >= DecisionPercent)
         private static bool _uiRoundResetDone = false;
         public static string SeqToParityString(string digitSeq)

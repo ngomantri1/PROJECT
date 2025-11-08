@@ -15,29 +15,50 @@ namespace XocDiaSoiLiveKH24.Tasks
         // Ghi log ra UI/File tuỳ bạn
         public Action<string> Log { get; init; }
 
-        // Dãy tiền + ngưỡng % còn lại để ra quyết định (0..1)
+        // Dãy tiền 1 chiều (giữ lại để tương thích)
         public long[] StakeSeq { get; init; }
+
+        // ====== NEW: dãy tiền nhiều chuỗi (mỗi dòng 1 chuỗi) ======
+        // Ví dụ:
+        // [ [1000,2000,4000,8000],
+        //   [2000,4000,8000,16000] ]
+        public long[][] StakeChains { get; init; } = Array.Empty<long[]>();
+
+        // Tổng tiền của từng chuỗi, dùng để so điều kiện "chuỗi sau thắng >= tổng chuỗi trước thì lùi về"
+        public long[] StakeChainTotals { get; init; } = Array.Empty<long>();
+
+        // ====== NEW: trạng thái runtime riêng cho quản lý vốn đa tầng ======
+        // đang ở chuỗi thứ mấy (0-based)
+        public int MoneyChainIndex { get; set; } = 0;
+        // đang ở mức thứ mấy trong chuỗi đó (0-based)
+        public int MoneyChainStep { get; set; } = 0;
+        // tiền thắng đã tích lũy được trong chuỗi hiện tại
+        public long MoneyChainProfit { get; set; } = 0;
+
+        // Ngưỡng % còn lại để ra quyết định
         public double DecisionPercent { get; init; }
 
-        // Trạng thái chiến lược (lưu Step/PreferLarger/...)
+        // Trạng thái chiến lược (lưu Step/PreferLarger/.)
         public DecisionState State { get; init; }
+
         // Kiểu quản lý vốn + input UI (nạp từ MainWindow)
-        public string MoneyStrategyId { get; init; }   // "IncreaseWhenLose" | "IncreaseWhenWin" | "Victor2" | "ReverseFibo"
-        public string BetSeq { get; init; }            // ô "CHUỖI CẦU" hoặc "Chuỗi N/I"
-        public string BetPatterns { get; init; }       // ô "CÁC THẾ CẦU"
+        // "IncreaseWhenLose" | "IncreaseWhenWin" | "Victor2" | "ReverseFibo" | "MultiChain"
+        public string MoneyStrategyId { get; init; }
+
+        public string BetSeq { get; init; }       // ô "CHUỖI CẦU" hoặc "Chuỗi N/I"
+        public string BetPatterns { get; init; }  // ô "CÁC THẾ CẦU"
 
         // Tiện ích UI nếu cần
         public Dispatcher UiDispatcher { get; init; }
 
-        // Cooldown setter (tuỳ MainWindow quản lý), có thể bỏ nếu để trong task
+        // Cooldown setter (tuỳ MainWindow quản lý)
         public Func<bool> GetCooldown { get; init; }
         public Action<bool> SetCooldown { get; init; }
 
         // --- UI updaters (được gán từ MainWindow) ---
-        public Action<string>? UiSetSide;     // "CHAN"/"LE" (cửa đang đánh)
-        public Action<double>? UiSetStake;    // mức tiền đang đặt
-        public Action<double>? UiAddWin;      // cộng/trừ tiền thắng lũy kế (cho phép âm)
-        public Action<bool>? UiWinLoss;      // thằng và thua
-
+        public Action<string>? UiSetSide;     // "CHAN"/"LE"
+        public Action<double>? UiSetStake;    // tiền đang đánh
+        public Action<double>? UiAddWin;      // cộng/trừ tiền thắng lũy kế
+        public Action<bool>? UiWinLoss;       // true = win, false = loss
     }
 }

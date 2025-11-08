@@ -111,15 +111,49 @@ namespace XocDiaSoiLiveKH24.Tasks
                 // Luôn quyết định và vào lệnh — không bỏ nhịp
                 var (next, conf) = PredictNextWithConfidence(parity, DefaultMaxPatternLen);
                 string side = ParityCharToSideSafe(next);
-
-                var stake = money.GetStakeForThisBet();
+                long stake;
+                if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
+                {
+                    stake = MoneyHelper.CalcAmountMultiChain(
+                        ctx.StakeChains,
+                        ctx.MoneyChainIndex,
+                        ctx.MoneyChainStep);
+                }
+                else
+                {
+                    stake = money.GetStakeForThisBet();
+                }
                 ctx.Log?.Invoke($"[AI-Stat-CL] pick={side}, conf={conf:F2}, stake={stake:N0}");
 
                 await PlaceBet(ctx, side, stake, ct);
 
                 bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
-                money.OnRoundResult(win);
+                if (ctx.MoneyStrategyId == "MultiChain")
+                {
+                    // cần biến local để truyền ref
+                    int chainIndex = ctx.MoneyChainIndex;
+                    int chainStep = ctx.MoneyChainStep;
+                    long chainProfit = ctx.MoneyChainProfit;
+
+                    MoneyHelper.UpdateAfterRoundMultiChain(
+                        ctx.StakeChains,
+                        ctx.StakeChainTotals,
+                        ref chainIndex,
+                        ref chainStep,
+                        ref chainProfit,
+                        win);
+
+                    // gán ngược lại vào context
+                    ctx.MoneyChainIndex = chainIndex;
+                    ctx.MoneyChainStep = chainStep;
+                    ctx.MoneyChainProfit = chainProfit;
+                }
+                else
+                {
+                    // 4 kiểu cũ vẫn đi qua MoneyManager
+                    money.OnRoundResult(win);
+                }
 
                 // Không nghỉ nhịp: vòng sau tự tính lại cầu dựa trên lịch sử mới
                 if (!win)

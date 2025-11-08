@@ -189,7 +189,18 @@ namespace XocDiaSoiLiveKH24.Tasks
 
                 // Đặt cược theo placedPick
                 string side = (placedPick == 0) ? "CHAN" : "LE";
-                var stake = money.GetStakeForThisBet();
+                long stake;
+                if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
+                {
+                    stake = MoneyHelper.CalcAmountMultiChain(
+                        ctx.StakeChains,
+                        ctx.MoneyChainIndex,
+                        ctx.MoneyChainStep);
+                }
+                else
+                {
+                    stake = money.GetStakeForThisBet();
+                }
                 Log(ctx, $"[AI15] BET side={side} stake={stake:N0} (panelPick={(panelPick == 0 ? "C" : "L")}, contrarian={(Cfg.ContrarianEnabled ? "ON" : "OFF")})");
                 await PlaceBet(ctx, side, stake, ct);
 
@@ -200,7 +211,31 @@ namespace XocDiaSoiLiveKH24.Tasks
 
                 // P&L theo kết quả thực
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(ok ? stake : -stake));
-                money.OnRoundResult(ok);
+                if (ctx.MoneyStrategyId == "MultiChain")
+                {
+                    // cần biến local để truyền ref
+                    int chainIndex = ctx.MoneyChainIndex;
+                    int chainStep = ctx.MoneyChainStep;
+                    long chainProfit = ctx.MoneyChainProfit;
+
+                    MoneyHelper.UpdateAfterRoundMultiChain(
+                        ctx.StakeChains,
+                        ctx.StakeChainTotals,
+                        ref chainIndex,
+                        ref chainStep,
+                        ref chainProfit,
+                        ok);
+
+                    // gán ngược lại vào context
+                    ctx.MoneyChainIndex = chainIndex;
+                    ctx.MoneyChainStep = chainStep;
+                    ctx.MoneyChainProfit = chainProfit;
+                }
+                else
+                {
+                    // 4 kiểu cũ vẫn đi qua MoneyManager
+                    money.OnRoundResult(ok);
+                }
 
                 // TÍNH panelWin (giả lập) và trainingWin (cho học)
                 // trueWinSide: 0/1 là CHAN/LE thực tế thắng
