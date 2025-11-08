@@ -1,9 +1,9 @@
-﻿// XocDiaLiveHit/MainWindow.Startup.cs
+﻿// XocDiaSoiLiveKH24/MainWindow.Startup.cs
 using System.IO;
 using System.Threading.Tasks;
 using ABX.Core;
 
-namespace XocDiaLiveHit
+namespace XocDiaSoiLiveKH24
 {
     public partial class MainWindow
     {
@@ -42,7 +42,7 @@ namespace XocDiaLiveHit
                     var asmDir = Path.GetDirectoryName(typeof(MainWindow).Assembly.Location)!;
                     var webDir = Path.Combine(asmDir, "web");
                     if (Directory.Exists(webDir))
-                        host.Web.MapFolder("xoc-dia-live-hit.local", webDir);
+                        host.Web.MapFolder("xoc-dia-soi-live-kh24.local", webDir);
                 }
                 catch
                 {

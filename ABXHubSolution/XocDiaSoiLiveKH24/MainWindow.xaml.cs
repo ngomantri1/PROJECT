@@ -13,8 +13,8 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using static System.Net.Mime.MediaTypeNames;
 using static System.Runtime.InteropServices.JavaScript.JSType;
-using XocDiaLiveHit;
-using XocDiaLiveHit.Tasks;
+using XocDiaSoiLiveKH24;
+using XocDiaSoiLiveKH24.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Globalization;
@@ -29,13 +29,13 @@ using System.ComponentModel;
 using System.Linq;
 using System.Collections.ObjectModel;
 using System.Windows.Data;
-using static XocDiaLiveHit.MainWindow;
+using static XocDiaSoiLiveKH24.MainWindow;
 using System.Windows.Input;
 
 
 
 
-namespace XocDiaLiveHit
+namespace XocDiaSoiLiveKH24
 {
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Assets (pack URI).
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Resources (pack URI).
@@ -133,7 +133,7 @@ namespace XocDiaLiveHit
     }
     public partial class MainWindow : Window
     {
-        private const string AppLocalDirName = "XocDiaLiveHit"; // đổi thành tên bạn muốn
+        private const string AppLocalDirName = "XocDiaSoiLiveKH24"; // đổi thành tên bạn muốn
         // ====== App paths ======
         private readonly string _appDataDir;
         private readonly string _cfgPath;
@@ -245,7 +245,7 @@ namespace XocDiaLiveHit
 
 
 
-        private const string DEFAULT_URL = "net88.com"; // URL mặc định bạn muốn
+        private const string DEFAULT_URL = "play.kh24.live"; // URL mặc định bạn muốn
         // === License repo/worker settings (CHỈNH LẠI CHO PHÙ HỢP) ===
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn
@@ -454,7 +454,7 @@ Ví dụ không hợp lệ:
         private double _winTotal = 0;
         private CoreWebView2Environment? _webEnv;
         private bool _webInitDone;
-        private const string Wv2ZipResNameX64 = "XocDiaLiveHit.ThirdParty.WebView2Fixed_win-x64.zip";
+        private const string Wv2ZipResNameX64 = "XocDiaSoiLiveKH24.ThirdParty.WebView2Fixed_win-x64.zip";
         // Thư mục cache bền vững cho runtime (không bị dọn như %TEMP%)
         private static string Wv2BaseDir =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -591,8 +591,6 @@ Ví dụ không hợp lệ:
         // Guard chống re-entrancy (đặt ở class level)
         private bool _ensuringWeb = false;
 
-        private bool _frameHookedAlways;
-
         private WebView2LiveBridge? _bridge;
         private bool _inputEventsHooked;
         // Interval push của Home (ms)
@@ -624,11 +622,31 @@ Ví dụ không hợp lệ:
             // đảm bảo về Home UI lúc khởi động
             SetModeUi(false);
             BetGrid.ItemsSource = _betPage;
+            this.PreviewKeyDown += MainWindow_PreviewKeyDown;
             // gọi async sau khi cửa sổ đã load
             this.Loaded += MainWindow_Loaded;
 
         }
 
+        private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.F12)
+            {
+                try
+                {
+                    // Web là WebView2 của bạn trong XAML
+                    if (Web?.CoreWebView2 != null)
+                    {
+                        Web.CoreWebView2.OpenDevToolsWindow();
+                        e.Handled = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log("[DevTools] " + ex.Message);
+                }
+            }
+        }
 
 
         // ====== Log helpers (batch) ======
@@ -653,10 +671,8 @@ Ví dụ không hợp lệ:
                 {
                     try
                     {
-                        bool hadItem = false;
                         while (_uiLogQueue.TryDequeue(out var line))
                         {
-                            hadItem = true;
                             _uiLines.AddLast(line);
                             if (_uiLines.Count > UI_MAX_LINES) _uiLines.RemoveFirst();
                         }
@@ -758,7 +774,7 @@ Ví dụ không hợp lệ:
 
         private string GetAiNGramStatePath()
         {
-            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\XocDiaLiveHit
+            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\XocDiaSoiLiveKH24
             var aiDir = System.IO.Path.Combine(_appDataDir, "ai");
             System.IO.Directory.CreateDirectory(aiDir);
             return System.IO.Path.Combine(aiDir, "ngram_state_v1.json");
@@ -1523,8 +1539,8 @@ Ví dụ không hợp lệ:
                 {
                     settings.IsWebMessageEnabled = true;
                     // (tuỳ chọn khác, giữ nguyên nếu bạn không cần)
-                    // settings.AreDefaultContextMenusEnabled = false;
-                    // settings.AreDevToolsEnabled = true;
+                    settings.AreDefaultContextMenusEnabled = false;
+                    settings.AreDevToolsEnabled = true;
                 }
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
@@ -1568,7 +1584,7 @@ Ví dụ không hợp lệ:
             Directory.CreateDirectory(targetDir);
 
             var resName = FindResourceName("ThirdParty.WebView2Fixed_win-x64.zip")
-                          ?? "XocDiaLiveHit.ThirdParty.WebView2Fixed_win-x64.zip";
+                          ?? "XocDiaSoiLiveKH24.ThirdParty.WebView2Fixed_win-x64.zip";
 
             using var s = Assembly.GetExecutingAssembly().GetManifestResourceStream(resName)
                            ?? throw new FileNotFoundException("Missing embedded resource: " + resName);
@@ -3582,25 +3598,25 @@ Ví dụ không hợp lệ:
                 }
 
 
-                XocDiaLiveHit.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
+                XocDiaSoiLiveKH24.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
                 {
-                    0 => new XocDiaLiveHit.Tasks.SeqParityFollowTask(),     // 1
-                    1 => new XocDiaLiveHit.Tasks.PatternParityTask(),       // 2
-                    2 => new XocDiaLiveHit.Tasks.SeqMajorMinorTask(),       // 3
-                    3 => new XocDiaLiveHit.Tasks.PatternMajorMinorTask(),   // 4
-                    4 => new XocDiaLiveHit.Tasks.SmartPrevTask(),           // 5
-                    5 => new XocDiaLiveHit.Tasks.RandomParityTask(),        // 6
-                    6 => new XocDiaLiveHit.Tasks.AiStatParityTask(),        // 7
-                    7 => new XocDiaLiveHit.Tasks.StateTransitionBiasTask(), // 8
-                    8 => new XocDiaLiveHit.Tasks.RunLengthBiasTask(),       // 9
-                    9 => new XocDiaLiveHit.Tasks.EnsembleMajorityTask(),    // 10
-                    10 => new XocDiaLiveHit.Tasks.TimeSlicedHedgeTask(),    // 11
-                    11 => new XocDiaLiveHit.Tasks.KnnSubsequenceTask(),     // 12
-                    12 => new XocDiaLiveHit.Tasks.DualScheduleHedgeTask(),  // 13
-                    13 => new XocDiaLiveHit.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
-                    14 => new XocDiaLiveHit.Tasks.AiExpertPanelTask(), // 15
-                    15 => new XocDiaLiveHit.Tasks.Top10PatternFollowTask(), // 16
-                    _ => new XocDiaLiveHit.Tasks.SmartPrevTask(),
+                    0 => new XocDiaSoiLiveKH24.Tasks.SeqParityFollowTask(),     // 1
+                    1 => new XocDiaSoiLiveKH24.Tasks.PatternParityTask(),       // 2
+                    2 => new XocDiaSoiLiveKH24.Tasks.SeqMajorMinorTask(),       // 3
+                    3 => new XocDiaSoiLiveKH24.Tasks.PatternMajorMinorTask(),   // 4
+                    4 => new XocDiaSoiLiveKH24.Tasks.SmartPrevTask(),           // 5
+                    5 => new XocDiaSoiLiveKH24.Tasks.RandomParityTask(),        // 6
+                    6 => new XocDiaSoiLiveKH24.Tasks.AiStatParityTask(),        // 7
+                    7 => new XocDiaSoiLiveKH24.Tasks.StateTransitionBiasTask(), // 8
+                    8 => new XocDiaSoiLiveKH24.Tasks.RunLengthBiasTask(),       // 9
+                    9 => new XocDiaSoiLiveKH24.Tasks.EnsembleMajorityTask(),    // 10
+                    10 => new XocDiaSoiLiveKH24.Tasks.TimeSlicedHedgeTask(),    // 11
+                    11 => new XocDiaSoiLiveKH24.Tasks.KnnSubsequenceTask(),     // 12
+                    12 => new XocDiaSoiLiveKH24.Tasks.DualScheduleHedgeTask(),  // 13
+                    13 => new XocDiaSoiLiveKH24.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
+                    14 => new XocDiaSoiLiveKH24.Tasks.AiExpertPanelTask(), // 15
+                    15 => new XocDiaSoiLiveKH24.Tasks.Top10PatternFollowTask(), // 16
+                    _ => new XocDiaSoiLiveKH24.Tasks.SmartPrevTask(),
                 };
 
 
@@ -3651,7 +3667,7 @@ Ví dụ không hợp lệ:
             try
             {
                 StopTask();
-                XocDiaLiveHit.Tasks.TaskUtil.ClearBetCooldown();
+                XocDiaSoiLiveKH24.Tasks.TaskUtil.ClearBetCooldown();
                 _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[Loop] stopped");
                 SetPlayButtonState(false);
@@ -3816,7 +3832,7 @@ Ví dụ không hợp lệ:
             return (s.Length <= take) ? s : s.Substring(s.Length - take, take);
         }
 
-        // đặt trong MainWindow.xaml.cs (project XocDiaLiveHit)
+        // đặt trong MainWindow.xaml.cs (project XocDiaSoiLiveKH24)
 
         // load thử lần lượt các uri, cái nào được thì dùng, không được thì trả về null
         private static ImageSource? LoadImgSafe(params string[] uris)
@@ -4187,7 +4203,7 @@ Ví dụ không hợp lệ:
             {
                 // Đọc thẳng từ embedded (KHÔNG thử đọc từ đĩa)
                 var resName = FindResourceName("v4_js_xoc_dia_live.js")
-                              ?? "XocDiaLiveHit.v4_js_xoc_dia_live.js";
+                              ?? "XocDiaSoiLiveKH24.v4_js_xoc_dia_live.js";
                 var text = ReadEmbeddedText(resName);
                 text = RemoveUtf8Bom(text);
 
@@ -4211,7 +4227,7 @@ Ví dụ không hợp lệ:
             try
             {
                 var resName = FindResourceName("js_home_v2.js")
-                              ?? "XocDiaLiveHit.js_home_v2.js"; // fallback tên logic
+                              ?? "XocDiaSoiLiveKH24.js_home_v2.js"; // fallback tên logic
                 var text = ReadEmbeddedText(resName);   // helper sẵn có
                 text = RemoveUtf8Bom(text);             // helper sẵn có
 

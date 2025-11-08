@@ -10,7 +10,7 @@
     <Prefer32Bit>false</Prefer32Bit>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
-    <AssemblyName>XocDiaLiveHit</AssemblyName>
+    <AssemblyName>XocDiaSoiLiveKH24</AssemblyName>
   </PropertyGroup>
 
   <!-- Stamp cho Release đổi tên EXE -->
@@ -20,8 +20,8 @@
 
   <!-- ===== Debug: build DLL plugin cho Hub ===== -->
   <PropertyGroup Condition="'$(Configuration)'=='Debug'">
-    <!-- WPF app compile as Library để Hub load như plugin -->
-    <OutputType>Library</OutputType>
+    <!-- WPF app compile as Library để Hub load như plugin còn WinExe để chạy Debug -->
+    <OutputType>WinExe</OutputType>
 
     <DefineConstants>$(DefineConstants);DEBUG;TRACE;ABX_HUB</DefineConstants>
     <DebugType>portable</DebugType>
@@ -67,7 +67,7 @@
   <ItemGroup Condition="'$(Configuration)'=='Release'">
     <None Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
     <EmbeddedResource Include="ThirdParty\WebView2Fixed_win-x64.zip">
-      <LogicalName>XocDiaLiveHit.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
+      <LogicalName>XocDiaSoiLiveKH24.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 
@@ -91,14 +91,14 @@
   <!-- ===== Kiểm soát file plugin để tránh duplicate compile ===== -->
   <!-- Bỏ mặc định trước, rồi Debug sẽ Include lại -->
   <ItemGroup>
-    <Compile Remove="XocDiaLiveHitPlugin.cs" />
-    <Compile Remove="XocDiaLiveHitPlugin.Hub.cs" />
+    <Compile Remove="XocDiaSoiLiveKH24Plugin.cs" />
+    <Compile Remove="XocDiaSoiLiveKH24Plugin.Hub.cs" />
     <Compile Remove="PluginProbe.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)'=='Debug'">
-    <Compile Include="XocDiaLiveHitPlugin.cs" />
+    <Compile Include="XocDiaSoiLiveKH24Plugin.cs" />
     <Compile Include="PluginProbe.cs" />
-    <Compile Include="XocDiaLiveHitPlugin.Hub.cs" Condition="Exists('XocDiaLiveHitPlugin.Hub.cs')" />
+    <Compile Include="XocDiaSoiLiveKH24Plugin.Hub.cs" Condition="Exists('XocDiaSoiLiveKH24Plugin.Hub.cs')" />
   </ItemGroup>
 
   <!-- ===== Tham chiếu ABX.Core đúng bản của Hub (không copy local) ===== -->

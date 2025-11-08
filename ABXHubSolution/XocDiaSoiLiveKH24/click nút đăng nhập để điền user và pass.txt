@@ -1,0 +1,63 @@
+(() => {
+    // 2 khả năng nút login bạn có trong scan
+    const TAILS = [
+        'MainGame/Canvas/widget-header/group-login/btn-Login'
+    ];
+
+    if (!(window.cc && cc.director && cc.director.getScene)) {
+        console.warn('[tail-click] Không thấy cocos.');
+        return;
+    }
+
+    const scene = cc.director.getScene();
+    const sceneName = scene.name;
+
+    function clickOneTail(tail) {
+        let parts = tail.split('/').filter(Boolean);
+
+        // nếu phần đầu đúng bằng tên scene thì bỏ đi
+        if (parts[0] === sceneName) {
+            parts.shift();
+        }
+
+        let node = scene;
+        for (let i = 0; i < parts.length; i++) {
+            const name = parts[i];
+            const kids = node.children || node._children || [];
+            let found = null;
+            for (let j = 0; j < kids.length; j++) {
+                if (kids[j] && kids[j].name === name) {
+                    found = kids[j];
+                    break;
+                }
+            }
+            if (!found) {
+                console.warn('[tail-click] Không tìm thấy node', name, 'dưới', node.name);
+                return false;
+            }
+            node = found;
+        }
+
+        const btn = node.getComponent && node.getComponent(cc.Button);
+        if (!btn) {
+            console.warn('[tail-click] Tìm được node nhưng không có cc.Button:', node.name);
+            return false;
+        }
+
+        cc.Component.EventHandler.emitEvents(
+            btn.clickEvents,
+            new cc.Event.EventCustom('click', true)
+        );
+        console.log('[tail-click] ĐÃ CLICK qua cc.Button cho tail =', tail);
+        return true;
+    }
+
+    // thử từng tail
+    for (let i = 0; i < TAILS.length; i++) {
+        if (clickOneTail(TAILS[i])) {
+            return; // thành công thì thôi
+        }
+    }
+
+    console.warn('[tail-click] Không click được tail nào trong danh sách.');
+})();

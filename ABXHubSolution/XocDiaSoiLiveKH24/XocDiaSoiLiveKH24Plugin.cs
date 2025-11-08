@@ -1,4 +1,4 @@
-﻿// XocDiaLiveHitPlugin.cs
+﻿// XocDiaSoiLiveKH24Plugin.cs
 using System;
 using System.IO;
 using System.Windows;
@@ -6,17 +6,17 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using ABX.Core;
-using XocDiaLiveHit.Views;
+using XocDiaSoiLiveKH24.Views;
 
-namespace XocDiaLiveHit
+namespace XocDiaSoiLiveKH24
 {
-    public sealed class XocDiaLiveHitPlugin : IGamePlugin
+    public sealed class XocDiaSoiLiveKH24Plugin : IGamePlugin
     {
         private MainWindow? _window;
         private IGameHostContext? _host;   // giữ lại để báo ngược về Hub
 
-        public string Name => "Xóc Đĩa Live Hit";
-        public string Slug => "xoc-dia-live-hit";
+        public string Name => "Xóc Đĩa Sới Live KH24";
+        public string Slug => "xoc-dia-soi-live-kh24";
 
         public UserControl CreateView(IGameHostContext host)
         {
@@ -121,7 +121,7 @@ namespace XocDiaLiveHit
             if (dict == null) return;
 
             // phải là 3 dấu phẩy
-            const string prefix = "pack://application:,,,/XocDiaLiveHit;component/";
+            const string prefix = "pack://application:,,,/XocDiaSoiLiveKH24;component/";
 
             void SetImg(string key, string rel)
             {
@@ -152,12 +152,12 @@ namespace XocDiaLiveHit
             // giữ lại để các converter trong MainWindow dùng chung
             try
             {
-                if (dict["ImgCHAN"] is ImageSource chan) XocDiaLiveHit.MainWindow.SharedIcons.SideChan = chan;
-                if (dict["ImgLE"] is ImageSource le) XocDiaLiveHit.MainWindow.SharedIcons.SideLe = le;
-                if (dict["ImgCHAN"] is ImageSource chan2) XocDiaLiveHit.MainWindow.SharedIcons.ResultChan = chan2;
-                if (dict["ImgLE"] is ImageSource le2) XocDiaLiveHit.MainWindow.SharedIcons.ResultLe = le2;
-                if (dict["ImgTHANG"] is ImageSource win) XocDiaLiveHit.MainWindow.SharedIcons.Win = win;
-                if (dict["ImgTHUA"] is ImageSource loss) XocDiaLiveHit.MainWindow.SharedIcons.Loss = loss;
+                if (dict["ImgCHAN"] is ImageSource chan) XocDiaSoiLiveKH24.MainWindow.SharedIcons.SideChan = chan;
+                if (dict["ImgLE"] is ImageSource le) XocDiaSoiLiveKH24.MainWindow.SharedIcons.SideLe = le;
+                if (dict["ImgCHAN"] is ImageSource chan2) XocDiaSoiLiveKH24.MainWindow.SharedIcons.ResultChan = chan2;
+                if (dict["ImgLE"] is ImageSource le2) XocDiaSoiLiveKH24.MainWindow.SharedIcons.ResultLe = le2;
+                if (dict["ImgTHANG"] is ImageSource win) XocDiaSoiLiveKH24.MainWindow.SharedIcons.Win = win;
+                if (dict["ImgTHUA"] is ImageSource loss) XocDiaSoiLiveKH24.MainWindow.SharedIcons.Loss = loss;
             }
             catch { }
         }
@@ -166,7 +166,7 @@ namespace XocDiaLiveHit
         {
             try
             {
-                var asm = typeof(XocDiaLiveHitPlugin).Assembly;
+                var asm = typeof(XocDiaSoiLiveKH24Plugin).Assembly;
                 var asmPath = asm.Location;
                 var asmDir = Path.GetDirectoryName(asmPath) ?? "";
 
@@ -178,7 +178,7 @@ namespace XocDiaLiveHit
                 TryLog(host, "[XocDia] Probe file (Assets): " + probe1 + " exists=" + File.Exists(probe1));
                 TryLog(host, "[XocDia] Probe file (assets): " + probe2 + " exists=" + File.Exists(probe2));
 
-                TryLog(host, "[XocDia] Expecting URI: /XocDiaLiveHit;component/Assets/side/CHAN.png");
+                TryLog(host, "[XocDia] Expecting URI: /XocDiaSoiLiveKH24;component/Assets/side/CHAN.png");
             }
             catch (Exception ex)
             {
