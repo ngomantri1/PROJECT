@@ -487,6 +487,13 @@ namespace AutoBetHub
                 _log.Warn("[Hub] CopyPluginsToLocal failed: " + ex.Message);
             }
         }
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            base.OnClosing(e);
+            e.Cancel = true;    // chặn đóng app
+            this.Hide();        // chỉ ẩn hub
+            _log.Info("[Hub] Main window hidden instead of closed.");
+        }
 
     }
 

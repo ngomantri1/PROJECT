@@ -631,6 +631,8 @@ Ví dụ không hợp lệ:
 
             // 2) Sau đó mới dựng UI
             InitializeComponent();
+            this.ShowInTaskbar = true;                       // có icon riêng
+            this.WindowStartupLocation = WindowStartupLocation.CenterScreen; // tuỳ, cho đẹp
             // đảm bảo về Home UI lúc khởi động
             SetModeUi(false);
             BetGrid.ItemsSource = _betPage;

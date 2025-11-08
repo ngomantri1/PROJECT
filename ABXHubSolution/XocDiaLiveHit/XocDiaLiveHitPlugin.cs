@@ -38,11 +38,9 @@ namespace XocDiaLiveHit
             {
                 if (_window == null)
                 {
-                    _window = new MainWindow
-                    {
-                        Owner = Application.Current?.MainWindow
-                    };
-
+                    _window = new MainWindow();
+                    // cửa sổ plugin có icon riêng trên taskbar
+                    _window.ShowInTaskbar = true;
                     // đè lại ngay trên window để át 4 dòng XAML kia
                     InjectImagesTo(host, _window.Resources);
 
