@@ -39,6 +39,9 @@ namespace AutoBetHub
         private bool _activating;
         private string? _activatingSlug;
 
+        // cờ mới: user đã bấm đóng trong khi vẫn còn plugin
+        private bool _pendingClose;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -79,7 +82,7 @@ namespace AutoBetHub
                     var basePlugins = Path.Combine(_baseDir, "Plugins");
                     var baseHasDll =
                         Directory.Exists(basePlugins) &&
-                        Directory.EnumerateFiles(basePlugins, "*.dll", SearchOption.AllDirectories).Any(); // <-- sửa ở đây
+                        Directory.EnumerateFiles(basePlugins, "*.dll", SearchOption.AllDirectories).Any();
 
                     if (baseHasDll)
                     {
@@ -129,15 +132,6 @@ namespace AutoBetHub
                     {
                         _log.Warn("[Home] Probe WebView2 version failed: " + ex.Message);
                     }
-                    try
-                    {
-                        var ver = CoreWebView2Environment.GetAvailableBrowserVersionString(null);
-                        _log.Info($"[Home] WebView2 ready. Version(Evergreen)={ver ?? "-"}");
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Warn("[Home] Probe WebView2 version failed: " + ex.Message);
-                    }
 
                     HookWebMessages();
                     HookHomeNavEvents();
@@ -170,14 +164,24 @@ namespace AutoBetHub
 
         public void OnPluginWindowClosed(string slug)
         {
+            // plugin gọi ngược về đây từ _window.Closed trong XocDiaLiveHitPlugin.cs
             if (_active != null &&
                 string.Equals(_active.Slug, slug, StringComparison.OrdinalIgnoreCase))
             {
-                DeactivatePlugin(); // dùng lại hàm bạn đã có
+                DeactivatePlugin();
+            }
+
+            // nếu trước đó user đã bấm đóng hub mà mình phải ẩn đi
+            // thì ngay khi plugin đóng xong, tắt hẳn app
+            if (_pendingClose)
+            {
+                _log.Info("[Hub] Plugin closed after pending close -> shutdown.");
+                Application.Current.Shutdown();
             }
         }
 
         // ========== WebView2 <-> hub.html ==========
+
         private sealed record WebMsg(string cmd, string? slug, string? file);
 
         private void HookWebMessages()
@@ -229,6 +233,7 @@ namespace AutoBetHub
         }
 
         // ========== Plugin lifecycle ==========
+
         private async Task ActivatePluginAsync(string? slug)
         {
             if (string.IsNullOrWhiteSpace(slug)) return;
@@ -244,7 +249,7 @@ namespace AutoBetHub
 
             try
             {
-                // anh muốn giữ home nên không ShowPlugin
+                // trước khi mở plugin mới, tắt cái cũ
                 DeactivatePlugin();
 
                 var p = _plugins.FirstOrDefault(x =>
@@ -487,12 +492,22 @@ namespace AutoBetHub
                 _log.Warn("[Hub] CopyPluginsToLocal failed: " + ex.Message);
             }
         }
+
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
+            // nếu vẫn còn plugin đang chạy (cửa sổ plugin tự show), thì chỉ ẩn hub
+            if (_active != null)
+            {
+                e.Cancel = true;
+                _pendingClose = true; // đánh dấu: user muốn đóng thật
+                this.Hide();
+                _log.Info("[Hub] Main window hidden (plugin still active) – pending close.");
+                return;
+            }
+
+            _log.Info("[Hub] Main window closing, no active plugin -> shutdown app.");
             base.OnClosing(e);
-            e.Cancel = true;    // chặn đóng app
-            this.Hide();        // chỉ ẩn hub
-            _log.Info("[Hub] Main window hidden instead of closed.");
+            Application.Current.Shutdown();
         }
 
     }

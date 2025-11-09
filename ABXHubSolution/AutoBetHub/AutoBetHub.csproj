@@ -7,13 +7,13 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-	<ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!-- Stamp để đổi tên exe khi Publish -->
-<PropertyGroup>
-  <BuildStamp Condition="'$(BuildStamp)'==''">$([System.DateTime]::Now.ToString("yyMMdd-HHmmss"))</BuildStamp>
-</PropertyGroup>
+  <PropertyGroup>
+    <BuildStamp Condition="'$(BuildStamp)'==''">$([System.DateTime]::Now.ToString("yyMMdd-HHmmss"))</BuildStamp>
+  </PropertyGroup>
 
   <!-- ===== Debug ===== -->
   <PropertyGroup Condition="'$(Configuration)'=='Debug'">
@@ -21,7 +21,7 @@
     <PublishSingleFile>false</PublishSingleFile>
     <DebugType>portable</DebugType>
     <DefineConstants>TRACE;DEBUG</DefineConstants>
-	 <DebugSymbols>true</DebugSymbols>
+    <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
 
   <!-- ===== Release (single-file exe) ===== -->
@@ -36,35 +36,46 @@
     <DebugType>embedded</DebugType>
   </PropertyGroup>
 
-  <!-- Bắt buộc: Hub cần Core -->
+  <!-- Bắt buộc: tham chiếu core -->
   <ItemGroup>
     <ProjectReference Include="..\ABX.Core\ABX.Core.csproj" />
   </ItemGroup>
 
-  <!-- WebView2 control -->
+  <!-- WebView2 -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
   </ItemGroup>
 
-  <!-- Copy web shell -->
-  <ItemGroup>
+  <!-- Debug: bỏ Plugins khỏi project, và copy web -->
+  <ItemGroup Condition="'$(Configuration)'=='Debug'">
     <Compile Remove="Plugins\**" />
     <EmbeddedResource Remove="Plugins\**" />
     <None Remove="Plugins\**" />
+
     <None Remove="web\**\*" />
     <Content Include="web\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
+
+  <!-- Release: cũng phải copy web giống Debug để có hub.html -->
+  <ItemGroup Condition="'$(Configuration)'=='Release'">
+    <None Remove="web\**\*" />
+    <Content Include="web\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- Phần môi trường gốc của ông chủ -->
   <ItemGroup>
     <Page Remove="Plugins\**" />
   </ItemGroup>
+
   <ItemGroup>
     <None Remove="Assets\AppIcon.ico" />
   </ItemGroup>
-
-  <!-- Copy Plugins -->
 
   <!-- ZIP fixed runtime -->
   <ItemGroup>
@@ -74,29 +85,32 @@
     </None>
   </ItemGroup>
 
-  <!-- Embed ZIP ở Release (đồng bộ tên resource với ZipUtil) -->
+  <!-- Embed ZIP ở Release -->
   <ItemGroup Condition="'$(Configuration)'=='Release'">
     <EmbeddedResource Include="ThirdParty\WebView2Fixed_win-x64.zip">
       <LogicalName>AutoBetHub.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
+
+
+  <!-- Icon ứng dụng -->
   <ItemGroup>
     <Resource Include="Assets\AppIcon.ico" />
   </ItemGroup>
 
-  <!-- Ensure dirs (Debug) -->
+  <!-- Tạo thư mục output (Debug) -->
   <Target Name="EnsureOutDirs" BeforeTargets="Build">
     <MakeDir Directories="$(OutDir)ThirdParty" />
     <MakeDir Directories="$(OutDir)Plugins" />
   </Target>
 
-  <!-- Debug: bung ZIP fixed runtime -->
+  <!-- Debug: bung WebView2 fixed -->
   <Target Name="ExpandWv2ZipDebug" AfterTargets="Build" Condition="'$(Configuration)'=='Debug' and Exists('$(OutDir)ThirdParty\WebView2Fixed_win-x64.zip')">
     <Message Importance="high" Text="Expanding WebView2 ZIP to $(OutDir)ThirdParty\WebView2Fixed_win-x64" />
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Expand-Archive -Force -LiteralPath '$(OutDir)ThirdParty\WebView2Fixed_win-x64.zip' -DestinationPath '$(OutDir)ThirdParty\WebView2Fixed_win-x64'&quot;" />
   </Target>
 
-  <!-- Release: đổi tên exe sau Publish -->
+  <!-- Release: đổi tên exe theo stamp -->
   <Target Name="RenamePublishedExeWithStamp" AfterTargets="Publish" Condition="'$(Configuration)'=='Release'">
     <PropertyGroup>
       <PublishedExe>$(PublishDir)$(AssemblyName).exe</PublishedExe>
@@ -105,7 +119,7 @@
     <Move SourceFiles="$(PublishedExe)" DestinationFiles="$(StampedExe)" Condition="Exists('$(PublishedExe)')" />
   </Target>
 
-  <!-- Release: dọn DLL rời để còn 1 exe -->
+  <!-- Release: dọn DLL rời -->
   <Target Name="CleanWebView2LooseDlls" AfterTargets="Publish" Condition="'$(Configuration)'=='Release'">
     <ItemGroup>
       <_Wv2Loose Include="$(PublishDir)Microsoft.Web.WebView2*.dll" />
