@@ -1,0 +1,49 @@
+(() => {
+    const tail = 'MainGame/Canvas/Xocdia_MD_View_Ngang/PopupManager/ThongBaoPopup/CloseBtn';
+
+    function findNodeByTailCompat(t) {
+        if (window.__abx_findNodeByTail) return window.__abx_findNodeByTail(t);
+        if (window.findNodeByTail) return window.findNodeByTail(t);
+        if (!(window.cc && cc.director && cc.director.getScene)) return null;
+        const scene = cc.director.getScene();
+        const sceneName = scene.name;
+        const parts = t.split('/').filter(Boolean);
+        let idx = 0;
+        if (parts[0] === sceneName) idx = 1;
+        let node = scene;
+        for (; idx < parts.length; idx++) {
+            const name = parts[idx];
+            const kids = node.children || node._children || [];
+            const found = kids.find(k => k && k.name === name);
+            if (!found) return null;
+            node = found;
+        }
+        return node;
+    }
+
+    function clickNode(n) {
+        if (!n) return false;
+        const btn = n.getComponent && n.getComponent(cc.Button);
+        if (btn) {
+            cc.Component.EventHandler.emitEvents(
+                btn.clickEvents,
+                new cc.Event.EventCustom('click', true)
+            );
+            console.log('[popup-close] clicked via cc.Button', n.name);
+            return true;
+        }
+        if (typeof n._onTouchEnded === 'function') {
+            n._onTouchEnded();
+            console.log('[popup-close] clicked via _onTouchEnded', n.name);
+            return true;
+        }
+        return false;
+    }
+
+    const node = findNodeByTailCompat(tail);
+    if (node && clickNode(node)) {
+        console.log('[popup-close] ✅ closed:', tail);
+    } else {
+        console.warn('[popup-close] ❌ not found / not clickable', tail, node);
+    }
+})();

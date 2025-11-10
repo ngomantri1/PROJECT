@@ -327,8 +327,8 @@ Ví dụ không hợp lệ:
   IN -> I1";
 
 
-       const string TIP_STAKE_CSV =
-        @"Chuỗi TIỀN (StakeCsv)
+        const string TIP_STAKE_CSV =
+         @"Chuỗi TIỀN (StakeCsv)
 • Có thể nhập 1 chuỗi hoặc NHIỀU chuỗi tiền.
 • Nếu nhập NHIỀU chuỗi: MỖI CHUỖI 1 DÒNG. Ví dụ:
   1000-2000-4000-8000
@@ -1267,7 +1267,7 @@ Ví dụ không hợp lệ:
                                     // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
                                     if (_autoFollowNewest)
                                     {
-                                       ShowFirstPage();
+                                        ShowFirstPage();
                                     }
                                     else
                                     {
@@ -1653,167 +1653,69 @@ Ví dụ không hợp lệ:
 
         // ====== Auto fill ======
         // Điền cả 2 trường (nhanh + chắc chắn), KHÔNG dùng postMessage
+        // ====== Auto fill ======
+        // Gửi user/pass sang game (Cocos) và bảo JS mở popup + điền + click
+        // ====== Auto fill ======
+        // Chỉ tự động điền tên đăng nhập và mật khẩu vào popup Cocos
+        // KHÔNG click nút Đăng nhập trong popup
         private async Task AutoFillLoginAsync()
         {
-            if (Web == null) return;
-            await EnsureWebReadyAsync();
-
-            var u = T(TxtUser);
-            var p = P(TxtPass);
-            if (string.IsNullOrEmpty(u) && string.IsNullOrEmpty(p))
+            // 1. webview chưa sẵn sàng thì thôi
+            if (!IsWebAlive)
             {
-                Log("[AutoFill] skipped (empty creds)");
+                Log("[AutoFill] skipped (web not ready)");
                 return;
             }
 
-            // Fast pass: thử điền nhanh cả 2 trong 1 lần – đồng bộ
-            string fastJs =
-        @"(function(u,p){
-  const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}};
-  const low=s=>rm(String(s||'').trim().toLowerCase());
-  const vis=el=>{if(!el)return false;const r=el.getBoundingClientRect(),cs=getComputedStyle(el);
-                 return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
-  const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
-  const q =(s,d)=>(d||document).querySelector(s);
-
-  function openLogin(d){
-    try{
-      const btn = qa('a,button,[role=""button""],.btn,.base-button,.el-button,.ant-btn,.v-btn', d)
-        .find(el=>/dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
-      if(btn) btn.click();
-    }catch(_){}
-  }
-  function pickUser(d){
-    const ss=['input[autocomplete=""username""]','input[placeholder*=""đăng nhập"" i]','input[placeholder*=""ten dang nhap"" i]',
-              'input[placeholder*=""tài khoản"" i]','input[placeholder*=""tai khoan"" i]',
-              'input[name*=""user"" i]','input[name*=""account"" i]','input[id*=""user"" i]',
-              'input[type=""email""]','input[type=""text""]'];
-    for(const s of ss){const el=q(s,d); if(el&&vis(el)) return el;} return null;
-  }
-  function pickPass(d){
-    const ss=['input[type=""password""]','input[autocomplete=""current-password""]',
-              'input[placeholder*=""mật khẩu"" i]','input[placeholder*=""mat khau"" i]',
-              'input[name*=""pass"" i]','input[id*=""pass"" i]'];
-    for(const s of ss){const el=q(s,d); if(el&&vis(el)) return el;} return null;
-  }
-
-  const frames=[window].concat(Array.from(document.querySelectorAll('iframe'))
-                 .map(i=>{try{return i.contentWindow;}catch(_){return null;}}).filter(Boolean));
-  let doneU=false, doneP=false;
-  for(const w of frames){
-    try{
-      const d=w.document; if(!(doneU&&doneP)) openLogin(d);
-      const uEl=!doneU?pickUser(d):null; const pEl=!doneP?pickPass(d):null;
-      if(uEl){ uEl.focus(); uEl.value=u||''; uEl.dispatchEvent(new Event('input',{bubbles:true})); uEl.dispatchEvent(new Event('change',{bubbles:true})); doneU=true; }
-      if(pEl){ pEl.focus(); pEl.value=p||''; pEl.dispatchEvent(new Event('input',{bubbles:true})); pEl.dispatchEvent(new Event('change',{bubbles:true})); doneP=true; }
-      if(doneU&&doneP) break;
-    }catch(_){}
-  }
-  return (doneU?1:0)+(doneP?2:0);
-})(" + JsonSerializer.Serialize(u) + "," + JsonSerializer.Serialize(p) + @");";
-
-            string fast = "0";
-            try { fast = await ExecJsAsyncStr(fastJs); Log("[AutoFillFast] " + fast); }
-            catch (Exception ex) { Log("[AutoFillFast] " + ex); }
-
-            // Fallback chắc chắn: nếu chưa đủ cả 2 trường thì điền lại từng trường
-            if (fast != "3")
-            {
-                try { await SyncLoginFieldAsync("user", u); } catch { }
-                try { await SyncLoginFieldAsync("pass", p); } catch { }
-            }
-
-            // Bấm đăng nhập sớm
-            await TryAutoLoginAsync(500, force: true);
-        }
-
-
-
-        // ====== Điền user/pass trong mọi frame (không timeout) ======
-        // Điền 1 trường (user/pass) trong mọi iframe same-origin – chạy đồng bộ, không phụ thuộc postMessage
-        private async Task SyncLoginFieldAsync(string which, string value)
-        {
-            if (Web == null) return;
+            // 2. đảm bảo web đã init CoreWebView2
             await EnsureWebReadyAsync();
-
-            string js =
-        @"(function(which,val){
-  const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}};
-  const low=s=>rm(String(s||'').trim().toLowerCase());
-  const vis=el=>{if(!el)return false;const r=el.getBoundingClientRect(),cs=getComputedStyle(el);
-                 return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
-  const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
-  const q =(s,d)=>(d||document).querySelector(s);
-
-  function openLogin(d){
-    try{
-      const btn = qa('a,button,[role=""button""],.btn,.base-button,.el-button,.ant-btn,.v-btn', d)
-        .find(el=>/dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
-      if(btn) btn.click();
-    }catch(_){}
-  }
-
-  function pickUser(d){
-    const ss=['input[autocomplete=""username""]','input[placeholder*=""đăng nhập"" i]','input[placeholder*=""ten dang nhap"" i]',
-              'input[placeholder*=""tài khoản"" i]','input[placeholder*=""tai khoan"" i]',
-              'input[name*=""user"" i]','input[name*=""account"" i]','input[id*=""user"" i]',
-              'input[type=""email""]','input[type=""text""]'];
-    for(const s of ss){ const el=q(s,d); if(el&&vis(el)) return el; } return null;
-  }
-  function pickPass(d){
-    const ss=['input[type=""password""]','input[autocomplete=""current-password""]',
-              'input[placeholder*=""mật khẩu"" i]','input[placeholder*=""mat khau"" i]',
-              'input[name*=""pass"" i]','input[id*=""pass"" i]'];
-    for(const s of ss){ const el=q(s,d); if(el&&vis(el)) return el; } return null;
-  }
-
-  const frames=[window].concat(Array.from(document.querySelectorAll('iframe'))
-                 .map(i=>{try{return i.contentWindow;}catch(_){return null;}}).filter(Boolean));
-
-  let el=null;
-  for(const w of frames){
-    try{
-      const d=w.document;
-      openLogin(d);
-      el = which==='user' ? pickUser(d) : pickPass(d);
-      if(el) break;
-    }catch(_){}
-  }
-  if(!el) return 'no-field';
-  try{
-    el.focus(); el.value = val || '';
-    el.dispatchEvent(new Event('input',{bubbles:true}));
-    el.dispatchEvent(new Event('change',{bubbles:true}));
-    return 'ok';
-  }catch(e){ return 'err:'+e; }
-})(" + JsonSerializer.Serialize(which) + "," + JsonSerializer.Serialize(value) + @");";
-
-            try
+            if (!IsWebAlive)
             {
-                var res = await ExecJsAsyncStr(js);
-                Log("[SyncLoginField] " + res);
+                Log("[AutoFill] stopped (web lost after EnsureWebReadyAsync)");
+                return;
             }
-            catch (Exception ex) { Log("[SyncLoginField] " + ex); }
+
+            // 3. lấy user/pass từ panel WPF
+            var u = T(TxtUser);   // ông đang có hàm T(...) lấy TextBox.Text
+            var p = P(TxtPass);   // ông đang có hàm P(...) lấy PasswordBox.Password
+
+            // 4. gửi credential sang JS để nó cập nhật window.__cw_loginUser / __cw_loginPass
+            var payload = new
+            {
+                __cw_cmd = "set_login",
+                user = u ?? "",
+                pass = p ?? "",
+                autoSubmit = false   // KHÔNG cho JS tự bấm
+            };
+            string json = System.Text.Json.JsonSerializer.Serialize(payload);
+            Web.CoreWebView2.PostWebMessageAsJson(json);
+            Log("[AutoFill] sent set_login to webview");
+
+            // 5. bảo JS mở popup (nếu header còn nút) và ĐIỀN, nhưng KHÔNG bấm nút login
+            var js = @"
+        (async function(){
+            try {
+                // mở popup nếu đang còn nút đăng nhập trên header
+                if (window.__cw_clickLoginIfNeed) {
+                    window.__cw_clickLoginIfNeed();
+                }
+                // đợi popup render ra
+                await new Promise(r => setTimeout(r, 200));
+                // điền user/pass vừa gửi ở bước 4
+                if (window.__cw_fillLoginPopup) {
+                    window.__cw_fillLoginPopup();
+                }
+                // KHÔNG gọi window.__cw_clickPopupLogin() ở đây
+            } catch (e) {
+                console.warn('[AutoFillLoginAsync js] error', e);
+            }
+        })();
+    ";
+            await Web.CoreWebView2.ExecuteScriptAsync(js);
+
+            Log("[AutoFill] done (filled only, no click)");
         }
 
-
-        // Gọi login trên trang Home: AutoFill -> ClickLoginButtonAsync
-        private async Task<bool> TryAutoLoginFromHomeAsync()
-        {
-            try
-            {
-                Log("[HOME] Auto-login: start");
-                await AutoFillLoginAsync(); // giữ nguyên hàm sẵn có
-                var res = await ClickLoginButtonAsync(18000); // hàm bạn đã có (không submit form)
-                Log("[HOME] Auto-login: " + res);
-                return string.Equals(res, "clicked", StringComparison.OrdinalIgnoreCase);
-            }
-            catch (Exception ex)
-            {
-                Log("[HOME] Auto-login: error " + ex.Message);
-                return false;
-            }
-        }
 
         // Bấm 'Chơi Xóc Đĩa Live' từ Home:
         // 1) Ưu tiên gọi API JS nếu có (__abx_hw_clickPlayXDL), 
@@ -2044,7 +1946,7 @@ Ví dụ không hợp lệ:
             _userCts = await DebounceAsync(_userCts, 150, async () =>
             {
                 await SaveConfigAsync();
-                await SyncLoginFieldAsync("user", T(TxtUser));
+                await AutoFillLoginAsync();
             });
         }
         private async void TxtPass_PasswordChanged(object sender, RoutedEventArgs e)
@@ -2053,7 +1955,7 @@ Ví dụ không hợp lệ:
             _passCts = await DebounceAsync(_passCts, 150, async () =>
             {
                 await SaveConfigAsync();
-                await SyncLoginFieldAsync("pass", P(TxtPass));
+                await AutoFillLoginAsync();
             });
         }
 
@@ -2208,7 +2110,7 @@ Ví dụ không hợp lệ:
                 _autoLoginBusy = true;
 
                 if (delayMs > 0) await Task.Delay(delayMs);
-                var res = await ClickLoginButtonAsync(18000);
+                var res = await ClickLoginButtonAsync();
                 Log("[AutoLogin] " + res);
                 _autoLoginLast = DateTime.UtcNow;
             }
@@ -2222,155 +2124,37 @@ Ví dụ không hợp lệ:
             }
         }
 
-        // ====== Click login (ưu tiên selector bạn cung cấp) + poll trạng thái ======
-        private async Task<string> ClickLoginButtonAsync(int timeoutMs = 18000)
+        // Bấm nút "Đăng nhập" TRONG POPUP COCOS
+        private async Task<string> ClickLoginButtonAsync()
         {
+            if (!IsWebAlive)
+                return "web-dead";
+
             await EnsureWebReadyAsync();
+            if (!IsWebAlive)
+                return "web-dead-after-ensure";
 
-            // 1) Bấm nút Đăng nhập theo selector header của NET88
-            string clickKnownJs =
-        @"(function(){
-  try{
-    const sel1 = '#page > header > div > div > div.d-flex.align-items-center.justify-content-between.w-100 > div > div > button.base-button.btn.base-button--bg-crimson-fill';
-    const sel2 = 'button.base-button.btn.base-button--bg-crimson-fill';
-    let btn = document.querySelector(sel1) || document.querySelector(sel2);
-    if(!btn) return 'no-el';
-
-    const vis = el => { if(!el) return false; const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
-      return r.width>4 && r.height>4 && cs.display!=='none' && cs.visibility!=='hidden' && cs.pointerEvents!=='none'; };
-
-    function fire(el){
-      if(!el) return false;
-      try{ el.scrollIntoView({block:'center', inline:'center'}); }catch(_){}
-      const r = el.getBoundingClientRect();
-      const cx = Math.max(0, Math.floor(r.left + r.width/2));
-      const cy = Math.max(0, Math.floor(r.top  + r.height/2));
-      const top = document.elementFromPoint(cx, cy) || el;
-      const seq = ['pointerover','mouseover','pointerenter','mouseenter','pointerdown','mousedown','pointerup','mouseup','click'];
-      for(const t of seq){
-        top.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,clientX:cx,clientY:cy,view:window}));
-      }
-      try{ top.click(); }catch(_){}
-      return true;
-    }
-
-    // nhiều site gán handler ở content bên trong
-    const target = btn.querySelector('.base-button--content') || btn;
-    if(!vis(target)) return 'not-visible';
-    fire(target);
-    return 'clicked-known';
-  }catch(e){ return 'err:'+e; }
-})();";
-
-            var clickRes = await ExecJsAsyncStr(clickKnownJs);
-            Log("[ClickLoginKnown] " + (string.IsNullOrEmpty(clickRes) ? "<empty>" : clickRes));
-
-            // Nếu chưa tìm được button theo selector bạn đưa, thử generic các form/iframe như cũ
-            if (clickRes == "no-el" || clickRes == "not-visible")
-            {
-                string clickFallbackJs =
-        @"(function(){
-  try{
-    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}};
-    const low=s=>rm(String(s||'').trim().toLowerCase());
-    const vis=el=>{if(!el)return false;const r=el.getBoundingClientRect(),cs=getComputedStyle(el);
-                   return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
-    const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
-
-    function fire(el){
-      if(!el) return false;
-      try{ el.scrollIntoView({block:'center', inline:'center'}); }catch(_){}
-      const r=el.getBoundingClientRect(), x=r.left+r.width/2, y=r.top+r.height/2;
-      const seq=['pointerdown','mousedown','pointerup','mouseup','click'];
-      for(const t of seq){ el.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,clientX:x,clientY:y,view:window})); }
-      try{ el.click(); }catch(_){}
-      return true;
-    }
-    function findInputs(d){
-      const pass=d.querySelector('input[type=""password""],input[autocomplete=""current-password""]');
-      const user=d.querySelector('input[autocomplete=""username""],input[name*=""user"" i],input[type=""text""],input[type=""email""]');
-      return {user,pass};
-    }
-    function tryFormSubmit(d){
-      const {user,pass}=findInputs(d);
-      let form=(pass&&pass.form)?pass.form:(pass?pass.closest('form'):null);
-      if(!form && user) form=user.closest('form');
-      if(!form) return false;
-      const btn = form.querySelector('button[type=""submit""],input[type=""submit""]') ||
-                  form.querySelector('button,.btn,.base-button,.el-button');
-      if(btn && vis(btn) && fire(btn)) return 'clicked-submit';
-      try{ if(form.requestSubmit){ form.requestSubmit(); return 'requestSubmit'; } }catch(_){}
-      try{ form.submit(); return 'form-submit'; }catch(_){}
-      return false;
-    }
-    function pressEnterOnPass(d){
-      const pass = d.querySelector('input[type=""password""],input[autocomplete=""current-password""]');
-      if(!pass || !vis(pass)) return false;
-      pass.focus();
-      const evt = new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true});
-      try{ pass.dispatchEvent(evt); }catch(_){}
-      return 'pressed-enter';
-    }
-    function clickGlobalLogin(d){
-      const cand = qa('a,button,[role=""button""],.btn,.base-button,.el-button', d)
-        .find(el=>vis(el)&&/dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)||low(el.value)));
-      return cand && fire(cand) ? 'clicked-global' : false;
-    }
-
-    const frames=[window].concat(Array.from(document.querySelectorAll('iframe'))
-                   .map(i=>{try{return i.contentWindow;}catch(_){return null;}}).filter(Boolean));
-
-    for(const w of frames){ try{ const r=tryFormSubmit(w.document); if(r) return String(r); }catch(_){ } }
-    for(const w of frames){ try{ const r=pressEnterOnPass(w.document); if(r) return String(r); }catch(_){ } }
-    const g = clickGlobalLogin(document); if(g) return String(g);
-
-    return 'no-login-button';
-  }catch(e){ return 'err:'+e; }
-})();";
-                var r2 = await ExecJsAsyncStr(clickFallbackJs);
-                Log("[ClickLoginFallback] " + r2);
-                clickRes = r2;
+            // gọi đúng hàm JS bạn đã tạo trong js_home_v2.js
+            var js = @"
+    (function(){
+        try {
+            if (window.__cw_clickPopupLogin) {
+                var ok = window.__cw_clickPopupLogin();
+                return ok ? 'clicked' : 'no-node';
             }
-
-            if (clickRes.StartsWith("err")) return clickRes;
-            if (clickRes == "no-login-button" || clickRes == "not-visible") return clickRes;
-
-            // 2) Poll trạng thái đăng nhập
-            var t0 = DateTime.UtcNow;
-            while ((DateTime.UtcNow - t0).TotalMilliseconds < timeoutMs)
-            {
-                string stateJs =
-        @"(function(){
-  try{
-    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\\u036f]/g,'');}catch(_){return s||'';}};
-    const low=s=>rm(String(s||'').trim().toLowerCase());
-    const vis=el=>{if(!el)return false;const r=el.getBoundingClientRect(),cs=getComputedStyle(el);
-                   return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
-    const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
-    const hasLogout = qa('a,button,[role=""button""],.btn,.base-button')
-        .some(el => /dang\\s*xuat|đăng\\s*xuất|logout|sign\\s*out/i.test(low(el.textContent)));
-    const hasLogin  = qa('a,button,[role=""button""],.btn,.base-button')
-        .some(el => vis(el) && /dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
-    let passVisible = false;
-    try{
-      const frames=[window].concat(Array.from(document.querySelectorAll('iframe'))
-                      .map(i=>{try{return i.contentWindow;}catch(_){return null;}}).filter(Boolean));
-      for(const w of frames){
-        try{
-          const arr = Array.from(w.document.querySelectorAll('input[type=""password""]'));
-          if (arr.some(el=>vis(el))) { passVisible = true; break; }
-        }catch(_){}
-      }
-    }catch(_){}
-    return (hasLogout || (!hasLogin && !passVisible)) ? '1' : '0';
-  }catch(e){ return 'err:'+e; }
-})();";
-                var ok = await ExecJsAsyncStr(stateJs);
-                if (ok == "1") return "login-ok";
-                await Task.Delay(250);
-            }
-            return "login-timeout";
+            return 'no-fn';
+        } catch (e) {
+            return 'err:' + (e && e.message ? e.message : e);
         }
+    })();";
+
+            // bạn đã có helper ExecJsAsyncStr(...) nên dùng luôn để bỏ dấu ngoặc kép
+            var res = await ExecJsAsyncStr(js);
+            Log("[GAME] Popup-login (cocos): " + res);
+            return res;
+        }
+
+
 
 
         // Gọi Login từ HOME:
@@ -2841,15 +2625,32 @@ Ví dụ không hợp lệ:
                 await EnsureWebReadyAsync();
 
                 // 1) Ưu tiên gọi API JS: click Login trước
-                var rLogin = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickLogin?window.__abx_hw_clickLogin():'no-api');}catch(e){return 'err:'+e.message;}})();");
-                Log("[HOME] clickLogin via JS => " + rLogin);
+                var res = await ClickLoginButtonAsync();
+                Log("[AutoLoginWatch] " + res);
 
                 // đợi nhẹ để trang xử lý login (nếu có)
                 await Task.Delay(900);
 
-                // 2) Tiếp tục gọi API JS: click 'Chơi Xóc Đĩa Live'
-                var rPlay = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickPlayXDL?window.__abx_hw_clickPlayXDL():'no-api');}catch(e){return 'err:'+e.message;}})();");
-                Log("[HOME] clickPlay via JS => " + rPlay);
+                // 2) Tiếp tục gọi API JS: mở Xóc Đĩa Sới Live
+                var rPlay = await Web.ExecuteScriptAsync(@"
+                (function () {
+                    try {
+                        // hàm JS bạn đã tạo ở phía trang
+                        if (typeof window.__cw_openXocDiaSoi === 'function') {
+                            var r = window.__cw_openXocDiaSoi();
+                
+                            // chuẩn hóa giá trị trả về một chút để C# dễ kiểm tra
+                            if (r === true || r === 'ok') return 'ok';
+                            return r || 'called';
+                        }
+                        return 'no-api';
+                    } catch (e) {
+                        return 'err:' + (e && e.message ? e.message : e);
+                    }
+                })();
+                ");
+                Log("[HOME] open xoc-dia-soi via JS => " + rPlay);
+
 
                 // 3) Fallback: nếu JS API không có/không ok, quay về hành vi cũ
                 var okByJs = (rPlay ?? "").IndexOf("ok", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -2865,28 +2666,28 @@ Ví dụ không hợp lệ:
                 }
 
                 // 4) Cầu nối: đồng bộ & autostart khi đã vào bàn
-                if (_bridge != null)
-                {
-                    // nếu bạn có sửa JS ngoài, nạp lại và re-register
-                    var latestJs = await LoadAppJsAsyncFallback();
-                    if (!string.IsNullOrEmpty(latestJs))
-                        await _bridge.UpdateAppJsAsync(latestJs);
+                //if (_bridge != null)
+                //{
+                //    // nếu bạn có sửa JS ngoài, nạp lại và re-register
+                //    var latestJs = await LoadAppJsAsyncFallback();
+                //    if (!string.IsNullOrEmpty(latestJs))
+                //        await _bridge.UpdateAppJsAsync(latestJs);
 
-                    await _bridge.ForceRefreshAsync();
-                }
+                //    await _bridge.ForceRefreshAsync();
+                //}
 
                 // 5) Poll cocos sẵn sàng (giữ nguyên như cũ)
-                var ok = false;
-                for (int i = 0; i < 100; i++)
-                {
-                    var ready = await Web.ExecuteScriptAsync(@"
-                (function(){ try{ return !!(window.cc && cc.director && cc.director.getScene); }
-                             catch(e){ return false; } })()");
-                    Log("[VaoXocDia_Click -> load xoc dia live] " + ready);
-                    if (bool.TryParse(ready, out var b) && b) { ok = true; break; }
-                    await Task.Delay(300);
-                }
-                if (!ok) Log("[CW] Game not ready (Cocos scene not found)");
+                //var ok = false;
+                //for (int i = 0; i < 100; i++)
+                //{
+                //    var ready = await Web.ExecuteScriptAsync(@"
+                //(function(){ try{ return !!(window.cc && cc.director && cc.director.getScene); }
+                //             catch(e){ return false; } })()");
+                //    Log("[VaoXocDia_Click -> load xoc dia live] " + ready);
+                //    if (bool.TryParse(ready, out var b) && b) { ok = true; break; }
+                //    await Task.Delay(300);
+                //}
+                //if (!ok) Log("[CW] Game not ready (Cocos scene not found)");
 
                 // 6) Bật push tick bên canvas (như cũ)
                 await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
@@ -2964,7 +2765,7 @@ Ví dụ không hợp lệ:
                                     Log("[AutoLoginWatch] need-login → auto-fill + click");
                                     await AutoFillLoginAsync(); // hàm này đã có fallback và tự gọi TryAutoLoginAsync
                                                                 // Trong trường hợp trang không mở form, ép Click thêm lần nữa:
-                                    var res = await ClickLoginButtonAsync(18000);
+                                    var res = await ClickLoginButtonAsync();
                                     Log("[AutoLoginWatch] " + res);
                                     _autoLoginLast = DateTime.UtcNow;
                                 }

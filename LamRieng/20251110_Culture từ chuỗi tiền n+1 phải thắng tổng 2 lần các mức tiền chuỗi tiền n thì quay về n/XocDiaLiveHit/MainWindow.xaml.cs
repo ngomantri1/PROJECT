@@ -397,7 +397,7 @@ Ví dụ không hợp lệ:
             public int BetStrategyIndex { get; set; } = 4; // mặc định "5. Theo cầu trước thông minh"
             public string BetSeq { get; set; } = "";       // giá trị ô "CHUỖI CẦU"
             public string BetPatterns { get; set; } = "";  // giá trị ô "CÁC THẾ CẦU"
-            public string MoneyStrategy { get; set; } = "Victor2";//IncreaseWhenLose
+            public string MoneyStrategy { get; set; } = "MultiChain";//IncreaseWhenLose
             public double CutProfit { get; set; } = 0; // 0 = tắt cắt lãi
             public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
             public string BetSeqCL { get; set; } = "";        // cho Chiến lược 1
@@ -633,8 +633,6 @@ Ví dụ không hợp lệ:
 
             // 2) Sau đó mới dựng UI
             InitializeComponent();
-            this.ShowInTaskbar = true;                       // có icon riêng
-            this.WindowStartupLocation = WindowStartupLocation.CenterScreen; // tuỳ, cho đẹp
             // đảm bảo về Home UI lúc khởi động
             SetModeUi(false);
             BetGrid.ItemsSource = _betPage;
@@ -927,7 +925,7 @@ Ví dụ không hợp lệ:
 
 
                 if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString();
-                if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
+                if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "MultiChain");
                 LoadStakeCsvForCurrentMoneyStrategy();// NEW: nạp chuỗi tiền theo “Quản lý vốn” hiện tại
 
 
@@ -1780,6 +1778,25 @@ Ví dụ không hợp lệ:
             catch (Exception ex) { Log("[SyncLoginField] " + ex); }
         }
 
+
+        // Gọi login trên trang Home: AutoFill -> ClickLoginButtonAsync
+        private async Task<bool> TryAutoLoginFromHomeAsync()
+        {
+            try
+            {
+                Log("[HOME] Auto-login: start");
+                await AutoFillLoginAsync(); // giữ nguyên hàm sẵn có
+                var res = await ClickLoginButtonAsync(18000); // hàm bạn đã có (không submit form)
+                Log("[HOME] Auto-login: " + res);
+                return string.Equals(res, "clicked", StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                Log("[HOME] Auto-login: error " + ex.Message);
+                return false;
+            }
+        }
+
         // Bấm 'Chơi Xóc Đĩa Live' từ Home:
         // 1) Ưu tiên gọi API JS nếu có (__abx_hw_clickPlayXDL), 
         // 2) fallback sang C# ClickXocDiaTitleAsync(timeout)
@@ -2048,7 +2065,7 @@ Ví dụ không hợp lệ:
         private string GetMoneyStrategyFromUI()
         {
             return (CmbMoneyStrategy?.SelectedItem as ComboBoxItem)?.Tag as string
-                   ?? "IncreaseWhenLose";
+                   ?? "MultiChain";
         }
 
         async void CmbMoneyStrategy_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -3230,7 +3247,7 @@ Ví dụ không hợp lệ:
                 UiDispatcher = Dispatcher,
                 GetCooldown = () => _cooldown,
                 SetCooldown = (v) => _cooldown = v,
-                MoneyStrategyId = _cfg.MoneyStrategy ?? "IncreaseWhenLose",
+                MoneyStrategyId = _cfg.MoneyStrategy ?? "MultiChain",
                 BetSeq = _cfg.BetSeq ?? "",
                 BetPatterns = _cfg.BetPatterns ?? "",
 
@@ -3396,7 +3413,7 @@ Ví dụ không hợp lệ:
 
                 _dec = new DecisionState();
                 _cooldown = false;
-                if (CheckLicense)
+                if (false)
                 {
                     // === PRE-CHECK: Trial hoặc License ===
                     bool isTrial = (ChkTrial?.IsChecked == true);

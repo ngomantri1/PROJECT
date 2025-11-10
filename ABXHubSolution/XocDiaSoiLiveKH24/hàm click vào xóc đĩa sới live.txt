@@ -1,0 +1,87 @@
+(() => {
+    // 1) những tail nghi được dùng để mở Xóc Đĩa Sới
+    // bạn đã xác nhận cái dưới chạy được nên mình để lên đầu
+    const GAME_TAILS = [
+        'MainGame/Canvas/widget-left/offset-left/scrollview-game/mask/view/content/page_game_XocDiaLive/btnXocDia'
+    ];
+
+    // 2) hàm tìm node theo tail – ưu tiên dùng hàm sẵn có của bạn
+    function findNodeByTailCompat(tail) {
+        if (!tail) return null;
+
+        // dùng lại hàm trong file dài của bạn nếu có
+        if (window.__abx_findNodeByTail) return window.__abx_findNodeByTail(tail);
+        if (window.findNodeByTail) return window.findNodeByTail(tail);
+
+        // fallback tự đi từ scene
+        if (!(window.cc && cc.director && cc.director.getScene)) return null;
+        const scene = cc.director.getScene();
+        const sceneName = scene.name;
+        let parts = tail.split('/').filter(Boolean);
+        if (parts[0] === sceneName) parts.shift();
+
+        let node = scene;
+        for (let i = 0; i < parts.length; i++) {
+            const name = parts[i];
+            const kids = node.children || node._children || [];
+            let found = null;
+            for (let j = 0; j < kids.length; j++) {
+                if (kids[j] && kids[j].name === name) {
+                    found = kids[j];
+                    break;
+                }
+            }
+            if (!found) return null;
+            node = found;
+        }
+        return node;
+    }
+
+    // 3) hàm click node cocos
+    function clickCocosNode(node) {
+        if (!node) return false;
+
+        // ưu tiên cc.Button
+        try {
+            const btn = node.getComponent && node.getComponent(cc.Button);
+            if (btn) {
+                cc.Component.EventHandler.emitEvents(
+                    btn.clickEvents,
+                    new cc.Event.EventCustom('click', true)
+                );
+                return true;
+            }
+        } catch (e) {}
+
+        // fallback mấy node dùng touch custom
+        try {
+            if (typeof node._onTouchEnded === 'function') {
+                node._onTouchEnded();
+                return true;
+            }
+        } catch (e) {}
+
+        return false;
+    }
+
+        for (const tail of GAME_TAILS) {
+            const node = findNodeByTailCompat(tail);
+            if (!node) {
+                console.log('[xocdia-soi] tail not found:', tail);
+                continue;
+            }
+
+            const ok = clickCocosNode(node);
+            if (ok) {
+                console.log('[xocdia-soi] ✅ opened by tail =', tail, 'node =', node.name);
+                return tail; // trả về để bạn biết chắc tail nào
+            } else {
+                console.log('[xocdia-soi] node found but not clickable:', tail);
+            }
+        }
+
+        console.warn('[xocdia-soi] ❌ không mở được, cần bổ sung đúng tail.');
+
+
+    console.log('%cĐã tạo window.openXocDiaSoi(). Gõ openXocDiaSoi() để chạy.', 'color:#0f0');
+})();
