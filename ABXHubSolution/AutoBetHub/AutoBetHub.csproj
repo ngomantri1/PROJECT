@@ -59,10 +59,17 @@
     </Content>
   </ItemGroup>
 
-  <!-- Release: cũng phải copy web giống Debug để có hub.html -->
+  <!-- Release: copy web + copy luôn Plugins vào publish -->
   <ItemGroup Condition="'$(Configuration)'=='Release'">
+    <!-- web để Home có hub.html -->
     <None Remove="web\**\*" />
     <Content Include="web\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+
+    <!-- THÊM: đóng gói luôn toàn bộ Plugins để khi single-file bung ra vẫn có thư mục Plugins -->
+    <Content Include="Plugins\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
@@ -92,7 +99,6 @@
     </EmbeddedResource>
   </ItemGroup>
 
-
   <!-- Icon ứng dụng -->
   <ItemGroup>
     <Resource Include="Assets\AppIcon.ico" />
@@ -105,7 +111,7 @@
   </Target>
 
   <!-- Debug: bung WebView2 fixed -->
-  <Target Name="ExpandWv2ZipDebug" AfterTargets="Build" Condition="'$(Configuration)'=='Debug' and Exists('$(OutDir)ThirdParty\WebView2Fixed_win-x64.zip')">
+  <Target Name="ExpandWv2ZipDebug" AfterTargets="Build" Condition=" '$(Configuration)' == 'Debug' and Exists('$(OutDir)ThirdParty\WebView2Fixed_win-x64.zip') ">
     <Message Importance="high" Text="Expanding WebView2 ZIP to $(OutDir)ThirdParty\WebView2Fixed_win-x64" />
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Expand-Archive -Force -LiteralPath '$(OutDir)ThirdParty\WebView2Fixed_win-x64.zip' -DestinationPath '$(OutDir)ThirdParty\WebView2Fixed_win-x64'&quot;" />
   </Target>
