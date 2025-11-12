@@ -228,6 +228,7 @@ namespace XocDiaSoiLiveKH24
         private DateTime _lastGameTickUtc = DateTime.MinValue;
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
         private bool _isGameUi = false;              // trạng thái UI hiện hành
+        private bool _lockGameUi = false;// NEW: khóa tạm để khỏi bị timer kéo về home sau khi mình chủ động vào game
         private System.Windows.Threading.DispatcherTimer? _uiModeTimer;
 
         private static readonly TimeSpan GameTickFresh = TimeSpan.FromSeconds(3);
@@ -757,34 +758,58 @@ Ví dụ không hợp lệ:
             EnqueueFile(line);
         }
 
+        private bool HasAnyWebTick()
+        {
+            bool hasGame = _lastGameTickUtc != DateTime.MinValue;
+            bool hasHome = _lastHomeTickUtc != DateTime.MinValue;
+
+            Log($"[HasAnyWebTick] hasGame={hasGame} ({_lastGameTickUtc:O}), hasHome={hasHome} ({_lastHomeTickUtc:O})");
+
+            return hasGame || hasHome;
+        }
+
+
         private void SetModeUi(bool isGame)
         {
             try
             {
-                Dispatcher.Invoke(() =>
+                if (isGame)
                 {
-                    // Nút cũ (đã có sẵn)
-                    //if (BtnVaoXocDia != null)
-                    //    BtnVaoXocDia.Visibility = isGame ? Visibility.Collapsed : Visibility.Visible;
-                    //if (BtnPlay != null)
-                    //    BtnPlay.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
-
-                    // NHÓM MỚI: ẩn/hiện theo chế độ
+                    // ẩn vùng đăng nhập + điều hướng
                     if (GroupLoginNav != null)
-                        GroupLoginNav.Visibility = isGame ? Visibility.Collapsed : Visibility.Visible;
+                        GroupLoginNav.Visibility = Visibility.Collapsed;
 
+                    // hiện vùng chiến lược / quản lý vốn / trạng thái
                     if (GroupStrategyMoney != null)
-                        GroupStrategyMoney.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
-
-                    if (GroupStatus != null)
-                        GroupStatus.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
-
+                        GroupStrategyMoney.Visibility = Visibility.Visible;
                     if (GroupConsole != null)
-                        GroupConsole.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
-                });
+                        GroupConsole.Visibility = Visibility.Visible;
+                    if (GroupStatus != null)
+                        GroupStatus.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    // hiện vùng đăng nhập + điều hướng
+                    if (GroupLoginNav != null)
+                        GroupLoginNav.Visibility = Visibility.Visible;
+
+                    // ẩn vùng chiến lược / quản lý vốn / trạng thái
+                    if (GroupStrategyMoney != null)
+                        GroupStrategyMoney.Visibility = Visibility.Collapsed;   // <--- sửa về Collapsed
+                    if (GroupConsole != null)
+                        GroupConsole.Visibility = Visibility.Collapsed;
+                    if (GroupStatus != null)
+                        GroupStatus.Visibility = Visibility.Collapsed;
+                }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log("[SetModeUi] " + ex);
+            }
         }
+
+
+
 
         private string GetAiNGramStatePath()
         {
@@ -809,25 +834,34 @@ Ví dụ không hợp lệ:
 
         private void RecomputeUiMode()
         {
-            // Ưu tiên URL: nếu KHÔNG ở games.* thì về Home ngay để tránh timer lôi về GAME
-            if (!GetIsGameByUrlFallback())
-            {
-                ApplyUiMode(false);
-                return;
-            }
-
             var now = DateTime.UtcNow;
             var recentGame = (now - _lastGameTickUtc) <= GameTickFresh;
             var recentHome = (now - _lastHomeTickUtc) <= HomeTickFresh;
 
             bool nextIsGame;
-            if (recentGame && !recentHome) nextIsGame = true;
-            else if (!recentGame && recentHome) nextIsGame = false;
-            else if (recentGame && recentHome) nextIsGame = true;   // giữ logic cũ
-            else nextIsGame = GetIsGameByUrlFallback();
+            if (recentGame && !recentHome)
+                nextIsGame = true;
+            else if (!recentGame && recentHome)
+                nextIsGame = false;
+            else if (recentGame && recentHome)
+                nextIsGame = false;   // ưu tiên home nếu cả 2 cùng tươi
+            else
+                nextIsGame = GetIsGameByUrlFallback();
 
-            ApplyUiMode(nextIsGame);
+            // chỉ thực hiện khi khác trạng thái hiện tại
+            if (nextIsGame != _isGameUi)
+            {
+                // nếu đang bị khóa ở game thì không cho chuyển về home
+                if (_lockGameUi && !nextIsGame)
+                    return;
+
+                ApplyUiMode(nextIsGame);
+                _isGameUi = nextIsGame;
+            }
         }
+
+
+
         // Khóa/mở cấu hình khi Start/Stop:
         // - enabled = true  => đang "Bắt Đầu Cược" (chưa chạy)  => mở hết để sửa
         // - enabled = false => đang "Dừng Đặt Cược" (đang chạy) => chỉ khóa chiến lược, chuỗi/thế cầu, combo quản lý vốn
@@ -848,35 +882,14 @@ Ví dụ không hợp lệ:
             if (TxtCutLoss != null) TxtCutLoss.IsReadOnly = false; // Cắt lỗ
         }
 
-
-
         private void ApplyUiMode(bool isGame)
         {
-            // so sánh trạng thái cũ/mới
-            bool wasGame = _isGameUi;
-            _isGameUi = isGame;
+            // nếu đang khóa ở game thì không cho ai gọi về home
+            if (_lockGameUi && !isGame)
+                return;
 
-            // Chỉ đổi layout nút khi chế độ thật sự đổi
-            if (isGame != wasGame)
-            {
-                SetModeUi(isGame); // ẩn/hiện BtnVaoXocDia vs BtnPlay (HÀM CŨ)
-                Log($"SetModeUi(isGame); " + isGame);
-            }
-
-            // DÙ mode không đổi, khi đang ở Home vẫn cần cập nhật nhãn theo username
-            if (!isGame && BtnVaoXocDia != null)
-            {
-                var desired = _homeLoggedIn
-                    ? "Chơi Xóc Đĩa Live"
-                    : "Đăng Nhập & Xóc Đĩa Live";
-
-                // tránh set lại nếu không thay đổi gì
-                if (!Equals(BtnVaoXocDia.Content as string, desired))
-                    BtnVaoXocDia.Content = desired;
-            }
+            SetModeUi(isGame);
         }
-
-
 
 
         // ====== Helpers ======
@@ -1091,6 +1104,9 @@ Ví dụ không hợp lệ:
 
                                 if (!root.TryGetProperty("abx", out var abxEl)) return;
                                 var abxStr = abxEl.GetString() ?? "";
+                                string ui = "";
+                                if (root.TryGetProperty("ui", out var uiEl))
+                                    ui = uiEl.GetString() ?? "";
 
                                 // 1) result: EvalJsAwaitAsync bridge
                                 if (abxStr == "result" && root.TryGetProperty("id", out var idEl))
@@ -1105,6 +1121,7 @@ Ví dụ không hợp lệ:
                                 // 2) tick: cập nhật snapshot + UI + (NI & finalize khi đuôi đổi)
                                 if (abxStr == "tick")
                                 {
+
                                     // Đổi tên biến JSON để không đụng 'doc'/'root' bên ngoài
                                     using var jdocTick = System.Text.Json.JsonDocument.Parse(msg);
                                     var jrootTick = jdocTick.RootElement;
@@ -1221,17 +1238,36 @@ Ví dụ không hợp lệ:
                                             catch { }
                                         }));
                                     }
-
-                                    _lastGameTickUtc = DateTime.UtcNow;
+                                    if (ui == "game")
+                                    {
+                                        _lastGameTickUtc = DateTime.UtcNow;
+                                    }
+                                    else
+                                    {
+                                        _lastHomeTickUtc = DateTime.UtcNow;
+                                        _lastGameTickUtc = DateTime.MinValue; // cho chắc
+                                        _lockGameUi = false;                  // cho quay lại home
+                                        Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(false)));
+                                    }
                                     return;
+
                                 }
-
-
 
                                 // 2.b) game_hint: Home báo đã có game/iframe → chuyển UI tức thì
                                 if (abxStr == "game_hint")
                                 {
-                                    _lastGameTickUtc = DateTime.UtcNow; // synthetic tick
+                                    var now = DateTime.UtcNow;
+
+                                    // nếu VỪA nhận được home_tick trong khoảng tươi thì coi như vẫn đang ở màn home
+                                    // HomeTickFresh của bạn đang dùng cho chỗ khác rồi, tận dụng luôn
+                                    if ((now - _lastHomeTickUtc) <= HomeTickFresh)
+                                    {
+                                        // chỉ ghi nhận là "có thể có game" thôi
+                                        _lastGameTickUtc = now;
+                                        return;    // QUAN TRỌNG: không gọi ApplyUiMode(true);
+                                    }
+
+                                    _lastGameTickUtc = now;
                                     _ = Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(true)));
                                     return;
                                 }
@@ -1290,6 +1326,10 @@ Ví dụ không hợp lệ:
                                 // 5) home_tick: username/balance/url từ Home
                                 if (abxStr == "home_tick")
                                 {
+                                    // đã về màn hình login trong web → gỡ khóa và chuyển về UI login
+                                    _lastHomeTickUtc = DateTime.UtcNow;
+                                    _lockGameUi = false;
+                                    Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(false)));
                                     var uname = root.TryGetProperty("username", out var uEl) ? (uEl.GetString() ?? "") : "";
                                     if (!string.IsNullOrWhiteSpace(uname))
                                     {
@@ -1327,22 +1367,22 @@ Ví dụ không hợp lệ:
                                         try
                                         {
                                             var jsLogged = @"
-(function(){
-  try{
-    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}}; 
-    const low=s=>rm(String(s||'').trim().toLowerCase());
-    const vis=el=>{if(!el)return false; const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
-                   return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
-    const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
-
-    const hasLogoutVis = qa('a,button,[role=""button""],.btn,.base-button')
-        .some(el => vis(el) && /dang\\s*xuat|đăng\\s*xuất|logout|sign\\s*out/i.test(low(el.textContent)));
-    const hasLoginVis = qa('a,button,[role=""button""],.btn,.base-button')
-        .some(el => vis(el) && /dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
-
-    return (hasLogoutVis && !hasLoginVis) ? '1' : '0';
-  }catch(e){ return '0'; }
-})();";
+                                              (function(){
+                                                try{
+                                                  const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}}; 
+                                                  const low=s=>rm(String(s||'').trim().toLowerCase());
+                                                  const vis=el=>{if(!el)return false; const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
+                                                                 return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
+                                                  const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
+                                              
+                                                  const hasLogoutVis = qa('a,button,[role=""button""],.btn,.base-button')
+                                                      .some(el => vis(el) && /dang\\s*xuat|đăng\\s*xuất|logout|sign\\s*out/i.test(low(el.textContent)));
+                                                  const hasLoginVis = qa('a,button,[role=""button""],.btn,.base-button')
+                                                      .some(el => vis(el) && /dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
+                                              
+                                                  return (hasLogoutVis && !hasLoginVis) ? '1' : '0';
+                                                }catch(e){ return '0'; }
+                                              })();";
                                             var st = await ExecJsAsyncStr(jsLogged);
                                             _homeLoggedIn = (st == "1");
                                         }
@@ -1365,7 +1405,6 @@ Ví dụ không hợp lệ:
                         }
                     };
                 }
-
                 // 3) Hook NavigationCompleted để chuyển UI theo URL ngay khi điều hướng xong
                 if (!_navModeHooked && Web != null)
                 {
@@ -1374,15 +1413,28 @@ Ví dụ không hợp lệ:
                     {
                         try
                         {
-                            var src = Web?.Source?.ToString() ?? "";
-                            var host = string.IsNullOrWhiteSpace(src) ? "" : new Uri(src).Host;
-                            bool isGameHost = host.StartsWith("games.", StringComparison.OrdinalIgnoreCase);
+                            // nếu chưa có tick thì thôi
+                            if (!HasAnyWebTick())
+                                return;
 
-                            await Dispatcher.InvokeAsync(() => ApplyUiMode(isGameHost));
+                            // nếu vừa có tick tươi thì cũng thôi
+                            var now = DateTime.UtcNow;
+                            bool recentGame = (now - _lastGameTickUtc) <= GameTickFresh;
+                            bool recentHome = (now - _lastHomeTickUtc) <= HomeTickFresh;
+                            if (recentGame || recentHome)
+                                return;
+
+                            // nếu muốn thật sự bỏ ép UI, thì dừng ở đây luôn
+                            return;
+
+                            // phần dưới coi như bỏ
                         }
-                        catch { /* ignore */ }
+                        catch { }
                     };
+
                 }
+
+
             }
             catch (Exception ex)
             {
@@ -1394,9 +1446,6 @@ Ví dụ không hợp lệ:
                 _ensuringWeb = false;
             }
         }
-
-
-
 
 
 
@@ -1830,19 +1879,23 @@ Ví dụ không hợp lệ:
                 ApplyMouseShieldFromCheck();
 
                 // --- BẮT ĐẦU GIÁM SÁT UI MODE ---
-                if (_uiModeTimer == null)
+                _uiModeTimer = new System.Windows.Threading.DispatcherTimer
                 {
-                    _uiModeTimer = new System.Windows.Threading.DispatcherTimer
+                    Interval = TimeSpan.FromMilliseconds(300)
+                };
+                _uiModeTimer.Tick += (_, __) =>
+                {
+                    try
                     {
-                        Interval = TimeSpan.FromMilliseconds(300)
-                    };
-                    _uiModeTimer.Tick += (_, __) =>
+                        RecomputeUiMode();
+                    }
+                    catch
                     {
-                        try { RecomputeUiMode(); } catch { /* ignore */ }
-                    };
-                    _uiModeTimer.Start();
-                    RecomputeUiMode();
-                }
+                        // ignore
+                    }
+                };
+                _uiModeTimer.Start();
+
 
             }
             catch (Exception ex)
@@ -2692,7 +2745,10 @@ Ví dụ không hợp lệ:
                 // 6) Bật push tick bên canvas (như cũ)
                 await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[CW] start push 240ms");
-                ApplyUiMode(true); // cho UI chuyển ngay sang nhóm 'Chiến lược/Trạng thái/Console'
+                // NEW: đánh dấu là mình CHỦ ĐỘNG vào game
+                _lockGameUi = true;
+                _lastGameTickUtc = DateTime.UtcNow;     // để timer thấy cũng hợp lý
+                ApplyUiMode(true);
             }
             catch (Exception ex)
             {

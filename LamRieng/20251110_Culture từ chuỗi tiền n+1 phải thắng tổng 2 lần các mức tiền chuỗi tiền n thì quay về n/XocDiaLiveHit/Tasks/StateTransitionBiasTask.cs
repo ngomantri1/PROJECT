@@ -77,7 +77,7 @@ namespace XocDiaLiveHit.Tasks
                     // cần biến local để truyền ref
                     int chainIndex = ctx.MoneyChainIndex;
                     int chainStep = ctx.MoneyChainStep;
-                    long chainProfit = ctx.MoneyChainProfit;
+                    double chainProfit = ctx.MoneyChainProfit;
 
                     MoneyHelper.UpdateAfterRoundMultiChain(
                         ctx.StakeChains,

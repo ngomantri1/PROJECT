@@ -1949,6 +1949,106 @@
                 });
             };
 
+            // --- game open helpers (xóc đĩa sới, tài xỉu sới) ---
+            function __cw_clickGameByTails(tails) {
+                if (!tails || !tails.length)
+                    return '';
+
+                for (var i = 0; i < tails.length; i++) {
+                    var tail = tails[i];
+                    if (!tail)
+                        continue;
+
+                    var node = null;
+
+                    // 1) ưu tiên mấy hàm có sẵn nếu nó hoạt động
+                    if (typeof window.__cw_findNodeByTailCompat === 'function') {
+                        node = window.__cw_findNodeByTailCompat(tail);
+                    } else if (typeof window.__abx_findNodeByTail === 'function') {
+                        node = window.__abx_findNodeByTail(tail);
+                    } else if (typeof window.findNodeByTail === 'function') {
+                        node = window.findNodeByTail(tail);
+                    }
+
+                    // 2) FALLBACK GIỐNG CONSOLE: tự lần từ scene xuống
+                    if (!node && window.cc && cc.director && cc.director.getScene) {
+                        var scene = cc.director.getScene();
+                        var sceneName = scene && scene.name;
+                        var parts = tail.split('/').filter(Boolean);
+                        if (parts[0] === sceneName)
+                            parts.shift();
+
+                        var cur = scene;
+                        for (var j = 0; j < parts.length && cur; j++) {
+                            var name = parts[j];
+                            var kids = cur.children || cur._children || [];
+                            var found = null;
+                            for (var k = 0; k < kids.length; k++) {
+                                if (kids[k] && kids[k].name === name) {
+                                    found = kids[k];
+                                    break;
+                                }
+                            }
+                            if (!found) {
+                                cur = null;
+                                break;
+                            }
+                            cur = found;
+                        }
+                        node = cur;
+                    }
+
+                    if (!node) {
+                        console.log('[game-click] tail NOT FOUND (after fallback):', tail);
+                        continue;
+                    }
+
+                    // 3) click cocos
+                    var clicked = false;
+                    try {
+                        var btn = node.getComponent && node.getComponent(cc.Button);
+                        if (btn) {
+                            cc.Component.EventHandler.emitEvents(
+                                btn.clickEvents,
+                                new cc.Event.EventCustom('click', true));
+                            clicked = true;
+                        } else if (typeof node._onTouchEnded === 'function') {
+                            node._onTouchEnded();
+                            clicked = true;
+                        }
+                    } catch (e) {
+                        console.warn('[game-click] error when clicking', tail, e);
+                    }
+
+                    if (clicked) {
+                        console.log('[game-click] ✅ CLICKED tail =', tail, 'node =', node.name);
+                        return tail;
+                    } else {
+                        console.log('[game-click] node found but NOT clickable:', tail, 'node =', node.name);
+                    }
+                }
+
+                console.warn('[game-click] ❌ none clicked, need correct tail');
+                return '';
+            }
+
+            // 1) Xóc Đĩa Sới (bạn đã test ok)
+            window.__cw_openXocDiaSoi = function () {
+                return __cw_clickGameByTails([
+                        'MainGame/Canvas/widget-left/offset-left/scrollview-game/mask/view/content/page_game_XocDiaLive/btnXocDia'
+                    ]);
+            };
+
+            // 2) Tài Xỉu Sới live (TX SỚI CAY ME)
+            window.__cw_openTaiXiuSoiLive = function () {
+                return __cw_clickGameByTails([
+                        // cái này thấy trong scan200button của bạn (index 40)
+                        'MainGame/Canvas/widget-left/offset-left/scrollview-game/mask/view/content/page_game_TaiXiuSoi/btnXocDia',
+                        // phòng hờ nếu sau này nó dùng đúng tên "tai xiu live"
+                        'MainGame/Canvas/widget-left/offset-left/scrollview-game/mask/view/content/page_game_TaiXiuLive/btnTaiXiuLive'
+                    ]);
+            };
+
             console.log('[READY] CW merged (compat + TextMap + Scan200Text + TK sequence + Totals by (x,tail) + standardized exports).');
 
             /* ---------------- tick & controls ---------------- */
@@ -1998,33 +2098,180 @@
                 return "";
             }
 
-            // auto login chỉ chạy 1 lần
-            var __cw_autoLoginDone = false;
+            // đặt ở cùng chỗ cũ của ông
+            var __cw_autoLoginBootAt = Date.now();
+            var __cw_autoLoginLast = 0;
+            var __cw_autoLoginPaused = false; // true = đang login rồi, đừng mở popup nữa
 
             function __cw_autoLoginWatcher() {
-                // đã chạy rồi thì thôi
-                if (__cw_autoLoginDone)
-                    return;
-
-                // hàm chưa được định nghĩa thì cũng thôi
+                // chưa có hàm click thì thôi
                 if (typeof window.__cw_clickLoginIfNeed !== 'function')
                     return;
 
-                if (!window.__abx_buttons && typeof scan200Button === 'function') {
-                    try {
-                        scan200Button();
-                    } catch (_) {}
+                var now = Date.now();
+
+                // 1) chờ game ổn định 3s đầu để tránh case đã login sẵn mà header vẫn vẽ
+                if (now - __cw_autoLoginBootAt < 3000)
+                    return;
+
+                // 2) throttle: 1s gọi 1 lần thôi, khỏi spam
+                if (now - __cw_autoLoginLast < 1000)
+                    return;
+                __cw_autoLoginLast = now;
+
+                // 3) nếu đang pause vì đã login rồi thì kiểm tra xem nút header có quay lại không (logout)
+                if (__cw_autoLoginPaused) {
+                    var rCheck = window.__cw_clickLoginIfNeed();
+                    // nếu header quay lại (tức rCheck != 'header-hidden' && rCheck != 'no-header')
+                    // thì bật lại auto
+                    if (rCheck !== 'header-hidden' && rCheck !== 'no-header') {
+                        __cw_autoLoginPaused = false; // cho chạy lại ở vòng sau
+                    }
+                    return;
                 }
-                // gọi thử
+
+                // 4) bình thường: thử click
                 var r = window.__cw_clickLoginIfNeed();
-                // các trạng thái này coi như xong nhiệm vụ
-                if (r === 'clicked-header' || r === 'popup-open' || r === 'header-hidden') {
-                    __cw_autoLoginDone = true;
+
+                // nếu game báo là header đã ẩn hoặc không còn nút → coi như login xong → pause
+                if (r === 'header-hidden' || r === 'no-header') {
+                    __cw_autoLoginPaused = true;
+                }
+                // nếu r === 'popup-open' hay 'clicked-header' thì để vòng sau nó tự fill tiếp
+            }
+
+            // 1) hàm tìm node theo tail dùng chung cho toàn bộ file
+            // ĐẶT PHẦN NÀY LÊN TRÊN, trước __cw_closeAnnoyingPopups
+            if (!window.__cw_findNodeByTailCompat) {
+                window.__cw_findNodeByTailCompat = function (tail) {
+                    if (!tail)
+                        return null;
+
+                    // ưu tiên các hàm đã có sẵn do bạn inject ở nơi khác
+                    if (window.__abx_findNodeByTail)
+                        return window.__abx_findNodeByTail(tail);
+                    if (window.findNodeByTail)
+                        return window.findNodeByTail(tail);
+
+                    // fallback đi từ scene cocos
+                    if (!(window.cc && cc.director && cc.director.getScene))
+                        return null;
+                    const scene = cc.director.getScene();
+                    if (!scene)
+                        return null;
+
+                    const sceneName = scene.name;
+                    const parts = String(tail).split('/').filter(Boolean);
+                    let i = 0;
+                    if (parts[0] === sceneName)
+                        i = 1;
+
+                    let node = scene;
+                    for (; i < parts.length; i++) {
+                        const name = parts[i];
+                        const kids = node.children || node._children || [];
+                        let found = null;
+                        for (let j = 0; j < kids.length; j++) {
+                            if (kids[j] && kids[j].name === name) {
+                                found = kids[j];
+                                break;
+                            }
+                        }
+                        if (!found)
+                            return null;
+                        node = found;
+                    }
+                    return node;
+                };
+            }
+
+            // đóng các popup thông báo KH24 nếu có
+            function __cw_closeAnnoyingPopups() {
+                try {
+                    const LOGIN_ROOT = 'MainGame/Canvas/loginView';
+
+                    // thứ tự từ cũ tới mới
+                    const CLOSE_TAILS = [
+                        'MainGame/Canvas/popupView-noHide/EventPopup/CloseBtn',
+                        'MainGame/Canvas/popupView-noHide/offset-banner/Close_Btn',
+                        'MainGame/Canvas/popupView-noHide/DailyPopup/Close_Btn',
+                        // cái bạn vừa thêm cho popup “Thời gian từ 12h trưa...”
+                        'MainGame/Canvas/Xocdia_MD_View_Ngang/PopupManager/ThongBaoPopup/CloseBtn'
+                    ];
+
+                    // luôn dùng 1 hàm tìm node đã được định nghĩa sẵn bên ngoài
+                    var findNodeByTailCompat = (
+                        window.__abx_findNodeByTail ||
+                        window.findNodeByTail ||
+                        window.__cw_findNodeByTailCompat ||
+                        null);
+                    if (!findNodeByTailCompat)
+                        return;
+
+                    // nếu đang ở màn login thì không đóng để khỏi phá thao tác người dùng
+                    const loginNode = findNodeByTailCompat(LOGIN_ROOT);
+                    if (loginNode && loginNode.activeInHierarchy !== false) {
+                        return;
+                    }
+
+                    // hàm click chung
+                    function clickNode(node) {
+                        if (!node)
+                            return false;
+
+                        // không click mấy node đang ẩn
+                        if (node.activeInHierarchy === false)
+                            return false;
+
+                        // ưu tiên cc.Button
+                        try {
+                            const btn = node.getComponent && node.getComponent(cc.Button);
+                            if (btn) {
+                                cc.Component.EventHandler.emitEvents(
+                                    btn.clickEvents,
+                                    new cc.Event.EventCustom('click', true));
+                                return true;
+                            }
+                        } catch (e) {}
+
+                        // fallback cho mấy node tự xử lý touch
+                        try {
+                            if (typeof node._onTouchEnded === 'function') {
+                                node._onTouchEnded();
+                                return true;
+                            }
+                        } catch (e) {}
+
+                        return false;
+                    }
+
+                    for (let i = 0; i < CLOSE_TAILS.length; i++) {
+                        const tail = CLOSE_TAILS[i];
+                        const n = findNodeByTailCompat(tail);
+                        // không có → thử tail khác
+                        if (!n)
+                            continue;
+                        // có nhưng đang ẩn → thử tail khác
+                        if (n.activeInHierarchy === false)
+                            continue;
+
+                        if (clickNode(n)) {
+                            // chỉ log cái đóng được và thoát
+                            // console.log('[__cw_closeAnnoyingPopups] closed', tail);
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    // nuốt lỗi để không làm hỏng tick
+                    // console.warn('[__cw_closeAnnoyingPopups] err', e);
                 }
             }
 
             function tick() {
+                // 1) lo đăng nhập trước
                 __cw_autoLoginWatcher();
+                // 2) rồi mới dọn popup thông báo
+                __cw_closeAnnoyingPopups();
                 var p = collectProgress();
                 if (p != null)
                     S.prog = p;
@@ -2393,42 +2640,83 @@
 
                     /* === LOGIN HELPER (ĐÃ SỬA) ======================================= */
                     (function () {
-                        // chỉ còn 1 tail header mà bạn muốn giữ
+                        /* =================== AUTO LOGIN WATCHER =================== */
+                        /* các tail bạn đang dùng */
                         var HEADER_LOGIN_TAIL = 'MainGame/Canvas/widget-header/group-login/btn-Login';
-                        // tail của nút login trên popup – để nhận biết popup đã mở
-                        var POPUP_LOGIN_TAIL = 'MainGame/Canvas/loginView/offset-login/btn-Login';
+                        var POPUP_LOGIN_BTN_TAIL = 'MainGame/Canvas/loginView/offset-login/btn-Login';
+                        var POPUP_ROOT_TAIL = 'MainGame/Canvas/loginView';
 
-                        // tìm node cocos theo tail
-                        function findNodeByTail(tail) {
-                            if (!(window.cc && cc.director && cc.director.getScene))
-                                return null;
-                            var scene = cc.director.getScene();
-                            if (!scene)
-                                return null;
+                        /* chỗ này mình làm biến toàn cục để C# có thể bắn vào */
+                        // mặc định rỗng – nếu bạn muốn hard-code thì sửa ngay ở đây
+                        window.__cw_loginUser = window.__cw_loginUser || '';
+                        window.__cw_loginPass = window.__cw_loginPass || '';
 
-                            var parts = String(tail || '').split('/').filter(Boolean);
-                            // nếu phần đầu trùng tên scene thì bỏ
-                            if (parts.length && parts[0] === scene.name) {
-                                parts.shift();
-                            }
-
-                            var node = scene;
-                            for (var i = 0; i < parts.length; i++) {
-                                var name = parts[i];
-                                var kids = node.children || node._children || [];
-                                var found = null;
-                                for (var j = 0; j < kids.length; j++) {
-                                    if (kids[j] && kids[j].name === name) {
-                                        found = kids[j];
-                                        break;
+                        /* nhận message từ C# để cập nhật user/pass
+                        bên C# chỉ cần post:{ "__cw_cmd": "set_login", "user": "...", "pass": "..." }
+                         */
+                        (function () {
+                            function onMsg(ev) {
+                                var d = ev && (ev.data || ev);
+                                if (typeof d === 'string') {
+                                    try {
+                                        d = JSON.parse(d);
+                                    } catch (_) {
+                                        d = null;
                                     }
                                 }
-                                if (!found) {
-                                    return null;
-                                }
-                                node = found;
+                                if (!d || d.__cw_cmd !== 'set_login')
+                                    return;
+                                if (typeof d.user === 'string')
+                                    window.__cw_loginUser = d.user;
+                                if (typeof d.pass === 'string')
+                                    window.__cw_loginPass = d.pass;
+                                console.log('[auto-login] cập nhật credential từ host.');
                             }
-                            return node;
+
+                            try {
+                                window.addEventListener('message', onMsg, true);
+                            } catch (_) {}
+                            try {
+                                if (window.chrome && window.chrome.webview) {
+                                    window.chrome.webview.addEventListener('message', onMsg);
+                                }
+                            } catch (_) {}
+                        })();
+
+                        /* hàm này bạn đã có ở dưới – mình dùng lại.
+                        nếu tên hàm của bạn khác thì khỏi tạo lại. */
+                        function findNodeByTail(tail) {
+                            try {
+                                if (!(window.cc && cc.director && cc.director.getScene))
+                                    return null;
+                                var scene = cc.director.getScene();
+                                if (!scene)
+                                    return null;
+
+                                var parts = String(tail || '').split('/').filter(Boolean);
+                                if (parts.length && parts[0] === scene.name) {
+                                    parts.shift();
+                                }
+
+                                var node = scene;
+                                for (var i = 0; i < parts.length; i++) {
+                                    var name = parts[i];
+                                    var kids = node.children || node._children || [];
+                                    var found = null;
+                                    for (var j = 0; j < kids.length; j++) {
+                                        if (kids[j] && kids[j].name === name) {
+                                            found = kids[j];
+                                            break;
+                                        }
+                                    }
+                                    if (!found)
+                                        return null;
+                                    node = found;
+                                }
+                                return node;
+                            } catch (_) {
+                                return null;
+                            }
                         }
 
                         function isNodeVisible(node) {
@@ -2452,79 +2740,282 @@
                             return true;
                         }
 
-                        // hàm public để bạn gọi
+                        /* tìm các EditBox trong popup và điền user/pass */
+                        function __cw_fillLoginPopup() {
+                            var root = findNodeByTail(POPUP_ROOT_TAIL);
+                            if (!root || !isNodeVisible(root)) {
+                                return 'no-popup';
+                            }
+
+                            // gom tất cả editbox ở dưới popup
+                            var boxes = [];
+                            (function walk(n) {
+                                if (!n)
+                                    return;
+                                var eb = n.getComponent && n.getComponent(cc.EditBox);
+                                if (eb) {
+                                    boxes.push({
+                                        node: n,
+                                        eb: eb,
+                                        tail: (function () {
+                                            // nếu file gốc của bạn đã có tailOf thì nên dùng tailOf(n, 12)
+                                            try {
+                                                var names = [],
+                                                p = n;
+                                                while (p) {
+                                                    names.push(p.name || '');
+                                                    p = p.parent;
+                                                }
+                                                return names.reverse().join('/').toLowerCase();
+                                            } catch (_) {
+                                                return '';
+                                            }
+                                        })()
+                                    });
+                                }
+                                var kids = n.children || n._children || [];
+                                for (var i = 0; i < kids.length; i++)
+                                    walk(kids[i]);
+                            })(root);
+
+                            if (!boxes.length) {
+                                console.warn('[auto-login] không tìm thấy EditBox nào trong popup.');
+                                return 'no-editbox';
+                            }
+
+                            var user = window.__cw_loginUser || '';
+                            var pass = window.__cw_loginPass || '';
+
+                            // đoán ô user/pass theo tail
+                            var userBox = null,
+                            passBox = null;
+                            for (var i = 0; i < boxes.length; i++) {
+                                var t = boxes[i].tail;
+                                if (!userBox && /user|account|acc|tai[_-]?khoan|taikhoan/i.test(t)) {
+                                    userBox = boxes[i];
+                                }
+                                if (!passBox && /pass|pwd|mat[_-]?khau|matkhau/i.test(t)) {
+                                    passBox = boxes[i];
+                                }
+                            }
+                            // nếu vẫn chưa đoán được thì lấy lần lượt
+                            if (!userBox)
+                                userBox = boxes[0];
+                            if (!passBox && boxes.length > 1)
+                                passBox = boxes[1];
+
+                            if (userBox && user) {
+                                userBox.eb.string = user;
+                                // một số version cần gọi _onDidEditEnded để refresh
+                                if (typeof userBox.eb._onDidEndedEditing === 'function')
+                                    userBox.eb._onDidEndedEditing();
+                            }
+                            if (passBox && pass) {
+                                passBox.eb.string = pass;
+                                if (typeof passBox.eb._onDidEndedEditing === 'function')
+                                    passBox.eb._onDidEndedEditing();
+                            }
+
+                            //console.log('[auto-login] đã thử điền user/pass vào popup.');
+                            return 'filled';
+                        }
+
+                        /* hàm click như bạn đang có – giữ nguyên ý tưởng */
                         window.__cw_clickLoginIfNeed = function () {
-                            // 1. nếu popup login đã mở thì thôi
-                            var loginPopupNode = findNodeByTail(POPUP_LOGIN_TAIL);
-                            if (isNodeVisible(loginPopupNode)) {
-                                console.log('[__cw_clickLoginIfNeed] popup login đã hiện → không click header.');
+                            // nếu popup đang mở thì chỉ điền
+                            var popupBtn = findNodeByTail(POPUP_LOGIN_BTN_TAIL);
+                            if (popupBtn && isNodeVisible(popupBtn)) {
+                                __cw_fillLoginPopup();
                                 return 'popup-open';
                             }
 
-                            // 2. tìm nút header
-                            var headerNode = findNodeByTail(HEADER_LOGIN_TAIL);
-                            if (!headerNode) {
-                                console.warn('[__cw_clickLoginIfNeed] không tìm thấy header login tail.');
+                            // nếu nút header còn thì click
+                            var header = findNodeByTail(HEADER_LOGIN_TAIL);
+                            if (!header) {
                                 return 'no-header';
                             }
-
-                            // 3. nếu header không hiển thị thì coi như đã login
-                            if (!isNodeVisible(headerNode)) {
-                                console.log('[__cw_clickLoginIfNeed] header login không hiển thị → có thể đã đăng nhập.');
+                            if (!isNodeVisible(header)) {
                                 return 'header-hidden';
                             }
 
-                            // 4. thử click bằng cc.Button
-                            var btn = headerNode.getComponent && headerNode.getComponent(cc.Button);
+                            var btn = header.getComponent && header.getComponent(cc.Button);
                             if (btn) {
-                                try {
-                                    cc.Component.EventHandler.emitEvents(
-                                        btn.clickEvents,
-                                        new cc.Event.EventCustom('click', true));
-                                    console.log('[__cw_clickLoginIfNeed] đã click header login bằng cc.Button');
-                                    return 'clicked-header';
-                                } catch (e) {
-                                    console.warn('[__cw_clickLoginIfNeed] lỗi khi emitEvents:', e);
-                                }
+                                cc.Component.EventHandler.emitEvents(btn.clickEvents, new cc.Event.EventCustom('click', true));
+                                console.log('[auto-login] click header login.');
+                                return 'clicked-header';
                             }
 
-                            // 5. fallback: click theo tọa độ đã scan
-                            var list = window.__abx_buttons;
-                            if (Array.isArray(list) && list.length) {
-                                var item = null;
-                                for (var i = 0; i < list.length; i++) {
-                                    if (list[i].tail === HEADER_LOGIN_TAIL) {
-                                        item = list[i];
-                                        break;
-                                    }
-                                }
-                                if (item) {
-                                    var cx = Math.round(item.x + item.w / 2);
-                                    var cy = Math.round(item.y + item.h / 2);
-                                    if (typeof clickAtWin === 'function') {
-                                        clickAtWin(cx, cy);
-                                    } else {
-                                        var canvas = document.querySelector('canvas') || document.body;
-                                        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (t) {
-                                            canvas.dispatchEvent(new MouseEvent(t, {
-                                                    bubbles: true,
-                                                    cancelable: true,
-                                                    view: window,
-                                                    clientX: cx,
-                                                    clientY: cy,
-                                                    button: 0
-                                                }));
-                                        });
-                                    }
-                                    console.log('[__cw_clickLoginIfNeed] fallback DOM click tại', cx, cy);
+                            // fallback DOM như code cũ của bạn
+                            var list = window.__abx_buttons || [];
+                            for (var i = 0; i < list.length; i++) {
+                                var it = list[i];
+                                if (it.tail === HEADER_LOGIN_TAIL) {
+                                    var cx = Math.round(it.x + it.w / 2);
+                                    var cy = Math.round(it.y + it.h / 2);
+                                    var canvas = document.querySelector('canvas') || document.body;
+                                    ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (t) {
+                                        canvas.dispatchEvent(new MouseEvent(t, {
+                                                bubbles: true,
+                                                cancelable: true,
+                                                clientX: cx,
+                                                clientY: cy,
+                                                button: 0
+                                            }));
+                                    });
+                                    console.log('[auto-login] DOM click header login.');
                                     return 'dom-fallback-clicked';
                                 }
                             }
 
-                            console.warn('[__cw_clickLoginIfNeed] không click được header login.');
                             return 'fail';
                         };
-                    })(); // hết login helper
+
+                        // danh sách tail có thể thay đổi sau này
+                        const TAILS = [
+                            'MainGame/Canvas/loginView/offset-login/btn-Login'
+                            // sau này cần thêm thì push thêm ở đây
+                        ];
+
+                        // 1) HÀM DÙNG CHUNG – GIỮ MỘT BẢN DUY NHẤT Ở NGOÀI
+                        function findNodeByTailCompat(tail) {
+                            if (window.__abx_findNodeByTail)
+                                return window.__abx_findNodeByTail(tail);
+                            if (window.findNodeByTail)
+                                return window.findNodeByTail(tail);
+
+                            if (!(window.cc && cc.director && cc.director.getScene))
+                                return null;
+                            const scene = cc.director.getScene();
+                            if (!scene)
+                                return null;
+
+                            const sceneName = scene.name;
+                            let parts = String(tail || '').split('/').filter(Boolean);
+                            if (parts[0] === sceneName)
+                                parts.shift();
+
+                            let node = scene;
+                            for (let i = 0; i < parts.length; i++) {
+                                const name = parts[i];
+                                const kids = node.children || node._children || [];
+                                let found = null;
+                                for (let j = 0; j < kids.length; j++) {
+                                    if (kids[j] && kids[j].name === name) {
+                                        found = kids[j];
+                                        break;
+                                    }
+                                }
+                                if (!found)
+                                    return null;
+                                node = found;
+                            }
+                            return node;
+                        }
+
+                        // 2) HÀM NHẬN DIỆN HOME – ĐẶT Ở ĐÂY
+                        function __cw_isHomeScreen() {
+                            const HOME_TAILS = [
+                                'MainGame/Canvas/widget-topRight-noHide/group-login/btn-Login',
+                                'MainGame/Canvas/widget-header/group-login/btn-Login'
+                            ];
+                            for (const t of HOME_TAILS) {
+                                const n = findNodeByTailCompat(t);
+                                if (n && n.activeInHierarchy !== false)
+                                    return true;
+                            }
+
+                            const GAME_HINTS = [
+                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Exit_Btn',
+                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Center/GateContent/Chan_Gate'
+                            ];
+                            for (const t of GAME_HINTS) {
+                                const n = findNodeByTailCompat(t);
+                                if (n && n.activeInHierarchy !== false)
+                                    return false;
+                            }
+
+                            return false;
+                        }
+                        window.__cw_isHomeScreen = __cw_isHomeScreen;
+
+                        function clickCocosButton(node) {
+                            if (!node)
+                                return false;
+                            // thử cc.Button chuẩn
+                            try {
+                                const btn = node.getComponent && node.getComponent(cc.Button);
+                                if (btn) {
+                                    cc.Component.EventHandler.emitEvents(
+                                        btn.clickEvents,
+                                        new cc.Event.EventCustom('click', true));
+                                    console.log('[cw-popup-login] clicked via cc.Button');
+                                    return true;
+                                }
+                            } catch (e) {
+                                console.warn('[cw-popup-login] btn click error', e);
+                            }
+
+                            // fallback: nếu node có _onTouchEnded
+                            try {
+                                if (node._onTouchEnded) {
+                                    node._onTouchEnded();
+                                    console.log('[cw-popup-login] clicked via _onTouchEnded');
+                                    return true;
+                                }
+                            } catch (e2) {}
+
+                            return false;
+                        }
+
+                        // HÀM PUBLIC để C# gọi
+                        window.__cw_clickPopupLogin = function () {
+                            if (!(window.cc && cc.director && cc.director.getScene)) {
+                                console.warn('[cw-popup-login] cocos chưa sẵn sàng');
+                                return false;
+                            }
+
+                            // thử từng tail
+                            for (let i = 0; i < TAILS.length; i++) {
+                                const tail = TAILS[i];
+                                const node = findNodeByTailCompat(tail);
+                                if (!node) {
+                                    continue;
+                                }
+                                if (clickCocosButton(node)) {
+                                    console.log('[cw-popup-login] ĐÃ CLICK popup login bằng tail =', tail);
+                                    return true;
+                                } else {
+                                    console.warn('[cw-popup-login] tìm thấy node nhưng click không được:', tail);
+                                }
+                            }
+
+                            // nếu không tìm được node theo tail, thử lấy từ danh sách scan200Button (nếu ông đã lưu)
+                            if (window.__abx_buttons && window.__abx_buttons.length) {
+                                for (let i = 0; i < window.__abx_buttons.length; i++) {
+                                    const b = window.__abx_buttons[i];
+                                    if (!b || !b.tail)
+                                        continue;
+                                    // so đuôi tail
+                                    for (let k = 0; k < TAILS.length; k++) {
+                                        const want = TAILS[k].toLowerCase();
+                                        if (b.tail.toLowerCase().endsWith(want.toLowerCase())) {
+                                            // dựng lại node từ tail này
+                                            const node = findNodeByTailCompat(b.tail);
+                                            if (node && clickCocosButton(node)) {
+                                                console.log('[cw-popup-login] CLICK từ __abx_buttons với tail =', b.tail);
+                                                return true;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            console.warn('[cw-popup-login] Không click được nút popup login nào trong danh sách.');
+                            return false;
+                        };
+
+                    })();
+
                     /* ================================================================== */
 
                 })(); // hết CW bridge

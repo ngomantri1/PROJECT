@@ -33,7 +33,7 @@ namespace XocDiaLiveHit.Tasks
         // đang ở mức thứ mấy trong chuỗi đó (0-based)
         public int MoneyChainStep { get; set; } = 0;
         // tiền thắng đã tích lũy được trong chuỗi hiện tại
-        public long MoneyChainProfit { get; set; } = 0;
+        public double MoneyChainProfit { get; set; } = 0;
 
         // Ngưỡng % còn lại để ra quyết định
         public double DecisionPercent { get; init; }

@@ -85,7 +85,7 @@ namespace XocDiaLiveHit.Tasks
             long[] chainTotals,
             ref int chainIndex,
             ref int levelIndex,
-            ref long profitOnCurrentChain,
+            ref double profitOnCurrentChain,
             bool? win)
         {
             int chainCount = chains?.Length ?? 0;
@@ -107,16 +107,39 @@ namespace XocDiaLiveHit.Tasks
 
             if (win == true)
             {
-                // thắng: gom tiền cho chuỗi hiện tại
-                long justWon = curChain[levelIndex];
-                // trong 1 chuỗi: thắng → về mức 0
+                // thắng: cần tính LỢI NHUẬN THỰC của chuỗi hiện tại
+                // = mức vừa thắng - (tổng các mức đã đốt trong chính chuỗi này trước đó)
+                int wonLevel = levelIndex;              // vd đang thắng ở mức 1 của chuỗi 2
+                long justWon = curChain[wonLevel];      // số vừa thắng, vd 7000
+                // reset mức trong chuỗi
                 levelIndex = 0;
 
                 if (chainIndex > 0)
                 {
-                    // chỉ chuỗi > 0 mới cần gom tiền để về chuỗi trước
-                    profitOnCurrentChain += justWon;
+                    // tính tổng tiền đã thua trong chính chuỗi hiện tại từ khi vào chuỗi
+                    long spentInThisChain = 0;
+                    for (int i = 0; i < wonLevel; i++)
+                        spentInThisChain += curChain[i];
 
+                    double netWinOnThisChain = 0.98 * justWon - spentInThisChain;
+                    if (netWinOnThisChain < 0)
+                        netWinOnThisChain = 0;
+
+                    // gom lợi nhuận thực vào quỹ của chuỗi hiện tại
+                    profitOnCurrentChain += netWinOnThisChain;
+
+                    // 1) tính NGƯỠNG về thẳng chuỗi 1 = tổng tất cả chuỗi từ 0..(chainIndex-1)
+                    long needAllPrev = 0;
+                    if (chainTotals != null && chainTotals.Length >= chainIndex)
+                    {
+                        for (int i = 0; i < chainIndex; i++)
+                            needAllPrev += chainTotals[i];
+                    }
+                    else
+                    {
+                        for (int i = 0; i < chainIndex; i++)
+                            needAllPrev += SumChain(chains[i]);
+                    }
                     long need = 0;
                     if (chainTotals != null && chainIndex - 1 < chainTotals.Length)
                         need = chainTotals[chainIndex - 1];

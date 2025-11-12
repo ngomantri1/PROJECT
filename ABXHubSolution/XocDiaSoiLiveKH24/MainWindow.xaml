@@ -505,6 +505,7 @@
                                         x:Name="RowChienLuoc"
                                         Grid.Row="0"
                                         Grid.ColumnSpan="2"
+                                        IsEnabled="True"
                                         Visibility="Visible">
                                         <!--  Visibility="Visible" là hiện, Visibility="Collapsed" là ẩn  -->
                                         <!--  nested grid: 2 cột label + value để giữ layout thẳng hàng  -->
@@ -526,7 +527,8 @@
                                             MinHeight="36"
                                             Margin="{StaticResource ValueFieldMargin}"
                                             Padding="10,8"
-                                            HorizontalAlignment="Stretch">
+                                            HorizontalAlignment="Stretch"
+                                            SelectedIndex="4">
                                             <ComboBoxItem Content="1) Chuỗi cầu C/L (chẵn/lẻ tự nhập)" />
                                             <ComboBoxItem Content="2) Thế cầu C/L (chẵn/lẻ tự nhập)" />
                                             <ComboBoxItem Content="3) Chuỗi cầu I/N (Ít/Nhiều, tự nhập)" />
@@ -625,6 +627,7 @@
                                         x:Name="RowQuanLyVon"
                                         Grid.Row="2"
                                         Grid.ColumnSpan="2"
+                                        IsEnabled="True"
                                         Visibility="Visible">
                                         <!--  Visibility="Visible" là hiện, Visibility="Collapsed" là ẩn  -->
                                         <Grid.ColumnDefinitions>
@@ -646,7 +649,7 @@
                                             Margin="{StaticResource ValueFieldMargin}"
                                             Padding="10,8"
                                             HorizontalAlignment="Stretch"
-                                            SelectedIndex="2"
+                                            SelectedIndex="0"
                                             SelectedValuePath="Tag">
                                             <ComboBoxItem Content="1. Tăng mức tiền khi thua, thắng quay về mức đầu" Tag="IncreaseWhenLose" />
                                             <ComboBoxItem Content="2. Tăng mức tiền khi thắng, thua quay về mức ban đầu" Tag="IncreaseWhenWin" />

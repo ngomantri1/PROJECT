@@ -2140,79 +2140,88 @@
                 // nếu r === 'popup-open' hay 'clicked-header' thì để vòng sau nó tự fill tiếp
             }
 
+            // 1) hàm tìm node theo tail dùng chung cho toàn bộ file
+            // ĐẶT PHẦN NÀY LÊN TRÊN, trước __cw_closeAnnoyingPopups
+            if (!window.__cw_findNodeByTailCompat) {
+                window.__cw_findNodeByTailCompat = function (tail) {
+                    if (!tail)
+                        return null;
+
+                    // ưu tiên các hàm đã có sẵn do bạn inject ở nơi khác
+                    if (window.__abx_findNodeByTail)
+                        return window.__abx_findNodeByTail(tail);
+                    if (window.findNodeByTail)
+                        return window.findNodeByTail(tail);
+
+                    // fallback đi từ scene cocos
+                    if (!(window.cc && cc.director && cc.director.getScene))
+                        return null;
+                    const scene = cc.director.getScene();
+                    if (!scene)
+                        return null;
+
+                    const sceneName = scene.name;
+                    const parts = String(tail).split('/').filter(Boolean);
+                    let i = 0;
+                    if (parts[0] === sceneName)
+                        i = 1;
+
+                    let node = scene;
+                    for (; i < parts.length; i++) {
+                        const name = parts[i];
+                        const kids = node.children || node._children || [];
+                        let found = null;
+                        for (let j = 0; j < kids.length; j++) {
+                            if (kids[j] && kids[j].name === name) {
+                                found = kids[j];
+                                break;
+                            }
+                        }
+                        if (!found)
+                            return null;
+                        node = found;
+                    }
+                    return node;
+                };
+            }
+
             // đóng các popup thông báo KH24 nếu có
             function __cw_closeAnnoyingPopups() {
                 try {
                     const LOGIN_ROOT = 'MainGame/Canvas/loginView';
 
-                    // danh sách popup có thể xuất hiện
+                    // thứ tự từ cũ tới mới
                     const CLOSE_TAILS = [
-                        // popup chung của sảnh
                         'MainGame/Canvas/popupView-noHide/EventPopup/CloseBtn',
                         'MainGame/Canvas/popupView-noHide/offset-banner/Close_Btn',
                         'MainGame/Canvas/popupView-noHide/DailyPopup/Close_Btn',
-
-                        // popup thông báo ngay trong xóc đĩa live
+                        // cái bạn vừa thêm cho popup “Thời gian từ 12h trưa...”
                         'MainGame/Canvas/Xocdia_MD_View_Ngang/PopupManager/ThongBaoPopup/CloseBtn'
                     ];
 
-                    // hàm tìm node theo tail, có đủ guard
-                    function findNodeByTailCompat(tail) {
-                        // ưu tiên hàm đã được inject sẵn
-                        if (window.__abx_findNodeByTail)
-                            return window.__abx_findNodeByTail(tail);
-                        if (window.findNodeByTail)
-                            return window.findNodeByTail(tail);
+                    // luôn dùng 1 hàm tìm node đã được định nghĩa sẵn bên ngoài
+                    var findNodeByTailCompat = (
+                        window.__abx_findNodeByTail ||
+                        window.findNodeByTail ||
+                        window.__cw_findNodeByTailCompat ||
+                        null);
+                    if (!findNodeByTailCompat)
+                        return;
 
-                        // fallback tự đi từ scene
-                        if (!(window.cc && cc.director && cc.director.getScene))
-                            return null;
-
-                        const scene = cc.director.getScene();
-                        if (!scene)
-                            return null;
-
-                        const sceneName = scene.name;
-                        let parts = String(tail || '').split('/').filter(Boolean);
-
-                        // bỏ tên scene nếu tail bắt đầu bằng nó
-                        if (parts[0] === sceneName)
-                            parts.shift();
-
-                        let node = scene;
-                        for (let i = 0; i < parts.length; i++) {
-                            const name = parts[i];
-                            const kids = node.children || node._children || [];
-                            let found = null;
-                            for (let j = 0; j < kids.length; j++) {
-                                const k = kids[j];
-                                if (k && k.name === name) {
-                                    found = k;
-                                    break;
-                                }
-                            }
-                            if (!found)
-                                return null;
-                            node = found;
-                        }
-                        return node;
-                    }
-
-                    // nếu đang ở màn login thì không đụng popup để khỏi tắt login
+                    // nếu đang ở màn login thì không đóng để khỏi phá thao tác người dùng
                     const loginNode = findNodeByTailCompat(LOGIN_ROOT);
                     if (loginNode && loginNode.activeInHierarchy !== false) {
                         return;
                     }
 
-                    // hàm thử click 1 node
+                    // hàm click chung
                     function clickNode(node) {
                         if (!node)
                             return false;
 
-                        // nếu node hoặc cha nó đang ẩn thì thôi
-                        if (node.active === false || node.activeInHierarchy === false) {
+                        // không click mấy node đang ẩn
+                        if (node.activeInHierarchy === false)
                             return false;
-                        }
 
                         // ưu tiên cc.Button
                         try {
@@ -2221,16 +2230,14 @@
                                 cc.Component.EventHandler.emitEvents(
                                     btn.clickEvents,
                                     new cc.Event.EventCustom('click', true));
-                                console.log('[close-popup] clicked via cc.Button:', node.name);
                                 return true;
                             }
                         } catch (e) {}
 
-                        // fallback _onTouchEnded custom
+                        // fallback cho mấy node tự xử lý touch
                         try {
                             if (typeof node._onTouchEnded === 'function') {
                                 node._onTouchEnded();
-                                console.log('[close-popup] clicked via _onTouchEnded:', node.name);
                                 return true;
                             }
                         } catch (e) {}
@@ -2238,27 +2245,22 @@
                         return false;
                     }
 
-                    // đi hết danh sách, cái nào đang mở thì tắt
-                    let closedAny = false;
                     for (let i = 0; i < CLOSE_TAILS.length; i++) {
                         const tail = CLOSE_TAILS[i];
                         const n = findNodeByTailCompat(tail);
-                        if (!n) {
-                            // console.log('[close-popup] not found:', tail);
+                        // không có → thử tail khác
+                        if (!n)
                             continue;
-                        }
-                        const ok = clickNode(n);
-                        if (ok) {
-                            closedAny = true;
-                        } else {
-                            // console.log('[close-popup] found but not clickable:', tail);
+                        // có nhưng đang ẩn → thử tail khác
+                        if (n.activeInHierarchy === false)
+                            continue;
+
+                        if (clickNode(n)) {
+                            // chỉ log cái đóng được và thoát
+                            // console.log('[__cw_closeAnnoyingPopups] closed', tail);
+                            break;
                         }
                     }
-
-                    if (!closedAny) {
-                        // console.log('[close-popup] none closed');
-                    }
-
                 } catch (e) {
                     // nuốt lỗi để không làm hỏng tick
                     // console.warn('[__cw_closeAnnoyingPopups] err', e);
@@ -2474,6 +2476,35 @@
             (() => {
                 'use strict';
 
+                // xác định đang ở màn hình game (cocos) hay không
+                function __cw_isGameUi() {
+                    try {
+                        // 1) nếu cocos đã lên scene thì coi như là game
+                        if (window.cc && cc.director && cc.director.getScene) {
+                            var sc = cc.director.getScene();
+                            if (sc && sc.name) {
+                                var n = sc.name.toLowerCase();
+                                // bạn có thể siết thêm theo tên
+                                if (n.indexOf('xocdia') !== -1 || n.indexOf('xd') !== -1) {
+                                    return true;
+                                }
+                            }
+                            // có scene rồi thì coi như game
+                            return true;
+                        }
+
+                        // 2) fallback theo host
+                        var h = (location && location.hostname ? location.hostname : '').toLowerCase();
+                        if (h.startsWith('games.'))
+                            return true;
+
+                        // 3) còn lại coi như home
+                        return false;
+                    } catch (e) {
+                        return false;
+                    }
+                }
+
                 /* ... GIỮ NGUYÊN TOÀN BỘ PHẦN TRÊN CỦA BẠN ...
                 (từ đầu file tới ngay trước đoạn "/* === CW Bridge ..." cũ)
                 Mình không thay gì ở đó, mình chỉ dán lại nguyên phần dưới
@@ -2548,52 +2579,164 @@
                         return '';
                     }
 
-                    // bắn snapshot định kỳ
+                    // === thay thế đoạn window.__cw_startPush cũ bằng đoạn này ===
                     window.__cw_startPush = function (tickMs) {
                         try {
-                            tickMs = Number(tickMs) || 240;
-                            if (tickMs < 120)
-                                tickMs = 120;
-                            if (tickMs > 1000)
-                                tickMs = 1000;
+                            if (!tickMs || tickMs < 200)
+                                tickMs = 400;
 
-                            if (_pushTimer) {
-                                clearInterval(_pushTimer);
-                                _pushTimer = null;
+                            // hủy timer cũ nếu có
+                            if (window.__cw_pushTimer) {
+                                clearInterval(window.__cw_pushTimer);
+                                window.__cw_pushTimer = null;
                             }
-                            _lastJson = '';
 
-                            _pushTimer = setInterval(function () {
-                                var p = readProgressVal();
-                                var st = (typeof statusByProg === 'function') ? statusByProg(p) : '';
-                                var snap = {
-                                    abx: 'tick',
-                                    prog: p,
-                                    totals: readTotalsSafe(),
-                                    seq: readSeqSafe(),
-                                    status: String(st || ''),
-                                    ts: Date.now()
-                                };
-                                if (shallowChanged(snap)) {
-                                    safePost(snap);
+                            // helper: tìm node theo tail nếu ở file lớn bạn đã có sẵn
+                            function findNodeSafe(tail) {
+                                if (!tail)
+                                    return null;
+                                if (window.__abx_findNodeByTail)
+                                    return window.__abx_findNodeByTail(tail);
+                                if (window.findNodeByTail)
+                                    return window.findNodeByTail(tail);
+
+                                // fallback rất an toàn
+                                if (!(window.cc && cc.director && cc.director.getScene))
+                                    return null;
+                                var scene = cc.director.getScene();
+                                if (!scene)
+                                    return null;
+                                var sceneName = scene.name;
+                                var parts = String(tail).split('/').filter(Boolean);
+                                if (parts[0] === sceneName)
+                                    parts.shift();
+
+                                var node = scene;
+                                for (var i = 0; i < parts.length; i++) {
+                                    var name = parts[i];
+                                    var kids = node.children || node._children || [];
+                                    var found = null;
+                                    for (var j = 0; j < kids.length; j++) {
+                                        if (kids[j] && kids[j].name === name) {
+                                            found = kids[j];
+                                            break;
+                                        }
+                                    }
+                                    if (!found)
+                                        return null;
+                                    node = found;
+                                }
+                                return node;
+                            }
+
+                            // helper: nhận diện đang ở HOME hay GAME
+                            function detectUiMode() {
+                                try {
+                                    var sceneName = '';
+                                    if (window.cc && cc.director && cc.director.getScene) {
+                                        var sc = cc.director.getScene();
+                                        if (sc)
+                                            sceneName = sc.name || '';
+                                    }
+
+                                    // ưu tiên 1: có loginView -> xem như HOME
+                                    var loginNode = findNodeSafe('MainGame/Canvas/loginView');
+                                    if (loginNode && loginNode.activeInHierarchy !== false) {
+                                        return {
+                                            ui: 'home',
+                                            via: 'loginView',
+                                            scene: sceneName
+                                        };
+                                    }
+
+                                    // ưu tiên 2: có list game bên trái -> cũng là HOME
+                                    var listNode =
+                                        findNodeSafe('MainGame/Canvas/widget-left/offset-left/scrollview-game')
+                                         || findNodeSafe('MainGame/Canvas/widget-left/offset-left/scrollview-game/mask/view/content');
+
+                                    if (listNode && listNode.activeInHierarchy !== false) {
+                                        return {
+                                            ui: 'home',
+                                            via: 'game-list',
+                                            scene: sceneName
+                                        };
+                                    }
+
+                                    // ưu tiên 3: có view xóc đĩa ngang -> GAME
+                                    var xdNode = findNodeSafe('MainGame/Canvas/Xocdia_MD_View_Ngang');
+                                    if (xdNode && xdNode.activeInHierarchy !== false) {
+                                        return {
+                                            ui: 'game',
+                                            via: 'xocdia-view',
+                                            scene: sceneName
+                                        };
+                                    }
+
+                                    // fallback: nhìn scene name
+                                    if (sceneName && sceneName.indexOf('Xocdia') !== -1) {
+                                        return {
+                                            ui: 'game',
+                                            via: 'scene-name',
+                                            scene: sceneName
+                                        };
+                                    }
+
+                                    return {
+                                        ui: 'unknown',
+                                        via: 'none',
+                                        scene: sceneName
+                                    };
+                                } catch (e) {
+                                    return {
+                                        ui: 'unknown',
+                                        via: 'err:' + e.message,
+                                        scene: ''
+                                    };
+                                }
+                            }
+
+                            window.__cw_pushTimer = setInterval(function () {
+                                try {
+                                    var p = window.__cw_getProg ? window.__cw_getProg() : 0;
+                                    var scan200 = window.__cw_scan200 ? window.__cw_scan200() : null;
+
+                                    var uiInfo = detectUiMode();
+
+                                    // gói gửi về C#
+                                    var snap = {
+                                        abx: 'tick', // giữ nguyên để C# không phải sửa nhiều
+                                        prog: p,
+                                        scan200: scan200 || undefined,
+                                        ui: uiInfo.ui, // <--- C# sẽ đọc trường này để biết HOME / GAME
+                                        ui_via: uiInfo.via, // để debug xem nhận diện bằng cách nào
+                                        scene: uiInfo.scene, // để bạn coi nhanh trên log
+                                        ts: Date.now()
+                                    };
+
+                                    // gửi đi
+                                    if (shallowChanged(snap)) {
+                                        if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
+                                            window.chrome.webview.postMessage(JSON.stringify(snap));
+                                        } else if (window.external && typeof window.external.notify === 'function') {
+                                            window.external.notify(JSON.stringify(snap));
+                                        } else {
+                                            // không có kênh gửi thì thôi
+                                            // console.log('[tick] no post channel', snap);
+                                        }
+                                    }
+                                } catch (err) {
+                                    // console.warn('[__cw_startPush] tick err', err);
                                 }
                             }, tickMs);
-
-                            return 'started';
-                        } catch (err) {
-                            safePost({
-                                abx: 'tick_error',
-                                error: String(err && err.message || err),
-                                ts: Date.now()
-                            });
-                            return 'fail';
+                        } catch (e) {
+                            // console.warn('[__cw_startPush] init err', e);
                         }
                     };
 
                     window.__cw_stopPush = function () {
-                        if (_pushTimer) {
-                            clearInterval(_pushTimer);
-                            _pushTimer = null;
+                        if (window.__cw_pushTimer) {
+                            clearInterval(window.__cw_pushTimer);
+                            window.__cw_pushTimer = null;
                         }
                         return 'stopped';
                     };
@@ -2874,29 +3017,24 @@
                             // sau này cần thêm thì push thêm ở đây
                         ];
 
-                        // tận dụng hàm tìm node theo tail nếu file lớn đã có
+                        // 1) HÀM DÙNG CHUNG – GIỮ MỘT BẢN DUY NHẤT Ở NGOÀI
                         function findNodeByTailCompat(tail) {
-                            if (!tail)
-                                return null;
-
-                            // ưu tiên hàm đã có trong file lớn
-                            if (window.__abx_findNodeByTail) {
+                            if (window.__abx_findNodeByTail)
                                 return window.__abx_findNodeByTail(tail);
-                            }
-                            if (window.findNodeByTail) {
+                            if (window.findNodeByTail)
                                 return window.findNodeByTail(tail);
-                            }
 
-                            // fallback đơn giản giống ông gửi
-                            if (!(window.cc && cc.director && cc.director.getScene)) {
+                            if (!(window.cc && cc.director && cc.director.getScene))
                                 return null;
-                            }
                             const scene = cc.director.getScene();
+                            if (!scene)
+                                return null;
+
                             const sceneName = scene.name;
-                            let parts = tail.split('/').filter(Boolean);
-                            if (parts[0] === sceneName) {
+                            let parts = String(tail || '').split('/').filter(Boolean);
+                            if (parts[0] === sceneName)
                                 parts.shift();
-                            }
+
                             let node = scene;
                             for (let i = 0; i < parts.length; i++) {
                                 const name = parts[i];
@@ -2908,13 +3046,38 @@
                                         break;
                                     }
                                 }
-                                if (!found) {
+                                if (!found)
                                     return null;
-                                }
                                 node = found;
                             }
                             return node;
                         }
+
+                        // 2) HÀM NHẬN DIỆN HOME – ĐẶT Ở ĐÂY
+                        function __cw_isHomeScreen() {
+                            const HOME_TAILS = [
+                                'MainGame/Canvas/widget-topRight-noHide/group-login/btn-Login',
+                                'MainGame/Canvas/widget-header/group-login/btn-Login'
+                            ];
+                            for (const t of HOME_TAILS) {
+                                const n = findNodeByTailCompat(t);
+                                if (n && n.activeInHierarchy !== false)
+                                    return true;
+                            }
+
+                            const GAME_HINTS = [
+                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Exit_Btn',
+                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Center/GateContent/Chan_Gate'
+                            ];
+                            for (const t of GAME_HINTS) {
+                                const n = findNodeByTailCompat(t);
+                                if (n && n.activeInHierarchy !== false)
+                                    return false;
+                            }
+
+                            return false;
+                        }
+                        window.__cw_isHomeScreen = __cw_isHomeScreen;
 
                         function clickCocosButton(node) {
                             if (!node)
@@ -3002,6 +3165,11 @@
 
 
         })();
+        // cuối hàm boot, THÊM 3 DÒNG NÀY:
+        if (window.__cw_startPush) {
+            // 800ms/lần → nhỏ hơn 1.5s HomeTickFresh bên C#
+            window.__cw_startPush(800);
+        }
 
     }
 
