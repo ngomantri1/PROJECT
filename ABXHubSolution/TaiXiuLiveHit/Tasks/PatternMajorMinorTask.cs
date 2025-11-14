@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using static XocDiaSoiLiveKH24.Tasks.TaskUtil;
+using static TaiXiuLiveHit.Tasks.TaskUtil;
 
-namespace XocDiaSoiLiveKH24.Tasks
+namespace TaiXiuLiveHit.Tasks
 {
     /// <summary>
     /// 4) Thế cầu N/I tự nhập
@@ -48,7 +48,7 @@ namespace XocDiaSoiLiveKH24.Tasks
             return items.OrderByDescending(x => x.lhs.Length).ToList();
         }
 
-        private static string NOrIToSide(char ch, XocDiaSoiLiveKH24.CwTotals totals)
+        private static string NOrIToSide(char ch, TaiXiuLiveHit.CwTotals totals)
         {
             // Chuyển N/I thành CHAN/LE theo tổng tiền "ngay thời điểm đặt"
             long c = totals?.C ?? 0, l = totals?.L ?? 0;

@@ -13,8 +13,8 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using static System.Net.Mime.MediaTypeNames;
 using static System.Runtime.InteropServices.JavaScript.JSType;
-using XocDiaLiveHit;
-using XocDiaLiveHit.Tasks;
+using TaiXiuLiveHit;
+using TaiXiuLiveHit.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Globalization;
@@ -29,13 +29,13 @@ using System.ComponentModel;
 using System.Linq;
 using System.Collections.ObjectModel;
 using System.Windows.Data;
-using static XocDiaLiveHit.MainWindow;
+using static TaiXiuLiveHit.MainWindow;
 using System.Windows.Input;
 
 
 
 
-namespace XocDiaLiveHit
+namespace TaiXiuLiveHit
 {
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Assets (pack URI).
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Resources (pack URI).
@@ -133,7 +133,7 @@ namespace XocDiaLiveHit
     }
     public partial class MainWindow : Window
     {
-        private const string AppLocalDirName = "XocDiaLiveHit"; // đổi thành tên bạn muốn
+        private const string AppLocalDirName = "TaiXiuLiveHit"; // đổi thành tên bạn muốn
         // ====== App paths ======
         private readonly string _appDataDir;
         private readonly string _cfgPath;
@@ -420,7 +420,7 @@ Ví dụ không hợp lệ:
         private sealed class BetRow
         {
             public DateTime At { get; set; }                 // Thời gian đặt
-            public string Game { get; set; } = "Xóc đĩa live";
+            public string Game { get; set; } = "Tài Xỉu live";
             public long Stake { get; set; }                  // Tiền cược
             public string Side { get; set; } = "";           // CHAN/LE
             public string Result { get; set; } = "";         // Kết quả "CHAN"/"LE"
@@ -466,7 +466,7 @@ Ví dụ không hợp lệ:
         private double _winTotal = 0;
         private CoreWebView2Environment? _webEnv;
         private bool _webInitDone;
-        private const string Wv2ZipResNameX64 = "XocDiaLiveHit.ThirdParty.WebView2Fixed_win-x64.zip";
+        private const string Wv2ZipResNameX64 = "TaiXiuLiveHit.ThirdParty.WebView2Fixed_win-x64.zip";
         // Thư mục cache bền vững cho runtime (không bị dọn như %TEMP%)
         private static string Wv2BaseDir =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -772,7 +772,7 @@ Ví dụ không hợp lệ:
 
         private string GetAiNGramStatePath()
         {
-            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\XocDiaLiveHit
+            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\TaiXiuLiveHit
             var aiDir = System.IO.Path.Combine(_appDataDir, "ai");
             System.IO.Directory.CreateDirectory(aiDir);
             return System.IO.Path.Combine(aiDir, "ngram_state_v1.json");
@@ -851,8 +851,8 @@ Ví dụ không hợp lệ:
             if (!isGame && BtnVaoXocDia != null)
             {
                 var desired = _homeLoggedIn
-                    ? "Chơi Xóc Đĩa Live"
-                    : "Đăng Nhập & Xóc Đĩa Live";
+                    ? "Chơi Tài Xỉu Live"
+                    : "Đăng Nhập & Tài Xỉu Live";
 
                 // tránh set lại nếu không thay đổi gì
                 if (!Equals(BtnVaoXocDia.Content as string, desired))
@@ -1237,7 +1237,7 @@ Ví dụ không hợp lệ:
                                     _pendingRow = new BetRow
                                     {
                                         At = DateTime.Now,
-                                        Game = "Xóc đĩa live",
+                                        Game = "Tài Xỉu live",
                                         Stake = amount,
                                         Side = side,
                                         Result = "-",
@@ -1582,7 +1582,7 @@ Ví dụ không hợp lệ:
             Directory.CreateDirectory(targetDir);
 
             var resName = FindResourceName("ThirdParty.WebView2Fixed_win-x64.zip")
-                          ?? "XocDiaLiveHit.ThirdParty.WebView2Fixed_win-x64.zip";
+                          ?? "TaiXiuLiveHit.ThirdParty.WebView2Fixed_win-x64.zip";
 
             using var s = Assembly.GetExecutingAssembly().GetManifestResourceStream(resName)
                            ?? throw new FileNotFoundException("Missing embedded resource: " + resName);
@@ -1780,14 +1780,14 @@ Ví dụ không hợp lệ:
             catch (Exception ex) { Log("[SyncLoginField] " + ex); }
         }
 
-        // Bấm 'Chơi Xóc Đĩa Live' từ Home:
+        // Bấm 'Chơi Tài Xỉu Live' từ Home:
         // 1) Ưu tiên gọi API JS nếu có (__abx_hw_clickPlayXDL), 
         // 2) fallback sang C# ClickXocDiaTitleAsync(timeout)
         private async Task<bool> TryPlayXocDiaFromHomeAsync()
         {
             try
             {
-                Log("[HOME] Play Xóc Đĩa Live: try js api");
+                Log("[HOME] Play Tài Xỉu Live: try js api");
                 var js = @"
         (function(){
           try{
@@ -2368,7 +2368,7 @@ Ví dụ không hợp lệ:
             }
         }
 
-        // Gọi Play Xóc Đĩa từ HOME:
+        // Gọi Play Tài Xỉu từ HOME:
         // - Ưu tiên gọi API JS (__abx_hw_clickPlayXDL)
         // - Fallback: gửi lệnh kiểu "nút" (home_click_xoc)
         private async Task<bool> HomeClickPlayAsync()
@@ -2418,27 +2418,37 @@ Ví dụ không hợp lệ:
 
         private async Task<string> ExecJsAsyncStr(string js)
         {
-            // nếu cửa sổ đã bị host đóng thì Web sẽ = null
             if (!IsWebAlive)
+                return "";
+
+            var t0 = DateTime.UtcNow;
+
+            try
             {
-                Log("**Web** was null. Skip ExecJsAsyncStr.");
+                await EnsureWebReadyAsync();
+                if (!IsWebAlive) return "";
+
+                var tExec = DateTime.UtcNow;
+                var raw = await Web.ExecuteScriptAsync(js);
+                var execMs = (DateTime.UtcNow - tExec).TotalMilliseconds;
+                var totalMs = (DateTime.UtcNow - t0).TotalMilliseconds;
+
+                Log($"[PERF][ExecJs] exec={execMs:0}ms total={totalMs:0}ms len={js?.Length ?? 0}");
+
+                if (string.IsNullOrWhiteSpace(raw)) return "";
+
+                raw = raw.Trim();
+                if (raw.StartsWith("\"") && raw.EndsWith("\"") && raw.Length >= 2)
+                    raw = raw.Substring(1, raw.Length - 2);
+                return raw;
+            }
+            catch (Exception ex)
+            {
+                Log("[ExecJsAsyncStr ERR] " + ex.Message);
                 return "";
             }
-
-            await EnsureWebReadyAsync();
-
-            if (!IsWebAlive)
-            {
-                Log("**Web** lost after EnsureWebReadyAsync. Skip.");
-                return "";
-            }
-
-            var raw = await Web.ExecuteScriptAsync(js);
-            if (string.IsNullOrEmpty(raw)) return "";
-            if (raw.Length >= 2 && raw[0] == '"')
-                raw = Regex.Unescape(raw).Trim('"');
-            return raw;
         }
+
 
 
         // ====== CDP tap ======
@@ -2583,7 +2593,7 @@ Ví dụ không hợp lệ:
         /// Mở live theo index trong .livestream-section__live (0-based).
         /// Chỉ nhắm đúng item-live[index], click overlay/play và chờ video mở.
         /// </summary>
-        private async Task<string> OpenLiveItemImmediatelyAsync(int zeroBasedIndex, int timeoutMs = 20000)
+        private async Task<string> OpenLiveItemImmediatelyAsync(int zeroBasedIndex, int timeoutMs = 12000)
         {
             if (Web == null) return "web-null";
             await EnsureWebReadyAsync();
@@ -2682,14 +2692,14 @@ Ví dụ không hợp lệ:
         }
 
 
-        // Bấm vào "Xóc Đĩa Live" theo tiêu đề/trang HOME.
+        // Bấm vào "Tài Xỉu Live" theo tiêu đề/trang HOME.
         // Trả về: "clicked" nếu đã bấm/mở được, hoặc chuỗi lỗi/trạng thái khác.
         private async Task<string> ClickXocDiaTitleAsync(int timeoutMs = 20000)
         {
             if (Web == null) return "web-null";
             await EnsureWebReadyAsync();
 
-            // 1) Thử bấm trực tiếp anchor/button có text "xóc đĩa" (khử dấu)
+            // 1) Thử bấm trực tiếp anchor/button có text "Tài Xỉu" (khử dấu)
             const string clickTitleJs = @"
 (function(){
   try{
@@ -2800,36 +2810,56 @@ Ví dụ không hợp lệ:
 
         private async void VaoXocDia_Click(object sender, RoutedEventArgs e)
         {
+            var t0 = DateTime.UtcNow;
+
             try
             {
+                Log("[PERF][VaoXocDia] === START ===");
+
                 await SaveConfigAsync();
+                Log($"[PERF][VaoXocDia] After SaveConfigAsync: {(DateTime.UtcNow - t0).TotalMilliseconds:0} ms");
+
                 await EnsureWebReadyAsync();
+                Log($"[PERF][VaoXocDia] After EnsureWebReadyAsync: {(DateTime.UtcNow - t0).TotalMilliseconds:0} ms");
 
                 // 1) Ưu tiên gọi API JS: click Login trước
+                var tLogin = DateTime.UtcNow;
                 var rLogin = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickLogin?window.__abx_hw_clickLogin():'no-api');}catch(e){return 'err:'+e.message;}})();");
                 Log("[HOME] clickLogin via JS => " + rLogin);
+                Log($"[PERF][VaoXocDia] clickLogin JS: {(DateTime.UtcNow - tLogin).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
 
                 // đợi nhẹ để trang xử lý login (nếu có)
-                await Task.Delay(900);
+                var tDelayBeforePlay = DateTime.UtcNow;
+                //await Task.Delay(900);
+                Log($"[PERF][VaoXocDia] Delay before clickPlay: {(DateTime.UtcNow - tDelayBeforePlay).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
 
-                // 2) Tiếp tục gọi API JS: click 'Chơi Xóc Đĩa Live'
+                // 2) Tiếp tục gọi API JS: click 'Chơi Tài Xỉu Live'
+                var tPlay = DateTime.UtcNow;
                 var rPlay = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickPlayXDL?window.__abx_hw_clickPlayXDL():'no-api');}catch(e){return 'err:'+e.message;}})();");
                 Log("[HOME] clickPlay via JS => " + rPlay);
+                Log($"[PERF][VaoXocDia] clickPlay JS: {(DateTime.UtcNow - tPlay).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
 
                 // 3) Fallback: nếu JS API không có/không ok, quay về hành vi cũ
                 var okByJs = (rPlay ?? "").IndexOf("ok", StringComparison.OrdinalIgnoreCase) >= 0;
                 if (!okByJs)
                 {
+                    var tHome = DateTime.UtcNow;
                     var goHome = await ClickHomeLogoAsync(12000);
                     Log("[VaoXocDia_Click -> home] " + goHome);
+                    Log($"[PERF][VaoXocDia] ClickHomeLogoAsync: {(DateTime.UtcNow - tHome).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
 
+                    var tDelayAfterHome = DateTime.UtcNow;
                     await Task.Delay(300);
+                    Log($"[PERF][VaoXocDia] Delay after home: {(DateTime.UtcNow - tDelayAfterHome).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
 
+                    var tOpen = DateTime.UtcNow;
                     var rOpen = await OpenLiveItemImmediatelyAsync(1, 25000);
                     Log("[VaoXocDia_Click -> open-live(index=1)] " + rOpen);
+                    Log($"[PERF][VaoXocDia] OpenLiveItemImmediatelyAsync(1): {(DateTime.UtcNow - tOpen).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
                 }
 
                 // 4) Cầu nối: đồng bộ & autostart khi đã vào bàn
+                var tBridge = DateTime.UtcNow;
                 if (_bridge != null)
                 {
                     // nếu bạn có sửa JS ngoài, nạp lại và re-register
@@ -2839,30 +2869,50 @@ Ví dụ không hợp lệ:
 
                     await _bridge.ForceRefreshAsync();
                 }
+                Log($"[PERF][VaoXocDia] Bridge refresh: {(DateTime.UtcNow - tBridge).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
 
-                // 5) Poll cocos sẵn sàng (giữ nguyên như cũ)
+                // 5) Poll cocos sẵn sàng (giữ nguyên như cũ, nhưng log thêm thời gian + số vòng)
+                var tPoll = DateTime.UtcNow;
                 var ok = false;
+                int loopCount = 0;
+
                 for (int i = 0; i < 100; i++)
                 {
+                    loopCount = i + 1;
+
                     var ready = await Web.ExecuteScriptAsync(@"
                 (function(){ try{ return !!(window.cc && cc.director && cc.director.getScene); }
                              catch(e){ return false; } })()");
                     Log("[VaoXocDia_Click -> load xoc dia live] " + ready);
-                    if (bool.TryParse(ready, out var b) && b) { ok = true; break; }
+
+                    if (bool.TryParse(ready, out var b) && b)
+                    {
+                        ok = true;
+                        break;
+                    }
+
                     await Task.Delay(300);
                 }
+
+                Log($"[PERF][VaoXocDia] Poll cocos: {(DateTime.UtcNow - tPoll).TotalMilliseconds:0} ms, loops={loopCount} (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
                 if (!ok) Log("[CW] Game not ready (Cocos scene not found)");
 
                 // 6) Bật push tick bên canvas (như cũ)
+                var tPush = DateTime.UtcNow;
                 await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[CW] start push 240ms");
+                Log($"[PERF][VaoXocDia] startPush JS: {(DateTime.UtcNow - tPush).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
+
                 ApplyUiMode(true); // cho UI chuyển ngay sang nhóm 'Chiến lược/Trạng thái/Console'
+
+                Log($"[PERF][VaoXocDia] === END total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms ===");
             }
             catch (Exception ex)
             {
                 Log("[VaoXocDia_Click] " + ex);
             }
         }
+
 
 
 
@@ -3346,7 +3396,7 @@ Ví dụ không hợp lệ:
                 var typeBet = typeBetJson?.Trim('"');
                 if (!string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
                 {
-                    Log("[DEC] Chưa thấy bridge JS (__cw_bet) → tự động 'Xóc Đĩa Live' và inject.");
+                    Log("[DEC] Chưa thấy bridge JS (__cw_bet) → tự động 'Tài Xỉu Live' và inject.");
                     VaoXocDia_Click(sender, e);
 
                     // Poll chờ bridge sẵn sàng tối đa 30s
@@ -3610,25 +3660,25 @@ Ví dụ không hợp lệ:
                 }
 
 
-                XocDiaLiveHit.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
+                TaiXiuLiveHit.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
                 {
-                    0 => new XocDiaLiveHit.Tasks.SeqParityFollowTask(),     // 1
-                    1 => new XocDiaLiveHit.Tasks.PatternParityTask(),       // 2
-                    2 => new XocDiaLiveHit.Tasks.SeqMajorMinorTask(),       // 3
-                    3 => new XocDiaLiveHit.Tasks.PatternMajorMinorTask(),   // 4
-                    4 => new XocDiaLiveHit.Tasks.SmartPrevTask(),           // 5
-                    5 => new XocDiaLiveHit.Tasks.RandomParityTask(),        // 6
-                    6 => new XocDiaLiveHit.Tasks.AiStatParityTask(),        // 7
-                    7 => new XocDiaLiveHit.Tasks.StateTransitionBiasTask(), // 8
-                    8 => new XocDiaLiveHit.Tasks.RunLengthBiasTask(),       // 9
-                    9 => new XocDiaLiveHit.Tasks.EnsembleMajorityTask(),    // 10
-                    10 => new XocDiaLiveHit.Tasks.TimeSlicedHedgeTask(),    // 11
-                    11 => new XocDiaLiveHit.Tasks.KnnSubsequenceTask(),     // 12
-                    12 => new XocDiaLiveHit.Tasks.DualScheduleHedgeTask(),  // 13
-                    13 => new XocDiaLiveHit.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
-                    14 => new XocDiaLiveHit.Tasks.AiExpertPanelTask(), // 15
-                    15 => new XocDiaLiveHit.Tasks.Top10PatternFollowTask(), // 16
-                    _ => new XocDiaLiveHit.Tasks.SmartPrevTask(),
+                    0 => new TaiXiuLiveHit.Tasks.SeqParityFollowTask(),     // 1
+                    1 => new TaiXiuLiveHit.Tasks.PatternParityTask(),       // 2
+                    2 => new TaiXiuLiveHit.Tasks.SeqMajorMinorTask(),       // 3
+                    3 => new TaiXiuLiveHit.Tasks.PatternMajorMinorTask(),   // 4
+                    4 => new TaiXiuLiveHit.Tasks.SmartPrevTask(),           // 5
+                    5 => new TaiXiuLiveHit.Tasks.RandomParityTask(),        // 6
+                    6 => new TaiXiuLiveHit.Tasks.AiStatParityTask(),        // 7
+                    7 => new TaiXiuLiveHit.Tasks.StateTransitionBiasTask(), // 8
+                    8 => new TaiXiuLiveHit.Tasks.RunLengthBiasTask(),       // 9
+                    9 => new TaiXiuLiveHit.Tasks.EnsembleMajorityTask(),    // 10
+                    10 => new TaiXiuLiveHit.Tasks.TimeSlicedHedgeTask(),    // 11
+                    11 => new TaiXiuLiveHit.Tasks.KnnSubsequenceTask(),     // 12
+                    12 => new TaiXiuLiveHit.Tasks.DualScheduleHedgeTask(),  // 13
+                    13 => new TaiXiuLiveHit.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
+                    14 => new TaiXiuLiveHit.Tasks.AiExpertPanelTask(), // 15
+                    15 => new TaiXiuLiveHit.Tasks.Top10PatternFollowTask(), // 16
+                    _ => new TaiXiuLiveHit.Tasks.SmartPrevTask(),
                 };
 
 
@@ -3679,7 +3729,7 @@ Ví dụ không hợp lệ:
             try
             {
                 StopTask();
-                XocDiaLiveHit.Tasks.TaskUtil.ClearBetCooldown();
+                TaiXiuLiveHit.Tasks.TaskUtil.ClearBetCooldown();
                 _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[Loop] stopped");
                 SetPlayButtonState(false);
@@ -3844,7 +3894,7 @@ Ví dụ không hợp lệ:
             return (s.Length <= take) ? s : s.Substring(s.Length - take, take);
         }
 
-        // đặt trong MainWindow.xaml.cs (project XocDiaLiveHit)
+        // đặt trong MainWindow.xaml.cs (project TaiXiuLiveHit)
 
         // load thử lần lượt các uri, cái nào được thì dùng, không được thì trả về null
         private static ImageSource? LoadImgSafe(params string[] uris)
@@ -4215,7 +4265,7 @@ Ví dụ không hợp lệ:
             {
                 // Đọc thẳng từ embedded (KHÔNG thử đọc từ đĩa)
                 var resName = FindResourceName("v4_js_xoc_dia_live.js")
-                              ?? "XocDiaLiveHit.v4_js_xoc_dia_live.js";
+                              ?? "TaiXiuLiveHit.v4_js_xoc_dia_live.js";
                 var text = ReadEmbeddedText(resName);
                 text = RemoveUtf8Bom(text);
 
@@ -4239,7 +4289,7 @@ Ví dụ không hợp lệ:
             try
             {
                 var resName = FindResourceName("js_home_v2.js")
-                              ?? "XocDiaLiveHit.js_home_v2.js"; // fallback tên logic
+                              ?? "TaiXiuLiveHit.js_home_v2.js"; // fallback tên logic
                 var text = ReadEmbeddedText(resName);   // helper sẵn có
                 text = RemoveUtf8Bom(text);             // helper sẵn có
 

@@ -949,7 +949,7 @@ Ví dụ không hợp lệ:
 
                 }
                 if (CmbBetStrategy != null)
-                    CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 15) ? _cfg.BetStrategyIndex : 15;
+                    CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 13) ? _cfg.BetStrategyIndex : 15;
                 SyncStrategyFieldsToUI();
                 UpdateTooltips();
                 UpdateBetStrategyUi();
@@ -1107,6 +1107,24 @@ Ví dụ không hợp lệ:
                                 string ui = "";
                                 if (root.TryGetProperty("ui", out var uiEl))
                                     ui = uiEl.GetString() ?? "";
+                                var uname = root.TryGetProperty("nick", out var uEl) ? (uEl.GetString() ?? "") : "";
+                                if (!string.IsNullOrWhiteSpace(uname))
+                                {
+                                    var normalized = uname.Trim().ToLowerInvariant();
+                                    if (_homeUsername != normalized)
+                                    {
+                                        _homeUsername = normalized;
+                                        _homeUsernameAt = DateTime.UtcNow;
+
+                                        if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
+                                        {
+                                            _cfg.LastHomeUsername = _homeUsername;
+                                            _ = SaveConfigAsync(); // fire-and-forget
+                                        }
+                                    }
+                                }
+                                
+                                string session = root.TryGetProperty("session", out var ssEl) ? (ssEl.GetString() ?? "") : "";
 
                                 // 1) result: EvalJsAwaitAsync bridge
                                 if (abxStr == "result" && root.TryGetProperty("id", out var idEl))
@@ -1185,7 +1203,12 @@ Ví dụ không hợp lệ:
 
                                         // --- NEW: lấy status từ JSON (JS đã bơm vào tick) ---
                                         string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
-
+                                        string statusUiT = statusUi switch
+                                        {
+                                            "open" => "Cho phép đặt cược",
+                                            "locked" => "Đợi kết quả",
+                                            _ => ""          // các trạng thái khác (nếu có) thì để trống
+                                        };
                                         // --- Cập nhật UI ---
                                         _ = Dispatcher.BeginInvoke(new Action(() =>
                                         {
@@ -1203,7 +1226,8 @@ Ví dụ không hợp lệ:
                                                     if (PrgBet != null) PrgBet.Value = 0;
                                                     if (LblProg != null) LblProg.Text = "-";
                                                 }
-
+                                                //Cập nhật Tên đăng nhập
+                                                if (LblUserName != null) LblUserName.Text = uname;
                                                 // Kết quả gần nhất từ chuỗi seq
                                                 var seqStrLocal = snap.seq ?? "";
                                                 char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
@@ -1223,9 +1247,9 @@ Ví dụ không hợp lệ:
                                                 // 🔸 Trạng thái: "Phiên mới" / "Ngừng đặt cược" / "Đang chờ kết quả"
                                                 if (LblStatusText != null)
                                                 {
-                                                    if (!string.IsNullOrWhiteSpace(statusUi))
+                                                    if (!string.IsNullOrWhiteSpace(statusUiT))
                                                     {
-                                                        LblStatusText.Text = statusUi;
+                                                        LblStatusText.Text = statusUiT;
                                                         LblStatusText.Visibility = Visibility.Visible;
                                                     }
                                                     else
@@ -1324,75 +1348,75 @@ Ví dụ không hợp lệ:
                                 }
 
                                 // 5) home_tick: username/balance/url từ Home
-                                if (abxStr == "home_tick")
-                                {
-                                    // đã về màn hình login trong web → gỡ khóa và chuyển về UI login
-                                    _lastHomeTickUtc = DateTime.UtcNow;
-                                    _lockGameUi = false;
-                                    Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(false)));
-                                    var uname = root.TryGetProperty("username", out var uEl) ? (uEl.GetString() ?? "") : "";
-                                    if (!string.IsNullOrWhiteSpace(uname))
-                                    {
-                                        var normalized = uname.Trim().ToLowerInvariant();
-                                        if (_homeUsername != normalized)
-                                        {
-                                            _homeUsername = normalized;
-                                            _homeUsernameAt = DateTime.UtcNow;
+                                //if (abxStr == "home_tick")
+                                //{
+                                //    // đã về màn hình login trong web → gỡ khóa và chuyển về UI login
+                                //    _lastHomeTickUtc = DateTime.UtcNow;
+                                //    _lockGameUi = false;
+                                //    Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(false)));
+                                //    var uname = root.TryGetProperty("username", out var uEl) ? (uEl.GetString() ?? "") : "";
+                                //    if (!string.IsNullOrWhiteSpace(uname))
+                                //    {
+                                //        var normalized = uname.Trim().ToLowerInvariant();
+                                //        if (_homeUsername != normalized)
+                                //        {
+                                //            _homeUsername = normalized;
+                                //            _homeUsernameAt = DateTime.UtcNow;
 
-                                            if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
-                                            {
-                                                _cfg.LastHomeUsername = _homeUsername;
-                                                _ = SaveConfigAsync(); // fire-and-forget
-                                            }
-                                        }
-                                    }
+                                //            if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
+                                //            {
+                                //                _cfg.LastHomeUsername = _homeUsername;
+                                //                _ = SaveConfigAsync(); // fire-and-forget
+                                //            }
+                                //        }
+                                //    }
 
-                                    var bal = root.TryGetProperty("balance", out var bEl) ? (bEl.GetString() ?? "") : "";
-                                    var href = root.TryGetProperty("href", out var hEl) ? (hEl.GetString() ?? "") : "";
+                                //    var bal = root.TryGetProperty("balance", out var bEl) ? (bEl.GetString() ?? "") : "";
+                                //    var href = root.TryGetProperty("href", out var hEl) ? (hEl.GetString() ?? "") : "";
 
-                                    try
-                                    {
-                                        await Dispatcher.InvokeAsync(() =>
-                                        {
-                                            if (!string.IsNullOrWhiteSpace(uname) && TxtUser != null)
-                                            {
-                                                if (string.IsNullOrWhiteSpace(TxtUser.Text) || TxtUser.Text != uname)
-                                                    TxtUser.Text = uname;
-                                            }
-                                            if (LblUserName != null) LblUserName.Text = uname;
-                                            if (LblAmount != null) LblAmount.Text = bal;
-                                        });
+                                //    try
+                                //    {
+                                //        await Dispatcher.InvokeAsync(() =>
+                                //        {
+                                //            if (!string.IsNullOrWhiteSpace(uname) && TxtUser != null)
+                                //            {
+                                //                if (string.IsNullOrWhiteSpace(TxtUser.Text) || TxtUser.Text != uname)
+                                //                    TxtUser.Text = uname;
+                                //            }
+                                //            if (LblUserName != null) LblUserName.Text = uname;
+                                //            if (LblAmount != null) LblAmount.Text = bal;
+                                //        });
 
-                                        // cập nhật trạng thái đã đăng nhập dựa trên nút Logout/Login
-                                        try
-                                        {
-                                            var jsLogged = @"
-                                              (function(){
-                                                try{
-                                                  const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}}; 
-                                                  const low=s=>rm(String(s||'').trim().toLowerCase());
-                                                  const vis=el=>{if(!el)return false; const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
-                                                                 return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
-                                                  const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
+                                //        // cập nhật trạng thái đã đăng nhập dựa trên nút Logout/Login
+                                //        try
+                                //        {
+                                //            var jsLogged = @"
+                                //              (function(){
+                                //                try{
+                                //                  const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}}; 
+                                //                  const low=s=>rm(String(s||'').trim().toLowerCase());
+                                //                  const vis=el=>{if(!el)return false; const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
+                                //                                 return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
+                                //                  const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
                                               
-                                                  const hasLogoutVis = qa('a,button,[role=""button""],.btn,.base-button')
-                                                      .some(el => vis(el) && /dang\\s*xuat|đăng\\s*xuất|logout|sign\\s*out/i.test(low(el.textContent)));
-                                                  const hasLoginVis = qa('a,button,[role=""button""],.btn,.base-button')
-                                                      .some(el => vis(el) && /dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
+                                //                  const hasLogoutVis = qa('a,button,[role=""button""],.btn,.base-button')
+                                //                      .some(el => vis(el) && /dang\\s*xuat|đăng\\s*xuất|logout|sign\\s*out/i.test(low(el.textContent)));
+                                //                  const hasLoginVis = qa('a,button,[role=""button""],.btn,.base-button')
+                                //                      .some(el => vis(el) && /dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
                                               
-                                                  return (hasLogoutVis && !hasLoginVis) ? '1' : '0';
-                                                }catch(e){ return '0'; }
-                                              })();";
-                                            var st = await ExecJsAsyncStr(jsLogged);
-                                            _homeLoggedIn = (st == "1");
-                                        }
-                                        catch { /* ignore */ }
-                                    }
-                                    catch { }
+                                //                  return (hasLogoutVis && !hasLoginVis) ? '1' : '0';
+                                //                }catch(e){ return '0'; }
+                                //              })();";
+                                //            var st = await ExecJsAsyncStr(jsLogged);
+                                //            _homeLoggedIn = (st == "1");
+                                //        }
+                                //        catch { /* ignore */ }
+                                //    }
+                                //    catch { }
 
-                                    _lastHomeTickUtc = DateTime.UtcNow;
-                                    return;
-                                }
+                                //    _lastHomeTickUtc = DateTime.UtcNow;
+                                //    return;
+                                //}
                             }
                             catch
                             {
@@ -3084,9 +3108,9 @@ Ví dụ không hợp lệ:
             {
                 var idx = CmbBetStrategy?.SelectedIndex ?? 4;
                 if (RowChuoiCau != null)
-                    RowChuoiCau.Visibility = (idx == 0 || idx == 2) ? Visibility.Visible : Visibility.Collapsed; // 1 hoặc 3
+                    RowChuoiCau.Visibility = (idx == 0) ? Visibility.Visible : Visibility.Collapsed; // 1 
                 if (RowTheCau != null)
-                    RowTheCau.Visibility = (idx == 1 || idx == 3) ? Visibility.Visible : Visibility.Collapsed;   // 2 hoặc 4
+                    RowTheCau.Visibility = (idx == 1) ? Visibility.Visible : Visibility.Collapsed;   // 2
             }
             catch { }
         }
@@ -3506,20 +3530,18 @@ Ví dụ không hợp lệ:
                 {
                     0 => new XocDiaSoiLiveKH24.Tasks.SeqParityFollowTask(),     // 1
                     1 => new XocDiaSoiLiveKH24.Tasks.PatternParityTask(),       // 2
-                    2 => new XocDiaSoiLiveKH24.Tasks.SeqMajorMinorTask(),       // 3
-                    3 => new XocDiaSoiLiveKH24.Tasks.PatternMajorMinorTask(),   // 4
-                    4 => new XocDiaSoiLiveKH24.Tasks.SmartPrevTask(),           // 5
-                    5 => new XocDiaSoiLiveKH24.Tasks.RandomParityTask(),        // 6
-                    6 => new XocDiaSoiLiveKH24.Tasks.AiStatParityTask(),        // 7
-                    7 => new XocDiaSoiLiveKH24.Tasks.StateTransitionBiasTask(), // 8
-                    8 => new XocDiaSoiLiveKH24.Tasks.RunLengthBiasTask(),       // 9
-                    9 => new XocDiaSoiLiveKH24.Tasks.EnsembleMajorityTask(),    // 10
-                    10 => new XocDiaSoiLiveKH24.Tasks.TimeSlicedHedgeTask(),    // 11
-                    11 => new XocDiaSoiLiveKH24.Tasks.KnnSubsequenceTask(),     // 12
-                    12 => new XocDiaSoiLiveKH24.Tasks.DualScheduleHedgeTask(),  // 13
-                    13 => new XocDiaSoiLiveKH24.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
-                    14 => new XocDiaSoiLiveKH24.Tasks.AiExpertPanelTask(), // 15
-                    15 => new XocDiaSoiLiveKH24.Tasks.Top10PatternFollowTask(), // 16
+                    2 => new XocDiaSoiLiveKH24.Tasks.SmartPrevTask(),           // 3
+                    3 => new XocDiaSoiLiveKH24.Tasks.RandomParityTask(),        // 4
+                    4 => new XocDiaSoiLiveKH24.Tasks.AiStatParityTask(),        // 5
+                    5 => new XocDiaSoiLiveKH24.Tasks.StateTransitionBiasTask(), // 6
+                    6 => new XocDiaSoiLiveKH24.Tasks.RunLengthBiasTask(),       // 7
+                    7 => new XocDiaSoiLiveKH24.Tasks.EnsembleMajorityTask(),    // 8
+                    8 => new XocDiaSoiLiveKH24.Tasks.TimeSlicedHedgeTask(),    // 9
+                    9 => new XocDiaSoiLiveKH24.Tasks.KnnSubsequenceTask(),     // 10
+                    10 => new XocDiaSoiLiveKH24.Tasks.DualScheduleHedgeTask(),  // 11
+                    11 => new XocDiaSoiLiveKH24.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 12
+                    12 => new XocDiaSoiLiveKH24.Tasks.AiExpertPanelTask(), // 13
+                    13 => new XocDiaSoiLiveKH24.Tasks.Top10PatternFollowTask(), // 14
                     _ => new XocDiaSoiLiveKH24.Tasks.SmartPrevTask(),
                 };
 

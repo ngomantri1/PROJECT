@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace XocDiaLiveHit.Tasks
+namespace TaiXiuLiveHit.Tasks
 {
     internal static class MoneyHelper
     {
@@ -70,20 +70,11 @@ namespace XocDiaLiveHit.Tasks
             if (chains == null || chains.Length == 0)
                 return 1000L;
 
-            // trạng thái CHỜ: không đánh
-            if (chainIndex < 0 || levelIndex < 0)
-                return 0L;
-
             chainIndex = Math.Clamp(chainIndex, 0, chains.Length - 1);
             var chain = chains[chainIndex] ?? Array.Empty<long>();
             if (chain.Length == 0) return 1000L;
 
             levelIndex = Math.Clamp(levelIndex, 0, chain.Length - 1);
-
-            // MỚI: nếu mức hiện tại là 0 -> không đánh
-            if (chain[levelIndex] == 0)
-                return 0L;
-
             return chain[levelIndex];
         }
 
@@ -109,52 +100,7 @@ namespace XocDiaLiveHit.Tasks
                 curChain = chains[0] ?? Array.Empty<long>();
             }
 
-            // 0) nếu đang ở trạng thái CHỜ (vừa thua hết 1 chuỗi và đã chuyển sang chuỗi mới nhưng phải đợi thắng)
-            if (levelIndex < 0)
-            {
-                // chỉ cần 1 ván thắng -> mở khoá chuỗi mới
-                if (win == true)
-                {
-                    levelIndex = 0;
-                    profitOnCurrentChain = 0;
-                }
-                // win == false hoặc null -> tiếp tục chờ
-                return;
-            }
-
             levelIndex = Math.Clamp(levelIndex, 0, curChain.Length - 1);
-
-            // 0b) MỚI: nếu mức hiện tại là 0 -> logic "đợi thắng rồi mới đánh mức kế tiếp"
-            if (curChain[levelIndex] == 0)
-            {
-                if (win == true)
-                {
-                    // nhảy sang mức kế tiếp trong cùng chuỗi
-                    if (levelIndex + 1 < curChain.Length)
-                    {
-                        levelIndex++;
-                    }
-                    else
-                    {
-                        // đang ở 0 cuối chuỗi -> sang chuỗi kế tiếp ở trạng thái CHỜ
-                        if (chainIndex + 1 < chainCount)
-                        {
-                            chainIndex++;
-                            levelIndex = -1;      // chờ 1 tay thắng để kích hoạt chuỗi mới
-                            profitOnCurrentChain = 0;
-                        }
-                        else
-                        {
-                            // đã ở chuỗi cuối cùng và cũng ở mức cuối (0) -> reset an toàn
-                            chainIndex = 0;
-                            levelIndex = 0;
-                            profitOnCurrentChain = 0;
-                        }
-                    }
-                }
-                // win == false hoặc null -> đứng im tại mức 0 để chờ
-                return;
-            }
 
             if (win == null)
                 return;
@@ -163,14 +109,14 @@ namespace XocDiaLiveHit.Tasks
             {
                 // thắng: cần tính LỢI NHUẬN THỰC của chuỗi hiện tại
                 // = mức vừa thắng - (tổng các mức đã đốt trong chính chuỗi này trước đó)
-                int wonLevel = levelIndex;              // vd đang thắng ở mức j của chuỗi i
-                long justWon = curChain[wonLevel];      // số vừa thắng
-                // trong 1 chuỗi: thắng -> về mức đầu
+                int wonLevel = levelIndex;              // vd đang thắng ở mức 1 của chuỗi 2
+                long justWon = curChain[wonLevel];      // số vừa thắng, vd 7000
+                // reset mức trong chuỗi
                 levelIndex = 0;
 
                 if (chainIndex > 0)
                 {
-                    // tổng tiền đã thua trong chính chuỗi hiện tại trước khi thắng
+                    // tính tổng tiền đã thua trong chính chuỗi hiện tại từ khi vào chuỗi
                     long spentInThisChain = 0;
                     for (int i = 0; i < wonLevel; i++)
                         spentInThisChain += curChain[i];
@@ -194,30 +140,18 @@ namespace XocDiaLiveHit.Tasks
                         for (int i = 0; i < chainIndex; i++)
                             needAllPrev += SumChain(chains[i]);
                     }
+                    long need = 0;
+                    if (chainTotals != null && chainIndex - 1 < chainTotals.Length)
+                        need = chainTotals[chainIndex - 1];
+                    else
+                        need = SumChain(chains[chainIndex - 1]);
 
-                    if (profitOnCurrentChain >= needAllPrev)
+                    if (profitOnCurrentChain >= need)
                     {
-                        // đủ để bù hết tất cả chuỗi trước → về thẳng chuỗi 1
-                        chainIndex = 0;
+                        // đủ điều kiện quay về chuỗi trước
+                        chainIndex--;
                         levelIndex = 0;
                         profitOnCurrentChain = 0;
-                    }
-                    else
-                    {
-                        // 2) nếu chưa đủ để về chuỗi 1 thì xét điều kiện cũ: về chuỗi ngay trước
-                        long needPrev = 0;
-                        if (chainTotals != null && chainIndex - 1 < chainTotals.Length)
-                            needPrev = chainTotals[chainIndex - 1];
-                        else
-                            needPrev = SumChain(chains[chainIndex - 1]);
-
-                        // yêu cầu mới: phải thắng gấp đôi tổng chuỗi trước
-                        if (profitOnCurrentChain >= 2 * needPrev)
-                        {
-                            chainIndex--;
-                            levelIndex = 0;
-                            profitOnCurrentChain = 0;
-                        }
                     }
                 }
                 else
@@ -239,9 +173,9 @@ namespace XocDiaLiveHit.Tasks
                     // thua hết chuỗi hiện tại
                     if (chainIndex + 1 < chainCount)
                     {
-                        // sang chuỗi kế tiếp NHƯNG phải chờ 1 tay thắng rồi mới đánh
+                        // sang chuỗi kế tiếp
                         chainIndex++;
-                        levelIndex = -1;           // đánh dấu trạng thái CHỜ
+                        levelIndex = 0;
                         profitOnCurrentChain = 0;
                     }
                     else
@@ -263,7 +197,8 @@ namespace XocDiaLiveHit.Tasks
             return s;
         }
 
-        public static string DigitSeqToParity(string digits)
+        // ====== CÁC HÀM PHỤ CŨ (giữ nguyên) ======
+        public static string DigitSeqToParity(string digits)  // "1234" -> "LCLC"
         {
             if (string.IsNullOrEmpty(digits)) return "";
             var s = digits.Trim();
@@ -273,6 +208,7 @@ namespace XocDiaLiveHit.Tasks
             {
                 if (ch == '0' || ch == '2' || ch == '4') arr[k++] = 'C';
                 else if (ch == '1' || ch == '3') arr[k++] = 'L';
+                // khác -> bỏ qua
             }
             return new string(arr, 0, k);
         }

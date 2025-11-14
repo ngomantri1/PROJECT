@@ -496,40 +496,85 @@
                     }); // TRÊN → DƯỚI
                 return cols;
             }
+            // Đọc chuỗi TK hiện tại trên bảng SoiCau
             function readTKSeq() {
                 var res = tkCellsPrefer('thongke2');
-                var cells = res.cells,
-                which = res.which;
-                if (!cells.length)
+                var cells = res.cells;
+                var which = res.which;
+
+                if (!cells.length) {
                     return {
                         seq: '',
                         which: null,
                         cols: [],
-                        cells: []
+                        cells: [],
+                        colStrings: []
                     };
-                var cols = clusterByX(cells); // TRÁI→PHẢI
-                var parts = [],
-                i;
-                for (i = 0; i < cols.length; i++) {
-                    var c = cols[i];
-                    var topDown = (i % 2 === 0); // cột 1 T↓, cột 2 B↑, ...
-                    var arr = c.items.slice();
-                    if (!topDown) {
-                        arr.reverse();
-                    }
-                    var s = '',
-                    k;
-                    for (k = 0; k < arr.length; k++)
+                }
+
+                // TRÁI → PHẢI, trong mỗi cột đã sort TRÊN → DƯỚI
+                var cols = clusterByX(cells);
+                var parts = [];
+
+                for (var i = 0; i < cols.length; i++) {
+                    var col = cols[i];
+                    var arr = col.items.slice(); // đã sort từ trên xuống dưới
+                    var s = '';
+                    for (var k = 0; k < arr.length; k++) {
                         s += String(arr[k].v);
+                    }
                     parts.push(s);
                 }
+
                 return {
                     seq: parts.join(''),
                     which: which,
                     cols: cols,
-                    cells: cells
+                    cells: cells,
+                    colStrings: parts
                 };
             }
+
+            // Ghép chuỗi từ bảng TK (boardSeq) vào lịch sử prev (S.seq),
+            // chỉ giữ tối đa 50 kết quả cuối cùng (bên phải là mới nhất)
+            function mergeSeq(prev, boardSeq) {
+                prev = String(prev || '');
+                boardSeq = String(boardSeq || '').replace(/[^0-4]/g, '');
+                if (!boardSeq) {
+                    return prev;
+                }
+
+                // Lần đầu: nhận luôn toàn bộ chuỗi trên bảng
+                if (!prev) {
+                    if (boardSeq.length > 50) {
+                        return boardSeq.slice(boardSeq.length - 50);
+                    }
+                    return boardSeq;
+                }
+
+                var maxK = Math.min(prev.length, boardSeq.length);
+                var kMatch = 0;
+
+                // Tìm overlap lớn nhất: suffix(prev,k) == prefix(boardSeq,k)
+                for (var k = maxK; k >= 0; k--) {
+                    var suf = prev.slice(prev.length - k);
+                    var pre = boardSeq.slice(0, k);
+                    if (suf === pre) {
+                        kMatch = k;
+                        break;
+                    }
+                }
+
+                var extra = boardSeq.slice(kMatch); // phần mới (thường là 1 số)
+                var merged = prev + extra;
+
+                // Chỉ giữ 50 số mới nhất (từ phải sang trái)
+                if (merged.length > 50) {
+                    merged = merged.slice(merged.length - 50);
+                }
+                return merged;
+            }
+
 
             /* ---------------- resolver/auto ---------------- */
             function resolve(poolSig, sig) {
@@ -593,7 +638,17 @@
             }
 
             /* ---------------- helpers for totals by (x, tail) ---------------- */
+            const TAIL_LOCKED_STATUS = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Center/StateGameContent/Locked';
             var TAIL_TOTAL_EXACT = 'XDLive/Canvas/Bg/footer/listLabel/totalBet';
+            // --- các tail đọc ở màn home ---
+            var TAIL_HOME_BALANCE = 'MainGame/Canvas/widget-top-view/wrapAvatar/btnShop/lbCoin'; // màn home
+            var TAIL_GAME_BALANCE = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Info_Content/PlayerBalance/AccountBalance'; // trong phòng Xóc Đĩa
+            // danh sách ưu tiên: trong game trước, không có thì mới dùng ở home
+            var TAIL_BALANCES = [
+                TAIL_GAME_BALANCE,
+                TAIL_HOME_BALANCE
+            ];
+            var TAIL_HOME_NICK = 'MainGame/Canvas/widget-top-view/wrapAvatar/lbNickName';
             var X_CHAN = 591; // CHẴN
             var X_LE = 973; // LẺ
             // --- NEW extra totals (by x under same tail) ---
@@ -648,6 +703,129 @@
                 }
                 return best;
             }
+
+            function readHomeBalance() {
+                try {
+                    // duyệt lần lượt các tail trong danh sách:
+                    // 1) TAIL_GAME_BALANCE (trong phòng Xóc Đĩa)
+                    // 2) TAIL_HOME_BALANCE (màn home)
+                    var n = null;
+
+                    for (var i = 0; i < TAIL_BALANCES.length && !n; i++) {
+                        var tail = TAIL_BALANCES[i];
+                        n =
+                            (window.findNodeByTailCompat && window.findNodeByTailCompat(tail)) ||
+                        (window.__abx_findNodeByTail && window.__abx_findNodeByTail(tail));
+                    }
+
+                    // không tìm được node nào → trả null
+                    if (!n)
+                        return {
+                            val: null,
+                            raw: null
+                        };
+
+                    // đọc text từ cc.Label
+                    var lbl = n.getComponent && n.getComponent(cc.Label);
+                    var txt = lbl && lbl.string != null ? String(lbl.string).trim() : '';
+                    var val = moneyOf(txt);
+
+                    return {
+                        val: val,
+                        raw: txt
+                    };
+                } catch (e) {
+                    return {
+                        val: null,
+                        raw: null
+                    };
+                }
+            }
+
+            // đọc nickname ở màn home, luôn tự đi scene, KHÔNG dùng __abx_findNodeByTail
+            function readHomeNick() {
+                try {
+                    if (!(window.cc && cc.director && cc.director.getScene))
+                        return '';
+
+                    var scene = cc.director.getScene();
+                    var parts = String(TAIL_HOME_NICK || '').split('/').filter(Boolean);
+                    // nếu tail bắt đầu bằng tên scene thì bỏ đi
+                    if (parts[0] === scene.name)
+                        parts.shift();
+
+                    var node = scene;
+                    for (var i = 0; i < parts.length; i++) {
+                        var name = parts[i];
+                        var kids = node.children || node._children || [];
+                        var found = null;
+                        for (var j = 0; j < kids.length; j++) {
+                            if (kids[j] && kids[j].name === name) {
+                                found = kids[j];
+                                break;
+                            }
+                        }
+                        if (!found)
+                            return ''; // đi sai nhánh thì coi như không có
+                        node = found;
+                    }
+
+                    var lbl = node.getComponent && node.getComponent(cc.Label);
+                    var txt = lbl && lbl.string != null ? String(lbl.string).trim() : '';
+                    return txt;
+                } catch (e) {
+                    return '';
+                }
+            }
+
+            function findNodeByTailCompat(tail) {
+                // ưu tiên hàm sẵn có nếu web đã tiêm
+                if (window.__abx_findNodeByTail)
+                    return window.__abx_findNodeByTail(tail);
+                if (window.findNodeByTail)
+                    return window.findNodeByTail(tail);
+
+                // fallback tự đi từ scene
+                if (!(window.cc && cc.director && cc.director.getScene))
+                    return null;
+                var scene = cc.director.getScene();
+                var parts = String(tail || '').split('/').filter(Boolean);
+                if (parts[0] === scene.name)
+                    parts.shift();
+
+                var node = scene;
+                for (var i = 0; i < parts.length; i++) {
+                    var name = parts[i];
+                    var kids = node.children || node._children || [];
+                    var found = null;
+                    for (var j = 0; j < kids.length; j++) {
+                        if (kids[j] && kids[j].name === name) {
+                            found = kids[j];
+                            break;
+                        }
+                    }
+                    if (!found)
+                        return null;
+                    node = found;
+                }
+                return node;
+            }
+
+            function __cw_readStatusSmart() {
+                try {
+                    const find = (window.findNodeByTailCompat || window.__abx_findNodeByTail || window.findNodeByTail);
+                    if (!find)
+                        return null;
+                    const n = find(TAIL_LOCKED_STATUS);
+                    if (!n)
+                        return null; // không có node Locked → để null
+                    const on = !!(n.activeInHierarchy || n.active);
+                    return on ? 'locked' : 'open';
+                } catch {
+                    return null;
+                }
+            }
+            window.findNodeByTailCompat = window.findNodeByTailCompat || findNodeByTailCompat;
             // Export standardized helpers
             window.moneyTailList = moneyTailList;
             window.pickByXTail = pickByXTail;
@@ -660,34 +838,42 @@
 
             /* ---------------- totals (using x & tail) ---------------- */
             function totals(S) {
-                S.money = buildMoneyRects(); // keep map for overlays & legacy helpers
+                S.money = buildMoneyRects(); // quét hết tiền
 
+                // 1) totals trong phòng (chan/le/...): vẫn để y như cũ
                 var list = moneyTailList(TAIL_TOTAL_EXACT);
-                var mC = pickByXTail(list, X_CHAN, TAIL_TOTAL_EXACT); // CHẴN
-                var mL = pickByXTail(list, X_LE, TAIL_TOTAL_EXACT); // LẺ
-                var mSD = pickByXTail(list, X_SAPDOI, TAIL_TOTAL_EXACT); // SẤP ĐÔI
-                var mTT = pickByXTail(list, X_TUTRANG, TAIL_TOTAL_EXACT); // TỨ TRẮNG
-                var m3T = pickByXTail(list, X_3TRANG, TAIL_TOTAL_EXACT); // 3 TRẮNG
-                var m3D = pickByXTail(list, X_3DO, TAIL_TOTAL_EXACT); // 3 ĐỎ
-                var mTD = pickByXTail(list, X_TUDO, TAIL_TOTAL_EXACT); // TỨ ĐỎ
+                var mC = pickByXTail(list, X_CHAN, TAIL_TOTAL_EXACT);
+                var mL = pickByXTail(list, X_LE, TAIL_TOTAL_EXACT);
+                var mSD = pickByXTail(list, X_SAPDOI, TAIL_TOTAL_EXACT);
+                var mTT = pickByXTail(list, X_TUTRANG, TAIL_TOTAL_EXACT);
+                var m3T = pickByXTail(list, X_3TRANG, TAIL_TOTAL_EXACT);
+                var m3D = pickByXTail(list, X_3DO, TAIL_TOTAL_EXACT);
+                var mTD = pickByXTail(list, X_TUDO, TAIL_TOTAL_EXACT);
 
-                // Account (A) keeps old robust resolver
-                if (!S.selAcc)
-                    autoBindAcc(S);
-                var rA = resolve(S.money, S.selAcc);
+                // 2) thử đọc tiền ở màn home
+                var homeBal = readHomeBalance(); // {val, raw}
+
+                // 3) nếu không có thì mới dùng autoBindAcc cũ
+                var rA = null;
+                if (!homeBal.val) {
+                    if (!S.selAcc)
+                        autoBindAcc(S);
+                    rA = resolve(S.money, S.selAcc);
+                }
 
                 return {
                     C: mC ? mC.val : null,
                     L: mL ? mL.val : null,
-                    A: rA ? rA.val : null,
+                    A: homeBal.val ? homeBal.val : (rA ? rA.val : null),
                     SD: mSD ? mSD.val : null,
                     TT: mTT ? mTT.val : null,
                     T3T: m3T ? m3T.val : null,
                     T3D: m3D ? m3D.val : null,
                     TD: mTD ? mTD.val : null,
+
                     rawC: mC ? mC.txt : null,
                     rawL: mL ? mL.txt : null,
-                    rawA: rA ? rA.txt : null,
+                    rawA: homeBal.raw ? homeBal.raw : (rA ? rA.txt : null),
                     rawSD: mSD ? mSD.txt : null,
                     rawTT: mTT ? mTT.txt : null,
                     rawT3T: m3T ? m3T.txt : null,
@@ -695,6 +881,7 @@
                     rawTD: mTD ? mTD.txt : null
                 };
             }
+
             function sampleTotalsNow() {
                 try {
                     return totals(S);
@@ -1062,25 +1249,41 @@
                     rawL: null,
                     rawA: null
                 };
+
+                // ƯU TIÊN đọc lại từ UI home
+                var nickNow = readHomeNick(); // cố gắng đọc từ tail home
+                if (nickNow) {
+                    S.lastNick = nickNow; // cập nhật cache
+                }
+                var nick = S.lastNick || '--'; // lấy cái mới nhất mình đang có
+                var stDisp = (S.status === 'locked') ? 'Đợi kết quả' :
+                (S.status === 'open') ? 'Cho phép đặt cược' : (S.status || '--');
                 var f = S.focus;
                 var base =
-                    '• Trạng thái: ' + S.status + ' | Prog: ' + (S.prog == null ? '--' : (((S.prog * 100) | 0) + '%')) + '\n' +
-                    '• TK : ' + fmt(t.A) + '|CHẴN: ' + fmt(t.C) + '|SẤP ĐÔI: ' + fmt(t.SD) + '|LẺ :' + fmt(t.L) + '|TỨ TRẮNG: ' + fmt(t.TT) + '|3 TRẮNG: ' + fmt(t.T3T) + '|3 ĐỎ: ' + fmt(t.T3D) + '|TỨ ĐỎ: ' + fmt(t.TD) + '\n' +
-
+                    '• Trạng thái: ' + stDisp + ' | Prog: ' + (S.prog == null ? '--' : (((S.prog * 100) | 0) + '%')) + ' | Phiên: ' + (S.sessionText || '--') + '\n' +
+                    '• TK : ' + fmt(t.A) +
+                    '|NickName: ' + nick +
+                    '|CHẴN: ' + fmt(t.C) +
+                    '|SẤP ĐÔI: ' + fmt(t.SD) +
+                    '|LẺ :' + fmt(t.L) +
+                    '|TỨ TRẮNG: ' + fmt(t.TT) +
+                    '|3 TRẮNG: ' + fmt(t.T3T) +
+                    '|3 ĐỎ: ' + fmt(t.T3D) +
+                    '|TỨ ĐỎ: ' + fmt(t.TD) + '\n' +
                     '• Focus: ' + (f ? f.kind : '-') + '\n' +
                     '  tail: ' + (f ? f.tail : '-') + '\n' +
                     '  txt : ' + (f ? (f.txt != null ? f.txt : '-') : '-') + '\n' +
                     '  val : ' + (f && f.val != null ? fmt(f.val) : '-');
 
-                var tk = readTKSeq();
-                S.seq = tk.seq || '';
                 var seqHtml = 'Chuỗi kết quả : <i>--</i>';
-                if (S.seq && S.seq.length) {
-                    var head = esc(S.seq.slice(0, -1));
-                    var last = esc(S.seq.slice(-1));
+                var seqStr = S.seq || '';
+                if (seqStr && seqStr.length) {
+                    var head = esc(seqStr.slice(0, -1));
+                    var last = esc(seqStr.slice(-1));
                     seqHtml = 'Chuỗi kết quả : <span>' + head + '</span><span style="color:#f66">' + last + '</span>';
                 }
                 panel.querySelector('#cwInfo').innerHTML = esc(base) + '\n' + seqHtml;
+
             }
 
             /* ---------------- scan tools ---------------- */
@@ -1549,6 +1752,14 @@
                 }
                 return node;
             }
+
+            /* expose helpers cho reactor dùng */
+            window.collectButtons = window.collectButtons || collectButtons;
+            window.buildTextRects = window.buildTextRects || buildTextRects;
+            window.clickRectCenter = window.clickRectCenter || clickRectCenter;
+            window.emitClick = window.emitClick || emitClick;
+            window.clickableOf = window.clickableOf || clickableOf;
+
             function NORM(s) {
                 return String(s || '').normalize('NFD').replace(/[\u0300-\u036F]/g, '').toUpperCase();
             }
@@ -2275,14 +2486,14 @@
                 var p = collectProgress();
                 if (p != null)
                     S.prog = p;
-                S.status = statusByProg(p == null ? null : p);
+                var st = (typeof __cw_readStatusSmart === 'function') ? __cw_readStatusSmart() : null;
+                if (st)
+                    S.status = st; // chỉ cập nhật khi đọc được 'locked' | 'open'
                 var T = totals(S);
                 S._lastTotals = T;
-
-                // TK sequence
+                // TK sequence: gộp bảng SoiCau vào lịch sử S.seq (giữ 50 kết quả)
                 var tk = readTKSeq();
-                S.seq = tk.seq || '';
-
+                S.seq = mergeSeq(S.seq || '', tk.seq || '');
                 // keep focus
                 if (S.focus) {
                     var all = collectLabels().filter(function (l) {
@@ -2476,6 +2687,35 @@
             (() => {
                 'use strict';
 
+                // xác định đang ở màn hình game (cocos) hay không
+                function __cw_isGameUi() {
+                    try {
+                        // 1) nếu cocos đã lên scene thì coi như là game
+                        if (window.cc && cc.director && cc.director.getScene) {
+                            var sc = cc.director.getScene();
+                            if (sc && sc.name) {
+                                var n = sc.name.toLowerCase();
+                                // bạn có thể siết thêm theo tên
+                                if (n.indexOf('xocdia') !== -1 || n.indexOf('xd') !== -1) {
+                                    return true;
+                                }
+                            }
+                            // có scene rồi thì coi như game
+                            return true;
+                        }
+
+                        // 2) fallback theo host
+                        var h = (location && location.hostname ? location.hostname : '').toLowerCase();
+                        if (h.startsWith('games.'))
+                            return true;
+
+                        // 3) còn lại coi như home
+                        return false;
+                    } catch (e) {
+                        return false;
+                    }
+                }
+
                 /* ... GIỮ NGUYÊN TOÀN BỘ PHẦN TRÊN CỦA BẠN ...
                 (từ đầu file tới ngay trước đoạn "/* === CW Bridge ..." cũ)
                 Mình không thay gì ở đó, mình chỉ dán lại nguyên phần dưới
@@ -2540,62 +2780,302 @@
                         }
                     }
 
-                    function readSeqSafe() {
-                        try {
-                            if (typeof readTKSeq === 'function') {
-                                var r = readTKSeq();
-                                return (r && r.seq) ? r.seq : '';
-                            }
-                        } catch (_) {}
-                        return '';
-                    }
+                     function readSeqSafe() {
+                         // ƯU TIÊN lấy từ lịch sử S.seq (đã merge + cắt 50 kết quả)
+                         try {
+                             if (typeof S === 'object' && typeof S.seq === 'string' && S.seq.length) {
+                                 return S.seq;
+                             }
+                         } catch (_) {}
 
-                    // bắn snapshot định kỳ
+                         // Fallback: nếu vì lý do gì đó S.seq chưa có thì đọc trực tiếp từ bảng
+                         try {
+                             if (typeof readTKSeq === 'function') {
+                                 var r = readTKSeq();
+                                 return (r && r.seq) ? r.seq : '';
+                             }
+                         } catch (_) {}
+
+                         return '';
+                     }
+
+                    // === thay thế đoạn window.__cw_startPush cũ bằng đoạn này ===
                     window.__cw_startPush = function (tickMs) {
                         try {
-                            tickMs = Number(tickMs) || 240;
-                            if (tickMs < 120)
-                                tickMs = 120;
-                            if (tickMs > 1000)
-                                tickMs = 1000;
+                            if (!tickMs || tickMs < 200)
+                                tickMs = 400;
 
-                            if (_pushTimer) {
-                                clearInterval(_pushTimer);
-                                _pushTimer = null;
+                            // hủy timer cũ nếu có
+                            if (window.__cw_pushTimer) {
+                                clearInterval(window.__cw_pushTimer);
+                                window.__cw_pushTimer = null;
                             }
-                            _lastJson = '';
 
-                            _pushTimer = setInterval(function () {
-                                var p = readProgressVal();
-                                var st = (typeof statusByProg === 'function') ? statusByProg(p) : '';
-                                var snap = {
-                                    abx: 'tick',
-                                    prog: p,
-                                    totals: readTotalsSafe(),
-                                    seq: readSeqSafe(),
-                                    status: String(st || ''),
-                                    ts: Date.now()
-                                };
-                                if (shallowChanged(snap)) {
-                                    safePost(snap);
+                            // helper: tìm node theo tail nếu ở file lớn bạn đã có sẵn
+                            function findNodeSafe(tail) {
+                                if (!tail)
+                                    return null;
+                                if (window.__abx_findNodeByTail)
+                                    return window.__abx_findNodeByTail(tail);
+                                if (window.findNodeByTail)
+                                    return window.findNodeByTail(tail);
+
+                                // fallback rất an toàn
+                                if (!(window.cc && cc.director && cc.director.getScene))
+                                    return null;
+                                var scene = cc.director.getScene();
+                                if (!scene)
+                                    return null;
+                                var sceneName = scene.name;
+                                var parts = String(tail).split('/').filter(Boolean);
+                                if (parts[0] === sceneName)
+                                    parts.shift();
+
+                                var node = scene;
+                                for (var i = 0; i < parts.length; i++) {
+                                    var name = parts[i];
+                                    var kids = node.children || node._children || [];
+                                    var found = null;
+                                    for (var j = 0; j < kids.length; j++) {
+                                        if (kids[j] && kids[j].name === name) {
+                                            found = kids[j];
+                                            break;
+                                        }
+                                    }
+                                    if (!found)
+                                        return null;
+                                    node = found;
+                                }
+                                return node;
+                            }
+
+                            // helper: nhận diện đang ở HOME hay GAME
+                            function detectUiMode() {
+                                try {
+                                    var sceneName = '';
+                                    if (window.cc && cc.director && cc.director.getScene) {
+                                        var sc = cc.director.getScene();
+                                        if (sc)
+                                            sceneName = sc.name || '';
+                                    }
+
+                                    // ưu tiên 1: có loginView -> xem như HOME
+                                    var loginNode = findNodeSafe('MainGame/Canvas/loginView');
+                                    if (loginNode && loginNode.activeInHierarchy !== false) {
+                                        return {
+                                            ui: 'home',
+                                            via: 'loginView',
+                                            scene: sceneName
+                                        };
+                                    }
+
+                                    // ưu tiên 2: có list game bên trái -> cũng là HOME
+                                    var listNode =
+                                        findNodeSafe('MainGame/Canvas/widget-left/offset-left/scrollview-game')
+                                         || findNodeSafe('MainGame/Canvas/widget-left/offset-left/scrollview-game/mask/view/content');
+
+                                    if (listNode && listNode.activeInHierarchy !== false) {
+                                        return {
+                                            ui: 'home',
+                                            via: 'game-list',
+                                            scene: sceneName
+                                        };
+                                    }
+
+                                    // ưu tiên 3: có view xóc đĩa ngang -> GAME
+                                    var xdNode = findNodeSafe('MainGame/Canvas/Xocdia_MD_View_Ngang');
+                                    if (xdNode && xdNode.activeInHierarchy !== false) {
+                                        return {
+                                            ui: 'game',
+                                            via: 'xocdia-view',
+                                            scene: sceneName
+                                        };
+                                    }
+
+                                    // fallback: nhìn scene name
+                                    if (sceneName && sceneName.indexOf('Xocdia') !== -1) {
+                                        return {
+                                            ui: 'game',
+                                            via: 'scene-name',
+                                            scene: sceneName
+                                        };
+                                    }
+
+                                    return {
+                                        ui: 'unknown',
+                                        via: 'none',
+                                        scene: sceneName
+                                    };
+                                } catch (e) {
+                                    return {
+                                        ui: 'unknown',
+                                        via: 'err:' + e.message,
+                                        scene: ''
+                                    };
+                                }
+                            }
+
+                            // --- Tails cho nickname ở GAME, PHIÊN & status (đa biến thể) ---
+                            const TAIL_NICK_GAME = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Info_Content/PlayerName/DisplayName_Lb';
+                            const TAIL_NICK_HOME = 'MainGame/Canvas/widget-top-view/wrapAvatar/lbNickName';
+
+                            // NEW: thử nhiều tail cho "Phiên cược"
+                            const TAIL_SESSION_CANDS = [
+                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/SessionContent/Session_Lb', // layout cũ
+                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Info_Content/Session_Lb', // KH24/biến thể mới
+                                'MainGame/Canvas/Xocdia_MD_View_Doc/Top/SessionContent/Session_Lb', // layout dọc
+                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Info_Content/SessionContent/Session_Lb' // một số bàn khác
+                            ];
+
+                            // Status có thể nằm ở nhiều nơi
+                            const TAIL_STATUS_CANDS = [
+                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Info_Content/Status_Lb',
+                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Info_Content/Lock_Lb',
+                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/StatusContent/Status_Lb',
+                            ];
+                            const TAIL_LOCKED = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Center/StateGameContent/Locked';
+
+                            // đọc text từ node: ưu tiên cc.Label, rồi đến cc.RichText
+                            function getLabelText(node) {
+                                try {
+                                    var lb = node && node.getComponent && node.getComponent(cc.Label);
+                                    if (lb && typeof lb.string !== 'undefined')
+                                        return String(lb.string);
+                                    var rt = node && node.getComponent && node.getComponent(cc.RichText);
+                                    if (rt && typeof rt.string !== 'undefined')
+                                        return String(rt.string);
+                                } catch (_) {}
+                                return null;
+                            }
+
+                            // helper đọc text theo tail (đúng bản, KHÔNG để rơi lỗi rồi trả null)
+                            function readLabelByTail(tail) {
+                                try {
+                                    var n = findNodeSafe(tail);
+                                    if (!n)
+                                        return null;
+                                    var t = getLabelText(n);
+                                    return (t == null ? null : String(t).trim());
+                                } catch (_) {
+                                    return null;
+                                }
+                            }
+
+                            // nickname: ưu tiên GAME, fallback HOME
+                            function readNickSmart() {
+                                return readLabelByTail(TAIL_NICK_GAME) || readLabelByTail(TAIL_NICK_HOME) || null;
+                            }
+
+                            // PHIÊN CƯỢC: chỉ đọc khi đang ở GAME, ưu tiên đúng tail SessionContent/Session_Lb
+                            function readSessionText() {
+                                try {
+                                    var ui = detectUiMode();
+                                    if (!ui || ui.ui !== 'game')
+                                        return null;
+
+                                    // 1) ƯU TIÊN đúng đuôi SessionContent/Session_Lb như ông chủ yêu cầu
+                                    var PREFERRED = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/SessionContent/Session_Lb';
+                                    var s0 = readLabelByTail(PREFERRED);
+                                    if (s0 && /^#\d{3,}$/.test(s0.trim()))
+                                        return s0.trim();
+
+                                    // 2) Các biến thể còn lại (nếu có)
+                                    for (var i = 0; i < TAIL_SESSION_CANDS.length; i++) {
+                                        var tail = TAIL_SESSION_CANDS[i];
+                                        if (tail === PREFERRED)
+                                            continue; // đã thử ở trên
+                                        var s = readLabelByTail(tail);
+                                        if (s && /^#\d{3,}$/.test(s.trim()))
+                                            return s.trim();
+                                    }
+
+                                    // 3) Fallback an toàn: CHỈ quét label có tail kết thúc bằng 'session_lb'
+                                    //    để tránh nhặt nhầm các label '#' ở nơi khác
+                                    var labs = collectLabels();
+                                    var best = null;
+                                    for (var k = 0; k < labs.length; k++) {
+                                        var tl = String(labs[k].tail || '').toLowerCase();
+                                        if (tl.endsWith('/session_lb') || tl.indexOf('sessioncontent/session_lb') !== -1) {
+                                            var txt = String(labs[k].text || '').trim();
+                                            if (/^#\d{3,}$/.test(txt)) {
+                                                best = txt;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    return best || null;
+                                } catch (_) {
+                                    return null;
+                                }
+                            }
+
+                            window.__cw_pushTimer = setInterval(function () {
+                                try {
+                                    // 1) đọc tiến trình & status (ưu tiên text)
+                                    var p = readProgressVal();
+                                    var st = (typeof __cw_readStatusSmart === 'function') ? __cw_readStatusSmart() : null;
+                                    var session = readSessionText();
+                                    var uiInfo = detectUiMode();
+
+                                    // 2) nick thông minh: GAME trước, HOME sau; rồi cache vào S.lastNick
+                                    var nickNow = readNickSmart() || readHomeNick() || '';
+                                    if (nickNow)
+                                        S.lastNick = nickNow;
+
+                                    // 3) totals an toàn, và nếu đang ở HOME thì chèn số dư màn HOME vào A/rawA
+                                    var tots = readTotalsSafe() || {};
+                                    if (uiInfo.ui === 'home') {
+                                        var hb = readHomeBalance(); // { val, raw }
+                                        if (hb && hb.val != null) {
+                                            tots.A = hb.val;
+                                            tots.rawA = hb.raw;
+                                        }
+                                    }
+
+                                    // 4) cập nhật UI nội bộ cho panel
+                                    S.status = st;
+                                    S.sessionText = session || null;
+
+                                    // 5) gói snapshot đẩy sang C#
+                                    var snap = {
+                                        abx: 'tick',
+                                        prog: p,
+                                        totals: tots, // dùng totals đã được patch ở HOME
+                                        seq: readSeqSafe(),
+                                        status: String(st || ''),
+                                        session: session || undefined, // giữ nguyên định dạng cũ
+                                        nick: S.lastNick || '',
+                                        ui: uiInfo.ui,
+                                        ui_via: uiInfo.via,
+                                        scene: uiInfo.scene,
+                                        ts: Date.now()
+                                    };
+
+                                    // 6) gửi nếu thay đổi (đỡ spam kênh webview)
+                                    if (shallowChanged(snap)) {
+                                        if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
+                                            window.chrome.webview.postMessage(JSON.stringify(snap));
+                                        } else if (window.external && typeof window.external.notify === 'function') {
+                                            window.external.notify(JSON.stringify(snap));
+                                        } else {
+                                            // không có kênh gửi thì bỏ qua
+                                        }
+                                    }
+                                } catch (err) {
+                                    // nuốt lỗi để không làm vỡ vòng tick
+                                    // console.warn('[__cw_startPush] tick err', err);
                                 }
                             }, tickMs);
 
-                            return 'started';
-                        } catch (err) {
-                            safePost({
-                                abx: 'tick_error',
-                                error: String(err && err.message || err),
-                                ts: Date.now()
-                            });
-                            return 'fail';
+                        } catch (e) {
+                            // console.warn('[__cw_startPush] init err', e);
                         }
                     };
 
                     window.__cw_stopPush = function () {
-                        if (_pushTimer) {
-                            clearInterval(_pushTimer);
-                            _pushTimer = null;
+                        if (window.__cw_pushTimer) {
+                            clearInterval(window.__cw_pushTimer);
+                            window.__cw_pushTimer = null;
                         }
                         return 'stopped';
                     };
@@ -3024,6 +3504,11 @@
 
 
         })();
+        // cuối hàm boot, THÊM 3 DÒNG NÀY:
+        if (window.__cw_startPush) {
+            // 800ms/lần → nhỏ hơn 1.5s HomeTickFresh bên C#
+            window.__cw_startPush(800);
+        }
 
     }
 
@@ -3041,4 +3526,180 @@
             }
         }, 500);
     }
+})();
+
+// ===== Realtime reactors: close notice + re-login (robust) =====
+(function () {
+    if (!window.cc || !cc.director || !cc.director.getScene)
+        return;
+
+    const TICK_MS = 150;
+    const TTL_MS = 7000; // chống spam cùng 1 mục tiêu
+    const TOPR = () => innerWidth;
+    const TOPH = () => innerHeight;
+
+    const seen = new Map(); // key -> expiresAt
+    let lastScene = '';
+    let timer = null;
+
+    function now() {
+        return performance && performance.now ? performance.now() : Date.now();
+    }
+    function alive(n) {
+        try {
+            return n && cc.isValid(n) && n.activeInHierarchy !== false;
+        } catch (_) {
+            return false;
+        }
+    }
+    function cooldown(key, ms = TTL_MS) {
+        const t = now();
+        const old = seen.get(key) || 0;
+        if (old > t)
+            return true; // đang cooldown
+        seen.set(key, t + ms);
+        return false;
+    }
+    function resetAll() {
+        seen.clear();
+    }
+
+    // --- Heuristic: tìm nút đóng thông báo ---
+    function findNoticeClose() {
+        try {
+            const btns = (window.collectButtons ? window.collectButtons() : []).filter(b => {
+                // vùng góc phải trên của pop-up
+                const rightSide = b.x > TOPR() * 0.55;
+                const highArea = b.w >= 24 && b.h >= 24 && b.w <= 140 && b.h <= 140;
+                const topBand = b.y < TOPH() * 0.50;
+                return rightSide && topBand && highArea;
+            });
+
+            // Ưu tiên tail gợi ý "close"
+            let cand = btns.filter(b => /close|btnclose|buttonclose|dong|x_|_x$/i.test(b.tail || ''));
+            if (!cand.length)
+                cand = btns;
+            if (!cand.length)
+                return null;
+
+            cand.sort((a, b) => (a.y - b.y) || (a.x - b.x)); // cái cao & sát góc trước
+            return cand[0];
+        } catch (_) {
+            return null;
+        }
+    }
+
+    // --- Heuristic: tìm “Đăng nhập lại / Reconnect” và nút gần đó ---
+    function findRelogin() {
+        try {
+            const texts = (window.buildTextRects ? window.buildTextRects() : []);
+            const want = texts.filter(t => /đăng\s*nhập\s*lại|kết\s*nối\s*lại|re\s*login|reconnect|login\s*again/i.test(t.text || ''));
+            if (!want.length)
+                return null;
+
+            // tìm button gần nhất với text này
+            const btns = (window.collectButtons ? window.collectButtons() : []);
+            function d2(ax, ay, bx, by) {
+                const dx = ax - bx,
+                dy = ay - by;
+                return dx * dx + dy * dy;
+            }
+
+            let best = null,
+            bestD = 1e18;
+            for (const w of want) {
+                const cx = w.x + w.w / 2,
+                cy = w.y + w.h / 2;
+                for (const b of btns) {
+                    const bx = b.x + b.w / 2,
+                    by = b.y + b.h / 2;
+                    const dist = d2(cx, cy, bx, by);
+                    if (dist < bestD) {
+                        bestD = dist;
+                        best = b;
+                    }
+                }
+            }
+            return best || null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    async function clickButtonBox(b) {
+        if (!b)
+            return false;
+        const r = {
+            x: b.x,
+            y: b.y,
+            w: b.w,
+            h: b.h
+        };
+        if (window.clickRectCenter)
+            return clickRectCenter(r);
+        // fallback dùng emitClick theo tail
+        const n = window.findNodeByTailCompat ? window.findNodeByTailCompat(b.tail) : null;
+        if (alive(n)) {
+            const hit = window.clickableOf ? window.clickableOf(n) : n;
+            return window.emitClick ? window.emitClick(hit) : false;
+        }
+        return false;
+    }
+
+    async function tick() {
+        try {
+            // Reset khi đổi scene
+            const sc = (cc.director.getScene() && cc.director.getScene().name) || '';
+            if (sc && sc !== lastScene) {
+                lastScene = sc;
+                resetAll();
+            }
+
+            // 1) Close thông báo nếu có
+            const closeBtn = findNoticeClose();
+            if (closeBtn && !cooldown('notice:' + closeBtn.x + ',' + closeBtn.y)) {
+                await clickButtonBox(closeBtn);
+            }
+
+            // 2) Nút "Đăng nhập lại/Kết nối lại"
+            const relogBtn = findRelogin();
+            if (relogBtn && !cooldown('relogin:' + relogBtn.x + ',' + relogBtn.y)) {
+                await clickButtonBox(relogBtn);
+            }
+
+        } catch (e) { /* noop */
+        }
+    }
+
+    // Public API để bật/tắt
+    window.cwReactor = window.cwReactor || {
+        start() {
+            if (timer)
+                return;
+            lastScene = (cc.director.getScene() && cc.director.getScene().name) || '';
+            resetAll();
+            timer = setInterval(tick, TICK_MS);
+            console.log('[cwReactor] START', {
+                tick: TICK_MS
+            });
+        },
+        stop() {
+            if (!timer)
+                return;
+            clearInterval(timer);
+            timer = null;
+            console.log('[cwReactor] STOP');
+        },
+        kick() {
+            tick();
+        } // chạy 1 nhịp ngay lập tức
+    };
+
+    // auto start sớm nhưng an toàn: để 1 frame cho scene dựng xong
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            window.cwReactor.start();
+        });
+    });
+
 })();

@@ -1,0 +1,66 @@
+(function () {
+    // hàm lấy node theo tail, ưu tiên hàm đã được ông chủ tiêm
+    function findByTail(tail) {
+        if (!tail) return null;
+        if (window.findNodeByTailCompat)
+            return window.findNodeByTailCompat(tail);
+        if (window.__abx_findNodeByTail)
+            return window.__abx_findNodeByTail(tail);
+
+        // fallback: tự đi từ scene
+        if (!(window.cc && cc.director && cc.director.getScene)) return null;
+        const scene = cc.director.getScene();
+        const parts = String(tail).split('/').filter(Boolean);
+        // nếu tail bắt đầu bằng tên scene thì bỏ đi
+        if (parts[0] === scene.name) parts.shift();
+
+        let node = scene;
+        for (let i = 0; i < parts.length; i++) {
+            const name = parts[i];
+            const kids = node.children || node._children || [];
+            let found = null;
+            for (let j = 0; j < kids.length; j++) {
+                if (kids[j] && kids[j].name === name) {
+                    found = kids[j];
+                    break;
+                }
+            }
+            if (!found) return null;
+            node = found;
+        }
+        return node;
+    }
+
+    function getNodeText(node) {
+        if (!node || !node.getComponent) return '';
+        const lbl = node.getComponent(cc.Label);
+        if (lbl && lbl.string != null) return String(lbl.string);
+        const rt = node.getComponent(cc.RichText);
+        if (rt && rt.string != null) return String(rt.string);
+        return '';
+    }
+
+    // hàm public
+    window.showTailText = function (tail) {
+        const node = findByTail(tail);
+        if (!node) {
+            console.log('[showTailText] NOT FOUND:', tail);
+            return;
+        }
+        const txt = getNodeText(node);
+        console.log('[showTailText] HIT:', tail, '→', txt || '(empty)');
+
+        // nếu là group, in thử các con cho dễ dò
+        const kids = node.children || node._children || [];
+        if (kids.length) {
+            console.log('  children:');
+            kids.forEach(function (c, i) {
+                const cTxt = getNodeText(c);
+                console.log('   -', i, c && c.name, '→', cTxt || '(empty)');
+            });
+        }
+    };
+
+    console.log('showTailText(tail) is ready.');
+})();
+showTailText('MainGame/Canvas/widget-top-view/wrapAvatar/btnShop/lbCoin');

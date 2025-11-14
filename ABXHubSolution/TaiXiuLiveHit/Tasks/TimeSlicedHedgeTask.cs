@@ -1,41 +1,46 @@
-﻿using System;
-using System.Threading;
+﻿using System.Threading;
 using System.Threading.Tasks;
+using static TaiXiuLiveHit.Tasks.TaskUtil;
 
-namespace XocDiaSoiLiveKH24.Tasks
+namespace TaiXiuLiveHit.Tasks
 {
-    public sealed class SeqMajorMinorTask : IBetTask
+    /// <summary>
+    /// 11) Time-sliced hedge (block 10 tay):
+    /// - Tay 1..5: theo ván cuối
+    /// - Tay 6..10: đảo ván cuối
+    /// - Lặp lại block (1..10)
+    /// </summary>
+    public sealed class TimeSlicedHedgeTask : IBetTask
     {
-        public string DisplayName => "3) Chuỗi N/I tự nhập";
-        public string Id => "seq-ni";               // 3) Chuỗi N/I tự nhập
+        public string DisplayName => "11) Lịch chẻ 10 tay";
+        public string Id => "time-sliced-hedge";
 
-        private static string PickSideByNI(char ni, XocDiaSoiLiveKH24.CwTotals t)
+        private int _roundInBlock = 0; // 0..9
+
+        private static char Opp(char c) => c == 'C' ? 'L' : 'C';
+        private static string ToSide(char c) => (c == 'C') ? "CHAN" : "LE";
+
+        private char Decide(string parity)
         {
-            // N = đánh cửa có tổng tiền NHIỀU hơn; I = đánh cửa có tổng tiền ÍT hơn
-            long c = t?.C ?? 0, l = t?.L ?? 0;
-            if (ni == 'N') return (c >= l) ? "CHAN" : "LE";
-            return (c < l) ? "CHAN" : "LE";
+            char last = (parity.Length == 0) ? 'C' : parity[^1];
+            int idx = (_roundInBlock % 10); // 0..9
+            return (idx < 5) ? last : Opp(last);
         }
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
             var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
-            var raw = (ctx.BetSeq ?? "").Trim().ToUpperInvariant().Replace(" ", "");
-            char[] seq = Array.FindAll(raw.ToCharArray(), ch => ch == 'N' || ch == 'I');
-            if (seq.Length == 0) throw new InvalidOperationException("Chuỗi N/I không hợp lệ.");
+            ctx.Log?.Invoke("[TimeSliced] Start: 5 follow + 5 opp");
 
-            int k = 0;
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                await Task.Delay(60, ct);
-
-                await TaskUtil.WaitUntilBetWindow(ctx, ct);
+                await WaitUntilNewRoundStart(ctx, ct);
 
                 var snap = ctx.GetSnap();
-                string baseSeq = snap?.seq ?? string.Empty;
+                var parity = SeqToParityString(snap?.seq ?? "");
 
-                string side = PickSideByNI(seq[k], snap?.totals);
+                char next = Decide(parity);
                 long stake;
                 if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
                 {
@@ -48,9 +53,11 @@ namespace XocDiaSoiLiveKH24.Tasks
                 {
                     stake = money.GetStakeForThisBet();
                 }
-                await TaskUtil.PlaceBet(ctx, side, stake, ct);
+                string side = ToSide(next);
+                ctx.Log?.Invoke($"[TimeSliced] r={_roundInBlock % 10 + 1}/10 next={side}, stake={stake:N0}");
 
-                bool win = await TaskUtil.WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                await PlaceBet(ctx, side, stake, ct);
+                bool win = await WaitRoundFinishAndJudge(ctx, side, snap?.seq ?? "", ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {
@@ -78,7 +85,7 @@ namespace XocDiaSoiLiveKH24.Tasks
                     money.OnRoundResult(win);
                 }
 
-                k = (k + 1) % seq.Length;
+                _roundInBlock = (_roundInBlock + 1) % 10;
             }
         }
     }

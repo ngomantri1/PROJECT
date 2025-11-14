@@ -229,7 +229,7 @@
         maxRetries: 6,
         watchdogMs: 1000, // tick 1s kiểm tra username/balance
         maxWatchdogMiss: 2, // quá 2 nhịp miss -> startAutoRetry(true)
-        showPanel: true, // ⬅️ false = ẩn panel; true = hiện panel
+        showPanel: false, // ⬅️ false = ẩn panel; true = hiện panel
 		autoRetryOnBoot: false
 
     };
@@ -595,7 +595,7 @@
             '  <button id="' + CFG.scanLinksBtnId + '">Scan200LinksMap</button>',
             '  <button id="' + CFG.scanTextsBtnId + '">Scan200TextMap</button>',
             '  <button id="' + CFG.loginBtnId + '">Click Đăng Nhập</button>',
-            '  <button id="' + CFG.xocBtnId + '">Chơi Xóc Đĩa Live</button>',
+            '  <button id="' + CFG.xocBtnId + '">Chơi Tài Xỉu Live</button>',
             '  <button id="' + CFG.retryBtnId + '">Thử lại (tự động)</button>',
             '  <button id="' + CFG.overlayToggleBtnId + '">Overlay</button>',
             '</div>',
@@ -742,7 +742,7 @@
     function updateInfo(extra) {
         if (CFG.showPanel === false)
             return; // panel đang ẩn -> bỏ qua render
-        // Tính trạng thái hiển thị thật sự của khu vực xóc đĩa
+        // Tính trạng thái hiển thị thật sự của khu vực Tài Xỉu
         const live = (() => {
             const s = document.querySelector('.livestream-section__live');
             return !!(s && s.offsetParent !== null);
@@ -754,7 +754,7 @@
             '• Tên đăng nhập: ' + (S.username ? S.username : '(?)'),
             '• Tài khoản: ' + balText,
             '• Title: ' + document.title,
-            '• Has Xóc Đĩa: ' + String(live)
+            '• Has Tài Xỉu: ' + String(live)
         ];
 
         if (extra)
@@ -971,23 +971,51 @@
     }
 
     // ======= Overlay / Map =======
-function ensureOverlay() {
-    let ov = document.getElementById(CFG.overlayId);
-    if (!ov) {
-        ov = document.createElement('div');
-        ov.id = CFG.overlayId;
-        ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:' + (ROOT_Z - 1) + ';pointer-events:none';
-        const mount = document.body || document.documentElement;
-        if (!mount) {
-            // nếu body chưa có thì báo lên panel để biết
-            updateInfo('⚠ overlay: body chưa sẵn');
-            return null;
-        }
-        mount.appendChild(ov);
-    }
-    return ov;
-}
+    function ensureOverlay() {
+        // Nếu đã có overlay thì dùng lại
+        let ov = $overlay();
+        if (!ov) {
+            // Tạo host overlay
+            ov = document.createElement('div');
+            ov.id = CFG.overlayId;
+            ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:' + (ROOT_Z - 1) + ';pointer-events:none';
 
+            // Fallback mount: body chưa có thì đợi DOM rồi gọi lại
+            const mount = document.body || document.documentElement;
+            if (!mount) {
+                onDomReady(ensureOverlay);
+                return null;
+            }
+            mount.appendChild(ov);
+        }
+
+        // Gắn listeners chỉ 1 lần (idempotent)
+        if (!window.__abx_overlay_listeners) {
+            window.__abx_overlay_listeners = true;
+
+            const rerender = () => {
+                try {
+                    if (typeof window.__abx_overlay_rerender === 'function') {
+                        window.__abx_overlay_rerender();
+                    }
+                } catch (_) {}
+            };
+
+            // Cập nhật overlay khi cuộn / đổi kích thước / tab quay lại
+            window.addEventListener('scroll', rerender, {
+                passive: true
+            });
+            window.addEventListener('resize', rerender, {
+                passive: true
+            });
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden)
+                    rerender();
+            });
+        }
+
+        return ov;
+    }
 
     function clearOverlay(kind) {
         const ov = ensureOverlay();
@@ -1038,216 +1066,158 @@ function ensureOverlay() {
         S.selected = null;
     }
 
-function collectLinks(win = window, arr = []) {
-    const doc = win.document;
-    if (!doc || !doc.body) return arr;
-
-    let i = arr.length;
-
-    doc.querySelectorAll('a,button,[role="button"],[onclick],input[type="submit"],input[type="button"]').forEach(el => {
-        const r = rectOf(el);
-        if (r.w <= 0 || r.h <= 0) return;
-        arr.push({
-            idx: ++i,
-            el,
-            rect: r,
-            tag: el.tagName.toLowerCase(),
-            href: el.getAttribute('href') || ''
+    function collectLinks() {
+        const arr = [];
+        let i = 0;
+        document.querySelectorAll('a,button,[role="button"],[onclick],input[type="submit"],input[type="button"]').forEach(el => {
+            const r = rectOf(el);
+            if (r.w <= 0 || r.h <= 0)
+                return;
+            arr.push({
+                idx: ++i,
+                el,
+                rect: r,
+                tag: el.tagName.toLowerCase(),
+                href: (el.getAttribute('href') || '')
+            });
         });
-    });
-
-    // ✅ quét luôn iframe
-    doc.querySelectorAll('iframe').forEach(ifr => {
-        try {
-            const cw = ifr.contentWindow;
-            if (cw && cw.document) {
-                collectLinks(cw, arr);
-            }
-        } catch (e) {
-            // khác origin thì thôi
-        }
-    });
-
-    return arr;
-}
-
-
-function collectTexts(win = window, arr = []) {
-    if (!win.document || !win.document.body)
         return arr;
-
-    const doc = win.document;
-    let i = arr.length;
-
-    // -------------- phần cũ của bạn: quét text node --------------
-    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
-        acceptNode: n => (n.nodeValue || '').trim().length > 0
-            ? NodeFilter.FILTER_ACCEPT
-            : NodeFilter.FILTER_SKIP
-    });
-    let node;
-    while (node = walker.nextNode()) {
-        const el = node.parentElement;
-        if (!el) continue;
-        const r = rectOf(el);
-        if (r.w <= 0 || r.h <= 0) continue;
-        arr.push({
-            idx: ++i,
-            el,
-            rect: r,
-            tag: el.tagName.toLowerCase(),
-            text: (node.nodeValue || '').trim()
-        });
     }
-
-    // helper y chang bản cũ
-    function pushDeep(el, text, srcTag) {
-        const t = (text || '').toString().trim();
-        if (!t) return;
-        const r = rectOf(el);
-        if (r.w <= 0 || r.h <= 0) return;
-        arr.push({
-            idx: ++i,
-            el,
-            rect: r,
-            tag: el.tagName.toLowerCase(),
-            text: t,
-            src: srcTag || 'deep'
+    function collectTexts() {
+        if (!document.body)
+            return [];
+        const arr = [];
+        let i = 0;
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+            acceptNode: n => (n.nodeValue || '').trim().length > 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
         });
-    }
-
-    // 1) IMG alt/title
-    doc.querySelectorAll('img[alt], img[title]').forEach(img => {
-        if (img.hasAttribute('alt'))
-            pushDeep(img, img.getAttribute('alt'), 'img@alt');
-        if (img.hasAttribute('title'))
-            pushDeep(img, img.getAttribute('title'), 'img@title');
-    });
-
-    // 2) phần tử có title
-    doc.querySelectorAll('[title]').forEach(el => {
-        if (el.tagName.toLowerCase() === 'img') return;
-        pushDeep(el, el.getAttribute('title'), 'el@title');
-    });
-
-    // 3) aria-*
-    doc.querySelectorAll('[aria-label], [aria-labelledby]').forEach(el => {
-        const ariaLabel = el.getAttribute('aria-label') || '';
-        if (ariaLabel)
-            pushDeep(el, ariaLabel, 'aria-label');
-        const ref = el.getAttribute('aria-labelledby');
-        if (ref) {
-            const txt = ref.split(/\s+/).map(id => {
-                const t = doc.getElementById(id);
-                return t ? (t.innerText || t.textContent || '') : '';
-            }).join(' ').replace(/\s+/g, ' ').trim();
-            if (txt)
-                pushDeep(el, txt, 'aria-labelledby');
+        let node;
+        while (node = walker.nextNode()) {
+            const el = node.parentElement;
+            if (!el)
+                continue;
+            const r = rectOf(el);
+            if (r.w <= 0 || r.h <= 0)
+                continue;
+            arr.push({
+                idx: ++i,
+                el,
+                rect: r,
+                tag: el.tagName.toLowerCase(),
+                text: (node.nodeValue || '').trim()
+            });
         }
-    });
-
-    // 4) input/textarea/select
-    doc.querySelectorAll('input, textarea, select').forEach(el => {
-        const tag = el.tagName.toLowerCase();
-        const ph = el.getAttribute('placeholder');
-        if (ph)
-            pushDeep(el, ph, tag + '@placeholder');
-
-        if (tag === 'input' || tag === 'textarea') {
-            const v = el.value != null ? String(el.value) : '';
-            if (v)
-                pushDeep(el, v, tag + '@value');
-        } else if (tag === 'select') {
-            const opt = el.selectedIndex >= 0 ? el.options[el.selectedIndex] : null;
-            const optText = opt ? (opt.text || '').trim() : '';
-            if (optText)
-                pushDeep(el, optText, 'select@selected');
+        // ===== DEEP SOURCES: thêm "text chìm" =====
+        // helper: push item text cho cùng element, có gắn nguồn (src)
+        function pushDeep(el, text, srcTag) {
+            const t = (text || '').toString().trim();
+            if (!t)
+                return;
+            const r = rectOf(el);
+            if (r.w <= 0 || r.h <= 0)
+                return; // vẫn ưu tiên phần tử có hình chữ nhật hiển thị
+            arr.push({
+                idx: ++i,
+                el,
+                rect: r,
+                tag: el.tagName.toLowerCase(),
+                text: t,
+                src: srcTag || 'deep'
+            });
         }
-    });
 
-    // 5) data-*
-    doc.querySelectorAll('[data-label],[data-title],[data-text],[data-name]').forEach(el => {
-        ['data-label', 'data-title', 'data-text', 'data-name'].forEach(k => {
-            if (el.hasAttribute(k))
-                pushDeep(el, el.getAttribute(k), k);
+        // 1) IMG alt/title
+        document.querySelectorAll('img[alt], img[title]').forEach(img => {
+            if (img.hasAttribute('alt'))
+                pushDeep(img, img.getAttribute('alt'), 'img@alt');
+            if (img.hasAttribute('title'))
+                pushDeep(img, img.getAttribute('title'), 'img@title');
         });
-    });
 
-    // 6) ::before / ::after
-    function unquote(s) {
-        const m = /^['"](.*)['"]$/.exec(s || '');
-        return m ? m[1] : s;
-    }
-    doc.querySelectorAll('body *').forEach(el => {
-        if (!(el instanceof HTMLElement)) return;
-        const cs = getComputedStyle(el, '::before').content;
-        if (cs && cs !== 'none')
-            pushDeep(el, unquote(cs), '::before');
-        const ca = getComputedStyle(el, '::after').content;
-        if (ca && ca !== 'none')
-            pushDeep(el, unquote(ca), '::after');
-    });
+        // 2) Bất kỳ phần tử có title
+        document.querySelectorAll('[title]').forEach(el => {
+            // tránh lặp lại với IMG (đã lấy bên trên)
+            if (el.tagName.toLowerCase() === 'img')
+                return;
+            pushDeep(el, el.getAttribute('title'), 'el@title');
+        });
 
-    // ✅ thêm phần QUÉT IFRAMES CÙNG ORIGIN
-    doc.querySelectorAll('iframe').forEach(ifr => {
-        try {
-            const cw = ifr.contentWindow;
-            if (cw && cw.document) {
-                collectTexts(cw, arr);
+        // 3) ARIA: aria-label / aria-labelledby
+        document.querySelectorAll('[aria-label], [aria-labelledby]').forEach(el => {
+            const ariaLabel = el.getAttribute('aria-label') || '';
+            if (ariaLabel)
+                pushDeep(el, ariaLabel, 'aria-label');
+            const ref = el.getAttribute('aria-labelledby');
+            if (ref) {
+                const txt = ref.split(/\s+/).map(id => {
+                    const t = document.getElementById(id);
+                    return t ? (t.innerText || t.textContent || '') : '';
+                }).join(' ').replace(/\s+/g, ' ').trim();
+                if (txt)
+                    pushDeep(el, txt, 'aria-labelledby');
             }
-        } catch (e) {
-            // khác domain thì bỏ qua
+        });
+
+        // 4) INPUT/TEXTAREA/SELECT: placeholder, value, option selected
+        document.querySelectorAll('input, textarea, select').forEach(el => {
+            const tag = el.tagName.toLowerCase();
+            const ph = el.getAttribute('placeholder');
+            if (ph)
+                pushDeep(el, ph, tag + '@placeholder');
+
+            if (tag === 'input' || tag === 'textarea') {
+                const v = el.value != null ? String(el.value) : '';
+                if (v)
+                    pushDeep(el, v, tag + '@value');
+            } else if (tag === 'select') {
+                const opt = el.selectedIndex >= 0 ? el.options[el.selectedIndex] : null;
+                const optText = opt ? (opt.text || '').trim() : '';
+                if (optText)
+                    pushDeep(el, optText, 'select@selected');
+            }
+        });
+
+        // 5) DATA-* label thường gặp
+        document.querySelectorAll('[data-label],[data-title],[data-text],[data-name]').forEach(el => {
+            ['data-label', 'data-title', 'data-text', 'data-name'].forEach(k => {
+                if (el.hasAttribute(k))
+                    pushDeep(el, el.getAttribute(k), k);
+            });
+        });
+
+        // 6) Pseudo-element ::before / ::after (nếu có content)
+        function unquote(s) {
+            const m = /^['"](.*)['"]$/.exec(s || '');
+            return m ? m[1] : s;
         }
-    });
+        document.querySelectorAll('body *').forEach(el => {
+            // bỏ qua các node quá lớn để tránh chậm (có thể giữ nguyên nếu cần)
+            if (!(el instanceof HTMLElement))
+                return;
+            const cs = getComputedStyle(el, '::before').content;
+            if (cs && cs !== 'none')
+                pushDeep(el, unquote(cs), '::before');
+            const ca = getComputedStyle(el, '::after').content;
+            if (ca && ca !== 'none')
+                pushDeep(el, unquote(ca), '::after');
+        });
 
-    return arr;
-}
-
-
+        return arr;
+    }
     const assignOrder = (items) => {
         items.forEach((it, i) => it.ord = i + 1);
         return items;
     };
-function render(kind) {
-    const ov = ensureOverlay();
-    if (!ov) {
-        updateInfo('⚠ Không tạo được overlay để vẽ ' + kind);
-        return;
+    function render(kind) {
+        const ov = ensureOverlay();
+        clearOverlay(kind);
+        const items = (kind === 'link') ? collectLinks() : collectTexts();
+        items.sort(smallFirst);
+        assignOrder(items);
+        S.items[kind] = items;
+        const draw = [...items].reverse();
+        draw.forEach(it => ov.appendChild(mkBox(it, kind)));
     }
-	    ov.style.display = 'block';
-
-    clearOverlay(kind);
-
-    let items = [];
-    try {
-        items = (kind === 'link') ? collectLinks() : collectTexts();
-    } catch (e) {
-        console.error('[HomeWatch] render ' + kind + ' error:', e);
-        updateInfo('⚠ Lỗi khi quét ' + kind + ': ' + e);
-        return;
-    }
-
-    if (!items || !items.length) {
-        updateInfo('⚠ ' + (kind === 'link' ? 'LinksMap' : 'TextMap') + ' không tìm thấy phần tử nào.');
-        return;
-    }
-
-    items.sort(smallFirst);
-    assignOrder(items);
-    S.items[kind] = items;
-
-    // vẽ
-    [...items].reverse().forEach(it => ov.appendChild(mkBox(it, kind)));
-
-    updateInfo('✓ ' + (kind === 'link' ? 'LinksMap' : 'TextMap') + ': ' + items.length + ' phần tử');
-    console.group('[HomeWatch] ' + kind);
-    items.slice(0, 50).forEach(it => {
-        console.log(it.ord, it.text || it.href || '', it.rect.x, it.rect.y, it.rect.w, it.rect.h);
-    });
-    console.groupEnd();
-}
-
-
     const renderLinks = () => render('link');
     const renderTexts = () => render('text');
     window.__abx_overlay_rerender = () => {
@@ -1258,28 +1228,23 @@ function render(kind) {
                 renderTexts();
         } catch (_) {}
     };
-function toggle(kind) {
-    clearSelected();
-
-    if (kind === 'link') {
-        S.showL = !S.showL;
-        if (S.showL) {
-            render('link');
+    function toggle(kind) {
+        ensureOverlay();
+        clearSelected();
+        if (kind === 'link') {
+            S.showL = !S.showL;
+            if (S.showL)
+                renderLinks();
+            else
+                clearOverlay('link');
         } else {
-            clearOverlay('link');
-            updateInfo('LinksMap: off');
-        }
-    } else {
-        S.showT = !S.showT;
-        if (S.showT) {
-            render('text');
-        } else {
-            clearOverlay('text');
-            updateInfo('TextMap: off');
+            S.showT = !S.showT;
+            if (S.showT)
+                renderTexts();
+            else
+                clearOverlay('text');
         }
     }
-}
-
     function showInfo(kind, item) {
         try {
             const el = item && item.el ? item.el : null;
@@ -2102,7 +2067,7 @@ function toggle(kind) {
         if (RE_XOCDIA_NEG.test(t) && !RE_XOCDIA_POS.test(t))
             return false;
 
-        // Đúng tiêu đề "xóc đĩa" → đúng game
+        // Đúng tiêu đề "Tài Xỉu" → đúng game
         if (RE_XOCDIA_POS.test(t))
             return true;
 
@@ -2205,7 +2170,7 @@ function toggle(kind) {
         }
 
         if (!btn) {
-            updateInfo('⚠ Không tìm thấy nút "Chơi Xóc Đĩa Live" trong ≤' + Math.round(WAIT_MS / 1000) + 's sau khi về trang Home.');
+            updateInfo('⚠ Không tìm thấy nút "Chơi Tài Xỉu Live" trong ≤' + Math.round(WAIT_MS / 1000) + 's sau khi về trang Home.');
             return;
         }
 
@@ -2216,9 +2181,9 @@ function toggle(kind) {
         // 5) Click 1–3 lần (auto) + xuyên overlay
         const ok = await multiTryClick(resolverForClick, 3, isXocDiaLaunched);
         if (ok) {
-            updateInfo('→ Đã tự động click (đợi nút trong ≤' + Math.round(WAIT_MS / 1000) + 's, sau đó click 1–3 lần) để vào "Chơi Xóc Đĩa Live".');
+            updateInfo('→ Đã tự động click (đợi nút trong ≤' + Math.round(WAIT_MS / 1000) + 's, sau đó click 1–3 lần) để vào "Chơi Tài Xỉu Live".');
         } else {
-            updateInfo('⚠ Không thể vào "Chơi Xóc Đĩa Live". Nút có thể bị khoá hoặc trang chặn điều hướng.');
+            updateInfo('⚠ Không thể vào "Chơi Tài Xỉu Live". Nút có thể bị khoá hoặc trang chặn điều hướng.');
         }
     }
 
