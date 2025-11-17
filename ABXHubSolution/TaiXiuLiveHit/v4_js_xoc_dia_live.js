@@ -279,29 +279,102 @@
         return out;
     }
     function collectProgress() {
-        var bars = [];
-        walkNodes(function (n) {
-            var comps = getComps(n, cc.ProgressBar);
-            if (comps && comps.length) {
-                var r = wRect(n);
-                for (var i = 0; i < comps.length; i++) {
-                    bars.push({
-                        comp: comps[i],
-                        rect: r
-                    });
+        try {
+            // 1) Nếu game có progress bar nội bộ thì dùng luôn (nếu hàm tồn tại)
+            var bars = null;
+            if (typeof sampleProgressBars === 'function') {
+                bars = sampleProgressBars();
+            }
+            if (bars && bars.length > 0) {
+                var b = bars[0];
+                var pr = null;
+                if (b.max > 0 && b.val >= 0) {
+                    pr = b.val / b.max;
+                }
+                pr = clamp01(pr);
+                if (pr != null)
+                    return pr;
+            }
+
+            // 2) Ưu tiên dùng label CountDownNode của Tài Xỉu Live
+            var labels = collectLabels();
+            if (!labels || labels.length === 0)
+                return null;
+
+            var COUNTDOWN_TAIL = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/CountDownNode';
+            var cdTailL = COUNTDOWN_TAIL.toLowerCase();
+            var sec = null;
+
+            for (var i = 0; i < labels.length; i++) {
+                var l = labels[i];
+                var tl = String(l.tail || '').toLowerCase();
+                if (!tl.endsWith(cdTailL))
+                    continue;
+
+                var txt = String(l.text || '').trim();
+                if (!txt)
+                    continue;
+
+                var m = txt.match(/(\d{1,2})/);
+                if (!m)
+                    continue;
+
+                var s = parseInt(m[1], 10);
+                if (isNaN(s))
+                    continue;
+
+                sec = s;
+                break; // lấy 1 label duy nhất là đủ
+            }
+
+            if (sec != null) {
+                if (sec < 0)
+                    sec = 0;
+                if (sec > 45)
+                    sec = 45; // theo yêu cầu: full thanh = 45s
+                var pr2 = sec / 45;
+                return clamp01(pr2);
+            }
+
+            // 3) Fallback cũ: heuristic chung theo vị trí text đếm ngược
+            var best = null;
+            var bestScore = -1;
+            for (var j = 0; j < labels.length; j++) {
+                var l2 = labels[j];
+                var txt2 = String(l2.text || '').trim();
+                if (!/^\d{1,2}$/.test(txt2))
+                    continue;
+
+                var sec2 = parseInt(txt2, 10);
+                if (isNaN(sec2) || sec2 < 0 || sec2 > 60)
+                    continue;
+
+                var score = 0;
+                var cx = (l2.x || 0) + (l2.w || 0) / 2;
+                var cy = (l2.y || 0) + (l2.h || 0) / 2;
+
+                if (cx > 400 && cx < 1100)
+                    score += 2;
+                if (cy > 400 && cy < 800)
+                    score += 2;
+
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = {
+                        sec: sec2
+                    };
                 }
             }
-        });
-        if (!bars.length)
-            return null;
-        var H = innerHeight,
-        cs = bars.filter(function (b) {
-            var r = b.rect;
-            return r.w > 300 && r.h >= 6 && r.h <= 60 && r.y < H * 0.75;
-        });
-        var bar = (cs[0] || bars[0]).comp;
-        var pr = (bar && typeof bar.progress !== 'undefined') ? bar.progress : 0;
-        return clamp01(Number(pr));
+
+            if (best) {
+                var total = 45;
+                var pr3 = best.sec / total;
+                return clamp01(pr3);
+            }
+        } catch (e) {
+            console.log('collectProgress error', e);
+        }
+        return null;
     }
 
     /* ---------------- MoneyMap ---------------- */
@@ -1020,12 +1093,21 @@
         }
 
         var f = S.focus;
+        var secLeft = null;
+        if (typeof S.prog === 'number') {
+            var s = Math.round(S.prog * 45);
+            if (s < 0)
+                s = 0;
+            if (s > 45)
+                s = 45;
+            secLeft = s;
+        }
         var base =
             '• Trạng thái: ' + S.status +
-            ' | Prog: ' + (S.prog == null ? '--' : (((S.prog * 100) | 0) + '%')) + '\n' +
+            ' | Thời gian: ' + (secLeft == null ? '--' : (secLeft + 's')) + '\n' +
             '• TK : ' + fmt(t.A) +
-            '|CHẴN: ' + fmt(t.C) +
-            '|LẺ: ' + fmt(t.L) +
+            '|TÀI: ' + fmt(t.T) +
+            '|XỈU: ' + fmt(t.X) +
             '|SẤP ĐÔI: ' + fmt(t.SD) +
             '|TỨ TRẮNG: ' + fmt(t.TT) +
             '|3 TRẮNG: ' + fmt(t.T3T) +
@@ -1590,20 +1672,38 @@
                 if (!val)
                     continue;
                 var score = 0;
-                if (clickable(n))
+                var isClick = clickable(n);
+                if (isClick)
                     score += 6;
+
                 var names = [],
                 p;
                 for (p = n; p; p = p.parent)
                     names.push(p.name || '');
                 var path = names.reverse().join('/').toLowerCase();
+
+                // Ưu tiên mạnh cho các chip tiền TipDealer (2 tail ông chủ cung cấp)
+                var TAIL_TX_ROW1 = 'txgamelive/main/bordertabble/chatcontroller/tipdealer/tabtipdealer/tipcontent/views/contentchat/row1/itemtip/lbmoney';
+                var TAIL_TX_ROW2 = 'txgamelive/main/bordertabble/chatcontroller/tipdealer/tabtipdealer/tipcontent/views/contentchat/row2/itemtip/lbmoney';
+                var isTxTipDealer =
+                    path.indexOf(TAIL_TX_ROW1) !== -1 ||
+                    path.indexOf(TAIL_TX_ROW2) !== -1;
+
+                if (isTxTipDealer) {
+                    // đẩy chip TipDealer lên ưu tiên cao nhất
+                    score += 10;
+                }
+
+                // Heuristic chung cho các game khác
                 if (/chip|coin|bet|chon|choose|phinh|menh/.test(path))
                     score += 3;
                 if (NORM(t).indexOf(String(val)) !== -1)
                     score += 2;
+
                 var hit = clickableOf(n);
                 if (hit !== n)
                     score += 1;
+
                 var old = getBest(val);
                 if (!old || score > old.score)
                     setBest(val, {
@@ -1885,49 +1985,51 @@
 
     /* ---------------- tick & controls ---------------- */
     function statusByProg(p) {
-        // Ngưỡng chống rung cho số thực gần 0
-        var EPS = 0.001;
+        // Đọc trực tiếp message từ PopupMessageUtilTaiXiu của Tài Xỉu Live
+        try {
+            var TAIL_TX_STATUS = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/ChatController/PopupMessageUtilTaiXiu/ig_bg_thong_bao/textMessage';
+            var tailL = TAIL_TX_STATUS.toLowerCase();
 
-        // Quy tắc ông chủ yêu cầu:
-        // - p > 0      → lấy text tail 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage'
-        // - p = 0      → lấy text tail 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting'
-        var TAIL_MSG = 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage';
-        var TAIL_WAIT = 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting';
-
-        // Chọn text theo tail, so khớp theo kiểu "đuôi" để chống thay đổi prefix
-        function pickTextByTailEnd(tailEnd) {
-            try {
-                var texts = buildTextRects(); // [{text,x,y,w,h,tail}, ...]
-                var best = null,
-                bestArea = -1;
-                var tailEndL = String(tailEnd || '').toLowerCase();
-
+            var texts = buildTextRects && buildTextRects();
+            if (texts && texts.length) {
                 for (var i = 0; i < texts.length; i++) {
-                    var t = texts[i];
-                    var tl = String(t.tail || '').toLowerCase();
-                    if (!tl.endsWith(tailEndL))
+                    var r = texts[i];
+                    var tl = String(r.tail || '').toLowerCase();
+                    if (!tl.endsWith(tailL))
                         continue;
 
-                    var ar = (t.w || 0) * (t.h || 0);
-                    if (ar > bestArea) {
-                        best = t;
-                        bestArea = ar;
-                    }
+                    var raw = (r.text || '').trim();
+                    if (!raw)
+                        continue;
+
+                    var u = NORM(raw);
+                    if (u.indexOf('BAT DAU CUOC') !== -1)
+                        return 'Cho phép đặt cược';
+                    if (u.indexOf('NGUNG NHAN CUOC') !== -1 || u.indexOf('NGUNG DAT CUOC') !== -1)
+                        return 'Ngừng đặt cược';
+                    if (u.indexOf('CHO KET QUA') !== -1 || u.indexOf('CHO KETQUA') !== -1)
+                        return 'Chờ kết quả';
+
+                    // nếu không match key thì bỏ qua để dùng fallback theo progress
+                    continue;
+
                 }
-                return best ? String(best.text || '').trim() : '';
-            } catch (e) {
-                return '';
             }
+        } catch (e) {
+            console.log('statusByProg label-fallback error', e);
         }
 
-        p = +p || 0;
-        var tail = (p > EPS) ? TAIL_MSG : TAIL_WAIT;
-        var txt = pickTextByTailEnd(tail);
+        // Fallback khi không đọc được label, suy từ progress (3 trạng thái)
+        if (p == null)
+            return '--';
+        p = clamp01(p);
 
-        // Fallback nhẹ khi không tìm thấy text
-        if (txt)
-            return txt;
-        return "";
+        if (p >= 0.7)
+            return 'Cho phép đặt cược';
+        if (p >= 0.2)
+            return 'Ngừng đặt cược';
+        return 'Chờ kết quả';
+
     }
 
     function tick() {
@@ -2175,24 +2277,53 @@
                 if (!t || typeof t !== 'object')
                     t = {};
 
-                // --- Bổ sung: map lại A (TK) theo tail mới dành cho Tài Xỉu Live ---
+                // --- Bổ sung: map lại A (TK) + tổng Tài/Xỉu theo tail mới dành cho Tài Xỉu Live ---
                 var ACC_TAIL_EXACT = 'MiniGameScene/Canvas/FootterRoomUi/Left/buttonMoney/moneyLabel';
 
+                // Tổng tiền đặt cược TÀI/XỈU:
+                // tail chung, phân biệt theo tọa độ x
+                var TX_TOTAL_TAIL = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbTotal';
+                var TX_TAI_X = 246; // TÀI
+                var TX_XIU_X = 785; // XỈU
+
                 try {
+                    var money = null;
+
                     if (typeof S === 'object' && S.money && S.money.length) {
+                        money = S.money;
+                    } else if (typeof buildMoneyRects === 'function') {
+                        try {
+                            money = buildMoneyRects();
+                        } catch (_) {}
+                    }
+
+                    if (money && money.length) {
                         var acc = null;
-                        for (var i = 0; i < S.money.length; i++) {
-                            var m = S.money[i];
+                        var tai = null;
+                        var xiu = null;
+
+                        for (var i = 0; i < money.length; i++) {
+                            var m = money[i];
                             if (!m)
                                 continue;
+
                             var tail = m.tail || m.tl || '';
                             if (!tail)
                                 continue;
 
-                            if (tail === ACC_TAIL_EXACT ||
-                                tail.indexOf('FootterRoomUi/Left/buttonMoney/moneyLabel') !== -1) {
+                            // TK (tài khoản)
+                            if (!acc && (tail === ACC_TAIL_EXACT ||
+                                    tail.indexOf('FootterRoomUi/Left/buttonMoney/moneyLabel') !== -1)) {
                                 acc = m;
-                                break;
+                            }
+
+                            // Tổng Tài/Xỉu ở TxGameLive: cùng tail, khác nhau theo x
+                            if (tail.indexOf(TX_TOTAL_TAIL) !== -1) {
+                                if (!tai && m.x === TX_TAI_X) {
+                                    tai = m;
+                                } else if (!xiu && m.x === TX_XIU_X) {
+                                    xiu = m;
+                                }
                             }
                         }
 
@@ -2200,6 +2331,20 @@
                             t.A = (typeof acc.val === 'number') ? acc.val : Number(acc.val || 0) || null;
                             if (!t.rawA) {
                                 t.rawA = acc.txt || acc.raw || null;
+                            }
+                        }
+
+                        if (tai) {
+                            t.T = (typeof tai.val === 'number') ? tai.val : Number(tai.val || 0) || null;
+                            if (!t.rawT) {
+                                t.rawT = tai.txt || tai.raw || null;
+                            }
+                        }
+
+                        if (xiu) {
+                            t.X = (typeof xiu.val === 'number') ? xiu.val : Number(xiu.val || 0) || null;
+                            if (!t.rawX) {
+                                t.rawX = xiu.txt || xiu.raw || null;
                             }
                         }
                     }
@@ -2238,86 +2383,95 @@
                     var p = readProgressVal(); // lấy progress hiện tại
                     var st = (typeof statusByProg === 'function') // tính status theo rule mới
                      ? statusByProg(p) : '';
+                    var seq = readSeqSafe();
+                    var last = '';
+                    if (seq && seq.length)
+                        last = seq.slice(-1);
                     var snap = {
                         abx: 'tick',
                         prog: p,
                         totals: (typeof window.readTotalsSafe === 'function'
                              ? window.readTotalsSafe()
                              : null),
-                        seq: readSeqSafe(),
+                        seq: seq,
+                        last: last,
                         status: String(st || ''),
                         ts: Date.now()
                     };
 
-                    if (shallowChanged(snap))
-                        safePost(snap);
-                }, tickMs);
-                return 'started';
-            } catch (err) {
-                safePost({
-                    abx: 'tick_error',
-                    error: String(err && err.message || err),
-                    ts: Date.now()
-                });
-                return 'fail';
-            }
-        };
+                };
+
+                        if (shallowChanged(snap))
+                            safePost(snap);
+            },
+            tickMs);
+            return 'started';
+        }
+        catch (err) {
+            safePost({
+                abx: 'tick_error',
+                error: String(err && err.message || err),
+                ts: Date.now()
+            });
+            return 'fail';
+        }
+    };
 
         window.__cw_stopPush = function () {
-            if (_pushTimer) {
-                clearInterval(_pushTimer);
-                _pushTimer = null;
-            }
-            return 'stopped';
-        };
+        if (_pushTimer) {
+            clearInterval(_pushTimer);
+            _pushTimer = null;
+        }
+        return 'stopped';
+    };
 
         // LƯU Ý: Chỉ dùng cwBet, không fallback cwBetSmart
         window.__cw_bet = async function (side, amount) {
-            try {
-                // chuẩn hoá tham số
-                side = (String(side || '').toUpperCase() === 'CHAN') ? 'CHAN' : 'LE';
-                var amt = Math.max(0, Math.floor(Number(amount) || 0));
+        try {
+            // chuẩn hoá tham số
+            side = (String(side || '').toUpperCase() === 'CHAN') ? 'CHAN' : 'LE';
+            var amt = Math.max(0, Math.floor(Number(amount) || 0));
 
-                // bắt buộc phải có cwBet
-                if (typeof cwBet !== 'function') {
-                    throw new Error('cwBet not found');
-                }
-
-                // chụp tổng trước khi bet (nếu có)
-                var before = (typeof window.readTotalsSafe === 'function'
-                     ? window.readTotalsSafe()
-                     : null) || {};
-
-                // ĐẶT CƯỢC bằng cwBet
-                await cwBet(side, amt);
-
-                // chờ tổng thay đổi (nếu có util này)
-                try {
-                    if (typeof waitForTotalsChange === 'function') {
-                        await waitForTotalsChange(before, side, 1600);
-                    }
-                } catch (_) {}
-
-                // báo về C#
-                safePost({
-                    abx: 'bet',
-                    side: side,
-                    amount: amt,
-                    ts: Date.now()
-                });
-                return 'ok';
-            } catch (err) {
-                safePost({
-                    abx: 'bet_error',
-                    side: side,
-                    amount: amount,
-                    error: String(err && err.message || err),
-                    ts: Date.now()
-                });
-                return 'fail';
+            // bắt buộc phải có cwBet
+            if (typeof cwBet !== 'function') {
+                throw new Error('cwBet not found');
             }
-        };
+
+            // chụp tổng trước khi bet (nếu có)
+            var before = (typeof window.readTotalsSafe === 'function'
+                 ? window.readTotalsSafe()
+                 : null) || {};
+
+            // ĐẶT CƯỢC bằng cwBet
+            await cwBet(side, amt);
+
+            // chờ tổng thay đổi (nếu có util này)
+            try {
+                if (typeof waitForTotalsChange === 'function') {
+                    await waitForTotalsChange(before, side, 1600);
+                }
+            } catch (_) {}
+
+            // báo về C#
+            safePost({
+                abx: 'bet',
+                side: side,
+                amount: amt,
+                ts: Date.now()
+            });
+            return 'ok';
+        } catch (err) {
+            safePost({
+                abx: 'bet_error',
+                side: side,
+                amount: amount,
+                error: String(err && err.message || err),
+                ts: Date.now()
+            });
+            return 'fail';
+        }
+    };
 
     })();
 
-})();
+    })();

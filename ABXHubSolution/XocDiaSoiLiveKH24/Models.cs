@@ -27,6 +27,7 @@ namespace XocDiaSoiLiveKH24
         public string side { get; set; }
         public long? amount { get; set; }
         public string error { get; set; }
+        public string session { get; set; }
     }
 
     public sealed class DecisionState

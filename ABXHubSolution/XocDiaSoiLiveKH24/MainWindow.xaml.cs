@@ -174,12 +174,14 @@ namespace XocDiaSoiLiveKH24
         private long _roundTotalsL = 0;
         private int _lastSeqLenNi = 0;
         private bool _lockMajorMinorUpdates = false;
-        private string _baseSeq = "";
+        private string _baseSession = "";
 
         private DecisionState _dec = new();
         private long[] _stakeSeq = Array.Empty<long>();
         private System.Collections.Generic.List<long[]> _stakeChains = new();
         private long[] _stakeChainTotals = Array.Empty<long>();
+        // Chỉ dùng cho hiển thị LblLevel: vị trí hiện tại trong _stakeSeq
+        private int _stakeLevelIndexForUi = -1;
 
         private double _decisionPercent = 0.15; // 15% (0.15)
 
@@ -254,8 +256,8 @@ namespace XocDiaSoiLiveKH24
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn
         const string LicenseBranch = "main";          // <- nhánh
-        const string LicenseNameGame = "net88";          // <- nhánh
-        const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/net88";
+        const string LicenseNameGame = "kh24";          // <- nhánh
+        const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/kh24";
 
         // ===================== TOOLTIP TEXTS =====================
         const string TIP_SEQ_CL =
@@ -398,7 +400,7 @@ Ví dụ không hợp lệ:
             public int BetStrategyIndex { get; set; } = 4; // mặc định "5. Theo cầu trước thông minh"
             public string BetSeq { get; set; } = "";       // giá trị ô "CHUỖI CẦU"
             public string BetPatterns { get; set; } = "";  // giá trị ô "CÁC THẾ CẦU"
-            public string MoneyStrategy { get; set; } = "Victor2";//IncreaseWhenLose
+            public string MoneyStrategy { get; set; } = "IncreaseWhenLose";//IncreaseWhenLose
             public double CutProfit { get; set; } = 0; // 0 = tắt cắt lãi
             public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
             public string BetSeqCL { get; set; } = "";        // cho Chiến lược 1
@@ -1123,8 +1125,6 @@ Ví dụ không hợp lệ:
                                         }
                                     }
                                 }
-                                
-                                string session = root.TryGetProperty("session", out var ssEl) ? (ssEl.GetString() ?? "") : "";
 
                                 // 1) result: EvalJsAwaitAsync bridge
                                 if (abxStr == "result" && root.TryGetProperty("id", out var idEl))
@@ -1151,25 +1151,15 @@ Ví dụ không hợp lệ:
                                         try
                                         {
                                             double progNow = snap.prog ?? 0;
+                                            var sessionStr = snap.session ?? "";
                                             var seqStr = snap.seq ?? "";
 
-                                            // Nếu đang khóa theo dõi và chuỗi đã thay đổi so với _baseSeq => ván cũ khép
+                                            // Nếu đang khóa theo dõi và phiên đã thay đổi so với _baseSession => ván cũ khép
                                             if (_lockMajorMinorUpdates == true &&
-                                                !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
+                                                !string.Equals(sessionStr, _baseSession, StringComparison.Ordinal))
                                             {
                                                 char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
                                                 bool winIsChan = (tail == '0' || tail == '2' || tail == '4');
-
-                                                long prevC = _roundTotalsC, prevL = _roundTotalsL;
-                                                // Ni: nếu cửa THẮNG là cửa có tổng tiền lớn hơn trong ván đó => 'N', ngược lại 'I'
-                                                char ni = winIsChan ? ((prevC >= prevL) ? 'N' : 'I')
-                                                                    : ((prevL >= prevC) ? 'N' : 'I');
-
-                                                _niSeq.Append(ni);
-                                                if (_niSeq.Length > NiSeqMax)
-                                                    _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
-
-                                                Log($"[NI] add={ni} | seq={_niSeq} | tail={tail} | C={prevC} | L={prevL}");
 
                                                 // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
                                                 var kqStr = winIsChan ? "CHAN" : "LE";
@@ -1187,11 +1177,8 @@ Ví dụ không hợp lệ:
                                             {
                                                 if (progNow == 0)
                                                 {
-                                                    _baseSeq = seqStr;
-                                                    _roundTotalsC = snap.totals?.C ?? 0;
-                                                    _roundTotalsL = snap.totals?.L ?? 0;
-                                                    if (_roundTotalsC != 0 && _roundTotalsL != 0)
-                                                        _lockMajorMinorUpdates = true;
+                                                    _baseSession = sessionStr;
+                                                    _lockMajorMinorUpdates = true;
                                                 }
                                             }
                                         }
@@ -1398,12 +1385,12 @@ Ví dụ không hợp lệ:
                                 //                  const vis=el=>{if(!el)return false; const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
                                 //                                 return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
                                 //                  const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
-                                              
+
                                 //                  const hasLogoutVis = qa('a,button,[role=""button""],.btn,.base-button')
                                 //                      .some(el => vis(el) && /dang\\s*xuat|đăng\\s*xuất|logout|sign\\s*out/i.test(low(el.textContent)));
                                 //                  const hasLoginVis = qa('a,button,[role=""button""],.btn,.base-button')
                                 //                      .some(el => vis(el) && /dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
-                                              
+
                                 //                  return (hasLogoutVis && !hasLoginVis) ? '1' : '0';
                                 //                }catch(e){ return '0'; }
                                 //              })();";
@@ -2770,9 +2757,9 @@ Ví dụ không hợp lệ:
                 await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[CW] start push 240ms");
                 // NEW: đánh dấu là mình CHỦ ĐỘNG vào game
-                _lockGameUi = true;
-                _lastGameTickUtc = DateTime.UtcNow;     // để timer thấy cũng hợp lý
-                ApplyUiMode(true);
+                //_lockGameUi = true;
+                //_lastGameTickUtc = DateTime.UtcNow;     // để timer thấy cũng hợp lý
+                //ApplyUiMode(true);
             }
             catch (Exception ex)
             {
@@ -3163,16 +3150,55 @@ Ví dụ không hợp lệ:
                         LblStake.Text = v.ToString("N0");
 
                     // MỨC TIỀN = vị trí trong _stakeSeq (1-based)
-                    // MỨC TIỀN = vị trí/độ dài (ví dụ 4/6)
+                    // MỨC TIỀN = vị trí/độ dài (ví dụ 4/6, 4/24, ...)
                     if (LblLevel != null)
                     {
                         try
                         {
                             var seq = _stakeSeq ?? Array.Empty<long>();
                             var rounded = (long)Math.Round(v);
-                            var idx = Array.IndexOf(seq, rounded); // 0-based
 
-                            // Nếu tìm thấy, hiển thị "vị trí/tổng", ngược lại hiển thị "-"
+                            int idx = -1;
+
+                            if (seq.Length > 0)
+                            {
+                                // 1) Nếu index cũ vẫn khớp giá trị hiện tại thì giữ luôn
+                                if (_stakeLevelIndexForUi >= 0 &&
+                                    _stakeLevelIndexForUi < seq.Length &&
+                                    seq[_stakeLevelIndexForUi] == rounded)
+                                {
+                                    idx = _stakeLevelIndexForUi;
+                                }
+                                else
+                                {
+                                    // 2) Thử bước tiếp theo trong chuỗi (tiến 1 ô, có vòng lại đầu)
+                                    var next = _stakeLevelIndexForUi + 1;
+                                    if (next >= seq.Length) next = 0;
+
+                                    if (_stakeLevelIndexForUi >= 0 &&
+                                        seq[next] == rounded)
+                                    {
+                                        idx = next;
+                                    }
+                                    else
+                                    {
+                                        // 3) Fallback: quét từ 'next' đến hết, rồi vòng về 0
+                                        for (int i = 0; i < seq.Length; i++)
+                                        {
+                                            int j = (next + i) % seq.Length;
+                                            if (seq[j] == rounded)
+                                            {
+                                                idx = j;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            _stakeLevelIndexForUi = idx;
+
+                            // Nếu tìm thấy, hiển thị "vị trí/tổng", ngược lại hiển thị rỗng
                             LblLevel.Text = (idx >= 0 && seq.Length > 0)
                                 ? $"{idx + 1}/{seq.Length}"
                                 : "";
@@ -3180,10 +3206,11 @@ Ví dụ không hợp lệ:
                         catch
                         {
                             LblLevel.Text = "";
+                            _stakeLevelIndexForUi = -1;
                         }
                     }
-
                 }),
+
                 UiAddWin = delta => Dispatcher.InvokeAsync(() =>
                 {
                     var net = (delta > 0) ? Math.Round(delta * 0.98) : delta;
@@ -3205,6 +3232,7 @@ Ví dụ không hợp lệ:
         {
             _activeTask = task;
             _dec = new DecisionState(); // reset trạng thái cho task mới
+            _stakeLevelIndexForUi = -1; // reset vị trí hiển thị mức tiền
             var ctx = BuildContext();
             // === Preflight: chờ __cw_bet sẵn sàng trước khi chạy chiến lược ===
             for (int i = 0; i < 25; i++) // 25 * 200ms ~= 5s
@@ -3958,6 +3986,7 @@ Ví dụ không hợp lệ:
                 // TIỀN CƯỢC & MỨC TIỀN
                 if (LblStake != null) LblStake.Text = "";  // TIỀN CƯỢC
                 if (LblLevel != null) LblLevel.Text = "";  // MỨC TIỀN
+                _stakeLevelIndexForUi = -1;
 
                 // Lưu ý: KHÔNG reset tổng lãi ở đây để ông chủ còn nhìn sau khi dừng.
             }
@@ -3966,6 +3995,7 @@ Ví dụ không hợp lệ:
                 Log("[UI] ResetBetMiniPanel error: " + ex.Message);
             }
         }
+
 
         // Cho code nền (TaskUtil) gọi đúng hàm reset gốc
         public void ResetBetMiniPanel_External()
@@ -4122,32 +4152,6 @@ Ví dụ không hợp lệ:
             return (!string.IsNullOrEmpty(s) && s[0] == '\uFEFF') ? s.Substring(1) : s;
         }
 
-        // Giữ nguyên tên để không phải sửa các callsite
-        private async Task<string> LoadAppJsAsyncFallback()
-        {
-            try
-            {
-                // Đọc thẳng từ embedded (KHÔNG thử đọc từ đĩa)
-                var resName = FindResourceName("v4_js_xoc_dia_live.js")
-                              ?? "XocDiaSoiLiveKH24.v4_js_xoc_dia_live.js";
-                var text = ReadEmbeddedText(resName);
-                text = RemoveUtf8Bom(text);
-
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    Log($"[Bridge] Loaded JS from embedded: {resName} (len={text.Length})");
-                    return text;
-                }
-
-                Log("[Bridge] Embedded JS empty: " + resName);
-            }
-            catch (Exception ex)
-            {
-                Log("[Bridge] Read embedded JS failed: " + ex.Message);
-            }
-            return "";
-        }
-
         private async Task<string> LoadHomeJsAsync()
         {
             try
@@ -4179,7 +4183,6 @@ Ví dụ không hợp lệ:
             await EnsureWebReadyAsync();
             if (Web?.CoreWebView2 == null) return;
 
-            _appJs ??= await LoadAppJsAsyncFallback();
             _homeJs ??= await LoadHomeJsAsync();
 
             if (_topForwardId == null)
@@ -4468,9 +4471,13 @@ Ví dụ không hợp lệ:
 
 
         // Khởi động đếm ngược hiển thị dưới nút và auto stop khi hết giờ
+        // Khởi động đếm ngược hiển thị dưới nút và auto stop khi hết giờ
+        // Khởi động đếm ngược hiển thị dưới nút và auto stop khi hết giờ
         private void StartExpiryCountdown(DateTimeOffset until, string mode)
         {
-            _runExpiresAt = until;
+            // ✅ Chuẩn hoá về LOCAL để hiển thị & tính giờ cho đúng với đồng hồ máy
+            var localUntil = until.ToLocalTime();
+            _runExpiresAt = localUntil;
             _expireMode = mode;
 
             // Cập nhật ngay 1 lần
@@ -4482,7 +4489,7 @@ Ví dụ không hợp lệ:
             {
                 try
                 {
-                    var now = DateTimeOffset.UtcNow;
+                    var now = DateTimeOffset.Now;          // ❗ Dùng Now (local), không dùng UtcNow nữa
                     var left = (_runExpiresAt ?? now) - now;
 
                     if (left <= TimeSpan.Zero)
@@ -4532,6 +4539,8 @@ Ví dụ không hợp lệ:
             }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         }
 
+
+
         private void StopExpiryCountdown()
         {
             try { _expireTimer?.Dispose(); } catch { }
@@ -4552,7 +4561,8 @@ Ví dụ không hợp lệ:
                 return;
             }
 
-            var now = DateTimeOffset.UtcNow;
+            // ❗ Dùng Now (local) để đồng bộ với _runExpiresAt (đã ToLocalTime ở trên)
+            var now = DateTimeOffset.Now;
             var left = _runExpiresAt.Value - now;
 
             if (left <= TimeSpan.Zero)
@@ -4564,14 +4574,17 @@ Ví dụ không hợp lệ:
             string line;
             if (left.TotalDays >= 1)
             {
+                // Ví dụ: "Còn lại: 1 ngày 07:12:34  |  Hết hạn: 17/11/2025 20:30"
                 line = $"Còn lại: {Math.Floor(left.TotalDays)} ngày {left:hh\\:mm\\:ss}  |  Hết hạn: {_runExpiresAt:dd/MM/yyyy HH:mm}";
             }
             else
             {
+                // Dưới 1 ngày chỉ hiện giờ/phút/giây
                 line = $"Còn lại: {left:hh\\:mm\\:ss}";
             }
             LblExpire.Text = line;
         }
+
 
         // Helper build script với tham số interval (ms)
         private static string BuildHomeAutostartJs(int intervalMs)
@@ -5333,15 +5346,15 @@ Ví dụ không hợp lệ:
                     return false;
                 }
             }
-            else if (idx == 2) // 3. Chuỗi I/N
-            {
-                if (!ValidateSeqNI(T(TxtChuoiCau), out var err))
-                {
-                    SetError(LblSeqError, err);
-                    BringBelow(TxtChuoiCau);
-                    return false;
-                }
-            }
+            //else if (idx == 2) // 3. Chuỗi I/N
+            //{
+            //    if (!ValidateSeqNI(T(TxtChuoiCau), out var err))
+            //    {
+            //        SetError(LblSeqError, err);
+            //        BringBelow(TxtChuoiCau);
+            //        return false;
+            //    }
+            //}
             else if (idx == 1) // 2. Thế C/L
             {
                 if (!ValidatePatternsCL(T(TxtTheCau), out var err))
@@ -5351,15 +5364,15 @@ Ví dụ không hợp lệ:
                     return false;
                 }
             }
-            else if (idx == 3) // 4. Thế I/N
-            {
-                if (!ValidatePatternsNI(T(TxtTheCau), out var err))
-                {
-                    SetError(LblPatError, err);
-                    BringBelow(TxtTheCau);
-                    return false;
-                }
-            }
+            //else if (idx == 3) // 4. Thế I/N
+            //{
+            //    if (!ValidatePatternsNI(T(TxtTheCau), out var err))
+            //    {
+            //        SetError(LblPatError, err);
+            //        BringBelow(TxtTheCau);
+            //        return false;
+            //    }
+            //}
 
             // Chiến lược 5 không cần input
             return true;

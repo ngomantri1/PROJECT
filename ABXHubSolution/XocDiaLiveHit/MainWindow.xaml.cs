@@ -180,6 +180,8 @@ namespace XocDiaLiveHit
         private long[] _stakeSeq = Array.Empty<long>();
         private System.Collections.Generic.List<long[]> _stakeChains = new();
         private long[] _stakeChainTotals = Array.Empty<long>();
+        // Chỉ dùng cho hiển thị LblLevel: vị trí hiện tại trong _stakeSeq
+        private int _stakeLevelIndexForUi = -1;
 
         private double _decisionPercent = 0.15; // 15% (0.15)
 
@@ -327,8 +329,8 @@ Ví dụ không hợp lệ:
   IN -> I1";
 
 
-       const string TIP_STAKE_CSV =
-        @"Chuỗi TIỀN (StakeCsv)
+        const string TIP_STAKE_CSV =
+         @"Chuỗi TIỀN (StakeCsv)
 • Có thể nhập 1 chuỗi hoặc NHIỀU chuỗi tiền.
 • Nếu nhập NHIỀU chuỗi: MỖI CHUỖI 1 DÒNG. Ví dụ:
   1000-2000-4000-8000
@@ -1251,7 +1253,7 @@ Ví dụ không hợp lệ:
                                     // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
                                     if (_autoFollowNewest)
                                     {
-                                       ShowFirstPage();
+                                        ShowFirstPage();
                                     }
                                     else
                                     {
@@ -4556,7 +4558,9 @@ Ví dụ không hợp lệ:
         // Khởi động đếm ngược hiển thị dưới nút và auto stop khi hết giờ
         private void StartExpiryCountdown(DateTimeOffset until, string mode)
         {
-            _runExpiresAt = until;
+            // ✅ Chuẩn hoá về LOCAL để hiển thị & tính giờ cho đúng với đồng hồ máy
+            var localUntil = until.ToLocalTime();
+            _runExpiresAt = localUntil;
             _expireMode = mode;
 
             // Cập nhật ngay 1 lần
@@ -4568,7 +4572,7 @@ Ví dụ không hợp lệ:
             {
                 try
                 {
-                    var now = DateTimeOffset.UtcNow;
+                    var now = DateTimeOffset.Now;          // ❗ Dùng Now (local), không dùng UtcNow nữa
                     var left = (_runExpiresAt ?? now) - now;
 
                     if (left <= TimeSpan.Zero)
@@ -4638,7 +4642,8 @@ Ví dụ không hợp lệ:
                 return;
             }
 
-            var now = DateTimeOffset.UtcNow;
+            // ❗ Dùng Now (local) để đồng bộ với _runExpiresAt (đã ToLocalTime ở trên)
+            var now = DateTimeOffset.Now;
             var left = _runExpiresAt.Value - now;
 
             if (left <= TimeSpan.Zero)
@@ -4650,10 +4655,12 @@ Ví dụ không hợp lệ:
             string line;
             if (left.TotalDays >= 1)
             {
+                // Ví dụ: "Còn lại: 1 ngày 07:12:34  |  Hết hạn: 17/11/2025 20:30"
                 line = $"Còn lại: {Math.Floor(left.TotalDays)} ngày {left:hh\\:mm\\:ss}  |  Hết hạn: {_runExpiresAt:dd/MM/yyyy HH:mm}";
             }
             else
             {
+                // Dưới 1 ngày chỉ hiện giờ/phút/giây
                 line = $"Còn lại: {left:hh\\:mm\\:ss}";
             }
             LblExpire.Text = line;

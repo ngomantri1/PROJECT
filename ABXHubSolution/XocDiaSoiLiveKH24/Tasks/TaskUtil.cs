@@ -130,8 +130,8 @@ namespace XocDiaSoiLiveKH24.Tasks
             var r = await ctx.EvalJsAsync(js);
             ctx.Log?.Invoke($"[BET-JS] result={r}");
 
-            // Chỉ coi là thành công khi KHÔNG phải 'no'/'err'
-            bool ok = !string.IsNullOrEmpty(r) && !r.StartsWith("no") && !r.StartsWith("err");
+            // Chỉ coi là thành công khi JS trả về 'ok'
+            bool ok = string.Equals(r, "ok", StringComparison.OrdinalIgnoreCase);
 
             if (ok)
                 Volatile.Write(ref _lastBetOkMs, now); // kích hoạt khoá 3s
@@ -141,7 +141,7 @@ namespace XocDiaSoiLiveKH24.Tasks
 
 
 
-        public static async Task<bool> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSeq, CancellationToken ct)
+        public static async Task<bool> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSession, CancellationToken ct)
         {
             // chờ seq tăng độ dài → có kết quả mới
             while (true)
@@ -149,7 +149,8 @@ namespace XocDiaSoiLiveKH24.Tasks
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
                 var curSeq = s?.seq ?? "";
-                if (!string.Equals(curSeq, baseSeq, StringComparison.Ordinal))
+                var curSession = s?.session ?? "";
+                if (!string.Equals(curSession, baseSession, StringComparison.Ordinal))
                 {
                     bool win = IsWin(betSide, curSeq[^1]);
                     await ctx.UiDispatcher.InvokeAsync(() => ctx.UiWinLoss?.Invoke(win));

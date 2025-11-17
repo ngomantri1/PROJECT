@@ -104,6 +104,7 @@ namespace XocDiaSoiLiveKH24.Tasks
                 // Ảnh chụp chuỗi trước khi đặt (để chấm thắng/thua)
                 var snap = ctx.GetSnap();
                 string baseSeq = snap?.seq ?? string.Empty;
+                string baseSession = snap?.session ?? string.Empty;
 
                 // Chuyển lịch sử sang C/L (cũ->mới)
                 string parity = SeqToParityString(baseSeq);
@@ -127,7 +128,7 @@ namespace XocDiaSoiLiveKH24.Tasks
 
                 await PlaceBet(ctx, side, stake, ct);
 
-                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {

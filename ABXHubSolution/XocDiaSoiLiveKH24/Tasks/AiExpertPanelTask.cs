@@ -206,8 +206,8 @@ namespace XocDiaSoiLiveKH24.Tasks
 
                 // Chấm điểm thực tế theo cửa đã đặt
                 var snapBefore = ctx.GetSnap();
-                string baseSeq = snapBefore?.seq ?? string.Empty;
-                bool ok = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                string baseSession = snapBefore?.session ?? string.Empty;
+                bool ok = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
 
                 // P&L theo kết quả thực
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(ok ? stake : -stake));

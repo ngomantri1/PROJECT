@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
 
-  <!-- Chung cho mọi cấu hình -->
+  <!-- ===== Common ===== -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -9,126 +9,67 @@
     <Nullable>enable</Nullable>
     <Prefer32Bit>false</Prefer32Bit>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
-    <!-- Để Restore có target win-x64 khi Publish -->
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
-
-    <!-- Cập nhật khi release -->
-    <Version>1.0.0</Version>
+    <AssemblyName>XocDiaSoiLiveKH24</AssemblyName>
   </PropertyGroup>
 
-  <!-- Dấu thời gian cho tên file publish -->
+  <!-- Stamp cho Release đổi tên EXE -->
   <PropertyGroup>
     <BuildStamp Condition="'$(BuildStamp)'==''">$([System.DateTime]::Now.ToString("yyMMdd-HHmmss"))</BuildStamp>
-    <!-- Mặc định không tạo alias; chỉ bật khi F5 Debug gọi publish nội bộ -->
-    <CreateDebugAlias>false</CreateDebugAlias>
   </PropertyGroup>
 
-  <!-- Debug: DLL nhẹ, F5 chạy EXE host (Release) -->
+  <!-- ===== Debug: build DLL plugin cho Hub ===== -->
   <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <!-- WPF app compile as Library để Hub load như plugin còn WinExe để chạy Debug -->
     <OutputType>Library</OutputType>
-    <Optimize>true</Optimize>
-    <DebugSymbols>false</DebugSymbols>
-    <DebugType>none</DebugType>
 
-    <!-- Không đóng gói môi trường -->
+    <DefineConstants>$(DefineConstants);DEBUG;TRACE;ABX_HUB</DefineConstants>
+    <DebugType>portable</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <Optimize>false</Optimize>
+    <Deterministic>false</Deterministic>
     <SelfContained>false</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>
-    <PublishTrimmed>false</PublishTrimmed>
 
-    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
-    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
-    <GenerateDocumentationFile>false</GenerateDocumentationFile>
-
-    <!-- F5: chạy EXE đã publish (alias ổn định) -->
-    <HostPublishDir>$(MSBuildProjectDirectory)\bin\Release\$(TargetFramework)\win-x64\publish\</HostPublishDir>
-    <StartAction>Program</StartAction>
-    <StartProgram>$(HostPublishDir)$(AssemblyName).DebugHost.exe</StartProgram>
-    <StartWorkingDirectory>$(HostPublishDir)</StartWorkingDirectory>
+    <!-- Bind đúng bản ABX.Core.dll mà Hub đang chạy -->
+    <AbxCorePath>$(SolutionDir)AutoBetHub\bin\$(Configuration)\net8.0-windows\ABX.Core.dll</AbxCorePath>
   </PropertyGroup>
 
-  <!-- Release: EXE 1 file tự chứa -->
+  <!-- ===== Release: 1-file EXE độc lập (giữ nguyên nghiệp vụ) ===== -->
   <PropertyGroup Condition="'$(Configuration)'=='Release'">
-    <Optimize>true</Optimize>
-    <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-    <PublishReadyToRun>false</PublishReadyToRun>
     <PublishTrimmed>false</PublishTrimmed>
-    <DebugSymbols>false</DebugSymbols>
+    <DefineConstants>$(DefineConstants);STANDALONE</DefineConstants>
     <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
-  <!-- Khi Debug: luôn publish host EXE (Release) để F5 chạy -->
-  <Target Name="EnsureReleaseHost" BeforeTargets="Build"
-          Condition="'$(Configuration)'=='Debug'">
-    <MSBuild Projects="$(MSBuildProjectFullPath)"
-             Targets="Restore;Publish"
-             Properties="
-                Configuration=Release;
-                RuntimeIdentifier=win-x64;
-                SelfContained=true;
-                PublishSingleFile=true;
-                IncludeNativeLibrariesForSelfExtract=true;
-                EnableCompressionInSingleFile=true;
-                PublishReadyToRun=false;
-                PublishTrimmed=false;
-                DebugSymbols=true;
-                DebugType=portable;
-                Optimize=false;
-                BuildStamp=$(BuildStamp);
-                CreateDebugAlias=true" />
-  </Target>
-
-  <!-- Sau Publish: ĐỔI TÊN EXE chính theo Version + BuildStamp (không giữ XocDiaSoiLiveKH24.exe) -->
-  <Target Name="RenamePublishOutputWithVersionAndTime" AfterTargets="Publish">
-    <PropertyGroup>
-      <_SrcExe>$(PublishDir)$(AssemblyName).exe</_SrcExe>
-      <_NewFileName Condition="'$(Version)' != ''">$(AssemblyName)-$(Version)-$(BuildStamp).exe</_NewFileName>
-      <_NewFileName Condition="'$(Version)' == ''">$(AssemblyName)-$(BuildStamp).exe</_NewFileName>
-      <_DstExe>$(PublishDir)$(_NewFileName)</_DstExe>
-      <!-- Alias ổn định chỉ để F5 (chỉ tạo khi CreateDebugAlias=true) -->
-      <_AliasExe>$(PublishDir)$(AssemblyName).DebugHost.exe</_AliasExe>
-    </PropertyGroup>
-
-    <Message Text="Renaming $(AssemblyName).exe → $(_NewFileName)" Importance="high" />
-
-    <Delete Files="$(_DstExe)" ContinueOnError="true" />
-    <Move SourceFiles="$(_SrcExe)" DestinationFiles="$(_DstExe)" />
-
-    <!-- Tạo alias ổn định cho F5 (không ảnh hưởng gói phát hành) -->
-    <Delete Files="$(_AliasExe)" ContinueOnError="true" Condition="'$(CreateDebugAlias)'=='true'" />
-    <Copy SourceFiles="$(_DstExe)" DestinationFiles="$(_AliasExe)" Condition="'$(CreateDebugAlias)'=='true'" />
-  </Target>
-
-  <!-- Gói WebView2 -->
+  <!-- ===== Packages & resources ===== -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
   </ItemGroup>
 
-  <!-- Chuẩn hoá: tự quản lý tài nguyên -->
+  <!-- Nhúng JS vào resource -->
   <ItemGroup>
-    <None Remove="Assets\AppIcon.ico" />
     <None Remove="js_home_v2.js" />
-    <None Remove="v4_js_xoc_dia_live.js" />
     <None Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
   </ItemGroup>
-
-  <!-- JS bridge (nhúng cho cả 2 cấu hình) -->
   <ItemGroup>
     <EmbeddedResource Include="js_home_v2.js" />
-    <EmbeddedResource Include="v4_js_xoc_dia_live.js" />
   </ItemGroup>
 
-  <!-- Fixed WebView2 runtime zip: GIỮ THEO BẢN GỐC (Release) -->
+  <!-- Release mới nhúng ZIP môi trường -->
   <ItemGroup Condition="'$(Configuration)'=='Release'">
     <EmbeddedResource Include="ThirdParty\WebView2Fixed_win-x64.zip">
       <LogicalName>XocDiaSoiLiveKH24.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 
-  <!-- Ảnh WPF dùng pack URI (giữ như bản gốc) -->
+  <!-- Tài nguyên ảnh/icon -->
   <ItemGroup>
     <Resource Include="Assets\**\*.png" />
     <Resource Include="Assets\**\*.jpg" />
@@ -137,28 +78,64 @@
     </Resource>
   </ItemGroup>
 
-  <!-- Chỉ ảnh hưởng Debug: build dạng thư viện & có thể loại ảnh/zip để DLL nhẹ hơn -->
+  <!-- ===== RẤT QUAN TRỌNG: Debug chuyển App.xaml từ ApplicationDefinition -> Page ===== -->
   <ItemGroup Condition="'$(Configuration)'=='Debug'">
     <ApplicationDefinition Remove="App.xaml" />
     <Page Include="App.xaml" />
-    <!-- Nếu muốn DLL nhẹ hơn nữa, bỏ comment 2 dòng dưới: -->
-    <!-- <Resource Remove="Assets\**\*.png" /> -->
-    <!-- <Resource Remove="Assets\**\*.jpg" /> -->
+    <!-- Debug không nhúng ZIP môi trường -->
     <EmbeddedResource Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
   </ItemGroup>
-  
-  
-  <!-- ===== BỎ những file phụ thuộc ABX/Core/Hub ===== -->
+
+  <!-- ===== Kiểm soát file plugin để tránh duplicate compile ===== -->
+  <!-- Bỏ mặc định trước, rồi Debug sẽ Include lại -->
   <ItemGroup>
-    <!-- mấy file plugin đã bỏ lúc trước -->
     <Compile Remove="XocDiaSoiLiveKH24Plugin.cs" />
     <Compile Remove="XocDiaSoiLiveKH24Plugin.Hub.cs" />
     <Compile Remove="PluginProbe.cs" />
-    <!-- file gây lỗi bạn vừa báo -->
-    <Compile Remove="MainWindow.Startup.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)'=='Debug'">
+    <Compile Include="XocDiaSoiLiveKH24Plugin.cs" />
+    <Compile Include="PluginProbe.cs" />
+    <Compile Include="XocDiaSoiLiveKH24Plugin.Hub.cs" Condition="Exists('XocDiaSoiLiveKH24Plugin.Hub.cs')" />
   </ItemGroup>
 
-  <!-- ===== Release rename & cleanup ===== -->
+  <!-- ===== Tham chiếu ABX.Core đúng bản của Hub (không copy local) ===== -->
+  <ItemGroup Condition="'$(Configuration)'=='Debug'">
+    <Reference Include="ABX.Core">
+      <HintPath>$(AbxCorePath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ABX.Core\ABX.Core.csproj" />
+  </ItemGroup>
+
+  <!-- ===== Guard: bắt buộc build Hub trước để có ABX.Core.dll ===== -->
+  <Target Name="CheckAbxCorePath" BeforeTargets="Build" Condition="'$(Configuration)'=='Debug'">
+    <Error Condition="!Exists('$(AbxCorePath)')" Text="ABX.Core.dll not found at '$(AbxCorePath)'. Build AutoBetHub (Debug) trước." />
+  </Target>
+
+  <!-- ===== Echo đường dẫn output để dễ kiểm tra ===== -->
+  <Target Name="EchoBuiltPath" AfterTargets="Build">
+    <Message Text="Built plugin at: $(TargetPath)" Importance="high" />
+  </Target>
+
+  <!-- ===== Copy plugin sang Hub (ép overwrite + đóng dấu) ===== -->
+  <Target Name="CopyPluginToHubDebug" AfterTargets="Build" Condition="'$(Configuration)'=='Debug'">
+    <PropertyGroup>
+      <HubPluginsDir>$(SolutionDir)AutoBetHub\Plugins\</HubPluginsDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(HubPluginsDir)" />
+    <ItemGroup>
+      <_AbxCoreInPlugins Include="$(HubPluginsDir)ABX.Core*.dll" />
+    </ItemGroup>
+    <Delete Files="@(_AbxCoreInPlugins)" />
+    <Message Text="Copying $(TargetPath) -&gt; $(HubPluginsDir)" Importance="high" />
+    <Delete Files="$(HubPluginsDir)$(TargetFileName)" ContinueOnError="true" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(HubPluginsDir)" SkipUnchangedFiles="false" OverwriteReadOnlyFiles="true" />
+  </Target>
+
+  <!-- ===== Release rename & cleanup (giữ nguyên) ===== -->
   <Target Name="RenamePublishedExeWithStamp" AfterTargets="Publish" Condition="'$(Configuration)'=='Release'">
     <PropertyGroup>
       <PublishedExe>$(PublishDir)$(AssemblyName).exe</PublishedExe>

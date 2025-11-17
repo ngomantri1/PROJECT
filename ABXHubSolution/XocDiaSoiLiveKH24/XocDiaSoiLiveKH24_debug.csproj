@@ -1,0 +1,177 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
+  <!-- Chung cho mọi cấu hình -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Prefer32Bit>false</Prefer32Bit>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <!-- Để Restore có target win-x64 khi Publish -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+
+    <!-- Cập nhật khi release -->
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <!-- Dấu thời gian cho tên file publish -->
+  <PropertyGroup>
+    <BuildStamp Condition="'$(BuildStamp)'==''">$([System.DateTime]::Now.ToString("yyMMdd-HHmmss"))</BuildStamp>
+    <!-- Mặc định không tạo alias; chỉ bật khi F5 Debug gọi publish nội bộ -->
+    <CreateDebugAlias>false</CreateDebugAlias>
+  </PropertyGroup>
+
+  <!-- Debug: DLL nhẹ, F5 chạy EXE host (Release) -->
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <OutputType>Library</OutputType>
+    <Optimize>true</Optimize>
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>none</DebugType>
+
+    <!-- Không đóng gói môi trường -->
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!-- F5: chạy EXE đã publish (alias ổn định) -->
+    <HostPublishDir>$(MSBuildProjectDirectory)\bin\Release\$(TargetFramework)\win-x64\publish\</HostPublishDir>
+    <StartAction>Program</StartAction>
+    <StartProgram>$(HostPublishDir)$(AssemblyName).DebugHost.exe</StartProgram>
+    <StartWorkingDirectory>$(HostPublishDir)</StartWorkingDirectory>
+  </PropertyGroup>
+
+  <!-- Release: EXE 1 file tự chứa -->
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <Optimize>true</Optimize>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <PublishTrimmed>false</PublishTrimmed>
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <!-- Khi Debug: luôn publish host EXE (Release) để F5 chạy -->
+  <Target Name="EnsureReleaseHost" BeforeTargets="Build"
+          Condition="'$(Configuration)'=='Debug'">
+    <MSBuild Projects="$(MSBuildProjectFullPath)"
+             Targets="Restore;Publish"
+             Properties="
+                Configuration=Release;
+                RuntimeIdentifier=win-x64;
+                SelfContained=true;
+                PublishSingleFile=true;
+                IncludeNativeLibrariesForSelfExtract=true;
+                EnableCompressionInSingleFile=true;
+                PublishReadyToRun=false;
+                PublishTrimmed=false;
+                DebugSymbols=true;
+                DebugType=portable;
+                Optimize=false;
+                BuildStamp=$(BuildStamp);
+                CreateDebugAlias=true" />
+  </Target>
+
+  <!-- Sau Publish: ĐỔI TÊN EXE chính theo Version + BuildStamp (không giữ XocDiaSoiLiveKH24.exe) -->
+  <Target Name="RenamePublishOutputWithVersionAndTime" AfterTargets="Publish">
+    <PropertyGroup>
+      <_SrcExe>$(PublishDir)$(AssemblyName).exe</_SrcExe>
+      <_NewFileName Condition="'$(Version)' != ''">$(AssemblyName)-$(Version)-$(BuildStamp).exe</_NewFileName>
+      <_NewFileName Condition="'$(Version)' == ''">$(AssemblyName)-$(BuildStamp).exe</_NewFileName>
+      <_DstExe>$(PublishDir)$(_NewFileName)</_DstExe>
+      <!-- Alias ổn định chỉ để F5 (chỉ tạo khi CreateDebugAlias=true) -->
+      <_AliasExe>$(PublishDir)$(AssemblyName).DebugHost.exe</_AliasExe>
+    </PropertyGroup>
+
+    <Message Text="Renaming $(AssemblyName).exe → $(_NewFileName)" Importance="high" />
+
+    <Delete Files="$(_DstExe)" ContinueOnError="true" />
+    <Move SourceFiles="$(_SrcExe)" DestinationFiles="$(_DstExe)" />
+
+    <!-- Tạo alias ổn định cho F5 (không ảnh hưởng gói phát hành) -->
+    <Delete Files="$(_AliasExe)" ContinueOnError="true" Condition="'$(CreateDebugAlias)'=='true'" />
+    <Copy SourceFiles="$(_DstExe)" DestinationFiles="$(_AliasExe)" Condition="'$(CreateDebugAlias)'=='true'" />
+  </Target>
+
+  <!-- Gói WebView2 -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
+  </ItemGroup>
+
+  <!-- Chuẩn hoá: tự quản lý tài nguyên -->
+  <ItemGroup>
+    <None Remove="Assets\AppIcon.ico" />
+    <None Remove="js_home_v2.js" />
+    <None Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
+  </ItemGroup>
+
+  <!-- JS bridge (nhúng cho cả 2 cấu hình) -->
+  <ItemGroup>
+    <EmbeddedResource Include="js_home_v2.js" />
+  </ItemGroup>
+
+  <!-- Fixed WebView2 runtime zip: GIỮ THEO BẢN GỐC (Release) -->
+  <ItemGroup Condition="'$(Configuration)'=='Release'">
+    <EmbeddedResource Include="ThirdParty\WebView2Fixed_win-x64.zip">
+      <LogicalName>XocDiaSoiLiveKH24.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- Ảnh WPF dùng pack URI (giữ như bản gốc) -->
+  <ItemGroup>
+    <Resource Include="Assets\**\*.png" />
+    <Resource Include="Assets\**\*.jpg" />
+    <Resource Include="Assets\AppIcon.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+  </ItemGroup>
+
+  <!-- Chỉ ảnh hưởng Debug: build dạng thư viện & có thể loại ảnh/zip để DLL nhẹ hơn -->
+  <ItemGroup Condition="'$(Configuration)'=='Debug'">
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+    <!-- Nếu muốn DLL nhẹ hơn nữa, bỏ comment 2 dòng dưới: -->
+    <!-- <Resource Remove="Assets\**\*.png" /> -->
+    <!-- <Resource Remove="Assets\**\*.jpg" /> -->
+    <EmbeddedResource Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
+  </ItemGroup>
+  
+  
+  <!-- ===== BỎ những file phụ thuộc ABX/Core/Hub ===== -->
+  <ItemGroup>
+    <!-- mấy file plugin đã bỏ lúc trước -->
+    <Compile Remove="XocDiaSoiLiveKH24Plugin.cs" />
+    <Compile Remove="XocDiaSoiLiveKH24Plugin.Hub.cs" />
+    <Compile Remove="PluginProbe.cs" />
+    <!-- file gây lỗi bạn vừa báo -->
+    <Compile Remove="MainWindow.Startup.cs" />
+  </ItemGroup>
+
+  <!-- ===== Release rename & cleanup ===== -->
+  <Target Name="RenamePublishedExeWithStamp" AfterTargets="Publish" Condition="'$(Configuration)'=='Release'">
+    <PropertyGroup>
+      <PublishedExe>$(PublishDir)$(AssemblyName).exe</PublishedExe>
+      <StampedExe>$(PublishDir)$(AssemblyName)_$(BuildStamp).exe</StampedExe>
+    </PropertyGroup>
+    <Move SourceFiles="$(PublishedExe)" DestinationFiles="$(StampedExe)" Condition="Exists('$(PublishedExe)')" />
+  </Target>
+
+  <Target Name="CleanWebView2LooseDlls" AfterTargets="Publish" Condition="'$(Configuration)'=='Release'">
+    <ItemGroup>
+      <_Wv2Loose Include="$(PublishDir)Microsoft.Web.WebView2*.dll" />
+      <_TfmsDir Include="$(PublishDir)net8.0-windows\" />
+    </ItemGroup>
+    <Delete Files="@(_Wv2Loose)" />
+    <RemoveDir Directories="@(_TfmsDir)" Condition="Exists('%(_TfmsDir.Identity)')" />
+  </Target>
+
+</Project>

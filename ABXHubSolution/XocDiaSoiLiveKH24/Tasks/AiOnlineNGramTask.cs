@@ -130,6 +130,7 @@ namespace XocDiaSoiLiveKH24.Tasks
 
                 var preSnap = ctx.GetSnap();
                 string preSeq = preSnap?.seq ?? "";
+                string baseSession = preSnap?.session ?? string.Empty;
                 string preParity = SeqToParityString(preSeq);
 
                 // 1) Tính tham số hiệu lực (ease-in theo SafetyEscalations & S5/S8 flags)
@@ -176,7 +177,7 @@ namespace XocDiaSoiLiveKH24.Tasks
                 await PlaceBet(ctx, side, stake, ct);
 
                 // 5) Kết quả ván
-                bool win = await WaitRoundFinishAndJudge(ctx, side, preSeq, ct);
+                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {

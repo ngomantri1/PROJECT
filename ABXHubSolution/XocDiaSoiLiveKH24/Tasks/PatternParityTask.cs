@@ -80,7 +80,7 @@ namespace XocDiaSoiLiveKH24.Tasks
                 // có plan → chờ đến lúc vào tiền
                 await WaitUntilNewRoundStart(ctx, ct);
 
-                string baseSeq = snap?.seq ?? string.Empty;
+                string baseSession = snap?.session ?? string.Empty;
                 char plan = planned.Dequeue();
                 string side = ParityCharToSide(plan);
                 long stake;
@@ -97,7 +97,7 @@ namespace XocDiaSoiLiveKH24.Tasks
                 }
                 await PlaceBet(ctx, side, stake, ct);
 
-                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {

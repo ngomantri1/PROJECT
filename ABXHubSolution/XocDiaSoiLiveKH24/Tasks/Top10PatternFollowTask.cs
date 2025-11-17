@@ -126,7 +126,8 @@ namespace XocDiaSoiLiveKH24.Tasks
                 await WaitUntilNewRoundStart(ctx, ct);
 
                 var snap = ctx.GetSnap?.Invoke();
-                string baseSeq = snap?.seq ?? string.Empty; // dùng cho Judge: chờ chuỗi đổi (không phụ thuộc tăng độ dài)
+                string baseSeq = snap?.seq ?? string.Empty;
+                string baseSession = snap?.session ?? string.Empty;
 
                 // Nếu chưa có best (đề phòng), pick lại
                 if (string.IsNullOrEmpty(curPattern))
@@ -142,7 +143,7 @@ namespace XocDiaSoiLiveKH24.Tasks
                         var stake0 = money.GetStakeForThisBet();
                         await PlaceBet(ctx, fallbackSide, stake0, ct);
 
-                        bool win0 = await WaitRoundFinishAndJudge(ctx, fallbackSide, baseSeq, ct);
+                        bool win0 = await WaitRoundFinishAndJudge(ctx, fallbackSide, baseSession, ct);
                         await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win0 ? stake0 : -stake0));
                         money.OnRoundResult(win0);
 
@@ -178,8 +179,8 @@ namespace XocDiaSoiLiveKH24.Tasks
                 ctx.Log?.Invoke($"[Top10-50] bet={side} (pat='{curPattern}', pos={curIdx + 1}/10, count={curCount})");
                 await PlaceBet(ctx, side, stake, ct);
 
-                // Chờ KẾT QUẢ: WaitRoundFinishAndJudge so sánh chuỗi → phù hợp cửa sổ 50 trượt
-                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                // Chờ KẾT QUẢ: WaitRoundFinishAndJudge so sánh phiên
+                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {

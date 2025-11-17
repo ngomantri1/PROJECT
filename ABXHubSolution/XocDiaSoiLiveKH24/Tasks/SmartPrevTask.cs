@@ -56,7 +56,7 @@ namespace XocDiaSoiLiveKH24.Tasks
 
                 var snap = ctx.GetSnap();
                 string parity = SeqToParityString(snap?.seq ?? "");
-                string baseSeq = snap?.seq ?? string.Empty;
+                string baseSession = snap?.session ?? string.Empty;
 
                 string side = DecideNextSide(parity);
                 long stake;
@@ -73,7 +73,7 @@ namespace XocDiaSoiLiveKH24.Tasks
                 }
                 await PlaceBet(ctx, side, stake, ct);
 
-                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {

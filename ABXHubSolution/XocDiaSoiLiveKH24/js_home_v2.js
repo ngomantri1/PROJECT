@@ -581,7 +581,47 @@
                     colStrings.push(s);
                 }
 
-                info.seq = colStrings.join("");
+                // --- 4b) BỎ cột thống kê "40"/"04" ở bên trái nếu nó cách xa bảng chính ---
+                if (cols.length >= 2) {
+                    var xs = [];
+                    for (var xi = 0; xi < cols.length; xi++) {
+                        xs.push(cols[xi].cx);
+                    }
+                    var diffs = [];
+                    for (var di = 1; di < xs.length; di++) {
+                        diffs.push(xs[di] - xs[di - 1]);
+                    }
+                    var spacing = 0;
+                    if (diffs.length) {
+                        var sortedDiffs = diffs.slice().sort(function (a, b) {
+                            return a - b;
+                        });
+                        spacing = sortedDiffs[Math.floor(sortedDiffs.length / 2)];
+                    }
+                    var firstGap = xs[1] - xs[0];
+
+                    // Nếu cột đầu là "40"/"04" và khoảng cách tới cột kế tiếp lớn hơn nhiều so với spacing chuẩn
+                    // => coi là cột thống kê, bỏ khỏi chuỗi kết quả
+                    if (spacing > 0 &&
+                        firstGap > spacing * 1.4 &&
+                        (colStrings[0] === "40" || colStrings[0] === "04")) {
+                        cols = cols.slice(1);
+                        colStrings = colStrings.slice(1);
+                    }
+                }
+
+                var seq = colStrings.join("");
+
+                // Nếu bảng chỉ có 2 số thống kê (thường là "40" hoặc "04") thì bỏ qua luôn
+                var isBareStats =
+                    (cells.length <= 2 && seq.length <= 2) ||
+                (cells.length <= 4 && (seq === "40" || seq === "04"));
+                if (isBareStats) {
+                    console.log('[TK] Bảng kết quả đang trống, bỏ qua seq =', seq, 'cells =', cells.length);
+                    seq = "";
+                }
+
+                info.seq = seq;
                 info.cells = cells;
                 info.cols = cols;
                 info.colStrings = colStrings;
@@ -1018,7 +1058,7 @@
                 '</div>' +
                 '<div id="cwInfo" style="white-space:pre;color:#9f9;line-height:1.45"></div>';
             //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-            //root.style.display='none';
+            root.style.display='none';
             var btns = panel.querySelectorAll('button');
             for (var bi = 0; bi < btns.length; bi++) {
                 var b = btns[bi];
@@ -2113,6 +2153,210 @@
                 };
             }
 
+            // ================= KH24: helpers cho bet CHẴN / LẺ ===================
+            var KH24_TAIL_TOTAL_CHAN = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Center/GateContent/Chan_Gate/TotalBet/Amount';
+            var KH24_TAIL_TOTAL_LE = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Center/GateContent/Le_Gate/TotalBet/Amount';
+
+            function kh24ReadTotals() {
+                if (typeof moneyTailList !== 'function')
+                    return {
+                        chan: 0,
+                        le: 0
+                    };
+
+                function sumTail(tailExact) {
+                    var list = moneyTailList(tailExact) || [];
+                    var s = 0;
+                    for (var i = 0; i < list.length; i++)
+                        s += Number(list[i].val || 0);
+                    return s;
+                }
+
+                return {
+                    chan: sumTail(KH24_TAIL_TOTAL_CHAN),
+                    le: sumTail(KH24_TAIL_TOTAL_LE)
+                };
+            }
+
+            function kh24GetGates() {
+                if (typeof collectButtons !== 'function')
+                    return {
+                        chan: null,
+                        le: null
+                    };
+
+                var btns = collectButtons();
+                var chan = null,
+                le = null;
+
+                for (var i = 0; i < btns.length; i++) {
+                    var t = String(btns[i].tail || '').toLowerCase();
+                    if (t.indexOf('/center/gatecontent/chan_gate') !== -1)
+                        chan = btns[i];
+                    else if (t.indexOf('/center/gatecontent/le_gate') !== -1)
+                        le = btns[i];
+                }
+                return {
+                    chan: chan,
+                    le: le
+                };
+            }
+
+            function kh24GetChipButtons() {
+                if (typeof collectButtons !== 'function')
+                    return {};
+
+                var btns = collectButtons();
+                var map = {}; // { value -> rect }
+
+                for (var i = 0; i < btns.length; i++) {
+                    var b = btns[i];
+                    var tail = String(b.tail || '').toLowerCase();
+
+                    // MainGame/.../Center/ChipContent/Chip_Btn_50M
+                    var m = /chipcontent\/chip_btn_([0-9]+)(k|m)/i.exec(tail);
+                    if (!m)
+                        continue;
+
+                    var raw = parseInt(m[1], 10);
+                    var unit = m[2].toLowerCase();
+                    var val = raw * (unit === 'k' ? 1000 : 1000000);
+
+                    var cur = map[val];
+                    if (!cur || (b.w * b.h) > (cur.w * cur.h)) {
+                        map[val] = {
+                            x: b.x,
+                            y: b.y,
+                            w: b.w,
+                            h: b.h,
+                            tail: b.tail
+                        };
+                    }
+                }
+
+                return map;
+            }
+
+            function kh24MakePlan(amount, chipMap) {
+                var vals = Object.keys(chipMap)
+                    .map(function (v) {
+                        return parseInt(v, 10);
+                    })
+                    .sort(function (a, b) {
+                        return b - a;
+                    }); // lớn -> nhỏ
+
+                var plan = [];
+                var rest = amount;
+
+                for (var i = 0; i < vals.length; i++) {
+                    var v = vals[i];
+                    if (rest < v)
+                        continue;
+                    var cnt = Math.floor(rest / v);
+                    if (cnt <= 0)
+                        continue;
+                    plan.push({
+                        val: v,
+                        count: cnt
+                    });
+                    rest -= v * cnt;
+                }
+                return {
+                    plan: plan,
+                    rest: rest
+                };
+            }
+
+            function kh24ClickBox(box) {
+                if (!box)
+                    return false;
+
+                // 1) ưu tiên emitClick theo node/tail (giống console)
+                try {
+                    var node = null;
+
+                    if (typeof findNodeByTailCompat === 'function') {
+                        node = findNodeByTailCompat(box.tail);
+                    } else if (typeof window.__cw_findNodeByTailCompat === 'function') {
+                        node = window.__cw_findNodeByTailCompat(box.tail);
+                    } else if (typeof window.__abx_findNodeByTail === 'function') {
+                        node = window.__abx_findNodeByTail(box.tail);
+                    } else if (typeof window.findNodeByTail === 'function') {
+                        node = window.findNodeByTail(box.tail);
+                    }
+
+                    if (node) {
+                        node = (typeof clickableOf === 'function') ? clickableOf(node) : node;
+                        if (emitClick(node))
+                            return true;
+                    }
+                } catch (e) {
+                    console.warn('[KH24] kh24ClickBox emitClick error:', e);
+                }
+
+                // 2) fallback: clickRectCenter nếu có
+                if (typeof clickRectCenter === 'function')
+                    return clickRectCenter(box);
+
+                return false;
+            }
+
+            async function kh24BetSide(side, amount) {
+                side = String(side || '').toUpperCase();
+                amount = Math.max(0, Math.floor(amount || 0));
+
+                // KHÔNG cố bet nếu amount = 0 → coi như KH24 không xử lý
+                if (!amount)
+                    return undefined; // <-- ĐỔI: undefined = KH24 không làm gì
+
+                var gates = kh24GetGates();
+                var gate = (side === 'CHAN') ? gates.chan : gates.le;
+                if (!gate)
+                    return undefined; // <-- KH24 không đủ dữ liệu để chạy
+
+                var chips = kh24GetChipButtons();
+                if (!Object.keys(chips).length)
+                    return undefined; // <-- không có chip, cho cwBet fallback
+
+                var planInfo = kh24MakePlan(amount, chips);
+                var plan = planInfo.plan,
+                rest = planInfo.rest;
+                if (!plan.length || rest > 0)
+                    return undefined; // <-- không lập được plan, cho fallback
+
+                var appliedTotal = 0; // tổng tiền thực sự được cộng
+
+                for (var s = 0; s < plan.length; s++) {
+                    var step = plan[s];
+                    var chipBtn = chips[step.val];
+                    if (!chipBtn)
+                        continue;
+
+                    for (var n = 0; n < step.count; n++) {
+                        var before = kh24ReadTotals();
+
+                        kh24ClickBox(chipBtn);
+                        await sleep(220);
+
+                        kh24ClickBox(gate);
+                        await sleep(260);
+
+                        var after = kh24ReadTotals();
+                        var delta = (side === 'CHAN')
+                         ? (after.chan - before.chan)
+                         : (after.le - before.le);
+
+                        if (delta > 0)
+                            appliedTotal += delta;
+                    }
+                }
+
+                // Ở đây CHẮC CHẮN KH24 đã THỬ bắn (có gate, chip, plan)
+                // → trả TRUE/FALSE nhưng KHÔNG cho cwBet fallback nữa
+                return appliedTotal > 0;
+            }
+            // ================= END KH24 helpers ===================
             window.cwBet = async function (side, amount) {
                 if (amount == null || isNaN(amount)) {
                     if (old_cwBet)
@@ -2136,6 +2380,24 @@
                 var X = raw - (raw % 1000);
 
                 return withLock(async function () {
+
+                    // --- ƯU TIÊN ĐƯỜNG KH24 CHO CHẴN / LẺ ---
+                    if (side === 'CHAN' || side === 'LE') {
+                        try {
+                            if (typeof kh24BetSide === 'function') {
+                                var kh24Result = await kh24BetSide(side, X);
+
+                                // KH24 đã THỰC SỰ xử lý (có gate/chip/plan) → không cho fallback nữa
+                                if (kh24Result !== undefined) {
+                                    return !!kh24Result; // true/false dựa trên appliedTotal
+                                }
+                                // Nếu kh24Result === undefined → KH24 chịu, cho phép rơi xuống fallback
+                            }
+                        } catch (e) {
+                            console.warn('[cwBet++][KH24] kh24BetSide error:', e);
+                        }
+                    }
+                    // --- HẾT KH24, FALLBACK VỀ LOGIC CHUNG ---
                     var btn = findSide(side);
                     if (!btn) {
                         console.warn('[cwBet++] không thấy nút cửa:', side);
@@ -2543,7 +2805,6 @@
                     S.status = st; // chỉ cập nhật khi đọc được 'locked' | 'open'
                 var T = totals(S);
                 S._lastTotals = T;
-                // TK sequence: gộp bảng SoiCau vào lịch sử S.seq (giữ 50 kết quả)
                 // 3) TK sequence (ổn định vài nhịp đầu, rồi mới chỉ ghép phần mới)
                 var tk = readTKSeq();
                 var boardSeq = (tk && tk.seq) ? tk.seq : '';
@@ -2558,6 +2819,10 @@
                         // Sau khi đã ổn định thì chỉ ghép phần mới vào đuôi
                         S.seq = mergeSeq(S.seq, boardSeq);
                     }
+                } else {
+                    // Bảng kết quả đang TRỐNG → chuỗi kết quả cũng phải trống
+                    S.seq = '';
+                    seqBootTicks = 0; // lần sau có dữ liệu lại boot từ đầu
                 }
 
                 // keep focus
@@ -2999,7 +3264,6 @@
                                 'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Info_Content/Lock_Lb',
                                 'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/StatusContent/Status_Lb',
                             ];
-                            const TAIL_LOCKED = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Center/StateGameContent/Locked';
 
                             // đọc text từ node: ưu tiên cc.Label, rồi đến cc.RichText
                             function getLabelText(node) {
@@ -3080,8 +3344,23 @@
                                     // 1) đọc tiến trình & status (ưu tiên text)
                                     var p = readProgressVal();
                                     var st = (typeof __cw_readStatusSmart === 'function') ? __cw_readStatusSmart() : null;
+
+                                    // NEW: ánh xạ prog theo status: open = 1, locked = 0, còn lại fallback p cũ
+                                    var prog = p;
+                                    if (st === 'open') {
+                                        prog = 1;
+                                    } else if (st === 'locked') {
+                                        prog = 0;
+                                    }
                                     var session = readSessionText();
                                     var uiInfo = detectUiMode();
+                                    if (!uiInfo) {
+                                        uiInfo = {
+                                            ui: 'unknown',
+                                            via: 'none',
+                                            scene: ''
+                                        };
+                                    }
 
                                     // 2) nick thông minh: GAME trước, HOME sau; rồi cache vào S.lastNick
                                     var nickNow = readNickSmart() || readHomeNick() || '';
@@ -3105,7 +3384,7 @@
                                     // 5) gói snapshot đẩy sang C#
                                     var snap = {
                                         abx: 'tick',
-                                        prog: p,
+                                        prog: prog, // dùng 0/1 theo status
                                         totals: tots, // dùng totals đã được patch ở HOME
                                         seq: readSeqSafe(),
                                         status: String(st || ''),
@@ -3146,7 +3425,7 @@
                         return 'stopped';
                     };
 
-                    // hàm bet bridge cũ của bạn
+                    // hàm bet bridge: CHỈ báo thành công khi thực sự có thay đổi tiền
                     window.__cw_bet = async function (side, amount) {
                         try {
                             side = (String(side || '').toUpperCase() === 'CHAN') ? 'CHAN' : 'LE';
@@ -3156,15 +3435,34 @@
                                 throw new Error('cwBet not found');
                             }
 
-                            var before = readTotalsSafe() || {};
-                            await cwBet(side, amt);
+                            var before = (typeof readTotalsSafe === 'function')
+                             ? (readTotalsSafe() || {})
+                             : null;
 
-                            try {
-                                if (typeof waitForTotalsChange === 'function') {
-                                    await waitForTotalsChange(before, side, 1600);
-                                }
-                            } catch (_) {}
+                            // gọi core cwBet (có KH24 bên trong)
+                            var okCore = await cwBet(side, amt);
 
+                            // kiểm tra tổng tiền có đổi không
+                            var changed = false;
+                            if (before && typeof waitForTotalsChange === 'function') {
+                                try {
+                                    changed = await waitForTotalsChange(before, side, 1600);
+                                } catch (_) {}
+                            }
+
+                            if (!okCore && !changed) {
+                                // không đặt được → báo lỗi cho C#
+                                safePost({
+                                    abx: 'bet_error',
+                                    side: side,
+                                    amount: amt,
+                                    error: 'no_totals_change',
+                                    ts: Date.now()
+                                });
+                                return 'fail';
+                            }
+
+                            // chỉ khi đặt OK mới báo [BET] cho C#
                             safePost({
                                 abx: 'bet',
                                 side: side,
@@ -3487,7 +3785,7 @@
                         function clickCocosButton(node) {
                             if (!node)
                                 return false;
-                            // thử cc.Button chuẩn
+                            // Button chuẩn
                             try {
                                 const btn = node.getComponent && node.getComponent(cc.Button);
                                 if (btn) {

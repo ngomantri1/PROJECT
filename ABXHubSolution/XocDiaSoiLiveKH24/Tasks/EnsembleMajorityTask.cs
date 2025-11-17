@@ -119,7 +119,7 @@ namespace XocDiaSoiLiveKH24.Tasks
                 ctx.Log?.Invoke($"[Ensemble] next={side}, stake={stake:N0}");
 
                 await PlaceBet(ctx, side, stake, ct);
-                bool win = await WaitRoundFinishAndJudge(ctx, side, snap?.seq ?? "", ct);
+                bool win = await WaitRoundFinishAndJudge(ctx, side, snap?.session ?? "", ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {
