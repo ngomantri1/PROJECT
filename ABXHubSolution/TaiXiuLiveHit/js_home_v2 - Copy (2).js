@@ -230,7 +230,7 @@
         watchdogMs: 1000, // tick 1s kiểm tra username/balance
         maxWatchdogMiss: 2, // quá 2 nhịp miss -> startAutoRetry(true)
         showPanel: false, // ⬅️ false = ẩn panel; true = hiện panel
-		autoRetryOnBoot: false
+        autoRetryOnBoot: false
 
     };
     // ABS selector cho Username (đường dẫn tuyệt đối bạn yêu cầu)
@@ -251,11 +251,14 @@
         'div.d-flex.align-items-center[2]/div.menu__right[1]/div.user-logged.d-flex[1]/div.user-logged__info[1]/div.base-dropdown-header[1]/button.btn.btn-secondary[1]/div.left[1]/p.base-dropdown-header__user__amount[1]';
 
     const TAIL_XOCDIA_BTN =
-        'div.livestream-section__live[2]/div.item-live[2]/div.live-stream[1]/div.player-wrapper[1]/div[1]/div.play-button[4]/div.play-overlay[1]/button.base-button.btn[1]';
+        'div.livestream-section__live[2]/div.item-live[2]/div.live-stream[1]/div.player-wrapper[1]/div[1]/div.play-button[4]/div.play-overlay[1]/button.base-button.btn[0]';
 
-    // ======= Game Regex (dùng trên chuỗi đã norm() — không dấu, lowercase) =======
-    const RE_XOCDIA_POS = /\bxoc(?:[-\s]*dia)?\b/; // "xoc", "xoc dia", "xoc-dia", "xocdia"
-    const RE_XOCDIA_NEG = /\b(?:tai|xiu|taixiu|sicbo|dice)\b/; // "tai", "xiu", "taixiu", "sicbo", "dice"
+    // ======= Game Regex cho TÀI XỈU LIVE (dùng trên chuỗi đã norm() — không dấu, lowercase) =======
+    // POS: các từ khóa liên quan Tài Xỉu / Sicbo
+    const RE_XOCDIA_POS = /\b(?:tai|xiu|taixiu|sicbo|dice)\b/; // "tai", "xiu", "taixiu", "sicbo", "dice"
+    // NEG: Xóc Đĩa (game khác, không phải Tài Xỉu)
+    const RE_XOCDIA_NEG = /\bxoc(?:[-\s]*dia)?\b/; // "xoc", "xoc dia", "xoc-dia", "xocdia"
+
 
     // ======= State =======
     const S = {
@@ -595,7 +598,7 @@
             '  <button id="' + CFG.scanLinksBtnId + '">Scan200LinksMap</button>',
             '  <button id="' + CFG.scanTextsBtnId + '">Scan200TextMap</button>',
             '  <button id="' + CFG.loginBtnId + '">Click Đăng Nhập</button>',
-            '  <button id="' + CFG.xocBtnId + '">Chơi Xóc Đĩa Live</button>',
+            '  <button id="' + CFG.xocBtnId + '">Chơi Tài Xỉu Live</button>',
             '  <button id="' + CFG.retryBtnId + '">Thử lại (tự động)</button>',
             '  <button id="' + CFG.overlayToggleBtnId + '">Overlay</button>',
             '</div>',
@@ -742,7 +745,7 @@
     function updateInfo(extra) {
         if (CFG.showPanel === false)
             return; // panel đang ẩn -> bỏ qua render
-        // Tính trạng thái hiển thị thật sự của khu vực xóc đĩa
+        // Tính trạng thái hiển thị thật sự của khu vực Tài Xỉu
         const live = (() => {
             const s = document.querySelector('.livestream-section__live');
             return !!(s && s.offsetParent !== null);
@@ -754,7 +757,7 @@
             '• Tên nhân vật: ' + (S.username ? S.username : '(?)'),
             '• Tài khoản: ' + balText,
             '• Title: ' + document.title,
-            '• Has Xóc Đĩa: ' + String(live)
+            '• Has Tài Xỉu: ' + String(live)
         ];
 
         if (extra)
@@ -2067,7 +2070,7 @@
         if (RE_XOCDIA_NEG.test(t) && !RE_XOCDIA_POS.test(t))
             return false;
 
-        // Đúng tiêu đề "xóc đĩa" → đúng game
+        // Đúng tiêu đề "Tài Xỉu" → đúng game
         if (RE_XOCDIA_POS.test(t))
             return true;
 
@@ -2114,9 +2117,8 @@
         // 1) Đảm bảo đang ở Home
         await ensureOnHome();
 
-        // 2) Tìm nút đúng (ưu tiên tail cố định)
+        // 2) Tìm nút đúng (ưu tiên tail cố định + 3 item đầu, trong đó Tài Xỉu Live là item 0)
         const resolveBtnFallback = () => {
-            // 1) Thử tail cố định trước
             const items = Array.from(document.querySelectorAll('.livestream-section__live .item-live'));
             const cand = [];
 
@@ -2124,18 +2126,28 @@
                 // văn bản toàn item + alt/title ảnh
                 const scopeTxt = norm([
                             it.innerText,
-                            ...Array.from(it.querySelectorAll('img[alt],img[title]')).map(img => img.alt || img.title || '')
+                            ...Array.from(it.querySelectorAll('img[alt],img[title]'))
+                            .map(img => img.alt || img.title || '')
                         ].join(' '));
 
+                // Tài Xỉu / Sicbo / Dice => điểm dương, Xóc Đĩa => điểm âm
                 const wCtxPos = RE_XOCDIA_POS.test(scopeTxt) ? 6 : 0;
                 const wCtxNeg = RE_XOCDIA_NEG.test(scopeTxt) ? -10 : 0;
 
-                const btns = Array.from(it.querySelectorAll('.play-overlay button.base-button.btn, button.base-button.btn, a.base-button.btn'));
+                const btns = Array.from(
+                        it.querySelectorAll('.play-overlay button.base-button.btn, button.base-button.btn, a.base-button.btn'));
+
                 btns.forEach(b => {
                     const lbl = norm(textOf(b));
                     const wBtnPos = RE_XOCDIA_POS.test(lbl) ? 4 : 0;
                     const wBtnNeg = RE_XOCDIA_NEG.test(lbl) ? -10 : 0;
-                    const score = wCtxPos + wCtxNeg + wBtnPos + wBtnNeg + (idx <= 2 ? 1 : 0); // ưu tiên 3 item đầu
+
+                    // 🔥 ƯU TIÊN THỨ TỰ ITEM:
+                    // - idx === 0: Tài Xỉu Live (item đầu tiên) -> +3
+                    // - idx 1, 2: vẫn được cộng nhẹ +1
+                    const idxBoost = (idx === 0 ? 3 : (idx <= 2 ? 1 : 0));
+
+                    const score = wCtxPos + wCtxNeg + wBtnPos + wBtnNeg + idxBoost;
                     cand.push({
                         el: b,
                         score,
@@ -2144,13 +2156,15 @@
                 });
             });
 
+            // Sắp xếp theo score, lấy cái tốt nhất và còn click được
             cand.sort((a, b) => b.score - a.score);
             const top = cand.find(c => c.score > 0 && isVisibleAndClickable(c.el));
-            return top ? top.el : null; // ❗ KHÔNG fallback theo “nút thứ 2” nữa
+            return top ? top.el : null; // ❗ KHÔNG fallback “nút thứ 2” nữa
         };
 
         // 3) Đóng quảng cáo/cover phổ biến trước
         closeAdsAndCovers();
+
         // 4) Chờ nút theo 2 pha: 5s chỉ tail, rồi phần còn lại cho fallback (tổng ≤12s)
         const WAIT_MS = 12000;
         const TAIL_ONLY_MS = 5000;
@@ -2170,20 +2184,24 @@
         }
 
         if (!btn) {
-            updateInfo('⚠ Không tìm thấy nút "Chơi Xóc Đĩa Live" trong ≤' + Math.round(WAIT_MS / 1000) + 's sau khi về trang Home.');
+            updateInfo('⚠ Không tìm thấy nút "Chơi Tài Xỉu Live" trong ≤' +
+                Math.round(WAIT_MS / 1000) + 's sau khi về trang Home.');
             return;
         }
 
         // Resolver click: ưu tiên nút đã tìm thấy (tail hoặc fallback); nếu không còn khả dụng, fallback tiếp
         const resolveBtnFallbackSafe = () => resolveBtnFallback();
-        const resolverForClick = () => (btn && isVisibleAndClickable(btn)) ? btn : resolveBtnFallbackSafe();
+        const resolverForClick = () =>
+        (btn && isVisibleAndClickable(btn)) ? btn : resolveBtnFallbackSafe();
 
         // 5) Click 1–3 lần (auto) + xuyên overlay
         const ok = await multiTryClick(resolverForClick, 3, isXocDiaLaunched);
         if (ok) {
-            updateInfo('→ Đã tự động click (đợi nút trong ≤' + Math.round(WAIT_MS / 1000) + 's, sau đó click 1–3 lần) để vào "Chơi Xóc Đĩa Live".');
+            updateInfo('→ Đã tự động click (đợi nút trong ≤' +
+                Math.round(WAIT_MS / 1000) +
+                's, sau đó click 1–3 lần) để vào "Chơi Tài Xỉu Live".');
         } else {
-            updateInfo('⚠ Không thể vào "Chơi Xóc Đĩa Live". Nút có thể bị khoá hoặc trang chặn điều hướng.');
+            updateInfo('⚠ Không thể vào "Chơi Tài Xỉu Live". Nút có thể bị khoá hoặc trang chặn điều hướng.');
         }
     }
 

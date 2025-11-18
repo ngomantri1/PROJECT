@@ -1,6 +1,5 @@
 (() => {
     'use strict';
-    console.log('[CW] xoc-dia-live panel script init');
     /* =========================================================
     CanvasWatch + MoneyMap + BetMap + TextMap + Scan200Text
     + TK Sequence (restore): LEFT→RIGHT columns, zig-zag T↓/B↑
@@ -12,7 +11,6 @@
     //root.style.display='none';  //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-
     try {
         if (window[NS] && window[NS].teardown) {
             window[NS].teardown();
@@ -60,9 +58,7 @@
         } catch (_) {}
     })();
 
-    // SỬA: không được đụng trực tiếp biến global cc khi cc chưa tồn tại,
-    // luôn đi qua window.cc để tránh ReferenceError khi inject sớm.
-    if (!window.cc || !window.cc.director || !window.cc.director.getScene) {
+    if (!(window.cc && cc.director && cc.director.getScene)) {
         return;
     }
 
@@ -283,102 +279,29 @@
         return out;
     }
     function collectProgress() {
-        try {
-            // 1) Nếu game có progress bar nội bộ thì dùng luôn (nếu hàm tồn tại)
-            var bars = null;
-            if (typeof sampleProgressBars === 'function') {
-                bars = sampleProgressBars();
-            }
-            if (bars && bars.length > 0) {
-                var b = bars[0];
-                var pr = null;
-                if (b.max > 0 && b.val >= 0) {
-                    pr = b.val / b.max;
-                }
-                pr = clamp01(pr);
-                if (pr != null)
-                    return pr;
-            }
-
-            // 2) Ưu tiên dùng label CountDownNode của Tài Xỉu Live
-            var labels = collectLabels();
-            if (!labels || labels.length === 0)
-                return null;
-
-            var COUNTDOWN_TAIL = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/CountDownNode';
-            var cdTailL = COUNTDOWN_TAIL.toLowerCase();
-            var sec = null;
-
-            for (var i = 0; i < labels.length; i++) {
-                var l = labels[i];
-                var tl = String(l.tail || '').toLowerCase();
-                if (!tl.endsWith(cdTailL))
-                    continue;
-
-                var txt = String(l.text || '').trim();
-                if (!txt)
-                    continue;
-
-                var m = txt.match(/(\d{1,2})/);
-                if (!m)
-                    continue;
-
-                var s = parseInt(m[1], 10);
-                if (isNaN(s))
-                    continue;
-
-                sec = s;
-                break; // lấy 1 label duy nhất là đủ
-            }
-
-            if (sec != null) {
-                if (sec < 0)
-                    sec = 0;
-                if (sec > 45)
-                    sec = 45; // theo yêu cầu: full thanh = 45s
-                var pr2 = sec / 45;
-                return clamp01(pr2);
-            }
-
-            // 3) Fallback cũ: heuristic chung theo vị trí text đếm ngược
-            var best = null;
-            var bestScore = -1;
-            for (var j = 0; j < labels.length; j++) {
-                var l2 = labels[j];
-                var txt2 = String(l2.text || '').trim();
-                if (!/^\d{1,2}$/.test(txt2))
-                    continue;
-
-                var sec2 = parseInt(txt2, 10);
-                if (isNaN(sec2) || sec2 < 0 || sec2 > 60)
-                    continue;
-
-                var score = 0;
-                var cx = (l2.x || 0) + (l2.w || 0) / 2;
-                var cy = (l2.y || 0) + (l2.h || 0) / 2;
-
-                if (cx > 400 && cx < 1100)
-                    score += 2;
-                if (cy > 400 && cy < 800)
-                    score += 2;
-
-                if (score > bestScore) {
-                    bestScore = score;
-                    best = {
-                        sec: sec2
-                    };
+        var bars = [];
+        walkNodes(function (n) {
+            var comps = getComps(n, cc.ProgressBar);
+            if (comps && comps.length) {
+                var r = wRect(n);
+                for (var i = 0; i < comps.length; i++) {
+                    bars.push({
+                        comp: comps[i],
+                        rect: r
+                    });
                 }
             }
-
-            if (best) {
-                var total = 45;
-                var pr3 = best.sec / total;
-                return clamp01(pr3);
-            }
-        } catch (e) {
-            console.log('collectProgress error', e);
-        }
-        return null;
+        });
+        if (!bars.length)
+            return null;
+        var H = innerHeight,
+        cs = bars.filter(function (b) {
+            var r = b.rect;
+            return r.w > 300 && r.h >= 6 && r.h <= 60 && r.y < H * 0.75;
+        });
+        var bar = (cs[0] || bars[0]).comp;
+        var pr = (bar && typeof bar.progress !== 'undefined') ? bar.progress : 0;
+        return clamp01(Number(pr));
     }
 
     /* ---------------- MoneyMap ---------------- */
@@ -516,7 +439,6 @@
         });
         return b[Math.floor(b.length / 2)] || 0;
     }
-
     function clusterByX(items) {
         if (!items.length)
             return [];
@@ -568,118 +490,7 @@
             }); // TRÊN → DƯỚI
         return cols;
     }
-
-    // NEW: đọc chuỗi kết quả Tài/Xỉu từ dãy icLspThugonTai1..15
-    function readTxLineSeq() {
-        try {
-            if (!window.cc || !cc.director || !cc.director.getScene)
-                return {
-                    seq: '',
-                    which: null,
-                    cols: [],
-                    cells: []
-                };
-
-            var cells = [];
-            walkNodes(function (n) {
-                if (!n)
-                    return;
-                // dùng active() sau này đã khai báo, nhưng là function declaration nên được hoist
-                if (typeof active === 'function' && !active(n))
-                    return;
-
-                var sp = getComp(n, cc.Sprite);
-                if (!sp || !sp.spriteFrame)
-                    return;
-
-                var sfName = (sp.spriteFrame && sp.spriteFrame.name) ? String(sp.spriteFrame.name).toLowerCase() : '';
-                var name = String(n.name || '');
-                var tail = tailOf(n, 16).toLowerCase();
-
-                // chỉ lấy các node icLspThugonTai* trong vùng listhistory
-                if (!/iclspthugontai\d+/i.test(name) &&
-                    tail.indexOf('bordertabble/lsp/listhistory/iclspthugontai') === -1)
-                    return;
-
-                var r = wRect(n);
-                cells.push({
-                    node: n,
-                    name: name,
-                    sprite: sfName,
-                    x: r.x,
-                    y: r.y,
-                    w: r.w,
-                    h: r.h
-                });
-            });
-
-            if (!cells.length) {
-                return {
-                    seq: '',
-                    which: null,
-                    cols: [],
-                    cells: []
-                };
-            }
-
-            // Lọc theo hàng chính bằng median Y
-            var ys = [];
-            var i;
-            for (i = 0; i < cells.length; i++)
-                ys.push(cells[i].y);
-            ys.sort(function (a, b) {
-                return a - b;
-            });
-            var midY = ys[Math.floor(ys.length / 2)] || 0;
-            var thrY = 24;
-
-            var row = [];
-            for (i = 0; i < cells.length; i++) {
-                var c = cells[i];
-                if (Math.abs(c.y - midY) <= thrY)
-                    row.push(c);
-            }
-            if (!row.length)
-                row = cells.slice();
-
-            // Sắp xếp TRÁI → PHẢI
-            row.sort(function (a, b) {
-                return a.x - b.x;
-            });
-
-            var seq = '';
-            for (i = 0; i < row.length; i++) {
-                var s = row[i].sprite || '';
-                var ch = '?';
-                if (s.indexOf('taiden') !== -1)
-                    ch = 'T';
-                else if (s.indexOf('xiutrang') !== -1)
-                    ch = 'X';
-                seq += ch;
-            }
-
-            return {
-                seq: seq,
-                which: 'tx_line',
-                cols: [{
-                        cx: row.length ? (row[0].x + row[row.length - 1].x) / 2 : 0,
-                        items: row
-                    }
-                ],
-                cells: row
-            };
-        } catch (e) {
-            return {
-                seq: '',
-                which: null,
-                cols: [],
-                cells: []
-            };
-        }
-    }
-
-    // OLD logic: đọc TK theo bảng số 0–4 (thongke1/2), giữ lại làm fallback
-    function readTKSeqFromDigits() {
+    function readTKSeq() {
         var res = tkCellsPrefer('thongke2');
         var cells = res.cells,
         which = res.which;
@@ -712,14 +523,6 @@
             cols: cols,
             cells: cells
         };
-    }
-
-    // NEW wrapper: ưu tiên chuỗi T/X, nếu không có thì fallback TK số
-    function readTKSeq() {
-        var tx = readTxLineSeq();
-        if (tx && tx.seq && tx.seq.length)
-            return tx;
-        return readTKSeqFromDigits();
     }
 
     /* ---------------- resolver/auto ---------------- */
@@ -967,7 +770,7 @@
         '</div>' +
         '<div id="cwInfo" style="white-space:pre;color:#9f9;line-height:1.45"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
+    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -1190,82 +993,31 @@
 
     /* ---------------- panel info ---------------- */
     function updatePanel() {
-        // Ưu tiên dùng cùng nguồn totals với C# (readTotalsSafe)
-        var t = null;
-        try {
-            if (typeof window.readTotalsSafe === 'function') {
-                t = window.readTotalsSafe();
-            }
-        } catch (e) {}
-
-        // Nếu vì lý do gì đó readTotalsSafe() trả null
-        // thì fallback về S._lastTotals như cũ
-        if (!t) {
-            t = S._lastTotals || {
-                C: null,
-                L: null,
-                A: null,
-                SD: null,
-                TT: null,
-                T3T: null,
-                T3D: null,
-                TD: null,
-                rawC: null,
-                rawL: null,
-                rawA: null
-            };
-        }
-
+        var t = S._lastTotals || {
+            C: null,
+            L: null,
+            A: null,
+            rawC: null,
+            rawL: null,
+            rawA: null
+        };
         var f = S.focus;
-        var secLeft = null;
-        if (typeof S.prog === 'number') {
-            var s = Math.round(S.prog * 45);
-            if (s < 0)
-                s = 0;
-            if (s > 45)
-                s = 45;
-            secLeft = s;
-        }
-        var session = (typeof readSessionSafe === 'function') ? readSessionSafe() : '';
-        if (!session)
-            session = '--';
-
-        var userName = '';
-        if (typeof window.readUsernameSafe === 'function') {
-            try {
-                userName = window.readUsernameSafe() || '';
-            } catch (_) {
-                userName = '';
-            }
-        }
         var base =
-            '• Trạng thái: ' + S.status +
-            ' | Thời gian: ' + (secLeft == null ? '--' : (secLeft + 's')) +
-            ' | Phiên: ' + session + '\n' +
-            '• Username : ' + (userName || '--') +
-            ' | TK : ' + fmt(t.A) +
-            '|TÀI: ' + fmt(t.T) +
-            '|XỈU: ' + fmt(t.X) +
-            '|SẤP ĐÔI: ' + fmt(t.SD) +
-            '|TỨ TRẮNG: ' + fmt(t.TT) +
-            '|3 TRẮNG: ' + fmt(t.T3T) +
-            '|3 ĐỎ: ' + fmt(t.T3D) +
-            '|TỨ ĐỎ: ' + fmt(t.TD) + '\n' +
+            '• Trạng thái: ' + S.status + ' | Prog: ' + (S.prog == null ? '--' : (((S.prog * 100) | 0) + '%')) + '\n' +
+            '• TK : ' + fmt(t.A) + '|CHẴN: ' + fmt(t.C) + '|SẤP ĐÔI: ' + fmt(t.SD) + '|LẺ :' + fmt(t.L) + '|TỨ TRẮNG: ' + fmt(t.TT) + '|3 TRẮNG: ' + fmt(t.T3T) + '|3 ĐỎ: ' + fmt(t.T3D) + '|TỨ ĐỎ: ' + fmt(t.TD) + '\n' +
 
             '• Focus: ' + (f ? f.kind : '-') + '\n' +
             '  tail: ' + (f ? f.tail : '-') + '\n' +
             '  txt : ' + (f ? (f.txt != null ? f.txt : '-') : '-') + '\n' +
             '  val : ' + (f && f.val != null ? fmt(f.val) : '-');
 
-        // Chuỗi kết quả hiển thị như cũ
         var tk = readTKSeq();
         S.seq = tk.seq || '';
         var seqHtml = 'Chuỗi kết quả : <i>--</i>';
         if (S.seq && S.seq.length) {
             var head = esc(S.seq.slice(0, -1));
             var last = esc(S.seq.slice(-1));
-            seqHtml = 'Chuỗi kết quả : <span>' + head +
-                '</span><span style="color:#f66">' + last + '</span>';
+            seqHtml = 'Chuỗi kết quả : <span>' + head + '</span><span style="color:#f66">' + last + '</span>';
         }
         panel.querySelector('#cwInfo').innerHTML = esc(base) + '\n' + seqHtml;
     }
@@ -1810,38 +1562,20 @@
                 if (!val)
                     continue;
                 var score = 0;
-                var isClick = clickable(n);
-                if (isClick)
+                if (clickable(n))
                     score += 6;
-
                 var names = [],
                 p;
                 for (p = n; p; p = p.parent)
                     names.push(p.name || '');
                 var path = names.reverse().join('/').toLowerCase();
-
-                // Ưu tiên mạnh cho các chip tiền TipDealer (2 tail ông chủ cung cấp)
-                var TAIL_TX_ROW1 = 'txgamelive/main/bordertabble/chatcontroller/tipdealer/tabtipdealer/tipcontent/views/contentchat/row1/itemtip/lbmoney';
-                var TAIL_TX_ROW2 = 'txgamelive/main/bordertabble/chatcontroller/tipdealer/tabtipdealer/tipcontent/views/contentchat/row2/itemtip/lbmoney';
-                var isTxTipDealer =
-                    path.indexOf(TAIL_TX_ROW1) !== -1 ||
-                    path.indexOf(TAIL_TX_ROW2) !== -1;
-
-                if (isTxTipDealer) {
-                    // đẩy chip TipDealer lên ưu tiên cao nhất
-                    score += 10;
-                }
-
-                // Heuristic chung cho các game khác
                 if (/chip|coin|bet|chon|choose|phinh|menh/.test(path))
                     score += 3;
                 if (NORM(t).indexOf(String(val)) !== -1)
                     score += 2;
-
                 var hit = clickableOf(n);
                 if (hit !== n)
                     score += 1;
-
                 var old = getBest(val);
                 if (!old || score > old.score)
                     setBest(val, {
@@ -2123,62 +1857,50 @@
 
     /* ---------------- tick & controls ---------------- */
     function statusByProg(p) {
-        // Đọc trực tiếp message từ PopupMessageUtilTaiXiu của Tài Xỉu Live
-        try {
-            var TAIL_TX_STATUS = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/ChatController/PopupMessageUtilTaiXiu/ig_bg_thong_bao/textMessage';
-            var tailL = TAIL_TX_STATUS.toLowerCase();
+        // Ngưỡng chống rung cho số thực gần 0
+        var EPS = 0.001;
 
-            var texts = buildTextRects && buildTextRects();
-            if (texts && texts.length) {
+        // Quy tắc ông chủ yêu cầu:
+        // - p > 0      → lấy text tail 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage'
+        // - p = 0      → lấy text tail 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting'
+        var TAIL_MSG = 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage';
+        var TAIL_WAIT = 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting';
+
+        // Chọn text theo tail, so khớp theo kiểu "đuôi" để chống thay đổi prefix
+        function pickTextByTailEnd(tailEnd) {
+            try {
+                var texts = buildTextRects(); // [{text,x,y,w,h,tail}, ...]
+                var best = null,
+                bestArea = -1;
+                var tailEndL = String(tailEnd || '').toLowerCase();
+
                 for (var i = 0; i < texts.length; i++) {
-                    var r = texts[i];
-                    var tl = String(r.tail || '').toLowerCase();
-                    if (!tl.endsWith(tailL))
+                    var t = texts[i];
+                    var tl = String(t.tail || '').toLowerCase();
+                    if (!tl.endsWith(tailEndL))
                         continue;
 
-                    var raw = (r.text || '').trim();
-                    if (!raw)
-                        continue;
-
-                    var u = NORM(raw);
-                    if (u.indexOf('BAT DAU CUOC') !== -1)
-                        return 'Cho phép đặt cược';
-                    if (u.indexOf('NGUNG NHAN CUOC') !== -1 || u.indexOf('NGUNG DAT CUOC') !== -1)
-                        return 'Ngừng đặt cược';
-                    if (u.indexOf('CHO KET QUA') !== -1 || u.indexOf('CHO KETQUA') !== -1)
-                        return 'Chờ kết quả';
-
-                    // nếu không match key thì bỏ qua để dùng fallback theo thời gian
-                    continue;
+                    var ar = (t.w || 0) * (t.h || 0);
+                    if (ar > bestArea) {
+                        best = t;
+                        bestArea = ar;
+                    }
                 }
+                return best ? String(best.text || '').trim() : '';
+            } catch (e) {
+                return '';
             }
-        } catch (e) {
-            console.log('statusByProg label-fallback error', e);
         }
 
-        // Fallback: suy theo THỜI GIAN (giây) chứ không theo %:
-        //  - 45s → 6s : Cho phép đặt cược
-        //  - 5s  → 1s : Ngừng đặt cược
-        //  - 0s       : Chờ kết quả
-        if (p == null)
-            return '--';
+        p = +p || 0;
+        var tail = (p > EPS) ? TAIL_MSG : TAIL_WAIT;
+        var txt = pickTextByTailEnd(tail);
 
-        p = clamp01(p);
-        var sec = Math.round(p * 45);
-        if (sec < 0)
-            sec = 0;
-        if (sec > 45)
-            sec = 45;
-
-        if (sec > 5)
-            return 'Cho phép đặt cược';
-        if (sec > 0)
-            return 'Ngừng đặt cược';
-        return 'Chờ kết quả';
+        // Fallback nhẹ khi không tìm thấy text
+        if (txt)
+            return txt;
+        return "";
     }
-
-    // Export ra global để bridge C# dùng được
-    window.cwStatusByProg = statusByProg;
 
     function tick() {
         var p = collectProgress();
@@ -2187,10 +1909,6 @@
         S.status = statusByProg(p == null ? null : p);
         var T = totals(S);
         S._lastTotals = T;
-
-        // Đẩy ra global cho bridge dùng (progress + totals)
-        window.__cw_lastProg = S.prog;
-        window.__cw_lastTotals = T;
 
         // TK sequence
         var tk = readTKSeq();
@@ -2370,501 +2088,168 @@
         teardown: teardown
     };
 
-})();
-
-/* === CW Bridge: push snapshot -> C#, receive bet <- C# =================== */
+    /* === CW Bridge: push snapshot -> C#, receive bet <- C# =================== */
 ;
-(function () {
-    // Không bọc toàn bộ bằng try/catch lớn nữa, mỗi hàm tự xử lý lỗi của nó
-    try {
-        if (!window.chrome || !chrome.webview || !chrome.webview.postMessage) {
-            console.warn('[CW] chrome.webview.postMessage not available');
-        }
-    } catch (_) {}
-
-    function safePost(obj) {
+    (function () {
         try {
-            if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function') {
-                chrome.webview.postMessage(JSON.stringify(obj));
-            } else {
-                // Fallback: gửi lên TOP bằng DOM message, TOP_FORWARD sẽ relay về C#
-                parent.postMessage(obj, '*');
+            if (!window.chrome || !chrome.webview || !chrome.webview.postMessage) {
+                console.warn('[CW] chrome.webview.postMessage not available');
             }
-        } catch (e) {
+        } catch (_) {}
+
+        function safePost(obj) {
             try {
-                parent.postMessage(obj, '*');
+                if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function') {
+                    chrome.webview.postMessage(JSON.stringify(obj));
+                } else {
+                    // Fallback: gửi lên TOP bằng DOM message, TOP_FORWARD sẽ relay về C#
+                    parent.postMessage(obj, '*');
+                }
+            } catch (e) {
+                try {
+                    parent.postMessage(obj, '*');
+                } catch (_) {}
+            }
+        }
+
+        var _pushTimer = null;
+        var _lastJson = '';
+
+        function shallowChanged(obj) {
+            var s = '';
+            try {
+                s = JSON.stringify(obj);
             } catch (_) {}
+            if (s && s !== _lastJson) {
+                _lastJson = s;
+                return true;
+            }
+            return false;
         }
-    }
 
-    var _pushTimer = null;
-    var _lastJson = '';
-    var _lastStatus = '';
-
-    function shallowChanged(obj) {
-        var s = '';
-        try {
-            s = JSON.stringify(obj);
-        } catch (_) {}
-        if (s && s !== _lastJson) {
-            _lastJson = s;
-            return true;
-        }
-        return false;
-    }
-
-    function readProgressVal() {
-        try {
-            if (typeof window.__cw_lastProg === 'number') {
-                return window.__cw_lastProg;
-            }
-        } catch (_) {}
-        return null;
-    }
-
-    // Đọc tổng tiền an toàn: lấy nền từ totals() mới nhất (tick)
-    // và ghi đè TK + TÀI + XỈU bằng cách scan theo tail/x.
-    window.readTotalsSafe = function () {
-        try {
-            // 1) Nền: snapshot totals gần nhất do tick() chụp
-            var t = {};
-            if (window.__cw_lastTotals && typeof window.__cw_lastTotals === 'object') {
-                try {
-                    for (var k in window.__cw_lastTotals) {
-                        if (Object.prototype.hasOwnProperty.call(window.__cw_lastTotals, k)) {
-                            t[k] = window.__cw_lastTotals[k];
-                        }
-                    }
-                } catch (_) {}
-            }
-
-            // 2) Ghi đè TK + Tài/Xỉu nếu lấy được qua moneyTailList()
-            var ACC_TAIL_EXACT = 'MiniGameScene/Canvas/FootterRoomUi/Left/buttonMoney/moneyLabel';
-
-            var TX_TOTAL_TAIL = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbTotal';
-            var TX_TAI_X = 246; // TÀI
-            var TX_XIU_X = 785; // XỈU
-
-            if (typeof window.moneyTailList === 'function') {
-
-                // 2.1 TK (tài khoản)
-                try {
-                    var accList = window.moneyTailList(ACC_TAIL_EXACT) || [];
-                    if (accList.length) {
-                        var acc = accList[accList.length - 1]; // thường là label dưới cùng
-                        var aval = (typeof acc.val === 'number')
-                         ? acc.val
-                         : Number(acc.val || 0) || null;
-                        if (aval != null)
-                            t.A = aval;
-                        if (!t.rawA)
-                            t.rawA = acc.txt || acc.raw || null;
-                    }
-                } catch (_) {}
-
-                // 2.2 Tổng TÀI / XỈU trong Tài Xỉu Live
-                try {
-                    var txList = window.moneyTailList(TX_TOTAL_TAIL) || [];
-                    if (txList.length) {
-                        var bestTai = null,
-                        bestXiu = null;
-                        var bestDxT = 1e9,
-                        bestDxX = 1e9;
-                        for (var i = 0; i < txList.length; i++) {
-                            var m = txList[i];
-
-                            // chọn label có |x - chuẩn| nhỏ nhất (chịu lệch zoom/resolution)
-                            var dxT = Math.abs(m.x - TX_TAI_X);
-                            if (dxT < bestDxT) {
-                                bestDxT = dxT;
-                                bestTai = m;
-                            }
-
-                            var dxX = Math.abs(m.x - TX_XIU_X);
-                            if (dxX < bestDxX) {
-                                bestDxX = dxX;
-                                bestXiu = m;
-                            }
-                        }
-
-                        if (bestTai) {
-                            var tval = (typeof bestTai.val === 'number')
-                             ? bestTai.val
-                             : Number(bestTai.val || 0) || null;
-                            if (tval != null)
-                                t.T = tval;
-                            if (!t.rawT)
-                                t.rawT = bestTai.txt || bestTai.raw || null;
-                        }
-
-                        if (bestXiu) {
-                            var xval = (typeof bestXiu.val === 'number')
-                             ? bestXiu.val
-                             : Number(bestXiu.val || 0) || null;
-                            if (xval != null)
-                                t.X = xval;
-                            if (!t.rawX)
-                                t.rawX = bestXiu.txt || bestXiu.raw || null;
-                        }
-                    }
-                } catch (_) {}
-            }
-
-            return t;
-        } catch (_) {
+        function readProgressVal() {
+            try {
+                var cp = (typeof collectProgress === 'function') ? collectProgress() : null;
+                if (typeof cp === 'number')
+                    return cp; // <— thêm dòng này
+                if (cp && typeof cp.val === 'number')
+                    return cp.val;
+                if (cp && typeof cp.progress === 'number')
+                    return cp.progress;
+            } catch (_) {}
             return null;
         }
-    };
 
-    function readSeqSafe() {
-        try {
-            if (typeof readTKSeq === 'function') {
-                var r = readTKSeq();
-                return (r && r.seq) ? r.seq : '';
+        function readTotalsSafe() {
+            try {
+                return (typeof sampleTotalsNow === 'function') ? sampleTotalsNow() : null;
+            } catch (_) {
+                return null;
             }
-        } catch (_) {}
-        return '';
-    }
+        }
 
-    function readSeqSafe() {
-        try {
-            if (typeof readTKSeq === 'function') {
-                var r = readTKSeq();
-                return (r && r.seq) ? r.seq : '';
-            }
-        } catch (_) {}
-        return '';
-    }
-
-    function readSessionSafe() {
-        try {
-            var TAIL = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbSesionId';
-            var txt = '';
-
-            // 1) Thử lấy qua collectLabels() nếu đã có sẵn label
-            if (typeof collectLabels === 'function') {
-                var labels = collectLabels();
-                if (labels && labels.length) {
-                    var tailLc = TAIL.toLowerCase();
-                    for (var i = 0; i < labels.length; i++) {
-                        var l = labels[i];
-                        var tl = String(l.tail || l.tl || '').toLowerCase();
-                        if (!tl)
-                            continue;
-
-                        // ưu tiên khớp đúng tail, hoặc chứa lbSesionId
-                        if (tl === tailLc ||
-                            (tl.indexOf('lbsesionid') !== -1 && tl.indexOf('borderTabble'.toLowerCase()) !== -1)) {
-                            txt = String(l.text || '').trim();
-                            if (txt)
-                                break;
-                        }
-                    }
+        function readSeqSafe() {
+            try {
+                if (typeof readTKSeq === 'function') {
+                    var r = readTKSeq();
+                    return (r && r.seq) ? r.seq : '';
                 }
-            }
-
-            // 2) Fallback: đi trực tiếp theo tail như đoạn ông chủ test
-            if (!txt) {
-                function findByTail(tail) {
-                    if (!tail)
-                        return null;
-
-                    if (window.findNodeByTailCompat)
-                        return window.findNodeByTailCompat(tail);
-                    if (window.__abx_findNodeByTail)
-                        return window.__abx_findNodeByTail(tail);
-
-                    if (!(window.cc && cc.director && cc.director.getScene))
-                        return null;
-                    var scene = cc.director.getScene();
-                    var parts = String(tail).split('/').filter(Boolean);
-                    if (parts[0] === scene.name)
-                        parts.shift();
-
-                    var node = scene;
-                    for (var i = 0; i < parts.length; i++) {
-                        var name = parts[i];
-                        var kids = node.children || node._children || [];
-                        var found = null;
-                        for (var j = 0; j < kids.length; j++) {
-                            var kid = kids[j];
-                            if (kid && kid.name === name) {
-                                found = kid;
-                                break;
-                            }
-                        }
-                        if (!found)
-                            return null;
-                        node = found;
-                    }
-                    return node;
-                }
-
-                function getNodeText(node) {
-                    if (!node || !node.getComponent)
-                        return '';
-                    var lbl = node.getComponent(cc.Label);
-                    if (lbl && lbl.string != null)
-                        return String(lbl.string);
-                    var rt = node.getComponent(cc.RichText);
-                    if (rt && rt.string != null)
-                        return String(rt.string);
-                    return '';
-                }
-
-                var node = findByTail(TAIL);
-                if (node) {
-                    txt = getNodeText(node);
-                }
-            }
-
-            txt = String(txt || '').trim();
-            if (!txt)
-                return '';
-
-            // Chuẩn hoá dạng "#501667"
-            if (txt.charAt(0) !== '#' && /^\d+$/.test(txt)) {
-                txt = '#' + txt;
-            }
-
-            return txt;
-        } catch (_) {}
-        return '';
-    }
-
-    window.readSessionSafe = readSessionSafe;
-
-    // NEW: đọc Username an toàn theo tail Cocos
-    function readUsernameSafe() {
-        try {
-            if (!window.cc || !window.cc.director || !window.cc.director.getScene)
-                return '';
-
-            // helper: tìm node theo tail Cocos
-            function findByTail(tail) {
-                if (!tail)
-                    return null;
-
-                // ưu tiên các hàm ông chủ đã tiêm
-                if (window.findNodeByTailCompat)
-                    return window.findNodeByTailCompat(tail);
-                if (window.__abx_findNodeByTail)
-                    return window.__abx_findNodeByTail(tail);
-
-                // fallback: tự lần từ scene
-                var scene = window.cc.director.getScene();
-                if (!scene)
-                    return null;
-
-                var parts = String(tail).split('/').filter(Boolean);
-                if (parts[0] === scene.name)
-                    parts.shift();
-
-                var node = scene;
-                for (var i = 0; i < parts.length; i++) {
-                    var name = parts[i];
-                    var kids = node.children || node._children || [];
-                    var found = null;
-                    for (var j = 0; j < kids.length; j++) {
-                        if (kids[j] && kids[j].name === name) {
-                            found = kids[j];
-                            break;
-                        }
-                    }
-                    if (!found)
-                        return null;
-                    node = found;
-                }
-                return node;
-            }
-
-            function getNodeText(node) {
-                if (!node || !node.getComponent)
-                    return '';
-                var lbl = node.getComponent(cc.Label);
-                if (lbl && lbl.string != null)
-                    return String(lbl.string);
-                var rt = node.getComponent(cc.RichText);
-                if (rt && rt.string != null)
-                    return String(rt.string);
-                return '';
-            }
-
-            // tail Username
-            var tail = 'MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/NameUser';
-            var node = findByTail(tail);
-            if (!node)
-                return '';
-
-            var txt = getNodeText(node) || '';
-            txt = String(txt).trim();
-            if (!txt)
-                return '';
-
-            // chuẩn hoá khoảng trắng
-            return txt.replace(/\s+/g, ' ');
-        } catch (_) {
+            } catch (_) {}
             return '';
         }
-    }
 
-    window.readUsernameSafe = readUsernameSafe;
+        // Bắt đầu bắn snapshot định kỳ {abx:'tick', prog, totals, seq, status}
+        window.__cw_startPush = function (tickMs) {
+            try {
+                tickMs = Number(tickMs) || 240;
+                if (tickMs < 120)
+                    tickMs = 120;
+                if (tickMs > 1000)
+                    tickMs = 1000;
+                if (_pushTimer) {
+                    clearInterval(_pushTimer);
+                    _pushTimer = null;
+                }
+                _lastJson = '';
+                _pushTimer = setInterval(function () {
+                    var p = readProgressVal(); // lấy progress hiện tại
+                    var st = (typeof statusByProg === 'function') // tính status theo rule mới
+                     ? statusByProg(p) : '';
+                    var snap = {
+                        abx: 'tick',
+                        prog: p,
+                        totals: readTotalsSafe(),
+                        seq: readSeqSafe(),
+                        status: String(st || ''), // <-- THÊM TRƯỜNG status
+                        ts: Date.now()
+                    };
+                    if (shallowChanged(snap))
+                        safePost(snap);
+                }, tickMs);
+                return 'started';
+            } catch (err) {
+                safePost({
+                    abx: 'tick_error',
+                    error: String(err && err.message || err),
+                    ts: Date.now()
+                });
+                return 'fail';
+            }
+        };
 
-    // Bắt đầu bắn snapshot định kỳ {abx:'tick', prog, totals, seq, status}
-    window.__cw_startPush = function (tickMs) {
-        try {
-            tickMs = Number(tickMs) || 240;
-            if (tickMs < 120)
-                tickMs = 120;
-            if (tickMs > 1000)
-                tickMs = 1000;
-
+        window.__cw_stopPush = function () {
             if (_pushTimer) {
                 clearInterval(_pushTimer);
                 _pushTimer = null;
             }
-            _lastJson = '';
+            return 'stopped';
+        };
 
-            _pushTimer = setInterval(function () {
-                var p = readProgressVal();
-                var st = (typeof window.cwStatusByProg === 'function')
-                 ? window.cwStatusByProg(p)
-                 : '';
-                var seq = readSeqSafe();
-
-                var last = '';
-                if (seq && seq.length)
-                    last = seq.slice(-1);
-
-                // === Thêm mapping prog -> thời gian (giây) ===
-                var timeSec = null;
-                var timePercent = null;
-                var timeText = '';
-                if (typeof p === 'number' && !isNaN(p)) {
-                    var sec = Math.round(p * 45);
-                    if (sec < 0)
-                        sec = 0;
-                    if (sec > 45)
-                        sec = 45;
-
-                    timeSec = sec; // 45 → 0
-                    timePercent = sec / 45; // 1 → 0
-                    timeText = sec + 's'; // "13s"...
-                }
-
-                var snap = {
-                    abx: 'tick',
-                    // prog: số giây còn lại 0..45
-                    prog: p,
-                    timeSec: timeSec,
-                    timePercent: timePercent,
-                    timeText: timeText,
-                    totals: (typeof window.readTotalsSafe === 'function'
-                         ? window.readTotalsSafe()
-                         : null),
-                    seq: seq,
-                    last: last,
-                    status: String(st || ''),
-                    session: (typeof readSessionSafe === 'function') ? readSessionSafe() : '',
-                    ts: Date.now()
-                };
-
-                if (shallowChanged(snap)) {
-                    // Log nhẹ để kiểm tra trạng thái đã bắn sang C# hay chưa
-                    if (snap.status !== _lastStatus) {
-                        _lastStatus = snap.status;
-                        var secLog = null;
-                        if (typeof p === 'number') {
-                            var pp = p;
-                            if (pp < 0)
-                                pp = 0;
-                            if (pp > 1)
-                                pp = 1;
-                            var ss = Math.round(pp * 45);
-                            if (ss < 0)
-                                ss = 0;
-                            if (ss > 45)
-                                ss = 45;
-                            secLog = ss;
-                        }
-                        console.log('[CW][push] status =', snap.status, 'sec =', secLog);
-                    }
-                    safePost(snap);
-                }
-
-            }, tickMs);
-
-            return 'started';
-        } catch (err) {
-            safePost({
-                abx: 'tick_error',
-                error: String(err && err.message || err),
-                ts: Date.now()
-            });
-            return 'fail';
-        }
-    };
-
-    window.__cw_stopPush = function () {
-        if (_pushTimer) {
-            clearInterval(_pushTimer);
-            _pushTimer = null;
-        }
-        return 'stopped';
-    };
-
-    // LƯU Ý: Chỉ dùng cwBet, không fallback cwBetSmart
-    window.__cw_bet = async function (side, amount) {
-        try {
-            // chuẩn hoá tham số
-            side = (String(side || '').toUpperCase() === 'CHAN') ? 'CHAN' : 'LE';
-            var amt = Math.max(0, Math.floor(Number(amount) || 0));
-
-            // bắt buộc phải có cwBet
-            if (typeof cwBet !== 'function') {
-                throw new Error('cwBet not found');
-            }
-
-            // chụp tổng trước khi bet (nếu có)
-            var before = (typeof window.readTotalsSafe === 'function'
-                 ? window.readTotalsSafe()
-                 : null) || {};
-
-            // ĐẶT CƯỢC bằng cwBet
-            await cwBet(side, amt);
-
-            // chờ tổng thay đổi (nếu có util này)
+        // LƯU Ý: Chỉ dùng cwBet, không fallback cwBetSmart
+        window.__cw_bet = async function (side, amount) {
             try {
-                if (typeof waitForTotalsChange === 'function') {
-                    await waitForTotalsChange(before, side, 1600);
+                // chuẩn hoá tham số
+                side = (String(side || '').toUpperCase() === 'CHAN') ? 'CHAN' : 'LE';
+                var amt = Math.max(0, Math.floor(Number(amount) || 0));
+
+                // bắt buộc phải có cwBet
+                if (typeof cwBet !== 'function') {
+                    throw new Error('cwBet not found');
                 }
-            } catch (_) {}
 
-            // báo về C#
-            safePost({
-                abx: 'bet',
-                side: side,
-                amount: amt,
-                ts: Date.now()
-            });
-            return 'ok';
-        } catch (err) {
-            safePost({
-                abx: 'bet_error',
-                side: side,
-                amount: amount,
-                error: String(err && err.message || err),
-                ts: Date.now()
-            });
-            return 'fail';
-        }
-    };
+                // chụp tổng trước khi bet (nếu có)
+                var before = readTotalsSafe() || {};
 
-    // NEW: báo về C# ngay khi file JS load xong để biết script đã chạy
-    try {
-        safePost({
-            abx: 'js_loaded',
-            ts: Date.now()
-        });
-    } catch (_) {}
+                // ĐẶT CƯỢC bằng cwBet
+                await cwBet(side, amt);
+
+                // chờ tổng thay đổi (nếu có util này)
+                try {
+                    if (typeof waitForTotalsChange === 'function') {
+                        await waitForTotalsChange(before, side, 1600);
+                    }
+                } catch (_) {}
+
+                // báo về C#
+                safePost({
+                    abx: 'bet',
+                    side: side,
+                    amount: amt,
+                    ts: Date.now()
+                });
+                return 'ok';
+            } catch (err) {
+                safePost({
+                    abx: 'bet_error',
+                    side: side,
+                    amount: amount,
+                    error: String(err && err.message || err),
+                    ts: Date.now()
+                });
+                return 'fail';
+            }
+        };
+
+    })();
+
 })();

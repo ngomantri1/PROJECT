@@ -3450,7 +3450,11 @@
                                 } catch (_) {}
                             }
 
-                            if (!okCore && !changed) {
+                            // CHỈ báo lỗi "no_totals_change" khi:
+                            //  - đã đọc được snapshot ban đầu (before != null)
+                            //  - core cwBet trả về false
+                            //  - và tổng tiền thực sự không đổi
+                            if (before && !okCore && !changed) {
                                 // không đặt được → báo lỗi cho C#
                                 safePost({
                                     abx: 'bet_error',
@@ -3463,6 +3467,7 @@
                             }
 
                             // chỉ khi đặt OK mới báo [BET] cho C#
+
                             safePost({
                                 abx: 'bet',
                                 side: side,

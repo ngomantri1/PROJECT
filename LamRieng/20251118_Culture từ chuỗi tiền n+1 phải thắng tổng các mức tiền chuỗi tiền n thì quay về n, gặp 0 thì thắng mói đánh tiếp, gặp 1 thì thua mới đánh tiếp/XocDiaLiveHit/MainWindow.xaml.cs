@@ -13,8 +13,8 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using static System.Net.Mime.MediaTypeNames;
 using static System.Runtime.InteropServices.JavaScript.JSType;
-using XocDiaSoiLiveKH24;
-using XocDiaSoiLiveKH24.Tasks;
+using XocDiaLiveHit;
+using XocDiaLiveHit.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Globalization;
@@ -29,13 +29,13 @@ using System.ComponentModel;
 using System.Linq;
 using System.Collections.ObjectModel;
 using System.Windows.Data;
-using static XocDiaSoiLiveKH24.MainWindow;
+using static XocDiaLiveHit.MainWindow;
 using System.Windows.Input;
 
 
 
 
-namespace XocDiaSoiLiveKH24
+namespace XocDiaLiveHit
 {
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Assets (pack URI).
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Resources (pack URI).
@@ -133,7 +133,7 @@ namespace XocDiaSoiLiveKH24
     }
     public partial class MainWindow : Window
     {
-        private const string AppLocalDirName = "XocDiaSoiLiveKH24"; // đổi thành tên bạn muốn
+        private const string AppLocalDirName = "XocDiaLiveHit"; // đổi thành tên bạn muốn
         // ====== App paths ======
         private readonly string _appDataDir;
         private readonly string _cfgPath;
@@ -174,14 +174,12 @@ namespace XocDiaSoiLiveKH24
         private long _roundTotalsL = 0;
         private int _lastSeqLenNi = 0;
         private bool _lockMajorMinorUpdates = false;
-        private string _baseSession = "";
+        private string _baseSeq = "";
 
         private DecisionState _dec = new();
         private long[] _stakeSeq = Array.Empty<long>();
         private System.Collections.Generic.List<long[]> _stakeChains = new();
         private long[] _stakeChainTotals = Array.Empty<long>();
-        // Chỉ dùng cho hiển thị LblLevel: vị trí hiện tại trong _stakeSeq
-        private int _stakeLevelIndexForUi = -1;
 
         private double _decisionPercent = 0.15; // 15% (0.15)
 
@@ -230,7 +228,6 @@ namespace XocDiaSoiLiveKH24
         private DateTime _lastGameTickUtc = DateTime.MinValue;
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
         private bool _isGameUi = false;              // trạng thái UI hiện hành
-        private bool _lockGameUi = false;// NEW: khóa tạm để khỏi bị timer kéo về home sau khi mình chủ động vào game
         private System.Windows.Threading.DispatcherTimer? _uiModeTimer;
 
         private static readonly TimeSpan GameTickFresh = TimeSpan.FromSeconds(3);
@@ -251,13 +248,13 @@ namespace XocDiaSoiLiveKH24
 
 
 
-        private const string DEFAULT_URL = "play.kh24.live"; // URL mặc định bạn muốn
+        private const string DEFAULT_URL = "net88.com"; // URL mặc định bạn muốn
         // === License repo/worker settings (CHỈNH LẠI CHO PHÙ HỢP) ===
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn
         const string LicenseBranch = "main";          // <- nhánh
-        const string LicenseNameGame = "kh24";          // <- nhánh
-        const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/kh24";
+        const string LicenseNameGame = "net88";          // <- nhánh
+        const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/net88";
 
         // ===================== TOOLTIP TEXTS =====================
         const string TIP_SEQ_CL =
@@ -330,8 +327,8 @@ Ví dụ không hợp lệ:
   IN -> I1";
 
 
-        const string TIP_STAKE_CSV =
-         @"Chuỗi TIỀN (StakeCsv)
+       const string TIP_STAKE_CSV =
+        @"Chuỗi TIỀN (StakeCsv)
 • Có thể nhập 1 chuỗi hoặc NHIỀU chuỗi tiền.
 • Nếu nhập NHIỀU chuỗi: MỖI CHUỖI 1 DÒNG. Ví dụ:
   1000-2000-4000-8000
@@ -400,7 +397,7 @@ Ví dụ không hợp lệ:
             public int BetStrategyIndex { get; set; } = 4; // mặc định "5. Theo cầu trước thông minh"
             public string BetSeq { get; set; } = "";       // giá trị ô "CHUỖI CẦU"
             public string BetPatterns { get; set; } = "";  // giá trị ô "CÁC THẾ CẦU"
-            public string MoneyStrategy { get; set; } = "IncreaseWhenLose";//IncreaseWhenLose
+            public string MoneyStrategy { get; set; } = "MultiChain";//IncreaseWhenLose
             public double CutProfit { get; set; } = 0; // 0 = tắt cắt lãi
             public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
             public string BetSeqCL { get; set; } = "";        // cho Chiến lược 1
@@ -469,7 +466,7 @@ Ví dụ không hợp lệ:
         private double _winTotal = 0;
         private CoreWebView2Environment? _webEnv;
         private bool _webInitDone;
-        private const string Wv2ZipResNameX64 = "XocDiaSoiLiveKH24.ThirdParty.WebView2Fixed_win-x64.zip";
+        private const string Wv2ZipResNameX64 = "XocDiaLiveHit.ThirdParty.WebView2Fixed_win-x64.zip";
         // Thư mục cache bền vững cho runtime (không bị dọn như %TEMP%)
         private static string Wv2BaseDir =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -606,6 +603,8 @@ Ví dụ không hợp lệ:
         // Guard chống re-entrancy (đặt ở class level)
         private bool _ensuringWeb = false;
 
+        private bool _frameHookedAlways;
+
         private WebView2LiveBridge? _bridge;
         private bool _inputEventsHooked;
         // Interval push của Home (ms)
@@ -634,36 +633,14 @@ Ví dụ không hợp lệ:
 
             // 2) Sau đó mới dựng UI
             InitializeComponent();
-            this.ShowInTaskbar = true;                       // có icon riêng
-            this.WindowStartupLocation = WindowStartupLocation.CenterScreen; // tuỳ, cho đẹp
             // đảm bảo về Home UI lúc khởi động
             SetModeUi(false);
             BetGrid.ItemsSource = _betPage;
-            this.PreviewKeyDown += MainWindow_PreviewKeyDown;
             // gọi async sau khi cửa sổ đã load
             this.Loaded += MainWindow_Loaded;
 
         }
 
-        private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.F12)
-            {
-                try
-                {
-                    // Web là WebView2 của bạn trong XAML
-                    if (Web?.CoreWebView2 != null)
-                    {
-                        Web.CoreWebView2.OpenDevToolsWindow();
-                        e.Handled = true;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log("[DevTools] " + ex.Message);
-                }
-            }
-        }
 
 
         // ====== Log helpers (batch) ======
@@ -688,8 +665,10 @@ Ví dụ không hợp lệ:
                 {
                     try
                     {
+                        bool hadItem = false;
                         while (_uiLogQueue.TryDequeue(out var line))
                         {
+                            hadItem = true;
                             _uiLines.AddLast(line);
                             if (_uiLines.Count > UI_MAX_LINES) _uiLines.RemoveFirst();
                         }
@@ -760,62 +739,38 @@ Ví dụ không hợp lệ:
             EnqueueFile(line);
         }
 
-        private bool HasAnyWebTick()
-        {
-            bool hasGame = _lastGameTickUtc != DateTime.MinValue;
-            bool hasHome = _lastHomeTickUtc != DateTime.MinValue;
-
-            Log($"[HasAnyWebTick] hasGame={hasGame} ({_lastGameTickUtc:O}), hasHome={hasHome} ({_lastHomeTickUtc:O})");
-
-            return hasGame || hasHome;
-        }
-
-
         private void SetModeUi(bool isGame)
         {
             try
             {
-                if (isGame)
+                Dispatcher.Invoke(() =>
                 {
-                    // ẩn vùng đăng nhập + điều hướng
-                    if (GroupLoginNav != null)
-                        GroupLoginNav.Visibility = Visibility.Collapsed;
+                    // Nút cũ (đã có sẵn)
+                    //if (BtnVaoXocDia != null)
+                    //    BtnVaoXocDia.Visibility = isGame ? Visibility.Collapsed : Visibility.Visible;
+                    //if (BtnPlay != null)
+                    //    BtnPlay.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
 
-                    // hiện vùng chiến lược / quản lý vốn / trạng thái
-                    if (GroupStrategyMoney != null)
-                        GroupStrategyMoney.Visibility = Visibility.Visible;
-                    if (GroupConsole != null)
-                        GroupConsole.Visibility = Visibility.Visible;
-                    if (GroupStatus != null)
-                        GroupStatus.Visibility = Visibility.Visible;
-                }
-                else
-                {
-                    // hiện vùng đăng nhập + điều hướng
+                    // NHÓM MỚI: ẩn/hiện theo chế độ
                     if (GroupLoginNav != null)
-                        GroupLoginNav.Visibility = Visibility.Visible;
+                        GroupLoginNav.Visibility = isGame ? Visibility.Collapsed : Visibility.Visible;
 
-                    // ẩn vùng chiến lược / quản lý vốn / trạng thái
                     if (GroupStrategyMoney != null)
-                        GroupStrategyMoney.Visibility = Visibility.Collapsed;   // <--- sửa về Collapsed
-                    if (GroupConsole != null)
-                        GroupConsole.Visibility = Visibility.Collapsed;
+                        GroupStrategyMoney.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
+
                     if (GroupStatus != null)
-                        GroupStatus.Visibility = Visibility.Collapsed;
-                }
+                        GroupStatus.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
+
+                    if (GroupConsole != null)
+                        GroupConsole.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
+                });
             }
-            catch (Exception ex)
-            {
-                Log("[SetModeUi] " + ex);
-            }
+            catch { }
         }
-
-
-
 
         private string GetAiNGramStatePath()
         {
-            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\XocDiaSoiLiveKH24
+            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\XocDiaLiveHit
             var aiDir = System.IO.Path.Combine(_appDataDir, "ai");
             System.IO.Directory.CreateDirectory(aiDir);
             return System.IO.Path.Combine(aiDir, "ngram_state_v1.json");
@@ -836,34 +791,25 @@ Ví dụ không hợp lệ:
 
         private void RecomputeUiMode()
         {
+            // Ưu tiên URL: nếu KHÔNG ở games.* thì về Home ngay để tránh timer lôi về GAME
+            if (!GetIsGameByUrlFallback())
+            {
+                ApplyUiMode(false);
+                return;
+            }
+
             var now = DateTime.UtcNow;
             var recentGame = (now - _lastGameTickUtc) <= GameTickFresh;
             var recentHome = (now - _lastHomeTickUtc) <= HomeTickFresh;
 
             bool nextIsGame;
-            if (recentGame && !recentHome)
-                nextIsGame = true;
-            else if (!recentGame && recentHome)
-                nextIsGame = false;
-            else if (recentGame && recentHome)
-                nextIsGame = false;   // ưu tiên home nếu cả 2 cùng tươi
-            else
-                nextIsGame = GetIsGameByUrlFallback();
+            if (recentGame && !recentHome) nextIsGame = true;
+            else if (!recentGame && recentHome) nextIsGame = false;
+            else if (recentGame && recentHome) nextIsGame = true;   // giữ logic cũ
+            else nextIsGame = GetIsGameByUrlFallback();
 
-            // chỉ thực hiện khi khác trạng thái hiện tại
-            if (nextIsGame != _isGameUi)
-            {
-                // nếu đang bị khóa ở game thì không cho chuyển về home
-                if (_lockGameUi && !nextIsGame)
-                    return;
-
-                ApplyUiMode(nextIsGame);
-                _isGameUi = nextIsGame;
-            }
+            ApplyUiMode(nextIsGame);
         }
-
-
-
         // Khóa/mở cấu hình khi Start/Stop:
         // - enabled = true  => đang "Bắt Đầu Cược" (chưa chạy)  => mở hết để sửa
         // - enabled = false => đang "Dừng Đặt Cược" (đang chạy) => chỉ khóa chiến lược, chuỗi/thế cầu, combo quản lý vốn
@@ -884,14 +830,35 @@ Ví dụ không hợp lệ:
             if (TxtCutLoss != null) TxtCutLoss.IsReadOnly = false; // Cắt lỗ
         }
 
+
+
         private void ApplyUiMode(bool isGame)
         {
-            // nếu đang khóa ở game thì không cho ai gọi về home
-            if (_lockGameUi && !isGame)
-                return;
+            // so sánh trạng thái cũ/mới
+            bool wasGame = _isGameUi;
+            _isGameUi = isGame;
 
-            SetModeUi(isGame);
+            // Chỉ đổi layout nút khi chế độ thật sự đổi
+            if (isGame != wasGame)
+            {
+                SetModeUi(isGame); // ẩn/hiện BtnVaoXocDia vs BtnPlay (HÀM CŨ)
+                Log($"SetModeUi(isGame); " + isGame);
+            }
+
+            // DÙ mode không đổi, khi đang ở Home vẫn cần cập nhật nhãn theo username
+            if (!isGame && BtnVaoXocDia != null)
+            {
+                var desired = _homeLoggedIn
+                    ? "Chơi Xóc Đĩa Live"
+                    : "Đăng Nhập & Xóc Đĩa Live";
+
+                // tránh set lại nếu không thay đổi gì
+                if (!Equals(BtnVaoXocDia.Content as string, desired))
+                    BtnVaoXocDia.Content = desired;
+            }
         }
+
+
 
 
         // ====== Helpers ======
@@ -951,14 +918,14 @@ Ví dụ không hợp lệ:
 
                 }
                 if (CmbBetStrategy != null)
-                    CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 13) ? _cfg.BetStrategyIndex : 15;
+                    CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 15) ? _cfg.BetStrategyIndex : 15;
                 SyncStrategyFieldsToUI();
                 UpdateTooltips();
                 UpdateBetStrategyUi();
 
 
                 if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString();
-                if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
+                if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "MultiChain");
                 LoadStakeCsvForCurrentMoneyStrategy();// NEW: nạp chuỗi tiền theo “Quản lý vốn” hiện tại
 
 
@@ -1106,25 +1073,6 @@ Ví dụ không hợp lệ:
 
                                 if (!root.TryGetProperty("abx", out var abxEl)) return;
                                 var abxStr = abxEl.GetString() ?? "";
-                                string ui = "";
-                                if (root.TryGetProperty("ui", out var uiEl))
-                                    ui = uiEl.GetString() ?? "";
-                                var uname = root.TryGetProperty("nick", out var uEl) ? (uEl.GetString() ?? "") : "";
-                                if (!string.IsNullOrWhiteSpace(uname))
-                                {
-                                    var normalized = uname.Trim().ToLowerInvariant();
-                                    if (_homeUsername != normalized)
-                                    {
-                                        _homeUsername = normalized;
-                                        _homeUsernameAt = DateTime.UtcNow;
-
-                                        if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
-                                        {
-                                            _cfg.LastHomeUsername = _homeUsername;
-                                            _ = SaveConfigAsync(); // fire-and-forget
-                                        }
-                                    }
-                                }
 
                                 // 1) result: EvalJsAwaitAsync bridge
                                 if (abxStr == "result" && root.TryGetProperty("id", out var idEl))
@@ -1139,7 +1087,6 @@ Ví dụ không hợp lệ:
                                 // 2) tick: cập nhật snapshot + UI + (NI & finalize khi đuôi đổi)
                                 if (abxStr == "tick")
                                 {
-
                                     // Đổi tên biến JSON để không đụng 'doc'/'root' bên ngoài
                                     using var jdocTick = System.Text.Json.JsonDocument.Parse(msg);
                                     var jrootTick = jdocTick.RootElement;
@@ -1151,15 +1098,25 @@ Ví dụ không hợp lệ:
                                         try
                                         {
                                             double progNow = snap.prog ?? 0;
-                                            var sessionStr = snap.session ?? "";
                                             var seqStr = snap.seq ?? "";
 
-                                            // Nếu đang khóa theo dõi và phiên đã thay đổi so với _baseSession => ván cũ khép
+                                            // Nếu đang khóa theo dõi và chuỗi đã thay đổi so với _baseSeq => ván cũ khép
                                             if (_lockMajorMinorUpdates == true &&
-                                                !string.Equals(sessionStr, _baseSession, StringComparison.Ordinal))
+                                                !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
                                             {
                                                 char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
                                                 bool winIsChan = (tail == '0' || tail == '2' || tail == '4');
+
+                                                long prevC = _roundTotalsC, prevL = _roundTotalsL;
+                                                // Ni: nếu cửa THẮNG là cửa có tổng tiền lớn hơn trong ván đó => 'N', ngược lại 'I'
+                                                char ni = winIsChan ? ((prevC >= prevL) ? 'N' : 'I')
+                                                                    : ((prevL >= prevC) ? 'N' : 'I');
+
+                                                _niSeq.Append(ni);
+                                                if (_niSeq.Length > NiSeqMax)
+                                                    _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
+
+                                                Log($"[NI] add={ni} | seq={_niSeq} | tail={tail} | C={prevC} | L={prevL}");
 
                                                 // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
                                                 var kqStr = winIsChan ? "CHAN" : "LE";
@@ -1177,8 +1134,11 @@ Ví dụ không hợp lệ:
                                             {
                                                 if (progNow == 0)
                                                 {
-                                                    _baseSession = sessionStr;
-                                                    _lockMajorMinorUpdates = true;
+                                                    _baseSeq = seqStr;
+                                                    _roundTotalsC = snap.totals?.C ?? 0;
+                                                    _roundTotalsL = snap.totals?.L ?? 0;
+                                                    if (_roundTotalsC != 0 && _roundTotalsL != 0)
+                                                        _lockMajorMinorUpdates = true;
                                                 }
                                             }
                                         }
@@ -1190,12 +1150,7 @@ Ví dụ không hợp lệ:
 
                                         // --- NEW: lấy status từ JSON (JS đã bơm vào tick) ---
                                         string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
-                                        string statusUiT = statusUi switch
-                                        {
-                                            "open" => "Cho phép đặt cược",
-                                            "locked" => "Đợi kết quả",
-                                            _ => ""          // các trạng thái khác (nếu có) thì để trống
-                                        };
+
                                         // --- Cập nhật UI ---
                                         _ = Dispatcher.BeginInvoke(new Action(() =>
                                         {
@@ -1213,8 +1168,7 @@ Ví dụ không hợp lệ:
                                                     if (PrgBet != null) PrgBet.Value = 0;
                                                     if (LblProg != null) LblProg.Text = "-";
                                                 }
-                                                //Cập nhật Tên nhân vật
-                                                if (LblUserName != null) LblUserName.Text = uname;
+
                                                 // Kết quả gần nhất từ chuỗi seq
                                                 var seqStrLocal = snap.seq ?? "";
                                                 char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
@@ -1234,9 +1188,9 @@ Ví dụ không hợp lệ:
                                                 // 🔸 Trạng thái: "Phiên mới" / "Ngừng đặt cược" / "Đang chờ kết quả"
                                                 if (LblStatusText != null)
                                                 {
-                                                    if (!string.IsNullOrWhiteSpace(statusUiT))
+                                                    if (!string.IsNullOrWhiteSpace(statusUi))
                                                     {
-                                                        LblStatusText.Text = statusUiT;
+                                                        LblStatusText.Text = statusUi;
                                                         LblStatusText.Visibility = Visibility.Visible;
                                                     }
                                                     else
@@ -1249,36 +1203,17 @@ Ví dụ không hợp lệ:
                                             catch { }
                                         }));
                                     }
-                                    if (ui == "game")
-                                    {
-                                        _lastGameTickUtc = DateTime.UtcNow;
-                                    }
-                                    else
-                                    {
-                                        _lastHomeTickUtc = DateTime.UtcNow;
-                                        _lastGameTickUtc = DateTime.MinValue; // cho chắc
-                                        _lockGameUi = false;                  // cho quay lại home
-                                        Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(false)));
-                                    }
-                                    return;
 
+                                    _lastGameTickUtc = DateTime.UtcNow;
+                                    return;
                                 }
+
+
 
                                 // 2.b) game_hint: Home báo đã có game/iframe → chuyển UI tức thì
                                 if (abxStr == "game_hint")
                                 {
-                                    var now = DateTime.UtcNow;
-
-                                    // nếu VỪA nhận được home_tick trong khoảng tươi thì coi như vẫn đang ở màn home
-                                    // HomeTickFresh của bạn đang dùng cho chỗ khác rồi, tận dụng luôn
-                                    if ((now - _lastHomeTickUtc) <= HomeTickFresh)
-                                    {
-                                        // chỉ ghi nhận là "có thể có game" thôi
-                                        _lastGameTickUtc = now;
-                                        return;    // QUAN TRỌNG: không gọi ApplyUiMode(true);
-                                    }
-
-                                    _lastGameTickUtc = now;
+                                    _lastGameTickUtc = DateTime.UtcNow; // synthetic tick
                                     _ = Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(true)));
                                     return;
                                 }
@@ -1314,7 +1249,7 @@ Ví dụ không hợp lệ:
                                     // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
                                     if (_autoFollowNewest)
                                     {
-                                        ShowFirstPage();
+                                       ShowFirstPage();
                                     }
                                     else
                                     {
@@ -1335,75 +1270,71 @@ Ví dụ không hợp lệ:
                                 }
 
                                 // 5) home_tick: username/balance/url từ Home
-                                //if (abxStr == "home_tick")
-                                //{
-                                //    // đã về màn hình login trong web → gỡ khóa và chuyển về UI login
-                                //    _lastHomeTickUtc = DateTime.UtcNow;
-                                //    _lockGameUi = false;
-                                //    Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(false)));
-                                //    var uname = root.TryGetProperty("username", out var uEl) ? (uEl.GetString() ?? "") : "";
-                                //    if (!string.IsNullOrWhiteSpace(uname))
-                                //    {
-                                //        var normalized = uname.Trim().ToLowerInvariant();
-                                //        if (_homeUsername != normalized)
-                                //        {
-                                //            _homeUsername = normalized;
-                                //            _homeUsernameAt = DateTime.UtcNow;
+                                if (abxStr == "home_tick")
+                                {
+                                    var uname = root.TryGetProperty("username", out var uEl) ? (uEl.GetString() ?? "") : "";
+                                    if (!string.IsNullOrWhiteSpace(uname))
+                                    {
+                                        var normalized = uname.Trim().ToLowerInvariant();
+                                        if (_homeUsername != normalized)
+                                        {
+                                            _homeUsername = normalized;
+                                            _homeUsernameAt = DateTime.UtcNow;
 
-                                //            if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
-                                //            {
-                                //                _cfg.LastHomeUsername = _homeUsername;
-                                //                _ = SaveConfigAsync(); // fire-and-forget
-                                //            }
-                                //        }
-                                //    }
+                                            if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
+                                            {
+                                                _cfg.LastHomeUsername = _homeUsername;
+                                                _ = SaveConfigAsync(); // fire-and-forget
+                                            }
+                                        }
+                                    }
 
-                                //    var bal = root.TryGetProperty("balance", out var bEl) ? (bEl.GetString() ?? "") : "";
-                                //    var href = root.TryGetProperty("href", out var hEl) ? (hEl.GetString() ?? "") : "";
+                                    var bal = root.TryGetProperty("balance", out var bEl) ? (bEl.GetString() ?? "") : "";
+                                    var href = root.TryGetProperty("href", out var hEl) ? (hEl.GetString() ?? "") : "";
 
-                                //    try
-                                //    {
-                                //        await Dispatcher.InvokeAsync(() =>
-                                //        {
-                                //            if (!string.IsNullOrWhiteSpace(uname) && TxtUser != null)
-                                //            {
-                                //                if (string.IsNullOrWhiteSpace(TxtUser.Text) || TxtUser.Text != uname)
-                                //                    TxtUser.Text = uname;
-                                //            }
-                                //            if (LblUserName != null) LblUserName.Text = uname;
-                                //            if (LblAmount != null) LblAmount.Text = bal;
-                                //        });
+                                    try
+                                    {
+                                        await Dispatcher.InvokeAsync(() =>
+                                        {
+                                            if (!string.IsNullOrWhiteSpace(uname) && TxtUser != null)
+                                            {
+                                                if (string.IsNullOrWhiteSpace(TxtUser.Text) || TxtUser.Text != uname)
+                                                    TxtUser.Text = uname;
+                                            }
+                                            if (LblUserName != null) LblUserName.Text = uname;
+                                            if (LblAmount != null) LblAmount.Text = bal;
+                                        });
 
-                                //        // cập nhật trạng thái đã đăng nhập dựa trên nút Logout/Login
-                                //        try
-                                //        {
-                                //            var jsLogged = @"
-                                //              (function(){
-                                //                try{
-                                //                  const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}}; 
-                                //                  const low=s=>rm(String(s||'').trim().toLowerCase());
-                                //                  const vis=el=>{if(!el)return false; const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
-                                //                                 return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
-                                //                  const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
+                                        // cập nhật trạng thái đã đăng nhập dựa trên nút Logout/Login
+                                        try
+                                        {
+                                            var jsLogged = @"
+(function(){
+  try{
+    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}}; 
+    const low=s=>rm(String(s||'').trim().toLowerCase());
+    const vis=el=>{if(!el)return false; const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
+                   return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
+    const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
 
-                                //                  const hasLogoutVis = qa('a,button,[role=""button""],.btn,.base-button')
-                                //                      .some(el => vis(el) && /dang\\s*xuat|đăng\\s*xuất|logout|sign\\s*out/i.test(low(el.textContent)));
-                                //                  const hasLoginVis = qa('a,button,[role=""button""],.btn,.base-button')
-                                //                      .some(el => vis(el) && /dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
+    const hasLogoutVis = qa('a,button,[role=""button""],.btn,.base-button')
+        .some(el => vis(el) && /dang\\s*xuat|đăng\\s*xuất|logout|sign\\s*out/i.test(low(el.textContent)));
+    const hasLoginVis = qa('a,button,[role=""button""],.btn,.base-button')
+        .some(el => vis(el) && /dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
 
-                                //                  return (hasLogoutVis && !hasLoginVis) ? '1' : '0';
-                                //                }catch(e){ return '0'; }
-                                //              })();";
-                                //            var st = await ExecJsAsyncStr(jsLogged);
-                                //            _homeLoggedIn = (st == "1");
-                                //        }
-                                //        catch { /* ignore */ }
-                                //    }
-                                //    catch { }
+    return (hasLogoutVis && !hasLoginVis) ? '1' : '0';
+  }catch(e){ return '0'; }
+})();";
+                                            var st = await ExecJsAsyncStr(jsLogged);
+                                            _homeLoggedIn = (st == "1");
+                                        }
+                                        catch { /* ignore */ }
+                                    }
+                                    catch { }
 
-                                //    _lastHomeTickUtc = DateTime.UtcNow;
-                                //    return;
-                                //}
+                                    _lastHomeTickUtc = DateTime.UtcNow;
+                                    return;
+                                }
                             }
                             catch
                             {
@@ -1416,6 +1347,7 @@ Ví dụ không hợp lệ:
                         }
                     };
                 }
+
                 // 3) Hook NavigationCompleted để chuyển UI theo URL ngay khi điều hướng xong
                 if (!_navModeHooked && Web != null)
                 {
@@ -1424,28 +1356,15 @@ Ví dụ không hợp lệ:
                     {
                         try
                         {
-                            // nếu chưa có tick thì thôi
-                            if (!HasAnyWebTick())
-                                return;
+                            var src = Web?.Source?.ToString() ?? "";
+                            var host = string.IsNullOrWhiteSpace(src) ? "" : new Uri(src).Host;
+                            bool isGameHost = host.StartsWith("games.", StringComparison.OrdinalIgnoreCase);
 
-                            // nếu vừa có tick tươi thì cũng thôi
-                            var now = DateTime.UtcNow;
-                            bool recentGame = (now - _lastGameTickUtc) <= GameTickFresh;
-                            bool recentHome = (now - _lastHomeTickUtc) <= HomeTickFresh;
-                            if (recentGame || recentHome)
-                                return;
-
-                            // nếu muốn thật sự bỏ ép UI, thì dừng ở đây luôn
-                            return;
-
-                            // phần dưới coi như bỏ
+                            await Dispatcher.InvokeAsync(() => ApplyUiMode(isGameHost));
                         }
-                        catch { }
+                        catch { /* ignore */ }
                     };
-
                 }
-
-
             }
             catch (Exception ex)
             {
@@ -1457,6 +1376,9 @@ Ví dụ không hợp lệ:
                 _ensuringWeb = false;
             }
         }
+
+
+
 
 
 
@@ -1613,8 +1535,8 @@ Ví dụ không hợp lệ:
                 {
                     settings.IsWebMessageEnabled = true;
                     // (tuỳ chọn khác, giữ nguyên nếu bạn không cần)
-                    settings.AreDefaultContextMenusEnabled = false;
-                    settings.AreDevToolsEnabled = true;
+                    // settings.AreDefaultContextMenusEnabled = false;
+                    // settings.AreDevToolsEnabled = true;
                 }
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
@@ -1658,7 +1580,7 @@ Ví dụ không hợp lệ:
             Directory.CreateDirectory(targetDir);
 
             var resName = FindResourceName("ThirdParty.WebView2Fixed_win-x64.zip")
-                          ?? "XocDiaSoiLiveKH24.ThirdParty.WebView2Fixed_win-x64.zip";
+                          ?? "XocDiaLiveHit.ThirdParty.WebView2Fixed_win-x64.zip";
 
             using var s = Assembly.GetExecutingAssembly().GetManifestResourceStream(resName)
                            ?? throw new FileNotFoundException("Missing embedded resource: " + resName);
@@ -1713,69 +1635,167 @@ Ví dụ không hợp lệ:
 
         // ====== Auto fill ======
         // Điền cả 2 trường (nhanh + chắc chắn), KHÔNG dùng postMessage
-        // ====== Auto fill ======
-        // Gửi user/pass sang game (Cocos) và bảo JS mở popup + điền + click
-        // ====== Auto fill ======
-        // Chỉ tự động điền tên nhân vật và mật khẩu vào popup Cocos
-        // KHÔNG click nút Đăng nhập trong popup
         private async Task AutoFillLoginAsync()
         {
-            // 1. webview chưa sẵn sàng thì thôi
-            if (!IsWebAlive)
-            {
-                Log("[AutoFill] skipped (web not ready)");
-                return;
-            }
-
-            // 2. đảm bảo web đã init CoreWebView2
+            if (Web == null) return;
             await EnsureWebReadyAsync();
-            if (!IsWebAlive)
+
+            var u = T(TxtUser);
+            var p = P(TxtPass);
+            if (string.IsNullOrEmpty(u) && string.IsNullOrEmpty(p))
             {
-                Log("[AutoFill] stopped (web lost after EnsureWebReadyAsync)");
+                Log("[AutoFill] skipped (empty creds)");
                 return;
             }
 
-            // 3. lấy user/pass từ panel WPF
-            var u = T(TxtUser);   // ông đang có hàm T(...) lấy TextBox.Text
-            var p = P(TxtPass);   // ông đang có hàm P(...) lấy PasswordBox.Password
+            // Fast pass: thử điền nhanh cả 2 trong 1 lần – đồng bộ
+            string fastJs =
+        @"(function(u,p){
+  const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}};
+  const low=s=>rm(String(s||'').trim().toLowerCase());
+  const vis=el=>{if(!el)return false;const r=el.getBoundingClientRect(),cs=getComputedStyle(el);
+                 return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
+  const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
+  const q =(s,d)=>(d||document).querySelector(s);
 
-            // 4. gửi credential sang JS để nó cập nhật window.__cw_loginUser / __cw_loginPass
-            var payload = new
+  function openLogin(d){
+    try{
+      const btn = qa('a,button,[role=""button""],.btn,.base-button,.el-button,.ant-btn,.v-btn', d)
+        .find(el=>/dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
+      if(btn) btn.click();
+    }catch(_){}
+  }
+  function pickUser(d){
+    const ss=['input[autocomplete=""username""]','input[placeholder*=""đăng nhập"" i]','input[placeholder*=""ten dang nhap"" i]',
+              'input[placeholder*=""tài khoản"" i]','input[placeholder*=""tai khoan"" i]',
+              'input[name*=""user"" i]','input[name*=""account"" i]','input[id*=""user"" i]',
+              'input[type=""email""]','input[type=""text""]'];
+    for(const s of ss){const el=q(s,d); if(el&&vis(el)) return el;} return null;
+  }
+  function pickPass(d){
+    const ss=['input[type=""password""]','input[autocomplete=""current-password""]',
+              'input[placeholder*=""mật khẩu"" i]','input[placeholder*=""mat khau"" i]',
+              'input[name*=""pass"" i]','input[id*=""pass"" i]'];
+    for(const s of ss){const el=q(s,d); if(el&&vis(el)) return el;} return null;
+  }
+
+  const frames=[window].concat(Array.from(document.querySelectorAll('iframe'))
+                 .map(i=>{try{return i.contentWindow;}catch(_){return null;}}).filter(Boolean));
+  let doneU=false, doneP=false;
+  for(const w of frames){
+    try{
+      const d=w.document; if(!(doneU&&doneP)) openLogin(d);
+      const uEl=!doneU?pickUser(d):null; const pEl=!doneP?pickPass(d):null;
+      if(uEl){ uEl.focus(); uEl.value=u||''; uEl.dispatchEvent(new Event('input',{bubbles:true})); uEl.dispatchEvent(new Event('change',{bubbles:true})); doneU=true; }
+      if(pEl){ pEl.focus(); pEl.value=p||''; pEl.dispatchEvent(new Event('input',{bubbles:true})); pEl.dispatchEvent(new Event('change',{bubbles:true})); doneP=true; }
+      if(doneU&&doneP) break;
+    }catch(_){}
+  }
+  return (doneU?1:0)+(doneP?2:0);
+})(" + JsonSerializer.Serialize(u) + "," + JsonSerializer.Serialize(p) + @");";
+
+            string fast = "0";
+            try { fast = await ExecJsAsyncStr(fastJs); Log("[AutoFillFast] " + fast); }
+            catch (Exception ex) { Log("[AutoFillFast] " + ex); }
+
+            // Fallback chắc chắn: nếu chưa đủ cả 2 trường thì điền lại từng trường
+            if (fast != "3")
             {
-                __cw_cmd = "set_login",
-                user = u ?? "",
-                pass = p ?? "",
-                autoSubmit = false   // KHÔNG cho JS tự bấm
-            };
-            string json = System.Text.Json.JsonSerializer.Serialize(payload);
-            Web.CoreWebView2.PostWebMessageAsJson(json);
-            Log("[AutoFill] sent set_login to webview");
-
-            // 5. bảo JS mở popup (nếu header còn nút) và ĐIỀN, nhưng KHÔNG bấm nút login
-            var js = @"
-        (async function(){
-            try {
-                // mở popup nếu đang còn nút đăng nhập trên header
-                if (window.__cw_clickLoginIfNeed) {
-                    window.__cw_clickLoginIfNeed();
-                }
-                // đợi popup render ra
-                await new Promise(r => setTimeout(r, 200));
-                // điền user/pass vừa gửi ở bước 4
-                if (window.__cw_fillLoginPopup) {
-                    window.__cw_fillLoginPopup();
-                }
-                // KHÔNG gọi window.__cw_clickPopupLogin() ở đây
-            } catch (e) {
-                console.warn('[AutoFillLoginAsync js] error', e);
+                try { await SyncLoginFieldAsync("user", u); } catch { }
+                try { await SyncLoginFieldAsync("pass", p); } catch { }
             }
-        })();
-    ";
-            await Web.CoreWebView2.ExecuteScriptAsync(js);
 
-            Log("[AutoFill] done (filled only, no click)");
+            // Bấm đăng nhập sớm
+            await TryAutoLoginAsync(500, force: true);
         }
 
+
+
+        // ====== Điền user/pass trong mọi frame (không timeout) ======
+        // Điền 1 trường (user/pass) trong mọi iframe same-origin – chạy đồng bộ, không phụ thuộc postMessage
+        private async Task SyncLoginFieldAsync(string which, string value)
+        {
+            if (Web == null) return;
+            await EnsureWebReadyAsync();
+
+            string js =
+        @"(function(which,val){
+  const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}};
+  const low=s=>rm(String(s||'').trim().toLowerCase());
+  const vis=el=>{if(!el)return false;const r=el.getBoundingClientRect(),cs=getComputedStyle(el);
+                 return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
+  const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
+  const q =(s,d)=>(d||document).querySelector(s);
+
+  function openLogin(d){
+    try{
+      const btn = qa('a,button,[role=""button""],.btn,.base-button,.el-button,.ant-btn,.v-btn', d)
+        .find(el=>/dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
+      if(btn) btn.click();
+    }catch(_){}
+  }
+
+  function pickUser(d){
+    const ss=['input[autocomplete=""username""]','input[placeholder*=""đăng nhập"" i]','input[placeholder*=""ten dang nhap"" i]',
+              'input[placeholder*=""tài khoản"" i]','input[placeholder*=""tai khoan"" i]',
+              'input[name*=""user"" i]','input[name*=""account"" i]','input[id*=""user"" i]',
+              'input[type=""email""]','input[type=""text""]'];
+    for(const s of ss){ const el=q(s,d); if(el&&vis(el)) return el; } return null;
+  }
+  function pickPass(d){
+    const ss=['input[type=""password""]','input[autocomplete=""current-password""]',
+              'input[placeholder*=""mật khẩu"" i]','input[placeholder*=""mat khau"" i]',
+              'input[name*=""pass"" i]','input[id*=""pass"" i]'];
+    for(const s of ss){ const el=q(s,d); if(el&&vis(el)) return el; } return null;
+  }
+
+  const frames=[window].concat(Array.from(document.querySelectorAll('iframe'))
+                 .map(i=>{try{return i.contentWindow;}catch(_){return null;}}).filter(Boolean));
+
+  let el=null;
+  for(const w of frames){
+    try{
+      const d=w.document;
+      openLogin(d);
+      el = which==='user' ? pickUser(d) : pickPass(d);
+      if(el) break;
+    }catch(_){}
+  }
+  if(!el) return 'no-field';
+  try{
+    el.focus(); el.value = val || '';
+    el.dispatchEvent(new Event('input',{bubbles:true}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+    return 'ok';
+  }catch(e){ return 'err:'+e; }
+})(" + JsonSerializer.Serialize(which) + "," + JsonSerializer.Serialize(value) + @");";
+
+            try
+            {
+                var res = await ExecJsAsyncStr(js);
+                Log("[SyncLoginField] " + res);
+            }
+            catch (Exception ex) { Log("[SyncLoginField] " + ex); }
+        }
+
+
+        // Gọi login trên trang Home: AutoFill -> ClickLoginButtonAsync
+        private async Task<bool> TryAutoLoginFromHomeAsync()
+        {
+            try
+            {
+                Log("[HOME] Auto-login: start");
+                await AutoFillLoginAsync(); // giữ nguyên hàm sẵn có
+                var res = await ClickLoginButtonAsync(18000); // hàm bạn đã có (không submit form)
+                Log("[HOME] Auto-login: " + res);
+                return string.Equals(res, "clicked", StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                Log("[HOME] Auto-login: error " + ex.Message);
+                return false;
+            }
+        }
 
         // Bấm 'Chơi Xóc Đĩa Live' từ Home:
         // 1) Ưu tiên gọi API JS nếu có (__abx_hw_clickPlayXDL), 
@@ -1890,23 +1910,19 @@ Ví dụ không hợp lệ:
                 ApplyMouseShieldFromCheck();
 
                 // --- BẮT ĐẦU GIÁM SÁT UI MODE ---
-                _uiModeTimer = new System.Windows.Threading.DispatcherTimer
+                if (_uiModeTimer == null)
                 {
-                    Interval = TimeSpan.FromMilliseconds(300)
-                };
-                _uiModeTimer.Tick += (_, __) =>
-                {
-                    try
+                    _uiModeTimer = new System.Windows.Threading.DispatcherTimer
                     {
-                        RecomputeUiMode();
-                    }
-                    catch
+                        Interval = TimeSpan.FromMilliseconds(300)
+                    };
+                    _uiModeTimer.Tick += (_, __) =>
                     {
-                        // ignore
-                    }
-                };
-                _uiModeTimer.Start();
-
+                        try { RecomputeUiMode(); } catch { /* ignore */ }
+                    };
+                    _uiModeTimer.Start();
+                    RecomputeUiMode();
+                }
 
             }
             catch (Exception ex)
@@ -2010,7 +2026,7 @@ Ví dụ không hợp lệ:
             _userCts = await DebounceAsync(_userCts, 150, async () =>
             {
                 await SaveConfigAsync();
-                await AutoFillLoginAsync();
+                await SyncLoginFieldAsync("user", T(TxtUser));
             });
         }
         private async void TxtPass_PasswordChanged(object sender, RoutedEventArgs e)
@@ -2019,7 +2035,7 @@ Ví dụ không hợp lệ:
             _passCts = await DebounceAsync(_passCts, 150, async () =>
             {
                 await SaveConfigAsync();
-                await AutoFillLoginAsync();
+                await SyncLoginFieldAsync("pass", P(TxtPass));
             });
         }
 
@@ -2049,7 +2065,7 @@ Ví dụ không hợp lệ:
         private string GetMoneyStrategyFromUI()
         {
             return (CmbMoneyStrategy?.SelectedItem as ComboBoxItem)?.Tag as string
-                   ?? "IncreaseWhenLose";
+                   ?? "MultiChain";
         }
 
         async void CmbMoneyStrategy_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -2174,7 +2190,7 @@ Ví dụ không hợp lệ:
                 _autoLoginBusy = true;
 
                 if (delayMs > 0) await Task.Delay(delayMs);
-                var res = await ClickLoginButtonAsync();
+                var res = await ClickLoginButtonAsync(18000);
                 Log("[AutoLogin] " + res);
                 _autoLoginLast = DateTime.UtcNow;
             }
@@ -2188,37 +2204,155 @@ Ví dụ không hợp lệ:
             }
         }
 
-        // Bấm nút "Đăng nhập" TRONG POPUP COCOS
-        private async Task<string> ClickLoginButtonAsync()
+        // ====== Click login (ưu tiên selector bạn cung cấp) + poll trạng thái ======
+        private async Task<string> ClickLoginButtonAsync(int timeoutMs = 18000)
         {
-            if (!IsWebAlive)
-                return "web-dead";
-
             await EnsureWebReadyAsync();
-            if (!IsWebAlive)
-                return "web-dead-after-ensure";
 
-            // gọi đúng hàm JS bạn đã tạo trong js_home_v2.js
-            var js = @"
-    (function(){
-        try {
-            if (window.__cw_clickPopupLogin) {
-                var ok = window.__cw_clickPopupLogin();
-                return ok ? 'clicked' : 'no-node';
+            // 1) Bấm nút Đăng nhập theo selector header của NET88
+            string clickKnownJs =
+        @"(function(){
+  try{
+    const sel1 = '#page > header > div > div > div.d-flex.align-items-center.justify-content-between.w-100 > div > div > button.base-button.btn.base-button--bg-crimson-fill';
+    const sel2 = 'button.base-button.btn.base-button--bg-crimson-fill';
+    let btn = document.querySelector(sel1) || document.querySelector(sel2);
+    if(!btn) return 'no-el';
+
+    const vis = el => { if(!el) return false; const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
+      return r.width>4 && r.height>4 && cs.display!=='none' && cs.visibility!=='hidden' && cs.pointerEvents!=='none'; };
+
+    function fire(el){
+      if(!el) return false;
+      try{ el.scrollIntoView({block:'center', inline:'center'}); }catch(_){}
+      const r = el.getBoundingClientRect();
+      const cx = Math.max(0, Math.floor(r.left + r.width/2));
+      const cy = Math.max(0, Math.floor(r.top  + r.height/2));
+      const top = document.elementFromPoint(cx, cy) || el;
+      const seq = ['pointerover','mouseover','pointerenter','mouseenter','pointerdown','mousedown','pointerup','mouseup','click'];
+      for(const t of seq){
+        top.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,clientX:cx,clientY:cy,view:window}));
+      }
+      try{ top.click(); }catch(_){}
+      return true;
+    }
+
+    // nhiều site gán handler ở content bên trong
+    const target = btn.querySelector('.base-button--content') || btn;
+    if(!vis(target)) return 'not-visible';
+    fire(target);
+    return 'clicked-known';
+  }catch(e){ return 'err:'+e; }
+})();";
+
+            var clickRes = await ExecJsAsyncStr(clickKnownJs);
+            Log("[ClickLoginKnown] " + (string.IsNullOrEmpty(clickRes) ? "<empty>" : clickRes));
+
+            // Nếu chưa tìm được button theo selector bạn đưa, thử generic các form/iframe như cũ
+            if (clickRes == "no-el" || clickRes == "not-visible")
+            {
+                string clickFallbackJs =
+        @"(function(){
+  try{
+    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}};
+    const low=s=>rm(String(s||'').trim().toLowerCase());
+    const vis=el=>{if(!el)return false;const r=el.getBoundingClientRect(),cs=getComputedStyle(el);
+                   return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
+    const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
+
+    function fire(el){
+      if(!el) return false;
+      try{ el.scrollIntoView({block:'center', inline:'center'}); }catch(_){}
+      const r=el.getBoundingClientRect(), x=r.left+r.width/2, y=r.top+r.height/2;
+      const seq=['pointerdown','mousedown','pointerup','mouseup','click'];
+      for(const t of seq){ el.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,clientX:x,clientY:y,view:window})); }
+      try{ el.click(); }catch(_){}
+      return true;
+    }
+    function findInputs(d){
+      const pass=d.querySelector('input[type=""password""],input[autocomplete=""current-password""]');
+      const user=d.querySelector('input[autocomplete=""username""],input[name*=""user"" i],input[type=""text""],input[type=""email""]');
+      return {user,pass};
+    }
+    function tryFormSubmit(d){
+      const {user,pass}=findInputs(d);
+      let form=(pass&&pass.form)?pass.form:(pass?pass.closest('form'):null);
+      if(!form && user) form=user.closest('form');
+      if(!form) return false;
+      const btn = form.querySelector('button[type=""submit""],input[type=""submit""]') ||
+                  form.querySelector('button,.btn,.base-button,.el-button');
+      if(btn && vis(btn) && fire(btn)) return 'clicked-submit';
+      try{ if(form.requestSubmit){ form.requestSubmit(); return 'requestSubmit'; } }catch(_){}
+      try{ form.submit(); return 'form-submit'; }catch(_){}
+      return false;
+    }
+    function pressEnterOnPass(d){
+      const pass = d.querySelector('input[type=""password""],input[autocomplete=""current-password""]');
+      if(!pass || !vis(pass)) return false;
+      pass.focus();
+      const evt = new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true});
+      try{ pass.dispatchEvent(evt); }catch(_){}
+      return 'pressed-enter';
+    }
+    function clickGlobalLogin(d){
+      const cand = qa('a,button,[role=""button""],.btn,.base-button,.el-button', d)
+        .find(el=>vis(el)&&/dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)||low(el.value)));
+      return cand && fire(cand) ? 'clicked-global' : false;
+    }
+
+    const frames=[window].concat(Array.from(document.querySelectorAll('iframe'))
+                   .map(i=>{try{return i.contentWindow;}catch(_){return null;}}).filter(Boolean));
+
+    for(const w of frames){ try{ const r=tryFormSubmit(w.document); if(r) return String(r); }catch(_){ } }
+    for(const w of frames){ try{ const r=pressEnterOnPass(w.document); if(r) return String(r); }catch(_){ } }
+    const g = clickGlobalLogin(document); if(g) return String(g);
+
+    return 'no-login-button';
+  }catch(e){ return 'err:'+e; }
+})();";
+                var r2 = await ExecJsAsyncStr(clickFallbackJs);
+                Log("[ClickLoginFallback] " + r2);
+                clickRes = r2;
             }
-            return 'no-fn';
-        } catch (e) {
-            return 'err:' + (e && e.message ? e.message : e);
+
+            if (clickRes.StartsWith("err")) return clickRes;
+            if (clickRes == "no-login-button" || clickRes == "not-visible") return clickRes;
+
+            // 2) Poll trạng thái đăng nhập
+            var t0 = DateTime.UtcNow;
+            while ((DateTime.UtcNow - t0).TotalMilliseconds < timeoutMs)
+            {
+                string stateJs =
+        @"(function(){
+  try{
+    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\\u036f]/g,'');}catch(_){return s||'';}};
+    const low=s=>rm(String(s||'').trim().toLowerCase());
+    const vis=el=>{if(!el)return false;const r=el.getBoundingClientRect(),cs=getComputedStyle(el);
+                   return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
+    const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
+    const hasLogout = qa('a,button,[role=""button""],.btn,.base-button')
+        .some(el => /dang\\s*xuat|đăng\\s*xuất|logout|sign\\s*out/i.test(low(el.textContent)));
+    const hasLogin  = qa('a,button,[role=""button""],.btn,.base-button')
+        .some(el => vis(el) && /dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
+    let passVisible = false;
+    try{
+      const frames=[window].concat(Array.from(document.querySelectorAll('iframe'))
+                      .map(i=>{try{return i.contentWindow;}catch(_){return null;}}).filter(Boolean));
+      for(const w of frames){
+        try{
+          const arr = Array.from(w.document.querySelectorAll('input[type=""password""]'));
+          if (arr.some(el=>vis(el))) { passVisible = true; break; }
+        }catch(_){}
+      }
+    }catch(_){}
+    return (hasLogout || (!hasLogin && !passVisible)) ? '1' : '0';
+  }catch(e){ return 'err:'+e; }
+})();";
+                var ok = await ExecJsAsyncStr(stateJs);
+                if (ok == "1") return "login-ok";
+                await Task.Delay(250);
+            }
+            return "login-timeout";
         }
-    })();";
-
-            // bạn đã có helper ExecJsAsyncStr(...) nên dùng luôn để bỏ dấu ngoặc kép
-            var res = await ExecJsAsyncStr(js);
-            Log("[GAME] Popup-login (cocos): " + res);
-            return res;
-        }
-
-
 
 
         // Gọi Login từ HOME:
@@ -2689,32 +2823,15 @@ Ví dụ không hợp lệ:
                 await EnsureWebReadyAsync();
 
                 // 1) Ưu tiên gọi API JS: click Login trước
-                var res = await ClickLoginButtonAsync();
-                Log("[AutoLoginWatch] " + res);
+                var rLogin = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickLogin?window.__abx_hw_clickLogin():'no-api');}catch(e){return 'err:'+e.message;}})();");
+                Log("[HOME] clickLogin via JS => " + rLogin);
 
                 // đợi nhẹ để trang xử lý login (nếu có)
                 await Task.Delay(900);
 
-                // 2) Tiếp tục gọi API JS: mở Xóc Đĩa Sới Live
-                var rPlay = await Web.ExecuteScriptAsync(@"
-                (function () {
-                    try {
-                        // hàm JS bạn đã tạo ở phía trang
-                        if (typeof window.__cw_openXocDiaSoi === 'function') {
-                            var r = window.__cw_openXocDiaSoi();
-                
-                            // chuẩn hóa giá trị trả về một chút để C# dễ kiểm tra
-                            if (r === true || r === 'ok') return 'ok';
-                            return r || 'called';
-                        }
-                        return 'no-api';
-                    } catch (e) {
-                        return 'err:' + (e && e.message ? e.message : e);
-                    }
-                })();
-                ");
-                Log("[HOME] open xoc-dia-soi via JS => " + rPlay);
-
+                // 2) Tiếp tục gọi API JS: click 'Chơi Xóc Đĩa Live'
+                var rPlay = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickPlayXDL?window.__abx_hw_clickPlayXDL():'no-api');}catch(e){return 'err:'+e.message;}})();");
+                Log("[HOME] clickPlay via JS => " + rPlay);
 
                 // 3) Fallback: nếu JS API không có/không ok, quay về hành vi cũ
                 var okByJs = (rPlay ?? "").IndexOf("ok", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -2730,36 +2847,33 @@ Ví dụ không hợp lệ:
                 }
 
                 // 4) Cầu nối: đồng bộ & autostart khi đã vào bàn
-                //if (_bridge != null)
-                //{
-                //    // nếu bạn có sửa JS ngoài, nạp lại và re-register
-                //    var latestJs = await LoadAppJsAsyncFallback();
-                //    if (!string.IsNullOrEmpty(latestJs))
-                //        await _bridge.UpdateAppJsAsync(latestJs);
+                if (_bridge != null)
+                {
+                    // nếu bạn có sửa JS ngoài, nạp lại và re-register
+                    var latestJs = await LoadAppJsAsyncFallback();
+                    if (!string.IsNullOrEmpty(latestJs))
+                        await _bridge.UpdateAppJsAsync(latestJs);
 
-                //    await _bridge.ForceRefreshAsync();
-                //}
+                    await _bridge.ForceRefreshAsync();
+                }
 
                 // 5) Poll cocos sẵn sàng (giữ nguyên như cũ)
-                //var ok = false;
-                //for (int i = 0; i < 100; i++)
-                //{
-                //    var ready = await Web.ExecuteScriptAsync(@"
-                //(function(){ try{ return !!(window.cc && cc.director && cc.director.getScene); }
-                //             catch(e){ return false; } })()");
-                //    Log("[VaoXocDia_Click -> load xoc dia live] " + ready);
-                //    if (bool.TryParse(ready, out var b) && b) { ok = true; break; }
-                //    await Task.Delay(300);
-                //}
-                //if (!ok) Log("[CW] Game not ready (Cocos scene not found)");
+                var ok = false;
+                for (int i = 0; i < 100; i++)
+                {
+                    var ready = await Web.ExecuteScriptAsync(@"
+                (function(){ try{ return !!(window.cc && cc.director && cc.director.getScene); }
+                             catch(e){ return false; } })()");
+                    Log("[VaoXocDia_Click -> load xoc dia live] " + ready);
+                    if (bool.TryParse(ready, out var b) && b) { ok = true; break; }
+                    await Task.Delay(300);
+                }
+                if (!ok) Log("[CW] Game not ready (Cocos scene not found)");
 
                 // 6) Bật push tick bên canvas (như cũ)
                 await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[CW] start push 240ms");
-                // NEW: đánh dấu là mình CHỦ ĐỘNG vào game
-                _lockGameUi = true;
-                _lastGameTickUtc = DateTime.UtcNow;     // để timer thấy cũng hợp lý
-                ApplyUiMode(true);
+                ApplyUiMode(true); // cho UI chuyển ngay sang nhóm 'Chiến lược/Trạng thái/Console'
             }
             catch (Exception ex)
             {
@@ -2832,7 +2946,7 @@ Ví dụ không hợp lệ:
                                     Log("[AutoLoginWatch] need-login → auto-fill + click");
                                     await AutoFillLoginAsync(); // hàm này đã có fallback và tự gọi TryAutoLoginAsync
                                                                 // Trong trường hợp trang không mở form, ép Click thêm lần nữa:
-                                    var res = await ClickLoginButtonAsync();
+                                    var res = await ClickLoginButtonAsync(18000);
                                     Log("[AutoLoginWatch] " + res);
                                     _autoLoginLast = DateTime.UtcNow;
                                 }
@@ -3095,9 +3209,9 @@ Ví dụ không hợp lệ:
             {
                 var idx = CmbBetStrategy?.SelectedIndex ?? 4;
                 if (RowChuoiCau != null)
-                    RowChuoiCau.Visibility = (idx == 0) ? Visibility.Visible : Visibility.Collapsed; // 1 
+                    RowChuoiCau.Visibility = (idx == 0 || idx == 2) ? Visibility.Visible : Visibility.Collapsed; // 1 hoặc 3
                 if (RowTheCau != null)
-                    RowTheCau.Visibility = (idx == 1) ? Visibility.Visible : Visibility.Collapsed;   // 2
+                    RowTheCau.Visibility = (idx == 1 || idx == 3) ? Visibility.Visible : Visibility.Collapsed;   // 2 hoặc 4
             }
             catch { }
         }
@@ -3133,7 +3247,7 @@ Ví dụ không hợp lệ:
                 UiDispatcher = Dispatcher,
                 GetCooldown = () => _cooldown,
                 SetCooldown = (v) => _cooldown = v,
-                MoneyStrategyId = _cfg.MoneyStrategy ?? "IncreaseWhenLose",
+                MoneyStrategyId = _cfg.MoneyStrategy ?? "MultiChain",
                 BetSeq = _cfg.BetSeq ?? "",
                 BetPatterns = _cfg.BetPatterns ?? "",
 
@@ -3150,55 +3264,16 @@ Ví dụ không hợp lệ:
                         LblStake.Text = v.ToString("N0");
 
                     // MỨC TIỀN = vị trí trong _stakeSeq (1-based)
-                    // MỨC TIỀN = vị trí/độ dài (ví dụ 4/6, 4/24, ...)
+                    // MỨC TIỀN = vị trí/độ dài (ví dụ 4/6)
                     if (LblLevel != null)
                     {
                         try
                         {
                             var seq = _stakeSeq ?? Array.Empty<long>();
                             var rounded = (long)Math.Round(v);
+                            var idx = Array.IndexOf(seq, rounded); // 0-based
 
-                            int idx = -1;
-
-                            if (seq.Length > 0)
-                            {
-                                // 1) Nếu index cũ vẫn khớp giá trị hiện tại thì giữ luôn
-                                if (_stakeLevelIndexForUi >= 0 &&
-                                    _stakeLevelIndexForUi < seq.Length &&
-                                    seq[_stakeLevelIndexForUi] == rounded)
-                                {
-                                    idx = _stakeLevelIndexForUi;
-                                }
-                                else
-                                {
-                                    // 2) Thử bước tiếp theo trong chuỗi (tiến 1 ô, có vòng lại đầu)
-                                    var next = _stakeLevelIndexForUi + 1;
-                                    if (next >= seq.Length) next = 0;
-
-                                    if (_stakeLevelIndexForUi >= 0 &&
-                                        seq[next] == rounded)
-                                    {
-                                        idx = next;
-                                    }
-                                    else
-                                    {
-                                        // 3) Fallback: quét từ 'next' đến hết, rồi vòng về 0
-                                        for (int i = 0; i < seq.Length; i++)
-                                        {
-                                            int j = (next + i) % seq.Length;
-                                            if (seq[j] == rounded)
-                                            {
-                                                idx = j;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            _stakeLevelIndexForUi = idx;
-
-                            // Nếu tìm thấy, hiển thị "vị trí/tổng", ngược lại hiển thị rỗng
+                            // Nếu tìm thấy, hiển thị "vị trí/tổng", ngược lại hiển thị "-"
                             LblLevel.Text = (idx >= 0 && seq.Length > 0)
                                 ? $"{idx + 1}/{seq.Length}"
                                 : "";
@@ -3206,11 +3281,10 @@ Ví dụ không hợp lệ:
                         catch
                         {
                             LblLevel.Text = "";
-                            _stakeLevelIndexForUi = -1;
                         }
                     }
-                }),
 
+                }),
                 UiAddWin = delta => Dispatcher.InvokeAsync(() =>
                 {
                     var net = (delta > 0) ? Math.Round(delta * 0.98) : delta;
@@ -3232,7 +3306,6 @@ Ví dụ không hợp lệ:
         {
             _activeTask = task;
             _dec = new DecisionState(); // reset trạng thái cho task mới
-            _stakeLevelIndexForUi = -1; // reset vị trí hiển thị mức tiền
             var ctx = BuildContext();
             // === Preflight: chờ __cw_bet sẵn sàng trước khi chạy chiến lược ===
             for (int i = 0; i < 25; i++) // 25 * 200ms ~= 5s
@@ -3340,7 +3413,7 @@ Ví dụ không hợp lệ:
 
                 _dec = new DecisionState();
                 _cooldown = false;
-                if (CheckLicense)
+                if (false)
                 {
                     // === PRE-CHECK: Trial hoặc License ===
                     bool isTrial = (ChkTrial?.IsChecked == true);
@@ -3554,23 +3627,25 @@ Ví dụ không hợp lệ:
                 }
 
 
-                XocDiaSoiLiveKH24.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
+                XocDiaLiveHit.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
                 {
-                    0 => new XocDiaSoiLiveKH24.Tasks.SeqParityFollowTask(),     // 1
-                    1 => new XocDiaSoiLiveKH24.Tasks.PatternParityTask(),       // 2
-                    2 => new XocDiaSoiLiveKH24.Tasks.SmartPrevTask(),           // 3
-                    3 => new XocDiaSoiLiveKH24.Tasks.RandomParityTask(),        // 4
-                    4 => new XocDiaSoiLiveKH24.Tasks.AiStatParityTask(),        // 5
-                    5 => new XocDiaSoiLiveKH24.Tasks.StateTransitionBiasTask(), // 6
-                    6 => new XocDiaSoiLiveKH24.Tasks.RunLengthBiasTask(),       // 7
-                    7 => new XocDiaSoiLiveKH24.Tasks.EnsembleMajorityTask(),    // 8
-                    8 => new XocDiaSoiLiveKH24.Tasks.TimeSlicedHedgeTask(),    // 9
-                    9 => new XocDiaSoiLiveKH24.Tasks.KnnSubsequenceTask(),     // 10
-                    10 => new XocDiaSoiLiveKH24.Tasks.DualScheduleHedgeTask(),  // 11
-                    11 => new XocDiaSoiLiveKH24.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 12
-                    12 => new XocDiaSoiLiveKH24.Tasks.AiExpertPanelTask(), // 13
-                    13 => new XocDiaSoiLiveKH24.Tasks.Top10PatternFollowTask(), // 14
-                    _ => new XocDiaSoiLiveKH24.Tasks.SmartPrevTask(),
+                    0 => new XocDiaLiveHit.Tasks.SeqParityFollowTask(),     // 1
+                    1 => new XocDiaLiveHit.Tasks.PatternParityTask(),       // 2
+                    2 => new XocDiaLiveHit.Tasks.SeqMajorMinorTask(),       // 3
+                    3 => new XocDiaLiveHit.Tasks.PatternMajorMinorTask(),   // 4
+                    4 => new XocDiaLiveHit.Tasks.SmartPrevTask(),           // 5
+                    5 => new XocDiaLiveHit.Tasks.RandomParityTask(),        // 6
+                    6 => new XocDiaLiveHit.Tasks.AiStatParityTask(),        // 7
+                    7 => new XocDiaLiveHit.Tasks.StateTransitionBiasTask(), // 8
+                    8 => new XocDiaLiveHit.Tasks.RunLengthBiasTask(),       // 9
+                    9 => new XocDiaLiveHit.Tasks.EnsembleMajorityTask(),    // 10
+                    10 => new XocDiaLiveHit.Tasks.TimeSlicedHedgeTask(),    // 11
+                    11 => new XocDiaLiveHit.Tasks.KnnSubsequenceTask(),     // 12
+                    12 => new XocDiaLiveHit.Tasks.DualScheduleHedgeTask(),  // 13
+                    13 => new XocDiaLiveHit.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
+                    14 => new XocDiaLiveHit.Tasks.AiExpertPanelTask(), // 15
+                    15 => new XocDiaLiveHit.Tasks.Top10PatternFollowTask(), // 16
+                    _ => new XocDiaLiveHit.Tasks.SmartPrevTask(),
                 };
 
 
@@ -3621,7 +3696,7 @@ Ví dụ không hợp lệ:
             try
             {
                 StopTask();
-                XocDiaSoiLiveKH24.Tasks.TaskUtil.ClearBetCooldown();
+                XocDiaLiveHit.Tasks.TaskUtil.ClearBetCooldown();
                 _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[Loop] stopped");
                 SetPlayButtonState(false);
@@ -3786,7 +3861,7 @@ Ví dụ không hợp lệ:
             return (s.Length <= take) ? s : s.Substring(s.Length - take, take);
         }
 
-        // đặt trong MainWindow.xaml.cs (project XocDiaSoiLiveKH24)
+        // đặt trong MainWindow.xaml.cs (project XocDiaLiveHit)
 
         // load thử lần lượt các uri, cái nào được thì dùng, không được thì trả về null
         private static ImageSource? LoadImgSafe(params string[] uris)
@@ -3986,7 +4061,6 @@ Ví dụ không hợp lệ:
                 // TIỀN CƯỢC & MỨC TIỀN
                 if (LblStake != null) LblStake.Text = "";  // TIỀN CƯỢC
                 if (LblLevel != null) LblLevel.Text = "";  // MỨC TIỀN
-                _stakeLevelIndexForUi = -1;
 
                 // Lưu ý: KHÔNG reset tổng lãi ở đây để ông chủ còn nhìn sau khi dừng.
             }
@@ -3995,7 +4069,6 @@ Ví dụ không hợp lệ:
                 Log("[UI] ResetBetMiniPanel error: " + ex.Message);
             }
         }
-
 
         // Cho code nền (TaskUtil) gọi đúng hàm reset gốc
         public void ResetBetMiniPanel_External()
@@ -4152,12 +4225,38 @@ Ví dụ không hợp lệ:
             return (!string.IsNullOrEmpty(s) && s[0] == '\uFEFF') ? s.Substring(1) : s;
         }
 
+        // Giữ nguyên tên để không phải sửa các callsite
+        private async Task<string> LoadAppJsAsyncFallback()
+        {
+            try
+            {
+                // Đọc thẳng từ embedded (KHÔNG thử đọc từ đĩa)
+                var resName = FindResourceName("v4_js_xoc_dia_live.js")
+                              ?? "XocDiaLiveHit.v4_js_xoc_dia_live.js";
+                var text = ReadEmbeddedText(resName);
+                text = RemoveUtf8Bom(text);
+
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    Log($"[Bridge] Loaded JS from embedded: {resName} (len={text.Length})");
+                    return text;
+                }
+
+                Log("[Bridge] Embedded JS empty: " + resName);
+            }
+            catch (Exception ex)
+            {
+                Log("[Bridge] Read embedded JS failed: " + ex.Message);
+            }
+            return "";
+        }
+
         private async Task<string> LoadHomeJsAsync()
         {
             try
             {
                 var resName = FindResourceName("js_home_v2.js")
-                              ?? "XocDiaSoiLiveKH24.js_home_v2.js"; // fallback tên logic
+                              ?? "XocDiaLiveHit.js_home_v2.js"; // fallback tên logic
                 var text = ReadEmbeddedText(resName);   // helper sẵn có
                 text = RemoveUtf8Bom(text);             // helper sẵn có
 
@@ -4183,6 +4282,7 @@ Ví dụ không hợp lệ:
             await EnsureWebReadyAsync();
             if (Web?.CoreWebView2 == null) return;
 
+            _appJs ??= await LoadAppJsAsyncFallback();
             _homeJs ??= await LoadHomeJsAsync();
 
             if (_topForwardId == null)
@@ -4471,13 +4571,9 @@ Ví dụ không hợp lệ:
 
 
         // Khởi động đếm ngược hiển thị dưới nút và auto stop khi hết giờ
-        // Khởi động đếm ngược hiển thị dưới nút và auto stop khi hết giờ
-        // Khởi động đếm ngược hiển thị dưới nút và auto stop khi hết giờ
         private void StartExpiryCountdown(DateTimeOffset until, string mode)
         {
-            // ✅ Chuẩn hoá về LOCAL để hiển thị & tính giờ cho đúng với đồng hồ máy
-            var localUntil = until.ToLocalTime();
-            _runExpiresAt = localUntil;
+            _runExpiresAt = until;
             _expireMode = mode;
 
             // Cập nhật ngay 1 lần
@@ -4489,7 +4585,7 @@ Ví dụ không hợp lệ:
             {
                 try
                 {
-                    var now = DateTimeOffset.Now;          // ❗ Dùng Now (local), không dùng UtcNow nữa
+                    var now = DateTimeOffset.UtcNow;
                     var left = (_runExpiresAt ?? now) - now;
 
                     if (left <= TimeSpan.Zero)
@@ -4539,8 +4635,6 @@ Ví dụ không hợp lệ:
             }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         }
 
-
-
         private void StopExpiryCountdown()
         {
             try { _expireTimer?.Dispose(); } catch { }
@@ -4561,8 +4655,7 @@ Ví dụ không hợp lệ:
                 return;
             }
 
-            // ❗ Dùng Now (local) để đồng bộ với _runExpiresAt (đã ToLocalTime ở trên)
-            var now = DateTimeOffset.Now;
+            var now = DateTimeOffset.UtcNow;
             var left = _runExpiresAt.Value - now;
 
             if (left <= TimeSpan.Zero)
@@ -4574,17 +4667,14 @@ Ví dụ không hợp lệ:
             string line;
             if (left.TotalDays >= 1)
             {
-                // Ví dụ: "Còn lại: 1 ngày 07:12:34  |  Hết hạn: 17/11/2025 20:30"
                 line = $"Còn lại: {Math.Floor(left.TotalDays)} ngày {left:hh\\:mm\\:ss}  |  Hết hạn: {_runExpiresAt:dd/MM/yyyy HH:mm}";
             }
             else
             {
-                // Dưới 1 ngày chỉ hiện giờ/phút/giây
                 line = $"Còn lại: {left:hh\\:mm\\:ss}";
             }
             LblExpire.Text = line;
         }
-
 
         // Helper build script với tham số interval (ms)
         private static string BuildHomeAutostartJs(int intervalMs)
@@ -5346,15 +5436,15 @@ Ví dụ không hợp lệ:
                     return false;
                 }
             }
-            //else if (idx == 2) // 3. Chuỗi I/N
-            //{
-            //    if (!ValidateSeqNI(T(TxtChuoiCau), out var err))
-            //    {
-            //        SetError(LblSeqError, err);
-            //        BringBelow(TxtChuoiCau);
-            //        return false;
-            //    }
-            //}
+            else if (idx == 2) // 3. Chuỗi I/N
+            {
+                if (!ValidateSeqNI(T(TxtChuoiCau), out var err))
+                {
+                    SetError(LblSeqError, err);
+                    BringBelow(TxtChuoiCau);
+                    return false;
+                }
+            }
             else if (idx == 1) // 2. Thế C/L
             {
                 if (!ValidatePatternsCL(T(TxtTheCau), out var err))
@@ -5364,15 +5454,15 @@ Ví dụ không hợp lệ:
                     return false;
                 }
             }
-            //else if (idx == 3) // 4. Thế I/N
-            //{
-            //    if (!ValidatePatternsNI(T(TxtTheCau), out var err))
-            //    {
-            //        SetError(LblPatError, err);
-            //        BringBelow(TxtTheCau);
-            //        return false;
-            //    }
-            //}
+            else if (idx == 3) // 4. Thế I/N
+            {
+                if (!ValidatePatternsNI(T(TxtTheCau), out var err))
+                {
+                    SetError(LblPatError, err);
+                    BringBelow(TxtTheCau);
+                    return false;
+                }
+            }
 
             // Chiến lược 5 không cần input
             return true;

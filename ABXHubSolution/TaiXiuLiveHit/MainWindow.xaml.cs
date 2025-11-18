@@ -1158,18 +1158,36 @@ Ví dụ không hợp lệ:
                                         {
                                             try
                                             {
-                                                // Progress / % thời gian
-                                                if (snap.prog.HasValue)
+                                                // Progress / thời gian (giây)
+                                                const double MaxSec = 45.0;
+                                                var prog = snap.prog;
+
+                                                if (prog.HasValue)
                                                 {
-                                                    var p = Math.Max(0, Math.Min(1, snap.prog.Value));
-                                                    if (PrgBet != null) PrgBet.Value = p;
-                                                    if (LblProg != null) LblProg.Text = $"{(int)Math.Round(p * 100)}%";
+                                                    var sec = Math.Clamp(prog.Value, 0.0, MaxSec);
+
+                                                    if (PrgBet != null)
+                                                    {
+                                                        // thanh progress chạy từ 0..45 giây
+                                                        if (PrgBet.Maximum != MaxSec)
+                                                            PrgBet.Maximum = MaxSec;
+
+                                                        PrgBet.Value = sec;
+                                                    }
+
+                                                    if (LblProg != null)
+                                                        LblProg.Text = $"{(int)Math.Round(MaxSec * prog.Value)}s";
                                                 }
                                                 else
                                                 {
-                                                    if (PrgBet != null) PrgBet.Value = 0;
-                                                    if (LblProg != null) LblProg.Text = "-";
+                                                    if (PrgBet != null)
+                                                        PrgBet.Value = 0;
+
+                                                    if (LblProg != null)
+                                                        LblProg.Text = "-";
                                                 }
+
+
 
                                                 // Kết quả gần nhất từ chuỗi seq
                                                 var seqStrLocal = snap.seq ?? "";
@@ -1298,11 +1316,11 @@ Ví dụ không hợp lệ:
                                     {
                                         await Dispatcher.InvokeAsync(() =>
                                         {
-                                            if (!string.IsNullOrWhiteSpace(uname) && TxtUser != null)
-                                            {
-                                                if (string.IsNullOrWhiteSpace(TxtUser.Text) || TxtUser.Text != uname)
-                                                    TxtUser.Text = uname;
-                                            }
+                                            //if (!string.IsNullOrWhiteSpace(uname) && TxtUser != null)
+                                            //{
+                                            //    if (string.IsNullOrWhiteSpace(TxtUser.Text) || TxtUser.Text != uname)
+                                            //        TxtUser.Text = uname;
+                                            //}
                                             if (LblUserName != null) LblUserName.Text = uname;
                                             if (LblAmount != null) LblAmount.Text = bal;
                                         });

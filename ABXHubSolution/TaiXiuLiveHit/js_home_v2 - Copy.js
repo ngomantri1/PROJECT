@@ -751,7 +751,7 @@
         const balText = S.balance ? S.balance : (loggedIn ? '0' : '(?)');
         const L = [
             '• URL : ' + location.href,
-            '• Tên đăng nhập: ' + (S.username ? S.username : '(?)'),
+            '• Tên nhân vật: ' + (S.username ? S.username : '(?)'),
             '• Tài khoản: ' + balText,
             '• Title: ' + document.title,
             '• Has Tài Xỉu: ' + String(live)

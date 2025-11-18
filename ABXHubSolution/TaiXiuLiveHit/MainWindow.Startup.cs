@@ -42,7 +42,7 @@ namespace TaiXiuLiveHit
                     var asmDir = Path.GetDirectoryName(typeof(MainWindow).Assembly.Location)!;
                     var webDir = Path.Combine(asmDir, "web");
                     if (Directory.Exists(webDir))
-                        host.Web.MapFolder("xoc-dia-live-hit.local", webDir);
+                        host.Web.MapFolder("tai-xiu-live-hit.local", webDir);
                 }
                 catch
                 {

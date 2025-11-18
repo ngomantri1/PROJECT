@@ -16,7 +16,7 @@ namespace TaiXiuLiveHit
         private IGameHostContext? _host;   // giữ lại để báo ngược về Hub
 
         public string Name => "Tài Xỉu Live Hit";
-        public string Slug => "xoc-dia-live-hit";
+        public string Slug => "tai-xiu-live-hit";
 
         public UserControl CreateView(IGameHostContext host)
         {

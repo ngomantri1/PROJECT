@@ -1191,7 +1191,7 @@
                                                     <TextBlock
                                                         VerticalAlignment="Center"
                                                         Style="{StaticResource CapsLabel}"
-                                                        Text="TÊN ĐĂNG NHẬP" />
+                                                        Text="TÊN NHÂN VẬT" />
                                                 </Border>
                                                 <Border Grid.Column="1" Style="{StaticResource GhostQMid}">
                                                     <TextBlock

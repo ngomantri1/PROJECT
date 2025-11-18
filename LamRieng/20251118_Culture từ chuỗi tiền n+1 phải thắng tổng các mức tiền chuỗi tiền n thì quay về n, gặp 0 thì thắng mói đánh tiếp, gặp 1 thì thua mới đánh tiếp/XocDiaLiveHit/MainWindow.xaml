@@ -1,19 +1,19 @@
 <Window
-    x:Class="XocDiaSoiLiveKH24.MainWindow"
+    x:Class="XocDiaLiveHit.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:local="clr-namespace:XocDiaSoiLiveKH24"
+    xmlns:local="clr-namespace:XocDiaLiveHit"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
-    Title="Xóc Đĩa Sới Live KH24 (Automino 0978.248.822)"
+    Title="AutoBet Xóc Đĩa Live HIT,GO88,NET88 (Automino 0978.248.822)"
     Width="1366"
     Height="768"
     Background="#F0F2F5"
     Closing="Window_Closing"
     FontFamily="Segoe UI, Segoe UI Variable, Arial"
     FontSize="14"
-    Icon="pack://application:,,,/XocDiaSoiLiveKH24;component/Assets/AppIcon.ico"
+    Icon="pack://application:,,,/XocDiaLiveHit;component/Assets/AppIcon.ico"
     Loaded="Window_Loaded"
     SnapsToDevicePixels="True"
     TextOptions.TextFormattingMode="Display"
@@ -505,7 +505,7 @@
                                         x:Name="RowChienLuoc"
                                         Grid.Row="0"
                                         Grid.ColumnSpan="2"
-                                        IsEnabled="True"
+                                        IsEnabled="False"
                                         Visibility="Visible">
                                         <!--  Visibility="Visible" là hiện, Visibility="Collapsed" là ẩn  -->
                                         <!--  nested grid: 2 cột label + value để giữ layout thẳng hàng  -->
@@ -531,22 +531,24 @@
                                             SelectedIndex="4">
                                             <ComboBoxItem Content="1) Chuỗi cầu C/L (chẵn/lẻ tự nhập)" />
                                             <ComboBoxItem Content="2) Thế cầu C/L (chẵn/lẻ tự nhập)" />
-                                            <ComboBoxItem Content="3) Bám cầu trước (thông minh)" />
-                                            <ComboBoxItem Content="4) Cửa đặt ngẫu nhiên" />
-                                            <ComboBoxItem Content="5) Bám cầu C/L theo thống kê AI" />
-                                            <ComboBoxItem Content="6) Xu hướng chuyển trạng thái" />
-                                            <ComboBoxItem Content="7) Run-length (dài-chuỗi)" />
-                                            <ComboBoxItem Content="8) Chuyên gia bỏ phiếu" />
-                                            <ComboBoxItem Content="9) Lịch chẻ 10 tay" />
-                                            <ComboBoxItem Content="10) KNN chuỗi con" />
-                                            <ComboBoxItem Content="11) Lịch hai lớp" />
-                                            <ComboBoxItem Content="12) AI học tại chỗ (n-gram)" />
-                                            <ComboBoxItem Content="13) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime)" />
-                                            <ComboBoxItem Content="14) Top10 tích lũy (khởi từ 50 C/L)" />
+                                            <ComboBoxItem Content="3) Chuỗi cầu I/N (Ít/Nhiều, tự nhập)" />
+                                            <ComboBoxItem Content="4) Thế cầu I/N (Ít/Nhiều, tự nhập)" />
+                                            <ComboBoxItem Content="5) Bám cầu trước (thông minh)" />
+                                            <ComboBoxItem Content="6) Cửa đặt ngẫu nhiên" />
+                                            <ComboBoxItem Content="7) Bám cầu C/L theo thống kê AI" />
+                                            <ComboBoxItem Content="8) Xu hướng chuyển trạng thái" />
+                                            <ComboBoxItem Content="9) Run-length (dài-chuỗi)" />
+                                            <ComboBoxItem Content="10) Chuyên gia bỏ phiếu" />
+                                            <ComboBoxItem Content="11) Lịch chẻ 10 tay" />
+                                            <ComboBoxItem Content="12) KNN chuỗi con" />
+                                            <ComboBoxItem Content="13) Lịch hai lớp" />
+                                            <ComboBoxItem Content="14) AI học tại chỗ (n-gram)" />
+                                            <ComboBoxItem Content="15) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime)" />
+                                            <ComboBoxItem Content="16) Top10 tích lũy (khởi từ 50 C/L)" />
                                         </ComboBox>
                                     </Grid>
 
-                                    <!--  HÀNG CHI TIẾT: CHUỖI CẦU (ẩn/hiện theo chọn 1)  -->
+                                    <!--  HÀNG CHI TIẾT: CHUỖI CẦU (ẩn/hiện theo chọn 1 hoặc 3)  -->
                                     <Grid
                                         x:Name="RowChuoiCau"
                                         Grid.Row="1"
@@ -625,7 +627,7 @@
                                         x:Name="RowQuanLyVon"
                                         Grid.Row="2"
                                         Grid.ColumnSpan="2"
-                                        IsEnabled="True"
+                                        IsEnabled="False"
                                         Visibility="Visible">
                                         <!--  Visibility="Visible" là hiện, Visibility="Collapsed" là ẩn  -->
                                         <Grid.ColumnDefinitions>
@@ -647,7 +649,7 @@
                                             Margin="{StaticResource ValueFieldMargin}"
                                             Padding="10,8"
                                             HorizontalAlignment="Stretch"
-                                            SelectedIndex="0"
+                                            SelectedIndex="4"
                                             SelectedValuePath="Tag">
                                             <ComboBoxItem Content="1. Tăng mức tiền khi thua, thắng quay về mức đầu" Tag="IncreaseWhenLose" />
                                             <ComboBoxItem Content="2. Tăng mức tiền khi thắng, thua quay về mức ban đầu" Tag="IncreaseWhenWin" />
@@ -1189,7 +1191,7 @@
                                                     <TextBlock
                                                         VerticalAlignment="Center"
                                                         Style="{StaticResource CapsLabel}"
-                                                        Text="TÊN NHÂN VẬT" />
+                                                        Text="TÊN ĐĂNG NHẬP" />
                                                 </Border>
                                                 <Border Grid.Column="1" Style="{StaticResource GhostQMid}">
                                                     <TextBlock

@@ -516,7 +516,6 @@
         });
         return b[Math.floor(b.length / 2)] || 0;
     }
-
     function clusterByX(items) {
         if (!items.length)
             return [];
@@ -568,118 +567,7 @@
             }); // TRÊN → DƯỚI
         return cols;
     }
-
-    // NEW: đọc chuỗi kết quả Tài/Xỉu từ dãy icLspThugonTai1..15
-    function readTxLineSeq() {
-        try {
-            if (!window.cc || !cc.director || !cc.director.getScene)
-                return {
-                    seq: '',
-                    which: null,
-                    cols: [],
-                    cells: []
-                };
-
-            var cells = [];
-            walkNodes(function (n) {
-                if (!n)
-                    return;
-                // dùng active() sau này đã khai báo, nhưng là function declaration nên được hoist
-                if (typeof active === 'function' && !active(n))
-                    return;
-
-                var sp = getComp(n, cc.Sprite);
-                if (!sp || !sp.spriteFrame)
-                    return;
-
-                var sfName = (sp.spriteFrame && sp.spriteFrame.name) ? String(sp.spriteFrame.name).toLowerCase() : '';
-                var name = String(n.name || '');
-                var tail = tailOf(n, 16).toLowerCase();
-
-                // chỉ lấy các node icLspThugonTai* trong vùng listhistory
-                if (!/iclspthugontai\d+/i.test(name) &&
-                    tail.indexOf('bordertabble/lsp/listhistory/iclspthugontai') === -1)
-                    return;
-
-                var r = wRect(n);
-                cells.push({
-                    node: n,
-                    name: name,
-                    sprite: sfName,
-                    x: r.x,
-                    y: r.y,
-                    w: r.w,
-                    h: r.h
-                });
-            });
-
-            if (!cells.length) {
-                return {
-                    seq: '',
-                    which: null,
-                    cols: [],
-                    cells: []
-                };
-            }
-
-            // Lọc theo hàng chính bằng median Y
-            var ys = [];
-            var i;
-            for (i = 0; i < cells.length; i++)
-                ys.push(cells[i].y);
-            ys.sort(function (a, b) {
-                return a - b;
-            });
-            var midY = ys[Math.floor(ys.length / 2)] || 0;
-            var thrY = 24;
-
-            var row = [];
-            for (i = 0; i < cells.length; i++) {
-                var c = cells[i];
-                if (Math.abs(c.y - midY) <= thrY)
-                    row.push(c);
-            }
-            if (!row.length)
-                row = cells.slice();
-
-            // Sắp xếp TRÁI → PHẢI
-            row.sort(function (a, b) {
-                return a.x - b.x;
-            });
-
-            var seq = '';
-            for (i = 0; i < row.length; i++) {
-                var s = row[i].sprite || '';
-                var ch = '?';
-                if (s.indexOf('taiden') !== -1)
-                    ch = 'T';
-                else if (s.indexOf('xiutrang') !== -1)
-                    ch = 'X';
-                seq += ch;
-            }
-
-            return {
-                seq: seq,
-                which: 'tx_line',
-                cols: [{
-                        cx: row.length ? (row[0].x + row[row.length - 1].x) / 2 : 0,
-                        items: row
-                    }
-                ],
-                cells: row
-            };
-        } catch (e) {
-            return {
-                seq: '',
-                which: null,
-                cols: [],
-                cells: []
-            };
-        }
-    }
-
-    // OLD logic: đọc TK theo bảng số 0–4 (thongke1/2), giữ lại làm fallback
-    function readTKSeqFromDigits() {
+    function readTKSeq() {
         var res = tkCellsPrefer('thongke2');
         var cells = res.cells,
         which = res.which;
@@ -712,14 +600,6 @@
             cols: cols,
             cells: cells
         };
-    }
-
-    // NEW wrapper: ưu tiên chuỗi T/X, nếu không có thì fallback TK số
-    function readTKSeq() {
-        var tx = readTxLineSeq();
-        if (tx && tx.seq && tx.seq.length)
-            return tx;
-        return readTKSeqFromDigits();
     }
 
     /* ---------------- resolver/auto ---------------- */
@@ -1226,24 +1106,10 @@
                 s = 45;
             secLeft = s;
         }
-        var session = (typeof readSessionSafe === 'function') ? readSessionSafe() : '';
-        if (!session)
-            session = '--';
-
-        var userName = '';
-        if (typeof window.readUsernameSafe === 'function') {
-            try {
-                userName = window.readUsernameSafe() || '';
-            } catch (_) {
-                userName = '';
-            }
-        }
         var base =
             '• Trạng thái: ' + S.status +
-            ' | Thời gian: ' + (secLeft == null ? '--' : (secLeft + 's')) +
-            ' | Phiên: ' + session + '\n' +
-            '• Username : ' + (userName || '--') +
-            ' | TK : ' + fmt(t.A) +
+            ' | Thời gian: ' + (secLeft == null ? '--' : (secLeft + 's')) + '\n' +
+            '• TK : ' + fmt(t.A) +
             '|TÀI: ' + fmt(t.T) +
             '|XỈU: ' + fmt(t.X) +
             '|SẤP ĐÔI: ' + fmt(t.SD) +
@@ -2526,190 +2392,6 @@
         return '';
     }
 
-    function readSeqSafe() {
-        try {
-            if (typeof readTKSeq === 'function') {
-                var r = readTKSeq();
-                return (r && r.seq) ? r.seq : '';
-            }
-        } catch (_) {}
-        return '';
-    }
-
-    function readSessionSafe() {
-        try {
-            var TAIL = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbSesionId';
-            var txt = '';
-
-            // 1) Thử lấy qua collectLabels() nếu đã có sẵn label
-            if (typeof collectLabels === 'function') {
-                var labels = collectLabels();
-                if (labels && labels.length) {
-                    var tailLc = TAIL.toLowerCase();
-                    for (var i = 0; i < labels.length; i++) {
-                        var l = labels[i];
-                        var tl = String(l.tail || l.tl || '').toLowerCase();
-                        if (!tl)
-                            continue;
-
-                        // ưu tiên khớp đúng tail, hoặc chứa lbSesionId
-                        if (tl === tailLc ||
-                            (tl.indexOf('lbsesionid') !== -1 && tl.indexOf('borderTabble'.toLowerCase()) !== -1)) {
-                            txt = String(l.text || '').trim();
-                            if (txt)
-                                break;
-                        }
-                    }
-                }
-            }
-
-            // 2) Fallback: đi trực tiếp theo tail như đoạn ông chủ test
-            if (!txt) {
-                function findByTail(tail) {
-                    if (!tail)
-                        return null;
-
-                    if (window.findNodeByTailCompat)
-                        return window.findNodeByTailCompat(tail);
-                    if (window.__abx_findNodeByTail)
-                        return window.__abx_findNodeByTail(tail);
-
-                    if (!(window.cc && cc.director && cc.director.getScene))
-                        return null;
-                    var scene = cc.director.getScene();
-                    var parts = String(tail).split('/').filter(Boolean);
-                    if (parts[0] === scene.name)
-                        parts.shift();
-
-                    var node = scene;
-                    for (var i = 0; i < parts.length; i++) {
-                        var name = parts[i];
-                        var kids = node.children || node._children || [];
-                        var found = null;
-                        for (var j = 0; j < kids.length; j++) {
-                            var kid = kids[j];
-                            if (kid && kid.name === name) {
-                                found = kid;
-                                break;
-                            }
-                        }
-                        if (!found)
-                            return null;
-                        node = found;
-                    }
-                    return node;
-                }
-
-                function getNodeText(node) {
-                    if (!node || !node.getComponent)
-                        return '';
-                    var lbl = node.getComponent(cc.Label);
-                    if (lbl && lbl.string != null)
-                        return String(lbl.string);
-                    var rt = node.getComponent(cc.RichText);
-                    if (rt && rt.string != null)
-                        return String(rt.string);
-                    return '';
-                }
-
-                var node = findByTail(TAIL);
-                if (node) {
-                    txt = getNodeText(node);
-                }
-            }
-
-            txt = String(txt || '').trim();
-            if (!txt)
-                return '';
-
-            // Chuẩn hoá dạng "#501667"
-            if (txt.charAt(0) !== '#' && /^\d+$/.test(txt)) {
-                txt = '#' + txt;
-            }
-
-            return txt;
-        } catch (_) {}
-        return '';
-    }
-
-    window.readSessionSafe = readSessionSafe;
-
-    // NEW: đọc Username an toàn theo tail Cocos
-    function readUsernameSafe() {
-        try {
-            if (!window.cc || !window.cc.director || !window.cc.director.getScene)
-                return '';
-
-            // helper: tìm node theo tail Cocos
-            function findByTail(tail) {
-                if (!tail)
-                    return null;
-
-                // ưu tiên các hàm ông chủ đã tiêm
-                if (window.findNodeByTailCompat)
-                    return window.findNodeByTailCompat(tail);
-                if (window.__abx_findNodeByTail)
-                    return window.__abx_findNodeByTail(tail);
-
-                // fallback: tự lần từ scene
-                var scene = window.cc.director.getScene();
-                if (!scene)
-                    return null;
-
-                var parts = String(tail).split('/').filter(Boolean);
-                if (parts[0] === scene.name)
-                    parts.shift();
-
-                var node = scene;
-                for (var i = 0; i < parts.length; i++) {
-                    var name = parts[i];
-                    var kids = node.children || node._children || [];
-                    var found = null;
-                    for (var j = 0; j < kids.length; j++) {
-                        if (kids[j] && kids[j].name === name) {
-                            found = kids[j];
-                            break;
-                        }
-                    }
-                    if (!found)
-                        return null;
-                    node = found;
-                }
-                return node;
-            }
-
-            function getNodeText(node) {
-                if (!node || !node.getComponent)
-                    return '';
-                var lbl = node.getComponent(cc.Label);
-                if (lbl && lbl.string != null)
-                    return String(lbl.string);
-                var rt = node.getComponent(cc.RichText);
-                if (rt && rt.string != null)
-                    return String(rt.string);
-                return '';
-            }
-
-            // tail Username
-            var tail = 'MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/NameUser';
-            var node = findByTail(tail);
-            if (!node)
-                return '';
-
-            var txt = getNodeText(node) || '';
-            txt = String(txt).trim();
-            if (!txt)
-                return '';
-
-            // chuẩn hoá khoảng trắng
-            return txt.replace(/\s+/g, ' ');
-        } catch (_) {
-            return '';
-        }
-    }
-
-    window.readUsernameSafe = readUsernameSafe;
-
     // Bắt đầu bắn snapshot định kỳ {abx:'tick', prog, totals, seq, status}
     window.__cw_startPush = function (tickMs) {
         try {
@@ -2741,7 +2423,8 @@
                 var timePercent = null;
                 var timeText = '';
                 if (typeof p === 'number' && !isNaN(p)) {
-                    var sec = Math.round(p * 45);
+                    // p ∈ [0,1] -> đếm ngược từ 45s về 0s
+                    var sec = Math.round((1 - Math.max(0, Math.min(1, p))) * 45);
                     if (sec < 0)
                         sec = 0;
                     if (sec > 45)
@@ -2755,7 +2438,7 @@
                 var snap = {
                     abx: 'tick',
                     // prog: số giây còn lại 0..45
-                    prog: p,
+                    prog: timeSec,
                     timeSec: timeSec,
                     timePercent: timePercent,
                     timeText: timeText,
@@ -2765,7 +2448,6 @@
                     seq: seq,
                     last: last,
                     status: String(st || ''),
-                    session: (typeof readSessionSafe === 'function') ? readSessionSafe() : '',
                     ts: Date.now()
                 };
 
