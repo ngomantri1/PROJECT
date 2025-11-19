@@ -8,7 +8,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+
+    <!-- Mặc định: build FULL có kèm môi trường ThirdParty.
+         Khi build gói update nhẹ, truyền IncludeThirdPartyRuntime=false -->
+    <IncludeThirdPartyRuntime>true</IncludeThirdPartyRuntime>
   </PropertyGroup>
+
 
   <!-- Stamp để đổi tên exe khi Publish -->
   <PropertyGroup>
@@ -85,15 +90,15 @@
   </ItemGroup>
 
   <!-- ZIP fixed runtime -->
-  <ItemGroup>
+  <ItemGroup Condition="'$(IncludeThirdPartyRuntime)'=='true'">
     <None Include="ThirdParty\WebView2Fixed_win-x64.zip">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Never</CopyToPublishDirectory>
     </None>
   </ItemGroup>
 
-  <!-- Embed ZIP ở Release -->
-  <ItemGroup Condition="'$(Configuration)'=='Release'">
+  <!-- Embed ZIP ở Release (chỉ với bản FULL có môi trường) -->
+  <ItemGroup Condition="'$(Configuration)'=='Release' and '$(IncludeThirdPartyRuntime)'=='true'">
     <EmbeddedResource Include="ThirdParty\WebView2Fixed_win-x64.zip">
       <LogicalName>AutoBetHub.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
     </EmbeddedResource>

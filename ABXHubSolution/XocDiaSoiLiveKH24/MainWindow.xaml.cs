@@ -4403,11 +4403,36 @@ Ví dụ không hợp lệ:
         {
             try
             {
-                using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(8) };
+                // ÉP TLS 1.2 + tăng timeout cho các VPS/máy cũ
+                using var http = new HttpClient(
+                    new HttpClientHandler
+                    {
+                        SslProtocols = System.Security.Authentication.SslProtocols.Tls12
+                    })
+                {
+                    Timeout = TimeSpan.FromSeconds(20)
+                };
+
+                // Một số nơi GitHub yêu cầu User-Agent rõ ràng
+                http.DefaultRequestHeaders.TryAddWithoutValidation(
+                    "User-Agent",
+                    "ABX5-LicenseChecker/1.0");
+
                 var uname = Uri.EscapeDataString(username);
-                var url = $"https://raw.githubusercontent.com/{LicenseOwner}/{LicenseRepo}/{LicenseBranch}/{LicenseNameGame}/{uname}.json";
+                var url =
+                    $"https://raw.githubusercontent.com/{LicenseOwner}/{LicenseRepo}/{LicenseBranch}/{LicenseNameGame}/{uname}.json";
+
                 var json = await http.GetStringAsync(url);
-                return JsonSerializer.Deserialize<LicenseDoc>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                return JsonSerializer.Deserialize<LicenseDoc>(
+                    json,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch (TaskCanceledException ex)
+            {
+                // Bắt riêng timeout để nhìn log cho rõ
+                Log("[License] fetch timeout: " + ex.Message);
+                return null; // phía trên vẫn xử lý lic == null như cũ
             }
             catch (Exception ex)
             {
@@ -4415,6 +4440,8 @@ Ví dụ không hợp lệ:
                 return null;
             }
         }
+
+
 
         // Acquire lease 1 lần (KHÔNG renew theo yêu cầu)
         private async Task<bool> AcquireLeaseOnceAsync(string username)
