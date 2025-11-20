@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
-    <Version>25.11.20.1</Version>
+
     <!-- Mặc định: build FULL có kèm môi trường ThirdParty.
          Khi build gói update nhẹ, truyền IncludeThirdPartyRuntime=false -->
     <IncludeThirdPartyRuntime>false</IncludeThirdPartyRuntime>
@@ -17,7 +17,7 @@
 
   <!-- Stamp để đổi tên exe khi Publish -->
   <PropertyGroup>
-    <BuildStamp Condition="'$(BuildStamp)'==''">$([System.DateTime]::Now.ToString("yy.MM.dd.HHmmss"))</BuildStamp>
+    <BuildStamp Condition="'$(BuildStamp)'==''">$([System.DateTime]::Now.ToString("yyMMdd-HHmmss"))</BuildStamp>
   </PropertyGroup>
 
   <!-- ===== Debug ===== -->
@@ -29,23 +29,17 @@
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
 
-<!-- ===== Release (single-file exe) ===== -->
-<PropertyGroup Condition="'$(Configuration)'=='Release'">
-  <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-  <!-- Nếu IncludeThirdPartyRuntime=true (bản FULL) => build self-contained
-       Nếu IncludeThirdPartyRuntime=false (bản UPDATE nhẹ) => framework-dependent -->
-  <SelfContained Condition="'$(IncludeThirdPartyRuntime)'=='true'">true</SelfContained>
-  <SelfContained Condition="'$(IncludeThirdPartyRuntime)'=='false'">false</SelfContained>
-  <PublishSingleFile>true</PublishSingleFile>
-  <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-  <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
-  <EnableCompressionInSingleFile Condition="'$(IncludeThirdPartyRuntime)'=='true'">true</EnableCompressionInSingleFile>
-  <EnableCompressionInSingleFile Condition="'$(IncludeThirdPartyRuntime)'=='false'">false</EnableCompressionInSingleFile>
-  <PublishTrimmed>false</PublishTrimmed>
-  <DebugType>embedded</DebugType>
-</PropertyGroup>
-
-
+  <!-- ===== Release (single-file exe) ===== -->
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
 
   <!-- Bắt buộc: tham chiếu core -->
   <ItemGroup>
@@ -105,18 +99,11 @@
 
   <!-- Embed ZIP ở Release (chỉ với bản FULL có môi trường) -->
   <ItemGroup Condition="'$(Configuration)'=='Release' and '$(IncludeThirdPartyRuntime)'=='true'">
-    <EmbeddedResource Update="ThirdParty\WebView2Fixed_win-x64.zip">
+    <EmbeddedResource Include="ThirdParty\WebView2Fixed_win-x64.zip">
       <LogicalName>AutoBetHub.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 
-  <!-- KHI KHÔNG DÙNG MÔI TRƯỜNG: loại bỏ toàn bộ file trong ThirdParty khỏi build/publish -->
-  <ItemGroup Condition="'$(IncludeThirdPartyRuntime)'=='false'">
-    <None Remove="ThirdParty\**\*" />
-    <Content Remove="ThirdParty\**\*" />
-    <EmbeddedResource Remove="ThirdParty\**\*" />
-  </ItemGroup>
-  
   <!-- Icon ứng dụng -->
   <ItemGroup>
     <Resource Include="Assets\AppIcon.ico" />
@@ -139,7 +126,7 @@
   <Target Name="RenamePublishedExeWithStamp" AfterTargets="Publish" Condition="'$(Configuration)'=='Release'">
     <PropertyGroup>
       <PublishedExe>$(PublishDir)$(AssemblyName).exe</PublishedExe>
-      <StampedExe>$(PublishDir)$(AssemblyName).$(BuildStamp).exe</StampedExe>
+      <StampedExe>$(PublishDir)$(AssemblyName)_$(BuildStamp).exe</StampedExe>
     </PropertyGroup>
     <Move SourceFiles="$(PublishedExe)" DestinationFiles="$(StampedExe)" Condition="Exists('$(PublishedExe)')" />
   </Target>

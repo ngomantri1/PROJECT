@@ -10,7 +10,8 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf; // cần để dùng WebView2
-
+using System.Diagnostics;
+using System.Net.Http;
 using ABX.Core;
 using AutoBetHub.Hosting;
 using AutoBetHub.Services;
@@ -28,7 +29,10 @@ namespace AutoBetHub
 
         // runtime unified: mọi thứ dồn về đây
         private readonly string _localRoot;
+        private readonly string _thirdPartyDir;
         private readonly string _localPluginsDir;
+        // HttpClient dùng chung cho việc check update
+        private static readonly HttpClient _httpClient = new();
 
         private HostContext _hostcx = default!;
 
@@ -41,6 +45,10 @@ namespace AutoBetHub
 
         // cờ mới: user đã bấm đóng trong khi vẫn còn plugin
         private bool _pendingClose;
+        const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
+        const string LicenseRepo = "AutoBetHub";  // <- đổi theo repo của bạn
+        const string LicenseBranch = "main";          // <- nhánh
+        const string UrlUpateFile = "https://drive.google.com/drive/folders/1cpK3SieshYEpkMWWDpUpQgSH8HBm9CM_";
 
         public MainWindow()
         {
@@ -54,6 +62,10 @@ namespace AutoBetHub
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "AutoBetHub");
             Directory.CreateDirectory(_localRoot);
+
+            // Thư mục môi trường tách riêng: %LocalAppData%\AutoBetHub\ThirdParty
+            _thirdPartyDir = Path.Combine(_localRoot, "ThirdParty");
+            Directory.CreateDirectory(_thirdPartyDir);
 
             var localLogs = Path.Combine(_localRoot, "logs");
             Directory.CreateDirectory(localLogs);
@@ -115,9 +127,22 @@ namespace AutoBetHub
                     var webview2Data = Path.Combine(_localRoot, "WebView2");
                     Directory.CreateDirectory(webview2Data);
 
+                    // Ưu tiên dùng runtime fixed nếu đã được bung ở %LocalAppData%\AutoBetHub\ThirdParty\WebView2Fixed_win-x64
+                    string? browserFolder = null;
+                    var fixedRuntime = Path.Combine(_thirdPartyDir, "WebView2Fixed_win-x64");
+                    if (Directory.Exists(fixedRuntime))
+                    {
+                        browserFolder = fixedRuntime;
+                        _log.Info("[Home] Using fixed WebView2 runtime at " + fixedRuntime);
+                    }
+                    else
+                    {
+                        _log.Info("[Home] Using Evergreen WebView2 runtime (no ThirdParty\\WebView2Fixed_win-x64 found).");
+                    }
+
                     // tạo environment để nó KHÔNG tạo thư mục cạnh exe nữa
                     var env = await CoreWebView2Environment.CreateAsync(
-                        browserExecutableFolder: null,
+                        browserExecutableFolder: browserFolder,
                         userDataFolder: webview2Data,
                         options: null);
 
@@ -125,8 +150,8 @@ namespace AutoBetHub
 
                     try
                     {
-                        var ver = CoreWebView2Environment.GetAvailableBrowserVersionString(null);
-                        _log.Info($"[Home] WebView2 ready. Version(Evergreen)={ver ?? "-"}");
+                        var ver = CoreWebView2Environment.GetAvailableBrowserVersionString(browserFolder);
+                        _log.Info($"[Home] WebView2 ready. Version={ver ?? "-"}");
                     }
                     catch (Exception ex)
                     {
@@ -154,6 +179,8 @@ namespace AutoBetHub
 
                     ShowHub();
                     NavigateFile("hub.html");
+                    // kiểm tra bản mới 1 lần khi khởi động (auto = true)
+                    _ = CheckForUpdateAsync(true);
                 }
                 catch (Exception ex)
                 {
@@ -182,7 +209,10 @@ namespace AutoBetHub
 
         // ========== WebView2 <-> hub.html ==========
 
+        // message gửi từ hub.html: { cmd, slug?, file? }
         private sealed record WebMsg(string cmd, string? slug, string? file);
+
+        private sealed record UpdateManifest(string appVersion, string? downloadUrl, string? notes);
 
         private void HookWebMessages()
         {
@@ -208,17 +238,161 @@ namespace AutoBetHub
                             NavigateFile("hub.html");
                             break;
 
+                        case "checkUpdate":
+                            _log.Info("[Hub] checkUpdate from web UI.");
+                            // fire-and-forget, không chờ trong handler
+                            _ = CheckForUpdateAsync(false);
+                            break;
+
                         case "navigateLocal":
                             if (!string.IsNullOrWhiteSpace(msg.file))
                                 NavigateFile(msg.file!);
                             break;
                     }
+
                 }
                 catch (Exception ex)
                 {
                     _log.Error("WebMessageReceived error", ex);
                 }
             };
+        }
+
+        private static Version GetCurrentVersion()
+        {
+            try
+            {
+                var asm = Assembly.GetExecutingAssembly();
+
+                // Ưu tiên lấy từ AssemblyInformationalVersion (mapping với <Version> trong csproj)
+                var infoAttr = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>();
+                if (infoAttr != null)
+                {
+                    var raw = infoAttr.InformationalVersion ?? "";
+                    // cắt phần "+gitsha" nếu dùng kiểu 1.2.3+abcd
+                    var main = raw.Split('+')[0];
+                    if (Version.TryParse(main, out var vInfo))
+                        return vInfo;
+                }
+
+                // Fallback: AssemblyVersion
+                var ver = asm.GetName().Version;
+                return ver ?? new Version(1, 0, 0, 0);
+            }
+            catch
+            {
+                return new Version(1, 0, 0, 0);
+            }
+        }
+
+
+        /// <summary>
+        /// Kiểm tra bản cập nhật trên GitHub.
+        /// auto = true: chỉ thông báo khi có bản mới hoặc lỗi lớn.
+        /// auto = false: bấm nút "Cập nhật" -> luôn báo kết quả cho người dùng.
+        /// </summary>
+        private async Task CheckForUpdateAsync(bool auto)
+        {
+            // TODO: Ông chủ sửa lại link này cho đúng repo của mình
+            const string ManifestUrl = $"https://raw.githubusercontent.com/{LicenseOwner}/{LicenseRepo}/{LicenseBranch}/autobethub-manifest.json";
+
+            try
+            {
+                _log.Info("[Update] Checking manifest at: " + ManifestUrl);
+
+                using var resp = await _httpClient.GetAsync(ManifestUrl);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    _log.Warn($"[Update] Manifest HTTP {(int)resp.StatusCode}");
+                    if (!auto)
+                        MessageBox.Show(
+                            "Không kiểm tra được bản cập nhật (HTTP " + (int)resp.StatusCode + ").",
+                            "Cập nhật",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Information);
+                    return;
+                }
+
+                var json = await resp.Content.ReadAsStringAsync();
+                var manifest = JsonSerializer.Deserialize<UpdateManifest>(json);
+                if (manifest == null || string.IsNullOrWhiteSpace(manifest.appVersion))
+                {
+                    _log.Warn("[Update] Manifest invalid or missing appVersion.");
+                    if (!auto)
+                        MessageBox.Show(
+                            "Dữ liệu cập nhật không hợp lệ.",
+                            "Cập nhật",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Information);
+                    return;
+                }
+
+                var current = GetCurrentVersion();
+                var remote = new Version(manifest.appVersion);
+
+                _log.Info($"[Update] Local={current}, Remote={remote}");
+
+                if (remote <= current)
+                {
+                    if (!auto)
+                        MessageBox.Show(
+                            $"Bạn đang dùng phiên bản mới nhất ({current}).",
+                            "Cập nhật",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Information);
+                    return;
+                }
+
+                var notes = string.IsNullOrWhiteSpace(manifest.notes) ? "(Không có ghi chú)" : manifest.notes;
+                var msg =
+                    $"Đã có phiên bản mới {remote} (hiện tại {current}).\n\n" +
+                    $"Ghi chú:\n{notes}\n\n" +
+                    $"Mở trang tải bản mới trên trình duyệt?";
+
+                var result = MessageBox.Show(
+                    msg,
+                    "Cập nhật AutoBetHub",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Information);
+
+                if (result != MessageBoxResult.Yes)
+                    return;
+
+                var url = manifest.downloadUrl;
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    // fallback: mở trang Releases
+                    url = UrlUpateFile;
+                }
+
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = url,
+                        UseShellExecute = true
+                    });
+                }
+                catch (Exception exOpen)
+                {
+                    _log.Error("[Update] Open browser failed", exOpen);
+                    MessageBox.Show(
+                        "Không mở được trình duyệt:\n" + exOpen.Message,
+                        "Cập nhật",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Error("[Update] CheckForUpdateAsync failed", ex);
+                if (!auto)
+                    MessageBox.Show(
+                        "Có lỗi khi kiểm tra bản cập nhật:\n" + ex.Message,
+                        "Cập nhật",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+            }
         }
 
         private void HookHomeNavEvents()
