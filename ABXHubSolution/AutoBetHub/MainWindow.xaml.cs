@@ -46,7 +46,7 @@ namespace AutoBetHub
         // cờ mới: user đã bấm đóng trong khi vẫn còn plugin
         private bool _pendingClose;
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
-        const string LicenseRepo = "AutoBetHub";  // <- đổi theo repo của bạn
+        const string LicenseRepo = "version";  // <- đổi theo repo của bạn
         const string LicenseBranch = "main";          // <- nhánh
         const string UrlUpateFile = "https://drive.google.com/drive/folders/1cpK3SieshYEpkMWWDpUpQgSH8HBm9CM_";
 
