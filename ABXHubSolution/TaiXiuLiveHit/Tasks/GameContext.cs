@@ -56,7 +56,7 @@ namespace TaiXiuLiveHit.Tasks
         public Action<bool> SetCooldown { get; init; }
 
         // --- UI updaters (được gán từ MainWindow) ---
-        public Action<string>? UiSetSide;     // "CHAN"/"LE"
+        public Action<string>? UiSetSide;     // "TAI"/"XIU"
         public Action<double>? UiSetStake;    // tiền đang đánh
         public Action<double>? UiAddWin;      // cộng/trừ tiền thắng lũy kế
         public Action<bool>? UiWinLoss;       // true = win, false = loss

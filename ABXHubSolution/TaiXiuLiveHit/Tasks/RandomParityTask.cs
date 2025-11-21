@@ -14,7 +14,7 @@ namespace TaiXiuLiveHit.Tasks
         private static readonly ThreadLocal<Random> _rng =
             new(() => new Random(unchecked(Environment.TickCount * 31 + Environment.CurrentManagedThreadId)));
 
-        private static string DecideRandomSide() => (_rng.Value!.Next(2) == 0) ? "CHAN" : "LE";
+        private static string DecideRandomSide() => (_rng.Value!.Next(2) == 0) ? "TAI" : "XIU";
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
@@ -28,7 +28,7 @@ namespace TaiXiuLiveHit.Tasks
                 await WaitUntilNewRoundStart(ctx, ct);
 
                 var snap = ctx.GetSnap();
-                string baseSeq = snap?.seq ?? string.Empty;
+                string baseSession = snap?.session ?? string.Empty;
 
                 string side = DecideRandomSide();
                 long stake;
@@ -47,7 +47,7 @@ namespace TaiXiuLiveHit.Tasks
 
                 await PlaceBet(ctx, side, stake, ct);
 
-                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {

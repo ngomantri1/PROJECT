@@ -30,8 +30,8 @@ namespace TaiXiuLiveHit.Tasks
 
         private static string DecideNextSide(string parity)
         {
-            if (parity.Length == 0) return "CHAN"; // mặc định
-            char lastParity = parity[^1];          // 'C' hoặc 'L'
+            if (parity.Length == 0) return "TAI"; // mặc định
+            char lastParity = parity[^1];          // 'T' hoặc 'X'
             var (seg1, _, seg3) = SplitSegments(parity);
 
             // Theo yêu cầu của bạn:
@@ -39,7 +39,7 @@ namespace TaiXiuLiveHit.Tasks
             // - seg1 < seg3  → ĐÁNH GIỐNG kết quả vừa về
             // - seg1 > seg3  → ĐÁNH GIỐNG kết quả vừa về
             bool sameAsLast = (seg1 != seg3);
-            char pick = sameAsLast ? lastParity : (lastParity == 'C' ? 'L' : 'C');
+            char pick = sameAsLast ? lastParity : (lastParity == 'T' ? 'X' : 'T');
             return ParityCharToSide(pick);
         }
 
@@ -56,7 +56,7 @@ namespace TaiXiuLiveHit.Tasks
 
                 var snap = ctx.GetSnap();
                 string parity = SeqToParityString(snap?.seq ?? "");
-                string baseSeq = snap?.seq ?? string.Empty;
+                string baseSession = snap?.session ?? string.Empty;
 
                 string side = DecideNextSide(parity);
                 long stake;
@@ -73,7 +73,7 @@ namespace TaiXiuLiveHit.Tasks
                 }
                 await PlaceBet(ctx, side, stake, ct);
 
-                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {

@@ -21,7 +21,7 @@ namespace TaiXiuLiveHit.Tasks
 
         private static char DecideNext(char last, string seq)
         {
-            // seq: chỉ 'C'/'L', cũ->mới
+            // seq: chỉ 'T'/'X', cũ->mới
             if (seq.Length < 2) return last;
 
             int consider = Math.Min(WindowK + 1, seq.Length);
@@ -34,8 +34,8 @@ namespace TaiXiuLiveHit.Tasks
             return (flip > same) ? Opp(last) : last;
         }
 
-        private static char Opp(char c) => c == 'C' ? 'L' : 'C';
-        private static string ToSide(char c) => (c == 'C') ? "CHAN" : "LE";
+        private static char Opp(char t) => t == 'T' ? 'X' : 'T';
+        private static string ToSide(char t) => (t == 'T') ? "TAI" : "XIU";
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
@@ -49,7 +49,7 @@ namespace TaiXiuLiveHit.Tasks
 
                 var snap = ctx.GetSnap();
                 var parity = SeqToParityString(snap?.seq ?? "");
-                if (parity.Length == 0) parity = "C";
+                if (parity.Length == 0) parity = "T";
 
                 char last = parity[^1];
                 char next = DecideNext(last, parity);
@@ -70,7 +70,7 @@ namespace TaiXiuLiveHit.Tasks
                 ctx.Log?.Invoke($"[StateTrans] next={side}, stake={stake:N0}");
 
                 await PlaceBet(ctx, side, stake, ct);
-                bool win = await WaitRoundFinishAndJudge(ctx, side, snap?.seq ?? "", ct);
+                bool win = await WaitRoundFinishAndJudge(ctx, side, snap?.session ?? "", ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {

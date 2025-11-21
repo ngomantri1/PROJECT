@@ -142,18 +142,18 @@ namespace TaiXiuLiveHit
                 }
             }
 
-            SetImg("ImgCHAN", "Assets/side/CHAN.png");
-            SetImg("ImgLE", "Assets/side/LE.png");
+            SetImg("ImgTAI", "Assets/side/TAI.png");
+            SetImg("ImgXIU", "Assets/side/XIU.png");
             SetImg("ImgTHANG", "Assets/kq/THANG.png");
             SetImg("ImgTHUA", "Assets/kq/THUA.png");
 
             // giữ lại để các converter trong MainWindow dùng chung
             try
             {
-                if (dict["ImgCHAN"] is ImageSource chan) TaiXiuLiveHit.MainWindow.SharedIcons.SideChan = chan;
-                if (dict["ImgLE"] is ImageSource le) TaiXiuLiveHit.MainWindow.SharedIcons.SideLe = le;
-                if (dict["ImgCHAN"] is ImageSource chan2) TaiXiuLiveHit.MainWindow.SharedIcons.ResultChan = chan2;
-                if (dict["ImgLE"] is ImageSource le2) TaiXiuLiveHit.MainWindow.SharedIcons.ResultLe = le2;
+                if (dict["ImgTAI"] is ImageSource tai) TaiXiuLiveHit.MainWindow.SharedIcons.SideTai = tai;
+                if (dict["ImgXIU"] is ImageSource xiu) TaiXiuLiveHit.MainWindow.SharedIcons.SideXiu = xiu;
+                if (dict["ImgTAI"] is ImageSource tai2) TaiXiuLiveHit.MainWindow.SharedIcons.ResultTai = tai2;
+                if (dict["ImgXIU"] is ImageSource xiu2) TaiXiuLiveHit.MainWindow.SharedIcons.ResultXiu = xiu2;
                 if (dict["ImgTHANG"] is ImageSource win) TaiXiuLiveHit.MainWindow.SharedIcons.Win = win;
                 if (dict["ImgTHUA"] is ImageSource loss) TaiXiuLiveHit.MainWindow.SharedIcons.Loss = loss;
             }
@@ -170,13 +170,13 @@ namespace TaiXiuLiveHit
 
                 TryLog(host, "[XocDia] Plugin asm path: " + asmPath);
 
-                var probe1 = Path.Combine(asmDir, "Assets", "side", "CHAN.png");
-                var probe2 = Path.Combine(asmDir, "assets", "side", "CHAN.png");
+                var probe1 = Path.Combine(asmDir, "Assets", "side", "TAI.png");
+                var probe2 = Path.Combine(asmDir, "assets", "side", "TAI.png");
 
                 TryLog(host, "[XocDia] Probe file (Assets): " + probe1 + " exists=" + File.Exists(probe1));
                 TryLog(host, "[XocDia] Probe file (assets): " + probe2 + " exists=" + File.Exists(probe2));
 
-                TryLog(host, "[XocDia] Expecting URI: /TaiXiuLiveHit;component/Assets/side/CHAN.png");
+                TryLog(host, "[XocDia] Expecting URI: /TaiXiuLiveHit;component/Assets/side/TAI.png");
             }
             catch (Exception ex)
             {

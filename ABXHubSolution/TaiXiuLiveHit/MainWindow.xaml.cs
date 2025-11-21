@@ -41,19 +41,19 @@ namespace TaiXiuLiveHit
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Resources (pack URI).
     internal static class FallbackIcons
     {
-        private const string SideChanPng = "Assets/side/CHAN.png";
-        private const string SideLePng = "Assets/side/LE.png";
-        private const string ResultChanPng = "Assets/side/CHAN.png";
-        private const string ResultLePng = "Assets/side/LE.png";
+        private const string SideTaiPng = "Assets/side/TAI.png";
+        private const string SideXiuPng = "Assets/side/XIU.png";
+        private const string ResultTaiPng = "Assets/side/TAI.png";
+        private const string ResultXiuPng = "Assets/side/XIU.png";
         private const string WinPng = "Assets/kq/THANG.png";
         private const string LossPng = "Assets/kq/THUA.png";
 
-        private static ImageSource? _sideChan, _sideLe, _resultChan, _resultLe, _win, _loss;
+        private static ImageSource? _sideTai, _sideXiu, _resultTai, _resultXiu, _win, _loss;
 
-        public static ImageSource? GetSideChan() => SharedIcons.SideChan ?? (_sideChan ??= Load(SideChanPng));
-        public static ImageSource? GetSideLe() => SharedIcons.SideLe ?? (_sideLe ??= Load(SideLePng));
-        public static ImageSource? GetResultChan() => SharedIcons.ResultChan ?? (_resultChan ??= Load(ResultChanPng));
-        public static ImageSource? GetResultLe() => SharedIcons.ResultLe ?? (_resultLe ??= Load(ResultLePng));
+        public static ImageSource? GetSideTai() => SharedIcons.SideTai ?? (_sideTai ??= Load(SideTaiPng));
+        public static ImageSource? GetSideXiu() => SharedIcons.SideXiu ?? (_sideXiu ??= Load(SideXiuPng));
+        public static ImageSource? GetResultTai() => SharedIcons.ResultTai ?? (_resultTai ??= Load(ResultTaiPng));
+        public static ImageSource? GetResultXiu() => SharedIcons.ResultXiu ?? (_resultXiu ??= Load(ResultXiuPng));
         public static ImageSource? GetWin() => SharedIcons.Win ?? (_win ??= Load(WinPng));
         public static ImageSource? GetLoss() => SharedIcons.Loss ?? (_loss ??= Load(LossPng));
 
@@ -101,8 +101,8 @@ namespace TaiXiuLiveHit
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
             var u = TextNorm.U(value?.ToString() ?? "");
-            if (u == "CHAN" || u == "C") return FallbackIcons.GetSideChan();
-            if (u == "LE" || u == "L") return FallbackIcons.GetSideLe();
+            if (u == "TAI" || u == "T") return FallbackIcons.GetSideTai();
+            if (u == "XIU" || u == "X") return FallbackIcons.GetSideXiu();
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -113,8 +113,8 @@ namespace TaiXiuLiveHit
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
             var u = TextNorm.U(value?.ToString() ?? "");
-            if (u == "CHAN" || u == "C") return FallbackIcons.GetResultChan();
-            if (u == "LE" || u == "L") return FallbackIcons.GetResultLe();
+            if (u == "TAI" || u == "T") return FallbackIcons.GetResultTai();
+            if (u == "XIU" || u == "X") return FallbackIcons.GetResultXiu();
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -168,10 +168,11 @@ namespace TaiXiuLiveHit
         private IBetTask _activeTask;
         private const int NiSeqMax = 50;
         private readonly System.Text.StringBuilder _niSeq = new(NiSeqMax);
+        private string _lastSeqLogged = "";
 
-        // Tổng C/L của ván đang diễn ra (để dùng khi ván vừa khép lại)
-        private long _roundTotalsC = 0;
-        private long _roundTotalsL = 0;
+        // Tổng T/X của ván đang diễn ra (để dùng khi ván vừa khép lại)
+        private long _roundTotalsT = 0;
+        private long _roundTotalsX = 0;
         private int _lastSeqLenNi = 0;
         private bool _lockMajorMinorUpdates = false;
         private string _baseSeq = "";
@@ -181,7 +182,7 @@ namespace TaiXiuLiveHit
         private System.Collections.Generic.List<long[]> _stakeChains = new();
         private long[] _stakeChainTotals = Array.Empty<long>();
 
-        private double _decisionPercent = 0.15; // 15% (0.15)
+        private double _decisionPercent = 0.22; // 10s (0.22)
 
         // Chống bắn trùng khi vừa cược
         private bool _cooldown = false;
@@ -257,20 +258,20 @@ namespace TaiXiuLiveHit
         const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/net88";
 
         // ===================== TOOLTIP TEXTS =====================
-        const string TIP_SEQ_CL =
-        @"Chuỗi CẦU (C/L) — Chiến lược 1
-• Ý nghĩa: C = CHẴN, L = LẺ (không phân biệt hoa/thường).
-• Cú pháp: chỉ gồm ký tự C hoặc L; ký tự khác không hợp lệ.
+        const string TIP_SEQ_TX =
+        @"Chuỗi CẦU (T/X) — Chiến lược 1
+• Ý nghĩa: T = TÀI, X = XỈU (không phân biệt hoa/thường).
+• Cú pháp: chỉ gồm ký tự T hoặc X; ký tự khác không hợp lệ.
 • Khoảng trắng/tab/xuống dòng: được phép; hệ thống tự bỏ qua.
 • Thứ tự đọc: từ trái sang phải; hết chuỗi sẽ lặp lại từ đầu.
 • Độ dài khuyến nghị: 2–50 ký tự.
 Ví dụ hợp lệ:
-  - CLLC
-  - C L L C
+  - TXXT
+  - T X X T
 Ví dụ không hợp lệ:
-  - C,X,L     (có dấu phẩy)
-  - CL1C      (có số)
-  - C L _ C   (ký tự ngoài C/L).";
+  - T,L,X     (có dấu phẩy)
+  - TX1T      (có số)
+  - T X _ T   (ký tự ngoài T/X).";
 
         const string TIP_SEQ_NI =
         @"Chuỗi CẦU (Ít/Nhiều) — Chiến lược 3
@@ -287,24 +288,24 @@ Ví dụ không hợp lệ:
   - IN1I      (có số)
   - I _ N I   (ký tự ngoài I/N).";
 
-        const string TIP_THE_CL =
-        @"Thế CẦU (C/L) — Chiến lược 2
-• Ý nghĩa: C = CHẴN, L = LẺ (không phân biệt hoa/thường).
+        const string TIP_THE_TX =
+        @"Thế CẦU (T/X) — Chiến lược 2
+• Ý nghĩa: T = TÀI, X = XỈU (không phân biệt hoa/thường).
 • Một quy tắc (mỗi dòng): <mẫu_quá_khứ> -> <cửa_kế_tiếp>  (hoặc dùng dấu - thay cho ->).
 • Phân tách nhiều quy tắc: bằng dấu ',', ';', '|', hoặc xuống dòng.
 • Khoảng trắng: được phép quanh ký hiệu và giữa các quy tắc; 
   Cho phép khoảng trắng BÊN TRONG <cửa_kế_tiếp>.
 • So khớp: xét K kết quả gần nhất với K = độ dài <mẫu_quá_khứ>; nếu khớp thì đặt theo <cửa_kế_tiếp>.
-• <cửa_kế_tiếp>: có thể là 1 ký tự (C/L) hoặc một chuỗi C/L (ví dụ: CLL).
+• <cửa_kế_tiếp>: có thể là 1 ký tự (T/X) hoặc một chuỗi T/X (ví dụ: TXX).
 • Độ dài khuyến nghị cho <mẫu_quá_khứ>: 1–10 ký tự.
 Ví dụ hợp lệ:
-  CCL -> C
-  LLL -> L C
-  CL  -> CLL
+  TXX -> T
+  XXX -> X T
+  TX  -> TXX
 Ví dụ không hợp lệ:
-  C, X, L -> C
-  CL -> C L
-  CL -> C1";
+  T, L, X -> T
+  TX -> T X
+  TX -> T1";
 
 
         const string TIP_THE_NI =
@@ -376,7 +377,6 @@ Ví dụ không hợp lệ:
 
 
 
-
         // ====== CONFIG ======
         private record AppConfig
         {
@@ -422,16 +422,16 @@ Ví dụ không hợp lệ:
             public DateTime At { get; set; }                 // Thời gian đặt
             public string Game { get; set; } = "Tài Xỉu live";
             public long Stake { get; set; }                  // Tiền cược
-            public string Side { get; set; } = "";           // CHAN/LE
-            public string Result { get; set; } = "";         // Kết quả "CHAN"/"LE"
+            public string Side { get; set; } = "";           // TAI/XIU
+            public string Result { get; set; } = "";         // Kết quả "TAI"/"XIU"
             public string WinLose { get; set; } = "";        // "Thắng"/"Thua"
             public long Account { get; set; }                // Số dư sau ván
         }
 
         public static class SharedIcons
         {
-            public static ImageSource? SideChan, SideLe;        // ảnh “Cửa đặt” CHẴN/LẺ
-            public static ImageSource? ResultChan, ResultLe;    // ảnh “Kết quả” CHẴN/LẺ
+            public static ImageSource? SideTai, SideXiu;        // ảnh “Cửa đặt” TÀI/XỈU
+            public static ImageSource? ResultTai, ResultXiu;    // ảnh “Kết quả” TÀI/XỈU
             public static ImageSource? Win, Loss;               // ảnh “Thắng/Thua”
         }
 
@@ -1092,11 +1092,40 @@ Ví dụ không hợp lệ:
                                     // Đổi tên biến JSON để không đụng 'doc'/'root' bên ngoài
                                     using var jdocTick = System.Text.Json.JsonDocument.Parse(msg);
                                     var jrootTick = jdocTick.RootElement;
-
                                     var snap = System.Text.Json.JsonSerializer.Deserialize<CwSnapshot>(msg);
                                     if (snap != null)
                                     {
+                                        // MỚI: log seq / session / username khi nhận tick từ JS để kiểm tra dữ liệu đẩy sang C#
+                                        try
+                                        {
+                                            var seqValRaw = snap.seq;
+                                            var seqVal = seqValRaw ?? "";
+                                            var sessionVal = snap.session ?? "";
+                                            var userVal = snap.username ?? "";
+
+                                            int secNow = 0;
+                                            if (snap.prog.HasValue)
+                                            {
+                                                secNow = (int)Math.Round(Math.Clamp(snap.prog.Value, 0.0, 45.0));
+                                            }
+
+                                            // Log khi bắt đầu phiên (sec=45), khi gần hết (sec=0),
+                                            // hoặc khi chuỗi kết quả thay đổi so với lần log trước
+                                            if (secNow == 0 || secNow == 45 ||
+                                                !string.Equals(seqValRaw, _lastSeqLogged, StringComparison.Ordinal))
+                                            {
+                                                _lastSeqLogged = seqValRaw ?? "";
+                                                Log($"[SNAP] tick sec={secNow} | seq=\"{seqVal}\" (len={seqVal.Length}) | session=\"{sessionVal}\" | user=\"{userVal}\"");
+                                            }
+                                        }
+                                        catch
+                                        {
+                                            // an toàn, không để văng lỗi
+                                        }
+
+
                                         // === NI-SEQUENCE & finalize đúng thời điểm (đuôi seq đổi) ===
+
                                         try
                                         {
                                             double progNow = snap.prog ?? 0;
@@ -1107,11 +1136,11 @@ Ví dụ không hợp lệ:
                                                 !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
                                             {
                                                 char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
-                                                bool winIsChan = (tail == '0' || tail == '2' || tail == '4');
+                                                bool winIsTai = (tail == 'T');
 
-                                                long prevC = _roundTotalsC, prevL = _roundTotalsL;
+                                                long prevC = _roundTotalsT, prevL = _roundTotalsX;
                                                 // Ni: nếu cửa THẮNG là cửa có tổng tiền lớn hơn trong ván đó => 'N', ngược lại 'I'
-                                                char ni = winIsChan ? ((prevC >= prevL) ? 'N' : 'I')
+                                                char ni = winIsTai ? ((prevC >= prevL) ? 'N' : 'I')
                                                                     : ((prevL >= prevC) ? 'N' : 'I');
 
                                                 _niSeq.Append(ni);
@@ -1121,7 +1150,7 @@ Ví dụ không hợp lệ:
                                                 Log($"[NI] add={ni} | seq={_niSeq} | tail={tail} | C={prevC} | L={prevL}");
 
                                                 // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
-                                                var kqStr = winIsChan ? "CHAN" : "LE";
+                                                var kqStr = winIsTai ? "TAI" : "XIU";
                                                 long? accNow2 = snap?.totals?.A;
                                                 if (_pendingRow != null && accNow2.HasValue)
                                                 {
@@ -1137,9 +1166,9 @@ Ví dụ không hợp lệ:
                                                 if (progNow == 0)
                                                 {
                                                     _baseSeq = seqStr;
-                                                    _roundTotalsC = snap.totals?.C ?? 0;
-                                                    _roundTotalsL = snap.totals?.L ?? 0;
-                                                    if (_roundTotalsC != 0 && _roundTotalsL != 0)
+                                                    _roundTotalsT = snap.totals?.T ?? 0;
+                                                    _roundTotalsX = snap.totals?.X ?? 0;
+                                                    if (_roundTotalsT != 0 && _roundTotalsX != 0)
                                                         _lockMajorMinorUpdates = true;
                                                 }
                                             }
@@ -1149,9 +1178,6 @@ Ví dụ không hợp lệ:
                                         // Ghi lại niSeq vào snapshot cho UI
                                         snap.niSeq = _niSeq.ToString();
                                         lock (_snapLock) _lastSnap = snap;
-
-                                        // --- NEW: lấy status từ JSON (JS đã bơm vào tick) ---
-                                        string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
 
                                         // --- Cập nhật UI ---
                                         _ = Dispatcher.BeginInvoke(new Action(() =>
@@ -1192,20 +1218,23 @@ Ví dụ không hợp lệ:
                                                 // Kết quả gần nhất từ chuỗi seq
                                                 var seqStrLocal = snap.seq ?? "";
                                                 char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
-                                                var kq = (last == '0' || last == '2' || last == '4') ? "CHAN"
-                                                         : (last == '1' || last == '3') ? "LE" : "";
+                                                var kq = (last == 'T') ? "TAI"
+                                                         : (last == 'X') ? "XIU" : "";
                                                 SetLastResultUI(kq);
 
                                                 // Tổng tiền
                                                 var amt = snap?.totals?.A;
+                                                
                                                 if (LblAmount != null)
                                                     LblAmount.Text = amt.HasValue
                                                         ? amt.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) : "-";
-
+                                                var uname = snap.username ?? "";
+                                                if (LblUserName != null) LblUserName.Text = uname;
                                                 // Chuỗi kết quả
                                                 UpdateSeqUI(snap.seq ?? "");
 
                                                 // 🔸 Trạng thái: "Phiên mới" / "Ngừng đặt cược" / "Đang chờ kết quả"
+                                                var statusUi = snap.status ?? "";
                                                 if (LblStatusText != null)
                                                 {
                                                     if (!string.IsNullOrWhiteSpace(statusUi))
@@ -1243,8 +1272,8 @@ Ví dụ không hợp lệ:
                                 {
                                     string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
                                     long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
-                                    string side = sideRaw.Equals("CHAN", StringComparison.OrdinalIgnoreCase) ? "CHAN"
-                                                : sideRaw.Equals("LE", StringComparison.OrdinalIgnoreCase) ? "LE"
+                                    string side = sideRaw.Equals("TAI", StringComparison.OrdinalIgnoreCase) ? "TAI"
+                                                : sideRaw.Equals("XIU", StringComparison.OrdinalIgnoreCase) ? "XIU"
                                                 : sideRaw.ToUpperInvariant();
 
                                     Log($"[BET] {side} {amount:N0}");
@@ -1937,12 +1966,6 @@ Ví dụ không hợp lệ:
         }
 
 
-
-
-
-
-
-
         private async void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
             try { await SaveConfigAsync(); } catch { }
@@ -2095,24 +2118,24 @@ Ví dụ không hợp lệ:
 
             // Chuỗi/Thế cầu
             AttachTip(TxtChuoiCau,
-                (idx == 0) ? TIP_SEQ_CL :
+                (idx == 0) ? TIP_SEQ_TX :
                 (idx == 2) ? TIP_SEQ_NI :
                 "Chọn chiến lược 1 hoặc 3 để nhập Chuỗi cầu.");
 
             AttachTip(TxtTheCau,
-                (idx == 1) ? TIP_THE_CL :
+                (idx == 1) ? TIP_THE_TX :
                 (idx == 3) ? TIP_THE_NI :
                 "Chọn chiến lược 2 hoặc 4 để nhập Thế cầu.");
             // ==== BẮT ĐẦU: Tooltip cho chiến lược đặt cược ====
             string tip = idx switch
             {
-                0 => "1) Chuỗi C/L tự nhập: So khớp chuỗi C/L cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
-                1 => "2) Thế cầu C/L tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
+                0 => "1) Chuỗi T/X tự nhập: So khớp chuỗi T/X cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
+                1 => "2) Thế cầu T/X tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
                 2 => "3) Chuỗi I/N: So khớp dãy Ít/Nhiều (I/N) cấu hình thủ công; khớp thì đặt theo chỉ định; không khớp dùng logic mặc định.",
                 3 => "4) Thế cầu I/N: Ánh xạ mẫu I/N → cửa kế tiếp; ưu tiên mẫu dài; cho phép nhiều luật trong cùng danh sách.",
                 4 => "5) Theo cầu trước (thông minh): Dựa vào ván gần nhất và heuristics nội bộ; đánh liên tục; quản lý vốn theo chuỗi tiền, cut_profit/cut_loss.",
-                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn CHẴN/LẺ ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
-                6 => "7) Bám cầu C/L (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất C/L sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
+                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn TÀI/XỈU ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
+                6 => "7) Bám cầu T/X (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất T/X sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
                 7 => "8) Xu hướng chuyển trạng thái: Thống kê 6 chuyển gần nhất giữa các ván ('lặp' vs 'đảo'); nếu 'đảo' nhiều hơn → đánh ngược ván cuối; ngược lại → theo ván cuối; đánh liên tục.",
                 8 => "9) Run-length (dài chuỗi): Tính độ dài chuỗi ký tự cuối; nếu run ≥ T (mặc định T=3) → đảo để mean-revert; nếu run ngắn → theo đà (momentum); đánh liên tục.",
                 9 => "10) Chuyên gia bỏ phiếu: Kết hợp 5 chuyên gia (theo-last, đảo-last, run-length, transition, AI-stat); chọn phía đa số; hòa → đảo; đánh liên tục để phủ nhiều kịch bản.",
@@ -2121,7 +2144,7 @@ Ví dụ không hợp lệ:
                 12 => "13) Lịch hai lớp: Lịch pha trộn 10 bước (1–3 theo-last, 4 đảo, 5–7 AI-stat, 8 đảo, 9 theo, 10 AI-stat); lặp lại; cân bằng giữa momentum/mean-revert/thống kê; đánh liên tục.",
                 13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
                 14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
-                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 C/L). Khởi tạo thống kê từ 50 kết quả đầu vào (C/L). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
+                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 T/X). Khởi tạo thống kê từ 50 kết quả đầu vào (T/X). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
                 _ => "Chiến lược chưa xác định."
             };
 
@@ -2143,13 +2166,13 @@ Ví dụ không hợp lệ:
         {
             return idx switch
             {
-                0 => "1) Chuỗi C/L tự nhập: So khớp chuỗi C/L cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
-                1 => "2) Thế cầu C/L tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
+                0 => "1) Chuỗi T/X tự nhập: So khớp chuỗi T/X cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
+                1 => "2) Thế cầu T/X tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
                 2 => "3) Chuỗi I/N: So khớp dãy Ít/Nhiều (I/N) cấu hình thủ công; khớp thì đặt theo chỉ định; không khớp dùng logic mặc định.",
                 3 => "4) Thế cầu I/N: Ánh xạ mẫu I/N → cửa kế tiếp; ưu tiên mẫu dài; cho phép nhiều luật trong cùng danh sách.",
                 4 => "5) Theo cầu trước (thông minh): Dựa vào ván gần nhất và heuristics nội bộ; đánh liên tục; quản lý vốn theo chuỗi tiền, cut_profit/cut_loss.",
-                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn CHẴN/LẺ ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
-                6 => "7) Bám cầu C/L (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất C/L sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
+                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn TÀI/XỈU ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
+                6 => "7) Bám cầu T/X (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất T/X sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
                 7 => "8) Xu hướng chuyển trạng thái: Thống kê 6 chuyển gần nhất giữa các ván ('lặp' vs 'đảo'); nếu 'đảo' nhiều hơn → đánh ngược ván cuối; ngược lại → theo ván cuối; đánh liên tục.",
                 8 => "9) Run-length (dài chuỗi): Tính độ dài chuỗi ký tự cuối; nếu run ≥ T (mặc định T=3) → đảo để mean-revert; nếu run ngắn → theo đà (momentum); đánh liên tục.",
                 9 => "10) Chuyên gia bỏ phiếu: Kết hợp 5 chuyên gia (theo-last, đảo-last, run-length, transition, AI-stat); chọn phía đa số; hòa → đảo; đánh liên tục để phủ nhiều kịch bản.",
@@ -2158,7 +2181,7 @@ Ví dụ không hợp lệ:
                 12 => "13) Lịch hai lớp: Lịch pha trộn 10 bước (1–3 theo-last, 4 đảo, 5–7 AI-stat, 8 đảo, 9 theo, 10 AI-stat); lặp lại; cân bằng giữa momentum/mean-revert/thống kê; đánh liên tục.",
                 13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
                 14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
-                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 C/L). Khởi tạo thống kê từ 50 kết quả đầu vào (C/L). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
+                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 T/X). Khởi tạo thống kê từ 50 kết quả đầu vào (T/X). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
                 _ => "Chiến lược chưa xác định."
             };
         }
@@ -3948,30 +3971,15 @@ Ví dụ không hợp lệ:
             string asm = GetType().Assembly.GetName().Name!;
 
             // mỗi cái cho 2-3 đường dẫn để chạy được cả khi làm plugin và khi chạy độc lập
-            _seqIconMap['0'] = LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/ball0.png",
-                "pack://application:,,,/Assets/Seq/ball0.png",
-                "pack://application:,/Assets/Seq/ball0.png"
+            _seqIconMap['T'] = LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/DEN.png",
+                "pack://application:,,,/Assets/Seq/DEN.png",
+                "pack://application:,/Assets/Seq/DEN.png"
             );
-            _seqIconMap['1'] = LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/ball1.png",
-                "pack://application:,,,/Assets/Seq/ball1.png",
-                "pack://application:,/Assets/Seq/ball1.png"
-            );
-            _seqIconMap['2'] = LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/ball2.png",
-                "pack://application:,,,/Assets/Seq/ball2.png",
-                "pack://application:,/Assets/Seq/ball2.png"
-            );
-            _seqIconMap['3'] = LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/ball3.png",
-                "pack://application:,,,/Assets/Seq/ball3.png",
-                "pack://application:,/Assets/Seq/ball3.png"
-            );
-            _seqIconMap['4'] = LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/ball4.png",
-                "pack://application:,,,/Assets/Seq/ball4.png",
-                "pack://application:,/Assets/Seq/ball4.png"
+            _seqIconMap['X'] = LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/TRANG.png",
+                "pack://application:,,,/Assets/Seq/TRANG.png",
+                "pack://application:,/Assets/Seq/TRANG.png"
             );
         }
 
@@ -4002,19 +4010,19 @@ Ví dụ không hợp lệ:
             string sRaw = result ?? string.Empty;
             string s = sRaw.Trim().ToUpperInvariant();
 
-            bool isChan = false, isLe = false;
+            bool isTai = false, isXiu = false;
 
             if (s.Length == 1 && char.IsDigit(s[0]))
             {
-                // tail số từ chuỗi kết quả: 0/2/4 => CHẴN, 1/3 => LẺ
+                // tail số từ chuỗi kết quả: 
                 char d = s[0];
-                isChan = (d == '0' || d == '2' || d == '4');
-                isLe = (d == '1' || d == '3');
+                isTai = (d == 'T');
+                isXiu = (d == 'X');
             }
             else
             {
-                isChan = (s == "CHAN" || s == "CHẴN" || s == "C");
-                isLe = (s == "LE" || s == "LẺ" || s == "L");
+                isTai = (s == "TAI" || s == "TÀI" || s == "T");
+                isXiu = (s == "XIU" || s == "XỈU" || s == "X");
             }
 
             // Helper: fallback hiển thị chữ
@@ -4028,20 +4036,20 @@ Ví dụ không hợp lệ:
                 }
             }
 
-            if (!isChan && !isLe)
+            if (!isTai && !isXiu)
             {
                 ShowText("");
                 return;
             }
 
-            // Ưu tiên lấy ảnh trong Resource (ImgCHAN/ImgLE) -> nếu không có thì dùng SharedIcons
-            string resKey = isLe ? "ImgLE" : "ImgCHAN";
+            // Ưu tiên lấy ảnh trong Resource (ImgTAI/ImgXIU) -> nếu không có thì dùng SharedIcons
+            string resKey = isXiu ? "ImgXIU" : "ImgTAI";
             var resImg = TryFindResource(resKey) as ImageSource;
 
             ImageSource? icon =
                 resImg
-                ?? (isChan ? (SharedIcons.ResultChan ?? SharedIcons.SideChan)
-                           : (SharedIcons.ResultLe ?? SharedIcons.SideLe));
+                ?? (isTai ? (SharedIcons.ResultTai ?? SharedIcons.SideTai)
+                           : (SharedIcons.ResultXiu ?? SharedIcons.SideXiu));
 
             if (icon != null && ImgKetQua != null)
             {
@@ -4051,13 +4059,13 @@ Ví dụ không hợp lệ:
                 if (LblKetQua != null) LblKetQua.Visibility = Visibility.Collapsed;
 
                 // Cache lại để DataGrid (converters) có thể "kế thừa" từ trạng thái
-                if (isChan) SharedIcons.ResultChan = icon;
-                else SharedIcons.ResultLe = icon;
+                if (isTai) SharedIcons.ResultTai = icon;
+                else SharedIcons.ResultXiu = icon;
             }
             else
             {
                 // Không có ảnh -> fallback chữ có dấu
-                ShowText(isChan ? "CHẴN" : "LẺ");
+                ShowText(isTai ? "TÀI" : "XỈU");
             }
         }
 
@@ -4066,8 +4074,8 @@ Ví dụ không hợp lệ:
         {
             // Chuẩn hoá
             var s = (result ?? "").Trim().ToUpperInvariant();
-            bool isLe = s == "LE" || s == "LẺ" || s == "L";
-            bool isChan = s == "CHAN" || s == "CHẴN" || s == "C";
+            bool isXiu = s == "XIU" || s == "XỈU" || s == "X";
+            bool isTai = s == "TAI" || s == "TÀI" || s == "T";
 
             void ShowText(string text)
             {
@@ -4079,9 +4087,9 @@ Ví dụ không hợp lệ:
                 }
             }
 
-            if (isLe || isChan)
+            if (isXiu || isTai)
             {
-                var key = isLe ? "ImgLE" : "ImgCHAN";
+                var key = isXiu ? "ImgXIU" : "ImgTAI";
                 var img = TryFindResource(key) as ImageSource;
                 if (img != null && ImgSide != null)
                 {
@@ -4152,7 +4160,7 @@ Ví dụ không hợp lệ:
                     ImgThangThua.Visibility = Visibility.Visible;
                     if (LblWinLoss != null) LblWinLoss.Visibility = Visibility.Collapsed;
                     return;
-                }
+                }   
 
                 // Thiếu resource → fallback chữ
                 ShowText(result.Value ? "THẮNG" : "THUA");
@@ -5084,8 +5092,8 @@ Ví dụ không hợp lệ:
         private static string NormalizeSide(string s)
         {
             var u = TextNorm.U(s);
-            if (u == "C" || u == "CHAN") return "CHAN";
-            if (u == "L" || u == "LE") return "LE";
+            if (u == "T" || u == "TAI") return "TAI";
+            if (u == "X" || u == "XIU") return "XIU";
             return (s ?? "").Trim();
         }
         private static string NormalizeWL(string s)
@@ -5271,13 +5279,13 @@ Ví dụ không hợp lệ:
         private static string NormalizeSeq(string raw) =>
     TextNorm.U(Regex.Replace(raw ?? "", @"[,\s\-]+", "")); // bỏ , khoảng trắng, -
 
-        // --- Chuỗi C/L: C,L; 2..50 ký tự sau khi bỏ phân tách ---
+        // --- Chuỗi T/X: C,L; 2..50 ký tự sau khi bỏ phân tách ---
         private static bool ValidateSeqCL(string s, out string err)
         {
             err = "";
             if (string.IsNullOrWhiteSpace(s))
             {
-                err = "Vui lòng nhập chuỗi C/L.";
+                err = "Vui lòng nhập chuỗi T/X.";
                 return false;
             }
 
@@ -5286,14 +5294,14 @@ Ví dụ không hợp lệ:
             {
                 if (char.IsWhiteSpace(ch)) continue;          // chỉ cho phép khoảng trắng
                 char u = char.ToUpperInvariant(ch);
-                if (u == 'C' || u == 'L') { count++; continue; }  // và C/L
-                err = "Chỉ cho phép khoảng trắng và ký tự C hoặc L (không dùng dấu phẩy/gạch/chấm phẩy/gạch dưới, số, ký tự khác).";
+                if (u == 'T' || u == 'X') { count++; continue; }  // và T/X
+                err = "Chỉ cho phép khoảng trắng và ký tự T hoặc X (không dùng dấu phẩy/gạch/chấm phẩy/gạch dưới, số, ký tự khác).";
                 return false;
             }
 
             if (count < 2 || count > 100)
             {
-                err = "Độ dài 2–50 ký tự (tính theo C/L, bỏ qua khoảng trắng).";
+                err = "Độ dài 2–50 ký tự (tính theo T/X, bỏ qua khoảng trắng).";
                 return false;
             }
 
@@ -5329,13 +5337,13 @@ Ví dụ không hợp lệ:
             return true;
         }
 
-        // --- Thế cầu C/L: từng dòng "<mẫu> - <đặt>", mẫu gồm C/L/?, đặt là C hoặc L ---
+        // --- Thế cầu T/X: từng dòng "<mẫu> - <đặt>", mẫu gồm T/X/?, đặt là C hoặc L ---
         private static bool ValidatePatternsCL(string s, out string err)
         {
             err = "";
             if (string.IsNullOrWhiteSpace(s))
             {
-                err = "Vui lòng nhập các thế cầu C/L.";
+                err = "Vui lòng nhập các thế cầu T/X.";
                 return false;
             }
 
@@ -5349,7 +5357,7 @@ Ví dụ không hợp lệ:
                 if (line.Length == 0) continue;
                 idx++;
 
-                // <mẫu> (C/L, cho phép khoảng trắng)  -> hoặc -  <chuỗi cầu> (C/L, CHO PHÉP khoảng trắng)
+                // <mẫu> (T/X, cho phép khoảng trắng)  -> hoặc -  <chuỗi cầu> (T/X, CHO PHÉP khoảng trắng)
                 var m = System.Text.RegularExpressions.Regex.Match(
                     line,
                     @"^\s*([CLcl\s]+)\s*(?:->|-)\s*([CLcl\s]+)\s*$",
@@ -5357,40 +5365,40 @@ Ví dụ không hợp lệ:
 
                 if (!m.Success)
                 {
-                    err = $"Quy tắc {idx} không hợp lệ: “{line}”. Dạng đúng: <mẫu> -> <chuỗi cầu> hoặc <mẫu>-<chuỗi cầu>; chỉ dùng C/L; <chuỗi cầu> có thể có khoảng trắng.";
+                    err = $"Quy tắc {idx} không hợp lệ: “{line}”. Dạng đúng: <mẫu> -> <chuỗi cầu> hoặc <mẫu>-<chuỗi cầu>; chỉ dùng T/X; <chuỗi cầu> có thể có khoảng trắng.";
                     return false;
                 }
 
-                // LHS: chỉ C/L + khoảng trắng; độ dài 1–10 sau khi bỏ khoảng trắng
+                // LHS: chỉ T/X + khoảng trắng; độ dài 1–10 sau khi bỏ khoảng trắng
                 var lhsRaw = m.Groups[1].Value;
                 var lhsBuf = new System.Text.StringBuilder(lhsRaw.Length);
                 foreach (char ch in lhsRaw)
                 {
                     if (char.IsWhiteSpace(ch)) continue;
                     char u = char.ToUpperInvariant(ch);
-                    if (u == 'C' || u == 'L') lhsBuf.Append(u);
-                    else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm C/L (cho phép khoảng trắng giữa các ký tự)."; return false; }
+                    if (u == 'T' || u == 'X') lhsBuf.Append(u);
+                    else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm T/X (cho phép khoảng trắng giữa các ký tự)."; return false; }
                 }
                 var lhs = lhsBuf.ToString();
                 if (lhs.Length < 1 || lhs.Length > 10)
                 {
-                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự (C/L).";
+                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự (T/X).";
                     return false;
                 }
 
-                // RHS: chuỗi cầu C/L (>=1), CHO PHÉP khoảng trắng (bị bỏ qua khi kiểm tra)
+                // RHS: chuỗi cầu T/X (>=1), CHO PHÉP khoảng trắng (bị bỏ qua khi kiểm tra)
                 var rhsRaw = m.Groups[2].Value;
                 var rhsBuf = new System.Text.StringBuilder(rhsRaw.Length);
                 foreach (char ch in rhsRaw)
                 {
                     if (char.IsWhiteSpace(ch)) continue;
                     char u = char.ToUpperInvariant(ch);
-                    if (u == 'C' || u == 'L') rhsBuf.Append(u);
-                    else { err = $"Quy tắc {idx}: <chuỗi cầu> chỉ gồm C/L (có thể nhiều ký tự), cho phép khoảng trắng."; return false; }
+                    if (u == 'T' || u == 'X') rhsBuf.Append(u);
+                    else { err = $"Quy tắc {idx}: <chuỗi cầu> chỉ gồm T/X (có thể nhiều ký tự), cho phép khoảng trắng."; return false; }
                 }
                 if (rhsBuf.Length < 1)
                 {
-                    err = $"Quy tắc {idx}: <chuỗi cầu> tối thiểu 1 ký tự C/L.";
+                    err = $"Quy tắc {idx}: <chuỗi cầu> tối thiểu 1 ký tự T/X.";
                     return false;
                 }
             }
@@ -5484,7 +5492,7 @@ Ví dụ không hợp lệ:
             ShowErrorsForCurrentStrategy(); // cập nhật UI trước
 
             int idx = CmbBetStrategy?.SelectedIndex ?? 4;
-            if (idx == 0) // 1. Chuỗi C/L
+            if (idx == 0) // 1. Chuỗi T/X
             {
                 if (!ValidateSeqCL(T(TxtChuoiCau), out var err))
                 {
@@ -5502,7 +5510,7 @@ Ví dụ không hợp lệ:
                     return false;
                 }
             }
-            else if (idx == 1) // 2. Thế C/L
+            else if (idx == 1) // 2. Thế T/X
             {
                 if (!ValidatePatternsCL(T(TxtTheCau), out var err))
                 {
@@ -5566,7 +5574,7 @@ Ví dụ không hợp lệ:
             var txt = (TxtChuoiCau?.Text ?? "").Trim();
 
             // Lưu tách bạch cho từng chiến lược
-            if (idx == 0) _cfg.BetSeqCL = txt;    // Chiến lược 1: Chuỗi C/L
+            if (idx == 0) _cfg.BetSeqCL = txt;    // Chiến lược 1: Chuỗi T/X
             if (idx == 2) _cfg.BetSeqNI = txt;    // Chiến lược 3: Chuỗi N/I
 
             // Bản “chung” để engine đọc khi chạy
@@ -5585,7 +5593,7 @@ Ví dụ không hợp lệ:
             var txt = (TxtTheCau?.Text ?? "").Trim();
 
             // Lưu tách bạch cho từng chiến lược
-            if (idx == 1) _cfg.BetPatternsCL = txt;  // Chiến lược 2: Thế C/L
+            if (idx == 1) _cfg.BetPatternsCL = txt;  // Chiến lược 2: Thế T/X
             if (idx == 3) _cfg.BetPatternsNI = txt;  // Chiến lược 4: Thế N/I
 
             // Bản “chung” để engine đọc khi chạy

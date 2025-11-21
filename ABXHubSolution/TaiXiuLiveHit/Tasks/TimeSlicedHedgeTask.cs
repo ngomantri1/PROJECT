@@ -17,12 +17,12 @@ namespace TaiXiuLiveHit.Tasks
 
         private int _roundInBlock = 0; // 0..9
 
-        private static char Opp(char c) => c == 'C' ? 'L' : 'C';
-        private static string ToSide(char c) => (c == 'C') ? "CHAN" : "LE";
+        private static char Opp(char t) => t == 'T' ? 'X' : 'T';
+        private static string ToSide(char t) => (t == 'T') ? "TAI" : "XIU";
 
         private char Decide(string parity)
         {
-            char last = (parity.Length == 0) ? 'C' : parity[^1];
+            char last = (parity.Length == 0) ? 'T' : parity[^1];
             int idx = (_roundInBlock % 10); // 0..9
             return (idx < 5) ? last : Opp(last);
         }
@@ -57,7 +57,7 @@ namespace TaiXiuLiveHit.Tasks
                 ctx.Log?.Invoke($"[TimeSliced] r={_roundInBlock % 10 + 1}/10 next={side}, stake={stake:N0}");
 
                 await PlaceBet(ctx, side, stake, ct);
-                bool win = await WaitRoundFinishAndJudge(ctx, side, snap?.seq ?? "", ct);
+                bool win = await WaitRoundFinishAndJudge(ctx, side, snap?.session ?? "", ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {

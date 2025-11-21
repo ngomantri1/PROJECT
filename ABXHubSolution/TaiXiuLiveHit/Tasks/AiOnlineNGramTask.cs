@@ -93,7 +93,7 @@ namespace TaiXiuLiveHit.Tasks
             return Path.Combine(dir, "ngram_adaptive_state_v2.json");
         }
 
-        private static string ToSide(char c) => c == 'C' ? "CHAN" : "LE";
+        private static string ToSide(char t) => t == 'T' ? "TAI" : "XIU";
 
         // ======================== RUN LOOP ========================
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
@@ -130,6 +130,7 @@ namespace TaiXiuLiveHit.Tasks
 
                 var preSnap = ctx.GetSnap();
                 string preSeq = preSnap?.seq ?? "";
+                string baseSession = preSnap?.session ?? string.Empty;
                 string preParity = SeqToParityString(preSeq);
 
                 // 1) Tính tham số hiệu lực (ease-in theo SafetyEscalations & S5/S8 flags)
@@ -150,11 +151,11 @@ namespace TaiXiuLiveHit.Tasks
                 char finalPick;
                 if (undecidable)
                 {
-                    finalPick = _rng.NextDouble() < 0.5 ? 'C' : 'L';
+                    finalPick = _rng.NextDouble() < 0.5 ? 'T' : 'X';
                 }
                 else
                 {
-                    finalPick = (score >= 0) ? 'C' : 'L';
+                    finalPick = (score >= 0) ? 'T' : 'X';
                 }
 
                 string side = ToSide(finalPick);
@@ -176,7 +177,7 @@ namespace TaiXiuLiveHit.Tasks
                 await PlaceBet(ctx, side, stake, ct);
 
                 // 5) Kết quả ván
-                bool win = await WaitRoundFinishAndJudge(ctx, side, preSeq, ct);
+                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {
@@ -476,7 +477,7 @@ namespace TaiXiuLiveHit.Tasks
                     var tab = _tables[k];
                     if (!tab.TryGetValue(key, out var cnt)) cnt = (0, 0);
 
-                    if (actual == 'C') cnt.c += 1.0; else cnt.l += 1.0;
+                    if (actual == 'T') cnt.c += 1.0; else cnt.l += 1.0;
 
                     double total = cnt.c + cnt.l;
                     if (total >= _rescaleThreshold) { cnt.c *= 0.5; cnt.l *= 0.5; }
@@ -559,7 +560,7 @@ namespace TaiXiuLiveHit.Tasks
             {
                 int bits = 0, n = parity.Length;
                 for (int i = Math.Max(0, n - k); i < n; i++)
-                    bits = (bits << 1) | (parity[i] == 'L' ? 1 : 0); // C=0, L=1
+                    bits = (bits << 1) | (parity[i] == 'X' ? 1 : 0); // T=0, X=1
                 return bits;
             }
         }

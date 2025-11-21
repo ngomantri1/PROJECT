@@ -16,13 +16,13 @@ namespace TaiXiuLiveHit.Tasks
 
         private int _roundInBlock = 0;
 
-        private static char Opp(char c) => c == 'C' ? 'L' : 'C';
-        private static string ToSide(char c) => (c == 'C') ? "CHAN" : "LE";
+        private static char Opp(char t) => t == 'T' ? 'X' : 'T';
+        private static string ToSide(char t) => (t == 'T') ? "TAI" : "XIU";
 
         // Mini predictor (giống bản AiStat rút gọn: exact-match; hòa->đảo; no-match->theo cuối)
         private static char AiStatMini(string p, int kmax = 6)
         {
-            int n = p.Length; if (n <= 1) return n == 0 ? 'C' : p[^1];
+            int n = p.Length; if (n <= 1) return n == 0 ? 'T' : p[^1];
             for (int k = System.Math.Min(kmax, n - 1); k >= 1; k--)
             {
                 int c = 0, l = 0;
@@ -30,12 +30,12 @@ namespace TaiXiuLiveHit.Tasks
                     if (p.AsSpan(i, k).SequenceEqual(p.AsSpan(n - k, k)))
                     {
                         char next = p[i + k];
-                        if (next == 'C') c++; else if (next == 'L') l++;
+                        if (next == 'T') c++; else if (next == 'X') l++;
                     }
                 if (c + l > 0)
                 {
-                    if (c > l) return 'C';
-                    if (l > c) return 'L';
+                    if (c > l) return 'T';
+                    if (l > c) return 'X';
                     return Opp(p[^1]); // hòa
                 }
             }
@@ -44,7 +44,7 @@ namespace TaiXiuLiveHit.Tasks
 
         private char Decide(string parity)
         {
-            char last = parity.Length == 0 ? 'C' : parity[^1];
+            char last = parity.Length == 0 ? 'T' : parity[^1];
             int i = _roundInBlock % 10; // 0..9
 
             if (i <= 2) return last;            // 1..3
@@ -85,7 +85,7 @@ namespace TaiXiuLiveHit.Tasks
                 ctx.Log?.Invoke($"[DualSched] r={_roundInBlock % 10 + 1}/10 next={side}, stake={stake:N0}");
 
                 await PlaceBet(ctx, side, stake, ct);
-                bool win = await WaitRoundFinishAndJudge(ctx, side, snap?.seq ?? "", ct);
+                bool win = await WaitRoundFinishAndJudge(ctx, side, snap?.session ?? "", ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {

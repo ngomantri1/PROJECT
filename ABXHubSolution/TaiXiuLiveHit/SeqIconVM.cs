@@ -4,7 +4,7 @@ using System.Windows.Media;
 
 namespace TaiXiuLiveHit
 {
-    // ViewModel nhỏ cho icon chuỗi (C/L, Win/Lose ...) – khớp code đang set ImageSource
+    // ViewModel nhỏ cho icon chuỗi (T/X, Win/Lose ...) – khớp code đang set ImageSource
     public sealed class SeqIconVM : INotifyPropertyChanged
     {
         private ImageSource? _img;

@@ -8,8 +8,8 @@ using static TaiXiuLiveHit.Tasks.TaskUtil;
 namespace TaiXiuLiveHit.Tasks
 {
     /// <summary>
-    /// 16) Theo chuỗi Top10 từ cửa sổ 50 phiên (C/L)
-    /// - KHÔNG CHỜ tích lũy: 50 C/L đã có sẵn khi load → build đếm ban đầu ngay.
+    /// 16) Theo chuỗi Top10 từ cửa sổ 50 phiên (T/X)
+    /// - KHÔNG CHỜ tích lũy: 50 T/X đã có sẵn khi load → build đếm ban đầu ngay.
     /// - Quét ban đầu: lấy các đoạn độ dài 10 theo thứ tự (50..41), (49..40), ..., (10..1).
     ///   Nếu đã có trong list thì +1, chưa có thì thêm với count=1. (Ưu tiên độ tươi bằng lastTick)
     /// - Sau mỗi KẾT QUẢ (chuỗi 50 đổi — trượt sang phải), lấy “10 phiên mới về” (41..50) để +1.
@@ -19,13 +19,13 @@ namespace TaiXiuLiveHit.Tasks
     /// </summary>
     public sealed class Top10PatternFollowTask : IBetTask
     {
-        public string DisplayName => "16) Top10 tích lũy (khởi từ 50 C/L)";
+        public string DisplayName => "16) Top10 tích lũy (khởi từ 50 T/X)";
         public string Id => "top10-50-cl";
 
         private const int WindowLen = 10;
         private const int FrameLen = 50; // cửa sổ 50 phiên gần nhất
 
-        // key: chuỗi 10 ký tự 'C'/'L'
+        // key: chuỗi 10 ký tự 'T'/'X'
         // value: (count, lastTick) → tie-break theo độ tươi (tick lớn hơn = mới hơn)
         private static (int count, long lastTick) GetOrDefault(Dictionary<string, (int, long)> dict, string k)
             => dict.TryGetValue(k, out var v) ? v : (0, 0);
@@ -80,9 +80,9 @@ namespace TaiXiuLiveHit.Tasks
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
             var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
-            ctx.Log?.Invoke("[Top10-50] Khởi chạy (không chờ — dùng 50 C/L sẵn có)…");
+            ctx.Log?.Invoke("[Top10-50] Khởi chạy (không chờ — dùng 50 T/X sẵn có)…");
 
-            // === KHỞI TẠO NGAY từ 50 C/L sẵn có ===
+            // === KHỞI TẠO NGAY từ 50 T/X sẵn có ===
             var counts = new Dictionary<string, (int count, long lastTick)>(StringComparer.Ordinal);
             long tick = 0;
 
@@ -126,7 +126,8 @@ namespace TaiXiuLiveHit.Tasks
                 await WaitUntilNewRoundStart(ctx, ct);
 
                 var snap = ctx.GetSnap?.Invoke();
-                string baseSeq = snap?.seq ?? string.Empty; // dùng cho Judge: chờ chuỗi đổi (không phụ thuộc tăng độ dài)
+                string baseSeq = snap?.seq ?? string.Empty;
+                string baseSession = snap?.session ?? string.Empty;
 
                 // Nếu chưa có best (đề phòng), pick lại
                 if (string.IsNullOrEmpty(curPattern))
@@ -138,11 +139,11 @@ namespace TaiXiuLiveHit.Tasks
                     {
                         // fallback an toàn: theo ván gần nhất
                         char lastCl = SeqToParityString(baseSeq).LastOrDefault();
-                        string fallbackSide = (lastCl == 'C') ? "CHAN" : "LE";
+                        string fallbackSide = (lastCl == 'T') ? "TAI" : "XIU";
                         var stake0 = money.GetStakeForThisBet();
                         await PlaceBet(ctx, fallbackSide, stake0, ct);
 
-                        bool win0 = await WaitRoundFinishAndJudge(ctx, fallbackSide, baseSeq, ct);
+                        bool win0 = await WaitRoundFinishAndJudge(ctx, fallbackSide, baseSession, ct);
                         await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win0 ? stake0 : -stake0));
                         money.OnRoundResult(win0);
 
@@ -159,7 +160,7 @@ namespace TaiXiuLiveHit.Tasks
                     }
                 }
 
-                // Đặt theo ký tự hiện tại của "chuỗi top" (C/L)
+                // Đặt theo ký tự hiện tại của "chuỗi top" (T/X)
                 char ch = curPattern[curIdx];
                 string side = ParityCharToSide(ch);
                 long stake;
@@ -178,8 +179,8 @@ namespace TaiXiuLiveHit.Tasks
                 ctx.Log?.Invoke($"[Top10-50] bet={side} (pat='{curPattern}', pos={curIdx + 1}/10, count={curCount})");
                 await PlaceBet(ctx, side, stake, ct);
 
-                // Chờ KẾT QUẢ: WaitRoundFinishAndJudge so sánh chuỗi → phù hợp cửa sổ 50 trượt
-                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                // Chờ KẾT QUẢ: WaitRoundFinishAndJudge so sánh phiên
+                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {

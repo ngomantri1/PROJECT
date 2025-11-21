@@ -51,9 +51,9 @@ namespace TaiXiuLiveHit.Tasks
         private static string NOrIToSide(char ch, TaiXiuLiveHit.CwTotals totals)
         {
             // Chuyển N/I thành CHAN/LE theo tổng tiền "ngay thời điểm đặt"
-            long c = totals?.C ?? 0, l = totals?.L ?? 0;
-            if (ch == 'N') return (c >= l) ? "CHAN" : "LE"; // hòa coi như N
-            return (c < l) ? "CHAN" : "LE";                 // 'I'
+            long t = totals?.T ?? 0, x = totals?.X ?? 0;
+            if (ch == 'N') return (t >= x) ? "TAI" : "XIU"; // hòa coi như N
+            return (t < x) ? "TAI" : "XIU";                 // 'I'
         }
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
@@ -109,7 +109,7 @@ namespace TaiXiuLiveHit.Tasks
                     continue;
                 }
                 // Lấy baseSeq NGAY TRƯỚC khi đặt (ảnh chụp mới nhất)
-                string baseSeq = snapNow?.seq ?? string.Empty;
+                string baseSession = snap?.session ?? string.Empty;
                 // Lấy 1 ký tự N/I theo kế hoạch và quy đổi N/I -> CHAN/LE theo totals GIỜ NÀY
                 char planNI = planned.Dequeue();
                 string side = NOrIToSide(planNI, snapNow?.totals);
@@ -131,7 +131,7 @@ namespace TaiXiuLiveHit.Tasks
                 await PlaceBet(ctx, side, stake, ct);
 
                 // Chờ ván xong & chấm kết quả so với baseSeq NGAY TRƯỚC KHI ĐẶT
-                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
 
                 // Cập nhật lũy kế & quản lý vốn
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));

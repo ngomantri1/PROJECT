@@ -5,9 +5,8 @@
 // - CONTRARIAN: Đặt cửa đảo so với quyết định panel (ContrarianEnabled=true).
 // - FEEDBACK SIMULATED: AI học/guard/ewma cập nhật theo "thắng/thua GIẢ LẬP của panel gốc",
 //   không theo kết quả thực tế của cửa đã đặt (để tránh poison khi đánh ngược).
-// - SEQ: luôn lấy trực tiếp từ snap.seq mỗi vòng, chuyển về C/L theo quy tắc:
-//     + Số: 1,3 => L ; 0,2,4 => C
-//     + Chữ: 'L'/'l' => L ; 'C'/'c' => C
+// - SEQ: luôn lấy trực tiếp từ snap.seq mỗi vòng, chuyển về T/X theo quy tắc:
+//     + Chữ: 'X'/'x' => X ; 'T'/'t' => T
 //   Bỏ qua ký tự khác. Chỉ lấy TỐI ĐA 50 phần tử cuối. An toàn khi chuỗi < 50.
 // - Không còn tự "append" kết quả vào st.lastHands; thay vào đó mỗi vòng luôn refresh từ snap.
 // - Log rõ ràng: REFRESH from snap.seq, BEAUTY-SCAN, quyết định panel vs cửa đặt (đảo), ok thực,
@@ -188,7 +187,7 @@ namespace TaiXiuLiveHit.Tasks
                 LogVotes(ctx, votes, panelPick, signer);
 
                 // Đặt cược theo placedPick
-                string side = (placedPick == 0) ? "CHAN" : "LE";
+                string side = (placedPick == 0) ? "TAI" : "XIU";
                 long stake;
                 if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
                 {
@@ -201,13 +200,13 @@ namespace TaiXiuLiveHit.Tasks
                 {
                     stake = money.GetStakeForThisBet();
                 }
-                Log(ctx, $"[AI15] BET side={side} stake={stake:N0} (panelPick={(panelPick == 0 ? "C" : "L")}, contrarian={(Cfg.ContrarianEnabled ? "ON" : "OFF")})");
+                Log(ctx, $"[AI15] BET side={side} stake={stake:N0} (panelPick={(panelPick == 0 ? "T" : "X")}, contrarian={(Cfg.ContrarianEnabled ? "ON" : "OFF")})");
                 await PlaceBet(ctx, side, stake, ct);
 
                 // Chấm điểm thực tế theo cửa đã đặt
                 var snapBefore = ctx.GetSnap();
-                string baseSeq = snapBefore?.seq ?? string.Empty;
-                bool ok = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                string baseSession = snapBefore?.session ?? string.Empty;
+                bool ok = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
 
                 // P&L theo kết quả thực
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(ok ? stake : -stake));
@@ -245,7 +244,7 @@ namespace TaiXiuLiveHit.Tasks
                 bool trainingWin = panelWin;       // HỌC THEO PANEL GỐC (GIẢ LẬP)
                 int trainingPick = panelPick;     // pick dùng để học
 
-                Log(ctx, $"[AI15] RESULT ok={(ok ? "WIN" : "LOSE")} | trueWin={(trueWinSide == 0 ? "C" : "L")} | panelPick={(panelPick == 0 ? "C" : "L")} -> panelWin={(panelWin ? "WIN" : "LOSE")} | trainingWin={(trainingWin ? "WIN" : "LOSE")}");
+                Log(ctx, $"[AI15] RESULT ok={(ok ? "WIN" : "LOSE")} | trueWin={(trueWinSide == 0 ? "T" : "X")} | panelPick={(panelPick == 0 ? "T" : "X")} -> panelWin={(panelWin ? "WIN" : "LOSE")} | trainingWin={(trainingWin ? "WIN" : "LOSE")}");
 
                 // Cập nhật trạng thái học/guard/ewma theo trainingWin
                 UpdateAfterTraining(st, trainingWin, trainingPick);
@@ -276,7 +275,7 @@ namespace TaiXiuLiveHit.Tasks
             return Task.CompletedTask;
         }
 
-        // Đọc snap.seq -> chuẩn hoá về danh sách 0/1 (C/L) và chuỗi chữ 'C'/'L' để log
+        // Đọc snap.seq -> chuẩn hoá về danh sách 0/1 (T/X) và chuỗi chữ 'T'/'X' để log
         private static void SafeRefreshLastHandsFromSnap(GameContext ctx, PanelState st, bool firstLog = false)
         {
             try
@@ -284,7 +283,7 @@ namespace TaiXiuLiveHit.Tasks
                 var snap = ctx.GetSnap();
                 var raw = snap?.seq ?? string.Empty;
 
-                // Parse: nhận cả số (0..4) lẫn chữ (C/L), lọc ký tự khác
+                // Parse: nhận cả số (0..4) lẫn chữ (T/X), lọc ký tự khác
                 var tmp = new List<int>(50);
                 var sb = new System.Text.StringBuilder(60);
 
@@ -293,12 +292,9 @@ namespace TaiXiuLiveHit.Tasks
                     int? bit = null;
                     switch (ch)
                     {
-                        // số
-                        case '0': case '2': case '4': bit = 0; break; // chẵn = C
-                        case '1': case '3': bit = 1; break; // lẻ   = L
                         // chữ
-                        case 'C': case 'c': bit = 0; break;
-                        case 'L': case 'l': bit = 1; break;
+                        case 'T': case 't': bit = 0; break;
+                        case 'X': case 'x': bit = 1; break;
                         default: break; // bỏ qua
                     }
 
@@ -312,10 +308,10 @@ namespace TaiXiuLiveHit.Tasks
                 if (tmp.Count > 50)
                     tmp = tmp.Skip(tmp.Count - 50).ToList();
 
-                // Xây chuỗi C/L để log
+                // Xây chuỗi T/X để log
                 foreach (var b in tmp)
-                    sb.Append(b == 0 ? 'C' : 'L');
-                string seqCL = sb.ToString();
+                    sb.Append(b == 0 ? 'T' : 'X');
+                string seqTX = sb.ToString();
 
                 if (tmp.Count == 0)
                 {
@@ -324,16 +320,16 @@ namespace TaiXiuLiveHit.Tasks
                 }
 
                 // Chỉ update khi thay đổi để tránh spam log
-                if (!string.Equals(seqCL, st.lastSeqStr, StringComparison.Ordinal))
+                if (!string.Equals(seqTX, st.lastSeqStr, StringComparison.Ordinal))
                 {
                     st.lastHands = tmp;
-                    st.lastSeqStr = seqCL;
-                    Log(ctx, $"[AI15] REFRESH from snap.seq -> n={tmp.Count} | {seqCL}");
+                    st.lastSeqStr = seqTX;
+                    Log(ctx, $"[AI15] REFRESH from snap.seq -> n={tmp.Count} | {seqTX}");
                 }
                 else if (firstLog)
                 {
                     // Lần đầu có chuỗi nhưng không thay đổi so với st.lastSeqStr (hiếm)
-                    Log(ctx, $"[AI15] REFRESH from snap.seq -> n={tmp.Count} | {seqCL}");
+                    Log(ctx, $"[AI15] REFRESH from snap.seq -> n={tmp.Count} | {seqTX}");
                 }
             }
             catch (Exception ex)
@@ -418,7 +414,7 @@ namespace TaiXiuLiveHit.Tasks
         private static string BitsCL(List<int> seq, int take = 24)
         {
             if (seq.Count == 0) return "-";
-            var tail = seq.Skip(Math.Max(0, seq.Count - take)).Select(x => x == 1 ? 'L' : 'C').ToArray();
+            var tail = seq.Skip(Math.Max(0, seq.Count - take)).Select(t => t == 1 ? 'T' : 'X').ToArray();
             return new string(tail);
         }
         private static string BlockSig(List<int> seq)
@@ -641,7 +637,7 @@ namespace TaiXiuLiveHit.Tasks
             string lgState = st.lossGuardOn ? "LG=ON" : "LG=OFF";
             string metrics = $"w20={w20:0.00} w50={w50:0.00} Lmax={st.maxLoseStreak} Lcurr={st.loseStreak}";
             string mode = "MODE=NORMAL";
-            string picks = $"panel={(panelPick == 0 ? "C" : "L")} placed={(placedPick == 0 ? "C" : "L")} contrarian={(Cfg.ContrarianEnabled ? "ON" : "OFF")}";
+            string picks = $"panel={(panelPick == 0 ? "T" : "X")} placed={(placedPick == 0 ? "T" : "X")} contrarian={(Cfg.ContrarianEnabled ? "ON" : "OFF")}";
             Log(ctx, $"[AI15] REG={regime} | dynTrig={dynLossTrig} | {lgState} | {lockState} | {mode} | {metrics} | {picks}");
         }
 

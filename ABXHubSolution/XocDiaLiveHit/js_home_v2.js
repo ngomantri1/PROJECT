@@ -235,7 +235,7 @@
     };
     // ABS selector cho Username (đường dẫn tuyệt đối bạn yêu cầu)
     const ABS_USERNAME_TAIL =
-        'div.user-profile[1]/div.main[2]/div.user-profile__left[1]/div.user-profile__form-input[1]/div.user-name[1]/div.base-input.disabled[1]/div.base-input__wrap.has-value[1]/input[1]';
+        'div.user-profile[1]/div.main[2]/div.user-profile__left[1]/div.user-profile__form-input[1]/div.full-name[2]/div.base-input.disabled[1]/div.base-input__wrap.has-value[1]/input[1]';
     // --- ABS selector cho số dư (đường dẫn tuyệt đối bạn yêu cầu)
     const ABS_BALANCE_SEL =
         'div.d-flex.align-items-center:nth-of-type(2) > div.menu__right > div.user-logged.d-flex > div.user-logged__info > div.base-dropdown-header > button.btn.btn-secondary > div.left > p.base-dropdown-header__user__amount';
@@ -331,16 +331,16 @@
         const t = String(s || '').trim();
         if (!t)
             return false;
-        // loại các nhãn phổ biến
+        // loại các nhãn phổ biến / label
         if (/(tên\s*hiển\s*thị|tên\s*đăng\s*nhập|đăng\s*nhập|login|email|mật\s*khẩu|vip)/i.test(t))
             return false;
-        // không dấu, không khoảng trắng, độ dài hợp lý
-        if (/[^\x20-\x7E]/.test(t))
+        // độ dài hợp lý cho tên nhân vật
+        if (t.length < 2 || t.length > 40)
             return false;
-        if (/\s/.test(t) || t.length < 4 || t.length > 32)
+        // phải có ít nhất 1 chữ hoặc số (kể cả có dấu tiếng Việt)
+        if (!/[A-Za-zÀ-ỹ0-9]/.test(t))
             return false;
-        // chỉ nhận ký tự chữ số, gạch dưới, chấm, gạch nối
-        return /^[A-Za-z0-9._-]+$/.test(t);
+        return true;
     }
 
     function cssTail(el) {
@@ -793,16 +793,44 @@
                     // ---- Fallback DOM: đọc nhanh trong header khi S.* đang rỗng ----
                     function quickPickUsername() {
                         try {
+                            // 1) ƯU TIÊN: đọc theo ABS_USERNAME_TAIL (tên nhân vật trên trang profile)
+                            if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
+                                try {
+                                    const elAbs = findByTail(ABS_USERNAME_TAIL);
+                                    if (elAbs) {
+                                        const val = (elAbs.value != null
+                                             ? String(elAbs.value)
+                                             : (elAbs.getAttribute && elAbs.getAttribute('value')) || elAbs.textContent || '').trim();
+                                        if (val)
+                                            return val.replace(/\s+/g, ' ');
+                                    }
+                                } catch (_) {}
+                            }
+
+                            // 2) Fallback: lấy theo header như trước (khi không có form profile)
                             const header = document.querySelector('header.menu, header') || document;
-                            const pri = header.querySelector('.user-logged__info .base-dropdown-header__user__name, p.base-dropdown-header__user__name');
+
+                            const pri = header.querySelector(
+                                    '.user-logged__info .base-dropdown-header__user__name, p.base-dropdown-header__user__name');
                             if (pri) {
                                 const t = (pri.textContent || '').trim();
                                 if (t)
                                     return t;
                             }
-                            const roots = ['.username', '.menu-account__info--user', '.user-logged', '.display-name', '.full-name'];
+
+                            const roots = [
+                                '.username',
+                                '.menu-account__info--user',
+                                '.user-logged',
+                                '.display-name',
+                                '.full-name'
+                            ];
                             for (const sel of roots) {
-                                const el = header.querySelector(sel + ' .full-name, ' + sel + ' .display-name, ' + sel + ' span.full-name, ' + sel);
+                                const el = header.querySelector(
+                                        sel + ' .full-name, ' +
+                                        sel + ' .display-name, ' +
+                                        sel + ' span.full-name, ' +
+                                        sel);
                                 if (el) {
                                     const txt = (el.textContent || '').trim();
                                     if (txt && !/^(vip|email|đăng|login)/i.test(txt))
@@ -2124,18 +2152,28 @@
                 // văn bản toàn item + alt/title ảnh
                 const scopeTxt = norm([
                             it.innerText,
-                            ...Array.from(it.querySelectorAll('img[alt],img[title]')).map(img => img.alt || img.title || '')
+                            ...Array.from(it.querySelectorAll('img[alt],img[title]'))
+                            .map(img => img.alt || img.title || '')
                         ].join(' '));
 
+                // Tài Xỉu / Sicbo / Dice => điểm dương, Xóc Đĩa => điểm âm
                 const wCtxPos = RE_XOCDIA_POS.test(scopeTxt) ? 6 : 0;
                 const wCtxNeg = RE_XOCDIA_NEG.test(scopeTxt) ? -10 : 0;
 
-                const btns = Array.from(it.querySelectorAll('.play-overlay button.base-button.btn, button.base-button.btn, a.base-button.btn'));
+                const btns = Array.from(
+                        it.querySelectorAll('.play-overlay button.base-button.btn, button.base-button.btn, a.base-button.btn'));
+
                 btns.forEach(b => {
                     const lbl = norm(textOf(b));
                     const wBtnPos = RE_XOCDIA_POS.test(lbl) ? 4 : 0;
                     const wBtnNeg = RE_XOCDIA_NEG.test(lbl) ? -10 : 0;
-                    const score = wCtxPos + wCtxNeg + wBtnPos + wBtnNeg + (idx <= 2 ? 1 : 0); // ưu tiên 3 item đầu
+
+                    // 🔥 ƯU TIÊN THỨ TỰ ITEM:
+                    // - idx === 0: Tài Xỉu Live (item đầu tiên) -> +3
+                    // - idx 1, 2: vẫn được cộng nhẹ +1
+                    const idxBoost = (idx === 0 ? 3 : (idx <= 2 ? 1 : 0));
+
+                    const score = wCtxPos + wCtxNeg + wBtnPos + wBtnNeg + idxBoost;
                     cand.push({
                         el: b,
                         score,
@@ -2144,13 +2182,15 @@
                 });
             });
 
+            // Sắp xếp theo score, lấy cái tốt nhất và còn click được
             cand.sort((a, b) => b.score - a.score);
             const top = cand.find(c => c.score > 0 && isVisibleAndClickable(c.el));
-            return top ? top.el : null; // ❗ KHÔNG fallback theo “nút thứ 2” nữa
+            return top ? top.el : null; // ❗ KHÔNG fallback “nút thứ 2” nữa
         };
 
         // 3) Đóng quảng cáo/cover phổ biến trước
         closeAdsAndCovers();
+
         // 4) Chờ nút theo 2 pha: 5s chỉ tail, rồi phần còn lại cho fallback (tổng ≤12s)
         const WAIT_MS = 12000;
         const TAIL_ONLY_MS = 5000;

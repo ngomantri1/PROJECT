@@ -967,7 +967,7 @@
         '</div>' +
         '<div id="cwInfo" style="white-space:pre;color:#9f9;line-height:1.45"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    root.style.display='none';
+    //root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -2400,7 +2400,7 @@
         }
     }
 
-    var _pushTimer = null;
+var _pushTimer = null;
     var _lastJson = '';
     var _lastStatus = '';
     var _lastSeq = '';
@@ -2539,6 +2539,7 @@
 
         return '';
     }
+
 
     function readSessionSafe() {
         try {
@@ -2731,8 +2732,8 @@
             _pushTimer = setInterval(function () {
                 var p = readProgressVal();
                 var st = (typeof window.cwStatusByProg === 'function')
-                 ? window.cwStatusByProg(p)
-                 : '';
+                    ? window.cwStatusByProg(p)
+                    : '';
 
                 // Lấy chuỗi kết quả an toàn (ưu tiên cache __cw_lastSeq)
                 var seq = readSeqSafe() || '';
@@ -2751,9 +2752,9 @@
                     if (sec > 45)
                         sec = 45;
 
-                    timeSec = sec; // 45 → 0
+                    timeSec = sec;          // 45 → 0
                     timePercent = sec / 45; // 1 → 0
-                    timeText = sec + 's'; // "13s"...
+                    timeText = sec + 's';   // "13s"...
                 }
 
                 var snap = {
@@ -2764,8 +2765,8 @@
                     timePercent: timePercent,
                     timeText: timeText,
                     totals: (typeof window.readTotalsSafe === 'function'
-                         ? window.readTotalsSafe()
-                         : null),
+                        ? window.readTotalsSafe()
+                        : null),
                     seq: seq,
                     last: last,
                     status: String(st || ''),
@@ -2789,11 +2790,11 @@
                         _lastSeq = snap.seq;
                         _lastSession = snap.session;
                         //console.log(
-                        //   '[CW][push] seq/session =',
-                        //   snap.seq || '<empty>',
+                         //   '[CW][push] seq/session =',
+                         //   snap.seq || '<empty>',
                         //    '| session =',
                         //    snap.session || '<empty>'
-                        // );
+                       // );
                     }
 
                     safePost(snap);
@@ -2811,6 +2812,7 @@
         }
     };
 
+
     window.__cw_stopPush = function () {
         if (_pushTimer) {
             clearInterval(_pushTimer);
@@ -2819,371 +2821,16 @@
         return 'stopped';
     };
 
-    // Helpers dùng riêng cho __cw_bet (Tài/Xỉu TipDealer), độc lập với IIFE phía trên
-    function sleep(ms) {
-        return new Promise(function (r) {
-            setTimeout(r, ms);
-        });
-    }
-
-    function getComp(n, T) {
-        try {
-            return n && n.getComponent ? n.getComponent(T) : null;
-        } catch (e) {
-            return null;
-        }
-    }
-
-    function hasBtn(n) {
-        return !!getComp(n, cc.Button);
-    }
-
-    function hasTgl(n) {
-        return !!getComp(n, cc.Toggle);
-    }
-
-    function clickable(n) {
-        return hasBtn(n) || hasTgl(n) || n._touchListener;
-    }
-
-    function emitClick(node) {
-        var b = getComp(node, cc.Button);
-        if (b && b.interactable !== false) {
-            try {
-                cc.Component.EventHandler.emitEvents(
-                    b.clickEvents,
-                    new cc.Event.EventCustom('click', true));
-            } catch (e) {}
-            return true;
-        }
-
-        var t = getComp(node, cc.Toggle);
-        if (t && t.interactable !== false) {
-            try {
-                t.isChecked = true;
-                if (t._emitToggleEvents)
-                    t._emitToggleEvents();
-            } catch (e) {}
-            return true;
-        }
-
-        try {
-            var cam = cc.Camera.findCamera(node);
-            var sp = cam.worldToScreen(node.convertToWorldSpaceAR(cc.v2()));
-            var fs = cc.view.getFrameSize();
-            var vs = cc.view.getVisibleSize();
-            var x = sp.x * (fs.width / vs.width);
-            var y = sp.y * (fs.height / vs.height);
-            var cvs = document.querySelector('canvas');
-            if (!cvs)
-                return false;
-
-            cvs.dispatchEvent(new PointerEvent('pointerdown', {
-                    clientX: x,
-                    clientY: y,
-                    buttons: 1,
-                    bubbles: true
-                }));
-            cvs.dispatchEvent(new PointerEvent('pointerup', {
-                    clientX: x,
-                    clientY: y,
-                    buttons: 1,
-                    bubbles: true
-                }));
-            return true;
-        } catch (e) {
-            console.warn('[emitClick][bridge] error', e);
-            return false;
-        }
-    }
-
-    function clickableOf(node, depth) {
-        depth = depth || 5;
-        var cur = node,
-        d = 0;
-        while (cur && d <= depth) {
-            if (clickable(cur))
-                return cur;
-            cur = cur.parent;
-            d++;
-        }
-        return node;
-    }
-
-    function tailOf(n, limit) {
-        limit = limit || 12;
-        var a = [];
-        try {
-            var t = n,
-            c = 0;
-            while (t && c < 64) {
-                if (t.name)
-                    a.push(t.name);
-                t = t.parent || t._parent || null;
-                c++;
-            }
-        } catch (e) {}
-        a.reverse();
-        return a.slice(-limit).join('/');
-    }
-
-    function walkNodes(cb) {
-        if (!(window.cc && cc.director && cc.director.getScene))
-            return;
-        var scene = cc.director.getScene();
-        if (!scene)
-            return;
-
-        var st = [scene];
-        var seen = [];
-        function seenHas(x) {
-            return seen.indexOf(x) !== -1;
-        }
-        function seenAdd(x) {
-            if (!seenHas(x))
-                seen.push(x);
-        }
-
-        while (st.length) {
-            var n = st.pop();
-            if (!n || seenHas(n))
-                continue;
-            seenAdd(n);
-            try {
-                cb(n);
-            } catch (e) {}
-            var kids = (n.children || n._children) || [];
-            for (var i = 0; i < kids.length; i++) {
-                var k = kids[i];
-                if (k && !seenHas(k))
-                    st.push(k);
-            }
-        }
-    }
-
-    // --- Bet TÀI/XỈU qua TipDealer (phỉnh chip) ---
-    var TX_TAIL_BTN_TAI = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocTai';
-    var TX_TAIL_BTN_XIU = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocXiu';
-
-    // --- Bet TÀI/XỈU qua TipDealer (phỉnh chip) ---
-    var TX_TAIL_BTN_TAI = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocTai';
-    var TX_TAIL_BTN_XIU = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocXiu';
-
-    var TX_TAIL_ROW2 = 'TxGameLive/Main/borderTabble/ChatController/TipDealer/tabTipDealer/TipContent/views/contentChat/row2/itemTip/lbMoney';
-    var TX_TAIL_ROW1 = 'TxGameLive/Main/borderTabble/ChatController/TipDealer/tabTipDealer/TipContent/views/contentChat/row1/itemTip/lbMoney';
-    var TX_TAIL_ROW0 = 'TxGameLive/Main/borderTabble/ChatController/TipDealer/tabTipDealer/TipContent/views/contentChat/row0/itemTip/lbMoney';
-
-    var TX_CHIP_CONFIG = [
-        // row0
-        {
-            amount: 10000000,
-            txt: '10M',
-            tailEnd: TX_TAIL_ROW0
-        }, {
-            amount: 5000000,
-            txt: '5M',
-            tailEnd: TX_TAIL_ROW0
-        }, {
-            amount: 2000000,
-            txt: '2M',
-            tailEnd: TX_TAIL_ROW0
-        },
-
-        // row1
-        {
-            amount: 1000000,
-            txt: '1M',
-            tailEnd: TX_TAIL_ROW1
-        }, {
-            amount: 500000,
-            txt: '500K',
-            tailEnd: TX_TAIL_ROW1
-        }, {
-            amount: 200000,
-            txt: '200K',
-            tailEnd: TX_TAIL_ROW1
-        }, {
-            amount: 100000,
-            txt: '100K',
-            tailEnd: TX_TAIL_ROW1
-        }, {
-            amount: 50000,
-            txt: '50K',
-            tailEnd: TX_TAIL_ROW1
-        },
-
-        // row2
-        {
-            amount: 20000,
-            txt: '20K',
-            tailEnd: TX_TAIL_ROW2
-        }, {
-            amount: 10000,
-            txt: '10K',
-            tailEnd: TX_TAIL_ROW2
-        }, {
-            amount: 5000,
-            txt: '5K',
-            tailEnd: TX_TAIL_ROW2
-        }, {
-            amount: 2000,
-            txt: '2K',
-            tailEnd: TX_TAIL_ROW2
-        }, {
-            amount: 1000,
-            txt: '1K',
-            tailEnd: TX_TAIL_ROW2
-        }
-    ];
-
-    function txFindLabelByTailAndText(tailEnd, txt) {
-        var tailLower = String(tailEnd || '').toLowerCase();
-        var want = String(txt || '').trim();
-        var found = null;
-        walkNodes(function (n) {
-            if (found)
-                return;
-            var lb = getComp(n, cc.Label) || getComp(n, cc.RichText);
-            if (!lb || typeof lb.string === 'undefined')
-                return;
-            var s = String(lb.string || '').trim();
-            if (s !== want)
-                return;
-            var t = tailOf(n, 12);
-            if (!String(t || '').toLowerCase().endsWith(tailLower))
-                return;
-            found = {
-                node: n,
-                label: lb,
-                text: s,
-                tail: t
-            };
-        });
-        return found;
-    }
-
-    function txFindNodeByTailEnd(tailEnd) {
-        var tailLower = String(tailEnd || '').toLowerCase();
-        var hit = null;
-        walkNodes(function (n) {
-            if (hit)
-                return;
-            var t = tailOf(n, 16);
-            if (String(t || '').toLowerCase().endsWith(tailLower)) {
-                hit = n;
-            }
-        });
-        return hit;
-    }
-
-    function txMakePlan(amount) {
-        var rest = Math.max(0, Math.floor(Number(amount) || 0));
-        var steps = [];
-        var cfgSorted = TX_CHIP_CONFIG.slice().sort(function (a, b) {
-            return b.amount - a.amount;
-        });
-        for (var i = 0; i < cfgSorted.length; i++) {
-            var cfg = cfgSorted[i];
-            if (rest <= 0)
-                break;
-            var cnt = Math.floor(rest / cfg.amount);
-            if (cnt > 0) {
-                steps.push({
-                    cfg: cfg,
-                    count: cnt
-                });
-                rest -= cnt * cfg.amount;
-            }
-        }
-        return {
-            steps: steps,
-            rest: rest
-        };
-    }
-
-    function txClickChipOnce(cfg) {
-        var info = txFindLabelByTailAndText(cfg.tailEnd, cfg.txt);
-        if (!info || !info.node) {
-            console.warn('[cwBetTx] Không tìm thấy phỉnh', cfg);
-            return false;
-        }
-        var node = clickableOf(info.node, 5);
-        var ok = emitClick(node);
-        if (!ok) {
-            console.warn('[cwBetTx] click phỉnh thất bại', cfg);
-            return false;
-        }
-        return true;
-    }
-
-    function txClickSide(side) {
-        var tailEnd = (String(side || '').toUpperCase() === 'TAI')
-         ? TX_TAIL_BTN_TAI
-         : TX_TAIL_BTN_XIU;
-        var n = txFindNodeByTailEnd(tailEnd);
-        if (!n) {
-            console.warn('[cwBetTx] Không tìm thấy nút cửa', side, 'tailEnd =', tailEnd);
-            return false;
-        }
-        var node = clickableOf(n, 5);
-        var ok = emitClick(node);
-        if (!ok) {
-            console.warn('[cwBetTx] click cửa thất bại', side);
-            return false;
-        }
-        return true;
-    }
-
-    async function cwBetTxByChip(side, amount) {
-        side = String(side || '').toUpperCase();
-        side = (side === 'TAI') ? 'TAI' : 'XIU';
-
-        var amt = Math.max(0, Math.floor(Number(amount) || 0));
-        if (!amt) {
-            console.warn('[cwBetTx] amount = 0');
-            return false;
-        }
-
-        var plan = txMakePlan(amt);
-        var steps = plan.steps;
-        var rest = plan.rest;
-        if (!steps.length || rest > 0) {
-            console.warn('[cwBetTx] Không lập được plan cho amount =', amt, 'rest =', rest);
-            return false;
-        }
-
-        try {
-            console.log('[cwBetTx] side =', side, 'amount =', amt, 'plan =', steps.map(function (s) {
-                    return s.count + '×' + s.cfg.txt;
-                }).join(' + '));
-        } catch (e) {}
-
-        for (var s = 0; s < steps.length; s++) {
-            var step = steps[s];
-            for (var i = 0; i < step.count; i++) {
-                var okChip = txClickChipOnce(step.cfg);
-                if (!okChip)
-                    return false;
-                await sleep(120);
-                var okSide = txClickSide(side);
-                if (!okSide)
-                    return false;
-                await sleep(160);
-            }
-        }
-        return true;
-    }
-
-    // LƯU Ý: Dùng cwBetTxByChip (TÀI/XỈU TipDealer)
+    // LƯU Ý: Chỉ dùng cwBet, không fallback cwBetSmart
     window.__cw_bet = async function (side, amount) {
         try {
             // chuẩn hoá tham số
-            side = String(side || '').toUpperCase();
-            side = (side === 'TAI') ? 'TAI' : 'XIU';
-
+            side = (String(side || '').toUpperCase() === 'TAI') ? 'TAI' : 'XIU';
             var amt = Math.max(0, Math.floor(Number(amount) || 0));
-            if (!amt) {
-                throw new Error('amount_invalid');
+
+            // bắt buộc phải có cwBet
+            if (typeof cwBet !== 'function') {
+                throw new Error('cwBet not found');
             }
 
             // chụp tổng trước khi bet (nếu có)
@@ -3191,11 +2838,8 @@
                  ? window.readTotalsSafe()
                  : null) || {};
 
-            // ĐẶT CƯỢC bằng click phỉnh TipDealer + cửa Tài/Xỉu
-            var ok = await cwBetTxByChip(side, amt);
-            if (!ok) {
-                throw new Error('click_failed');
-            }
+            // ĐẶT CƯỢC bằng cwBet
+            await cwBet(side, amt);
 
             // chờ tổng thay đổi (nếu có util này)
             try {

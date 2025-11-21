@@ -206,14 +206,14 @@ namespace TaiXiuLiveHit.Tasks
             int k = 0;
             foreach (var ch in s)
             {
-                if (ch == '0' || ch == '2' || ch == '4') arr[k++] = 'C';
-                else if (ch == '1' || ch == '3') arr[k++] = 'L';
+                if (ch == 'T') arr[k++] = 'T';
+                else if (ch == 'X') arr[k++] = 'X';
                 // khác -> bỏ qua
             }
             return new string(arr, 0, k);
         }
 
-        public static string OppCL(string cl) => cl == "CHAN" ? "LE" : (cl == "LE" ? "CHAN" : cl);
-        public static string ClCharToSide(char cl) => (cl == 'C') ? "CHAN" : "LE";
+        public static string OppCL(string tx) => tx == "TAI" ? "XIU" : (tx == "XIU" ? "TAI" : tx);
+        public static string ClCharToSide(char tx) => (tx == 'T') ? "TAI" : "XIU";
     }
 }

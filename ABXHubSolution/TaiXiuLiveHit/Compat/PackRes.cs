@@ -34,8 +34,8 @@ namespace TaiXiuLiveHit
             TryMerge(app.Resources, "pack://application:,,,/TaiXiuLiveHit;component/Assets/Images.xaml");
 
             // 2. fallback: tự tạo ảnh để dù Images.xaml không load được vẫn không vỡ XAML
-            EnsureImage(app.Resources, "ImgLE", "pack://application:,,,/TaiXiuLiveHit;component/Assets/side/LE.png");
-            EnsureImage(app.Resources, "ImgCHAN", "pack://application:,,,/TaiXiuLiveHit;component/Assets/side/CHAN.png");
+            EnsureImage(app.Resources, "ImgXIU", "pack://application:,,,/TaiXiuLiveHit;component/Assets/side/XIU.png");
+            EnsureImage(app.Resources, "ImgTAI", "pack://application:,,,/TaiXiuLiveHit;component/Assets/side/TAI.png");
             EnsureImage(app.Resources, "ImgTHANG", "pack://application:,,,/TaiXiuLiveHit;component/Assets/kq/THANG.png");
             EnsureImage(app.Resources, "ImgTHUA", "pack://application:,,,/TaiXiuLiveHit;component/Assets/kq/THUA.png");
 

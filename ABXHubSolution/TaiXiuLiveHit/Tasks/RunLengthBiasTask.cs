@@ -17,12 +17,12 @@ namespace TaiXiuLiveHit.Tasks
 
         private const int T = 3; // ngưỡng run-length
 
-        private static char Opp(char c) => c == 'C' ? 'L' : 'C';
-        private static string ToSide(char c) => (c == 'C') ? "CHAN" : "LE";
+        private static char Opp(char t) => t == 'T' ? 'X' : 'T';
+        private static string ToSide(char t) => (t == 'T') ? "TAI" : "XIU";
 
         private static char DecideNext(string parity)
         {
-            if (string.IsNullOrEmpty(parity)) return 'C';
+            if (string.IsNullOrEmpty(parity)) return 'T';
             char last = parity[^1];
             // đếm run-length của last từ cuối ngược về
             int run = 1;
@@ -60,7 +60,7 @@ namespace TaiXiuLiveHit.Tasks
                 ctx.Log?.Invoke($"[RunLen] next={side}, stake={stake:N0}");
 
                 await PlaceBet(ctx, side, stake, ct);
-                bool win = await WaitRoundFinishAndJudge(ctx, side, snap?.seq ?? "", ct);
+                bool win = await WaitRoundFinishAndJudge(ctx, side, snap?.session ?? "", ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {

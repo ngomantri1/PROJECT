@@ -12,9 +12,9 @@ namespace TaiXiuLiveHit.Tasks
         private static string PickSideByNI(char ni, TaiXiuLiveHit.CwTotals t)
         {
             // N = đánh cửa có tổng tiền NHIỀU hơn; I = đánh cửa có tổng tiền ÍT hơn
-            long c = t?.C ?? 0, l = t?.L ?? 0;
-            if (ni == 'N') return (c >= l) ? "CHAN" : "LE";
-            return (c < l) ? "CHAN" : "LE";
+            long tt = t?.T ?? 0, xx = t?.X ?? 0;
+            if (ni == 'N') return (tt >= xx) ? "TAI" : "XIU";
+            return (tt < xx) ? "TAI" : "XIU";
         }
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
@@ -33,7 +33,7 @@ namespace TaiXiuLiveHit.Tasks
                 await TaskUtil.WaitUntilBetWindow(ctx, ct);
 
                 var snap = ctx.GetSnap();
-                string baseSeq = snap?.seq ?? string.Empty;
+                string baseSession = snap?.session ?? string.Empty;
 
                 string side = PickSideByNI(seq[k], snap?.totals);
                 long stake;
@@ -50,7 +50,7 @@ namespace TaiXiuLiveHit.Tasks
                 }
                 await TaskUtil.PlaceBet(ctx, side, stake, ct);
 
-                bool win = await TaskUtil.WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                bool win = await TaskUtil.WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {

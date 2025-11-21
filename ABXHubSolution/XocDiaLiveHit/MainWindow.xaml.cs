@@ -1300,11 +1300,11 @@ Ví dụ không hợp lệ:
                                     {
                                         await Dispatcher.InvokeAsync(() =>
                                         {
-                                            if (!string.IsNullOrWhiteSpace(uname) && TxtUser != null)
-                                            {
-                                                if (string.IsNullOrWhiteSpace(TxtUser.Text) || TxtUser.Text != uname)
-                                                    TxtUser.Text = uname;
-                                            }
+                                            //if (!string.IsNullOrWhiteSpace(uname) && TxtUser != null)
+                                            //{
+                                               // if (string.IsNullOrWhiteSpace(TxtUser.Text) || TxtUser.Text != uname)
+                                               //     TxtUser.Text = uname;
+                                            //}
                                             if (LblUserName != null) LblUserName.Text = uname;
                                             if (LblAmount != null) LblAmount.Text = bal;
                                         });

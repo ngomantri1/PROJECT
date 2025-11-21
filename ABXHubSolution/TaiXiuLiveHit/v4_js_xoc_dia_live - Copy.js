@@ -5,7 +5,7 @@
     CanvasWatch + MoneyMap + BetMap + TextMap + Scan200Text
     + TK Sequence (restore): LEFT→RIGHT columns, zig-zag T↓/B↑
     (Compat build: no spread operator, no optional chaining)
-    + FIX: totals CHẴN/LẺ by (x,tail) — CHẴN x=591, LẺ x=973,
+    + FIX: totals TÀI/XỈU by (x,tail) — TÀI x=591, XỈU x=973,
     tail = 'XDLive/Canvas/Bg/footer/listLabel/totalBet'
     + STANDARDIZED EXPORTS: moneyTailList(), pickByXTail()
     ========================================================= */
@@ -665,8 +665,8 @@
 
     /* ---------------- helpers for totals by (x, tail) ---------------- */
     var TAIL_TOTAL_EXACT = 'XDLive/Canvas/Bg/footer/listLabel/totalBet';
-    var X_CHAN = 591; // CHẴN
-    var X_LE = 973; // LẺ
+    var X_TAI = 591; // TÀI
+    var X_XIU = 973; // XỈU
     // --- NEW extra totals (by x under same tail) ---
     var X_SAPDOI = 783; // SẤP ĐÔI
     var X_TUTRANG = 561; // TỨ TRẮNG
@@ -723,10 +723,10 @@
     window.moneyTailList = moneyTailList;
     window.pickByXTail = pickByXTail;
     window.cwPickChan = function () {
-        return pickByXTail(moneyTailList(TAIL_TOTAL_EXACT), X_CHAN, TAIL_TOTAL_EXACT);
+        return pickByXTail(moneyTailList(TAIL_TOTAL_EXACT), X_TAI, TAIL_TOTAL_EXACT);
     };
     window.cwPickLe = function () {
-        return pickByXTail(moneyTailList(TAIL_TOTAL_EXACT), X_LE, TAIL_TOTAL_EXACT);
+        return pickByXTail(moneyTailList(TAIL_TOTAL_EXACT), X_XIU, TAIL_TOTAL_EXACT);
     };
 
     /* ---------------- totals (using x & tail) ---------------- */
@@ -734,8 +734,8 @@
         S.money = buildMoneyRects(); // keep map for overlays & legacy helpers
 
         var list = moneyTailList(TAIL_TOTAL_EXACT);
-        var mC = pickByXTail(list, X_CHAN, TAIL_TOTAL_EXACT); // CHẴN
-        var mL = pickByXTail(list, X_LE, TAIL_TOTAL_EXACT); // LẺ
+        var mC = pickByXTail(list, X_TAI, TAIL_TOTAL_EXACT); // TÀI
+        var mL = pickByXTail(list, X_XIU, TAIL_TOTAL_EXACT); // XỈU
         var mSD = pickByXTail(list, X_SAPDOI, TAIL_TOTAL_EXACT); // SẤP ĐÔI
         var mTT = pickByXTail(list, X_TUTRANG, TAIL_TOTAL_EXACT); // TỨ TRẮNG
         var m3T = pickByXTail(list, X_3TRANG, TAIL_TOTAL_EXACT); // 3 TRẮNG
@@ -784,7 +784,7 @@
         while (((performance && performance.now ? performance.now() : Date.now()) - t0) < timeout) {
             await sleep(90);
             var cur = sampleTotalsNow();
-            if ((side === 'CHAN' && cur.C !== last.C) || (side === 'LE' && cur.L !== last.L) || (cur.A !== last.A))
+            if ((side === 'TAI' && cur.C !== last.C) || (side === 'XIU' && cur.L !== last.L) || (cur.A !== last.A))
                 return true;
             last = cur;
         }
@@ -842,8 +842,8 @@
         '<div style="display:flex;gap:10px;align-items:center;margin-bottom:6px">' +
         '<span>Tiền (×1K)</span>' +
         '<input id="iStake" value="1" style="width:60px;background:#0b1b16;border:1px solid #3a6;color:#bff;padding:2px 4px;border-radius:4px">' +
-        '<button id="bBetC">Bet CHẴN</button>' +
-        '<button id="bBetL">Bet LẺ</button>' +
+        '<button id="bBetC">Bet TÀI</button>' +
+        '<button id="bBetL">Bet XỈU</button>' +
         '</div>' +
         '<div id="cwInfo" style="white-space:pre;color:#9f9;line-height:1.45"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
@@ -1358,8 +1358,8 @@
             return cand[0];
         }
         return {
-            chan: pick('chan'),
-            le: pick('le')
+            chan: pick('TAI'),
+            le: pick('XIU')
         };
     }
     async function pickChip(val, chips) {
@@ -1380,7 +1380,7 @@
     }
     async function tapSide(side) {
         var tgts = getTargets();
-        var tgt = (side === 'CHAN' ? tgts.chan : tgts.le);
+        var tgt = (side === 'TAI' ? tgts.chan : tgts.le);
         if (!tgt) {
             console.warn('[cwTapTarget] no target', side);
             return false;
@@ -1456,7 +1456,7 @@
                         }
                     }
                     if (!applied) {
-                        var tgt = (side === 'CHAN' ? getTargets().chan : getTargets().le);
+                        var tgt = (side === 'TAI' ? getTargets().chan : getTargets().le);
                         if (tgt) {
                             var offsets = [[0, 0], [0.15, 0], [-0.15, 0], [0, 0.15], [0, -0.15]];
                             for (var k = 0; k < offsets.length; k++) {
@@ -1571,7 +1571,7 @@
         return String(s || '').normalize('NFD').replace(/[\u0300-\u036F]/g, '').toUpperCase();
     }
     function findSide(side) {
-        var WANT = /CHAN/i.test(side) ? 'CHAN' : 'LE';
+        var WANT = /CHAN/i.test(side) ? 'TAI' : 'XIU';
         var hit = null;
         (function walk(n) {
             if (hit || !active(n))
@@ -1580,7 +1580,7 @@
             var ok = false;
             if (lb && typeof lb.string !== 'undefined') {
                 var s = NORM(lb.string);
-                ok = (WANT === 'CHAN') ? /(CHAN|EVEN)\b/.test(s) : /(\bLE\b|ODD)\b/.test(s);
+                ok = (WANT === 'TAI') ? /(CHAN|EVEN)\b/.test(s) : /(\bLE\b|ODD)\b/.test(s);
             }
             if (!ok) {
                 var names = [],
@@ -1588,7 +1588,7 @@
                 for (p = n; p; p = p.parent)
                     names.push(p.name || '');
                 var path = names.reverse().join('/').toLowerCase();
-                ok = (WANT === 'CHAN') ? /chan|even/.test(path) : (/\ble\b|odd/.test(path));
+                ok = (WANT === 'TAI') ? /chan|even/.test(path) : (/\ble\b|odd/.test(path));
             }
             if (ok && clickable(n)) {
                 hit = n;
@@ -2179,13 +2179,13 @@
         try {
             window.chrome && window.chrome.webview && window.chrome.webview.postMessage && window.chrome.webview.postMessage(JSON.stringify({
                     abx: 'cwBet',
-                    side: 'CHAN',
+                    side: 'TAI',
                     amount: amount,
                     ts: Date.now()
                 }));
         } catch (e) {}
         try {
-            await cwBet('CHAN', amount);
+            await cwBet('TAI', amount);
         } catch (e) {}
     }, true);
     panel.querySelector('#bBetL').addEventListener('click', async function () {
@@ -2194,13 +2194,13 @@
         try {
             window.chrome && window.chrome.webview && window.chrome.webview.postMessage && window.chrome.webview.postMessage(JSON.stringify({
                     abx: 'cwBet',
-                    side: 'LE',
+                    side: 'XIU',
                     amount: amount,
                     ts: Date.now()
                 }));
         } catch (e) {}
         try {
-            await cwBet('LE', amount);
+            await cwBet('XIU', amount);
         } catch (e) {}
     }, true);
 
@@ -2499,7 +2499,7 @@
     window.__cw_bet = async function (side, amount) {
         try {
             // chuẩn hoá tham số
-            side = (String(side || '').toUpperCase() === 'CHAN') ? 'CHAN' : 'LE';
+            side = (String(side || '').toUpperCase() === 'TAI') ? 'TAI' : 'XIU';
             var amt = Math.max(0, Math.floor(Number(amount) || 0));
 
             // bắt buộc phải có cwBet
