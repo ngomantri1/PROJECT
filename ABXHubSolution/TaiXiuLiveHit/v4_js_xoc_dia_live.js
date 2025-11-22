@@ -967,7 +967,7 @@
         '</div>' +
         '<div id="cwInfo" style="white-space:pre;color:#9f9;line-height:1.45"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    root.style.display='none';
+    root.style.display = 'none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -1782,33 +1782,41 @@
     function wideScan() {
         var q = [cc.director.getScene()],
         best = {};
+
         function getBest(val) {
             return best[String(val)];
         }
         function setBest(val, obj) {
             best[String(val)] = obj;
         }
+
         while (q.length) {
             var n = q.shift();
             if (!active(n))
                 continue;
+
             var texts = [];
             var lb = getComp(n, cc.Label);
             if (lb && typeof lb.string !== 'undefined')
                 texts.push(lb.string);
+
             var rt = getComp(n, cc.RichText);
             if (rt && typeof rt.string !== 'undefined')
                 texts.push(rt.string);
+
             var sp = getComp(n, cc.Sprite);
             var sfn = sp && sp.spriteFrame ? sp.spriteFrame.name : '';
             if (sfn)
                 texts.push(sfn);
+
             texts.push(n.name || '');
+
             for (var ti = 0; ti < texts.length; ti++) {
                 var t = texts[ti];
                 var val = parseAmountLoose(t);
                 if (!val)
                     continue;
+
                 var score = 0;
                 var isClick = clickable(n);
                 if (isClick)
@@ -1820,19 +1828,7 @@
                     names.push(p.name || '');
                 var path = names.reverse().join('/').toLowerCase();
 
-                // Ưu tiên mạnh cho các chip tiền TipDealer (2 tail ông chủ cung cấp)
-                var TAIL_TX_ROW1 = 'txgamelive/main/bordertabble/chatcontroller/tipdealer/tabtipdealer/tipcontent/views/contentchat/row1/itemtip/lbmoney';
-                var TAIL_TX_ROW2 = 'txgamelive/main/bordertabble/chatcontroller/tipdealer/tabtipdealer/tipcontent/views/contentchat/row2/itemtip/lbmoney';
-                var isTxTipDealer =
-                    path.indexOf(TAIL_TX_ROW1) !== -1 ||
-                    path.indexOf(TAIL_TX_ROW2) !== -1;
-
-                if (isTxTipDealer) {
-                    // đẩy chip TipDealer lên ưu tiên cao nhất
-                    score += 10;
-                }
-
-                // Heuristic chung cho các game khác
+                // Heuristic chung CHỈ cho các nút chip/bet, KHÔNG ưu tiên TipDealer nữa
                 if (/chip|coin|bet|chon|choose|phinh|menh/.test(path))
                     score += 3;
                 if (NORM(t).indexOf(String(val)) !== -1)
@@ -1849,10 +1845,12 @@
                         score: score
                     });
             }
+
             var kids = n.children || [];
             for (var i = 0; i < kids.length; i++)
                 q.push(kids[i]);
         }
+
         var map = {};
         for (var k in best) {
             map[k] = {
@@ -2961,107 +2959,45 @@
         }
     }
 
-    // --- Bet TÀI/XỈU qua TipDealer (phỉnh chip) ---
+    // --- Bet TÀI/XỈU bằng chip menuMoney + nút ĐẶT CƯỢC ---
+
+    // Nút cửa TÀI / XỈU trên bàn chính
     var TX_TAIL_BTN_TAI = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocTai';
     var TX_TAIL_BTN_XIU = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocXiu';
 
-    // --- Bet TÀI/XỈU qua TipDealer (phỉnh chip) ---
-    var TX_TAIL_BTN_TAI = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocTai';
-    var TX_TAIL_BTN_XIU = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocXiu';
+    // Nút ĐẶT CƯỢC (menuMoney/btnFunctions/btnDatCuoc)
+    var TX_TAIL_BTN_DATCUOC =
+        'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/menuMoney/btnFunctions/btnDatCuoc';
 
-    var TX_TAIL_ROW2 = 'TxGameLive/Main/borderTabble/ChatController/TipDealer/tabTipDealer/TipContent/views/contentChat/row2/itemTip/lbMoney';
-    var TX_TAIL_ROW1 = 'TxGameLive/Main/borderTabble/ChatController/TipDealer/tabTipDealer/TipContent/views/contentChat/row1/itemTip/lbMoney';
-    var TX_TAIL_ROW0 = 'TxGameLive/Main/borderTabble/ChatController/TipDealer/tabTipDealer/TipContent/views/contentChat/row0/itemTip/lbMoney';
-
-    var TX_CHIP_CONFIG = [
-        // row0
-        {
+    // Chip ở hàng menuMoney/btnPrices (ở giữa màn hình, KHÔNG phải TipDealer)
+    var TX_MENU_CHIP_CONFIG = [{
+            amount: 50000000,
+            tailEnd: 'menuMoney/btnPrices/Btn50M'
+        }, {
             amount: 10000000,
-            txt: '10M',
-            tailEnd: TX_TAIL_ROW0
+            tailEnd: 'menuMoney/btnPrices/btn10M'
         }, {
-            amount: 5000000,
-            txt: '5M',
-            tailEnd: TX_TAIL_ROW0
-        }, {
-            amount: 2000000,
-            txt: '2M',
-            tailEnd: TX_TAIL_ROW0
-        },
-
-        // row1
-        {
             amount: 1000000,
-            txt: '1M',
-            tailEnd: TX_TAIL_ROW1
+            tailEnd: 'menuMoney/btnPrices/btn1M'
         }, {
             amount: 500000,
-            txt: '500K',
-            tailEnd: TX_TAIL_ROW1
-        }, {
-            amount: 200000,
-            txt: '200K',
-            tailEnd: TX_TAIL_ROW1
+            tailEnd: 'menuMoney/btnPrices/btn500K'
         }, {
             amount: 100000,
-            txt: '100K',
-            tailEnd: TX_TAIL_ROW1
+            tailEnd: 'menuMoney/btnPrices/btn100K'
         }, {
             amount: 50000,
-            txt: '50K',
-            tailEnd: TX_TAIL_ROW1
-        },
-
-        // row2
-        {
-            amount: 20000,
-            txt: '20K',
-            tailEnd: TX_TAIL_ROW2
+            tailEnd: 'menuMoney/btnPrices/btn50k'
         }, {
             amount: 10000,
-            txt: '10K',
-            tailEnd: TX_TAIL_ROW2
-        }, {
-            amount: 5000,
-            txt: '5K',
-            tailEnd: TX_TAIL_ROW2
-        }, {
-            amount: 2000,
-            txt: '2K',
-            tailEnd: TX_TAIL_ROW2
+            tailEnd: 'menuMoney/btnPrices/btn10k'
         }, {
             amount: 1000,
-            txt: '1K',
-            tailEnd: TX_TAIL_ROW2
+            tailEnd: 'menuMoney/btnPrices/btn1K'
         }
     ];
 
-    function txFindLabelByTailAndText(tailEnd, txt) {
-        var tailLower = String(tailEnd || '').toLowerCase();
-        var want = String(txt || '').trim();
-        var found = null;
-        walkNodes(function (n) {
-            if (found)
-                return;
-            var lb = getComp(n, cc.Label) || getComp(n, cc.RichText);
-            if (!lb || typeof lb.string === 'undefined')
-                return;
-            var s = String(lb.string || '').trim();
-            if (s !== want)
-                return;
-            var t = tailOf(n, 12);
-            if (!String(t || '').toLowerCase().endsWith(tailLower))
-                return;
-            found = {
-                node: n,
-                label: lb,
-                text: s,
-                tail: t
-            };
-        });
-        return found;
-    }
-
+    // Tìm node theo phần đuôi tail (dùng tailOf + walkNodes bên trên)
     function txFindNodeByTailEnd(tailEnd) {
         var tailLower = String(tailEnd || '').toLowerCase();
         var hit = null;
@@ -3076,23 +3012,42 @@
         return hit;
     }
 
-    function txMakePlan(amount) {
+    // Scan xem chip nào ở menuMoney đang tồn tại
+    function txScanMenuChips() {
+        var out = [];
+        for (var i = 0; i < TX_MENU_CHIP_CONFIG.length; i++) {
+            var cfg = TX_MENU_CHIP_CONFIG[i];
+            var n = txFindNodeByTailEnd(cfg.tailEnd);
+            if (!n)
+                continue;
+            out.push({
+                amount: cfg.amount,
+                tailEnd: cfg.tailEnd,
+                node: n
+            });
+        }
+        return out;
+    }
+
+    // Lập plan tách amount thành các chip có sẵn (tham lam từ lớn -> nhỏ)
+    function txBuildPlan(amount, chipList) {
         var rest = Math.max(0, Math.floor(Number(amount) || 0));
         var steps = [];
-        var cfgSorted = TX_CHIP_CONFIG.slice().sort(function (a, b) {
+        var sorted = chipList.slice().sort(function (a, b) {
             return b.amount - a.amount;
         });
-        for (var i = 0; i < cfgSorted.length; i++) {
-            var cfg = cfgSorted[i];
+
+        for (var i = 0; i < sorted.length; i++) {
+            var chip = sorted[i];
             if (rest <= 0)
                 break;
-            var cnt = Math.floor(rest / cfg.amount);
+            var cnt = Math.floor(rest / chip.amount);
             if (cnt > 0) {
                 steps.push({
-                    cfg: cfg,
+                    chip: chip,
                     count: cnt
                 });
-                rest -= cnt * cfg.amount;
+                rest -= cnt * chip.amount;
             }
         }
         return {
@@ -3101,16 +3056,15 @@
         };
     }
 
-    function txClickChipOnce(cfg) {
-        var info = txFindLabelByTailAndText(cfg.tailEnd, cfg.txt);
-        if (!info || !info.node) {
-            console.warn('[cwBetTx] Không tìm thấy phỉnh', cfg);
+    function txClickMenuChipOnce(chip) {
+        if (!chip || !chip.node) {
+            console.warn('[cwBetTx] chip node null', chip);
             return false;
         }
-        var node = clickableOf(info.node, 5);
+        var node = clickableOf(chip.node, 5);
         var ok = emitClick(node);
         if (!ok) {
-            console.warn('[cwBetTx] click phỉnh thất bại', cfg);
+            console.warn('[cwBetTx] click chip thất bại', chip.amount);
             return false;
         }
         return true;
@@ -3120,6 +3074,7 @@
         var tailEnd = (String(side || '').toUpperCase() === 'TAI')
          ? TX_TAIL_BTN_TAI
          : TX_TAIL_BTN_XIU;
+
         var n = txFindNodeByTailEnd(tailEnd);
         if (!n) {
             console.warn('[cwBetTx] Không tìm thấy nút cửa', side, 'tailEnd =', tailEnd);
@@ -3134,6 +3089,23 @@
         return true;
     }
 
+    async function txClickDatCuoc() {
+        var n = txFindNodeByTailEnd(TX_TAIL_BTN_DATCUOC);
+        if (!n) {
+            console.warn('[cwBetTx] Không tìm thấy nút ĐẶT CƯỢC');
+            return false;
+        }
+        var node = clickableOf(n, 5);
+        var ok = emitClick(node);
+        if (!ok) {
+            console.warn('[cwBetTx] click ĐẶT CƯỢC thất bại');
+            return false;
+        }
+        await sleep(180);
+        return true;
+    }
+
+    // ĐẶT CƯỢC: dùng chip menuMoney + click cửa TÀI/XỈU + 1 lần ĐẶT CƯỢC
     async function cwBetTxByChip(side, amount) {
         side = String(side || '').toUpperCase();
         side = (side === 'TAI') ? 'TAI' : 'XIU';
@@ -3144,7 +3116,15 @@
             return false;
         }
 
-        var plan = txMakePlan(amt);
+        // 1) Lấy danh sách chip ở menuMoney
+        var chips = txScanMenuChips();
+        if (!chips.length) {
+            console.warn('[cwBetTx] Không tìm thấy chip menuMoney nào');
+            return false;
+        }
+
+        // 2) Lập plan tách số tiền
+        var plan = txBuildPlan(amt, chips);
         var steps = plan.steps;
         var rest = plan.rest;
         if (!steps.length || rest > 0) {
@@ -3153,24 +3133,43 @@
         }
 
         try {
-            console.log('[cwBetTx] side =', side, 'amount =', amt, 'plan =', steps.map(function (s) {
-                    return s.count + '×' + s.cfg.txt;
+            console.log(
+                '[cwBetTx] side =', side,
+                'amount =', amt,
+                'plan =',
+                steps.map(function (s) {
+                    return s.count + '×' + s.chip.amount.toLocaleString();
                 }).join(' + '));
         } catch (e) {}
 
+        // 3) CHỌN CỬA TRƯỚC (TÀI / XỈU)
+        var okSideOnce = txClickSide(side);
+        if (!okSideOnce) {
+            console.warn('[cwBetTx] click cửa lần đầu thất bại', side);
+            return false;
+        }
+        await sleep(160);
+
+        // 4) Sau khi đã chọn cửa, CHỈ bấm phỉnh theo plan (không bấm lại cửa)
         for (var s = 0; s < steps.length; s++) {
             var step = steps[s];
             for (var i = 0; i < step.count; i++) {
-                var okChip = txClickChipOnce(step.cfg);
-                if (!okChip)
+                var okChip = txClickMenuChipOnce(step.chip);
+                if (!okChip) {
+                    console.warn('[cwBetTx] click chip thất bại', step.chip.amount);
                     return false;
-                await sleep(120);
-                var okSide = txClickSide(side);
-                if (!okSide)
-                    return false;
-                await sleep(160);
+                }
+                await sleep(140);
             }
         }
+
+        // 5) Cuối cùng nhấn ĐẶT CƯỢC 1 lần để xác nhận, KHÔNG dùng tip
+        var okDat = await txClickDatCuoc();
+        if (!okDat) {
+            console.warn('[cwBetTx] click ĐẶT CƯỢC thất bại');
+            return false;
+        }
+
         return true;
     }
 

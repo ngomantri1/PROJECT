@@ -516,6 +516,7 @@
         });
         return b[Math.floor(b.length / 2)] || 0;
     }
+
     function clusterByX(items) {
         if (!items.length)
             return [];
@@ -567,7 +568,118 @@
             }); // TRÊN → DƯỚI
         return cols;
     }
-    function readTKSeq() {
+
+    // NEW: đọc chuỗi kết quả Tài/Xỉu từ dãy icLspThugonTai1..15
+    function readTxLineSeq() {
+        try {
+            if (!window.cc || !cc.director || !cc.director.getScene)
+                return {
+                    seq: '',
+                    which: null,
+                    cols: [],
+                    cells: []
+                };
+
+            var cells = [];
+            walkNodes(function (n) {
+                if (!n)
+                    return;
+                // dùng active() sau này đã khai báo, nhưng là function declaration nên được hoist
+                if (typeof active === 'function' && !active(n))
+                    return;
+
+                var sp = getComp(n, cc.Sprite);
+                if (!sp || !sp.spriteFrame)
+                    return;
+
+                var sfName = (sp.spriteFrame && sp.spriteFrame.name) ? String(sp.spriteFrame.name).toLowerCase() : '';
+                var name = String(n.name || '');
+                var tail = tailOf(n, 16).toLowerCase();
+
+                // chỉ lấy các node icLspThugonTai* trong vùng listhistory
+                if (!/iclspthugontai\d+/i.test(name) &&
+                    tail.indexOf('bordertabble/lsp/listhistory/iclspthugontai') === -1)
+                    return;
+
+                var r = wRect(n);
+                cells.push({
+                    node: n,
+                    name: name,
+                    sprite: sfName,
+                    x: r.x,
+                    y: r.y,
+                    w: r.w,
+                    h: r.h
+                });
+            });
+
+            if (!cells.length) {
+                return {
+                    seq: '',
+                    which: null,
+                    cols: [],
+                    cells: []
+                };
+            }
+
+            // Lọc theo hàng chính bằng median Y
+            var ys = [];
+            var i;
+            for (i = 0; i < cells.length; i++)
+                ys.push(cells[i].y);
+            ys.sort(function (a, b) {
+                return a - b;
+            });
+            var midY = ys[Math.floor(ys.length / 2)] || 0;
+            var thrY = 24;
+
+            var row = [];
+            for (i = 0; i < cells.length; i++) {
+                var c = cells[i];
+                if (Math.abs(c.y - midY) <= thrY)
+                    row.push(c);
+            }
+            if (!row.length)
+                row = cells.slice();
+
+            // Sắp xếp TRÁI → PHẢI
+            row.sort(function (a, b) {
+                return a.x - b.x;
+            });
+
+            var seq = '';
+            for (i = 0; i < row.length; i++) {
+                var s = row[i].sprite || '';
+                if (s.indexOf('taiden') !== -1) {
+                    seq += 'T';
+                } else if (s.indexOf('xiutrang') !== -1) {
+                    seq += 'X';
+                }
+                // các sprite không khớp T/X thì bỏ qua, không thêm '?'
+            }
+
+            return {
+                seq: seq,
+                which: 'tx_line',
+                cols: [{
+                        cx: row.length ? (row[0].x + row[row.length - 1].x) / 2 : 0,
+                        items: row
+                    }
+                ],
+                cells: row
+            };
+        } catch (e) {
+            return {
+                seq: '',
+                which: null,
+                cols: [],
+                cells: []
+            };
+        }
+    }
+
+    // OLD logic: đọc TK theo bảng số 0–4 (thongke1/2), giữ lại làm fallback
+    function readTKSeqFromDigits() {
         var res = tkCellsPrefer('thongke2');
         var cells = res.cells,
         which = res.which;
@@ -600,6 +712,14 @@
             cols: cols,
             cells: cells
         };
+    }
+
+    // NEW wrapper: ưu tiên chuỗi T/X, nếu không có thì fallback TK số
+    function readTKSeq() {
+        var tx = readTxLineSeq();
+        if (tx && tx.seq && tx.seq.length)
+            return tx;
+        return readTKSeqFromDigits();
     }
 
     /* ---------------- resolver/auto ---------------- */
@@ -1106,10 +1226,24 @@
                 s = 45;
             secLeft = s;
         }
+        var session = (typeof readSessionSafe === 'function') ? readSessionSafe() : '';
+        if (!session)
+            session = '--';
+
+        var userName = '';
+        if (typeof window.readUsernameSafe === 'function') {
+            try {
+                userName = window.readUsernameSafe() || '';
+            } catch (_) {
+                userName = '';
+            }
+        }
         var base =
             '• Trạng thái: ' + S.status +
-            ' | Thời gian: ' + (secLeft == null ? '--' : (secLeft + 's')) + '\n' +
-            '• TK : ' + fmt(t.A) +
+            ' | Thời gian: ' + (secLeft == null ? '--' : (secLeft + 's')) +
+            ' | Phiên: ' + session + '\n' +
+            '• Username : ' + (userName || '--') +
+            ' | TK : ' + fmt(t.A) +
             '|TÀI: ' + fmt(t.T) +
             '|XỈU: ' + fmt(t.X) +
             '|SẤP ĐÔI: ' + fmt(t.SD) +
@@ -2058,9 +2192,12 @@
         window.__cw_lastProg = S.prog;
         window.__cw_lastTotals = T;
 
-        // TK sequence
+        // TK sequence (export ra global để bridge dùng)
         var tk = readTKSeq();
         S.seq = tk.seq || '';
+        try {
+            window.__cw_lastSeq = S.seq;
+        } catch (_) {}
 
         // keep focus
         if (S.focus) {
@@ -2266,6 +2403,8 @@
     var _pushTimer = null;
     var _lastJson = '';
     var _lastStatus = '';
+    var _lastSeq = '';
+    var _lastSession = '';
 
     function shallowChanged(obj) {
         var s = '';
@@ -2383,16 +2522,198 @@
     };
 
     function readSeqSafe() {
+        // Ưu tiên dùng cache đã export ra global từ tick()
+        try {
+            if (typeof window.__cw_lastSeq === 'string' && window.__cw_lastSeq.length) {
+                return window.__cw_lastSeq;
+            }
+        } catch (_) {}
+
+        // Fallback: gọi lại readTKSeq() trực tiếp
         try {
             if (typeof readTKSeq === 'function') {
                 var r = readTKSeq();
                 return (r && r.seq) ? r.seq : '';
             }
         } catch (_) {}
+
         return '';
     }
 
-    // Bắt đầu bắn snapshot định kỳ {abx:'tick', prog, totals, seq, status}
+    function readSessionSafe() {
+        try {
+            var TAIL = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbSesionId';
+            var txt = '';
+
+            // 1) Thử lấy qua collectLabels() nếu đã có sẵn label
+            if (typeof collectLabels === 'function') {
+                var labels = collectLabels();
+                if (labels && labels.length) {
+                    var tailLc = TAIL.toLowerCase();
+                    for (var i = 0; i < labels.length; i++) {
+                        var l = labels[i];
+                        var tl = String(l.tail || l.tl || '').toLowerCase();
+                        if (!tl)
+                            continue;
+
+                        // ưu tiên khớp đúng tail, hoặc chứa lbSesionId
+                        if (tl === tailLc ||
+                            (tl.indexOf('lbsesionid') !== -1 && tl.indexOf('borderTabble'.toLowerCase()) !== -1)) {
+                            txt = String(l.text || '').trim();
+                            if (txt)
+                                break;
+                        }
+                    }
+                }
+            }
+
+            // 2) Fallback: đi trực tiếp theo tail như đoạn ông chủ test
+            if (!txt) {
+                function findByTail(tail) {
+                    if (!tail)
+                        return null;
+
+                    if (window.findNodeByTailCompat)
+                        return window.findNodeByTailCompat(tail);
+                    if (window.__abx_findNodeByTail)
+                        return window.__abx_findNodeByTail(tail);
+
+                    if (!(window.cc && cc.director && cc.director.getScene))
+                        return null;
+                    var scene = cc.director.getScene();
+                    var parts = String(tail).split('/').filter(Boolean);
+                    if (parts[0] === scene.name)
+                        parts.shift();
+
+                    var node = scene;
+                    for (var i = 0; i < parts.length; i++) {
+                        var name = parts[i];
+                        var kids = node.children || node._children || [];
+                        var found = null;
+                        for (var j = 0; j < kids.length; j++) {
+                            var kid = kids[j];
+                            if (kid && kid.name === name) {
+                                found = kid;
+                                break;
+                            }
+                        }
+                        if (!found)
+                            return null;
+                        node = found;
+                    }
+                    return node;
+                }
+
+                function getNodeText(node) {
+                    if (!node || !node.getComponent)
+                        return '';
+                    var lbl = node.getComponent(cc.Label);
+                    if (lbl && lbl.string != null)
+                        return String(lbl.string);
+                    var rt = node.getComponent(cc.RichText);
+                    if (rt && rt.string != null)
+                        return String(rt.string);
+                    return '';
+                }
+
+                var node = findByTail(TAIL);
+                if (node) {
+                    txt = getNodeText(node);
+                }
+            }
+
+            txt = String(txt || '').trim();
+            if (!txt)
+                return '';
+
+            // Chuẩn hoá dạng "#501667"
+            if (txt.charAt(0) !== '#' && /^\d+$/.test(txt)) {
+                txt = '#' + txt;
+            }
+
+            return txt;
+        } catch (_) {}
+        return '';
+    }
+
+    window.readSessionSafe = readSessionSafe;
+
+    // NEW: đọc Username an toàn theo tail Cocos
+    function readUsernameSafe() {
+        try {
+            if (!window.cc || !window.cc.director || !window.cc.director.getScene)
+                return '';
+
+            // helper: tìm node theo tail Cocos
+            function findByTail(tail) {
+                if (!tail)
+                    return null;
+
+                // ưu tiên các hàm ông chủ đã tiêm
+                if (window.findNodeByTailCompat)
+                    return window.findNodeByTailCompat(tail);
+                if (window.__abx_findNodeByTail)
+                    return window.__abx_findNodeByTail(tail);
+
+                // fallback: tự lần từ scene
+                var scene = window.cc.director.getScene();
+                if (!scene)
+                    return null;
+
+                var parts = String(tail).split('/').filter(Boolean);
+                if (parts[0] === scene.name)
+                    parts.shift();
+
+                var node = scene;
+                for (var i = 0; i < parts.length; i++) {
+                    var name = parts[i];
+                    var kids = node.children || node._children || [];
+                    var found = null;
+                    for (var j = 0; j < kids.length; j++) {
+                        if (kids[j] && kids[j].name === name) {
+                            found = kids[j];
+                            break;
+                        }
+                    }
+                    if (!found)
+                        return null;
+                    node = found;
+                }
+                return node;
+            }
+
+            function getNodeText(node) {
+                if (!node || !node.getComponent)
+                    return '';
+                var lbl = node.getComponent(cc.Label);
+                if (lbl && lbl.string != null)
+                    return String(lbl.string);
+                var rt = node.getComponent(cc.RichText);
+                if (rt && rt.string != null)
+                    return String(rt.string);
+                return '';
+            }
+
+            // tail Username
+            var tail = 'MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/NameUser';
+            var node = findByTail(tail);
+            if (!node)
+                return '';
+
+            var txt = getNodeText(node) || '';
+            txt = String(txt).trim();
+            if (!txt)
+                return '';
+
+            // chuẩn hoá khoảng trắng
+            return txt.replace(/\s+/g, ' ');
+        } catch (_) {
+            return '';
+        }
+    }
+
+    window.readUsernameSafe = readUsernameSafe;
+
     window.__cw_startPush = function (tickMs) {
         try {
             tickMs = Number(tickMs) || 240;
@@ -2412,19 +2733,19 @@
                 var st = (typeof window.cwStatusByProg === 'function')
                  ? window.cwStatusByProg(p)
                  : '';
-                var seq = readSeqSafe();
 
+                // Lấy chuỗi kết quả an toàn (ưu tiên cache __cw_lastSeq)
+                var seq = readSeqSafe() || '';
                 var last = '';
                 if (seq && seq.length)
                     last = seq.slice(-1);
 
-                // === Thêm mapping prog -> thời gian (giây) ===
+                // Mapping prog -> thời gian (giây)
                 var timeSec = null;
                 var timePercent = null;
                 var timeText = '';
                 if (typeof p === 'number' && !isNaN(p)) {
-                    // p ∈ [0,1] -> đếm ngược từ 45s về 0s
-                    var sec = Math.round((1 - Math.max(0, Math.min(1, p))) * 45);
+                    var sec = Math.round(p * 45);
                     if (sec < 0)
                         sec = 0;
                     if (sec > 45)
@@ -2437,8 +2758,8 @@
 
                 var snap = {
                     abx: 'tick',
-                    // prog: số giây còn lại 0..45
-                    prog: timeSec,
+                    // prog: số giây còn lại 0..45 (theo tỉ lệ p)
+                    prog: p,
                     timeSec: timeSec,
                     timePercent: timePercent,
                     timeText: timeText,
@@ -2448,32 +2769,35 @@
                     seq: seq,
                     last: last,
                     status: String(st || ''),
+                    session: (typeof readSessionSafe === 'function') ? readSessionSafe() : '',
+                    username: (typeof readUsernameSafe === 'function') ? readUsernameSafe() : '',
                     ts: Date.now()
                 };
 
                 if (shallowChanged(snap)) {
-                    // Log nhẹ để kiểm tra trạng thái đã bắn sang C# hay chưa
+                    // Log trạng thái + thời gian
                     if (snap.status !== _lastStatus) {
                         _lastStatus = snap.status;
                         var secLog = null;
-                        if (typeof p === 'number') {
-                            var pp = p;
-                            if (pp < 0)
-                                pp = 0;
-                            if (pp > 1)
-                                pp = 1;
-                            var ss = Math.round(pp * 45);
-                            if (ss < 0)
-                                ss = 0;
-                            if (ss > 45)
-                                ss = 45;
-                            secLog = ss;
-                        }
-                        console.log('[CW][push] status =', snap.status, 'sec =', secLog);
+                        if (typeof timeSec === 'number')
+                            secLog = timeSec;
+                        //console.log('[CW][push] status =', snap.status, 'sec =', secLog);
                     }
+
+                    // Log seq + session khi thay đổi
+                    if (snap.seq !== _lastSeq || snap.session !== _lastSession) {
+                        _lastSeq = snap.seq;
+                        _lastSession = snap.session;
+                        //console.log(
+                        //   '[CW][push] seq/session =',
+                        //   snap.seq || '<empty>',
+                        //    '| session =',
+                        //    snap.session || '<empty>'
+                        // );
+                    }
+
                     safePost(snap);
                 }
-
             }, tickMs);
 
             return 'started';
@@ -2495,16 +2819,371 @@
         return 'stopped';
     };
 
-    // LƯU Ý: Chỉ dùng cwBet, không fallback cwBetSmart
+    // Helpers dùng riêng cho __cw_bet (Tài/Xỉu TipDealer), độc lập với IIFE phía trên
+    function sleep(ms) {
+        return new Promise(function (r) {
+            setTimeout(r, ms);
+        });
+    }
+
+    function getComp(n, T) {
+        try {
+            return n && n.getComponent ? n.getComponent(T) : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function hasBtn(n) {
+        return !!getComp(n, cc.Button);
+    }
+
+    function hasTgl(n) {
+        return !!getComp(n, cc.Toggle);
+    }
+
+    function clickable(n) {
+        return hasBtn(n) || hasTgl(n) || n._touchListener;
+    }
+
+    function emitClick(node) {
+        var b = getComp(node, cc.Button);
+        if (b && b.interactable !== false) {
+            try {
+                cc.Component.EventHandler.emitEvents(
+                    b.clickEvents,
+                    new cc.Event.EventCustom('click', true));
+            } catch (e) {}
+            return true;
+        }
+
+        var t = getComp(node, cc.Toggle);
+        if (t && t.interactable !== false) {
+            try {
+                t.isChecked = true;
+                if (t._emitToggleEvents)
+                    t._emitToggleEvents();
+            } catch (e) {}
+            return true;
+        }
+
+        try {
+            var cam = cc.Camera.findCamera(node);
+            var sp = cam.worldToScreen(node.convertToWorldSpaceAR(cc.v2()));
+            var fs = cc.view.getFrameSize();
+            var vs = cc.view.getVisibleSize();
+            var x = sp.x * (fs.width / vs.width);
+            var y = sp.y * (fs.height / vs.height);
+            var cvs = document.querySelector('canvas');
+            if (!cvs)
+                return false;
+
+            cvs.dispatchEvent(new PointerEvent('pointerdown', {
+                    clientX: x,
+                    clientY: y,
+                    buttons: 1,
+                    bubbles: true
+                }));
+            cvs.dispatchEvent(new PointerEvent('pointerup', {
+                    clientX: x,
+                    clientY: y,
+                    buttons: 1,
+                    bubbles: true
+                }));
+            return true;
+        } catch (e) {
+            console.warn('[emitClick][bridge] error', e);
+            return false;
+        }
+    }
+
+    function clickableOf(node, depth) {
+        depth = depth || 5;
+        var cur = node,
+        d = 0;
+        while (cur && d <= depth) {
+            if (clickable(cur))
+                return cur;
+            cur = cur.parent;
+            d++;
+        }
+        return node;
+    }
+
+    function tailOf(n, limit) {
+        limit = limit || 12;
+        var a = [];
+        try {
+            var t = n,
+            c = 0;
+            while (t && c < 64) {
+                if (t.name)
+                    a.push(t.name);
+                t = t.parent || t._parent || null;
+                c++;
+            }
+        } catch (e) {}
+        a.reverse();
+        return a.slice(-limit).join('/');
+    }
+
+    function walkNodes(cb) {
+        if (!(window.cc && cc.director && cc.director.getScene))
+            return;
+        var scene = cc.director.getScene();
+        if (!scene)
+            return;
+
+        var st = [scene];
+        var seen = [];
+        function seenHas(x) {
+            return seen.indexOf(x) !== -1;
+        }
+        function seenAdd(x) {
+            if (!seenHas(x))
+                seen.push(x);
+        }
+
+        while (st.length) {
+            var n = st.pop();
+            if (!n || seenHas(n))
+                continue;
+            seenAdd(n);
+            try {
+                cb(n);
+            } catch (e) {}
+            var kids = (n.children || n._children) || [];
+            for (var i = 0; i < kids.length; i++) {
+                var k = kids[i];
+                if (k && !seenHas(k))
+                    st.push(k);
+            }
+        }
+    }
+
+    // --- Bet TÀI/XỈU qua TipDealer (phỉnh chip) ---
+    var TX_TAIL_BTN_TAI = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocTai';
+    var TX_TAIL_BTN_XIU = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocXiu';
+
+    // --- Bet TÀI/XỈU qua TipDealer (phỉnh chip) ---
+    var TX_TAIL_BTN_TAI = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocTai';
+    var TX_TAIL_BTN_XIU = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocXiu';
+
+    var TX_TAIL_ROW2 = 'TxGameLive/Main/borderTabble/ChatController/TipDealer/tabTipDealer/TipContent/views/contentChat/row2/itemTip/lbMoney';
+    var TX_TAIL_ROW1 = 'TxGameLive/Main/borderTabble/ChatController/TipDealer/tabTipDealer/TipContent/views/contentChat/row1/itemTip/lbMoney';
+    var TX_TAIL_ROW0 = 'TxGameLive/Main/borderTabble/ChatController/TipDealer/tabTipDealer/TipContent/views/contentChat/row0/itemTip/lbMoney';
+
+    var TX_CHIP_CONFIG = [
+        // row0
+        {
+            amount: 10000000,
+            txt: '10M',
+            tailEnd: TX_TAIL_ROW0
+        }, {
+            amount: 5000000,
+            txt: '5M',
+            tailEnd: TX_TAIL_ROW0
+        }, {
+            amount: 2000000,
+            txt: '2M',
+            tailEnd: TX_TAIL_ROW0
+        },
+
+        // row1
+        {
+            amount: 1000000,
+            txt: '1M',
+            tailEnd: TX_TAIL_ROW1
+        }, {
+            amount: 500000,
+            txt: '500K',
+            tailEnd: TX_TAIL_ROW1
+        }, {
+            amount: 200000,
+            txt: '200K',
+            tailEnd: TX_TAIL_ROW1
+        }, {
+            amount: 100000,
+            txt: '100K',
+            tailEnd: TX_TAIL_ROW1
+        }, {
+            amount: 50000,
+            txt: '50K',
+            tailEnd: TX_TAIL_ROW1
+        },
+
+        // row2
+        {
+            amount: 20000,
+            txt: '20K',
+            tailEnd: TX_TAIL_ROW2
+        }, {
+            amount: 10000,
+            txt: '10K',
+            tailEnd: TX_TAIL_ROW2
+        }, {
+            amount: 5000,
+            txt: '5K',
+            tailEnd: TX_TAIL_ROW2
+        }, {
+            amount: 2000,
+            txt: '2K',
+            tailEnd: TX_TAIL_ROW2
+        }, {
+            amount: 1000,
+            txt: '1K',
+            tailEnd: TX_TAIL_ROW2
+        }
+    ];
+
+    function txFindLabelByTailAndText(tailEnd, txt) {
+        var tailLower = String(tailEnd || '').toLowerCase();
+        var want = String(txt || '').trim();
+        var found = null;
+        walkNodes(function (n) {
+            if (found)
+                return;
+            var lb = getComp(n, cc.Label) || getComp(n, cc.RichText);
+            if (!lb || typeof lb.string === 'undefined')
+                return;
+            var s = String(lb.string || '').trim();
+            if (s !== want)
+                return;
+            var t = tailOf(n, 12);
+            if (!String(t || '').toLowerCase().endsWith(tailLower))
+                return;
+            found = {
+                node: n,
+                label: lb,
+                text: s,
+                tail: t
+            };
+        });
+        return found;
+    }
+
+    function txFindNodeByTailEnd(tailEnd) {
+        var tailLower = String(tailEnd || '').toLowerCase();
+        var hit = null;
+        walkNodes(function (n) {
+            if (hit)
+                return;
+            var t = tailOf(n, 16);
+            if (String(t || '').toLowerCase().endsWith(tailLower)) {
+                hit = n;
+            }
+        });
+        return hit;
+    }
+
+    function txMakePlan(amount) {
+        var rest = Math.max(0, Math.floor(Number(amount) || 0));
+        var steps = [];
+        var cfgSorted = TX_CHIP_CONFIG.slice().sort(function (a, b) {
+            return b.amount - a.amount;
+        });
+        for (var i = 0; i < cfgSorted.length; i++) {
+            var cfg = cfgSorted[i];
+            if (rest <= 0)
+                break;
+            var cnt = Math.floor(rest / cfg.amount);
+            if (cnt > 0) {
+                steps.push({
+                    cfg: cfg,
+                    count: cnt
+                });
+                rest -= cnt * cfg.amount;
+            }
+        }
+        return {
+            steps: steps,
+            rest: rest
+        };
+    }
+
+    function txClickChipOnce(cfg) {
+        var info = txFindLabelByTailAndText(cfg.tailEnd, cfg.txt);
+        if (!info || !info.node) {
+            console.warn('[cwBetTx] Không tìm thấy phỉnh', cfg);
+            return false;
+        }
+        var node = clickableOf(info.node, 5);
+        var ok = emitClick(node);
+        if (!ok) {
+            console.warn('[cwBetTx] click phỉnh thất bại', cfg);
+            return false;
+        }
+        return true;
+    }
+
+    function txClickSide(side) {
+        var tailEnd = (String(side || '').toUpperCase() === 'TAI')
+         ? TX_TAIL_BTN_TAI
+         : TX_TAIL_BTN_XIU;
+        var n = txFindNodeByTailEnd(tailEnd);
+        if (!n) {
+            console.warn('[cwBetTx] Không tìm thấy nút cửa', side, 'tailEnd =', tailEnd);
+            return false;
+        }
+        var node = clickableOf(n, 5);
+        var ok = emitClick(node);
+        if (!ok) {
+            console.warn('[cwBetTx] click cửa thất bại', side);
+            return false;
+        }
+        return true;
+    }
+
+    async function cwBetTxByChip(side, amount) {
+        side = String(side || '').toUpperCase();
+        side = (side === 'TAI') ? 'TAI' : 'XIU';
+
+        var amt = Math.max(0, Math.floor(Number(amount) || 0));
+        if (!amt) {
+            console.warn('[cwBetTx] amount = 0');
+            return false;
+        }
+
+        var plan = txMakePlan(amt);
+        var steps = plan.steps;
+        var rest = plan.rest;
+        if (!steps.length || rest > 0) {
+            console.warn('[cwBetTx] Không lập được plan cho amount =', amt, 'rest =', rest);
+            return false;
+        }
+
+        try {
+            console.log('[cwBetTx] side =', side, 'amount =', amt, 'plan =', steps.map(function (s) {
+                    return s.count + '×' + s.cfg.txt;
+                }).join(' + '));
+        } catch (e) {}
+
+        for (var s = 0; s < steps.length; s++) {
+            var step = steps[s];
+            for (var i = 0; i < step.count; i++) {
+                var okChip = txClickChipOnce(step.cfg);
+                if (!okChip)
+                    return false;
+                await sleep(120);
+                var okSide = txClickSide(side);
+                if (!okSide)
+                    return false;
+                await sleep(160);
+            }
+        }
+        return true;
+    }
+
+    // LƯU Ý: Dùng cwBetTxByChip (TÀI/XỈU TipDealer)
     window.__cw_bet = async function (side, amount) {
         try {
             // chuẩn hoá tham số
-            side = (String(side || '').toUpperCase() === 'TAI') ? 'TAI' : 'XIU';
-            var amt = Math.max(0, Math.floor(Number(amount) || 0));
+            side = String(side || '').toUpperCase();
+            side = (side === 'TAI') ? 'TAI' : 'XIU';
 
-            // bắt buộc phải có cwBet
-            if (typeof cwBet !== 'function') {
-                throw new Error('cwBet not found');
+            var amt = Math.max(0, Math.floor(Number(amount) || 0));
+            if (!amt) {
+                throw new Error('amount_invalid');
             }
 
             // chụp tổng trước khi bet (nếu có)
@@ -2512,8 +3191,11 @@
                  ? window.readTotalsSafe()
                  : null) || {};
 
-            // ĐẶT CƯỢC bằng cwBet
-            await cwBet(side, amt);
+            // ĐẶT CƯỢC bằng click phỉnh TipDealer + cửa Tài/Xỉu
+            var ok = await cwBetTxByChip(side, amt);
+            if (!ok) {
+                throw new Error('click_failed');
+            }
 
             // chờ tổng thay đổi (nếu có util này)
             try {

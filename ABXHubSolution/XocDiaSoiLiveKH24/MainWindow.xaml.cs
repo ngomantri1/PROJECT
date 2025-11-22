@@ -1647,8 +1647,36 @@ Ví dụ không hợp lệ:
 
         private async Task<string> EnsureFixedRuntimePresentAsync()
         {
-            var baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                       AppLocalDirName, "WebView2Fixed");
+            // 0) Nếu đang chạy như plugin trong AutoBetHub ⇒ ưu tiên dùng runtime dùng chung
+            try
+            {
+                var entryName = Assembly.GetEntryAssembly()?.GetName().Name;
+                if (!string.IsNullOrEmpty(entryName) &&
+                    string.Equals(entryName, "AutoBetHub", StringComparison.OrdinalIgnoreCase))
+                {
+                    var hubDir = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "AutoBetHub", "ThirdParty", "WebView2Fixed_win-x64");
+
+                    var hubExe = Path.Combine(hubDir, "msedgewebview2.exe");
+                    if (File.Exists(hubExe))
+                    {
+                        Log("[Web] Using host fixed runtime from AutoBetHub: " + hubDir);
+                        return hubDir;
+                    }
+
+                    Log("[Web] Host fixed runtime not found at: " + hubDir);
+                }
+            }
+            catch
+            {
+                // Bỏ qua lỗi detect host, sẽ fallback sang runtime riêng bên dưới
+            }
+
+            // 1) Runtime riêng của XocDiaSoiLiveKH24 (dùng khi chạy EXE độc lập)
+            var baseDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                AppLocalDirName, "WebView2Fixed");
             var targetDir = Path.Combine(baseDir, "fixed");
 
             // Nếu đã có exe chính => coi như đã bung
@@ -1658,29 +1686,27 @@ Ví dụ không hợp lệ:
             Directory.CreateDirectory(targetDir);
 
             var resName = FindResourceName("ThirdParty.WebView2Fixed_win-x64.zip")
-                          ?? "XocDiaSoiLiveKH24.ThirdParty.WebView2Fixed_win-x64.zip";
+                          ?? Wv2ZipResNameX64;
 
             using var s = Assembly.GetExecutingAssembly().GetManifestResourceStream(resName)
                            ?? throw new FileNotFoundException("Missing embedded resource: " + resName);
-            using var za = new System.IO.Compression.ZipArchive(s, System.IO.Compression.ZipArchiveMode.Read);
+            using var za = new System.IO.Compression.ZipArchive(
+                s, System.IO.Compression.ZipArchiveMode.Read);
 
             foreach (var e in za.Entries)
             {
                 var outPath = Path.Combine(targetDir, e.FullName);
                 var dir = Path.GetDirectoryName(outPath);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                if (string.IsNullOrEmpty(e.Name)) continue; // folder
+                if (string.IsNullOrEmpty(e.Name)) continue; // bỏ folder rỗng
+
                 using var es = e.Open();
                 using var fs = File.Create(outPath);
-                await es.CopyToAsync(fs);
+                es.CopyTo(fs);
             }
 
             return targetDir;
         }
-
-
-
-
 
         private bool CheckWebView2RuntimeOrNotify()
         {

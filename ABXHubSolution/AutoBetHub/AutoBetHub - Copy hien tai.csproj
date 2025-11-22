@@ -8,9 +8,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
-    <Version>25.11.22.1</Version>
-    <!-- Mặc định: build FULL có kèm môi trường ThirdParty. IncludeThirdPartyRuntime=true
-         Khi build gói update nhẹ, truyền IncludeThirdPartyRuntime=false-->
+    <Version>25.11.20.2</Version>
+    <!-- Mặc định: build FULL có kèm môi trường ThirdParty.
+         Khi build gói update nhẹ, truyền IncludeThirdPartyRuntime=false -->
     <IncludeThirdPartyRuntime>true</IncludeThirdPartyRuntime>
   </PropertyGroup>
 
@@ -29,24 +29,23 @@
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
 
-  <!-- ===== Release (single-file exe) ===== -->
-  <PropertyGroup Condition="'$(Configuration)'=='Release'">
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <!-- FULL: self-contained; UPDATE: framework-dependent -->
-    <SelfContained Condition="'$(IncludeThirdPartyRuntime)'=='true'">true</SelfContained>
-    <SelfContained Condition="'$(IncludeThirdPartyRuntime)'=='false'">false</SelfContained>
-    <!-- Cả FULL và UPDATE đều xuất ra 1 file exe -->
-    <PublishSingleFile>true</PublishSingleFile>
-    <!-- Các cờ self-extract dùng cho bản self-contained;
-         với UPDATE (SelfContained=false) thì chúng hầu như bị bỏ qua -->
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
-    <!-- Compression chỉ hợp lệ cho self-contained -->
-    <EnableCompressionInSingleFile Condition="'$(IncludeThirdPartyRuntime)'=='true'">true</EnableCompressionInSingleFile>
-    <EnableCompressionInSingleFile Condition="'$(IncludeThirdPartyRuntime)'=='false'">false</EnableCompressionInSingleFile>
-    <PublishTrimmed>false</PublishTrimmed>
-    <DebugType>embedded</DebugType>
-  </PropertyGroup>
+<!-- ===== Release (single-file exe) ===== -->
+<PropertyGroup Condition="'$(Configuration)'=='Release'">
+  <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  <!-- Nếu IncludeThirdPartyRuntime=true (bản FULL) => build self-contained
+       Nếu IncludeThirdPartyRuntime=false (bản UPDATE nhẹ) => framework-dependent -->
+  <SelfContained Condition="'$(IncludeThirdPartyRuntime)'=='true'">true</SelfContained>
+  <SelfContained Condition="'$(IncludeThirdPartyRuntime)'=='false'">false</SelfContained>
+  <PublishSingleFile>true</PublishSingleFile>
+  <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+  <EnableCompressionInSingleFile Condition="'$(IncludeThirdPartyRuntime)'=='true'">true</EnableCompressionInSingleFile>
+  <EnableCompressionInSingleFile Condition="'$(IncludeThirdPartyRuntime)'=='false'">false</EnableCompressionInSingleFile>
+  <PublishTrimmed>false</PublishTrimmed>
+  <DebugType>embedded</DebugType>
+</PropertyGroup>
+
+
 
   <!-- Bắt buộc: tham chiếu core -->
   <ItemGroup>
@@ -106,13 +105,10 @@
 
   <!-- Embed ZIP ở Release (chỉ với bản FULL có môi trường) -->
   <ItemGroup Condition="'$(Configuration)'=='Release' and '$(IncludeThirdPartyRuntime)'=='true'">
-    <!-- Xoá EmbeddedResource mặc định (nếu có), rồi thêm lại với LogicalName chuẩn -->
-    <EmbeddedResource Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
-    <EmbeddedResource Include="ThirdParty\WebView2Fixed_win-x64.zip">
+    <EmbeddedResource Update="ThirdParty\WebView2Fixed_win-x64.zip">
       <LogicalName>AutoBetHub.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
-
 
   <!-- KHI KHÔNG DÙNG MÔI TRƯỜNG: loại bỏ toàn bộ file trong ThirdParty khỏi build/publish -->
   <ItemGroup Condition="'$(IncludeThirdPartyRuntime)'=='false'">

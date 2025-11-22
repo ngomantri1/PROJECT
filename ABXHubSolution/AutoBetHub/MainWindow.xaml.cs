@@ -15,6 +15,8 @@ using System.Net.Http;
 using ABX.Core;
 using AutoBetHub.Hosting;
 using AutoBetHub.Services;
+using System.IO.Compression;
+
 
 namespace AutoBetHub
 {
@@ -123,21 +125,34 @@ namespace AutoBetHub
                     _log.Info($"[Hub] WebDir: {_webDir}");
                     _log.Info($"[Hub] LocalPluginsDir: {_pluginsDir}");
 
+                    // đảm bảo runtime fixed được bung ra local (nếu có nhúng trong exe)
+                    EnsureFixedWebView2Runtime();
+
+
                     // chuẩn bị WebView2 ở home
                     var webview2Data = Path.Combine(_localRoot, "WebView2");
                     Directory.CreateDirectory(webview2Data);
 
-                    // Ưu tiên dùng runtime fixed nếu đã được bung ở %LocalAppData%\AutoBetHub\ThirdParty\WebView2Fixed_win-x64
+                    // Ưu tiên dùng runtime fixed ở localRoot; nếu không có thì fallback sang cạnh exe;
+                    // nếu vẫn không có thì dùng Evergreen (nếu máy đã cài).
                     string? browserFolder = null;
-                    var fixedRuntime = Path.Combine(_thirdPartyDir, "WebView2Fixed_win-x64");
-                    if (Directory.Exists(fixedRuntime))
+
+                    var fixedRuntimeLocal = Path.Combine(_thirdPartyDir, "WebView2Fixed_win-x64");
+                    var fixedRuntimeBase = Path.Combine(_baseDir, "ThirdParty", "WebView2Fixed_win-x64");
+
+                    if (Directory.Exists(fixedRuntimeLocal))
                     {
-                        browserFolder = fixedRuntime;
-                        _log.Info("[Home] Using fixed WebView2 runtime at " + fixedRuntime);
+                        browserFolder = fixedRuntimeLocal;
+                        _log.Info("[Home] Using fixed WebView2 runtime at (localRoot) " + fixedRuntimeLocal);
+                    }
+                    else if (Directory.Exists(fixedRuntimeBase))
+                    {
+                        browserFolder = fixedRuntimeBase;
+                        _log.Info("[Home] Using fixed WebView2 runtime at (BaseDir) " + fixedRuntimeBase);
                     }
                     else
                     {
-                        _log.Info("[Home] Using Evergreen WebView2 runtime (no ThirdParty\\WebView2Fixed_win-x64 found).");
+                        _log.Info("[Home] Using Evergreen WebView2 runtime (no fixed runtime folder found).");
                     }
 
                     // tạo environment để nó KHÔNG tạo thư mục cạnh exe nữa
@@ -602,6 +617,70 @@ namespace AutoBetHub
             }
             catch { }
         }
+
+        private void EnsureFixedWebView2Runtime()
+        {
+            try
+            {
+                var fixedRuntimeLocal = Path.Combine(_thirdPartyDir, "WebView2Fixed_win-x64");
+                var fixedRuntimeBase = Path.Combine(_baseDir, "ThirdParty", "WebView2Fixed_win-x64");
+                var zipPath = Path.Combine(_thirdPartyDir, "WebView2Fixed_win-x64.zip");
+
+                // Nếu runtime đã tồn tại (local hoặc cạnh exe) thì KHÔNG bung lại nữa.
+                // Chỉ xóa file zip thừa nếu còn.
+                if (Directory.Exists(fixedRuntimeLocal) || Directory.Exists(fixedRuntimeBase))
+                {
+                    try
+                    {
+                        if (File.Exists(zipPath))
+                        {
+                            File.Delete(zipPath);
+                            _log.Info("[Home] Deleted leftover WebView2Fixed zip (runtime already present).");
+                        }
+                    }
+                    catch (Exception exDel)
+                    {
+                        _log.Warn("[Home] Delete leftover WebView2Fixed zip failed: " + exDel.Message);
+                    }
+
+                    _log.Info("[Home] Fixed WebView2 runtime already present, skip extract.");
+                    return;
+                }
+
+                // Đến đây nghĩa là CHƯA có runtime -> bung từ resource nhúng
+                var asm = Assembly.GetExecutingAssembly();
+                const string resName = "AutoBetHub.ThirdParty.WebView2Fixed_win-x64.zip";
+                using var s = asm.GetManifestResourceStream(resName);
+                if (s == null)
+                {
+                    _log.Info("[Home] No embedded WebView2 fixed runtime resource found.");
+                    return;
+                }
+
+                Directory.CreateDirectory(_thirdPartyDir);
+                using (var fs = File.Create(zipPath))
+                    s.CopyTo(fs);
+
+                _log.Info("[Home] Extracting WebView2 fixed runtime to " + fixedRuntimeLocal);
+                ZipFile.ExtractToDirectory(zipPath, fixedRuntimeLocal, overwriteFiles: true);
+
+                try
+                {
+                    if (File.Exists(zipPath))
+                        File.Delete(zipPath);
+                }
+                catch (Exception exDel)
+                {
+                    _log.Warn("[Home] Delete WebView2Fixed zip after extract failed: " + exDel.Message);
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Warn("[Home] EnsureFixedWebView2Runtime failed: " + ex.Message);
+            }
+        }
+
+
 
         // =========================================================
         //  unified runtime helpers
