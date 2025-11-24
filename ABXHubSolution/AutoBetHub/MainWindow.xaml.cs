@@ -50,8 +50,6 @@ namespace AutoBetHub
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "version";  // <- đổi theo repo của bạn
         const string LicenseBranch = "main";          // <- nhánh
-        const string UrlUpateFile = "https://drive.google.com/drive/folders/1cpK3SieshYEpkMWWDpUpQgSH8HBm9CM_";
-
         public MainWindow()
         {
             InitializeComponent();
@@ -88,42 +86,90 @@ namespace AutoBetHub
                     _baseDir = AppContext.BaseDirectory;
                     _webDir = ResolveWebRoot();
 
-                    // 0) nếu exe có nhúng plugin thì bung hết ra local
-                    ExtractEmbeddedPluginsToLocal();
-
-                    // 1) nếu cạnh exe (debug/publish folder) có thư mục Plugins
-                    //    VÀ trong đó thực sự có .dll thì copy sang local để chạy
-                    var basePlugins = Path.Combine(_baseDir, "Plugins");
-                    var baseHasDll =
-                        Directory.Exists(basePlugins) &&
-                        Directory.EnumerateFiles(basePlugins, "*.dll", SearchOption.AllDirectories).Any();
-
-                    if (baseHasDll)
+                    // ==== So sánh version exe / version đã cài (AppVersion.txt) ====
+                    Version exeVersion = GetCurrentVersion();
+                    Version? installedVersion = null;
+                    try
                     {
-                        CopyPluginsToLocal(basePlugins, _localPluginsDir);
-                    }
-                    else
-                    {
-                        // 1b) Fallback: nếu chạy từ bin\Debug\net8.0-windows mà chưa có Plugins ở đó
-                        // thì đi lên lại thư mục project: ...\AutoBetHub\Plugins
-                        var devPlugins = Path.GetFullPath(Path.Combine(_baseDir, "..", "..", "..", "Plugins"));
-                        if (Directory.Exists(devPlugins))
+                        var verPath = Path.Combine(_localRoot, "AppVersion.txt");
+                        if (File.Exists(verPath))
                         {
-                            _log.Info("[Hub] Runtime Plugins empty/missing, fallback to source Plugins: " + devPlugins);
-                            CopyPluginsToLocal(devPlugins, _localPluginsDir);
+                            var raw = File.ReadAllText(verPath).Trim();
+                            if (!string.IsNullOrEmpty(raw) && Version.TryParse(raw, out var v))
+                                installedVersion = v;
+                        }
+                    }
+                    catch (Exception exVer)
+                    {
+                        _log.Warn("[Update] Read AppVersion.txt failed: " + exVer.Message);
+                    }
+
+                    // Không có AppVersion.txt => luôn cho phép copy từ exe
+                    // Có AppVersion.txt => chỉ cho copy khi exeVersion > installedVersion
+                    bool allowCopyFromExe = installedVersion == null || exeVersion > installedVersion;
+                    if (!allowCopyFromExe)
+                    {
+                        _log.Info($"[Hub] Skip copying plugins from exe because installed version {installedVersion} >= exe {exeVersion}.");
+                    }
+
+                    if (allowCopyFromExe)
+                    {
+                        // 0) nếu exe có nhúng plugin thì bung hết ra local
+                        ExtractEmbeddedPluginsToLocal();
+
+                        // 1) nếu cạnh exe (debug/publish folder) có thư mục Plugins
+                        //    VÀ trong đó thực sự có .dll thì copy sang local để chạy
+                        var basePlugins = Path.Combine(_baseDir, "Plugins");
+                        var baseHasDll =
+                            Directory.Exists(basePlugins) &&
+                            Directory.EnumerateFiles(basePlugins, "*.dll", SearchOption.AllDirectories).Any();
+
+                        if (baseHasDll)
+                        {
+                            CopyPluginsToLocal(basePlugins, _localPluginsDir);
                         }
                         else
                         {
-                            _log.Warn("[Hub] No Plugins folder found (neither runtime nor dev).");
+                            // 1b) Fallback: nếu chạy từ bin\Debug\net8.0-windows mà chưa có Plugins ở đó
+                            var devPlugins = Path.GetFullPath(Path.Combine(_baseDir, "..", "..", "..", "Plugins"));
+                            if (Directory.Exists(devPlugins))
+                            {
+                                _log.Info("[Hub] Runtime Plugins empty/missing, fallback to source Plugins: " + devPlugins);
+                                CopyPluginsToLocal(devPlugins, _localPluginsDir);
+                            }
+                            else
+                            {
+                                _log.Warn("[Hub] No Plugins folder found (neither runtime nor dev).");
+                            }
                         }
                     }
 
                     // 2) từ đây trở đi: hub luôn load plugin tại local
                     _pluginsDir = _localPluginsDir;
 
+                    // 2b) Áp dụng gói update đã tải (nếu có) từ các thư mục AutoBetHub.<ver>
+                    ApplyPendingUpdatesFromVersionFolders();
+
+                    // Ưu tiên web ở LocalAppData nếu đã được update, nếu không dùng web cạnh exe
+                    try
+                    {
+                        var localWeb = Path.Combine(_localRoot, "web");
+                        var hubFile = Path.Combine(localWeb, "hub.html");
+                        if (File.Exists(hubFile))
+                        {
+                            _webDir = localWeb;
+                            _log.Info("[Hub] Override WebDir from LocalAppData: " + _webDir);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Warn("[Hub] Probe local web dir failed: " + ex.Message);
+                    }
+
                     _log.Info($"[Hub] BaseDir: {_baseDir}");
                     _log.Info($"[Hub] WebDir: {_webDir}");
                     _log.Info($"[Hub] LocalPluginsDir: {_pluginsDir}");
+
 
                     // đảm bảo runtime fixed được bung ra local (nếu có nhúng trong exe)
                     EnsureFixedWebView2Runtime();
@@ -229,6 +275,37 @@ namespace AutoBetHub
 
         private sealed record UpdateManifest(string appVersion, string? downloadUrl, string? notes);
 
+        private void SendUpdateStatusToWeb(
+    string phase,
+    int progress,
+    string message,
+    Version? current = null,
+    Version? remote = null)
+        {
+            try
+            {
+                if (web?.CoreWebView2 == null) return;
+
+                var payload = new
+                {
+                    type = "updateStatus",
+                    phase,
+                    progress,
+                    message,
+                    currentVersion = current?.ToString(),
+                    remoteVersion = remote?.ToString()
+                };
+
+                var json = JsonSerializer.Serialize(payload);
+                web.CoreWebView2.PostWebMessageAsJson(json);
+            }
+            catch (Exception ex)
+            {
+                _log.Warn("[Update] SendUpdateStatusToWeb failed: " + ex.Message);
+            }
+        }
+
+
         private void HookWebMessages()
         {
             web.CoreWebView2.WebMessageReceived += async (_, e) =>
@@ -300,69 +377,139 @@ namespace AutoBetHub
             }
         }
 
+        /// <summary>
+        /// Lấy phiên bản AutoBetHub đang được cài (ưu tiên file lưu ở %LocalAppData%\AutoBetHub).
+        /// Nếu chưa có file version thì fallback về version của chính exe.
+        /// </summary>
+        private Version GetInstalledVersion()
+        {
+            try
+            {
+                var path = Path.Combine(_localRoot, "AppVersion.txt");
+                if (File.Exists(path))
+                {
+                    var raw = File.ReadAllText(path).Trim();
+                    if (!string.IsNullOrEmpty(raw) && Version.TryParse(raw, out var v))
+                        return v;
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Warn("[Update] GetInstalledVersion failed: " + ex.Message);
+            }
+
+            return GetCurrentVersion();
+        }
+
+        /// <summary>
+        /// Ghi lại phiên bản AutoBetHub đã cài thành công gần nhất.
+        /// </summary>
+        private void SaveInstalledVersion(Version version)
+        {
+            try
+            {
+                var path = Path.Combine(_localRoot, "AppVersion.txt");
+                File.WriteAllText(path, version.ToString());
+            }
+            catch (Exception ex)
+            {
+                _log.Warn("[Update] SaveInstalledVersion failed: " + ex.Message);
+            }
+        }
+
+
 
         /// <summary>
         /// Kiểm tra bản cập nhật trên GitHub.
         /// auto = true: chỉ thông báo khi có bản mới hoặc lỗi lớn.
         /// auto = false: bấm nút "Cập nhật" -> luôn báo kết quả cho người dùng.
         /// </summary>
+
         private async Task CheckForUpdateAsync(bool auto)
         {
-            // TODO: Ông chủ sửa lại link này cho đúng repo của mình
-            const string ManifestUrl = $"https://raw.githubusercontent.com/{LicenseOwner}/{LicenseRepo}/{LicenseBranch}/autobethub-manifest.json";
+            const string ManifestUrl =
+                $"https://raw.githubusercontent.com/{LicenseOwner}/{LicenseRepo}/{LicenseBranch}/autobethub-manifest.json";
 
             try
             {
                 _log.Info("[Update] Checking manifest at: " + ManifestUrl);
+
+                //if (!auto)
+                //    SendUpdateStatusToWeb("checking", 5, "Đang kiểm tra bản cập nhật…");
 
                 using var resp = await _httpClient.GetAsync(ManifestUrl);
                 if (!resp.IsSuccessStatusCode)
                 {
                     _log.Warn($"[Update] Manifest HTTP {(int)resp.StatusCode}");
                     if (!auto)
+                    {
+                        SendUpdateStatusToWeb(
+                            "error",
+                            100,
+                            "Không kiểm tra được bản cập nhật (HTTP " + (int)resp.StatusCode + ").");
+
                         MessageBox.Show(
                             "Không kiểm tra được bản cập nhật (HTTP " + (int)resp.StatusCode + ").",
                             "Cập nhật",
                             MessageBoxButton.OK,
                             MessageBoxImage.Information);
+                    }
                     return;
                 }
 
                 var json = await resp.Content.ReadAsStringAsync();
-                var manifest = JsonSerializer.Deserialize<UpdateManifest>(json);
+                var manifest = JsonSerializer.Deserialize<UpdateManifest>(
+                    json,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
                 if (manifest == null || string.IsNullOrWhiteSpace(manifest.appVersion))
                 {
                     _log.Warn("[Update] Manifest invalid or missing appVersion.");
                     if (!auto)
+                    {
+                        SendUpdateStatusToWeb(
+                            "error",
+                            100,
+                            "Dữ liệu cập nhật không hợp lệ.");
+
                         MessageBox.Show(
                             "Dữ liệu cập nhật không hợp lệ.",
                             "Cập nhật",
                             MessageBoxButton.OK,
                             MessageBoxImage.Information);
+                    }
                     return;
                 }
 
-                var current = GetCurrentVersion();
+                var current = GetInstalledVersion();
                 var remote = new Version(manifest.appVersion);
-
                 _log.Info($"[Update] Local={current}, Remote={remote}");
 
+                // Không có bản mới
                 if (remote <= current)
                 {
                     if (!auto)
-                        MessageBox.Show(
+                    {
+                        SendUpdateStatusToWeb(
+                            "upToDate",
+                            100,
                             $"Bạn đang dùng phiên bản mới nhất ({current}).",
-                            "Cập nhật",
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Information);
+                            current,
+                            remote);
+                        // popup web sẽ tự tắt sau 3 giây, không cần MessageBox
+                    }
                     return;
                 }
 
-                var notes = string.IsNullOrWhiteSpace(manifest.notes) ? "(Không có ghi chú)" : manifest.notes;
+                // Có bản mới
+                var notes = string.IsNullOrWhiteSpace(manifest.notes)
+                    ? "(Không có ghi chú)"
+                    : manifest.notes;
+
                 var msg =
                     $"Đã có phiên bản mới {remote} (hiện tại {current}).\n\n" +
                     $"Ghi chú:\n{notes}\n\n" +
-                    $"Mở trang tải bản mới trên trình duyệt?";
+                    "Bạn có muốn tải và cập nhật tự động không?";
 
                 var result = MessageBox.Show(
                     msg,
@@ -371,44 +518,249 @@ namespace AutoBetHub
                     MessageBoxImage.Information);
 
                 if (result != MessageBoxResult.Yes)
+                {
+                    // Người dùng chọn KHÔNG cập nhật:
+                    // -> chỉ log lại, KHÔNG gửi status sang web
+                    // để tránh hiển thị popup "Bạn đã hủy cập nhật".
+                    _log.Info("[Update] User cancelled update from MessageBox.");
                     return;
-
-                var url = manifest.downloadUrl;
-                if (string.IsNullOrWhiteSpace(url))
-                {
-                    // fallback: mở trang Releases
-                    url = UrlUpateFile;
                 }
 
-                try
+                await DownloadAndApplyUpdateAsync(manifest, current, remote);
+
+
+                if (result != MessageBoxResult.Yes)
                 {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = url,
-                        UseShellExecute = true
-                    });
+                    // Người dùng chọn KHÔNG cập nhật:
+                    // -> chỉ log lại, KHÔNG gửi status sang web
+                    // để tránh hiển thị popup "Bạn đã hủy cập nhật".
+                    _log.Info("[Update] User cancelled update from MessageBox.");
+                    return;
                 }
-                catch (Exception exOpen)
-                {
-                    _log.Error("[Update] Open browser failed", exOpen);
-                    MessageBox.Show(
-                        "Không mở được trình duyệt:\n" + exOpen.Message,
-                        "Cập nhật",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Error);
-                }
+
+                await DownloadAndApplyUpdateAsync(manifest, current, remote);
             }
             catch (Exception ex)
             {
                 _log.Error("[Update] CheckForUpdateAsync failed", ex);
                 if (!auto)
+                {
+                    SendUpdateStatusToWeb(
+                        "error",
+                        100,
+                        "Có lỗi khi kiểm tra bản cập nhật: " + ex.Message);
+
                     MessageBox.Show(
                         "Có lỗi khi kiểm tra bản cập nhật:\n" + ex.Message,
                         "Cập nhật",
                         MessageBoxButton.OK,
                         MessageBoxImage.Error);
+                }
             }
         }
+
+        /// <summary>
+        /// Tải gói cập nhật (ZIP) và giải nén vào %LocalAppData%\AutoBetHub.
+        /// </summary>
+        private async Task DownloadAndApplyUpdateAsync(UpdateManifest manifest, Version current, Version remote)
+        {
+            var url = !string.IsNullOrWhiteSpace(manifest.downloadUrl)
+                ? manifest.downloadUrl
+                : null;
+
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                SendUpdateStatusToWeb(
+                    "error",
+                    100,
+                    "Không tìm thấy đường dẫn gói cập nhật (downloadUrl).");
+
+                MessageBox.Show(
+                    "Không tìm thấy đường dẫn gói cập nhật (downloadUrl) trong manifest.",
+                    "Cập nhật",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return;
+            }
+
+            var tempZip = Path.Combine(
+                Path.GetTempPath(),
+                $"AutoBetHub_update_{remote}.zip");
+
+            try
+            {
+                _log.Info("[Update] Downloading package from: " + url);
+
+                SendUpdateStatusToWeb(
+                    "downloading",
+                    5,
+                    "Đang bắt đầu tải gói cập nhật…",
+                    current,
+                    remote);
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                using var response = await _httpClient.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead);
+
+                response.EnsureSuccessStatusCode();
+
+                var totalBytes = response.Content.Headers.ContentLength;
+
+                // 🔧 QUAN TRỌNG: gói chung vào block để dispose stream TRƯỚC khi giải nén
+                await using (var responseStream = await response.Content.ReadAsStreamAsync())
+                await using (var fileStream = File.Create(tempZip))
+                {
+                    var buffer = new byte[81920];
+                    long downloaded = 0;
+                    var sw = Stopwatch.StartNew();
+
+                    while (true)
+                    {
+                        var read = await responseStream.ReadAsync(buffer, 0, buffer.Length);
+                        if (read <= 0) break;
+
+                        await fileStream.WriteAsync(buffer, 0, read);
+                        downloaded += read;
+
+                        if (totalBytes.HasValue && totalBytes.Value > 0)
+                        {
+                            var progress = (int)Math.Min(95,
+                                downloaded * 100.0 / totalBytes.Value);
+
+                            var elapsed = sw.Elapsed.TotalSeconds;
+                            var speed = elapsed > 0 ? downloaded / elapsed : 0; // bytes/s
+                            double remainingSeconds = 0;
+                            if (speed > 0)
+                                remainingSeconds = (totalBytes.Value - downloaded) / speed;
+
+                            string eta;
+                            if (remainingSeconds >= 60)
+                            {
+                                var mins = (int)(remainingSeconds / 60);
+                                var secs = (int)(remainingSeconds % 60);
+                                eta = $"{mins} phút {secs} giây";
+                            }
+                            else
+                            {
+                                eta = $"{(int)remainingSeconds} giây";
+                            }
+
+                            var downloadedMb = downloaded / (1024.0 * 1024.0);
+                            var totalMb = totalBytes.Value / (1024.0 * 1024.0);
+
+                            SendUpdateStatusToWeb(
+                                "downloading",
+                                progress,
+                                $"Đang tải gói cập nhật… ({downloadedMb:0.0}/{totalMb:0.0} MB, còn khoảng {eta})",
+                                current,
+                                remote);
+                        }
+                        else
+                        {
+                            var downloadedMb = downloaded / (1024.0 * 1024.0);
+                            SendUpdateStatusToWeb(
+                                "downloading",
+                                50,
+                                $"Đang tải gói cập nhật… ({downloadedMb:0.0} MB)",
+                                current,
+                                remote);
+                        }
+                    }
+                } // <- ra khỏi block, cả responseStream & fileStream đều đã được dispose
+
+                _log.Info("[Update] Download completed: " + tempZip);
+
+                SendUpdateStatusToWeb(
+                    "extracting",
+                    97,
+                    "Đang giải nén gói cập nhật…",
+                    current,
+                    remote);
+                // Giải nén vào thư mục version riêng, tránh ghi đè các file đang được sử dụng.
+                Directory.CreateDirectory(_localRoot);
+                var targetRoot = Path.Combine(_localRoot, $"AutoBetHub.{remote}");
+                Directory.CreateDirectory(targetRoot);
+                ZipFile.ExtractToDirectory(tempZip, targetRoot, overwriteFiles: true);
+                // đánh dấu đã tải về version mới (sẽ được áp dụng ở lần khởi động sau)
+                SaveInstalledVersion(remote);
+
+                SendUpdateStatusToWeb(
+                    "done",
+                    100,
+                    "Cập nhật thành công! AutoBetHub sẽ tự khởi động lại…",
+                    current,
+                    remote);
+
+                try
+                {
+                    // Lấy đường dẫn exe hiện tại
+                    var exePath = Environment.ProcessPath;
+                    if (string.IsNullOrEmpty(exePath))
+                    {
+                        exePath = Process.GetCurrentProcess().MainModule?.FileName;
+                    }
+
+                    if (!string.IsNullOrEmpty(exePath))
+                    {
+                        var startInfo = new ProcessStartInfo
+                        {
+                            FileName = exePath,
+                            WorkingDirectory = Path.GetDirectoryName(exePath),
+                            UseShellExecute = true
+                        };
+
+                        // Khởi động lại tiến trình mới
+                        Process.Start(startInfo);
+                    }
+
+                    // Thoát ứng dụng hiện tại
+                    Application.Current.Shutdown();
+                }
+                catch (Exception exRestart)
+                {
+                    _log.Warn("[Update] Auto-restart failed: " + exRestart.Message);
+
+                    // Nếu restart tự động lỗi thì fallback: thông báo để người dùng tự mở lại
+                    MessageBox.Show(
+                        "Cập nhật thành công, nhưng không tự khởi động lại được.\n" +
+                        "Vui lòng đóng và mở lại AutoBetHub.",
+                        "Cập nhật",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Error("[Update] DownloadAndApplyUpdateAsync failed", ex);
+
+                SendUpdateStatusToWeb(
+                    "error",
+                    100,
+                    "Có lỗi khi tải hoặc giải nén gói cập nhật: " + ex.Message,
+                    current,
+                    remote);
+
+                MessageBox.Show(
+                    "Có lỗi khi tải hoặc giải nén gói cập nhật:\n" + ex.Message,
+                    "Cập nhật",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(tempZip))
+                        File.Delete(tempZip);
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
+        }
+
 
         private void HookHomeNavEvents()
         {
@@ -439,7 +791,7 @@ namespace AutoBetHub
             try
             {
                 // trước khi mở plugin mới, tắt cái cũ
-                DeactivatePlugin();
+                //DeactivatePlugin();
 
                 var p = _plugins.FirstOrDefault(x =>
                     string.Equals(x.Slug, slug, StringComparison.OrdinalIgnoreCase));
@@ -616,6 +968,109 @@ namespace AutoBetHub
                           $"psize={(parent != null ? $"{parent.ActualWidth:0}x{parent.ActualHeight:0}" : "-")} ");
             }
             catch { }
+        }
+
+
+        /// <summary>
+        /// Tìm các thư mục dạng AutoBetHub.&lt;version&gt; dưới _localRoot,
+        /// lấy version mới nhất và copy Plugins + web sang thư mục runtime chính.
+        /// Gọi hàm này lúc khởi động, trước khi load plugin.
+        /// </summary>
+        private void ApplyPendingUpdatesFromVersionFolders()
+        {
+            try
+            {
+                if (!Directory.Exists(_localRoot))
+                    return;
+
+                var versionDirs = Directory.GetDirectories(_localRoot, "AutoBetHub.*", SearchOption.TopDirectoryOnly);
+                if (versionDirs.Length == 0) return;
+
+                Version? bestVersion = null;
+                string? bestDir = null;
+
+                foreach (var dir in versionDirs)
+                {
+                    var name = Path.GetFileName(dir);
+                    if (string.IsNullOrEmpty(name)) continue;
+
+                    const string prefix = "AutoBetHub.";
+                    if (!name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    var verStr = name.Substring(prefix.Length);
+                    if (!Version.TryParse(verStr, out var v)) continue;
+
+                    if (bestVersion == null || v > bestVersion)
+                    {
+                        bestVersion = v;
+                        bestDir = dir;
+                    }
+                }
+
+                if (bestDir == null || bestVersion == null)
+                    return;
+
+                _log.Info($"[Update] Applying pending update from folder: {bestDir}");
+
+                // Plugins
+                var srcPlugins = Path.Combine(bestDir, "Plugins");
+                if (Directory.Exists(srcPlugins))
+                {
+                    Directory.CreateDirectory(_localPluginsDir);
+                    CopyDirectoryOverwrite(srcPlugins, _localPluginsDir);
+                }
+
+                // web
+                var srcWeb = Path.Combine(bestDir, "web");
+                var dstWeb = Path.Combine(_localRoot, "web");
+                if (Directory.Exists(srcWeb))
+                {
+                    Directory.CreateDirectory(dstWeb);
+                    CopyDirectoryOverwrite(srcWeb, dstWeb);
+                }
+
+                // lưu lại version đã thực sự áp dụng
+                SaveInstalledVersion(bestVersion);
+
+                // XÓA TẤT CẢ các folder AutoBetHub.<ver> sau khi đã copy xong
+                foreach (var dir in versionDirs)
+                {
+                    try
+                    {
+                        Directory.Delete(dir, true);
+                    }
+                    catch (Exception exDel)
+                    {
+                        _log.Warn("[Update] Delete version folder failed: " + exDel.Message);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Warn("[Update] ApplyPendingUpdatesFromVersionFolders failed: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Copy toàn bộ cây thư mục sourceDir sang destDir, ghi đè file nếu đã tồn tại.
+        /// </summary>
+        private static void CopyDirectoryOverwrite(string sourceDir, string destDir)
+        {
+            foreach (var dir in Directory.GetDirectories(sourceDir, "*", SearchOption.AllDirectories))
+            {
+                var relative = Path.GetRelativePath(sourceDir, dir);
+                var targetSub = Path.Combine(destDir, relative);
+                Directory.CreateDirectory(targetSub);
+            }
+
+            foreach (var file in Directory.GetFiles(sourceDir, "*", SearchOption.AllDirectories))
+            {
+                var relative = Path.GetRelativePath(sourceDir, file);
+                var targetFile = Path.Combine(destDir, relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(targetFile)!);
+                File.Copy(file, targetFile, overwrite: true);
+            }
         }
 
         private void EnsureFixedWebView2Runtime()

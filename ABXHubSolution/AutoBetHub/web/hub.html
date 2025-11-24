@@ -34,7 +34,7 @@
                     /* ================== DATA ================== */
                     const GAMES = [
                       { title: "Xóc Đĩa Live Net88,Go88,Hit88",   slug: "xoc-dia-live-hit",   tag: "Trực tiếp", gradient: "from-rose-500 to-fuchsia-500", img: "Assets/XocDiaLiveHit.png" },
-					  { title: "Tài Xỉu Live Net88,Go88,Hit88",   slug: "tai-xiu-live-hit",   tag: "Trực tiếp", gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuLiveHit.png" },
+            { title: "Tài Xỉu Live Net88,Go88,Hit88",   slug: "tai-xiu-live-hit",   tag: "Trực tiếp", gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuLiveHit.png" },
                       { title: "Xóc Đĩa Sới Live KH24",   slug: "xoc-dia-soi-live-kh24",   tag: "Trực tiếp", gradient: "from-rose-500 to-fuchsia-500", img: "Assets/XocDiaSoiLiveKH24.png" },
                       { title: "Xóc Đĩa Sới Live KH24",   slug: "bau-cua-live",   tag: "Sắp ra mắt", gradient: "from-amber-500 to-orange-500" },
                       { title: "Roulette Live",  slug: "roulette-live",  tag: "Casino",     gradient: "from-sky-500 to-indigo-500" },
@@ -216,57 +216,57 @@
                     }
 
                     /* ===== Nav (Trang chủ / Cài đặt + đổi nền) ===== */
-        function TopNavbar({ t, tone, setTone, goHome }) {
-          return (
-            <div className="sticky top-0 z-40">
-              <div className="w-[min(1280px,95vw)] mx-auto mt-2">
-                <div className={`rounded-2xl ${t.panel} backdrop-blur border ${t.border} px-3 py-2 shadow`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600" />
-                      <span className={`font-semibold ${t.textStrong}`}>ABX – Hub</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={goHome}
-                        className={`text-sm px-3 py-1.5 rounded-xl border ${t.btnSecondary}`}
-                      >
-                        Trang chủ
-                      </button>
+                    function TopNavbar({ t, tone, setTone, goHome }) {
+                      return (
+                        <div className="sticky top-0 z-40">
+                          <div className="w-[min(1280px,95vw)] mx-auto mt-2">
+                            <div className={`rounded-2xl ${t.panel} backdrop-blur border ${t.border} px-3 py-2 shadow`}>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600" />
+                                  <span className={`font-semibold ${t.textStrong}`}>ABX – Hub</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={goHome}
+                                    className={`text-sm px-3 py-1.5 rounded-xl border ${t.btnSecondary}`}
+                                  >
+                                    Trang chủ
+                                  </button>
 
-                      {/* NÚT CẬP NHẬT MỚI THÊM VÀO ĐÂY */}
-                      <button
-                        onClick={() => {
-                          try { sendHost({ cmd: "checkUpdate" }); }
-                          catch (e) { console.warn("checkUpdate failed:", e); }
-                        }}
-                        className={`text-sm px-3 py-1.5 rounded-xl border ${t.btnPrimary}`}
-                      >
-                        Cập nhật
-                      </button>
+                                  {/* NÚT CẬP NHẬT MỚI THÊM VÀO ĐÂY */}
+                                  <button
+                                    onClick={() => {
+                                      try { sendHost({ cmd: "checkUpdate" }); }
+                                      catch (e) { console.warn("checkUpdate failed:", e); }
+                                    }}
+                                    className={`text-sm px-3 py-1.5 rounded-xl border ${t.btnPrimary}`}
+                                  >
+                                    Cập nhật
+                                  </button>
 
-                      <button className={`text-sm px-3 py-1.5 rounded-xl border ${t.btnSecondary}`}>
-                        Cài đặt
-                      </button>
-                      <button
-                        onClick={() => setTone(0)}
-                        className={`text-sm px-3 py-1.5 rounded-xl border ${tone === 0 ? t.chipActive : t.chip}`}
-                      >
-                        Nền sáng
-                      </button>
-                      <button
-                        onClick={() => setTone(1)}
-                        className={`text-sm px-3 py-1.5 rounded-xl border ${tone === 1 ? t.chipActive : t.chip}`}
-                      >
-                        Nền tối
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        }
+                                  <button className={`text-sm px-3 py-1.5 rounded-xl border ${t.btnSecondary}`}>
+                                    Cài đặt
+                                  </button>
+                                  <button
+                                    onClick={() => setTone(0)}
+                                    className={`text-sm px-3 py-1.5 rounded-xl border ${tone === 0 ? t.chipActive : t.chip}`}
+                                  >
+                                    Nền sáng
+                                  </button>
+                                  <button
+                                    onClick={() => setTone(1)}
+                                    className={`text-sm px-3 py-1.5 rounded-xl border ${tone === 1 ? t.chipActive : t.chip}`}
+                                  >
+                                    Nền tối
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
 
 
                     // --- bridge ra WPF host (WebView2) ---
@@ -277,16 +277,67 @@
 
                     /* ================== APP ================== */
                     function HomeHub() {
-                      // tone
-                      const [tone, setToneState] = useState(() => {
-                        const saved = localStorage.getItem(LS_KEYS.tone);
-                        return saved === "1" ? 1 : 0;
-                      });
-                      const t = useMemo(() => TONES[tone], [tone]);
-                      const setTonePersist = (i) => {
-                        setToneState(i);
-                        localStorage.setItem(LS_KEYS.tone, String(i));
-                      };
+                   // tone
+                   const [tone, setToneState] = useState(() => {
+                     const saved = localStorage.getItem(LS_KEYS.tone);
+                     return saved === "1" ? 1 : 0;
+                   });
+                   const t = useMemo(() => TONES[tone], [tone]);
+
+                   const setTonePersist = (i) => {
+                     setToneState(i);
+                     localStorage.setItem(LS_KEYS.tone, String(i));
+                   };
+
+                   // trạng thái popup cập nhật
+                   const [updateState, setUpdateState] = useState({
+                     visible: false,
+                     phase: "idle",
+                     progress: 0,
+                     message: "",
+                     currentVersion: null,
+                     remoteVersion: null,
+                   });
+
+                   useEffect(() => {
+                     function onMessage(e) {
+                       const data = e.data || {};
+                       if (data.type !== "updateStatus") return;
+
+                       setUpdateState((prev) => ({
+                         ...prev,
+                         visible: true,
+                         ...data,
+                         progress:
+                           typeof data.progress === "number"
+                             ? data.progress
+                             : prev.progress,
+                       }));
+                     }
+
+                     try {
+                       window.chrome?.webview?.addEventListener("message", onMessage);
+                     } catch {}
+
+                     return () => {
+                       try {
+                         window.chrome?.webview?.removeEventListener("message", onMessage);
+                       } catch {}
+                     };
+                   }, []);
+
+                     useEffect(() => {
+                     if (!updateState.visible) return;
+                     if (updateState.phase !== "upToDate") return;
+
+                     const timer = setTimeout(() => {
+                       setUpdateState((prev) => ({ ...prev, visible: false }));
+                     }, 3000);
+
+                     return () => clearTimeout(timer);
+                   }, [updateState.visible, updateState.phase]);
+
+
 
                       // GHIM & Auto-jump
                       const [pinnedList, setPinnedList] = useState([]);
@@ -389,6 +440,64 @@
 
                       return (
                         <div className={`min-h-screen ${t.bg} ${t.text}`}>
+                                  {updateState.visible && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                              <div className={`w-[min(420px,90vw)] rounded-2xl border ${t.border} ${t.panel} p-5 shadow-xl`}>
+                                <h2 className={`text-lg font-semibold mb-2 ${t.textStrong}`}>
+                                  Cập nhật AutoBetHub
+                                </h2>
+                                <p className={`${t.textSoft} text-sm mb-4 whitespace-pre-line`}>
+                                  {updateState.message || "Đang kiểm tra bản cập nhật…"}
+                                </p>
+
+                                <div className="w-full h-2 rounded-full bg-slate-200/70 overflow-hidden mb-3">
+                                  <div
+                                    className="h-full rounded-full bg-[#1877F2] transition-all"
+                                    style={{
+                                      width: `${Math.max(
+                                        0,
+                                        Math.min(100, updateState.progress || 0)
+                                      )}%`,
+                                    }}
+                                  />
+                                </div>
+
+                                {(updateState.currentVersion || updateState.remoteVersion) && (
+                                  <div className={`${t.textSoft} text-xs mb-2`}>
+                                    {updateState.currentVersion && (
+                                      <>
+                                        Phiên bản hiện tại:{" "}
+                                        <span className={t.textStrong}>
+                                          {updateState.currentVersion}
+                                        </span>
+                                        <br />
+                                      </>
+                                    )}
+                                    {updateState.remoteVersion && (
+                                      <>
+                                        Phiên bản mới nhất:{" "}
+                                        <span className={t.textStrong}>
+                                          {updateState.remoteVersion}
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+
+                                <div className="flex justify-end gap-2 mt-3">
+                                  <button
+                                    onClick={() =>
+                                      setUpdateState((prev) => ({ ...prev, visible: false }))
+                                    }
+                                    className={`px-3 py-1.5 rounded-xl border text-sm ${t.btnSecondary}`}
+                                  >
+                                    Đóng
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
                           <TopNavbar t={t} tone={tone} setTone={setTonePersist} goHome={goHome} />
 
                           <div className="w-[min(1280px,95vw)] mx-auto pt-6">

@@ -7,7 +7,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 
-namespace TaiXiuLiveHit.Tasks
+namespace TaiXiuThuongKF.Tasks
 {
     internal static class TaskUtil
     {

@@ -1,0 +1,167 @@
+﻿using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using static TaiXiuThuongKF.Tasks.TaskUtil;
+
+namespace TaiXiuThuongKF.Tasks
+{
+    /// <summary>
+    /// 7) Bám cầu C/L theo thống kê AI — phiên bản đánh LIÊN TỤC
+    /// - Mỗi ván đều vào lệnh (không bỏ nhịp).
+    /// - Nếu thua (gãy cầu), vòng sau tính lại mẫu và đánh tiếp.
+    /// - Nếu không khớp được mẫu nào → ĐÁNH THEO KẾT QUẢ VỪA VỀ (không đảo 1–1).
+    /// - Quản lý vốn: dùng MoneyManager giống SmartPrevTask.
+    /// </summary>
+    public sealed class AiStatParityTask : IBetTask
+    {
+        public string DisplayName => "7) Bám cầu T/X theo thống kê AI";
+        public string Id => "ai-stat-cl";
+
+        private const int DefaultMaxPatternLen = 6;
+
+        private static string ParityCharToSideSafe(char tai) => (tai == 'T') ? "TAI" : "XIU";
+
+        /// <summary>
+        /// Dự đoán ký tự T/X ván kế + confidence (0..1).
+        /// Luật:
+        /// - k từ k_max→1: match tail; đếm C_count/L_count sau vị trí match.
+        /// - C_count ≠ L_count: chọn bên nhiều hơn và conf = |C-L|/(C+L).
+        /// - Hòa: ưu tiên lần xuất hiện gần nhất; nếu không có → ĐÁNH NGƯỢC so với ván cuối (cầu 1–1).
+        /// - KHÔNG CÓ MẪU NÀO: Fallback = THEO VÁN CUỐI (đánh đúng kết quả vừa về).
+        /// </summary>
+        private static (char next, double conf) PredictNextWithConfidence(string input, int maxPatternLen = DefaultMaxPatternLen)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return ('T', 0);
+
+            var seq = new string(input
+                .Where(ch => ch == 'T' || ch == 't' || ch == 'X' || ch == 'x')
+                .Select(char.ToUpperInvariant)
+                .ToArray());
+
+            int n = seq.Length;
+            if (n == 0) return ('T', 0);
+            if (n == 1) return (seq[0], 0); // theo đúng kết quả vừa về
+
+            for (int k = Math.Min(maxPatternLen, n - 1); k >= 1; k--)
+            {
+                var tail = seq.Substring(n - k, k);
+
+                int cCount = 0, lCount = 0;
+                int mostRecentIdx = -1;
+                char mostRecentNext = '\0';
+
+                for (int i = 0; i <= n - k - 1; i++)
+                {
+                    if (seq.AsSpan(i, k).SequenceEqual(seq.AsSpan(n - k, k)))
+                    {
+                        char next = seq[i + k];
+                        if (next == 'T') cCount++;
+                        else if (next == 'X') lCount++;
+
+                        if (i > mostRecentIdx)
+                        {
+                            mostRecentIdx = i;
+                            mostRecentNext = next;
+                        }
+                    }
+                }
+
+                if (cCount + lCount > 0)
+                {
+                    if (cCount > lCount)
+                        return ('T', (double)(cCount - lCount) / (cCount + lCount));
+                    if (lCount > cCount)
+                        return ('X', (double)(lCount - cCount) / (cCount + lCount));
+
+                    // HÒA tần suất:
+                    // - Nếu có "lần xuất hiện gần nhất" -> dùng nó.
+                    // - Nếu không có -> ĐÁNH NGƯỢC so với ván cuối (cầu 1–1), conf=0 để log.
+                    if (mostRecentNext != '\0')
+                        return (mostRecentNext, 0.0);
+
+                    char last = seq[n - 1];
+                    char opposite = (last == 'T') ? 'X' : 'T'; // cầu 1–1
+                    return (opposite, 0.0);
+                }
+            }
+
+            // KHÔNG tìm được mẫu nào: theo VÁN CUỐI (đánh đúng kết quả vừa về)
+            return (seq[n - 1], 0.0);
+        }
+
+        public async Task RunAsync(GameContext ctx, CancellationToken ct)
+        {
+            var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
+            ctx.Log?.Invoke($"[AI-Stat-CL] Khởi chạy liên tục: k_max={DefaultMaxPatternLen}, vốn={ctx.MoneyStrategyId}");
+
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                await WaitUntilBetWindow(ctx, ct);
+
+                // Ảnh chụp chuỗi trước khi đặt (để chấm thắng/thua)
+                var snap = ctx.GetSnap();
+                string baseSeq = snap?.seq ?? string.Empty;
+                string baseSession = snap?.session ?? string.Empty;
+
+                // Chuyển lịch sử sang T/X (cũ->mới)
+                string parity = SeqToParityString(baseSeq);
+
+                // Luôn quyết định và vào lệnh — không bỏ nhịp
+                var (next, conf) = PredictNextWithConfidence(parity, DefaultMaxPatternLen);
+                string side = ParityCharToSideSafe(next);
+                long stake;
+                if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
+                {
+                    stake = MoneyHelper.CalcAmountMultiChain(
+                        ctx.StakeChains,
+                        ctx.MoneyChainIndex,
+                        ctx.MoneyChainStep);
+                }
+                else
+                {
+                    stake = money.GetStakeForThisBet();
+                }
+                ctx.Log?.Invoke($"[AI-Stat-TX] pick={side}, conf={conf:F2}, stake={stake:N0}");
+
+                await PlaceBet(ctx, side, stake, ct);
+
+                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
+                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
+                if (ctx.MoneyStrategyId == "MultiChain")
+                {
+                    // cần biến local để truyền ref
+                    int chainIndex = ctx.MoneyChainIndex;
+                    int chainStep = ctx.MoneyChainStep;
+                    double chainProfit = ctx.MoneyChainProfit;
+
+                    MoneyHelper.UpdateAfterRoundMultiChain(
+                        ctx.StakeChains,
+                        ctx.StakeChainTotals,
+                        ref chainIndex,
+                        ref chainStep,
+                        ref chainProfit,
+                        win);
+
+                    // gán ngược lại vào context
+                    ctx.MoneyChainIndex = chainIndex;
+                    ctx.MoneyChainStep = chainStep;
+                    ctx.MoneyChainProfit = chainProfit;
+                }
+                else
+                {
+                    // 4 kiểu cũ vẫn đi qua MoneyManager
+                    money.OnRoundResult(win);
+                }
+
+                // Không nghỉ nhịp: vòng sau tự tính lại cầu dựa trên lịch sử mới
+                if (!win)
+                {
+                    ctx.Log?.Invoke("[AI-Stat-CL] Gãy cầu → tính lại cầu mới và đánh tiếp (không dừng).");
+                }
+            }
+        }
+    }
+}

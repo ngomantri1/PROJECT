@@ -2996,6 +2996,12 @@
             tailEnd: 'menuMoney/btnPrices/btn1K'
         }
     ];
+    // NEW: delay cho chuỗi thao tác bet (tối ưu cho máy yếu/VPS)
+    var TX_BET_DELAY = {
+        sideToChip: 260, // sau khi click cửa → đợi rồi mới bấm phỉnh
+        chipToChip: 220, // giữa các lần click phỉnh liên tiếp
+        afterChipsBeforeConfirm: 260 // sau khi xong phỉnh → đợi rồi mới ấn ĐẶT CƯỢC
+    };
 
     // Tìm node theo phần đuôi tail (dùng tailOf + walkNodes bên trên)
     function txFindNodeByTailEnd(tailEnd) {
@@ -3148,7 +3154,8 @@
             console.warn('[cwBetTx] click cửa lần đầu thất bại', side);
             return false;
         }
-        await sleep(160);
+        // ➜ Đợi một nhịp cho game highlight cửa xong rồi mới bấm phỉnh
+        await sleep(TX_BET_DELAY.sideToChip);
 
         // 4) Sau khi đã chọn cửa, CHỈ bấm phỉnh theo plan (không bấm lại cửa)
         for (var s = 0; s < steps.length; s++) {
@@ -3159,11 +3166,15 @@
                     console.warn('[cwBetTx] click chip thất bại', step.chip.amount);
                     return false;
                 }
-                await sleep(140);
+                // ➜ Delay giữa các lần click phỉnh liên tiếp
+                await sleep(TX_BET_DELAY.chipToChip);
             }
         }
 
-        // 5) Cuối cùng nhấn ĐẶT CƯỢC 1 lần để xác nhận, KHÔNG dùng tip
+        // 5) Đợi thêm một nhịp để game gom hết phỉnh rồi mới nhấn ĐẶT CƯỢC
+        await sleep(TX_BET_DELAY.afterChipsBeforeConfirm);
+
+        // 6) Cuối cùng nhấn ĐẶT CƯỢC 1 lần để xác nhận, KHÔNG dùng tip
         var okDat = await txClickDatCuoc();
         if (!okDat) {
             console.warn('[cwBetTx] click ĐẶT CƯỢC thất bại');
@@ -3173,7 +3184,6 @@
         return true;
     }
 
-    // LƯU Ý: Dùng cwBetTxByChip (TÀI/XỈU TipDealer)
     window.__cw_bet = async function (side, amount) {
         try {
             // chuẩn hoá tham số
@@ -3196,12 +3206,21 @@
                 throw new Error('click_failed');
             }
 
-            // chờ tổng thay đổi (nếu có util này)
+            // ✅ BẮT BUỘC kiểm tra tổng có thay đổi hay không
+            var changed = true;
             try {
                 if (typeof waitForTotalsChange === 'function') {
-                    await waitForTotalsChange(before, side, 1600);
+                    changed = await waitForTotalsChange(before, side, 1600);
                 }
-            } catch (_) {}
+            } catch (_) {
+                // nếu util lỗi thì coi như không chặn cược (tránh chặn nhầm)
+                changed = true;
+            }
+
+            if (!changed) {
+                // Click đủ bước nhưng tổng không đổi → coi là bet thất bại (thường là do quá sớm/quá muộn)
+                throw new Error('totals_not_changed');
+            }
 
             // báo về C#
             safePost({
