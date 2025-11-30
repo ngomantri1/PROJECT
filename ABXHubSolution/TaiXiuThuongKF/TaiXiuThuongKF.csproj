@@ -111,7 +111,7 @@
   <ItemGroup>
     <None Remove="Assets\AppIcon.ico" />
     <None Remove="js_home_v2.js" />
-    <None Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
+    <!--<None Remove="ThirdParty\WebView2Fixed_win-x64.zip" /> -->
   </ItemGroup>
 
   <!-- JS bridge (nhúng cho cả 2 cấu hình) -->
@@ -142,7 +142,7 @@
     <!-- Nếu muốn DLL nhẹ hơn nữa, bỏ comment 2 dòng dưới: -->
     <!-- <Resource Remove="Assets\**\*.png" /> -->
     <!-- <Resource Remove="Assets\**\*.jpg" /> -->
-    <EmbeddedResource Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
+    <!--<EmbeddedResource Remove="ThirdParty\WebView2Fixed_win-x64.zip" />-->
   </ItemGroup>
   
   

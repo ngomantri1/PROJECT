@@ -97,9 +97,9 @@ namespace TaiXiuLiveHit.Tasks
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                var p = s?.prog ?? 0.0;   // prog = 0..1 (thời gian còn lại)
+                var p = s?.prog ?? 1.0;   // prog = 0..1 (thời gian còn lại)
                 // Sau khi đã thấy prog thấp rồi, lần đầu prog nhảy cao trở lại => phiên mới
-                if (p >= ctx.DecisionPercent && p <= 0.98)
+                if (p >= ctx.DecisionPercent && p <= 0.97)
                     break;
                 await Task.Delay(120, ct);
             }

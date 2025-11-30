@@ -1,0 +1,185 @@
+// ================= KH24: helpers cho bet CHẴN / LẺ (console) ===================
+const TAIL_TOTAL_CHAN = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Center/GateContent/Chan_Gate/TotalBet/Amount';
+const TAIL_TOTAL_LE   = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Center/GateContent/Le_Gate/TotalBet/Amount';
+
+
+// sleep local cho block này
+function sleep(ms) {
+    return new Promise(function (r) { setTimeout(r, ms); });
+}
+
+// Lấy nút CHẴN / LẺ từ log scan200bet (GateContent/Chan_Gate, Le_Gate)
+function getGateTargetsKH24() {
+    var fnCollect = window.collectButtons;
+    if (typeof fnCollect !== 'function') {
+        console.warn('[KH24] collectButtons chưa có – cần js_home_v2.js đang chạy.');
+        return { chan: null, le: null };
+    }
+    var btns = fnCollect();
+    var chan = null, le = null;
+
+    for (var i = 0; i < btns.length; i++) {
+        var t = String(btns[i].tail || '').toLowerCase();
+        if (t.indexOf('/center/gatecontent/chan_gate') !== -1) {
+            chan = btns[i];
+        } else if (t.indexOf('/center/gatecontent/le_gate') !== -1) {
+            le = btns[i];
+        }
+    }
+    return { chan: chan, le: le };
+}
+
+// Map phỉnh (chip) theo mệnh giá từ ChipContent/Chip_Btn_xxx
+// Ví dụ: Chip_Btn_100k -> 100000, Chip_Btn_1M -> 1000000
+function getChipButtonsKH24() {
+    var fnCollect = window.collectButtons;
+    if (typeof fnCollect !== 'function') {
+        console.warn('[KH24] collectButtons chưa có – cần js_home_v2.js đang chạy.');
+        return {};
+    }
+
+    var btns = fnCollect();
+    var map = {}; // { value -> rect }
+
+    for (var i = 0; i < btns.length; i++) {
+        var b = btns[i];
+        var tail = String(b.tail || '').toLowerCase();
+
+        // MainGame/.../Center/ChipContent/Chip_Btn_50M
+        var m = /chipcontent\/chip_btn_([0-9]+)(k|m)/i.exec(tail);
+        if (!m) continue;
+
+        var raw  = parseInt(m[1], 10);
+        var unit = m[2].toLowerCase();
+        var val  = raw * (unit === 'k' ? 1000 : 1000000);
+
+        var cur = map[val];
+        if (!cur || (b.w * b.h) > (cur.w * cur.h)) {
+            map[val] = { x: b.x, y: b.y, w: b.w, h: b.h, tail: b.tail };
+        }
+    }
+
+    return map;
+}
+
+// Đọc MyBet hiện tại ở 2 cửa CHẴN / LẺ bằng moneyTailList (đã export)
+function readMyBetKH24() {
+    var fnMoney = window.moneyTailList;
+    if (typeof fnMoney !== 'function') {
+        console.warn('[KH24] moneyTailList chưa có – cần js_home_v2.js đang chạy.');
+        return { chan: 0, le: 0 };
+    }
+
+    function sumTail(tailExact) {
+        var list = fnMoney(tailExact) || [];
+        var s = 0;
+        for (var i = 0; i < list.length; i++) {
+            s += Number(list[i].val || 0);
+        }
+        return s;
+    }
+
+    return {
+        chan: sumTail(TAIL_TOTAL_CHAN),
+        le:   sumTail(TAIL_TOTAL_LE)
+    };
+}
+
+// Lập kế hoạch đánh từ amount và danh sách phỉnh hiện có
+function makePlanKH24(amount, chipMap) {
+    var vals = Object.keys(chipMap)
+        .map(function (v) { return parseInt(v, 10); })
+        .sort(function (a, b) { return b - a; }); // lớn -> nhỏ
+
+    var plan = [];
+    var rest = amount;
+
+    for (var i = 0; i < vals.length; i++) {
+        var v = vals[i];
+        if (rest < v) continue;
+        var cnt = Math.floor(rest / v);
+        if (cnt <= 0) continue;
+        plan.push({ val: v, count: cnt });
+        rest -= v * cnt;
+    }
+    return { plan: plan, rest: rest };
+}
+
+// Hàm core: đặt về 1 bên (CHAN / LE) với số tiền tuyệt đối (VNĐ)
+async function betSideKH24(side, amount) {
+    amount = Math.max(0, Math.floor(amount || 0));
+    if (!amount) {
+        console.warn('[KH24] Amount = 0, bỏ qua.');
+        return;
+    }
+
+    var clickFn = window.clickRectCenter;
+    if (typeof clickFn !== 'function') {
+        console.warn('[KH24] window.clickRectCenter chưa có – cần js_home_v2.js đang chạy.');
+        return;
+    }
+
+    var gates = getGateTargetsKH24();
+    var gate  = (String(side || '').toUpperCase() === 'CHAN') ? gates.chan : gates.le;
+    if (!gate) {
+        console.warn('[KH24] Không tìm được nút ' + side + ' trong GateContent.');
+        return;
+    }
+
+    var chips = getChipButtonsKH24();
+    if (!Object.keys(chips).length) {
+        console.warn('[KH24] Không tìm thấy chip nào từ ChipContent/Chip_Btn_...');
+        return;
+    }
+
+    var p = makePlanKH24(amount, chips);
+    if (!p.plan.length) {
+        console.warn('[KH24] Không lập được plan từ mệnh giá hiện có. rest = ' + p.rest);
+        return;
+    }
+
+    console.log('[KH24] BET', side, 'amount =', amount, 'plan =', p.plan, 'rest =', p.rest);
+
+    for (var i = 0; i < p.plan.length; i++) {
+        var step = p.plan[i];
+        var chipBtn = chips[step.val];
+        if (!chipBtn) continue;
+
+        for (var n = 0; n < step.count; n++) {
+            // Đọc MyBet trước khi click (để debug)
+            var before = readMyBetKH24();
+
+            // 1) chọn phỉnh
+            clickFn(chipBtn);
+            await sleep(220);
+
+            // 2) click cửa
+            clickFn(gate);
+            await sleep(260);
+
+            // 3) kiểm tra MyBet thay đổi hay không (log cho chắc)
+            var after = readMyBetKH24();
+            var delta = (String(side || '').toUpperCase() === 'CHAN')
+                ? (after.chan - before.chan)
+                : (after.le - before.le);
+
+            console.log('[KH24] step', step.val, '-> delta MyBet =', delta);
+        }
+    }
+
+    console.log('[KH24] Hoàn tất bet', side, 'amount =', amount);
+}
+
+// Hai hàm public để gọi nhanh trong Console:
+async function betChan(amount) {
+    return betSideKH24('CHAN', amount);
+}
+async function betLe(amount) {
+    return betSideKH24('LE', amount);
+}
+//thực hiện như sau : 
+//getGateTargetsKH24();
+//getChipButtonsKH24();
+//readTotalsKH24();
+//await betChan(10000);   // 10k
+//await betLe(10000);   // 10k

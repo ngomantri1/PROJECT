@@ -64,31 +64,17 @@
                 } catch (_) {}
             })();
 
-            // --- BỎ CHECK "KHÔNG PHẢI GAME" ĐỂ LUÔN KHỞI TẠO CANVAS WATCH ---
-            // Lưu ý: bên ngoài boot() C# vẫn chỉ gọi boot khi thấy có window.cc & cc.director.getScene,
-            // nên việc comment đoạn dưới không làm crash các trang khác.
-            // if (!(window.cc && cc.director && cc.director.getScene)) {
-            //     return;
-            // }
+            // Cho phép chạy cả khi KHÔNG có cocos (trang chỉ là 1 <canvas>)
+            // -> hasCocos dùng cho các hàm cần cc.director, còn Canvas Watch/bridge vẫn hoạt động bình thường.
+            var hasCocos = !!(window.cc && window.cc.director && window.cc.director.getScene);
 
             /* ---------------- utils ---------------- */
-            // Dùng cc.v2/cc.Vec2 nếu có, fallback tạo point đơn giản cho an toàn
-            var V2 = (window.cc && (window.cc.v2 || window.cc.Vec2)) || function (x, y) {
+            var V2 = (hasCocos && (cc.v2 || cc.Vec2)) || function (x, y) {
                 return {
-                    x: x || 0,
-                    y: y || 0
+                    x: x,
+                    y: y
                 };
             };
-
-            // Tiện ích: kiểm tra Cocos (window.cc) đã sẵn sàng trước khi chạy các hàm cần cc
-            function ensureCocosReady() {
-                if (!window.cc || !window.cc.director || !window.cc.director.getScene) {
-                    console.warn('[CW] Cocos (window.cc) chưa sẵn sàng ⇒ bỏ qua thao tác yêu cầu cc.');
-                    return false;
-                }
-                return true;
-            }
-
             var sleep = function (ms) {
                 return new Promise(function (r) {
                     setTimeout(r, ms);
@@ -226,11 +212,18 @@
                 return a.slice(-limit).join('/');
             }
             function walkNodes(cb) {
-                var scene = cc.director.getScene();
+                // Nếu không có cocos (trang chỉ có canvas Unity / DOM-only) thì bỏ qua để tránh lỗi cc is not defined
+                var cocos = window.cc;
+                if (!cocos || !cocos.director || !cocos.director.getScene)
+                    return;
+
+                var scene = cocos.director.getScene();
                 if (!scene)
                     return;
+
                 var st = [scene],
                 seen = [];
+
                 function seenHas(x) {
                     return seen.indexOf(x) !== -1;
                 }
@@ -254,6 +247,7 @@
                     }
                 }
             }
+
             function collectLabels() {
                 var out = [];
                 walkNodes(function (n) {
@@ -2642,10 +2636,11 @@
                 return "";
             }
 
-            // đặt ở cùng chỗ cũ của ông
+            // ============== AUTO LOGIN WATCHER ==============
             var __cw_autoLoginBootAt = Date.now();
             var __cw_autoLoginLast = 0;
-            var __cw_autoLoginPaused = false; // true = đang login rồi, đừng mở popup nữa
+            // chỉ dùng để dừng hẳn sau khi popup login đã mở
+            var __cw_autoLoginPaused = false;
 
             function __cw_autoLoginWatcher() {
                 // chưa có hàm click thì thôi
@@ -2654,35 +2649,49 @@
 
                 var now = Date.now();
 
-                // 1) chờ game ổn định 3s đầu để tránh case đã login sẵn mà header vẫn vẽ
+                // 1) chờ game ổn định 3s đầu
                 if (now - __cw_autoLoginBootAt < 3000)
                     return;
 
-                // 2) throttle: 1s gọi 1 lần thôi, khỏi spam
+                // 2) nếu đã thấy popup login mở rồi thì dừng hẳn
+                if (__cw_autoLoginPaused)
+                    return;
+
+                // 3) throttle: 1s gọi 1 lần
                 if (now - __cw_autoLoginLast < 1000)
                     return;
                 __cw_autoLoginLast = now;
 
-                // 3) nếu đang pause vì đã login rồi thì kiểm tra xem nút header có quay lại không (logout)
-                if (__cw_autoLoginPaused) {
-                    var rCheck = window.__cw_clickLoginIfNeed();
-                    // nếu header quay lại (tức rCheck != 'header-hidden' && rCheck != 'no-header')
-                    // thì bật lại auto
-                    if (rCheck !== 'header-hidden' && rCheck !== 'no-header') {
-                        __cw_autoLoginPaused = false; // cho chạy lại ở vòng sau
-                    }
+                // 4) bình thường: thử click
+                var r;
+                try {
+                    r = window.__cw_clickLoginIfNeed();
+                } catch (e) {
+                    console.warn('[auto-login] __cw_clickLoginIfNeed error:', e);
                     return;
                 }
 
-                // 4) bình thường: thử click
-                var r = window.__cw_clickLoginIfNeed();
-
-                // nếu game báo là header đã ẩn hoặc không còn nút → coi như login xong → pause
-                if (r === 'header-hidden' || r === 'no-header') {
+                // CHỈ pause khi popup login đã mở
+                // (không pause với 'clicked-header' nữa, tránh trường hợp bị tịt luôn)
+                if (r === 'popup-open') {
                     __cw_autoLoginPaused = true;
                 }
-                // nếu r === 'popup-open' hay 'clicked-header' thì để vòng sau nó tự fill tiếp
+
+                // nếu cần debug thêm, có thể mở log dòng dưới:
+                // console.log('[auto-login] tick =>', r);
             }
+
+            // === THÊM MỚI: wrapper cho các chỗ cũ gọi autoLoginLoop() ===
+            window.__cw_autoLoginWatcher = window.__cw_autoLoginWatcher || __cw_autoLoginWatcher;
+
+            function autoLoginLoop() {
+                try {
+                    __cw_autoLoginWatcher();
+                } catch (e) {
+                    console.warn('[auto-login] autoLoginLoop error', e);
+                }
+            }
+            window.autoLoginLoop = window.autoLoginLoop || autoLoginLoop;
 
             // 1) hàm tìm node theo tail dùng chung cho toàn bộ file
             // ĐẶT PHẦN NÀY LÊN TRÊN, trước __cw_closeAnnoyingPopups
@@ -2812,8 +2821,6 @@
             }
 
             function tick() {
-                if (!ensureCocosReady())
-                    return;
                 // 1) lo đăng nhập trước
                 __cw_autoLoginWatcher();
                 // 2) rồi mới dọn popup thông báo
@@ -2907,18 +2914,12 @@
             }
 
             panel.querySelector('#bStart').onclick = function () {
-                if (!ensureCocosReady())
-                    return;
                 start();
             };
             panel.querySelector('#bStop').onclick = function () {
-                if (!ensureCocosReady())
-                    return;
                 stop();
             };
             panel.querySelector('#bMoney').onclick = function () {
-                if (!ensureCocosReady())
-                    return;
                 S.showMoney = !S.showMoney;
                 layerMoney.style.display = S.showMoney ? '' : 'none';
                 if (S.showMoney) {
@@ -2931,8 +2932,6 @@
                 panel.style.zIndex = '2147483647';
             };
             panel.querySelector('#bBet').onclick = function () {
-                if (!ensureCocosReady())
-                    return;
                 S.showBet = !S.showBet;
                 layerBet.style.display = S.showBet ? '' : 'none';
                 if (S.showBet) {
@@ -2944,8 +2943,6 @@
                 panel.style.zIndex = '2147483647';
             };
             panel.querySelector('#bText').onclick = function () {
-                if (!ensureCocosReady())
-                    return;
                 S.showText = !S.showText;
                 layerText.style.display = S.showText ? '' : 'none';
                 if (S.showText) {
@@ -2958,8 +2955,6 @@
                 panel.style.zIndex = '2147483647';
             };
             panel.querySelector('#bButton').onclick = function () {
-                if (!ensureCocosReady())
-                    return;
                 S.showButton = !S.showButton;
                 layerButton.style.display = S.showButton ? '' : 'none';
                 if (S.showButton) {
@@ -2971,26 +2966,17 @@
                 panel.style.zIndex = '2147483647';
             };
             panel.querySelector('#bScanMoney').onclick = function () {
-                if (!ensureCocosReady())
-                    return;
                 scan200Money();
             };
             panel.querySelector('#bScanBet').onclick = function () {
-                if (!ensureCocosReady())
-                    return;
                 scan200Bet();
             };
             panel.querySelector('#bScanText').onclick = function () {
-                if (!ensureCocosReady())
-                    return;
                 scan200Text();
             };
             panel.querySelector('#bScanButton').onclick = function () {
-                if (!ensureCocosReady())
-                    return;
                 scan200Button();
             };
-
 
             panel.querySelector('#bBetC').addEventListener('click', async function () {
                 var n = parseFloat(document.getElementById('iStake').value || '1');
@@ -3711,54 +3697,283 @@
                             return 'filled';
                         }
 
-                        /* hàm click như bạn đang có – giữ nguyên ý tưởng */
-                        window.__cw_clickLoginIfNeed = function () {
-                            // nếu popup đang mở thì chỉ điền
-                            var popupBtn = findNodeByTail(POPUP_LOGIN_BTN_TAIL);
-                            if (popupBtn && isNodeVisible(popupBtn)) {
-                                __cw_fillLoginPopup();
-                                return 'popup-open';
+                        // cấu hình click login theo toạ độ chuẩn hoá (0..1) để chơi được với Unity WebGL
+                        window.__cw_loginConfig = window.__cw_loginConfig || {
+                            // Kingfun WebGL – toạ độ nút ĐĂNG NHẬP trên header (đã đo bằng __cw_enableLoginProbe)
+                            headerNorm: {
+                                x: 0.2832,
+                                y: 0.0398
+                            },
+                            // toạ độ nút ĐĂNG NHẬP trong popup login (nếu Unity vẽ trong canvas), dùng sau nếu cần
+                            popupNorm: null
+                        };
+
+                        // click vào canvas theo toạ độ chuẩn hoá → không phụ thuộc độ phân giải
+                        function __cw_clickCanvasNorm(norm) {
+                            if (!norm)
+                                return false;
+
+                            var canvas = document.querySelector('canvas');
+                            if (!canvas)
+                                return false;
+
+                            var rect = canvas.getBoundingClientRect();
+                            var x = rect.left + rect.width * norm.x;
+                            var y = rect.top + rect.height * norm.y;
+
+                            var evInit = {
+                                bubbles: true,
+                                cancelable: true,
+                                clientX: x,
+                                clientY: y,
+                                button: 0
+                            };
+
+                            try {
+                                canvas.dispatchEvent(new PointerEvent('pointerdown', evInit));
+                                canvas.dispatchEvent(new MouseEvent('mousedown', evInit));
+                                canvas.dispatchEvent(new PointerEvent('pointerup', evInit));
+                                canvas.dispatchEvent(new MouseEvent('mouseup', evInit));
+                                canvas.dispatchEvent(new MouseEvent('click', evInit));
+                            } catch (e) {}
+
+                            return true;
+                        }
+                        window.__cw_clickCanvasNorm = window.__cw_clickCanvasNorm || __cw_clickCanvasNorm;
+
+                        // Bật chế độ đo toạ độ chuẩn hoá: mở DevTools, chạy __cw_enableLoginProbe(), rồi tự click nút login
+                        window.__cw_enableLoginProbe = window.__cw_enableLoginProbe || function () {
+                            var canvas = document.querySelector('canvas');
+                            if (!canvas) {
+                                console.warn('[login-probe] không thấy <canvas>');
+                                return 'no-canvas';
                             }
 
-                            // nếu nút header còn thì click
-                            var header = findNodeByTail(HEADER_LOGIN_TAIL);
-                            if (!header) {
-                                return 'no-header';
-                            }
-                            if (!isNodeVisible(header)) {
-                                return 'header-hidden';
-                            }
-
-                            var btn = header.getComponent && header.getComponent(cc.Button);
-                            if (btn) {
-                                cc.Component.EventHandler.emitEvents(btn.clickEvents, new cc.Event.EventCustom('click', true));
-                                console.log('[auto-login] click header login.');
-                                return 'clicked-header';
+                            function handler(ev) {
+                                var rect = canvas.getBoundingClientRect();
+                                var nx = (ev.clientX - rect.left) / rect.width;
+                                var ny = (ev.clientY - rect.top) / rect.height;
+                                console.log('[LOGIN-PROBE]', {
+                                    x: Math.round(ev.clientX),
+                                    y: Math.round(ev.clientY),
+                                    nx: +nx.toFixed(4),
+                                    ny: +ny.toFixed(4)
+                                });
                             }
 
-                            // fallback DOM như code cũ của bạn
-                            var list = window.__abx_buttons || [];
-                            for (var i = 0; i < list.length; i++) {
-                                var it = list[i];
-                                if (it.tail === HEADER_LOGIN_TAIL) {
-                                    var cx = Math.round(it.x + it.w / 2);
-                                    var cy = Math.round(it.y + it.h / 2);
-                                    var canvas = document.querySelector('canvas') || document.body;
-                                    ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (t) {
-                                        canvas.dispatchEvent(new MouseEvent(t, {
-                                                bubbles: true,
-                                                cancelable: true,
-                                                clientX: cx,
-                                                clientY: cy,
-                                                button: 0
-                                            }));
-                                    });
-                                    console.log('[auto-login] DOM click header login.');
-                                    return 'dom-fallback-clicked';
+                            canvas.addEventListener('click', handler, true);
+                            console.log('[login-probe] ĐÃ BẬT – hãy click vào nút ĐĂNG NHẬP, xem toạ độ chuẩn hoá trong console.');
+                            return 'ok';
+                        };
+
+                        // --- helper DOM dùng cho mode Unity/HTML ---
+                        function __cw_isDomVisible(el) {
+                            if (!el || !el.getBoundingClientRect)
+                                return false;
+                            var r = el.getBoundingClientRect();
+                            if (r.width <= 4 || r.height <= 4)
+                                return false;
+                            var st = window.getComputedStyle ? getComputedStyle(el) : null;
+                            if (!st)
+                                return true;
+                            if (st.display === 'none' || st.visibility === 'hidden' || +st.opacity === 0)
+                                return false;
+                            return true;
+                        }
+
+                        function __cw_normText(s) {
+                            return String(s || '')
+                            .normalize('NFD')
+                            .replace(/[\u0300-\u036F]/g, '')
+                            .toUpperCase();
+                        }
+
+                        // Tìm nút ĐĂNG NHẬP trên thanh header (DOM)
+                        function __cw_findDomHeaderLogin() {
+                            var nodes = document.querySelectorAll('button, a, div, span');
+                            var best = null;
+                            var bestScore = -1;
+                            var H = window.innerHeight || 800;
+                            var KW = ['DANG NHAP', 'ĐĂNG NHẬP', 'LOGIN', 'LOG IN'];
+
+                            for (var i = 0; i < nodes.length; i++) {
+                                var el = nodes[i];
+                                if (!__cw_isDomVisible(el))
+                                    continue;
+
+                                var txt = __cw_normText(el.innerText || el.textContent || '');
+                                if (!txt)
+                                    continue;
+
+                                var matched = false;
+                                for (var k = 0; k < KW.length; k++) {
+                                    if (txt.indexOf(KW[k]) !== -1) {
+                                        matched = true;
+                                        break;
+                                    }
+                                }
+                                if (!matched)
+                                    continue;
+
+                                var r = el.getBoundingClientRect();
+                                var area = r.width * r.height;
+                                // ưu tiên nút càng to, càng gần mép trên
+                                var score = area - r.top * 5;
+                                if (score > bestScore) {
+                                    bestScore = score;
+                                    best = el;
                                 }
                             }
+                            return best;
+                        }
 
-                            return 'fail';
+                        // Tìm nút ĐĂNG NHẬP trong popup DOM (khi có input password)
+                        function __cw_findDomPopupLogin() {
+                            // Tìm input mật khẩu theo nhiều kiểu, không chỉ type="password"
+                            var inputs = document.querySelectorAll(
+                                    'input[type="password"],' +
+                                    'input[name*="pass"],input[name*="pwd"],' +
+                                    'input[placeholder*="Mật khẩu"],input[placeholder*="MAT KHAU"],' +
+                                    'input[placeholder*="password"],input[placeholder*="PASSWORD"]');
+                            var pwd = null;
+                            for (var i = 0; i < inputs.length; i++) {
+                                if (__cw_isDomVisible(inputs[i])) {
+                                    pwd = inputs[i];
+                                    break;
+                                }
+                            }
+                            if (!pwd)
+                                return null;
+
+                            var pr = pwd.getBoundingClientRect();
+                            var cx = pr.left + pr.width / 2;
+                            var cy = pr.top + pr.height / 2;
+
+                            var nodes = document.querySelectorAll('button, a, div, span');
+                            var best = null;
+                            var bestD2 = 1e18;
+                            var KW = ['DANG NHAP', 'ĐĂNG NHẬP', 'LOGIN', 'LOG IN'];
+
+                            function d2(ax, ay, bx, by) {
+                                var dx = ax - bx;
+                                var dy = ay - by;
+                                return dx * dx + dy * dy;
+                            }
+
+                            for (var j = 0; j < nodes.length; j++) {
+                                var el = nodes[j];
+                                if (!__cw_isDomVisible(el))
+                                    continue;
+
+                                var txt = __cw_normText(el.innerText || el.textContent || '');
+                                if (!txt)
+                                    continue;
+
+                                var matched = false;
+                                for (var k = 0; k < KW.length; k++) {
+                                    if (txt.indexOf(KW[k]) !== -1) {
+                                        matched = true;
+                                        break;
+                                    }
+                                }
+                                if (!matched)
+                                    continue;
+
+                                var r = el.getBoundingClientRect();
+                                var ex = r.left + r.width / 2;
+                                var ey = r.top + r.height / 2;
+                                var dist = d2(cx, cy, ex, ey);
+                                if (dist < bestD2) {
+                                    bestD2 = dist;
+                                    best = el;
+                                }
+                            }
+                            return best;
+                        }
+
+                        // Điền user/pass cho form DOM (nếu host đã bắn xuống)
+                        function __cw_fillDomLoginInputs() {
+                            var user = window.__cw_loginUser || '';
+                            var pass = window.__cw_loginPass || '';
+                            if (!user && !pass)
+                                return;
+
+                            function pickVisible(selector) {
+                                var list = document.querySelectorAll(selector);
+                                for (var i = 0; i < list.length; i++) {
+                                    if (__cw_isDomVisible(list[i]))
+                                        return list[i];
+                                }
+                                return null;
+                            }
+
+                            var userEl = pickVisible('input[name*=user],input[name*=account],input[type=text],input[type=email]');
+                            var passEl = pickVisible('input[type=password]');
+
+                            function setInput(el, val) {
+                                if (!el || !val)
+                                    return;
+                                el.value = val;
+                                try {
+                                    el.dispatchEvent(new Event('input', {
+                                            bubbles: true
+                                        }));
+                                    el.dispatchEvent(new Event('change', {
+                                            bubbles: true
+                                        }));
+                                } catch (e) {}
+                            }
+
+                            setInput(userEl, user);
+                            setInput(passEl, pass);
+                        }
+
+                        window.__cw_clickLoginIfNeed = function () {
+                            try {
+                                // Nếu đã login rồi thì thôi
+                                if (window.__cw_isLoggedIn && window.__cw_isLoggedIn()) {
+                                    return 'already-logged-in';
+                                }
+
+                                // Lấy config toạ độ header (normX, normY đã đo bằng __cw_enableLoginProbe)
+                                var cfg = window.__cw_loginConfig || {};
+                                var norm = cfg.headerNorm;
+                                if (!norm || typeof norm.x !== 'number' || typeof norm.y !== 'number') {
+                                    console.warn('[auto-login] thiếu __cw_loginConfig.headerNorm');
+                                    return 'no-header-norm';
+                                }
+
+                                // 1) CLICK TRỰC TIẾP LÊN CANVAS UNITY WEBGL (giống click thật)
+                                var okCanvas = false;
+                                try {
+                                    okCanvas = __cw_clickCanvasNorm(norm);
+                                } catch (e2) {
+                                    okCanvas = false;
+                                }
+
+                                // 2) Song song thử click nút login DOM (nếu có) cho các layout HTML thuần
+                                try {
+                                    if (typeof __cw_findDomHeaderLogin === 'function') {
+                                        var domBtn = __cw_findDomHeaderLogin();
+                                        if (domBtn) {
+                                            domBtn.click();
+                                        }
+                                    }
+                                } catch (e3) {
+                                    // bỏ qua lỗi DOM, không ảnh hưởng Unity
+                                }
+
+                                if (!okCanvas) {
+                                    console.log('[auto-login] __cw_clickCanvasNorm không tìm được canvas hoặc không click được.');
+                                    return 'no-canvas';
+                                }
+
+                                //console.log('[auto-login] CLICK header login (norm=', norm, ')');
+                                return 'clicked-header';
+                            } catch (e) {
+                                console.warn('[auto-login] error', e);
+                                return 'error';
+                            }
                         };
 
                         // danh sách tail có thể thay đổi sau này
@@ -3923,11 +4138,29 @@
 
     }
 
-    // ===== Khởi động boot() KHÔNG CẦN CHECK GAME NỮA =====
-    try {
-        boot(); // gọi trực tiếp, bỏ mọi điều kiện cc / scene
-    } catch (e) {
-        console.error('[js_home_v2] boot() error:', e);
+    // chờ đợi cocos sẵn sàng rồi mới boot
+    if (window.cc && cc.director && cc.director.getScene) {
+        // đã sẵn sàng
+        boot();
+    } else {
+        // chưa sẵn sàng → thăm dò 500ms/lần
+        var waited = 0;
+        var __cw_wait_tm = setInterval(function () {
+            if (window.cc && cc.director && cc.director.getScene) {
+                clearInterval(__cw_wait_tm);
+                console.log('[js_home_v2] Cocos sẵn sàng → chạy boot()');
+                boot();
+            } else {
+                waited += 500;
+                // Nếu sau 2 giây vẫn KHÔNG có cocos (trang Unity WebGL chỉ có <canvas>)
+                // thì boot() ở chế độ DOM-only để vẫn hiện Canvas Watch.
+                if (waited >= 2000) {
+                    clearInterval(__cw_wait_tm);
+                    console.log('[js_home_v2] Không thấy cocos → boot() DOM-only');
+                    boot();
+                }
+            }
+        }, 500);
     }
 })();
 

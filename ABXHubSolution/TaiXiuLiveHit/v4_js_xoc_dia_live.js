@@ -1349,9 +1349,9 @@
     var CHIP_TAIL_ROW4 = 'xdlive/canvas/bg/tipdealer/tabtipdealer/tipcontent/views/contentchat/row4/itemtip/lbmoney';
     var DENOMS_DESC = [10000000, 5000000, 1000000, 500000, 100000, 50000, 20000, 10000, 5000, 2000, 1000];
     var cfgBet = {
-        delayPick: 220,
-        delayTap: 260,
-        delayBetweenSteps: 280
+        delayPick: 200,
+        delayTap: 200,
+        delayBetweenSteps: 200
     };
 
     function clickAtWin(x, y) {

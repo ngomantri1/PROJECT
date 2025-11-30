@@ -182,7 +182,7 @@ namespace TaiXiuLiveHit
         private System.Collections.Generic.List<long[]> _stakeChains = new();
         private long[] _stakeChainTotals = Array.Empty<long>();
 
-        private double _decisionPercent = 0.22; // 10s (0.22)
+        private double _decisionPercent = 0.25; // 11s (0.25)
 
         // Chống bắn trùng khi vừa cược
         private bool _cooldown = false;
@@ -249,7 +249,7 @@ namespace TaiXiuLiveHit
 
 
 
-        private const string DEFAULT_URL = "net88.com"; // URL mặc định bạn muốn
+        private const string DEFAULT_URL = "net88.top"; // URL mặc định bạn muốn
         // === License repo/worker settings (CHỈNH LẠI CHO PHÙ HỢP) ===
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn
@@ -400,9 +400,9 @@ Ví dụ không hợp lệ:
             public string MoneyStrategy { get; set; } = "IncreaseWhenLose";//IncreaseWhenLose
             public double CutProfit { get; set; } = 0; // 0 = tắt cắt lãi
             public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
-            public string BetSeqCL { get; set; } = "";        // cho Chiến lược 1
+            public string BetSeqTX { get; set; } = "";        // cho Chiến lược 1
             public string BetSeqNI { get; set; } = "";        // cho Chiến lược 3
-            public string BetPatternsCL { get; set; } = "";   // cho Chiến lược 2
+            public string BetPatternsTX { get; set; } = "";   // cho Chiến lược 2
             public string BetPatternsNI { get; set; } = "";   // cho Chiến lược 4
 
             // Lưu chuỗi tiền theo từng MoneyStrategy
@@ -3665,8 +3665,8 @@ Ví dụ không hợp lệ:
 
                 // Đồng bộ ô hiện hành vào trường chung để Task đọc
                 int __idx = CmbBetStrategy?.SelectedIndex ?? 4;
-                _cfg.BetSeq = (__idx == 0) ? (_cfg.BetSeqCL ?? "") : (__idx == 2 ? (_cfg.BetSeqNI ?? "") : "");
-                _cfg.BetPatterns = (__idx == 1) ? (_cfg.BetPatternsCL ?? "") : (__idx == 3 ? (_cfg.BetPatternsNI ?? "") : "");
+                _cfg.BetSeq = (__idx == 0) ? (_cfg.BetSeqTX ?? "") : (__idx == 2 ? (_cfg.BetSeqNI ?? "") : "");
+                _cfg.BetPatterns = (__idx == 1) ? (_cfg.BetPatternsTX ?? "") : (__idx == 3 ? (_cfg.BetPatternsNI ?? "") : "");
 
 
                 // === Khởi động task theo lựa chọn CHIẾN LƯỢC ===
@@ -5373,8 +5373,8 @@ Ví dụ không hợp lệ:
             return true;
         }
 
-        // --- Thế cầu T/X: từng dòng "<mẫu> - <đặt>", mẫu gồm T/X/?, đặt là C hoặc L ---
-        private static bool ValidatePatternsCL(string s, out string err)
+        // --- Thế cầu T/X: từng dòng "<mẫu> - <chuỗi cầu>", mẫu & chuỗi chỉ gồm T/X ---
+        private static bool ValidatePatternsTX(string s, out string err)
         {
             err = "";
             if (string.IsNullOrWhiteSpace(s))
@@ -5396,7 +5396,7 @@ Ví dụ không hợp lệ:
                 // <mẫu> (T/X, cho phép khoảng trắng)  -> hoặc -  <chuỗi cầu> (T/X, CHO PHÉP khoảng trắng)
                 var m = System.Text.RegularExpressions.Regex.Match(
                     line,
-                    @"^\s*([CLcl\s]+)\s*(?:->|-)\s*([CLcl\s]+)\s*$",
+                    @"^\s*([TXtx\s]+)\s*(?:->|-)\s*([TXtx\s]+)\s*$",
                     System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
                 if (!m.Success)
@@ -5441,8 +5441,6 @@ Ví dụ không hợp lệ:
 
             return true;
         }
-
-
 
 
         // --- Thế cầu I/N: từng dòng "<mẫu> - <đặt>", mẫu gồm I/N/?, đặt là I hoặc N ---
@@ -5548,7 +5546,7 @@ Ví dụ không hợp lệ:
             }
             else if (idx == 1) // 2. Thế T/X
             {
-                if (!ValidatePatternsCL(T(TxtTheCau), out var err))
+                if (!ValidatePatternsTX(T(TxtTheCau), out var err))
                 {
                     SetError(LblPatError, err);
                     BringBelow(TxtTheCau);
@@ -5572,10 +5570,10 @@ Ví dụ không hợp lệ:
         private void SyncStrategyFieldsToUI()
         {
             int idx = CmbBetStrategy?.SelectedIndex ?? 4;
-            if (idx == 0) { if (TxtChuoiCau != null) TxtChuoiCau.Text = _cfg.BetSeqCL ?? ""; }
+            if (idx == 0) { if (TxtChuoiCau != null) TxtChuoiCau.Text = _cfg.BetSeqTX ?? ""; }
             else if (idx == 2) { if (TxtChuoiCau != null) TxtChuoiCau.Text = _cfg.BetSeqNI ?? ""; }
 
-            if (idx == 1) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsCL ?? ""; }
+            if (idx == 1) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsTX ?? ""; }
             else if (idx == 3) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsNI ?? ""; }
         }
 
@@ -5606,11 +5604,11 @@ Ví dụ không hợp lệ:
         {
             if (!_uiReady) return;
 
-            var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 0: CL, 2: N/I
+            var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 0: TX, 2: N/I
             var txt = (TxtChuoiCau?.Text ?? "").Trim();
 
             // Lưu tách bạch cho từng chiến lược
-            if (idx == 0) _cfg.BetSeqCL = txt;    // Chiến lược 1: Chuỗi T/X
+            if (idx == 0) _cfg.BetSeqTX = txt;    // Chiến lược 1: Chuỗi T/X
             if (idx == 2) _cfg.BetSeqNI = txt;    // Chiến lược 3: Chuỗi N/I
 
             // Bản “chung” để engine đọc khi chạy
@@ -5625,11 +5623,11 @@ Ví dụ không hợp lệ:
         {
             if (!_uiReady) return;
 
-            var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 1: CL, 3: N/I
+            var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 1: TX, 3: N/I
             var txt = (TxtTheCau?.Text ?? "").Trim();
 
             // Lưu tách bạch cho từng chiến lược
-            if (idx == 1) _cfg.BetPatternsCL = txt;  // Chiến lược 2: Thế T/X
+            if (idx == 1) _cfg.BetPatternsTX = txt;  // Chiến lược 2: Thế T/X
             if (idx == 3) _cfg.BetPatternsNI = txt;  // Chiến lược 4: Thế N/I
 
             // Bản “chung” để engine đọc khi chạy
@@ -5720,7 +5718,7 @@ Ví dụ không hợp lệ:
             {
                 string s = (TxtTheCau?.Text ?? "");
                 bool ok = (idx == 1)
-                    ? ValidatePatternsCL(s, out var e2)
+                    ? ValidatePatternsTX(s, out var e2)
                     : ValidatePatternsNI(s, out e2);
                 SetError(LblPatError, ok ? null : e2);
             }

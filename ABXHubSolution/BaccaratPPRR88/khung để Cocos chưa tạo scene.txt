@@ -1,0 +1,18 @@
+(() => {
+    'use strict';
+
+    function boot() {
+        // toàn bộ code gốc
+    }
+
+    if (window.cc && cc.director && cc.director.getScene) {
+        boot();
+    } else {
+        var tm = setInterval(function () {
+            if (window.cc && cc.director && cc.director.getScene) {
+                clearInterval(tm);
+                boot();
+            }
+        }, 500);
+    }
+})();

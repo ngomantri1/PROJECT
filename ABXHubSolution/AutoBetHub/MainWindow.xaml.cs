@@ -506,39 +506,37 @@ namespace AutoBetHub
                     ? "(Không có ghi chú)"
                     : manifest.notes;
 
-                var msg =
-                    $"Đã có phiên bản mới {remote} (hiện tại {current}).\n\n" +
-                    $"Ghi chú:\n{notes}\n\n" +
-                    "Bạn có muốn tải và cập nhật tự động không?";
-
-                var result = MessageBox.Show(
-                    msg,
-                    "Cập nhật AutoBetHub",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Information);
-
-                if (result != MessageBoxResult.Yes)
+                // Nếu là auto (kiểm tra lúc khởi động) -> tự động cập nhật, không hỏi
+                if (auto)
                 {
-                    // Người dùng chọn KHÔNG cập nhật:
-                    // -> chỉ log lại, KHÔNG gửi status sang web
-                    // để tránh hiển thị popup "Bạn đã hủy cập nhật".
-                    _log.Info("[Update] User cancelled update from MessageBox.");
-                    return;
+                    _log.Info($"[Update] Auto-startup: new version {remote} available (current {current}). Auto-updating without confirmation.");
+                    await DownloadAndApplyUpdateAsync(manifest, current, remote);
                 }
-
-                await DownloadAndApplyUpdateAsync(manifest, current, remote);
-
-
-                if (result != MessageBoxResult.Yes)
+                else
                 {
-                    // Người dùng chọn KHÔNG cập nhật:
-                    // -> chỉ log lại, KHÔNG gửi status sang web
-                    // để tránh hiển thị popup "Bạn đã hủy cập nhật".
-                    _log.Info("[Update] User cancelled update from MessageBox.");
-                    return;
-                }
+                    // Người dùng tự bấm checkUpdate -> vẫn hỏi confirm như cũ
+                    var msg =
+                        $"Đã có phiên bản mới {remote} (hiện tại {current}).\n\n" +
+                        $"Ghi chú:\n{notes}\n\n" +
+                        "Bạn có muốn tải và cập nhật tự động không?";
 
-                await DownloadAndApplyUpdateAsync(manifest, current, remote);
+                    var result = MessageBox.Show(
+                        msg,
+                        "Cập nhật AutoBetHub",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Information);
+
+                    if (result != MessageBoxResult.Yes)
+                    {
+                        // Người dùng chọn KHÔNG cập nhật:
+                        // -> chỉ log lại, KHÔNG gửi status sang web
+                        // để tránh hiển thị popup "Bạn đã hủy cập nhật".
+                        _log.Info("[Update] User cancelled update from MessageBox.");
+                        return;
+                    }
+
+                    await DownloadAndApplyUpdateAsync(manifest, current, remote);
+                }
             }
             catch (Exception ex)
             {

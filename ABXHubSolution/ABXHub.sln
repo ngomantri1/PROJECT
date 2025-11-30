@@ -2,7 +2,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaiXiuThuongKF", "TaiXiuThuongKF\TaiXiuThuongKF.csproj", "{3AE8F698-9E01-462A-9CEA-03ABF4F524A2}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BaccaratPPRR88", "BaccaratPPRR88\BaccaratPPRR88.csproj", "{3AE8F698-9E01-462A-9CEA-03ABF4F524A2}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaiXiuLiveHit", "TaiXiuLiveHit\TaiXiuLiveHit.csproj", "{324D2884-9AC0-4743-9F01-2D8848A9D133}"
 EndProject

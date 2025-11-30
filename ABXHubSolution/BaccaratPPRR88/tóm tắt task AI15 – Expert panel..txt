@@ -1,0 +1,83 @@
+Đây là tóm tắt ngắn gọn để bạn mang sang chat mới:
+
+Bối cảnh & mục tiêu
+
+Dự án: BaccaratPPRR88.
+
+Chiến lược cần thay thế: AI15 – Expert panel.
+
+Phong cách bắt chước: AiOnlineNGramTask (kế thừa IBetTask, dùng helper từ TaskUtil, không tự định nghĩa MoneyManager, PlaceBet, Log2, JsPlace2…).
+
+Mục tiêu: đánh liên tục nhưng giảm tối đa chuỗi thua dài, đặc biệt hạn chế >10 tay thua liên tiếp.
+
+Vấn đề đã gặp & đã sửa
+
+Lỗi “ambiguous / duplicate” do tự khai báo MoneyManager, PlaceBet,… → Đã bỏ, chỉ dùng TaskUtil + MoneyManager sẵn có.
+
+Hiểu sai warm-seed (đợi đủ 50 ván tiếp theo). Yêu cầu đúng: dùng ngay đến 50 kết quả sẵn có để chấm 100 chuyên gia trước khi đánh.
+
+Luồng đặt cược phải giống AiOnlineNGramTask:
+WaitUntilNewRoundStart → build plan → chọn chuyên gia → PlaceBet → WaitRoundFinishAndJudge → cập nhật P/L/metrics → chọn chuyên gia cho ván sau.
+
+Cách làm hiện tại (AI15 – Expert panel)
+
+100 chuyên gia / 100 cách đánh, gồm:
+
+Follow/Anti theo độ dài bệt (run-length) k=1..10 (20 biến thể).
+
+Zigzag/ZigFollow cửa sổ 8..32 với ngưỡng tự tin (16 biến thể).
+
+Majority / AntiMajority cửa sổ 6..24 bước 2 (24 biến thể).
+
+N-Gram bậc 2..5, tieBias, markovStrength khác nhau (≈20 biến thể).
+
+StreakSensitive (cầu đẹp) theo/đảo khi bệt ≥3..6 (8 biến thể).
+
+Cầu 1-1 theo/đảo, Follow/FlipPrev (4 biến thể).
+
+Thêm biến thể nhỏ cho đủ 100.
+
+Warm-seed: duyệt tối đa 50 kết quả cuối (ít hơn thì dùng bấy nhiêu).
+Với mỗi bước: 100 chuyên gia cùng dự đoán trên prefix, chấm: Plays, Wins, Ewma, CurrWinStreak (vừa thắng), LastOK, LastConf.
+
+Chọn chuyên gia cho ván kế (ưu tiên theo yêu cầu):
+
+Vừa đoán đúng ván trước (LastOK=True)
+
+Chuỗi vừa thắng (CurrWinStreak) dài hơn
+
+LastConf cao hơn
+
+Ewma cao hơn
+
+Nếu không ai vừa đúng, giữ chuyên gia hiện tại; nếu chưa có, chọn theo Ewma.
+
+Chuyển chuyên gia khi thua: “cứ thua là chuyển” sang người có LastOK=True theo thứ tự tie-break trên; nếu không ai vừa đúng thì giữ nguyên.
+
+Đặt tiền: dùng MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId) → GetStakeForThisBet() → sau ván gọi OnRoundResult(win). (Bạn yêu cầu không thay đổi quy luật tiền đang dùng.)
+
+Logging gọn:
+
+Warm-seed: scored last N step(s)…
+
+Top10 candidates: chuyên gia được chọn đứng đầu, sau đó 9 ứng viên tiếp theo (theo tiêu chí trên). Mỗi dòng có: plan=SIDE@conf, plays, wins, ewma, currWS, lastOK.
+
+Place => SIDE stake by [id:name] (plan=SIDE@conf)
+
+RoundResult actual=SIDE | winners=[..] | losers=[..]
+
+SwitchExpert / KeepExpert.
+
+Kỳ vọng & cách kiểm tra
+
+Ngay khi đủ ≥2 kết quả lịch sử, log in: “Warm-seed: scored last …” và in Top10.
+
+Mỗi ván: in Top10 (10 dòng), Place và RoundResult, sau đó Switch/Keep.
+
+Chuỗi thua dài được giảm nhờ: chọn chuyên gia theo tiêu chí “vừa thắng” + chuỗi vừa thắng + độ tự tin và có đa dạng chiến lược (100 cách).
+
+Trạng thái cuối
+
+Đã gửi file AiExpertPanelTask.cs theo đúng phong cách AiOnlineNGramTask với toàn bộ nghiệp vụ trên (warm-seed 50, 100 experts, chọn theo “vừa thắng”, log Top10, không định nghĩa trùng).
+
+Bạn yêu cầu thêm: chỉ hiển thị Top10 (đã có), “vừa thắng” là chuỗi vừa thắng gần đây, không phải max lịch sử (đã làm).
