@@ -772,7 +772,7 @@
             u.value = location.href;
     }
 
-    // === ABX5 Home <-> C# bridge (non-intrusive) ===
+    // === Automino Home <-> C# bridge (non-intrusive) ===
     (function () {
         try {
             // Gửi an toàn lên host (WebView2)

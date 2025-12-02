@@ -439,10 +439,91 @@
         if (v && v.trim())
             return true;
         // 2) Có khối user đang HIỂN THỊ -> tạm xem là logged-in
-        const block = document.querySelector('.user-logged, .base-dropdown-header__user__name, .user__name');
+        const block = document.querySelector('.user-logged, .base-dropdown-header__user__name, .user__name, .header .user-info, .hd_login .user-name, .logined_wrap');
         if (block && block.offsetParent !== null)
             return true;
+        // 3) Thấy nút/khối Đăng xuất hoặc số dư trên header
+        const logoutBtn = Array.from(document.querySelectorAll('a,button')).find(el => /dang\s*xuat|logout/i.test(norm(textOf(el))));
+        if (logoutBtn && logoutBtn.offsetParent !== null)
+            return true;
+        const balanceNode = Array.from(document.querySelectorAll('.balance, .balance-text, .user-balance, .nav_item .balance, .balance-box .balance, .logined_wrap .balance-box'))
+            .find(el => /\d/.test(norm(textOf(el))));
+        if (balanceNode && balanceNode.offsetParent !== null)
+            return true;
         return false;
+    }
+    function closeLoginPopupIfLoggedIn() {
+        try {
+            if (!isLoggedInFromDOM())
+                return;
+
+            // Xóa overlay/modal nếu đang che
+            const hideOverlays = () => {
+                const sels = [
+                    '.v--modal-overlay', '.v--modal-box',
+                    '.modal-mask', '.modal-backdrop', '.modal-overlay', '.modal',
+                    '.tcg_modal_wrap.loginPopupModal', '.tcg_modal_wrap.publicModal', '.tcg_modal_wrap'
+                ];
+                const nodes = Array.from(document.querySelectorAll(sels.join(',')));
+                nodes.forEach(n => { try { n.style.display = 'none'; n.remove(); } catch (_) {} });
+                try { document.body.classList.remove('modal-open', 'overflow-hidden'); document.body.style.overflow = ''; } catch (_) {}
+                try { console && console.warn && console.warn('[HomeWatch] removed overlays:', nodes.length); } catch (_) {}
+            };
+
+            const roots = [];
+            try {
+                if (typeof TAIL_LOGIN_POPUP_ROOT === 'string' && TAIL_LOGIN_POPUP_ROOT) {
+                    const r = findByTail(TAIL_LOGIN_POPUP_ROOT);
+                    if (r) roots.push(r);
+                }
+            } catch (_) {}
+            roots.push(
+                ...Array.from(document.querySelectorAll(
+                    '.tcg_modal_wrap.loginPopupModal, .tcg_modal_wrap.publicModal, .tcg_modal_wrap, .loginPopupModal, .popup-login, .login-popup, .modal-login, .login__popup, .v--modal-box, .v--modal-overlay'))
+            );
+            // thêm: tìm modal chứa input password để ẩn cha gần nhất
+            const pwdParents = Array.from(document.querySelectorAll('input[type="password"]'))
+                .map(i => i.closest('.v--modal-box, .v--modal-overlay, .tcg_modal_wrap, .modal, .popup, .loginPopupModal, .login-popup, .modal-login'))
+                .filter(Boolean);
+            roots.push(...pwdParents);
+
+            // thử click nút X nếu có; nếu không, gỡ nguyên overlay cha
+            const closeBtn = Array.from(document.querySelectorAll('.v--modal__close, .tcg_modal_wrap .close, .tcg_modal_wrap .icon-close, .loginPopupModal .icon-close, .loginPopupModal .close'))
+                .find(isVisibleAndClickable);
+            if (closeBtn) {
+                try { closeBtn.click(); } catch (_) {}
+                hideOverlays();
+            } else {
+                roots.forEach(r => {
+                    try {
+                        const ov = r.closest('.v--modal-overlay, .v--modal-box') || r;
+                        ov.style.display = 'none';
+                        ov.remove();
+                    } catch (_) {}
+                });
+                hideOverlays();
+            }
+        } catch (_) {}
+    }
+
+    // Tick định kỳ để đóng popup login nếu đã đăng nhập mà popup vẫn còn
+    if (!window.__abx_close_login_timer) {
+        window.__abx_close_login_timer = setInterval(() => {
+            try {
+                if (!isLoggedInFromDOM())
+                    return;
+                closeLoginPopupIfLoggedIn();
+            } catch (_) {}
+        }, 1200);
+    }
+    function showHostMismatchAlertIfAny() {
+        try {
+            const cfgHost = (window.__abx_cfg_url_host || '').toLowerCase();
+            const currHost = (location && location.host || '').toLowerCase();
+            if (cfgHost && currHost && cfgHost !== currHost) {
+                alert('Host khác với cấu hình:\nĐã đăng nhập ở: ' + cfgHost + '\nNhưng hiện tại: ' + currHost + '\nCookie sẽ không dùng chung, có thể bật lại popup đăng nhập.');
+            }
+        } catch (_) { }
     }
 
     function isClearlyLoggedOut() {
@@ -465,6 +546,7 @@
         const loggedIn = !!document.querySelector('.user-logged, .base-dropdown-header__user__name, [class*="user-logged"]');
 
         if (loggedIn) {
+            closeLoginPopupIfLoggedIn();
             // Nếu đã nhận diện là login nhưng chưa có tên → ép kéo 1 lần
             if (!S.username) {
                 S.fetchDone = false; // cho phép fetch lại
@@ -710,6 +792,111 @@
             b.addEventListener('pointerdown', e => e.stopPropagation());
         });
 
+        // Devtools-lite: cho phép chạy JS tùy ý và xem kết quả (trong top window)
+        (function attachDevRunner() {
+            if (root.querySelector('#hw_dev_runner'))
+                return;
+            const wrap = document.createElement('div');
+            wrap.id = 'hw_dev_runner';
+            wrap.style.marginTop = '8px';
+
+            const ta = document.createElement('textarea');
+            ta.id = 'hw_dev_code';
+            ta.placeholder = 'Dán JS rồi bấm Run (chạy trong top window)';
+            ta.style.width = '100%';
+            ta.style.height = '82px';
+            ta.style.background = '#0b122e';
+            ta.style.border = '1px solid #334155';
+            ta.style.color = '#e5e7eb';
+            ta.style.borderRadius = '8px';
+            ta.style.padding = '6px 8px';
+            ta.style.font = '12px/1.35 Consolas,ui-monospace,monospace';
+
+            const btnRow = document.createElement('div');
+            btnRow.style.display = 'flex';
+            btnRow.style.gap = '6px';
+            btnRow.style.marginTop = '4px';
+
+            const btn = document.createElement('button');
+            btn.textContent = 'Run JS';
+            btn.style.background = '#0b122e';
+            btn.style.border = '1px solid #334155';
+            btn.style.color = '#e5e7eb';
+            btn.style.padding = '6px 10px';
+            btn.style.borderRadius = '8px';
+            btn.style.cursor = 'pointer';
+
+            const btnCopy = document.createElement('button');
+            btnCopy.textContent = 'Copy';
+            btnCopy.style.background = '#0b122e';
+            btnCopy.style.border = '1px solid #334155';
+            btnCopy.style.color = '#e5e7eb';
+            btnCopy.style.padding = '6px 10px';
+            btnCopy.style.borderRadius = '8px';
+            btnCopy.style.cursor = 'pointer';
+
+            const out = document.createElement('pre');
+            out.id = 'hw_dev_output';
+            out.style.maxHeight = '140px';
+            out.style.overflow = 'auto';
+            out.style.background = '#0b122e';
+            out.style.color = '#22c55e';
+            out.style.padding = '6px 8px';
+            out.style.border = '1px dashed #334155';
+            out.style.borderRadius = '8px';
+            out.style.whiteSpace = 'pre-wrap';
+            out.style.marginTop = '4px';
+            out.textContent = 'Kết quả sẽ hiển thị ở đây...';
+
+            const dump = (val) => {
+                try {
+                    return JSON.stringify(val, null, 2);
+                } catch (_) {
+                    try {
+                        return String(val);
+                    } catch (_) {
+                        return Object.prototype.toString.call(val);
+                    }
+                }
+            };
+
+            btn.onclick = () => {
+                try {
+                    const code = ta.value || '';
+                    const val = eval(code);
+                    out.textContent = dump(val);
+                } catch (e) {
+                    out.textContent = 'Error: ' + e;
+                }
+            };
+
+            btnCopy.onclick = async() => {
+                try {
+                    const txt = out.textContent || '';
+                    if (navigator?.clipboard?.writeText) {
+                        await navigator.clipboard.writeText(txt);
+                    } else {
+                        const taTmp = document.createElement('textarea');
+                        taTmp.value = txt;
+                        document.body.appendChild(taTmp);
+                        taTmp.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(taTmp);
+                    }
+                    out.textContent = txt || '(đã copy chuỗi rỗng)';
+                } catch (e) {
+                    out.textContent = 'Copy error: ' + e;
+                }
+            };
+
+            wrap.appendChild(ta);
+            btnRow.appendChild(btn);
+            btnRow.appendChild(btnCopy);
+            wrap.appendChild(btnRow);
+            wrap.appendChild(out);
+            root.appendChild(wrap);
+        })();
+
         // drag bằng title
         (function () {
             const bar = root.querySelector('#hwtitle');
@@ -921,7 +1108,7 @@
         } catch (_) {}
     }
 
-    // === ABX5 Home <-> C# bridge (non-intrusive) ===
+    // === Automino Home <-> C# bridge (non-intrusive) ===
     (function () {
         try {
             // Gửi an toàn lên host (WebView2)
@@ -2180,8 +2367,19 @@
 
     // ======= Overlay handling (close / peel / force click) =======
     function tryCloseCommonOverlays() {
+        // Chỉ đóng các popup/modal thực sự, bỏ qua phần tử nằm trong header/nav để không chạm dropdown Casino/PP
+        const shouldSkip = (el) => {
+            try {
+                return !!el.closest('.header, .header_nav, .header_nav_list, .nav_item, .nav_item_btn, .dropdown_menu');
+            } catch (_) {
+                return false;
+            }
+        };
+
         document.querySelectorAll('.swal2-container, .swal2-popup, .swal2-backdrop-show, .modal.show, .modal-backdrop')
         .forEach(n => {
+            if (!n || shouldSkip(n))
+                return;
             const c = n.querySelector('.swal2-close, .btn-close, .close, [data-action="close"], .swal2-confirm');
             if (c) {
                 try {
@@ -2590,8 +2788,156 @@
         // Không giữ ẩn quá lâu tại trang Home, chỉ peel khi click
     }
 
+
+    // ====== Scan/Click "Baccarat nhieu ban" qua bridge frame/top ======
+    (function setupBaccFrameBridge() {
+        if (window.__abx_bacc_bridge_installed)
+            return;
+        window.__abx_bacc_bridge_installed = true;
+
+        const logInfo = (msg) => { try { updateInfo && updateInfo(msg); } catch (_) { console.log(msg); } };
+        try { logInfo('[baccBridge] installed at ' + (location && location.href ? location.href : '')); } catch (_) {}
+        const norm = (s) => (s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+        const buildTail = (el, doc) => {
+            if (!el || !el.tagName)
+                return '';
+            const segs = [];
+            let n = el;
+            const root = doc.documentElement;
+            while (n && n.nodeType === 1 && n !== root && segs.length < 10) {
+                const tag = n.tagName.toLowerCase();
+                const parent = n.parentElement;
+                let idx = 1;
+                if (parent) {
+                    const sib = Array.from(parent.children).filter(c => c.tagName === n.tagName);
+                    idx = sib.indexOf(n) + 1;
+                }
+                segs.push(tag + '[' + idx + ']');
+                n = parent;
+            }
+            return segs.reverse().join('/');
+        };
+
+        const scanBaccCards = (doc, scope) => {
+            const hits = [];
+            const nodes = Array.from(doc.querySelectorAll(
+                '.game-card, [class*="game-card"], ' +
+                '.game-item, [class*="game-item"], ' +
+                '.casino_detail .game-list .game-item, .casino_detail .game-list li, ' +
+                '.casino_list .game-card, li, [aria-label], [title], [data-name], [data-game-name], img[alt], img[title]'
+            ));
+            nodes.forEach((card, idx) => {
+                const txt = norm([
+                    card.innerText || '',
+                    card.getAttribute('aria-label') || '',
+                    card.getAttribute('title') || '',
+                    card.getAttribute('data-name') || '',
+                    card.getAttribute('data-game-name') || ''
+                ].join(' '));
+                const imgTxt = norm(
+                    Array.from(card.querySelectorAll('img[alt],img[title]'))
+                        .map(img => img.alt || img.title || '')
+                        .join(' ')
+                );
+                const t = txt + ' ' + imgTxt;
+                const hasBacc = /\bbaccarat\b/.test(t);
+                const hasMulti = /(nhieu\s*ban|multi[\s_-]*table|multi[\s_-]*baccarat)/i.test(t);
+                if (!hasBacc && !hasMulti)
+                    return;
+                let score = 0;
+                if (hasBacc) score += 6;
+                if (hasMulti) score += 6;
+                if (/nhieu\s*ban/i.test(t)) score += 2;
+                if (/multi/.test(t)) score += 1;
+                if (idx <= 2) score += 1;
+                const r = card.getBoundingClientRect();
+                hits.push({
+                    scope,
+                    score,
+                    tail: buildTail(card, doc),
+                    text: (card.innerText || '').trim().slice(0, 80),
+                    attrs: ((card.getAttribute('aria-label') || '') + ' ' + (card.getAttribute('title') || '')).trim().slice(0, 80),
+                    rect: Math.round(r.x) + ',' + Math.round(r.y) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height)
+                });
+            });
+            hits.sort((a, b) => b.score - a.score);
+            return hits;
+        };
+
+        const frameHandler = (evt) => {
+            try {
+                const data = evt && evt.data || {};
+                const cmd = data.cmd || '';
+                if (cmd === 'abx_scan_bacc') {
+                    const hits = scanBaccCards(document, 'frame');
+                    evt.source && evt.source.postMessage({ cmd: 'abx_scan_bacc_result', hits, idx: data.idx }, '*');
+                } else if (cmd === 'abx_click_bacc_tail') {
+                    const tail = data.tail || '';
+                    let el = null;
+                    try { el = findByTail ? findByTail(tail) : null; } catch (_) {}
+                    if (!el) {
+                        const parts = tail.split('/').filter(Boolean);
+                        const last = parts[parts.length - 1] || '';
+                        const m = last.match(/^([a-z0-9_-]+)(\.[a-z0-9_.-]+)?/i);
+                        if (m) {
+                            const sel = m[2] ? (m[1] + m[2].replace(/\./g, '.')) : m[1];
+                            el = document.querySelector(sel);
+                        }
+                    }
+                    let res = 'not-found';
+                    if (el) {
+                        const btn = el.querySelector('a,button') || el;
+                        try { peelAndClick ? peelAndClick(btn, { holdMs: 400 }) : btn.click(); res = 'ok'; }
+                        catch (e) {
+                            try { btn.click(); res = 'ok'; } catch (e2) { res = 'err:' + (e2 && e2.message || e2); }
+                        }
+                    }
+                    evt.source && evt.source.postMessage({ cmd: 'abx_click_bacc_tail_result', tail, result: res, idx: data.idx }, '*');
+                }
+            } catch (_) {}
+        };
+
+        if (window !== window.top) {
+            window.addEventListener('message', frameHandler, false);
+        } else {
+            window.__abx_scanBaccFrames = () => {
+                const iframes = Array.from(document.querySelectorAll('iframe'));
+                iframes.forEach((ifr, idx) => {
+                    try { ifr.contentWindow && ifr.contentWindow.postMessage({ cmd: 'abx_scan_bacc', idx }, '*'); } catch (_) {}
+                });
+                const hitsTop = scanBaccCards(document, 'top');
+                window.__abx_scan_bacc_hits = hitsTop;
+                logInfo('[scanBacc] top hits=' + hitsTop.length + ', iframes=' + iframes.length);
+                try { console.table(hitsTop.slice(0, 10)); } catch (_) {}
+                return hitsTop;
+            };
+            window.__abx_clickBaccTailInFrames = (tail) => {
+                const iframes = Array.from(document.querySelectorAll('iframe'));
+                iframes.forEach((ifr, idx) => {
+                    try { ifr.contentWindow && ifr.contentWindow.postMessage({ cmd: 'abx_click_bacc_tail', tail, idx }, '*'); } catch (_) {}
+                });
+            };
+            window.addEventListener('message', (evt) => {
+                const data = evt && evt.data || {};
+                if (data.cmd === 'abx_scan_bacc_result' && data.hits) {
+                    window.__abx_scan_bacc_hits = (window.__abx_scan_bacc_hits || []).concat(data.hits);
+                    logInfo('[scanBacc frame] +' + data.hits.length + ' (total=' + window.__abx_scan_bacc_hits.length + ')');
+                    try { console.table(data.hits.slice(0, 10)); } catch (_) {}
+                    try { updateInfo && updateInfo('[scanBacc frames] +' + data.hits.length); } catch (_) {}
+                }
+                if (data.cmd === 'abx_click_bacc_tail_result') {
+                    try { updateInfo && updateInfo('clickBacc tail ' + data.tail + ': ' + data.result); } catch (_) {}
+                }
+            }, false);
+        }
+    })();
+
     // === Login helpers: auto click nút "Đăng nhập" cho tới khi popup hiện ra ===
     function clickLoginButtonOnce() {
+        // Nếu đã đăng nhập thì không click nữa
+        if (isLoggedInFromDOM()) {
+            return false;
+        }
         const btn = findLoginButton();
         if (btn && isVisibleAndClickable(btn)) {
             peelAndClick(btn, {
@@ -2606,6 +2952,11 @@
     // Trả về true nếu tìm được nút và đã click, false nếu không tìm thấy.
     window.__cw_clickPopupLogin = function () {
         try {
+            // Nếu đã đăng nhập hoặc nút/khối logout/username đã hiển thị → bỏ qua
+            if (isLoggedInFromDOM()) {
+                return false;
+            }
+
             // 1) Xác định root của popup đăng nhập
             let root = null;
             try {
@@ -2616,16 +2967,29 @@
 
             if (!root || !root.isConnected) {
                 root = document.querySelector(
-                        '.tcg_modal_wrap.loginPopupModal, ' +
-                        '.loginPopupModal, .popup-login, .login-popup, .modal-login, .login__popup');
+                        '.tcg_modal_wrap.loginPopupModal, .tcg_modal_wrap.publicModal, .tcg_modal_wrap, ' +
+                        '.loginPopupModal, .popup-login, .login-popup, .modal-login, .login__popup, .v--modal-box, .v--modal-overlay');
             }
 
             // Nếu popup chưa mở thì không làm gì
             if (!root || !root.isConnected || root.offsetParent === null) {
+                // fallback: tìm modal chứa input password
+                const pwParent = Array.from(document.querySelectorAll('input[type="password"]'))
+                    .map(i => i.closest('.v--modal-box, .v--modal-overlay, .tcg_modal_wrap, .modal, .popup, .loginPopupModal, .login-popup, .modal-login'))
+                    .find(Boolean);
+                if (!pwParent || pwParent.offsetParent === null)
+                    return false;
+                root = pwParent;
+            }
+
+            // 2) Nếu user/pass chưa được điền → không click, tránh mở popup nếu đã login
+            const userFilled = !!(root.querySelector('input[name="username"], input[type="text"]')?.value || '').trim();
+            const passFilled = !!(root.querySelector('input[type="password"]')?.value || '').trim();
+            if (!userFilled || !passFilled) {
                 return false;
             }
 
-            // 2) Tìm nút submit trong popup
+            // 3) Tìm nút submit trong popup
             const candSel =
                 'button.submit_btn, .submit_btn[role="button"], button[type="submit"], .btn-login, .base-button.btn';
             let btn = Array.from(root.querySelectorAll(candSel)).find(isVisibleAndClickable) || null;
@@ -2644,7 +3008,7 @@
                 return false;
             }
 
-            // 3) Thực hiện click xuyên overlay nếu cần
+            // 4) Thực hiện click xuyên overlay nếu cần
             peelAndClick(btn, {
                 holdMs: 400
             });
@@ -2750,14 +3114,26 @@
     // ======= Actions =======
     function clickLoginButton() {
         try {
-            // Nếu popup login đã hiện rồi thì KHÔNG click nút nữa
-            // và cũng KHÔNG dừng timer (nếu đang chạy), để khi anh đóng popup
-            // timer vẫn tiếp tục click lại nút "Đăng nhập".
-            if (isLoginPopupVisible()) {
+            // Nếu đã login thì không auto-click nút Đăng nhập nữa
+            if (isLoggedInFromDOM()) {
+                stopLoginAutoClick('Đã đăng nhập — không auto click nút "Đăng nhập".');
                 return;
             }
-            // Bắt đầu vòng auto-click
-            startLoginAutoClick();
+            // Thử chờ ngắn xem có nhận diện login sau khi DOM đầy đủ không
+            waitFor(() => isLoggedInFromDOM(), 2500, 150).then((ok) => {
+                if (ok) {
+                    stopLoginAutoClick('Đã đăng nhập (sau chờ) — không auto click nút "Đăng nhập".');
+                    return;
+                }
+                // Nếu popup login đã hiện rồi thì KHÔNG click nút nữa
+                // và cũng KHÔNG dừng timer (nếu đang chạy), để khi anh đóng popup
+                // timer vẫn tiếp tục click lại nút "Đăng nhập".
+                if (isLoginPopupVisible()) {
+                    return;
+                }
+                // Bắt đầu vòng auto-click
+                startLoginAutoClick();
+            });
         } catch (e) {
             console.error('[HomeWatch] clickLoginButton error', e);
         }
@@ -2825,18 +3201,18 @@
         return false;
     }
 
-    async function multiTryClick(resolveBtn, attempts = 3, isOk = () => false) {
+    async function multiTryClick(resolveBtn, attempts = 50, isOk = () => false, delayMs = 200, holdMs = 600) {
         for (let i = 0; i < attempts; i++) {
             let b = resolveBtn();
             if (!b)
                 break;
             peelAndClick(b, {
-                holdMs: 600
+                holdMs: holdMs
             });
             const ok = await waitFor(() => !b.isConnected || !isVisibleAndClickable(b) || isOk(), 1800, 120);
             if (ok)
                 return true;
-            await wait(120);
+            await wait(delayMs);
         }
         return isOk();
     }
@@ -2854,170 +3230,501 @@
         return null;
     }
 
+    // Nhant dien trang lobby PP khi da chuyen han sang client.pragmaticplaylive.net
+    function isOnPPLobby() {
+        try {
+            return /client\.pragmaticplaylive\.net/i.test(location.hostname) &&
+                /\/desktop\/lobby(2)?/i.test(location.pathname);
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Click "Baccarat nhieu ban" truc tiep trong trang lobby PP (same-origin)
+    async function clickBaccNhieuBanInPPLobby(maxWaitMs = 10000) {
+        const log = (m) => { try { updateInfo && updateInfo(m); } catch (_) {} };
+        const tailFor = (el) => {
+            try {
+                const segs = [];
+                let n = el;
+                const root = document.documentElement;
+                while (n && n.nodeType === 1 && n !== root && segs.length < 12) {
+                    const tag = n.tagName.toLowerCase();
+                    const parent = n.parentElement;
+                    const idx = parent ? Array.from(parent.children).filter(c => c.tagName === n.tagName).indexOf(n) + 1 : 1;
+                    segs.push(tag + '[' + idx + ']');
+                    n = parent;
+                }
+                return segs.reverse().join('/');
+            } catch (_) {
+                return '';
+            }
+        };
+        const matchCard = (el) => {
+            const t = norm([
+                el.textContent || '',
+                el.getAttribute('aria-label') || '',
+                el.getAttribute('title') || '',
+                el.getAttribute('alt') || ''
+            ].join(' '));
+            return t.includes('baccarat') && (t.includes('nhieu ban') || t.includes('multi') || t.includes('many table'));
+        };
+        const collectNodes = () => {
+            const out = [];
+            const stack = [document.documentElement];
+            while (stack.length) {
+                const node = stack.pop();
+                if (!node || node.nodeType !== 1) continue;
+                const el = node;
+                if (['A', 'BUTTON', 'DIV', 'SPAN', 'IMG'].includes(el.tagName))
+                    out.push(el);
+                for (const k of Array.from(el.children || [])) stack.push(k);
+                if (el.shadowRoot) {
+                    for (const k of Array.from(el.shadowRoot.children || [])) stack.push(k);
+                }
+            }
+            return out;
+        };
+        const resolveCard = () => {
+            const TAILS = [
+                'div.bq_bt[2]/section[2]/div.eF_eG.fk_fl[1]/div.fk_fm.fk_fp[1]/div.eI_eJ[3]/div.eq_er.eq_eu[1]/div.eq_ev[1]/div.mT_mU.mT_mV[1]'
+            ];
+            for (const t of TAILS) {
+                try {
+                    const el = findByTail ? findByTail(t) : null;
+                    if (el && isVisibleAndClickable(el)) {
+                        const clickable = el.closest('a,button,[role="button"],.mT_mU,.mT_mV,.eq_ev,.eq_er') || el;
+                        if (isVisibleAndClickable(clickable))
+                            return clickable;
+                    }
+                } catch (_) { }
+            }
+
+            // Bám text nhưng chấm điểm để tránh trúng container lớn
+            const nodes = collectNodes();
+            const cands = [];
+            for (const el of nodes) {
+                if (!matchCard(el))
+                    continue;
+                const clickable = el.closest('a,button,[role=\"button\"],.game-card,.eq_er,.eq_ev') || el;
+                if (!isVisibleAndClickable(clickable))
+                    continue;
+                const r = clickable.getBoundingClientRect();
+                const area = r.width * r.height;
+                const textLen = norm((clickable.textContent || '') + ' ' + (clickable.getAttribute('aria-label') || '')).length;
+                let score = 0;
+                if (['A', 'BUTTON'].includes(clickable.tagName)) score += 10;
+                if ((clickable.getAttribute('role') || '').toLowerCase() === 'button') score += 6;
+                score += Math.max(0, 2000 - Math.min(area, 2000)) / 200; // ưu tiên diện tích nhỏ
+                score += Math.max(0, 120 - Math.min(textLen, 120)) / 20; // ưu tiên text ngắn
+                cands.push({ el: clickable, score, area, textLen });
+            }
+            if (!cands.length)
+                return null;
+            cands.sort((a, b) => b.score - a.score);
+            return cands[0].el;
+        };
+
+        log('Dang tim "Baccarat nhieu ban" trong lobby PP...');
+        const t0 = Date.now();
+        while (Date.now() - t0 < maxWaitMs) {
+            if (!isOnPPLobby()) {
+                log('Khong o lobby PP, bo tim card.');
+                return 'not-lobby';
+            }
+            const card = resolveCard();
+            if (card) {
+                log('Thay card, tail=' + tailFor(card));
+                try { console && console.warn && console.warn('[BaccMulti] click card'); } catch (_) {}
+                try { card.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch (_) {}
+                const forceClick = (el) => {
+                    try {
+                        const r = el.getBoundingClientRect();
+                        const cx = r.left + r.width / 2;
+                        const cy = r.top + r.height / 2;
+                        const tgt = document.elementFromPoint(cx, cy) || el;
+                        tgt.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: cx, clientY: cy }));
+                        return true;
+                    } catch (_) { return false; }
+                };
+                try { peelAndClick(card, { holdMs: 400 }); }
+                catch (_) {
+                    try { card.click(); }
+                    catch (_) { forceClick(card); }
+                }
+                return 'ok';
+            }
+            await wait(400);
+        }
+        log('Khong tim thay "Baccarat nhieu ban" trong lobby PP (het wait).');
+        try { console && console.warn && console.warn('[BaccMulti] no card after wait'); } catch (_) {}
+        return 'no-card';
+    }
     async function clickBaccNhieuBanFromHome() {
-        // Home → PP Trực tuyến → Baccarat nhiều bàn (PP)
+        // Guard: tránh click lặp khi đang load vào game
+        const now = Date.now();
+        const guardMs = 3000; // 3s hạn chế lặp
+        const logStep = (m) => {
+            try { updateInfo && updateInfo('[bacc] ' + m); } catch (_) {}
+            try { console && console.warn && console.warn('[BaccMulti]', m); } catch (_) {}
+        };
+        logStep('start, url=' + (location.href || '') + ', guard_until=' + (window.__abx_bacc_loading_until || 0));
+        if (window.__abx_bacc_loading_until && now < window.__abx_bacc_loading_until) {
+            logStep('Dang trong chu ky vao game, bo qua. guard_until=' + window.__abx_bacc_loading_until + ', now=' + now);
+            try { updateInfo && updateInfo('⚠ Đang trong chu kỳ vào game (guard), bỏ qua.'); } catch (_) {}
+            return 'skip-guard';
+        }
+        window.__abx_bacc_loading_until = now + guardMs;
+
+        // Neu dang o thang trang lobby PP thi click ngay tai do
+        if (isOnPPLobby()) {
+            logStep('dang o lobby PP -> click tai cho');
+            return await clickBaccNhieuBanInPPLobby();
+        }
+        // Home + PP truc tuyen + Baccarat nhieu ban (PP)
         try {
             if (typeof updateInfo === 'function')
-                updateInfo('Đang cố gắng vào game "Baccarat nhiều bàn" (PP) từ trang Home…');
+                updateInfo('Dang co gang vao game "Baccarat nhieu ban" (PP) tu trang Home...');
 
-            // 1) Đảm bảo đang ở trang Home / Casino (giữ như cũ, KHÔNG click tab Casino/Home ở đây)
             await ensureOnHome();
-
-            // 2) Đóng quảng cáo / cover nếu có
+            logStep('ensureOnHome done, url=' + (location.href || ''));
             closeAdsAndCovers();
 
-            // 3) Đợi nút "PP trực tuyến" (theo tail) VISIBLE rồi mới click
-            const WAIT_PP_MS = 8000;
-            let triedClickCasino = false; // đảm bảo chỉ click CASINO 1 lần
+            // Thoi gian tre chu dong de trang Home/Dropdown Casino load day du
+            const DELAY_BEFORE_FLOW = 1200;   // ms sau khi bat flow tu login
+            const DELAY_AFTER_CASINO = 600;   // ms sau khi tab Casino active truoc khi click PP
+            await wait(DELAY_BEFORE_FLOW);
 
-            const resolveProviderBtn = () => {
-                return findPPProviderButton();
+            // tam dung auto close popup 5s de dropdown khong bi dong ngay
+            const savedAutoClose = window.__abx_auto_close_popup;
+            if (savedAutoClose) {
+                clearInterval(savedAutoClose);
+                window.__abx_auto_close_popup = null;
+                setTimeout(() => {
+                    if (!window.__abx_auto_close_popup)
+                        window.__abx_auto_close_popup = setInterval(() => { try { closeAdsAndCovers(); } catch (_) {} }, 2000);
+                }, 5000);
+            }
+
+            try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) {}
+
+            const log = (m) => { try { updateInfo && updateInfo(m); } catch (_) {} };
+            const safeClick = (el, holdMs = 400) => {
+                if (!el) return false;
+                try { peelAndClick(el, { holdMs }); return true; } catch (_) {}
+                try { el.click(); return true; } catch (_) {}
+                return false;
             };
-            // hoặc ngắn gọn:
-            // const resolveProviderBtn = () => findPPProviderButton();
-
-            // Nếu chưa thấy PP và chưa thử bấm CASINO → click CASINO 1 lần
-            if (!triedClickCasino) {
-                triedClickCasino = true;
+            const openCasinoDropdown = () => {
                 try {
-                    // tìm tab "Casino" theo text, không phụ thuộc class active
-                    const casinoName = Array.from(
-                            document.querySelectorAll('div.header_nav_list .nav_item_btn.LIVE .name1')).find(el2 => {
-                            const t = norm(
-                                    el2.textContent ||
-                                    el2.title ||
-                                    el2.getAttribute('aria-label') ||
-                                    '');
-                            return t.includes('casino'); // "casino", "casino games"… đều match
-                        });
+                    const nav = document.querySelector('.nav_item_btn.LIVE, .nav_item.LIVE, .nav_item_btn');
+                    if (nav)
+                        nav.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                } catch (_) {}
+            };
 
-                    if (casinoName) {
-                        const btn = casinoName.closest('.nav_item_btn.LIVE') || casinoName;
-                        if (btn && isVisibleAndClickable(btn)) {
-                            btn.click(); // vào trang Casino (/live)
-                        }
+            const casinoTails = [
+                'div.header[1]/div.header_title[1]/div.header_bottom[2]/div.header_nav[1]/div.header_nav_list[1]/div.nav_item[2]/div.nav_item_btn.LIVE[1]/div.name1[1]',
+                'div.header_nav[1]/div.header_nav_list[1]/div.nav_item[2]/div.nav_item_btn.LIVE[1]',
+                'div.header_nav[1]/div.header_nav_list[1]/div.nav_item.active[2]/div.nav_item_btn.LIVE[1]'
+            ];
+            const resolveCasinoTab = () => {
+                for (const t of casinoTails) {
+                    const btn = findByTail(t);
+                    if (btn && isVisibleAndClickable(btn))
+                        return btn.closest('.nav_item_btn.LIVE') || btn;
+                }
+                const byText = Array.from(document.querySelectorAll('div.header_nav_list .nav_item_btn.LIVE, .nav_item_btn.LIVE .name1'))
+                    .find(el => norm(el.textContent || '').includes('casino'));
+                if (byText && isVisibleAndClickable(byText))
+                    return byText.closest('.nav_item_btn.LIVE') || byText;
+                const byClass = document.querySelector('div.header_nav_list .nav_item_btn.LIVE');
+                if (byClass && isVisibleAndClickable(byClass))
+                    return byClass;
+                return null;
+            };
+
+            const ensurePPDropdownOpen = () => {
+                try {
+                    // click/hover nav LIVE thêm lần nữa để dropdown chắc chắn mở
+                    const nav = document.querySelector('.nav_item_btn.LIVE, .nav_item.LIVE, .nav_item_btn');
+                    if (nav) {
+                        nav.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                        nav.click?.();
                     }
                 } catch (_) {}
-            }
+            };
 
-            // chưa tìm được nút PP ở vòng này
-            return null;
-        };
-
-        const ppBtn = await waitButtonUpTo(resolveProviderBtn, WAIT_PP_MS, 200);
-
-        if (!ppBtn) {
-            if (typeof updateInfo === 'function')
-                updateInfo('⚠ Không tìm thấy nút "PP trực tuyến" theo tail đã cấu hình (trong ≤'
-                     + Math.round(WAIT_PP_MS / 1000) + 's).');
-            return 'no-pp';
-        }
-
-        // Chỉ click sau khi đã chắc chắn visible + clickable
-        ppBtn.click();
-        await sleep(800); // cho danh sách game của PP load xong
-
-        // 4) Tìm card "Baccarat nhiều bàn" (PP)
-        if (typeof updateInfo === 'function')
-            updateInfo('Đang tìm game "Baccarat nhiều bàn" (PP)…');
-
-        const RE_BACC = /\bbaccarat\b/i;
-        const RE_MULTI = /(nhi[eê]u\s*ban|multi[\s_-]*table|multi[\s_-]*baccarat)/i;
-        const RE_PP = /\bpp\b|pragmatic/i;
-
-        const resolveGameCard = () => {
-            const cards = Array.from(document.querySelectorAll(
-                        // một số cấu trúc hay gặp trên trang Casino
-                        '.casino_detail .game-list .game-item,' +
-                        '.casino_detail .game-list li,' +
-                        '.casino_list .game-card'));
-
-            if (!cards.length)
-                return null;
-
-            const cand = [];
-
-            cards.forEach((card, idx) => {
-                const txt = norm(card.innerText || '');
-                const imgTxt = norm(
-                        Array.from(card.querySelectorAll('img[alt],img[title]'))
-                        .map(img => img.alt || img.title || '')
-                        .join(' '));
-
-                const t = txt + ' ' + imgTxt;
-                let score = 0;
-
-                if (RE_BACC.test(t))
-                    score += 6;
-                if (RE_MULTI.test(t))
-                    score += 6;
-                if (RE_PP.test(t))
-                    score += 4;
-                if (/nhieu\s*ban/i.test(t))
-                    score += 2;
-                if (idx <= 2)
-                    score += 1; // ưu tiên vài game đầu
-
-                if (score > 0 && isVisibleAndClickable(card)) {
-                    cand.push({
-                        el: card,
-                        score
-                    });
+            const resolvePP_TailAndText = () => {
+                const tails = [TAIL_PP_TRUC_TUYEN, TAIL_PP_TRUC_TUYEN_ALT];
+                for (const t of tails) {
+                    if (!t) continue;
+                    try {
+                        const el = findByTail(t);
+                        if (el && el.isConnected)
+                            return el;
+                    } catch (_) {}
                 }
-            });
+                return Array.from(document.querySelectorAll('span.desc, li, a, button, div'))
+                    .find(el => /pp\s*truc\s*tuyen/i.test(norm(el.textContent)));
+            };
+            const resolvePP_ByBroadText = () => {
+                const match = (el) => /pp\s*(live|truc\s*tuyen)|pragmatic\s*play|pragmatic/.test(norm(el.textContent));
+                return Array.from(document.querySelectorAll('li, a, button, span, div'))
+                    .find(el => match(el));
+            };
+            const resolvePP_ClickParent = () => {
+                const el = resolvePP_TailAndText() || resolvePP_ByBroadText();
+                if (!el) return null;
+                return el.closest('li, .dropdown_menu, .nav_item, .nav_item_btn') || el;
+            };
 
-            if (!cand.length)
-                return null;
-            cand.sort((a, b) => b.score - a.score);
-            return cand[0].el;
-        };
-
-        const WAIT_GAME_MS = 12000;
-        let card = await waitButtonUpTo(resolveGameCard, WAIT_GAME_MS, 200);
-
-        if (!card) {
-            if (typeof updateInfo === 'function')
-                updateInfo('⚠ Không tìm thấy game "Baccarat nhiều bàn" (PP).');
-            return 'no-game';
-        }
-
-        // 5) Click card / nút Play bên trong card, có fallback nếu card đầu tiên biến mất
-        const resolverForClick = () => {
-            if (card && isVisibleAndClickable(card)) {
-                const btn = card.querySelector('a,button') || card;
-                if (isVisibleAndClickable(btn))
-                    return btn;
+            // pha 1: click Casino toi da 8 lan
+            let activeCasino = false;
+            for (let i = 0; i < 8; i++) {
+                const btn = resolveCasinoTab();
+                const navItem = btn?.closest('.nav_item');
+                activeCasino = !!(navItem && /\bactive\b/.test(navItem.className));
+                if (!activeCasino && btn)
+                    safeClick(btn, 450);
+                if (activeCasino)
+                    break;
+                await wait(800);
             }
 
-            const other = resolveGameCard();
-            if (!other)
-                return null;
+            if (activeCasino && DELAY_AFTER_CASINO > 0)
+                await wait(DELAY_AFTER_CASINO);
 
-            const btn2 = other.querySelector('a,button') || other;
-            return isVisibleAndClickable(btn2) ? btn2 : null;
-        };
+            // pha 2: click PP truc tuyen voi nhieu phuong an
+            const strategies = [
+                { name: 'tail+text', resolver: resolvePP_TailAndText },
+                { name: 'broad-text', resolver: resolvePP_ByBroadText },
+                { name: 'parent-fallback', resolver: resolvePP_ClickParent }
+            ];
+            let gotPP = false;
+            let usedStrat = '';
+            for (const strat of strategies) {
+                for (let i = 0; i < 6; i++) {
+                    const ppBtn = strat.resolver();
+                    if (ppBtn && safeClick(ppBtn, 400)) {
+                        gotPP = true;
+                        usedStrat = strat.name;
+                        break;
+                    }
+                    await wait(1000);
+                }
+                if (gotPP)
+                    break;
+                ensurePPDropdownOpen();
+            }
 
-        const ok = await multiTryClick(resolverForClick, 3);
-        if (!ok) {
+            if (!gotPP) {
+                if (typeof updateInfo === 'function')
+                    updateInfo('Khong click duoc nut "PP truc tuyen". Co the bi overlay/che.');
+                return 'no-pp-click';
+            }
+
+            if (usedStrat && typeof updateInfo === 'function')
+                updateInfo('Da click PP truc tuyen (strategy: ' + usedStrat + ')');
+
+            await wait(800); // cho danh sach game PP load
+            // đợi listing render + đóng overlay để tránh click sớm khi còn /seamless
+            const ensurePpListingReady = async () => {
+                const DEADLINE = 6000;
+                const start = Date.now();
+                while (Date.now() - start < DEADLINE) {
+                    try { closeAdsAndCovers(); } catch (_) {}
+                    const hasList = document.querySelector('.casino_detail .game-list, .casino_list .game-card, .game-item');
+                    if (hasList && hasList.offsetParent !== null)
+                        return true;
+                    await wait(200);
+                }
+                return false;
+            };
+            const listReady = await ensurePpListingReady();
+            logStep('listing ready=' + listReady + ' href=' + (location.href || ''));
+
+            // 4) tim card "Baccarat nhieu ban" (PP)
             if (typeof updateInfo === 'function')
-                updateInfo('⚠ Không thể click vào game "Baccarat nhiều bàn" (PP). Nút có thể bị khoá hoặc trang chặn điều hướng.');
-            return 'no-click';
+                updateInfo('Dang tim game "Baccarat nhieu ban" (PP)...');
+
+            const RE_BACC = /\bbaccarat\b/i;
+            const RE_MULTI = /(nhieu\s*ban|multi[\s_-]*table|multi[\s_-]*baccarat)/i;
+            const RE_PP = /\bpp\b|pragmatic/i;
+
+            // scan nhanh tren trang hien tai (khong can tai su dung bridge)
+            const resolveGameCardSimple = () => {
+                const nodes = Array.from(document.querySelectorAll('a,button,div,span'));
+                for (const el of nodes) {
+                    const t = norm([
+                        el.textContent || '',
+                        el.getAttribute('aria-label') || '',
+                        el.getAttribute('title') || ''
+                    ].join(' '));
+                    if (t.includes('baccarat') && t.includes('nhieu ban') && isVisibleAndClickable(el)) {
+                        const clickable = el.closest('a,button') || el;
+                        if (isVisibleAndClickable(clickable))
+                            return clickable;
+                    }
+                }
+                return null;
+            };
+
+            const resolveGameCard = () => {
+                const cards = Array.from(document.querySelectorAll(
+                    '.casino_detail .game-list .game-item,' +
+                    '.casino_detail .game-list li,' +
+                    '.casino_list .game-card'));
+
+                if (!cards.length)
+                    return null;
+
+                const cand = [];
+
+                cards.forEach((card, idx) => {
+                    const txt = norm(card.innerText || '');
+                    const imgTxt = norm(
+                        Array.from(card.querySelectorAll('img[alt],img[title]'))
+                            .map(img => img.alt || img.title || '')
+                            .join(' '));
+
+                    const t = txt + ' ' + imgTxt;
+                    let score = 0;
+
+                    if (RE_BACC.test(t)) score += 6;
+                    if (RE_MULTI.test(t)) score += 6;
+                    if (RE_PP.test(t)) score += 4;
+                    if (/nhieu\s*ban/i.test(t)) score += 2;
+                    if (idx <= 2) score += 1;
+
+                    if (score > 0 && isVisibleAndClickable(card)) {
+                        cand.push({ el: card, score });
+                    }
+                });
+
+                if (!cand.length)
+                    return null;
+                cand.sort((a, b) => b.score - a.score);
+                return cand[0].el;
+            };
+
+            const WAIT_GAME_MS = 12000;
+            let card = await waitButtonUpTo(resolveGameCard, WAIT_GAME_MS, 200);
+
+            // fallback scan đơn giản nếu chưa thấy
+            if (!card)
+                card = resolveGameCardSimple();
+
+            if (!card) {
+                logStep('no-card found, url=' + (location.href || ''));
+                if (typeof updateInfo === 'function')
+                    updateInfo('Khong tim thay game "Baccarat nhieu ban" (PP).');
+                return 'no-game';
+            }
+
+            // 5) Click card / nut Play
+            const resolverForClick = () => {
+                if (card && isVisibleAndClickable(card)) {
+                    const btn = card.querySelector('a,button') || card;
+                    if (isVisibleAndClickable(btn))
+                        return btn;
+                }
+
+                const other = resolveGameCard();
+                if (!other)
+                    return null;
+
+                const btn2 = other.querySelector('a,button') || other;
+                return isVisibleAndClickable(btn2) ? btn2 : null;
+            };
+
+            // thử điều hướng thẳng nếu card có href/data-url (để tránh bị kẹt ở seamless)
+            const directHref =
+                (card && (card.getAttribute('href') || (card.dataset && (card.dataset.href || card.dataset.url)))) ||
+                (card && card.closest('a') ? card.closest('a').href : '');
+            if (directHref) {
+                logStep('found card href, navigate direct: ' + directHref);
+                try { location.href = directHref; window.__abx_bacc_loading_until = Date.now() + guardMs; return 'nav-href'; } catch (_) {}
+            }
+
+            const ok = await multiTryClick(resolverForClick, 50, () => false, 200, 700);
+            if (!ok) {
+                if (typeof updateInfo === 'function') {
+                    const info = [
+                        'Khong the click vao game "Baccarat nhieu ban" (PP). Nut co the bi khoa hoac trang chan dieu huong.',
+                        'URL: ' + (location.href || ''),
+                        'Title: ' + (document.title || '')
+                    ].join('\\n');
+                    updateInfo(info);
+                }
+                logStep('no-click after retries, url=' + (location.href || ''));
+                // fallback: nếu card có href/data-url thì điều hướng thẳng
+                const href =
+                    (card && (card.getAttribute('href') || (card.dataset && (card.dataset.href || card.dataset.url)))) ||
+                    (card && card.closest('a') ? card.closest('a').href : '');
+                if (href) {
+                    logStep('click fail -> navigate direct ' + href);
+                    try { location.href = href; return 'nav-href'; } catch (_) {}
+                }
+                try { console && console.warn && console.warn('[BaccMulti] no-click', { href: location.href, title: document.title }); } catch (_) {}
+                return 'no-click';
+            }
+
+            if (typeof updateInfo === 'function')
+                updateInfo('Da click vao game "Baccarat nhieu ban" (PP).');
+
+            return 'ok';
+        } catch (e) {
+            try { console && console.warn && console.warn('[HomeWatch] clickBaccNhieuBanFromHome error:', e); } catch (_) {}
+            return 'err:' + (e && e.message ? e.message : String(e));
         }
-
-        if (typeof updateInfo === 'function')
-            updateInfo('→ Đã click vào game "Baccarat nhiều bàn" (PP).');
-
-        return 'ok';
     }
-    catch (e) {
-        try {
-            console && console.warn && console.warn('[HomeWatch] clickBaccNhieuBanFromHome error:', e);
-        } catch (_) { /* ignore */
-        }
 
-        return 'err:' + (e && e.message ? e.message : String(e));
-    }
-}
+    // Reset guard khi quay ve home (tranh mang guard tu PP ve khien lan sau bi chan)
+    if (!window.__abx_bacc_guard_reset) {
+        window.__abx_bacc_guard_reset = setInterval(() => {
+            try {
+                const href = location.href || '';
+                const host = (new URL(href, location.href)).hostname || '';
+                const isHomeHost = /rr\d+\.com/i.test(host) || host.includes('rr5309.com') || host.includes('www.rr');
+                if (isHomeHost && window.__abx_bacc_loading_until) {
+                    window.__abx_bacc_loading_until = 0;
+                    try { updateInfo && updateInfo('[bacc] reset guard on home host'); } catch (_) {}
+                    try { console && console.warn && console.warn('[BaccMulti] reset guard on home host'); } catch (_) {}
+                }
+            } catch (_) {}
+        }, 1000);
+    }    // Auto retry trong lobby PP: cu thay lobby thi thu click "Baccarat nhieu ban"
+      if (!window.__abx_bacc_lobby_retry) {
+          let __abx_bacc_auto_state = '';
+          window.__abx_bacc_lobby_retry = setInterval(async () => {
+              try {
+                  if (!isOnPPLobby()) {
+                      if (__abx_bacc_auto_state !== 'not-lobby') {
+                          try { updateInfo && updateInfo('[bacc-auto] Skip: chua o lobby PP'); } catch (_) {}
+                          __abx_bacc_auto_state = 'not-lobby';
+                      }
+                      return;
+                  }
+                  // tránh spam khi vừa click/đang load game
+                  if (window.__abx_bacc_loading_until && Date.now() < window.__abx_bacc_loading_until) {
+                      if (__abx_bacc_auto_state !== 'guard') {
+                          try { updateInfo && updateInfo('[bacc-auto] Guard active, doi het thoi gian...'); } catch (_) {}
+                          __abx_bacc_auto_state = 'guard';
+                      }
+                      return;
+                  }
+                  try { updateInfo && updateInfo('[bacc-auto] Dang thu click "Baccarat nhieu ban" trong lobby...'); } catch (_) {}
+                  const res = await clickBaccNhieuBanInPPLobby(6000);
+                  try { console && console.warn && console.warn('[BaccMulti][auto] result:', res); } catch (_) {}
+                  try { updateInfo && updateInfo('[bacc-auto] Ket qua: ' + res); } catch (_) {}
+                  __abx_bacc_auto_state = 'res:' + res;
+                  if (res === 'ok') {
+                      window.__abx_bacc_loading_until = Date.now() + 5000;
+                  }
+              } catch (_) { }
+          }, 200);
+      }
 
     async function clickXocDiaLive() {
     // 1) Đảm bảo đang ở Home
@@ -3225,3 +3932,10 @@
 }
     boot();
     })();
+
+
+
+
+
+
+

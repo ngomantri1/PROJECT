@@ -192,11 +192,8 @@ namespace BaccaratPPRR88
         // Cache & cờ để không inject lặp lại
         private string? _appJs;
         private string? _homeJs;  // nội dung js_home_v2.js
-        private bool _webMsgHooked; // để gắn WebMessageReceived đúng 1 lần
-
-
-
-
+        private bool _webMsgHooked; // �`��� g��_n WebMessageReceived �`A�ng 1 l��n
+        private string? _lastForcedLobbyUrl; // luu URL lobby PP da force navigate
         private string? _topForwardId, _appJsRegId;           // id script TOP_FORWARD
                                                               // ID riêng cho autostart của trang Home (đừng dùng chung với _homeJsRegId)
         private string? _homeAutoStartId;
@@ -230,7 +227,6 @@ namespace BaccaratPPRR88
                                                                  // --- UI mode monitor ---
         private DateTime _lastGameTickUtc = DateTime.MinValue;
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
-        private bool _isGameUi = false;              // trạng thái UI hiện hành
         private bool _lockGameUi = false;// NEW: khóa tạm để khỏi bị timer kéo về home sau khi mình chủ động vào game
         private System.Windows.Threading.DispatcherTimer? _uiModeTimer;
 
@@ -412,7 +408,7 @@ Ví dụ không hợp lệ:
             // Lưu chuỗi tiền theo từng MoneyStrategy
             public Dictionary<string, string> StakeCsvByMoney { get; set; } = new();
 
-            /// <summary>Đường dẫn file lưu trạng thái AI n-gram (JSON). Bỏ trống => dùng mặc định %LOCALAPPDATA%\ABX5\ai\ngram_state_v1.json</summary>
+            /// <summary>Đường dẫn file lưu trạng thái AI n-gram (JSON). Bỏ trống => dùng mặc định %LOCALAPPDATA%\Automino\ai\ngram_state_v1.json</summary>
             public string AiNGramStatePath { get; set; } = "";
 
 
@@ -991,40 +987,25 @@ Ví dụ không hợp lệ:
             try
             {
                 var src = Web?.Source?.ToString() ?? "";
-                if (string.IsNullOrWhiteSpace(src)) return _isGameUi;
-                var host = new Uri(src).Host;
-                // games.* => đang ở trang game
-                return host.StartsWith("games.", StringComparison.OrdinalIgnoreCase);
+                if (string.IsNullOrWhiteSpace(src)) return false;
+
+                var uri = new Uri(src);
+                var host = uri.Host.ToLowerInvariant();
+
+                // Nhận diện trang game theo host của nhà cung cấp
+                if (host.StartsWith("games.", StringComparison.OrdinalIgnoreCase) ||
+                    host.Contains("pragmaticplaylive"))
+                    return true;    // game
+
+                return false;       // home
             }
-            catch { return _isGameUi; }
+            catch { return false; }
         }
 
         private void RecomputeUiMode()
         {
-            var now = DateTime.UtcNow;
-            var recentGame = (now - _lastGameTickUtc) <= GameTickFresh;
-            var recentHome = (now - _lastHomeTickUtc) <= HomeTickFresh;
-
-            bool nextIsGame;
-            if (recentGame && !recentHome)
-                nextIsGame = true;
-            else if (!recentGame && recentHome)
-                nextIsGame = false;
-            else if (recentGame && recentHome)
-                nextIsGame = false;   // ưu tiên home nếu cả 2 cùng tươi
-            else
-                nextIsGame = GetIsGameByUrlFallback();
-
-            // chỉ thực hiện khi khác trạng thái hiện tại
-            if (nextIsGame != _isGameUi)
-            {
-                // nếu đang bị khóa ở game thì không cho chuyển về home
-                if (_lockGameUi && !nextIsGame)
-                    return;
-
-                ApplyUiMode(nextIsGame);
-                _isGameUi = nextIsGame;
-            }
+            var nextIsGame = GetIsGameByUrlFallback(); // quyết định UI thuần theo URL
+            ApplyUiMode(nextIsGame);
         }
 
 
@@ -1051,10 +1032,6 @@ Ví dụ không hợp lệ:
 
         private void ApplyUiMode(bool isGame)
         {
-            // nếu đang khóa ở game thì không cho ai gọi về home
-            if (_lockGameUi && !isGame)
-                return;
-
             SetModeUi(isGame);
         }
 
@@ -2227,6 +2204,24 @@ Ví dụ không hợp lệ:
         {
             await SaveConfigAsync();
             await NavigateIfNeededAsync(T(TxtUrl).Trim());
+        }
+
+        private async void BtnGoHome_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var home = (_cfg?.Url ?? DEFAULT_URL)?.Trim();
+                if (string.IsNullOrWhiteSpace(home))
+                    home = DEFAULT_URL;
+                if (!Regex.IsMatch(home, @"^[a-zA-Z][a-zA-Z0-9+.-]*://", RegexOptions.IgnoreCase))
+                    home = "https://" + home;
+
+                await NavigateIfNeededAsync(home);
+            }
+            catch (Exception ex)
+            {
+                Log("[GoHome] " + ex.Message);
+            }
         }
         private void Exit_Click(object sender, RoutedEventArgs e) => Close();
         private void StartLoop_Click(object sender, RoutedEventArgs e)
@@ -3629,7 +3624,7 @@ Ví dụ không hợp lệ:
                     var username = (_homeUsername ?? "").Trim().ToLowerInvariant();
                     if (string.IsNullOrWhiteSpace(username))
                     {
-                        MessageBox.Show("Chưa xác định được tài khoản game từ trang Home. Hãy vào Home để hệ thống tự nhận diện.", "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show("Chưa xác định được tài khoản game từ trang Home. Hãy vào Home để hệ thống tự nhận diện.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
 
@@ -3700,17 +3695,17 @@ Ví dụ không hợp lệ:
                                     if (string.Equals(error, "in-use", StringComparison.OrdinalIgnoreCase))
                                     {
                                         MessageBox.Show("Tài khoản đang chạy ở nơi khác. Vui lòng dừng ở máy kia trước.",
-                                                        "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                                     }
                                     else if (string.Equals(error, "trial-consumed", StringComparison.OrdinalIgnoreCase))
                                     {
                                         MessageBox.Show("Hết lượt dùng thử! Hãy liên hệ 0978.248.822 để gia hạn/mua.",
-                                                        "ABX5", MessageBoxButton.OK, MessageBoxImage.Information);
+                                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                                     }
                                     else
                                     {
                                         MessageBox.Show("Không thể bắt đầu chế độ dùng thử. Vui lòng thử lại.",
-                                                        "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                                     }
                                     return;
                                 }
@@ -3719,7 +3714,7 @@ Ví dụ không hợp lệ:
                         catch (Exception exTrial)
                         {
                             Log("[Trial ERR] " + exTrial.Message);
-                            MessageBox.Show("Không thể kết nối chế độ dùng thử.", "ABX5",
+                            MessageBox.Show("Không thể kết nối chế độ dùng thử.", "Automino",
                                 MessageBoxButton.OK, MessageBoxImage.Warning);
                             return;
                         }
@@ -3732,20 +3727,20 @@ Ví dụ không hợp lệ:
                         var lic = await FetchLicenseAsync(username);
                         if (lic == null)
                         {
-                            MessageBox.Show("Không tìm thấy license trên cho tài khoản này. Hãy liên hệ 0978.248.822 để dùng", "ABX5",
+                            MessageBox.Show("Không tìm thấy license trên cho tài khoản này. Hãy liên hệ 0978.248.822 để dùng", "Automino",
                                 MessageBoxButton.OK, MessageBoxImage.Warning);
                             return;
                         }
                         if (!DateTimeOffset.TryParse(lic.exp, out var expUtc))
                         {
-                            MessageBox.Show("License không hợp lệ (exp).", "ABX5",
+                            MessageBox.Show("License không hợp lệ (exp).", "Automino",
                                 MessageBoxButton.OK, MessageBoxImage.Warning);
                             return;
                         }
                         if (DateTimeOffset.UtcNow >= expUtc)
                         {
                             MessageBox.Show("Tool của bạn hết hạn ! Hãy liên hệ 0978.248.822 để gia hạn",
-                                "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                             return;
                         }
                         // 2) Acquire lease 1 lần (KHÔNG renew trong lúc chạy, theo yêu cầu)
@@ -3798,7 +3793,7 @@ Ví dụ không hợp lệ:
                                         {
                                             await Dispatcher.InvokeAsync(() =>
                                             {
-                                                MessageBox.Show("License đã hết hạn. Dừng đặt cược.", "ABX5",
+                                                MessageBox.Show("License đã hết hạn. Dừng đặt cược.", "Automino",
                                                     MessageBoxButton.OK, MessageBoxImage.Warning);
                                                 StopXocDia_Click(this, new RoutedEventArgs());
                                             });
@@ -4366,7 +4361,7 @@ Ví dụ không hợp lệ:
                     Log("[LicenseCheck] invalid license payload");
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        MessageBox.Show("Không xác thực được license. Dừng đặt cược.", "ABX5",
+                        MessageBox.Show("Không xác thực được license. Dừng đặt cược.", "Automino",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
                         StopXocDia_Click(this, new RoutedEventArgs());
                     });
@@ -4378,7 +4373,7 @@ Ví dụ không hợp lệ:
                     Log("[LicenseCheck] license expired");
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        MessageBox.Show("License đã hết hạn. Dừng đặt cược.", "ABX5",
+                        MessageBox.Show("License đã hết hạn. Dừng đặt cược.", "Automino",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
                         StopXocDia_Click(this, new RoutedEventArgs());
                     });
@@ -4583,8 +4578,61 @@ Ví dụ không hợp lệ:
                 Log("[Bridge] Frame injected + autostart armed.");
 
                 // Hook lifecycle của CHÍNH frame này
+                string lastFrameNavUri = "";
+                f.NavigationStarting += (s2, e2) =>
+                {
+                    try
+                    {
+                        lastFrameNavUri = e2.Uri ?? "";
+                        Log($"[Frame NavStart] id={f.Name} uri={lastFrameNavUri}");
+
+                        // Neu iframe vao lobby PP thi dieu huong top window sang cung URL de cung origin
+                        // chi force 1 lan: neu da force hoac top da o host pragmaticplaylive thi bo qua
+                        if (!string.IsNullOrEmpty(_lastForcedLobbyUrl))
+                        {
+                            // da force roi, khong lam tiep
+                        }
+                        else if (Web?.CoreWebView2 != null &&
+                                 Uri.TryCreate(Web.CoreWebView2.Source, UriKind.Absolute, out var topUri) &&
+                                 topUri.Host.Contains("pragmaticplaylive.net"))
+                        {
+                            // top da o pragmaticplaylive, bo qua
+                        }
+                        else if (!string.IsNullOrEmpty(lastFrameNavUri) &&
+                            Uri.TryCreate(lastFrameNavUri, UriKind.Absolute, out var u))
+                        {
+                            var host = u.Host.ToLowerInvariant();
+                            var path = u.AbsolutePath.ToLowerInvariant();
+                            if (host.Contains("client.pragmaticplaylive.net") && path.Contains("/desktop/lobby"))
+                            {
+                                if (!string.Equals(_lastForcedLobbyUrl, u.ToString(), StringComparison.Ordinal))
+                                {
+                                    _lastForcedLobbyUrl = u.ToString();
+                                    try
+                                    {
+                                        Web?.CoreWebView2?.Navigate(_lastForcedLobbyUrl);
+                                        Log("[Frame NavStart] force top navigate to lobby: " + _lastForcedLobbyUrl);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Log("[Frame NavStart] force lobby err: " + ex.Message);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                };
                 f.DOMContentLoaded += Frame_DOMContentLoaded_Bridge;
                 f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
+                f.NavigationCompleted += (s2, e2) =>
+                {
+                    try
+                    {
+                        Log($"[Frame NavDone] id={f.Name} uri={lastFrameNavUri}");
+                    }
+                    catch { }
+                };
             }
             catch (Exception ex)
             {
@@ -4713,7 +4761,7 @@ Ví dụ không hợp lệ:
                 // Một số nơi GitHub yêu cầu User-Agent rõ ràng
                 http.DefaultRequestHeaders.TryAddWithoutValidation(
                     "User-Agent",
-                    "ABX5-LicenseChecker/1.0");
+                    "Automino-LicenseChecker/1.0");
 
                 var uname = Uri.EscapeDataString(username);
                 var url =
@@ -4753,7 +4801,7 @@ Ví dụ không hợp lệ:
                 Log($"[Lease] acquire -> {(int)resp.StatusCode} {resp.ReasonPhrase} | {body}");
                 if (!resp.IsSuccessStatusCode)
                 {
-                    MessageBox.Show($"Lease bị từ chối [{(int)resp.StatusCode}] — {body}", "ABX5",
+                    MessageBox.Show($"Lease bị từ chối [{(int)resp.StatusCode}] — {body}", "Automino",
                         MessageBoxButton.OK, MessageBoxImage.Warning);
                     return false;
                 }
@@ -4763,15 +4811,15 @@ Ví dụ không hợp lệ:
                     // tài khoản đang chạy nơi khác
                     body = await resp.Content.ReadAsStringAsync();
                     Log("[Lease] 409 in-use: " + body);
-                    MessageBox.Show("Tài khoản đang chạy nơi khác. Vui lòng thử lại sau.", "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("Tài khoản đang chạy nơi khác. Vui lòng thử lại sau.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return false;
                 }
-                MessageBox.Show("Không lấy được quyền chạy (lease).", "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Không lấy được quyền chạy (lease).", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             catch (Exception ex)
             {
                 Log("[Lease] acquire error: " + ex.Message);
-                MessageBox.Show("Không kết nối được trung tâm lease. Vui lòng kiểm tra mạng.", "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Không kết nối được trung tâm lease. Vui lòng kiểm tra mạng.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             return false;
         }
@@ -4833,11 +4881,11 @@ Ví dụ không hợp lệ:
                             // Thông báo theo mode
                             if (_expireMode == "trial")
                             {
-                                MessageBox.Show("Bạn đang dùng tool dùng thử. Hãy liên hệ 0978.248.822", "ABX5", MessageBoxButton.OK, MessageBoxImage.Information);
+                                MessageBox.Show("Bạn đang dùng tool dùng thử. Hãy liên hệ 0978.248.822", "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                             }
                             else
                             {
-                                MessageBox.Show("Tool của bạn hết hạn ! Hãy liên hệ 0978.248.822 để gia hạn", "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                MessageBox.Show("Tool của bạn hết hạn ! Hãy liên hệ 0978.248.822 để gia hạn", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                             }
 
                             // Xoá nhãn
@@ -5166,7 +5214,7 @@ Ví dụ không hợp lệ:
             {
                 StopTask();
                 SetPlayButtonState(false);
-                MessageBox.Show(reason, "ABX5", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(reason, "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                 Log("[CUT] " + reason);
             }
             catch { /* ignore */ }
@@ -5882,3 +5930,4 @@ Ví dụ không hợp lệ:
     }
 
 }
+

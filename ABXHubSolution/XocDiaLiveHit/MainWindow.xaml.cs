@@ -410,7 +410,7 @@ Ví dụ không hợp lệ:
             // Lưu chuỗi tiền theo từng MoneyStrategy
             public Dictionary<string, string> StakeCsvByMoney { get; set; } = new();
 
-            /// <summary>Đường dẫn file lưu trạng thái AI n-gram (JSON). Bỏ trống => dùng mặc định %LOCALAPPDATA%\ABX5\ai\ngram_state_v1.json</summary>
+            /// <summary>Đường dẫn file lưu trạng thái AI n-gram (JSON). Bỏ trống => dùng mặc định %LOCALAPPDATA%\Automino\ai\ngram_state_v1.json</summary>
             public string AiNGramStatePath { get; set; } = "";
 
 
@@ -3433,7 +3433,7 @@ Ví dụ không hợp lệ:
                     var username = (_homeUsername ?? "").Trim().ToLowerInvariant();
                     if (string.IsNullOrWhiteSpace(username))
                     {
-                        MessageBox.Show("Chưa xác định được tài khoản game từ trang Home. Hãy vào Home để hệ thống tự nhận diện.", "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show("Chưa xác định được tài khoản game từ trang Home. Hãy vào Home để hệ thống tự nhận diện.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
 
@@ -3504,17 +3504,17 @@ Ví dụ không hợp lệ:
                                     if (string.Equals(error, "in-use", StringComparison.OrdinalIgnoreCase))
                                     {
                                         MessageBox.Show("Tài khoản đang chạy ở nơi khác. Vui lòng dừng ở máy kia trước.",
-                                                        "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                                     }
                                     else if (string.Equals(error, "trial-consumed", StringComparison.OrdinalIgnoreCase))
                                     {
                                         MessageBox.Show("Hết lượt dùng thử! Hãy liên hệ 0978.248.822 để gia hạn/mua.",
-                                                        "ABX5", MessageBoxButton.OK, MessageBoxImage.Information);
+                                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                                     }
                                     else
                                     {
                                         MessageBox.Show("Không thể bắt đầu chế độ dùng thử. Vui lòng thử lại.",
-                                                        "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                                     }
                                     return;
                                 }
@@ -3523,7 +3523,7 @@ Ví dụ không hợp lệ:
                         catch (Exception exTrial)
                         {
                             Log("[Trial ERR] " + exTrial.Message);
-                            MessageBox.Show("Không thể kết nối chế độ dùng thử.", "ABX5",
+                            MessageBox.Show("Không thể kết nối chế độ dùng thử.", "Automino",
                                 MessageBoxButton.OK, MessageBoxImage.Warning);
                             return;
                         }
@@ -3536,20 +3536,20 @@ Ví dụ không hợp lệ:
                         var lic = await FetchLicenseAsync(username);
                         if (lic == null)
                         {
-                            MessageBox.Show("Không tìm thấy license trên cho tài khoản này. Hãy liên hệ 0978.248.822 để dùng", "ABX5",
+                            MessageBox.Show("Không tìm thấy license trên cho tài khoản này. Hãy liên hệ 0978.248.822 để dùng", "Automino",
                                 MessageBoxButton.OK, MessageBoxImage.Warning);
                             return;
                         }
                         if (!DateTimeOffset.TryParse(lic.exp, out var expUtc))
                         {
-                            MessageBox.Show("License không hợp lệ (exp).", "ABX5",
+                            MessageBox.Show("License không hợp lệ (exp).", "Automino",
                                 MessageBoxButton.OK, MessageBoxImage.Warning);
                             return;
                         }
                         if (DateTimeOffset.UtcNow >= expUtc)
                         {
                             MessageBox.Show("Tool của bạn hết hạn ! Hãy liên hệ 0978.248.822 để gia hạn",
-                                "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                             return;
                         }
                         // 2) Acquire lease 1 lần (KHÔNG renew trong lúc chạy, theo yêu cầu)
@@ -3602,7 +3602,7 @@ Ví dụ không hợp lệ:
                                         {
                                             await Dispatcher.InvokeAsync(() =>
                                             {
-                                                MessageBox.Show("License đã hết hạn. Dừng đặt cược.", "ABX5",
+                                                MessageBox.Show("License đã hết hạn. Dừng đặt cược.", "Automino",
                                                     MessageBoxButton.OK, MessageBoxImage.Warning);
                                                 StopXocDia_Click(this, new RoutedEventArgs());
                                             });
@@ -4170,7 +4170,7 @@ Ví dụ không hợp lệ:
                     Log("[LicenseCheck] invalid license payload");
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        MessageBox.Show("Không xác thực được license. Dừng đặt cược.", "ABX5",
+                        MessageBox.Show("Không xác thực được license. Dừng đặt cược.", "Automino",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
                         StopXocDia_Click(this, new RoutedEventArgs());
                     });
@@ -4182,7 +4182,7 @@ Ví dụ không hợp lệ:
                     Log("[LicenseCheck] license expired");
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        MessageBox.Show("License đã hết hạn. Dừng đặt cược.", "ABX5",
+                        MessageBox.Show("License đã hết hạn. Dừng đặt cược.", "Automino",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
                         StopXocDia_Click(this, new RoutedEventArgs());
                     });
@@ -4539,7 +4539,7 @@ Ví dụ không hợp lệ:
                 Log($"[Lease] acquire -> {(int)resp.StatusCode} {resp.ReasonPhrase} | {body}");
                 if (!resp.IsSuccessStatusCode)
                 {
-                    MessageBox.Show($"Lease bị từ chối [{(int)resp.StatusCode}] — {body}", "ABX5",
+                    MessageBox.Show($"Lease bị từ chối [{(int)resp.StatusCode}] — {body}", "Automino",
                         MessageBoxButton.OK, MessageBoxImage.Warning);
                     return false;
                 }
@@ -4549,15 +4549,15 @@ Ví dụ không hợp lệ:
                     // tài khoản đang chạy nơi khác
                     body = await resp.Content.ReadAsStringAsync();
                     Log("[Lease] 409 in-use: " + body);
-                    MessageBox.Show("Tài khoản đang chạy nơi khác. Vui lòng thử lại sau.", "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("Tài khoản đang chạy nơi khác. Vui lòng thử lại sau.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return false;
                 }
-                MessageBox.Show("Không lấy được quyền chạy (lease).", "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Không lấy được quyền chạy (lease).", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             catch (Exception ex)
             {
                 Log("[Lease] acquire error: " + ex.Message);
-                MessageBox.Show("Không kết nối được trung tâm lease. Vui lòng kiểm tra mạng.", "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Không kết nối được trung tâm lease. Vui lòng kiểm tra mạng.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             return false;
         }
@@ -4617,11 +4617,11 @@ Ví dụ không hợp lệ:
                             // Thông báo theo mode
                             if (_expireMode == "trial")
                             {
-                                MessageBox.Show("Bạn đang dùng tool dùng thử. Hãy liên hệ 0978.248.822", "ABX5", MessageBoxButton.OK, MessageBoxImage.Information);
+                                MessageBox.Show("Bạn đang dùng tool dùng thử. Hãy liên hệ 0978.248.822", "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                             }
                             else
                             {
-                                MessageBox.Show("Tool của bạn hết hạn ! Hãy liên hệ 0978.248.822 để gia hạn", "ABX5", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                MessageBox.Show("Tool của bạn hết hạn ! Hãy liên hệ 0978.248.822 để gia hạn", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                             }
 
                             // Xoá nhãn
@@ -4947,7 +4947,7 @@ Ví dụ không hợp lệ:
             {
                 StopTask();
                 SetPlayButtonState(false);
-                MessageBox.Show(reason, "ABX5", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(reason, "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                 Log("[CUT] " + reason);
             }
             catch { /* ignore */ }
