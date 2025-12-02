@@ -366,10 +366,6 @@
             console && console.warn && console.warn('[BaccMulti]', msg);
         } catch (_) {}
     };
-    const bLog = (m) => {
-        try { updateInfo && updateInfo('[bacc] ' + m); } catch (_) {}
-        try { console && console.warn && console.warn('[BaccMulti]', m); } catch (_) {}
-    };
 
     async function waitFor(test, timeout = 8000, step = 120) {
         const t0 = Date.now();

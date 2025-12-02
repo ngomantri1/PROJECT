@@ -2210,6 +2210,9 @@ Ví dụ không hợp lệ:
         {
             try
             {
+                // Reset force-lobby guard when returning to home
+                _lastForcedLobbyUrl = null;
+
                 var home = (_cfg?.Url ?? DEFAULT_URL)?.Trim();
                 if (string.IsNullOrWhiteSpace(home))
                     home = DEFAULT_URL;
@@ -2556,6 +2559,9 @@ Ví dụ không hợp lệ:
         {
             try
             {
+                // Allow forcing lobby again on each home-start flow
+                _lastForcedLobbyUrl = null;
+
                 await EnsureWebReadyAsync();
                 var r = await Web.CoreWebView2.ExecuteScriptAsync(
                     "(typeof window.__abx_hw_clickPlayXDL==='function') ? window.__abx_hw_clickPlayXDL() : 'no-fn';"
