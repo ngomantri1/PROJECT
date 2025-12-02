@@ -357,6 +357,19 @@
     };
     const norm = s => (s || '').toString().normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
     const wait = ms => new Promise(r => setTimeout(r, ms));
+    // log tiện dụng cho luồng baccarat
+    const bLog = (msg) => {
+        try {
+            updateInfo && updateInfo('[bacc] ' + msg);
+        } catch (_) {}
+        try {
+            console && console.warn && console.warn('[BaccMulti]', msg);
+        } catch (_) {}
+    };
+    const bLog = (m) => {
+        try { updateInfo && updateInfo('[bacc] ' + m); } catch (_) {}
+        try { console && console.warn && console.warn('[BaccMulti]', m); } catch (_) {}
+    };
 
     async function waitFor(test, timeout = 8000, step = 120) {
         const t0 = Date.now();
