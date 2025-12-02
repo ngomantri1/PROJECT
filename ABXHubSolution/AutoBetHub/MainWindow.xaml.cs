@@ -104,6 +104,11 @@ namespace AutoBetHub
                         _log.Warn("[Update] Read AppVersion.txt failed: " + exVer.Message);
                     }
 
+                    if (installedVersion != null && exeVersion > installedVersion)
+                    {
+                        SaveInstalledVersion(exeVersion);
+                    }
+
                     // Không có AppVersion.txt => luôn cho phép copy từ exe
                     // Có AppVersion.txt => chỉ cho copy khi exeVersion > installedVersion
                     bool allowCopyFromExe = installedVersion == null || exeVersion > installedVersion;
