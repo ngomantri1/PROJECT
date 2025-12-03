@@ -56,12 +56,10 @@
   <!-- Nhúng JS vào resource -->
   <ItemGroup>
     <None Remove="js_home_v2.js" />
-    <None Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
     <None Remove="v4_js_xoc_dia_live.js" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="js_home_v2.js" />
-    <EmbeddedResource Include="ThirdParty\WebView2Fixed_win-x64.zip" />
     <EmbeddedResource Include="v4_js_xoc_dia_live.js" />
   </ItemGroup>
 

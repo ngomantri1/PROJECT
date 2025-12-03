@@ -770,7 +770,7 @@
         '</div>' +
         '<div id="cwInfo" style="white-space:pre;color:#9f9;line-height:1.45"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    root.style.display='none';
+    //root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -1456,8 +1456,41 @@
     function NORM(s) {
         return String(s || '').normalize('NFD').replace(/[\u0300-\u036F]/g, '').toUpperCase();
     }
+    function normalizeSide(raw) {
+        // chuyển input thành key chuẩn cho findSide/cwBet
+        var s = NORM(raw || '').replace(/[^A-Z0-9]+/g, '_');
+        if (!s)
+            return 'LE'; // giữ nguyên hành vi cũ: không nhận => mặc định Lẻ
+        if (s === 'CHAN' || s === 'EVEN')
+            return 'CHAN';
+        if (s === 'LE' || s === 'ODD')
+            return 'LE';
+        if (s === 'SAP_DOI' || s === 'SAPDOI' || s === '2DO2TRANG' || s === '2D2T' || s === '2R2W')
+            return 'SAP_DOI';
+        if (s === 'TRANG3_DO1' || s === '3TRANG1DO' || s === '3T1D' || s === '3W1R' || s === '1DO3TRANG' || s === '1D3T' || s === '1R3W')
+            return 'TRANG3_DO1';
+        if (s === 'DO3_TRANG1' || s === '3DO1TRANG' || s === '3D1T' || s === '3R1W' || s === '1TRANG3DO' || s === '1T3D' || s === '1W3R')
+            return 'DO3_TRANG1';
+        if (s === 'TU_TRANG' || s === 'TUTRANG' || s === '4TRANG' || s === '4W')
+            return 'TU_TRANG';
+        if (s === 'TU_DO' || s === 'TUDO' || s === '4DO' || s === '4R')
+            return 'TU_DO';
+        return s;
+    }
+    var SIDE_REGEX = {
+        CHAN: /(CHAN|EVEN)\b/i,
+        LE: /(\bLE\b|ODD)\b/i,
+        SAP_DOI: /(SAP\s*DOI|SAPDOI|2\s*DO\s*2\s*TRANG|2D2T|2R2W|2DO2TRANG)/i,
+        TRANG3_DO1: /(3\s*TRANG\s*1\s*DO|3T1D|3W1R|3TRANG1DO|1\s*DO\s*3\s*TRANG|1D3T|1R3W|1DO3TRANG)/i,
+        DO3_TRANG1: /(3\s*DO\s*1\s*TRANG|3D1T|3R1W|3DO1TRANG|1\s*TRANG\s*3\s*DO|1T3D|1W3R|1TRANG3DO)/i,
+        TU_TRANG: /(TU\s*TRANG|4\s*TRANG|4W|TUTRANG)/i,
+        TU_DO: /(TU\s*DO|4\s*DO|4R|TUDO)/i
+    };
     function findSide(side) {
-        var WANT = /CHAN/i.test(side) ? 'CHAN' : 'LE';
+        var WANT = normalizeSide(side);
+        var rx = SIDE_REGEX[WANT];
+        if (!rx)
+            return null; // không nhận diện được cửa -> bỏ qua, tránh click nhầm
         var hit = null;
         (function walk(n) {
             if (hit || !active(n))
@@ -1466,7 +1499,7 @@
             var ok = false;
             if (lb && typeof lb.string !== 'undefined') {
                 var s = NORM(lb.string);
-                ok = (WANT === 'CHAN') ? /(CHAN|EVEN)\b/.test(s) : /(\bLE\b|ODD)\b/.test(s);
+                ok = rx ? rx.test(s) : false;
             }
             if (!ok) {
                 var names = [],
@@ -1474,11 +1507,14 @@
                 for (p = n; p; p = p.parent)
                     names.push(p.name || '');
                 var path = names.reverse().join('/').toLowerCase();
-                ok = (WANT === 'CHAN') ? /chan|even/.test(path) : (/\ble\b|odd/.test(path));
+                ok = rx ? rx.test(path) : false;
             }
-            if (ok && clickable(n)) {
-                hit = n;
-                return;
+            if (ok) {
+                var c = clickableOf(n, 8);
+                if (clickable(c)) {
+                    hit = c;
+                    return;
+                }
             }
             var kids = n.children || [];
             for (var i = 0; i < kids.length; i++)
@@ -1755,6 +1791,7 @@
     }
 
     window.cwBet = async function (side, amount) {
+        side = normalizeSide(side);
         if (amount == null || isNaN(amount)) {
             if (old_cwBet)
                 return old_cwBet(side);
@@ -1768,7 +1805,6 @@
             return true;
         }
 
-        side = String(side || '').toUpperCase();
         var raw = Math.max(0, Math.floor(+amount || 0));
         if (!raw) {
             console.warn('[cwBet++] amount=0');
@@ -2209,7 +2245,7 @@
         window.__cw_bet = async function (side, amount) {
             try {
                 // chuẩn hoá tham số
-                side = (String(side || '').toUpperCase() === 'CHAN') ? 'CHAN' : 'LE';
+                side = normalizeSide(side);
                 var amt = Math.max(0, Math.floor(Number(amount) || 0));
 
                 // bắt buộc phải có cwBet
