@@ -105,11 +105,11 @@ namespace XocDiaLiveHit.Tasks
         }
 
 
-        public static async Task<bool> PlaceBet(GameContext ctx, string side, long amount, CancellationToken ct)
+        public static async Task<bool> PlaceBet(GameContext ctx, string side, long amount, CancellationToken ct, bool ignoreCooldown = false)
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var last = Volatile.Read(ref _lastBetOkMs);
-            if (now - last < 3000)  // 3 giây khoá sau lần bet OK gần nhất
+            if (!ignoreCooldown && now - last < 3000)  // 3 giây khoá sau lần bet OK gần nhất
             {
                 ctx.Log?.Invoke($"[BET] cooldown 3s active, skip ({3000 - (now - last)}ms left)");
                 return false;

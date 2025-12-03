@@ -79,6 +79,11 @@ namespace XocDiaLiveHit.Tasks
                     _needDoubleNext = false;
                     _i = win ? 0 : Math.Min(_i + 1, _seq.Length - 1);
                     break;
+
+                case "IncreaseEveryRound": // thua/th?ng �?u nh?y b?c, h?t chu?i quay v?
+                    _needDoubleNext = false;
+                    _i = (_i + 1 < _seq.Length ? _i + 1 : 0);
+                    break;
             }
         }
     }

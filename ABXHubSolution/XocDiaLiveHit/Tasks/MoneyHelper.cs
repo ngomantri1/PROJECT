@@ -55,6 +55,11 @@ namespace XocDiaLiveHit.Tasks
                     v2DoublePhase = false;
                     break;
 
+
+                case "IncreaseEveryRound":
+                    step = (step + 1) % n;
+                    v2DoublePhase = false;
+                    break;
                 default:
                     if (win == true || win == null) step = 0;
                     else step = (step + 1) % n;

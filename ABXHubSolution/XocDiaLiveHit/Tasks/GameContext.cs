@@ -42,9 +42,12 @@ namespace XocDiaLiveHit.Tasks
         public DecisionState State { get; init; }
 
         // Kiểu quản lý vốn + input UI (nạp từ MainWindow)
-        // "IncreaseWhenLose" | "IncreaseWhenWin" | "Victor2" | "ReverseFibo" | "MultiChain"
+        // "IncreaseWhenLose" | "IncreaseWhenWin" | "Victor2" | "ReverseFibo" | "IncreaseEveryRound" | "MultiChain"
         public string MoneyStrategyId { get; init; }
 
+
+        public string SideRateText { get; init; } = "";
+        public bool UseRawWinAmount { get; init; } = false;
         public string BetSeq { get; init; }       // ô "CHUỖI CẦU" hoặc "Chuỗi N/I"
         public string BetPatterns { get; init; }  // ô "CÁC THẾ CẦU"
 

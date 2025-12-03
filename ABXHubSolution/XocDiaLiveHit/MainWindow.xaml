@@ -144,6 +144,45 @@
             </Style.Triggers>
         </Style>
 
+        <!--  Secondary Button (neutral outline)  -->
+        <Style
+            x:Key="SecondaryButton"
+            TargetType="Button">
+            <Setter Property="Background" Value="White" />
+            <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="12,9" />
+            <Setter Property="MinWidth" Value="90" />
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="8">
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#F5F6F7" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.6" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <!--  Console (light)  -->
         <Style x:Key="ConsoleBox" TargetType="TextBox">
             <Setter Property="Background" Value="White" />
@@ -494,6 +533,8 @@
                                         <!--  CHUỖI TIỀN  -->
                                         <RowDefinition Height="Auto" />
                                         <!--  ĐẶT KHI CÒN (GIÂY)  -->
+                                        <RowDefinition Height="Auto" />
+                                        <!--  CỬA ĐẶT &amp; TỈ LỆ  -->
                                     </Grid.RowDefinitions>
 
                                     <Grid.ColumnDefinitions>
@@ -545,6 +586,7 @@
                                             <ComboBoxItem Content="14) AI học tại chỗ (n-gram)" />
                                             <ComboBoxItem Content="15) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime)" />
                                             <ComboBoxItem Content="16) Top10 tích lũy (khởi từ 50 C/L)" />
+                                            <ComboBoxItem Content="17) Đánh các cửa ăn nổ hũ" />
                                         </ComboBox>
                                     </Grid>
 
@@ -656,6 +698,7 @@
                                             <ComboBoxItem Content="3. Quản lý vốn Victor 2" Tag="Victor2" />
                                             <ComboBoxItem Content="4. Quản lý vốn Fibonaci ngược" Tag="ReverseFibo" />
                                             <ComboBoxItem Content="5. Quản lý vốn đa tầng" Tag="MultiChain" />
+                                            <ComboBoxItem Content="6. Thua thắng đều lên mức" Tag="IncreaseEveryRound" />
                                         </ComboBox>
                                     </Grid>
                                     <!--  CHUỖI TIỀN (CSV)  -->
@@ -693,6 +736,54 @@
                                         Margin="{StaticResource ValueFieldMargin}"
                                         HorizontalAlignment="Stretch"
                                         Text="0" />
+                                    <!--  CỬA ĐẶT &amp; TỈ LỆ  -->
+                                    <Grid
+                                        x:Name="RowSideRatio"
+                                        Grid.Row="5"
+                                        Grid.ColumnSpan="2"
+                                        Visibility="Collapsed">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="130" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock
+                                            Grid.Column="0"
+                                            Style="{StaticResource CapsLabel}"
+                                            Text="CỬA ĐẶT &amp; TỈ LỆ" />
+                                        <StackPanel Grid.Column="1" Orientation="Vertical">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox
+                                                    x:Name="TxtSideRatio"
+                                                    Grid.Column="0"
+                                                    MinHeight="36"
+                                                    MaxHeight="120"
+                                                    Margin="{StaticResource ValueFieldMargin}"
+                                                    HorizontalAlignment="Stretch"
+                                                    AcceptsReturn="True"
+                                                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                    TextWrapping="Wrap" />
+                                                <Button
+                                                    x:Name="BtnResetSideRatio"
+                                                    Grid.Column="1"
+                                                    MinWidth="70"
+                                                    Margin="8,0,0,0"
+                                                    Padding="12,8"
+                                                    Content="Reset"
+                                                    Style="{StaticResource SecondaryButton}" />
+                                            </Grid>
+                                            <TextBlock
+                                                x:Name="LblSideRatioError"
+                                                Margin="0,2,0,0"
+                                                Foreground="Red"
+                                                TextWrapping="Wrap"
+                                                Visibility="Collapsed" />
+                                        </StackPanel>
+                                    </Grid>
                                 </Grid>
                                 <!--  HÀNG: CẮT LÃI / CẮT LỖ (đặt ngay sau hàng 'Đặt khi còn (giây)')  -->
                                 <Grid>
