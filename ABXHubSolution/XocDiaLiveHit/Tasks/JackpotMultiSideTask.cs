@@ -123,6 +123,8 @@ namespace XocDiaLiveHit.Tasks
 
                 var lastDigit = await WaitForResultAsync(ctx, baseSeq, ct);
                 var winners = SideRateParser.GetWinningSides(lastDigit);
+                // hiển thị kết quả dạng ball0..ball4 cho lịch sử
+                string resultDisplay = $"BALL{lastDigit}";
 
                 bool winAny = false;
                 double delta = 0;
@@ -132,14 +134,19 @@ namespace XocDiaLiveHit.Tasks
                     {
                         winAny = true;
                         delta += CalcProfit(side, stake);
+                        ctx.Log?.Invoke($"[Task17][WIN] {side} +{CalcProfit(side, stake):N0}");
                     }
                     else
                     {
                         delta -= stake;
+                        ctx.Log?.Invoke($"[Task17][LOSS] {side} -{stake:N0}");
                     }
                 }
 
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(delta));
+                // cập nhật lịch sử cho từng cửa
+                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiFinalizeMultiBet?.Invoke(winners, resultDisplay));
+                // Chỉ hiển thị WIN/LOSS tổng hợp một lần cho cả vòng
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiWinLoss?.Invoke(winAny));
 
                 if (ctx.MoneyStrategyId == "MultiChain")

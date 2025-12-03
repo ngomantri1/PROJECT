@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 using System.Windows.Threading;
 
 namespace XocDiaLiveHit.Tasks
@@ -50,6 +51,7 @@ namespace XocDiaLiveHit.Tasks
         public bool UseRawWinAmount { get; init; } = false;
         public string BetSeq { get; init; }       // ô "CHUỖI CẦU" hoặc "Chuỗi N/I"
         public string BetPatterns { get; init; }  // ô "CÁC THẾ CẦU"
+        public Action<HashSet<string>, string>? UiFinalizeMultiBet { get; init; }
 
         // Tiện ích UI nếu cần
         public Dispatcher UiDispatcher { get; init; }

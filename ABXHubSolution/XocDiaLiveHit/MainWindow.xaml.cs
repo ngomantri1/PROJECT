@@ -110,11 +110,48 @@ namespace XocDiaLiveHit
 
     public sealed class KetQuaToIconConverter : IValueConverter
     {
+        private static readonly Dictionary<char, ImageSource?> _ballIcons = new();
+
+        private static ImageSource? LoadBall(char d)
+        {
+            if (_ballIcons.TryGetValue(d, out var img))
+                return img;
+
+            try
+            {
+                var uri = new Uri($"pack://application:,,,/Assets/Seq/ball{d}.png", UriKind.Absolute);
+                var bi = new BitmapImage();
+                bi.BeginInit();
+                bi.UriSource = uri;
+                bi.CacheOption = BitmapCacheOption.OnLoad;
+                bi.EndInit();
+                bi.Freeze();
+                img = bi;
+            }
+            catch
+            {
+                img = null;
+            }
+
+            _ballIcons[d] = img;
+            return img;
+        }
+
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
             var u = TextNorm.U(value?.ToString() ?? "");
             if (u == "CHAN" || u == "C") return FallbackIcons.GetResultChan();
             if (u == "LE" || u == "L") return FallbackIcons.GetResultLe();
+
+            char digit = '\0';
+            if (u.Length == 1 && char.IsDigit(u[0])) digit = u[0];
+            else if (u.StartsWith("BALL", StringComparison.OrdinalIgnoreCase) && u.Length >= 5 && char.IsDigit(u[4])) digit = u[4];
+
+            if (digit >= '0' && digit <= '4')
+            {
+                return LoadBall(digit);
+            }
+
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -245,7 +282,7 @@ namespace XocDiaLiveHit
         private bool _autoFollowNewest = true;// true = đang bám trang mới nhất (trang 1); false = đang xem trang cũ, KHÔNG auto nhảy
 
         // 3) Giữ pending bet để chờ kết quả
-        private BetRow? _pendingRow;
+        private readonly List<BetRow> _pendingRows = new();
         private const int MaxHistory = 1000;   // tổng số bản ghi giữ trong bộ nhớ & khi load
 
 
@@ -1151,9 +1188,13 @@ Ví dụ không hợp lệ:
                                                 // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
                                                 var kqStr = winIsChan ? "CHAN" : "LE";
                                                 long? accNow2 = snap?.totals?.A;
-                                                if (_pendingRow != null && accNow2.HasValue)
+                                                if (_pendingRows.Count > 0 && accNow2.HasValue)
                                                 {
-                                                    FinalizeLastBet(kqStr, accNow2.Value);
+                                                    // Chiến lược 17 tự finalize nhiều cửa theo winners
+                                                    if (_activeTask is not XocDiaLiveHit.Tasks.JackpotMultiSideTask)
+                                                    {
+                                        FinalizeLastBet(kqStr, accNow2.Value);
+                                                    }
                                                 }
 
                                                 _lockMajorMinorUpdates = false; // xong chu kỳ này
@@ -1262,7 +1303,7 @@ Ví dụ không hợp lệ:
                                     long accNow = 0;
                                     try { accNow = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
 
-                                    _pendingRow = new BetRow
+                                    var row = new BetRow
                                     {
                                         At = DateTime.Now,
                                         Game = "Xóc đĩa live",
@@ -1274,8 +1315,9 @@ Ví dụ không hợp lệ:
                                     };
 
                                     // MỚI NHẤT Ở ĐẦU DANH SÁCH (trang 1)
-                                    _betAll.Insert(0, _pendingRow);
+                                    _betAll.Insert(0, row);
                                     if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
+                                    _pendingRows.Add(row);
                                     // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
                                     if (_autoFollowNewest)
                                     {
@@ -3320,6 +3362,10 @@ Ví dụ không hợp lệ:
                 UseRawWinAmount = useRawWinAmount,
                 BetSeq = _cfg.BetSeq ?? "",
                 BetPatterns = _cfg.BetPatterns ?? "",
+                UiFinalizeMultiBet = (winners, resultDisplay) => Dispatcher.Invoke(() =>
+                {
+                    try { FinalizePendingBetsWithWinners(winners, resultDisplay); } catch { }
+                }),
 
 
                 // ==== 3 callback UI ====
@@ -5016,17 +5062,25 @@ Ví dụ không hợp lệ:
             catch { /* ignore */ }
         }
 
-        private void FinalizeLastBet(string? result, long balanceAfter)
+        private void FinalizeLastBet(string? result, long balanceAfter, HashSet<string>? winners = null, string? displayResult = null)
         {
-            if (_pendingRow == null || string.IsNullOrWhiteSpace(result)) return;
+            if (_pendingRows.Count == 0 || string.IsNullOrWhiteSpace(result)) return;
 
-            _pendingRow.Result = result!.ToUpperInvariant();
-            bool win = string.Equals(_pendingRow.Side, _pendingRow.Result, StringComparison.OrdinalIgnoreCase);
-            _pendingRow.WinLose = win ? "Thắng" : "Thua";
-            _pendingRow.Account = balanceAfter;
+            var winSet = winners ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase) { result! };
+            var resultText = string.IsNullOrWhiteSpace(displayResult)
+                ? result!.ToUpperInvariant()
+                : displayResult!;
 
-            // ❗KHÔNG Add lại vào _betAll (đã chèn ở thời điểm BET)
-            try { AppendBetCsv(_pendingRow); } catch { /* ignore IO */ }
+            foreach (var row in _pendingRows)
+            {
+                row.Result = resultText;
+                bool win = winSet.Contains(row.Side);
+                row.WinLose = win ? "Thắng" : "Thua";
+                row.Account = balanceAfter;
+
+                // ❗KHÔNG Add lại vào _betAll (đã chèn ở thời điểm BET)
+                try { AppendBetCsv(row); } catch { /* ignore IO */ }
+            }
 
             // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
             if (_autoFollowNewest)
@@ -5038,7 +5092,18 @@ Ví dụ không hợp lệ:
                 RefreshCurrentPage();   // (mục 3 bên dưới)
             }
 
-            _pendingRow = null; // sẵn sàng ván tiếp theo
+            _pendingRows.Clear(); // sẵn sàng ván tiếp theo
+        }
+
+        public void FinalizePendingBetsWithWinners(HashSet<string> winners, string? displayResult = null)
+        {
+            if (_pendingRows.Count == 0) return;
+            long balance = 0;
+            try { balance = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
+            var resText = !string.IsNullOrWhiteSpace(displayResult)
+                ? displayResult
+                : (winners != null && winners.Count > 0 ? string.Join("/", winners) : "-");
+            FinalizeLastBet(resText, balance, winners, resText);
         }
 
 
