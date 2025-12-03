@@ -55,8 +55,16 @@ namespace XocDiaLiveHit.Tasks
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                await WaitUntilNewRoundStart(ctx, ct);
-                await Task.Delay(250, ct); // chờ giao diện mở cửa cược ổn định
+                // Chờ cửa cược mở nhưng vẫn còn đủ thời gian (prog ~ 60% trở xuống)
+                while (true)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var s = ctx.GetSnap?.Invoke();
+                    double p = s?.prog ?? 1.0;
+                    if (p > 0 && p <= 0.6) break;
+                    await Task.Delay(80, ct);
+                }
+                await Task.Delay(120, ct); // chờ giao diện ổn định thêm
 
                 // tắt chờ waitForTotalsChange để đặt nhanh nhiều cửa
                 try { _ = ctx.EvalJsAsync("window.waitForTotalsChange = null;"); } catch { }
@@ -73,47 +81,48 @@ namespace XocDiaLiveHit.Tasks
                         ctx.MoneyChainIndex,
                         ctx.MoneyChainStep)
                     : money.GetStakeForThisBet();
+                if (baseStake <= 0) baseStake = 1000; // tối thiểu 1 chip nhỏ nhất
 
                 var placed = new List<(string side, long stake)>(plan.Count);
                 var successes = new List<(string side, long stake)>();
-                var fails = new List<(string side, long stake)>();
+                placed.Clear();
+
+                async Task<bool> PlaceWithRetry(string side, long stake)
+                {
+                    for (int attempt = 0; attempt < 8; attempt++)
+                    {
+                        try
+                        {
+                            _ = ctx.EvalJsAsync("if(window.__cwBetLockFix){window.__cwBetLockFix.busy=false;} window.tryOpenChipPanel && window.tryOpenChipPanel();");
+                        }
+                        catch { }
+                        await Task.Delay(80, ct);
+
+                        bool ok = await PlaceBet(ctx, side, stake, ct, ignoreCooldown: true);
+                        if (ok) return true;
+
+                        await Task.Delay(260 + attempt * 60, ct);
+                    }
+                    return false;
+                }
+
                 foreach (var p in plan)
                 {
                     long stake = baseStake * p.Ratio;
-
-                    bool ok = false;
-                    for (int attempt = 0; attempt < 3 && !ok; attempt++)
+                    bool ok = await PlaceWithRetry(p.Side, stake);
+                    if (ok)
                     {
-                        ok = await PlaceBet(ctx, p.Side, stake, ct, ignoreCooldown: true);
-                        if (!ok) await Task.Delay(90, ct);
+                        successes.Add((p.Side, stake));
+                        placed.Add((p.Side, stake));
                     }
-                    if (ok) successes.Add((p.Side, stake));
-                    else fails.Add((p.Side, stake));
-
-                    // giãn cách nhẹ giữa các lệnh bet để client nhận đủ
-                    await Task.Delay(90, ct);
+                    else
+                    {
+                        ctx.Log?.Invoke($"[Task17] FAIL {p.Side} stake={stake}");
+                    }
+                    await Task.Delay(220, ct);
                 }
 
-                // thử lại các cửa chưa đặt được với delay lâu hơn
-                if (fails.Count > 0)
-                {
-                    await Task.Delay(200, ct);
-                    try { _ = ctx.EvalJsAsync("window.tryOpenChipPanel && window.tryOpenChipPanel();"); } catch { }
-
-                    foreach (var f in fails.ToArray())
-                    {
-                        bool ok = false;
-                        for (int attempt = 0; attempt < 3 && !ok; attempt++)
-                        {
-                            ok = await PlaceBet(ctx, f.side, f.stake, ct, ignoreCooldown: true);
-                            if (!ok) await Task.Delay(120, ct);
-                        }
-                        if (ok) successes.Add((f.side, f.stake));
-                    }
-                }
-
-                placed.Clear();
-                placed.AddRange(successes);
+                ctx.Log?.Invoke($"[Task17] Đã đặt {successes.Count}/{plan.Count} cửa; còn lại: {Math.Max(0, plan.Count - successes.Count)}");
 
                 var lastDigit = await WaitForResultAsync(ctx, baseSeq, ct);
                 var winners = SideRateParser.GetWinningSides(lastDigit);
