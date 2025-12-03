@@ -55,17 +55,7 @@ namespace XocDiaLiveHit.Tasks
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                // Chờ cửa cược mở nhưng vẫn còn đủ thời gian (prog ~ 60% trở xuống)
-                while (true)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    var s = ctx.GetSnap?.Invoke();
-                    double p = s?.prog ?? 1.0;
-                    if (p > 0 && p <= 0.6) break;
-                    await Task.Delay(80, ct);
-                }
-                await Task.Delay(120, ct); // chờ giao diện ổn định thêm
-
+                await WaitUntilNewRoundStart(ctx, ct);
                 // tắt chờ waitForTotalsChange để đặt nhanh nhiều cửa
                 try { _ = ctx.EvalJsAsync("window.waitForTotalsChange = null;"); } catch { }
 
@@ -81,7 +71,7 @@ namespace XocDiaLiveHit.Tasks
                         ctx.MoneyChainIndex,
                         ctx.MoneyChainStep)
                     : money.GetStakeForThisBet();
-                if (baseStake <= 0) baseStake = 1000; // tối thiểu 1 chip nhỏ nhất
+                if (baseStake < 0) baseStake = 0;
 
                 var placed = new List<(string side, long stake)>(plan.Count);
                 var successes = new List<(string side, long stake)>();
@@ -89,6 +79,13 @@ namespace XocDiaLiveHit.Tasks
 
                 async Task<bool> PlaceWithRetry(string side, long stake)
                 {
+                    if (stake <= 0)
+                    {
+                        // vẫn gửi xuống JS với tiền 0 để giữ đủ 7 cửa
+                        try { await PlaceBet(ctx, side, stake, ct, ignoreCooldown: true); } catch { }
+                        return true;
+                    }
+
                     for (int attempt = 0; attempt < 8; attempt++)
                     {
                         try
