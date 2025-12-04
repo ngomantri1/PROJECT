@@ -770,7 +770,7 @@
         '</div>' +
         '<div id="cwInfo" style="white-space:pre;color:#9f9;line-height:1.45"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
+    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];

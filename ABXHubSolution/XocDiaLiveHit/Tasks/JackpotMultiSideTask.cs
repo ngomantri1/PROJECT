@@ -106,6 +106,7 @@ namespace XocDiaLiveHit.Tasks
                 foreach (var p in plan)
                 {
                     long stake = baseStake * p.Ratio;
+                    ctx.UiSetChainLevel?.Invoke(ctx.MoneyChainIndex, ctx.MoneyChainStep);
                     bool ok = await PlaceWithRetry(p.Side, stake);
                     if (ok)
                     {

@@ -968,7 +968,7 @@ Ví dụ không hợp lệ:
 
                 if (string.IsNullOrWhiteSpace(_cfg.Url))
                     _cfg.Url = DEFAULT_URL;
-                if (TxtUrl != null) TxtUrl.Text = _cfg.Url;
+                //if (TxtUrl != null) TxtUrl.Text = _cfg.Url;
                 if (TxtStakeCsv != null)
                 {
                     TxtStakeCsv.Text = _cfg.StakeCsv;
@@ -1029,7 +1029,7 @@ Ví dụ không hợp lệ:
             await _cfgWriteGate.WaitAsync();
             try
             {
-                _cfg.Url = T(TxtUrl);
+                //_cfg.Url = T(TxtUrl);
                 _cfg.StakeCsv = T(TxtStakeCsv, "1000,2000,4000,8000,16000");
                 _cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
                 _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? _cfg.BetStrategyIndex;
@@ -3366,6 +3366,10 @@ Ví dụ không hợp lệ:
                 {
                     try { FinalizePendingBetsWithWinners(winners, resultDisplay); } catch { }
                 }),
+                UiSetChainLevel = (chain, level) => Dispatcher.Invoke(() =>
+                {
+                    try { SetLevelForMultiChain(chain, level); } catch { }
+                }),
 
 
                 // ==== 3 callback UI ====
@@ -3379,8 +3383,9 @@ Ví dụ không hợp lệ:
                     if (LblStake != null)
                         LblStake.Text = v.ToString("N0");
 
-                    // MỨC TIỀN = vị trí trong _stakeSeq (1-based)
-                    // MỨC TIỀN = vị trí/độ dài (ví dụ 4/6)
+                    // Với MultiChain, mức tiền sẽ được set qua UiSetChainLevel
+                    if ((_cfg.MoneyStrategy ?? "") == "MultiChain") return;
+
                     if (LblLevel != null)
                     {
                         try
@@ -3389,7 +3394,6 @@ Ví dụ không hợp lệ:
                             var rounded = (long)Math.Round(v);
                             var idx = Array.IndexOf(seq, rounded); // 0-based
 
-                            // Nếu tìm thấy, hiển thị "vị trí/tổng", ngược lại hiển thị "-"
                             LblLevel.Text = (idx >= 0 && seq.Length > 0)
                                 ? $"{idx + 1}/{seq.Length}"
                                 : "";
@@ -5104,6 +5108,32 @@ Ví dụ không hợp lệ:
                 ? displayResult
                 : (winners != null && winners.Count > 0 ? string.Join("/", winners) : "-");
             FinalizeLastBet(resText, balance, winners, resText);
+        }
+
+        private void SetLevelForMultiChain(int chainIndex, int levelIndex)
+        {
+            if (LblLevel == null) return;
+            try
+            {
+                var chains = _stakeChains ?? new List<long[]>();
+                int total = chains.Sum(ch => ch?.Length ?? 0);
+                if (total == 0) { LblLevel.Text = ""; return; }
+
+                chainIndex = Math.Clamp(chainIndex, 0, chains.Count - 1);
+                var curChain = chains[chainIndex] ?? Array.Empty<long>();
+                levelIndex = Math.Clamp(levelIndex, 0, curChain.Length - 1);
+
+                int offset = 0;
+                for (int i = 0; i < chainIndex; i++)
+                    offset += chains[i]?.Length ?? 0;
+
+                int pos = offset + levelIndex; // 0-based
+                LblLevel.Text = $"{pos + 1}/{total}";
+            }
+            catch
+            {
+                LblLevel.Text = "";
+            }
         }
 
 
