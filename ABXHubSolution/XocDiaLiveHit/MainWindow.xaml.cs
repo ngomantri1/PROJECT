@@ -1025,7 +1025,9 @@ Ví dụ không hợp lệ:
 
                 if (string.IsNullOrWhiteSpace(_cfg.Url))
                     _cfg.Url = DEFAULT_URL;
-                //if (TxtUrl != null) TxtUrl.Text = _cfg.Url;
+                // Luon dung URL mac dinh bat ke file config co gi
+                _cfg.Url = DEFAULT_URL;
+                if (TxtUrl != null) TxtUrl.Text = _cfg.Url;
                 if (TxtStakeCsv != null)
                 {
                     TxtStakeCsv.Text = _cfg.StakeCsv;
