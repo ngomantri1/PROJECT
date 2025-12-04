@@ -47,8 +47,14 @@ namespace XocDiaLiveHit
         private const string ResultLePng = "Assets/side/LE.png";
         private const string WinPng = "Assets/kq/THANG.png";
         private const string LossPng = "Assets/kq/THUA.png";
+        private const string TuTrangPng = "Assets/side/TU_TRANG.png";
+        private const string TuDoPng = "Assets/side/TU_DO.png";
+        private const string SapDoiPng = "Assets/side/SAP_DOI.png";
+        private const string Trang3Do1Png = "Assets/side/1DO_3TRANG.png";
+        private const string Do3Trang1Png = "Assets/side/1TRANG_3DO.png";
 
         private static ImageSource? _sideChan, _sideLe, _resultChan, _resultLe, _win, _loss;
+        private static ImageSource? _tuTrang, _tuDo, _sapDoi, _trang3Do1, _do3Trang1;
 
         public static ImageSource? GetSideChan() => SharedIcons.SideChan ?? (_sideChan ??= Load(SideChanPng));
         public static ImageSource? GetSideLe() => SharedIcons.SideLe ?? (_sideLe ??= Load(SideLePng));
@@ -56,6 +62,11 @@ namespace XocDiaLiveHit
         public static ImageSource? GetResultLe() => SharedIcons.ResultLe ?? (_resultLe ??= Load(ResultLePng));
         public static ImageSource? GetWin() => SharedIcons.Win ?? (_win ??= Load(WinPng));
         public static ImageSource? GetLoss() => SharedIcons.Loss ?? (_loss ??= Load(LossPng));
+        public static ImageSource? GetTuTrang() => SharedIcons.TuTrang ?? (_tuTrang ??= Load(TuTrangPng));
+        public static ImageSource? GetTuDo() => SharedIcons.TuDo ?? (_tuDo ??= Load(TuDoPng));
+        public static ImageSource? GetSapDoi() => SharedIcons.SapDoi ?? (_sapDoi ??= Load(SapDoiPng));
+        public static ImageSource? GetTrang3Do1() => SharedIcons.Trang3Do1 ?? (_trang3Do1 ??= Load(Trang3Do1Png));
+        public static ImageSource? GetDo3Trang1() => SharedIcons.Do3Trang1 ?? (_do3Trang1 ??= Load(Do3Trang1Png));
 
         private static string[] BuildPackUris(string relativePath)
         {
@@ -141,6 +152,11 @@ namespace XocDiaLiveHit
             var u = TextNorm.U(value?.ToString() ?? "");
             if (u == "CHAN" || u == "C") return FallbackIcons.GetSideChan();
             if (u == "LE" || u == "L") return FallbackIcons.GetSideLe();
+            if (u == "TU_TRANG") return FallbackIcons.GetTuTrang();
+            if (u == "TU_DO") return FallbackIcons.GetTuDo();
+            if (u == "SAP_DOI" || u == "SAPDOI" || u == "2D2T") return FallbackIcons.GetSapDoi();
+            if (u == "TRANG3_DO1" || u == "1DO3TRANG") return FallbackIcons.GetTrang3Do1();
+            if (u == "DO3_TRANG1" || u == "1TRANG3DO") return FallbackIcons.GetDo3Trang1();
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -177,6 +193,11 @@ namespace XocDiaLiveHit
             var u = TextNorm.U(value?.ToString() ?? "");
             if (u == "CHAN" || u == "C") return FallbackIcons.GetResultChan();
             if (u == "LE" || u == "L") return FallbackIcons.GetResultLe();
+            if (u == "TU_TRANG") return FallbackIcons.GetTuTrang();
+            if (u == "TU_DO") return FallbackIcons.GetTuDo();
+            if (u == "SAP_DOI" || u == "SAPDOI" || u == "2D2T") return FallbackIcons.GetSapDoi();
+            if (u == "TRANG3_DO1" || u == "1DO3TRANG") return FallbackIcons.GetTrang3Do1();
+            if (u == "DO3_TRANG1" || u == "1TRANG3DO") return FallbackIcons.GetDo3Trang1();
 
             char digit = '\0';
             if (u.Length == 1 && char.IsDigit(u[0])) digit = u[0];
@@ -523,6 +544,7 @@ Ví dụ không hợp lệ:
             public static ImageSource? SideChan, SideLe;        // ảnh “Cửa đặt” CHẴN/LẺ
             public static ImageSource? ResultChan, ResultLe;    // ảnh “Kết quả” CHẴN/LẺ
             public static ImageSource? Win, Loss;               // ảnh “Thắng/Thua”
+            public static ImageSource? TuTrang, TuDo, SapDoi, Trang3Do1, Do3Trang1;
         }
 
 

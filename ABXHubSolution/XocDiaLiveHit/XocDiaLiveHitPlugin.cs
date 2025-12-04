@@ -141,6 +141,11 @@ namespace XocDiaLiveHit
             SetImg("ImgBALL2", "Assets/Seq/ball2.png");
             SetImg("ImgBALL3", "Assets/Seq/ball3.png");
             SetImg("ImgBALL4", "Assets/Seq/ball4.png");
+            SetImg("ImgTU_TRANG", "Assets/side/TU_TRANG.png");
+            SetImg("ImgTU_DO", "Assets/side/TU_DO.png");
+            SetImg("ImgSAP_DOI", "Assets/side/SAP_DOI.png");
+            SetImg("ImgTRANG3_DO1", "Assets/side/1DO_3TRANG.png");
+            SetImg("ImgDO3_TRANG1", "Assets/side/1TRANG_3DO.png");
 
             // giữ lại để các converter trong MainWindow dùng chung
             try
@@ -151,6 +156,12 @@ namespace XocDiaLiveHit
                 if (dict["ImgLE"] is ImageSource le2) XocDiaLiveHit.MainWindow.SharedIcons.ResultLe = le2;
                 if (dict["ImgTHANG"] is ImageSource win) XocDiaLiveHit.MainWindow.SharedIcons.Win = win;
                 if (dict["ImgTHUA"] is ImageSource loss) XocDiaLiveHit.MainWindow.SharedIcons.Loss = loss;
+                // set thêm các icon mới cho converter
+                if (dict["ImgTU_TRANG"] is ImageSource tuw) XocDiaLiveHit.MainWindow.SharedIcons.TuTrang = tuw;
+                if (dict["ImgTU_DO"] is ImageSource tur) XocDiaLiveHit.MainWindow.SharedIcons.TuDo = tur;
+                if (dict["ImgSAP_DOI"] is ImageSource sap) XocDiaLiveHit.MainWindow.SharedIcons.SapDoi = sap;
+                if (dict["ImgTRANG3_DO1"] is ImageSource t31) XocDiaLiveHit.MainWindow.SharedIcons.Trang3Do1 = t31;
+                if (dict["ImgDO3_TRANG1"] is ImageSource d31) XocDiaLiveHit.MainWindow.SharedIcons.Do3Trang1 = d31;
             }
             catch { }
         }
