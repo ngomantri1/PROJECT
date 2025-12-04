@@ -118,27 +118,17 @@ namespace XocDiaLiveHit
         {
             if (dict == null) return;
 
-            // phải là 3 dấu phẩy
-            const string prefix = "pack://application:,,,/XocDiaLiveHit;component/";
-
             void SetImg(string key, string rel)
             {
-                var fullUri = prefix + rel;
-                try
+                var img = FallbackIcons.LoadPackImage(rel);
+                if (img != null)
                 {
-                    var bmp = new BitmapImage();
-                    bmp.BeginInit();
-                    bmp.UriSource = new Uri(fullUri, UriKind.Absolute);
-                    bmp.CacheOption = BitmapCacheOption.OnLoad;
-                    bmp.EndInit();
-                    bmp.Freeze();
-
-                    dict[key] = bmp;
-                    TryLog(host, $"[XocDia] InjectImagesTo: set {key} = {fullUri}");
+                    dict[key] = img;
+                    TryLog(host, $"[XocDia] InjectImagesTo: set {key} from {rel}");
                 }
-                catch (Exception ex)
+                else
                 {
-                    TryLog(host, $"[XocDia] InjectImagesTo: FAILED {key} -> {ex.Message}");
+                    TryLog(host, $"[XocDia] InjectImagesTo: FAILED {key} (not found)");
                 }
             }
 
@@ -146,6 +136,11 @@ namespace XocDiaLiveHit
             SetImg("ImgLE", "Assets/side/LE.png");
             SetImg("ImgTHANG", "Assets/kq/THANG.png");
             SetImg("ImgTHUA", "Assets/kq/THUA.png");
+            SetImg("ImgBALL0", "Assets/Seq/ball0.png");
+            SetImg("ImgBALL1", "Assets/Seq/ball1.png");
+            SetImg("ImgBALL2", "Assets/Seq/ball2.png");
+            SetImg("ImgBALL3", "Assets/Seq/ball3.png");
+            SetImg("ImgBALL4", "Assets/Seq/ball4.png");
 
             // giữ lại để các converter trong MainWindow dùng chung
             try

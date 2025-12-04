@@ -34,10 +34,20 @@ namespace XocDiaLiveHit
             TryMerge(app.Resources, "pack://application:,,,/XocDiaLiveHit;component/Assets/Images.xaml");
 
             // 2. fallback: tự tạo ảnh để dù Images.xaml không load được vẫn không vỡ XAML
-            EnsureImage(app.Resources, "ImgLE", "pack://application:,,,/XocDiaLiveHit;component/Assets/side/LE.png");
-            EnsureImage(app.Resources, "ImgCHAN", "pack://application:,,,/XocDiaLiveHit;component/Assets/side/CHAN.png");
-            EnsureImage(app.Resources, "ImgTHANG", "pack://application:,,,/XocDiaLiveHit;component/Assets/kq/THANG.png");
-            EnsureImage(app.Resources, "ImgTHUA", "pack://application:,,,/XocDiaLiveHit;component/Assets/kq/THUA.png");
+            EnsureImage(app.Resources, "ImgLE", "Assets/side/LE.png");
+            EnsureImage(app.Resources, "ImgCHAN", "Assets/side/CHAN.png");
+            EnsureImage(app.Resources, "ImgTHANG", "Assets/kq/THANG.png");
+            EnsureImage(app.Resources, "ImgTHUA", "Assets/kq/THUA.png");
+            EnsureImage(app.Resources, "ImgBALL0", "Assets/Seq/ball0.png");
+            EnsureImage(app.Resources, "ImgBALL1", "Assets/Seq/ball1.png");
+            EnsureImage(app.Resources, "ImgBALL2", "Assets/Seq/ball2.png");
+            EnsureImage(app.Resources, "ImgBALL3", "Assets/Seq/ball3.png");
+            EnsureImage(app.Resources, "ImgBALL4", "Assets/Seq/ball4.png");
+            EnsureImage(app.Resources, "ImgBALL0", "pack://application:,,,/XocDiaLiveHit;component/Assets/Seq/ball0.png");
+            EnsureImage(app.Resources, "ImgBALL1", "pack://application:,,,/XocDiaLiveHit;component/Assets/Seq/ball1.png");
+            EnsureImage(app.Resources, "ImgBALL2", "pack://application:,,,/XocDiaLiveHit;component/Assets/Seq/ball2.png");
+            EnsureImage(app.Resources, "ImgBALL3", "pack://application:,,,/XocDiaLiveHit;component/Assets/Seq/ball3.png");
+            EnsureImage(app.Resources, "ImgBALL4", "pack://application:,,,/XocDiaLiveHit;component/Assets/Seq/ball4.png");
 
             // 3. đăng ký converter (XAML của bạn đang dùng StaticResource mấy cái này)
             if (!app.Resources.Contains("SideToIconConverter"))
@@ -73,20 +83,16 @@ namespace XocDiaLiveHit
             }
         }
 
-        private static void EnsureImage(ResourceDictionary res, string key, string packUri)
+        private static void EnsureImage(ResourceDictionary res, string key, string relPath)
         {
             if (res.Contains(key))
                 return;
 
             try
             {
-                var bi = new BitmapImage();
-                bi.BeginInit();
-                bi.UriSource = new Uri(packUri, UriKind.Absolute);
-                bi.CacheOption = BitmapCacheOption.OnLoad;
-                bi.EndInit();
-                bi.Freeze();
-                res.Add(key, bi);
+                var img = FallbackIcons.LoadPackImage(relPath);
+                if (img != null)
+                    res.Add(key, img);
             }
             catch
             {

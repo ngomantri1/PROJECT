@@ -57,26 +57,64 @@ namespace XocDiaLiveHit
         public static ImageSource? GetWin() => SharedIcons.Win ?? (_win ??= Load(WinPng));
         public static ImageSource? GetLoss() => SharedIcons.Loss ?? (_loss ??= Load(LossPng));
 
-        private static ImageSource? Load(string relativePath)
+        private static string[] BuildPackUris(string relativePath)
         {
+            var asm = typeof(FallbackIcons).Assembly.GetName().Name;
+            return new[]
+            {
+                $"pack://application:,,,/{asm};component/{relativePath}",
+                $"pack://application:,,,/{relativePath}",
+                $"pack://application:,/{relativePath}"
+            };
+        }
+
+        internal static ImageSource? LoadPackImage(string relativePath)
+        {
+            foreach (var uri in BuildPackUris(relativePath))
+            {
+                try
+                {
+                    var bi = new BitmapImage();
+                    bi.BeginInit();
+                    bi.UriSource = new Uri(uri, UriKind.Absolute);
+                    bi.CacheOption = BitmapCacheOption.OnLoad;
+                    bi.EndInit();
+                    bi.Freeze();
+                    return bi;
+                }
+                catch
+                {
+                    // thử uri tiếp theo
+                }
+            }
+
+            // Fallback đọc file vật lý cạnh DLL khi pack URI không resolve (plugin)
             try
             {
-                // Nếu ảnh nằm trong cùng assembly và Build Action = Resource:
-                var uri = new Uri($"pack://application:,,,/{relativePath}", UriKind.Absolute);
-
-                var bi = new BitmapImage();
-                bi.BeginInit();
-                bi.UriSource = uri;
-                bi.CacheOption = BitmapCacheOption.OnLoad;
-                bi.EndInit();
-                bi.Freeze();
-                return bi;
+                var asmDir = Path.GetDirectoryName(typeof(FallbackIcons).Assembly.Location) ?? "";
+                var filePath = Path.Combine(asmDir, relativePath.Replace('/', Path.DirectorySeparatorChar));
+                if (File.Exists(filePath))
+                {
+                    var bi = new BitmapImage();
+                    bi.BeginInit();
+                    bi.UriSource = new Uri(filePath, UriKind.Absolute);
+                    bi.CacheOption = BitmapCacheOption.OnLoad;
+                    bi.EndInit();
+                    bi.Freeze();
+                    return bi;
+                }
             }
             catch
             {
-                // Quan trọng: trả null để DataTemplate trigger sang hiển thị chữ.
-                return null;
             }
+
+            return null;
+        }
+
+        private static ImageSource? Load(string relativePath)
+        {
+            // Quan trọng: trả null nếu tất cả URI thất bại để DataTemplate fallback sang text.
+            return LoadPackImage(relativePath);
         }
     }
 
@@ -117,24 +155,21 @@ namespace XocDiaLiveHit
             if (_ballIcons.TryGetValue(d, out var img))
                 return img;
 
+            // Ưu tiên ảnh đã merge vào App.Resources (PackRes đã làm)
             try
             {
-                var uri = new Uri($"pack://application:,,,/Assets/Seq/ball{d}.png", UriKind.Absolute);
-                var bi = new BitmapImage();
-                bi.BeginInit();
-                bi.UriSource = uri;
-                bi.CacheOption = BitmapCacheOption.OnLoad;
-                bi.EndInit();
-                bi.Freeze();
-                img = bi;
+                if (System.Windows.Application.Current?.Resources != null)
+                {
+                    var key = $"ImgBALL{d}";
+                    if (System.Windows.Application.Current.Resources[key] is ImageSource resImg)
+                        img = resImg;
+                }
             }
-            catch
-            {
-                img = null;
-            }
+            catch { }
 
+            img ??= FallbackIcons.LoadPackImage($"Assets/Seq/ball{d}.png");
             _ballIcons[d] = img;
-            return img;
+            return img; // có thể null -> XAML sẽ hiển thị chữ thay thế
         }
 
         public object Convert(object value, Type t, object p, CultureInfo c)
@@ -4020,27 +4055,27 @@ Ví dụ không hợp lệ:
             string asm = GetType().Assembly.GetName().Name!;
 
             // mỗi cái cho 2-3 đường dẫn để chạy được cả khi làm plugin và khi chạy độc lập
-            _seqIconMap['0'] = LoadImgSafe(
+            _seqIconMap['0'] = FallbackIcons.LoadPackImage("Assets/Seq/ball0.png") ?? LoadImgSafe(
                 $"pack://application:,,,/{asm};component/Assets/Seq/ball0.png",
                 "pack://application:,,,/Assets/Seq/ball0.png",
                 "pack://application:,/Assets/Seq/ball0.png"
             );
-            _seqIconMap['1'] = LoadImgSafe(
+            _seqIconMap['1'] = FallbackIcons.LoadPackImage("Assets/Seq/ball1.png") ?? LoadImgSafe(
                 $"pack://application:,,,/{asm};component/Assets/Seq/ball1.png",
                 "pack://application:,,,/Assets/Seq/ball1.png",
                 "pack://application:,/Assets/Seq/ball1.png"
             );
-            _seqIconMap['2'] = LoadImgSafe(
+            _seqIconMap['2'] = FallbackIcons.LoadPackImage("Assets/Seq/ball2.png") ?? LoadImgSafe(
                 $"pack://application:,,,/{asm};component/Assets/Seq/ball2.png",
                 "pack://application:,,,/Assets/Seq/ball2.png",
                 "pack://application:,/Assets/Seq/ball2.png"
             );
-            _seqIconMap['3'] = LoadImgSafe(
+            _seqIconMap['3'] = FallbackIcons.LoadPackImage("Assets/Seq/ball3.png") ?? LoadImgSafe(
                 $"pack://application:,,,/{asm};component/Assets/Seq/ball3.png",
                 "pack://application:,,,/Assets/Seq/ball3.png",
                 "pack://application:,/Assets/Seq/ball3.png"
             );
-            _seqIconMap['4'] = LoadImgSafe(
+            _seqIconMap['4'] = FallbackIcons.LoadPackImage("Assets/Seq/ball4.png") ?? LoadImgSafe(
                 $"pack://application:,,,/{asm};component/Assets/Seq/ball4.png",
                 "pack://application:,,,/Assets/Seq/ball4.png",
                 "pack://application:,/Assets/Seq/ball4.png"
