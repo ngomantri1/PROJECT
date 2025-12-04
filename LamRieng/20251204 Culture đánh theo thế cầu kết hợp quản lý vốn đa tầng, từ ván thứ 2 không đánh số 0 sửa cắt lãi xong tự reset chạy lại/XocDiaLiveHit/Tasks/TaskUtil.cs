@@ -7,7 +7,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 
-namespace TaiXiuLiveHit.Tasks
+namespace XocDiaLiveHit.Tasks
 {
     internal static class TaskUtil
     {
@@ -17,13 +17,12 @@ namespace TaiXiuLiveHit.Tasks
         // (tuỳ chọn) reset khi dừng task
         public static void ClearBetCooldown() => Volatile.Write(ref _lastBetOkMs, 0);
 
-        public static string ParityCharToSide(char ch) => (ch == 'T') ? "TAI" : "XIU";
-        public static char DigitToParity(char d) => (d == 'T') ? 'T' : 'X';
+        public static string ParityCharToSide(char ch) => (ch == 'C') ? "CHAN" : "LE";
+        public static char DigitToParity(char d) => (d == '0' || d == '2' || d == '4') ? 'C' : 'L';
         // TaskUtil.cs (trong class TaskUtil)
         private static readonly object _betLock = new object();
         private static string _lastBetSeq = "";
         private static long _lastBetMs = 0;
-        private static int _betInFlight = 0;
         // Reset UI 1 lần ngay khi vào cửa sổ đặt (p >= DecisionPercent)
         private static bool _uiRoundResetDone = false;
         public static string SeqToParityString(string digitSeq)
@@ -36,7 +35,7 @@ namespace TaiXiuLiveHit.Tasks
 
         public static bool IsWin(string betSide, char lastDigit)
         {
-            var lastSide = (lastDigit == 'T') ? "TAI" : "XIU";
+            var lastSide = (lastDigit == '0' || lastDigit == '2' || lastDigit == '4') ? "CHAN" : "LE";
             return string.Equals(betSide, lastSide, StringComparison.OrdinalIgnoreCase);
         }
 
@@ -98,28 +97,25 @@ namespace TaiXiuLiveHit.Tasks
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                var p = s?.prog ?? 1.0;   // prog = 0..1 (thời gian còn lại)
-                // Sau khi đã thấy prog thấp rồi, lần đầu prog nhảy cao trở lại => phiên mới
-                if (p >= ctx.DecisionPercent && p <= 0.97)
-                    break;
+                double p = s?.prog ?? 1.0;
+                //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
+                if (p >= ctx.DecisionPercent) break;
                 await Task.Delay(120, ct);
             }
         }
 
 
-
         public static async Task<bool> PlaceBet(GameContext ctx, string side, long amount, CancellationToken ct)
         {
-            if (Interlocked.CompareExchange(ref _betInFlight, 1, 0) != 0)
+            // Nếu đang trong trạng thái stop/restart (cắt lãi, hết hạn, v.v.) thì bỏ qua cược.
+            if (ctx.ShouldBlockBet != null && ctx.ShouldBlockBet())
             {
-                ctx.Log?.Invoke("[BET] đang có lệnh bet khác chạy, bỏ qua để tránh bắn đúp");
+                ctx.Log?.Invoke("[BET] skip because stop/restart in progress");
                 return false;
             }
 
-            try
-            {
-                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                var last = Volatile.Read(ref _lastBetOkMs);
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var last = Volatile.Read(ref _lastBetOkMs);
             if (now - last < 3000)  // 3 giây khoá sau lần bet OK gần nhất
             {
                 ctx.Log?.Invoke($"[BET] cooldown 3s active, skip ({3000 - (now - last)}ms left)");
@@ -141,23 +137,18 @@ namespace TaiXiuLiveHit.Tasks
             var r = await ctx.EvalJsAsync(js);
             ctx.Log?.Invoke($"[BET-JS] result={r}");
 
-            // Chỉ coi là thành công khi JS trả về 'ok'
-            bool ok = string.Equals(r, "ok", StringComparison.OrdinalIgnoreCase);
+            // Chỉ coi là thành công khi KHÔNG phải 'no'/'err'
+            bool ok = !string.IsNullOrEmpty(r) && !r.StartsWith("no") && !r.StartsWith("err");
 
             if (ok)
                 Volatile.Write(ref _lastBetOkMs, now); // kích hoạt khoá 3s
 
             return ok;
-            }
-            finally
-            {
-                Interlocked.Exchange(ref _betInFlight, 0);
-            }
         }
 
 
 
-        public static async Task<bool> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSession, CancellationToken ct)
+        public static async Task<bool> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSeq, CancellationToken ct)
         {
             // chờ seq tăng độ dài → có kết quả mới
             while (true)
@@ -165,8 +156,7 @@ namespace TaiXiuLiveHit.Tasks
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
                 var curSeq = s?.seq ?? "";
-                var curSession = s?.session ?? "";
-                if (!string.Equals(curSession, baseSession, StringComparison.Ordinal))
+                if (!string.Equals(curSeq, baseSeq, StringComparison.Ordinal))
                 {
                     bool win = IsWin(betSide, curSeq[^1]);
                     await ctx.UiDispatcher.InvokeAsync(() => ctx.UiWinLoss?.Invoke(win));
