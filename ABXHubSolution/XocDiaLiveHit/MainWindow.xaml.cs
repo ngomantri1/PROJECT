@@ -150,13 +150,14 @@ namespace XocDiaLiveHit
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
             var u = TextNorm.U(value?.ToString() ?? "");
+            var compact = u.Replace(" ", "").Replace("_", "");
             if (u == "CHAN" || u == "C") return FallbackIcons.GetSideChan();
             if (u == "LE" || u == "L") return FallbackIcons.GetSideLe();
             if (u == "TU_TRANG") return FallbackIcons.GetTuTrang();
             if (u == "TU_DO") return FallbackIcons.GetTuDo();
             if (u == "SAP_DOI" || u == "SAPDOI" || u == "2D2T") return FallbackIcons.GetSapDoi();
-            if (u == "TRANG3_DO1" || u == "1DO3TRANG") return FallbackIcons.GetTrang3Do1();
-            if (u == "DO3_TRANG1" || u == "1TRANG3DO") return FallbackIcons.GetDo3Trang1();
+            if (u == "TRANG3_DO1" || compact == "TRANG3DO1" || compact == "1DO3TRANG") return FallbackIcons.GetTrang3Do1();
+            if (u == "DO3_TRANG1" || compact == "DO3TRANG1" || compact == "1TRANG3DO") return FallbackIcons.GetDo3Trang1();
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -191,13 +192,14 @@ namespace XocDiaLiveHit
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
             var u = TextNorm.U(value?.ToString() ?? "");
+            var compact = u.Replace(" ", "").Replace("_", "");
             if (u == "CHAN" || u == "C") return FallbackIcons.GetResultChan();
             if (u == "LE" || u == "L") return FallbackIcons.GetResultLe();
             if (u == "TU_TRANG") return FallbackIcons.GetTuTrang();
             if (u == "TU_DO") return FallbackIcons.GetTuDo();
             if (u == "SAP_DOI" || u == "SAPDOI" || u == "2D2T") return FallbackIcons.GetSapDoi();
-            if (u == "TRANG3_DO1" || u == "1DO3TRANG") return FallbackIcons.GetTrang3Do1();
-            if (u == "DO3_TRANG1" || u == "1TRANG3DO") return FallbackIcons.GetDo3Trang1();
+            if (u == "TRANG3_DO1" || compact == "TRANG3DO1" || compact == "1DO3TRANG") return FallbackIcons.GetTrang3Do1();
+            if (u == "DO3_TRANG1" || compact == "DO3TRANG1" || compact == "1TRANG3DO") return FallbackIcons.GetDo3Trang1();
 
             char digit = '\0';
             if (u.Length == 1 && char.IsDigit(u[0])) digit = u[0];
