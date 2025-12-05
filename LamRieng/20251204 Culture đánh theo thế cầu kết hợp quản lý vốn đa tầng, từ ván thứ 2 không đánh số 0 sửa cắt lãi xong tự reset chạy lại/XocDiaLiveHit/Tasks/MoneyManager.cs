@@ -10,6 +10,8 @@ namespace XocDiaLiveHit.Tasks
         private int _i;                       // index hiện tại (0-based)
         private bool _needDoubleNext;         // Victor2: vừa thắng xong → ván tới gấp đôi
         private bool _usedDoubleThisRound;    // Victor2: ván vừa cược có gấp đôi hay không
+        private bool _skipZeroAfterPositiveWin = false; // bỏ qua mức 0 sau khi thắng một mức > 0
+        private long _lastStakeUsed = 0;
 
         public MoneyManager(long[] seq, string id)
         {
@@ -23,18 +25,29 @@ namespace XocDiaLiveHit.Tasks
         /// <summary>Tiền sẽ đặt ở VÁN SẮP CƯỢC (có xét gấp đôi với Victor2).</summary>
         public long GetStakeForThisBet()
         {
+            NormalizeIndexForSkipZero();
+            long stake;
             if (_id == "Victor2" && _needDoubleNext)
             {
                 _usedDoubleThisRound = true;
-                return CurrentUnit * 2;
+                stake = CurrentUnit * 2;
             }
-            _usedDoubleThisRound = false;
-            return CurrentUnit;
+            else
+            {
+                _usedDoubleThisRound = false;
+                stake = CurrentUnit;
+            }
+
+            _lastStakeUsed = stake;
+            return stake;
         }
 
         /// <summary>Gọi sau khi có kết quả WIN/LOSS (true/false).</summary>
         public void OnRoundResult(bool win)
         {
+            if (win && _lastStakeUsed > 0)
+                _skipZeroAfterPositiveWin = true;
+
             switch (_id)
             {
                 case "IncreaseWhenLose":   // thua ↑1 mức, thắng → về mức 1
@@ -80,6 +93,49 @@ namespace XocDiaLiveHit.Tasks
                     _i = win ? 0 : Math.Min(_i + 1, _seq.Length - 1);
                     break;
             }
+
+            NormalizeIndexForSkipZero();
+        }
+
+        private void NormalizeIndexForSkipZero()
+        {
+            if (!_skipZeroAfterPositiveWin)
+                return;
+
+            if (_seq == null || _seq.Length == 0)
+            {
+                _i = 0;
+                return;
+            }
+
+            _i = Math.Clamp(_i, 0, _seq.Length - 1);
+
+            int idx = _i;
+            bool found = false;
+            for (; idx < _seq.Length; idx++)
+            {
+                if (_seq[idx] > 0)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                for (int j = 0; j < _i; j++)
+                {
+                    if (_seq[j] > 0)
+                    {
+                        idx = j;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            if (found)
+                _i = idx;
         }
     }
 }

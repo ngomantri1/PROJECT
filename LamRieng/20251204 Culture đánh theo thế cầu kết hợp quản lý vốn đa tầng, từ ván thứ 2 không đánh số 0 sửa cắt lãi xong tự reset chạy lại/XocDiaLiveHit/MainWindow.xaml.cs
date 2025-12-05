@@ -187,6 +187,9 @@ namespace XocDiaLiveHit
 
         // Chống bắn trùng khi vừa cược
         private bool _cooldown = false;
+        private long _stopBlockUntilMs = 0; // chặn cược tạm thời sau khi dừng/cắt lãi
+        private bool _hardStopAllBets = false; // chặn tuyệt đối khi đã bấm Dừng/Cắt lãi
+        private int _betEpoch = 0; // tăng mỗi lần stop/cut để vô hiệu hoá các task cũ
 
         // Cache & cờ để không inject lặp lại
         private string? _appJs;
@@ -3291,6 +3294,12 @@ Ví dụ không hợp lệ:
                 StakeSeq = _stakeSeq,
                 StakeChains = _stakeChains.Select(a => a.ToArray()).ToArray(),
                 StakeChainTotals = _stakeChainTotals,
+                MoneyChainIndex = 0,
+                MoneyChainStep = 0,
+                MoneyChainProfit = 0,
+                SkipZeroAfterPositiveWin = false,
+                BetEpochSnapshot = _betEpoch,
+                GetBetEpoch = () => _betEpoch,
 
                 DecisionPercent = _decisionPercent,
                 State = _dec,
@@ -3300,8 +3309,11 @@ Ví dụ không hợp lệ:
                 ShouldBlockBet = () =>
                 {
                     // Chặn cược khi đang stop/restart do cắt lãi hoặc có stop in-progress.
+                    if (_hardStopAllBets) return true;
                     if (_cutStopTriggered) return true;
                     if (Volatile.Read(ref _stopInProgress) == 1) return true;
+                    var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    if (nowMs < _stopBlockUntilMs) return true;
                     return false;
                 },
                 MoneyStrategyId = _cfg.MoneyStrategy ?? "IncreaseWhenLose",
@@ -3382,6 +3394,7 @@ Ví dụ không hợp lệ:
             try { _taskCts?.Cancel(); } catch { }
             _taskCts = null;
             _activeTask = null;
+            _hardStopAllBets = true;
         }
 
 
@@ -3470,6 +3483,9 @@ Ví dụ không hợp lệ:
 
                 _dec = new DecisionState();
                 _cooldown = false;
+                _stopBlockUntilMs = 0;
+                _hardStopAllBets = false;
+                // giữ nguyên _betEpoch (được tăng khi stop) để task cũ không bắn được
                 if (false)
                 {
                     // === PRE-CHECK: Trial hoặc License ===
@@ -3713,9 +3729,10 @@ Ví dụ không hợp lệ:
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
                         SetPlayButtonState(false);
-                        _activeTask = null;
-                        _cooldown = false;
-                        _taskCts = null;
+            _activeTask = null;
+            _cooldown = false;
+            _taskCts = null;
+            _hardStopAllBets = false;
 
                         if (t.IsFaulted)
                             Log("[Task ERR] " + (t.Exception?.GetBaseException().Message ?? "Unknown error"));
@@ -3752,6 +3769,10 @@ Ví dụ không hợp lệ:
             if (Interlocked.Exchange(ref _stopInProgress, 1) == 1) return;
             try
             {
+                var newEpoch = Interlocked.Increment(ref _betEpoch);
+                Log($"[STOP] epoch => {newEpoch}");
+                _hardStopAllBets = true;
+                _stopBlockUntilMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 5000;
                 StopTask();
                 XocDiaLiveHit.Tasks.TaskUtil.ClearBetCooldown();
                 _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
@@ -4997,6 +5018,13 @@ Ví dụ không hợp lệ:
                 Log("[CUT] " + reason);
             }
             catch { /* ignore */ }
+            finally
+            {
+                // chặn cược thêm vài giây phòng lệnh rơi rớt
+                _stopBlockUntilMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 5000;
+                Interlocked.Increment(ref _betEpoch);
+                _hardStopAllBets = true;
+            }
         }
 
         /// <summary>Đạt ngưỡng cắt lãi: dừng task rồi tự chạy lại sau một khoảng trễ ngắn.</summary>
@@ -5004,6 +5032,9 @@ Ví dụ không hợp lệ:
         {
             if (_cutStopTriggered) return;
             _cutStopTriggered = true;
+            var newEpoch = Interlocked.Increment(ref _betEpoch);
+            Log($"[CUT] epoch => {newEpoch}");
+            _hardStopAllBets = true;
 
             Log($"[CUT] Đạt CẮT LÃI: Tiền thắng = {_winTotal:N0} ≥ {cutProfit:N0} → dừng và chạy lại");
 
@@ -5019,14 +5050,22 @@ Ví dụ không hợp lệ:
             _winTotal = 0;
             if (LblWin != null) LblWin.Text = "0";
 
-            // Để phòng trường hợp task cũ chưa kịp hủy, block cược tạm thời.
+            // Block cược tạm thời để chắc chắn không có lệnh rơi rớt khi stop.
             _cooldown = true;
+            _stopBlockUntilMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 5000;
 
             await Task.Delay(2000);
 
             try
             {
                 _cooldown = false;
+                _stopBlockUntilMs = 0;
+                _hardStopAllBets = false;
+                if (_taskCts != null)
+                {
+                    Log("[CUT] Task vẫn đang chạy, bỏ qua auto-start.");
+                    return;
+                }
                 PlayXocDia_Click(this, new RoutedEventArgs());
             }
             catch (Exception ex)

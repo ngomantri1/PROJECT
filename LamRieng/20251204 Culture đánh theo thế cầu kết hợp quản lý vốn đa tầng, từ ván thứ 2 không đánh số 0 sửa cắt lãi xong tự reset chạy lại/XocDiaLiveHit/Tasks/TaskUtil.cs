@@ -16,6 +16,7 @@ namespace XocDiaLiveHit.Tasks
 
         // (tuỳ chọn) reset khi dừng task
         public static void ClearBetCooldown() => Volatile.Write(ref _lastBetOkMs, 0);
+        private static long _lastCooldownLogMs = 0;
 
         public static string ParityCharToSide(char ch) => (ch == 'C') ? "CHAN" : "LE";
         public static char DigitToParity(char d) => (d == '0' || d == '2' || d == '4') ? 'C' : 'L';
@@ -107,6 +108,19 @@ namespace XocDiaLiveHit.Tasks
 
         public static async Task<bool> PlaceBet(GameContext ctx, string side, long amount, CancellationToken ct)
         {
+            if (ct.IsCancellationRequested)
+            {
+                ctx.Log?.Invoke("[BET] skip because token cancelled (pre)");
+                return false;
+            }
+
+            int curEpoch = ctx.GetBetEpoch != null ? ctx.GetBetEpoch() : -1;
+            if (ctx.GetBetEpoch != null && ctx.BetEpochSnapshot != curEpoch)
+            {
+                ctx.Log?.Invoke($"[BET] skip due to stale epoch snap={ctx.BetEpochSnapshot} cur={curEpoch}");
+                return false;
+            }
+
             // Nếu đang trong trạng thái stop/restart (cắt lãi, hết hạn, v.v.) thì bỏ qua cược.
             if (ctx.ShouldBlockBet != null && ctx.ShouldBlockBet())
             {
@@ -118,13 +132,43 @@ namespace XocDiaLiveHit.Tasks
             var last = Volatile.Read(ref _lastBetOkMs);
             if (now - last < 3000)  // 3 giây khoá sau lần bet OK gần nhất
             {
-                ctx.Log?.Invoke($"[BET] cooldown 3s active, skip ({3000 - (now - last)}ms left)");
+                // Chỉ log cảnh báo cooldown mỗi ~500ms để tránh spam nếu nhiều task cùng check
+                var prevLog = Interlocked.Read(ref _lastCooldownLogMs);
+                if (now - prevLog >= 500)
+                {
+                    ctx.Log?.Invoke($"[BET] cooldown 3s active, skip ({3000 - (now - last)}ms left)");
+                    Interlocked.Exchange(ref _lastCooldownLogMs, now);
+                }
+                return false;
+            }
+
+            if (ct.IsCancellationRequested)
+            {
+                ctx.Log?.Invoke("[BET] skip because token cancelled (post-cooldown)");
                 return false;
             }
 
             // Cập nhật UI chỉ khi thực sự được phép bắn
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke(side));
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
+
+            // Re-check epoch/stop ngay trước khi gọi JS để tránh bắn khi vừa cắt lãi/stop giữa chừng
+            curEpoch = ctx.GetBetEpoch != null ? ctx.GetBetEpoch() : curEpoch;
+            if (ctx.GetBetEpoch != null && ctx.BetEpochSnapshot != curEpoch)
+            {
+                ctx.Log?.Invoke($"[BET] skip pre-js due to stale epoch snap={ctx.BetEpochSnapshot} cur={curEpoch}");
+                return false;
+            }
+            if (ctx.ShouldBlockBet != null && ctx.ShouldBlockBet())
+            {
+                ctx.Log?.Invoke("[BET] skip pre-js because stop/restart in progress");
+                return false;
+            }
+            if (ct.IsCancellationRequested)
+            {
+                ctx.Log?.Invoke("[BET] skip pre-js because token cancelled");
+                return false;
+            }
 
             // GỌI __cw_bet AN TOÀN (giữ nguyên như code hiện tại)
             var js =
@@ -143,7 +187,20 @@ namespace XocDiaLiveHit.Tasks
             if (ok)
                 Volatile.Write(ref _lastBetOkMs, now); // kích hoạt khoá 3s
 
-            return ok;
+            if (ct.IsCancellationRequested)
+            {
+                ctx.Log?.Invoke("[BET] skip because token cancelled (after js)");
+                return false;
+            }
+
+            if (!ok)
+            {
+                ctx.Log?.Invoke("[BET] js returned no/err, skip place result");
+                return false;
+            }
+
+            ctx.Log?.Invoke($"[BET] allow epoch={curEpoch} snap={ctx.BetEpochSnapshot} amount={amount:N0} side={side}");
+            return true;
         }
 
 

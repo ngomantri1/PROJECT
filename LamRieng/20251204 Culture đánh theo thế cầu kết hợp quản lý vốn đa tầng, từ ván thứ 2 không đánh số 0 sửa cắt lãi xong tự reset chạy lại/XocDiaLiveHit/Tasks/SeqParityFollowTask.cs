@@ -35,17 +35,14 @@ namespace XocDiaLiveHit.Tasks
                 long stake;
                 if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
                 {
-                    stake = MoneyHelper.CalcAmountMultiChain(
-                        ctx.StakeChains,
-                        ctx.MoneyChainIndex,
-                        ctx.MoneyChainStep);
+                    stake = MoneyHelper.CalcAmountMultiChain(ctx);
                 }
                 else
                 {
                     stake = money.GetStakeForThisBet();
                 }
-                await PlaceBet(ctx, side, stake, ct);
-
+                bool placed = await PlaceBet(ctx, side, stake, ct);
+                if (!placed) continue;
                 bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
@@ -54,6 +51,7 @@ namespace XocDiaLiveHit.Tasks
                     int chainIndex = ctx.MoneyChainIndex;
                     int chainStep = ctx.MoneyChainStep;
                     double chainProfit = ctx.MoneyChainProfit;
+                    bool skipZero = ctx.SkipZeroAfterPositiveWin;
 
                     MoneyHelper.UpdateAfterRoundMultiChain(
                         ctx.StakeChains,
@@ -61,12 +59,15 @@ namespace XocDiaLiveHit.Tasks
                         ref chainIndex,
                         ref chainStep,
                         ref chainProfit,
+                        ref skipZero,
+                        stake,
                         win);
 
                     // gán ngược lại vào context
                     ctx.MoneyChainIndex = chainIndex;
                     ctx.MoneyChainStep = chainStep;
                     ctx.MoneyChainProfit = chainProfit;
+                    ctx.SkipZeroAfterPositiveWin = skipZero;
                 }
                 else
                 {

@@ -65,10 +65,13 @@ namespace XocDiaLiveHit.Tasks
 
         // ====== NEW: kiểu 5. Đa tầng chuỗi tiền ======
         // Lấy tiền sẽ đánh ở ván sắp tới, theo chuỗi & mức hiện tại
-        public static long CalcAmountMultiChain(long[][] chains, int chainIndex, int levelIndex)
+        public static long CalcAmountMultiChain(long[][] chains, ref int chainIndex, ref int levelIndex, bool skipZeroAfterPositiveWin)
         {
             if (chains == null || chains.Length == 0)
                 return 1000L;
+
+            if (skipZeroAfterPositiveWin)
+                NormalizeMultiChainPosition(chains, ref chainIndex, ref levelIndex, skipZeroAfterPositiveWin);
 
             chainIndex = Math.Clamp(chainIndex, 0, chains.Length - 1);
             var chain = chains[chainIndex] ?? Array.Empty<long>();
@@ -76,6 +79,19 @@ namespace XocDiaLiveHit.Tasks
 
             levelIndex = Math.Clamp(levelIndex, 0, chain.Length - 1);
             return chain[levelIndex];
+        }
+
+        public static long CalcAmountMultiChain(GameContext ctx)
+        {
+            int chainIndex = ctx.MoneyChainIndex;
+            int levelIndex = ctx.MoneyChainStep;
+            bool skipZero = ctx.SkipZeroAfterPositiveWin;
+
+            long amt = CalcAmountMultiChain(ctx.StakeChains, ref chainIndex, ref levelIndex, skipZero);
+
+            ctx.MoneyChainIndex = chainIndex;
+            ctx.MoneyChainStep = levelIndex;
+            return amt;
         }
 
         // Cập nhật trạng thái sau khi biết win/lose
@@ -86,6 +102,8 @@ namespace XocDiaLiveHit.Tasks
             ref int chainIndex,
             ref int levelIndex,
             ref double profitOnCurrentChain,
+            ref bool skipZeroAfterPositiveWin,
+            long lastStakeAmount,
             bool? win)
         {
             int chainCount = chains?.Length ?? 0;
@@ -103,7 +121,10 @@ namespace XocDiaLiveHit.Tasks
             levelIndex = Math.Clamp(levelIndex, 0, curChain.Length - 1);
 
             if (win == null)
+            {
+                NormalizeMultiChainPosition(chains, ref chainIndex, ref levelIndex, skipZeroAfterPositiveWin);
                 return;
+            }
 
             if (win == true)
             {
@@ -111,8 +132,19 @@ namespace XocDiaLiveHit.Tasks
                 // = mức vừa thắng - (tổng các mức đã đốt trong chính chuỗi này trước đó)
                 int wonLevel = levelIndex;              // vd đang thắng ở mức 1 của chuỗi 2
                 long justWon = curChain[wonLevel];      // số vừa thắng, vd 7000
-                // reset mức trong chuỗi
-                levelIndex = 0;
+                if (justWon > 0)
+                    skipZeroAfterPositiveWin = true;
+                if (justWon == 0)
+                {
+                    // Nếu mức cược = 0 thì không reset về 0, mà tiến sang mức tiếp theo (tránh lặp cược 0)
+                    if (levelIndex + 1 < curChain.Length)
+                        levelIndex++;
+                }
+                else
+                {
+                    // reset mức trong chuỗi
+                    levelIndex = 0;
+                }
 
                 if (chainIndex > 0)
                 {
@@ -187,6 +219,55 @@ namespace XocDiaLiveHit.Tasks
                     }
                 }
             }
+            NormalizeMultiChainPosition(chains, ref chainIndex, ref levelIndex, skipZeroAfterPositiveWin);
+        }
+
+        private static void NormalizeMultiChainPosition(long[][] chains, ref int chainIndex, ref int levelIndex, bool skipZeroAfterPositiveWin)
+        {
+            int chainCount = chains?.Length ?? 0;
+            if (chainCount == 0)
+            {
+                chainIndex = 0;
+                levelIndex = 0;
+                return;
+            }
+
+            chainIndex = Math.Clamp(chainIndex, 0, chainCount - 1);
+            var chain = chains[chainIndex] ?? Array.Empty<long>();
+            if (chain.Length == 0)
+            {
+                levelIndex = 0;
+                return;
+            }
+
+            levelIndex = Math.Clamp(levelIndex, 0, chain.Length - 1);
+            if (!skipZeroAfterPositiveWin) return;
+
+            int idx = levelIndex;
+            bool found = false;
+            for (; idx < chain.Length; idx++)
+            {
+                if (chain[idx] > 0)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                for (int i = 0; i < levelIndex && i < chain.Length; i++)
+                {
+                    if (chain[i] > 0)
+                    {
+                        idx = i;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            if (found) levelIndex = idx;
         }
 
         private static long SumChain(long[] chain)

@@ -140,7 +140,8 @@ namespace XocDiaLiveHit.Tasks
                         char lastCl = SeqToParityString(baseSeq).LastOrDefault();
                         string fallbackSide = (lastCl == 'C') ? "CHAN" : "LE";
                         var stake0 = money.GetStakeForThisBet();
-                        await PlaceBet(ctx, fallbackSide, stake0, ct);
+                        bool placed0 = await PlaceBet(ctx, fallbackSide, stake0, ct);
+                        if (!placed0) continue;
 
                         bool win0 = await WaitRoundFinishAndJudge(ctx, fallbackSide, baseSeq, ct);
                         await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win0 ? stake0 : -stake0));
@@ -165,10 +166,7 @@ namespace XocDiaLiveHit.Tasks
                 long stake;
                 if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
                 {
-                    stake = MoneyHelper.CalcAmountMultiChain(
-                        ctx.StakeChains,
-                        ctx.MoneyChainIndex,
-                        ctx.MoneyChainStep);
+                    stake = MoneyHelper.CalcAmountMultiChain(ctx);
                 }
                 else
                 {
@@ -176,7 +174,8 @@ namespace XocDiaLiveHit.Tasks
                 }
 
                 ctx.Log?.Invoke($"[Top10-50] bet={side} (pat='{curPattern}', pos={curIdx + 1}/10, count={curCount})");
-                await PlaceBet(ctx, side, stake, ct);
+                bool placed = await PlaceBet(ctx, side, stake, ct);
+                if (!placed) continue;
 
                 // Chờ KẾT QUẢ: WaitRoundFinishAndJudge so sánh chuỗi → phù hợp cửa sổ 50 trượt
                 bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
@@ -187,6 +186,7 @@ namespace XocDiaLiveHit.Tasks
                     int chainIndex = ctx.MoneyChainIndex;
                     int chainStep = ctx.MoneyChainStep;
                     double chainProfit = ctx.MoneyChainProfit;
+                    bool skipZero = ctx.SkipZeroAfterPositiveWin;
 
                     MoneyHelper.UpdateAfterRoundMultiChain(
                         ctx.StakeChains,
@@ -194,12 +194,15 @@ namespace XocDiaLiveHit.Tasks
                         ref chainIndex,
                         ref chainStep,
                         ref chainProfit,
+                        ref skipZero,
+                        stake,
                         win);
 
                     // gán ngược lại vào context
                     ctx.MoneyChainIndex = chainIndex;
                     ctx.MoneyChainStep = chainStep;
                     ctx.MoneyChainProfit = chainProfit;
+                    ctx.SkipZeroAfterPositiveWin = skipZero;
                 }
                 else
                 {

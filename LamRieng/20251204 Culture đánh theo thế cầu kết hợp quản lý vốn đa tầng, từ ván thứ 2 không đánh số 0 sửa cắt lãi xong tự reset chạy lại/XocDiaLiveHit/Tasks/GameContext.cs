@@ -34,6 +34,8 @@ namespace XocDiaLiveHit.Tasks
         public int MoneyChainStep { get; set; } = 0;
         // tiền thắng đã tích lũy được trong chuỗi hiện tại
         public double MoneyChainProfit { get; set; } = 0;
+        // đã từng thắng ở mức >0 để bỏ qua các mốc 0 trong chuỗi tiền
+        public bool SkipZeroAfterPositiveWin { get; set; } = false;
 
         // Ngưỡng % còn lại để ra quyết định
         public double DecisionPercent { get; init; }
@@ -57,6 +59,8 @@ namespace XocDiaLiveHit.Tasks
 
         // Cho phép MainWindow chặn cược khi đang stop/restart (ví dụ cắt lãi auto).
         public Func<bool> ShouldBlockBet { get; init; }
+        public int BetEpochSnapshot { get; init; }
+        public Func<int>? GetBetEpoch { get; init; }
 
         // --- UI updaters (được gán từ MainWindow) ---
         public Action<string>? UiSetSide;     // "CHAN"/"LE"
