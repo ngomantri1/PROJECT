@@ -1,0 +1,56 @@
+Dưới đây là tóm tắt bối cảnh từ một chat cũ.
+Hãy coi như bạn đã đọc toàn bộ lịch sử và code tương ứng, nhưng chỉ dùng thông tin trong tóm tắt này:
+
+
+
+Mục tiêu chính của project / bug
+
+AutoBetHub tải plugin DLL cho game Xóc Đĩa Live Hit. Plugin phải hiển thị đúng icon ảnh (cửa cược, kết quả, chuỗi BALL0..4, cửa đặc biệt TU_TRANG/TU_DO/SAP_DOI/TRANG3_DO1/DO3_TRANG1) cả khi chạy độc lập lẫn khi load qua Hub.
+Tech stack
+
+.NET 8, WPF (C#), WebView2 (Microsoft.Web.WebView2), plugin cơ chế DLL.
+Resource ảnh dạng WPF Resource/pack URI trong thư mục XocDiaLiveHit/Assets.
+Các file / module quan trọng
+
+XocDiaLiveHit/MainWindow.xaml.cs: converters, fallback icon loader, Seq icon map, SharedIcons.
+XocDiaLiveHit/MainWindow.xaml: UI bindings sử dụng converters/static resources.
+XocDiaLiveHit/App.xaml: ResourceDictionary gốc (BitmapImage).
+XocDiaLiveHit/Assets/Images.xaml: ResourceDictionary pack URI khi merge.
+XocDiaLiveHit/XocDiaLiveHitPlugin.cs: inject resource vào App/Window khi chạy plugin, log resource.
+XocDiaLiveHit/Compat/PackRes.cs: EnsureGlobalResourcesLoaded merge Images.xaml, fallback tạo BitmapImage và register converters.
+Tasks liên quan kết quả: Tasks/JackpotMultiSideTask.cs, Tasks/SideRateParser.cs.
+Logic chính đã thiết kế
+
+FallbackIcons.LoadPackImage(relativePath): thử pack URI với assembly; fallback đọc file vật lý cạnh DLL; trả ImageSource hoặc null.
+Converters:
+SideToIconConverter: trả icon cho CHAN/LE + thêm TU_TRANG, TU_DO, SAP_DOI, TRANG3_DO1, DO3_TRANG1.
+KetQuaToIconConverter: trả icon CHAN/LE, các cửa đặc biệt trên, hoặc BALL0..4 (LoadBall dùng loader).
+WinLossToIconConverter: WIN/LOSS.
+SharedIcons (trong MainWindow): giữ cache icon cho converters, nay có thêm TuTrang, TuDo, SapDoi, Trang3Do1, Do3Trang1.
+MainWindow.InitSeqIcons: map char ‘0’..‘4’ -> icon, ưu tiên LoadPackImage.
+XocDiaLiveHitPlugin.InjectImagesTo: dùng FallbackIcons.LoadPackImage set ImgCHAN/LE/THANG/THUA/BALL0-4 và thêm TU_TRANG, TU_DO, SAP_DOI, TRANG3_DO1, DO3_TRANG1; gán vào SharedIcons.
+PackRes.EnsureGlobalResourcesLoaded: merge Images.xaml; fallback đảm bảo ImgCHAN/LE/THANG/THUA/BALL0-4 và 5 icon mới; register converters.
+Những lỗi đã gặp & nguyên nhân chính
+
+Ảnh BALL0..4 không hiển thị khi chạy plugin: pack URI không resolve trong chế độ DLL, thiếu fallback file vật lý/SharedIcons.
+Build lỗi do guard thiếu ABX.Core.dll (target check AutoBetHub build trước).
+Ambiguous Application namespace đã xử lý bằng System.Windows.Application.
+Các giải pháp đã thử, giải pháp hiện tại
+
+Thêm loader fallback (pack URI + file) cho icon.
+Bổ sung resource dictionary (App.xaml, Assets/Images.xaml) và fallback PackRes để include BALL0..4 và 5 icon cửa mới.
+InjectImagesTo plugin dùng loader fallback; converters nhận diện cửa mới.
+SharedIcons mở rộng cho icon đặc biệt.
+Việc còn dang dở / TODO
+
+Build plugin yêu cầu có AutoBetHub/bin/Debug/net8.0-windows/ABX.Core.dll; cần build AutoBetHub Debug trước khi build XocDiaLiveHit plugin.
+Sau khi build/copy DLL vào AutoBetHub/Plugins, kiểm tra UI: cột “Cửa đặt” và “Kết quả” hiển thị icon cho TU_TRANG, TU_DO, SAP_DOI, TRANG3_DO1, DO3_TRANG1 và BALL0..4.
+
+
+
+
+
+Dựa trên bối cảnh đó, nhiệm vụ mới của bạn là:
+Xem trong project XocDiaLiveHit trong file MainWindow.xaml.cs có đoạn mặc định url tại sao không load mặc định net88.top mà lại load bằng null 
+Tôi đã bỏ ghi vào file cấu hình và load từ file cấu hình rồi, chỉ load mặc định thôi hay lại ưu tiên cấu hình load trong file MainWindow.xaml
+

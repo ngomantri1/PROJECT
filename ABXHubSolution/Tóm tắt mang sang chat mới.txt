@@ -1,0 +1,12 @@
+Hãy đọc toàn bộ lịch sử hội thoại và code đã thảo luận trong chat này.
+Viết cho mình một bản tóm tắt cô đọng nhưng đủ chi tiết để mình dùng mở một chat mới.
+Đầu ra yêu cầu theo format:
+Mục tiêu chính của project / bug
+Tech stack (ngôn ngữ, framework, DB…)
+Các file / module quan trọng đang liên quan
+Logic chính đã thiết kế (tên hàm, class, luồng xử lý)
+Những lỗi đã gặp & nguyên nhân chính
+Các giải pháp đã thử, giải pháp hiện tại đang dùng
+Việc còn dang dở / TODO
+Viết ở dạng block markdown có tiêu đề rõ ràng, tối đa khoảng 150–200 dòng để mình dễ copy.
+Đây là “context tóm tắt cho chat mới”, không cần giải thích thêm.
