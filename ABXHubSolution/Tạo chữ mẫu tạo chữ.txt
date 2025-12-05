@@ -1,5 +1,4 @@
-Create a transparent PNG badge: canvas 200x60 px, 96 DPI. Background fully transparent. Centered bold text "TỨ TRẮNG" in uppercase, font family Montserrat Bold, font size 24px, color #111111 (bright red). No shadow, no stroke, no extra padding beyond 4px inside the canvas.
-
+Create a transparent PNG badge: canvas 200x60 px, 96 DPI. Background fully transparent. Centered bold text "TỨ ĐỎ" in uppercase, font family Montserrat Bold, font size 36px, color #E60000 (bright red). No shadow, no stroke, no extra padding beyond 4px inside the canvas.
 
 Tương tự các dòng khác (đổi nội dung và màu):
 
@@ -8,3 +7,15 @@ Tương tự các dòng khác (đổi nội dung và màu):
 "1 ĐỎ 3 TRẮNG" màu đen đậm (#111111).
 "TỨ TRẮNG" màu đen đậm (#111111).
 Bạn có thể tăng canvas lên 220x70 nếu text dài (“1 TRẮNG 3 ĐỎ”) để chữ không bị bó, nhưng giữ font size 24px và padding ~4px. Keep background transparent, no shadow/border.
+
+
+
+
+
+Create a transparent PNG badge: canvas 300x60 px, 96 DPI. Background fully transparent. Centered bold text "1 TRẮNG 3 ĐỎ" in uppercase, font family Montserrat Bold, font size 36px, color #E60000 (bright red). No shadow, no stroke, no extra padding beyond 4px inside the canvas.
+
+Create a transparent PNG badge: canvas 200x60 px, 96 DPI. Background fully transparent. Centered bold text "1 ĐỎ 3 TRẮNG" in uppercase, font family Montserrat Bold, font size 36px, color #111111 (bright red). No shadow, no stroke, no extra padding beyond 4px inside the canvas.
+
+Create a transparent PNG badge: canvas 200x60 px, 96 DPI. Background fully transparent. Centered bold text "TỨ TRẮNG" in uppercase, font family Montserrat Bold, font size 36px, color #111111 (bright red). No shadow, no stroke, no extra padding beyond 4px inside the canvas.
+Create a transparent PNG badge: canvas 200x60 px, 96 DPI. Background fully transparent. Centered bold text "CHẴN" in uppercase, font family Montserrat Bold, font size 36px, color #E60000 (bright red). No shadow, no stroke, no extra padding beyond 4px inside the canvas.
+Create a transparent PNG badge: canvas 200x60 px, 96 DPI. Background fully transparent. Centered bold text "LẺ" in uppercase, font family Montserrat Bold, font size 36px, color #111111 (bright red). No shadow, no stroke, no extra padding beyond 4px inside the canvas.
