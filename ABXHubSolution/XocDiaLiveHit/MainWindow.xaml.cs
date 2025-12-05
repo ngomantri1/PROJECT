@@ -150,7 +150,7 @@ namespace XocDiaLiveHit
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
             var u = TextNorm.U(value?.ToString() ?? "");
-            var compact = u.Replace(" ", "").Replace("_", "");
+            var compact = u.Replace(" ", "").Replace("_", "").Replace("-", "");
             if (u == "CHAN" || u == "C") return FallbackIcons.GetSideChan();
             if (u == "LE" || u == "L") return FallbackIcons.GetSideLe();
             if (u == "TU_TRANG") return FallbackIcons.GetTuTrang();
@@ -192,7 +192,7 @@ namespace XocDiaLiveHit
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
             var u = TextNorm.U(value?.ToString() ?? "");
-            var compact = u.Replace(" ", "").Replace("_", "");
+            var compact = u.Replace(" ", "").Replace("_", "").Replace("-", "");
             if (u == "CHAN" || u == "C") return FallbackIcons.GetResultChan();
             if (u == "LE" || u == "L") return FallbackIcons.GetResultLe();
             if (u == "TU_TRANG") return FallbackIcons.GetTuTrang();

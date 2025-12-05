@@ -1461,7 +1461,7 @@
                                                         <Grid VerticalAlignment="Center">
                                                             <Image
                                                                 x:Name="ImgSide"
-                                                                Height="20"
+                                                                Height="32"
                                                                 Source="{Binding Side, Converter={StaticResource SideToIcon}}"
                                                                 Visibility="Visible" />
                                                             <TextBlock
