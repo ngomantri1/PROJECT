@@ -495,23 +495,36 @@ namespace AutoBetHub
                 var remote = new Version(manifest.appVersion);
                 _log.Info($"[Update] Local={current}, Remote={remote}");
 
+                if (remote > current)
+                {
+                    _log.Info($"[Update] UPDATE_AVAILABLE remote={remote} current={current}");
+                }
+                else
+                {
+                    _log.Info($"[Update] UPDATE_LATEST current={current} remote={remote}");
+                }
+
                 // Không có bản mới
                 if (remote <= current)
                 {
-                    if (!auto)
-                    {
-                        SendUpdateStatusToWeb(
-                            "upToDate",
-                            100,
-                            $"Bạn đang dùng phiên bản mới nhất ({current}).",
-                            current,
-                            remote);
-                        // popup web sẽ tự tắt sau 3 giây, không cần MessageBox
-                    }
+                    SendUpdateStatusToWeb(
+                        "upToDate",
+                        100,
+                        $"Bạn đang dùng phiên bản mới nhất ({current}).",
+                        current,
+                        remote);
+                    // popup web sẽ tự tắt sau 3 giây, không cần MessageBox
                     return;
                 }
 
                 // Có bản mới
+                SendUpdateStatusToWeb(
+                    "updateAvailable",
+                    15,
+                    $"Có bản mới {remote} (hiện tại {current}).",
+                    current,
+                    remote);
+
                 var notes = string.IsNullOrWhiteSpace(manifest.notes)
                     ? "(Không có ghi chú)"
                     : manifest.notes;
