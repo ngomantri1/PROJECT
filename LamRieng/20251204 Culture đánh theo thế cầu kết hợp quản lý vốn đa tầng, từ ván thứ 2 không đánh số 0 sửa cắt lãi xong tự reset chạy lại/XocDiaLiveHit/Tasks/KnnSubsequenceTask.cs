@@ -81,6 +81,7 @@ namespace XocDiaLiveHit.Tasks
                 if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
                 {
                     stake = MoneyHelper.CalcAmountMultiChain(ctx);
+                    MoneyHelper.UpdateUiLevel(ctx);
                 }
                 else
                 {

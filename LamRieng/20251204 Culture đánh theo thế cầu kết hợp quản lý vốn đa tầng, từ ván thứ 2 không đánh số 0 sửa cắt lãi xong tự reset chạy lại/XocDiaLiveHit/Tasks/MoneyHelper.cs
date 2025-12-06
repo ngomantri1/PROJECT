@@ -94,6 +94,20 @@ namespace XocDiaLiveHit.Tasks
             return amt;
         }
 
+        public static void UpdateUiLevel(GameContext ctx)
+        {
+            var chains = ctx.StakeChains ?? Array.Empty<long[]>();
+            int chainIndex = Math.Clamp(ctx.MoneyChainIndex, 0, chains.Length - 1);
+            int total = 0;
+            if (chainIndex >= 0 && chainIndex < chains.Length)
+            {
+                var chain = chains[chainIndex];
+                total = chain?.Length ?? 0;
+            }
+
+            ctx.UiSetLevel?.Invoke(ctx.MoneyChainStep + 1, total);
+        }
+
         // Cập nhật trạng thái sau khi biết win/lose
         // chainTotals: tổng tiền của từng chuỗi (để so điều kiện quay về chuỗi trước)
         public static void UpdateAfterRoundMultiChain(
@@ -134,17 +148,9 @@ namespace XocDiaLiveHit.Tasks
                 long justWon = curChain[wonLevel];      // số vừa thắng, vd 7000
                 if (justWon > 0)
                     skipZeroAfterPositiveWin = true;
-                if (justWon == 0)
-                {
-                    // Nếu mức cược = 0 thì không reset về 0, mà tiến sang mức tiếp theo (tránh lặp cược 0)
-                    if (levelIndex + 1 < curChain.Length)
-                        levelIndex++;
-                }
-                else
-                {
-                    // reset mức trong chuỗi
-                    levelIndex = 0;
-                }
+
+                // Thắng (kể cả thắng ở mức 0) chỉ reset về đầu chuỗi, không tự nhảy qua các mức 0.
+                levelIndex = 0;
 
                 if (chainIndex > 0)
                 {

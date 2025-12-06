@@ -67,5 +67,6 @@ namespace XocDiaLiveHit.Tasks
         public Action<double>? UiSetStake;    // tiền đang đánh
         public Action<double>? UiAddWin;      // cộng/trừ tiền thắng lũy kế
         public Action<bool>? UiWinLoss;       // true = win, false = loss
+        public Action<int, int>? UiSetLevel;  // (pos, total) m?c ti?n (1-based)
     }
 }

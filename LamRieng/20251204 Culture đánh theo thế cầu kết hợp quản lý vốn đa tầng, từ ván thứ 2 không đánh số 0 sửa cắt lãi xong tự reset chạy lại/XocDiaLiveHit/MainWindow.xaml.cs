@@ -422,7 +422,7 @@ Ví dụ không hợp lệ:
         }
 
         // ====== GIÁ TRỊ CỐ ĐỊNH THEO YÊU CẦU ======
-        private const int DefaultBetStrategyIndex = 1;                 // 2) Thế cầu C/L
+        private const int DefaultBetStrategyIndex = 4;                 // 2) Thế cầu C/L
         private const string DefaultBetPatterns = "CC-C;LL-L";         // Thế cầu mặc định, không cho sửa
         private const string DefaultMoneyStrategyId = "MultiChain";    // 5) Quản lý vốn đa tầng
 
@@ -3332,6 +3332,12 @@ Ví dụ không hợp lệ:
                     if (LblStake != null)
                         LblStake.Text = v.ToString("N0");
 
+                    if (string.Equals(_cfg.MoneyStrategy, "MultiChain", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+
+
                     // MỨC TIỀN = vị trí trong _stakeSeq (1-based)
                     // MỨC TIỀN = vị trí/độ dài (ví dụ 4/6)
                     if (LblLevel != null)
@@ -3364,6 +3370,14 @@ Ví dụ không hợp lệ:
                 UiWinLoss = s => Dispatcher.Invoke(() =>
                 {
                     SetWinLossUI(s);
+                }),
+                UiSetLevel = (pos, total) => Dispatcher.Invoke(() =>
+                {
+                    if (LblLevel == null) return;
+                    if (pos > 0 && total > 0)
+                        LblLevel.Text = $"{pos}/{total}";
+                    else
+                        LblLevel.Text = "";
                 }),
             };
         }
