@@ -12,6 +12,7 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf; // cần để dùng WebView2
 using System.Diagnostics;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using ABX.Core;
 using AutoBetHub.Hosting;
 using AutoBetHub.Services;
@@ -437,12 +438,16 @@ namespace AutoBetHub
 
             try
             {
-                _log.Info("[Update] Checking manifest at: " + ManifestUrl);
+                // raw.githubusercontent.com bị cache CDN ~5 phút, thêm query-string + no-cache để lấy bản mới ngay
+                var manifestUrl = $"{ManifestUrl}?_ts={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+                _log.Info("[Update] Checking manifest at: " + manifestUrl);
 
                 //if (!auto)
                 //    SendUpdateStatusToWeb("checking", 5, "Đang kiểm tra bản cập nhật…");
 
-                using var resp = await _httpClient.GetAsync(ManifestUrl);
+                using var req = new HttpRequestMessage(HttpMethod.Get, manifestUrl);
+                req.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
+                using var resp = await _httpClient.SendAsync(req);
                 if (!resp.IsSuccessStatusCode)
                 {
                     _log.Warn($"[Update] Manifest HTTP {(int)resp.StatusCode}");
