@@ -261,11 +261,17 @@
             <Setter Property="AlternationCount" Value="2" />
             <Setter Property="AlternatingRowBackground" Value="{StaticResource Log_Alt}" />
             <Setter Property="GridLinesVisibility" Value="None" />
-            <Setter Property="RowHeight" Value="28" />
             <Setter Property="ColumnHeaderHeight" Value="30" />
             <Setter Property="HeadersVisibility" Value="All" />
             <Setter Property="SelectionMode" Value="Single" />
             <Setter Property="SelectionUnit" Value="FullRow" />
+            <Setter Property="RowStyle">
+                <Setter.Value>
+                    <Style TargetType="DataGridRow">
+                        <Setter Property="MinHeight" Value="28" />
+                    </Style>
+                </Setter.Value>
+            </Setter>
             <Setter Property="ColumnHeaderStyle">
                 <Setter.Value>
                     <Style TargetType="DataGridColumnHeader">
@@ -1110,7 +1116,7 @@
                                                 <Border Grid.Column="1" Style="{StaticResource GhostQMid}">
                                                     <Grid
                                                         x:Name="CellKetQua"
-                                                        Margin="8,0,0,0"
+                                                        Margin="0,0,0,0"
                                                         HorizontalAlignment="Center"
                                                         VerticalAlignment="Center">
                                                         <Image
@@ -1484,7 +1490,7 @@
                                                         <Grid VerticalAlignment="Center">
                                                             <Image
                                                                 x:Name="ImgKq"
-                                                                Height="20"
+                                                                Height="32"
                                                                 Source="{Binding Result, Converter={StaticResource KetQuaToIcon}}"
                                                                 Visibility="Visible" />
                                                             <TextBlock
@@ -1515,7 +1521,7 @@
                                                             <Grid VerticalAlignment="Center">
                                                                 <Image
                                                                     x:Name="ImgWL"
-                                                                    Height="18"
+                                                                    Height="32"
                                                                     Source="{Binding WinLose, Converter={StaticResource WinLossToIcon}}"
                                                                     Visibility="Visible" />
                                                                 <TextBlock
