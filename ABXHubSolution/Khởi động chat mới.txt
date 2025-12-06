@@ -2,55 +2,89 @@ Dưới đây là tóm tắt bối cảnh từ một chat cũ.
 Hãy coi như bạn đã đọc toàn bộ lịch sử và code tương ứng, nhưng chỉ dùng thông tin trong tóm tắt này:
 
 
-
 Mục tiêu chính của project / bug
 
-AutoBetHub tải plugin DLL cho game Xóc Đĩa Live Hit. Plugin phải hiển thị đúng icon ảnh (cửa cược, kết quả, chuỗi BALL0..4, cửa đặc biệt TU_TRANG/TU_DO/SAP_DOI/TRANG3_DO1/DO3_TRANG1) cả khi chạy độc lập lẫn khi load qua Hub.
-Tech stack
+Plugin/game Xóc Đĩa Live Hit cần hiển thị đúng icon (cửa cược, kết quả BALL0..4, cửa đặc biệt TU_TRANG/TU_DO/SAP_DOI/TRANG3_DO1/DO3_TRANG1) khi chạy độc lập hoặc qua Hub. UI lịch sử cược phải hiển thị icon chữ PNG (SẤP ĐÔI, TỨ ĐỎ, 1 TRẮNG 3 ĐỎ, 1 ĐỎ 3 TRẮNG, TỨ TRẮNG, CHẴN/LẺ) to, không rơi về TextBlock, không lỗi tiếng Việt. Vấn đề đặt cược: tránh bắn lặp, nhận dạng kết quả từ JS chính xác, đặc biệt với Task 17 (Đánh các cửa ăn nổ hũ).
+Tech stack (ngôn ngữ, framework, DB…)
 
-.NET 8, WPF (C#), WebView2 (Microsoft.Web.WebView2), plugin cơ chế DLL.
-Resource ảnh dạng WPF Resource/pack URI trong thư mục XocDiaLiveHit/Assets.
-Các file / module quan trọng
+.NET 8, WPF (C#), WebView2 (Microsoft.Web.WebView2).
+JS bridge v4_js_xoc_dia_live.js (Cocos DOM automation).
+Ảnh Resource WPF (pack URI, Assets).
+Các file / module quan trọng đang liên quan
 
-XocDiaLiveHit/MainWindow.xaml.cs: converters, fallback icon loader, Seq icon map, SharedIcons.
-XocDiaLiveHit/MainWindow.xaml: UI bindings sử dụng converters/static resources.
-XocDiaLiveHit/App.xaml: ResourceDictionary gốc (BitmapImage).
-XocDiaLiveHit/Assets/Images.xaml: ResourceDictionary pack URI khi merge.
-XocDiaLiveHit/XocDiaLiveHitPlugin.cs: inject resource vào App/Window khi chạy plugin, log resource.
-XocDiaLiveHit/Compat/PackRes.cs: EnsureGlobalResourcesLoaded merge Images.xaml, fallback tạo BitmapImage và register converters.
-Tasks liên quan kết quả: Tasks/JackpotMultiSideTask.cs, Tasks/SideRateParser.cs.
-Logic chính đã thiết kế
+XocDiaLiveHit/MainWindow.xaml, MainWindow.xaml.cs: UI, history grid, converters, inject logic.
+XocDiaLiveHit/Tasks/TaskUtil.cs: PlaceBet, cooldown, JS call wrapper.
+XocDiaLiveHit/Tasks/JackpotMultiSideTask.cs: Chiến lược 17 đa cửa.
+XocDiaLiveHit/v4_js_xoc_dia_live.js: JS bridge __cw_bet, cwBet, chip scan, findSide.
+XocDiaLiveHit/Tasks/SideRateParser.cs: Parse cửa & tỉ lệ, NormalizeSide.
+XocDiaLiveHit/Tasks/MoneyManager.cs: Quản lý vốn (Victor2, v.v.).
+XocDiaLiveHit/Tasks/GameContext.cs: EvalJsAsync, GetSnap, UI callbacks.
+Logic chính đã thiết kế (tên hàm, class, luồng xử lý)
 
-FallbackIcons.LoadPackImage(relativePath): thử pack URI với assembly; fallback đọc file vật lý cạnh DLL; trả ImageSource hoặc null.
-Converters:
-SideToIconConverter: trả icon cho CHAN/LE + thêm TU_TRANG, TU_DO, SAP_DOI, TRANG3_DO1, DO3_TRANG1.
-KetQuaToIconConverter: trả icon CHAN/LE, các cửa đặc biệt trên, hoặc BALL0..4 (LoadBall dùng loader).
-WinLossToIconConverter: WIN/LOSS.
-SharedIcons (trong MainWindow): giữ cache icon cho converters, nay có thêm TuTrang, TuDo, SapDoi, Trang3Do1, Do3Trang1.
-MainWindow.InitSeqIcons: map char ‘0’..‘4’ -> icon, ưu tiên LoadPackImage.
-XocDiaLiveHitPlugin.InjectImagesTo: dùng FallbackIcons.LoadPackImage set ImgCHAN/LE/THANG/THUA/BALL0-4 và thêm TU_TRANG, TU_DO, SAP_DOI, TRANG3_DO1, DO3_TRANG1; gán vào SharedIcons.
-PackRes.EnsureGlobalResourcesLoaded: merge Images.xaml; fallback đảm bảo ImgCHAN/LE/THANG/THUA/BALL0-4 và 5 icon mới; register converters.
+WPF DataGrid “Lịch sử cược”: style LogGrid_BlueTint (RowHeight=60), cột “Cửa đặt” Image height 60, stretch Uniform; converters SideToIconConverter, KetQuaToIconConverter, WinLossToIconConverter.
+JS bridge: __cw_bet(side, amount) gọi cwBet; cwBet tìm nút cửa (normalizeSide, regex), tách chip theo DENOMS, click; báo abx:'bet' hoặc bet_error.
+C# nhận abx message: bet → add row history; bet_error → log error.
+TaskUtil.PlaceBet: gọi EvalJsAsync(js) để invoke __cw_bet, log [BET-JS] result=..., quyết định thành công/thất bại, cập nhật cooldown.
+JackpotMultiSideTask.RunAsync: parse plan (SideRateParser), tính stake (MoneyManager), PlaceWithRetry cho từng cửa, chờ kết quả, cập nhật win/loss.
 Những lỗi đã gặp & nguyên nhân chính
 
-Ảnh BALL0..4 không hiển thị khi chạy plugin: pack URI không resolve trong chế độ DLL, thiếu fallback file vật lý/SharedIcons.
-Build lỗi do guard thiếu ABX.Core.dll (target check AutoBetHub build trước).
-Ambiguous Application namespace đã xử lý bằng System.Windows.Application.
-Các giải pháp đã thử, giải pháp hiện tại
+Icon không hiển thị/fallback: thiếu pack URI, thiếu BALL0..4 → đã thêm fallback SharedIcons/LoadPackImage (đã xử lý).
+Text/icon nhỏ: cột “Cửa đặt” height/width nhỏ → đã tăng RowHeight=60, Img height 60, stretch.
+Đặt cược lặp/nhân đôi: C# hiểu sai kết quả JS (nhận {}/Promise) và retry/bắn lặp; trước đây __cw_bet luôn trả “ok” kể cả cwBet fail.
+Không đặt đủ cửa (1Đ3T/1T3Đ): cwBet fail (findSide/plan chip) nhưng C# vẫn đếm đủ vì kết quả mập mờ.
+Phiên bản gần nhất: vẫn thấy [BET-JS] result={} và bị đặt lặp nhiều lần.
+Các giải pháp đã thử, giải pháp hiện tại đang dùng
 
-Thêm loader fallback (pack URI + file) cho icon.
-Bổ sung resource dictionary (App.xaml, Assets/Images.xaml) và fallback PackRes để include BALL0..4 và 5 icon cửa mới.
-InjectImagesTo plugin dùng loader fallback; converters nhận diện cửa mới.
-SharedIcons mở rộng cho icon đặc biệt.
+WPF: RowHeight=60, cột “Cửa đặt” width 220 min 200, ImgSide height 60, stretch Uniform, HighQuality scaling.
+JS __cw_bet: đã sửa để return 'ok' hoặc 'fail' theo cwBet (có chờ waitForTotalsChange khi ok).
+JackpotMultiSideTask.PlaceWithRetry: giảm retry xuống 3, delay 180ms + 350..650ms, bỏ cưỡng bức mở lock JS.
+TaskUtil.PlaceBet: gọi __cw_bet qua IIFE async; logic hiện tại coi thất bại chỉ khi rỗng hoặc bắt đầu bằng fail/no/err; {} được coi là ok để tránh lặp (nhưng vẫn gây click lặp nếu cwBet đang chạy?).
+Kết quả hiện tại: Task 17 vẫn bắn lặp (tứ đỏ/tứ trắng x3, 1Đ3T/1T3Đ x2) do result={}.
 Việc còn dang dở / TODO
 
-Build plugin yêu cầu có AutoBetHub/bin/Debug/net8.0-windows/ABX.Core.dll; cần build AutoBetHub Debug trước khi build XocDiaLiveHit plugin.
-Sau khi build/copy DLL vào AutoBetHub/Plugins, kiểm tra UI: cột “Cửa đặt” và “Kết quả” hiển thị icon cho TU_TRANG, TU_DO, SAP_DOI, TRANG3_DO1, DO3_TRANG1 và BALL0..4.
+Sửa triệt để PlaceBet/__cw_bet handshake: phân biệt rõ trạng thái “đang xử lý”/“fail” để tránh retry lặp; không coi {} là ok, mà cần await promise và nhận ok/fail.
+Rà soát cwBet và findSide cho 1TRANG3DO/1DO3TRANG; kiểm tra tách chip và timeout khi close betting (có thể fail trả false).
+Đảm bảo EvalJsAsync thực sự lấy kết quả của promise __cw_bet (String(await ...)) và C# coi non-ok là fail (để không gửi nhiều lần).
+Kiểm tra log [BET-JS] sau sửa: phải là “ok”/“fail/err/no”, không còn {}; chỉ gửi lại khi fail.
 
 
-
-
-
+Lưy ý : Kiểm tra và sửa lại code cho chính xác, chỉ sửa phần thay đổi của file
+Đừng chuyển đổi text sang ASCII hay dạng không Unicode.
+Giữ nguyên toàn bộ ký tự UTF-8 (tiếng Việt có dấu) khi chèn vào file.
+Không được dùng bất kỳ bước ‘ASCII-compliant’ nào. cho cả file .xaml, .cs, .js
+Không được encoding issues in XAML
+Giao tiếp bằng tiếng việt
 Dựa trên bối cảnh đó, nhiệm vụ mới của bạn là:
-Xem trong project XocDiaLiveHit trong file MainWindow.xaml.cs có đoạn mặc định url tại sao không load mặc định net88.top mà lại load bằng null 
-Tôi đã bỏ ghi vào file cấu hình và load từ file cấu hình rồi, chỉ load mặc định thôi hay lại ưu tiên cấu hình load trong file MainWindow.xaml
+Xem trong project XocDiaLiveHit 
+Hiện tại đặt thiếu cửa hãy xem lại tôi gửi log : 
+Theo đúng thì phải đặt tứ đỏ : 1000, tứ trắng : 1000, 1 trắng 3 đỏ : 4000, 1 đỏ 3 trắng : 4000
+Nhưng hiện thực tế thì chỉ đặt 3 cửa  tứ đỏ : 1000, tứ trắng : 1000, 1 trắng 3 đỏ : 4000
+Thiếu : 1 đỏ 3 trắng : 4000
+
+[10:10:11] [Lease] acquire -> 200 OK | {"ok":true,"leased":true}
+[10:10:11] [License] valid until: 2026-11-04 16:59:59Z
+[10:10:11] [Loop] started task: 17) Đánh các cửa ăn nổ hũ
+[10:10:16] [BET-JS] result={}
+[10:10:16] [BET] TU_DO 1,000
+[10:10:16] [BET-JS] result={}
+[10:10:17] [BET-JS] result={}
+[10:10:17] [BET] TU_TRANG 1,000
+[10:10:17] [BET][ERR] TRANG3_DO1 4000 :: cwBet returned false
+[10:10:17] [BET-JS] result={}
+[10:10:17] [Task17] Đã đặt 4/4 cửa; còn lại: 0
+[10:10:17] [BET] DO3_TRANG1 4,000
+[10:10:58] [NI] add=N | seq=INNIN | tail=3 | C=116750000 | L=200320000
+[10:10:58] [Task17][LOSS] TU_DO -1,000
+[10:10:58] [Task17][LOSS] TU_TRANG -1,000
+[10:10:58] [Task17][LOSS] DO3_TRANG1 -4,000
+[10:10:58] [Task17][WIN] TRANG3_DO1 +11,640
+[10:10:59] [BET-JS] result={}
+[10:10:59] [BET] TU_DO 1,000
+[10:10:59] [BET-JS] result={}
+[10:11:00] [BET] TU_TRANG 1,000
+[10:11:00] [BET-JS] result={}
+[10:11:00] [BET][ERR] TRANG3_DO1 4000 :: cwBet returned false
+[10:11:00] [BET-JS] result={}
+[10:11:00] [Task17] Đã đặt 4/4 cửa; còn lại: 0
+[10:11:00] [BET] DO3_TRANG1 4,000
 

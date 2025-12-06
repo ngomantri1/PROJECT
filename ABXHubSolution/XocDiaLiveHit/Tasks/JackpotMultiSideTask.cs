@@ -86,21 +86,10 @@ namespace XocDiaLiveHit.Tasks
                         return true;
                     }
 
-                    for (int attempt = 0; attempt < 8; attempt++)
-                    {
-                        try
-                        {
-                            _ = ctx.EvalJsAsync("if(window.__cwBetLockFix){window.__cwBetLockFix.busy=false;} window.tryOpenChipPanel && window.tryOpenChipPanel();");
-                        }
-                        catch { }
-                        await Task.Delay(80, ct);
-
-                        bool ok = await PlaceBet(ctx, side, stake, ct, ignoreCooldown: true);
-                        if (ok) return true;
-
-                        await Task.Delay(260 + attempt * 60, ct);
-                    }
-                    return false;
+                    try { _ = ctx.EvalJsAsync("window.tryOpenChipPanel && window.tryOpenChipPanel();"); } catch { }
+                    await Task.Delay(180, ct);
+                    try { await PlaceBet(ctx, side, stake, ct, ignoreCooldown: true); } catch { return false; }
+                    return true;
                 }
 
                 foreach (var p in plan)

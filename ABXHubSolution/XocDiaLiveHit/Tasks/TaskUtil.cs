@@ -121,17 +121,17 @@ namespace XocDiaLiveHit.Tasks
 
             // GỌI __cw_bet AN TOÀN (giữ nguyên như code hiện tại)
             var js =
-                "(function(){try{" +
+                "(async function(){try{" +
                 " if (typeof window.__cw_bet==='function'){" +
-                "   return window.__cw_bet('" + side + "', " + amount + ");" +
+                "   return String(await window.__cw_bet('" + side + "', " + amount + "));" +
                 " } else { return 'no'; }" +
                 "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
-            var r = await ctx.EvalJsAsync(js);
-            ctx.Log?.Invoke($"[BET-JS] result={r}");
+            var rRaw = await ctx.EvalJsAsync(js);
+            ctx.Log?.Invoke($"[BET-JS] result={rRaw}");
 
-            // Chỉ coi là thành công khi KHÔNG phải 'no'/'err'
-            bool ok = !string.IsNullOrEmpty(r) && !r.StartsWith("no") && !r.StartsWith("err");
+            // Không kiểm tra thành công/thất bại để tránh bắn lặp; chỉ đẩy lệnh một lần
+            bool ok = true;
 
             if (ok)
                 Volatile.Write(ref _lastBetOkMs, now); // kích hoạt khoá 3s

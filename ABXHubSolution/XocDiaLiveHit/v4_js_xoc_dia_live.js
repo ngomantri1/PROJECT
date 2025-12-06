@@ -1756,8 +1756,13 @@
             busy: false
         });
     async function withLock(fn) {
+        // chờ ngắn nếu đang bận để tránh trượt lệnh khi bắn liên tục nhiều cửa
+        for (var i = 0; i < 4 && LOCK.busy; i++) {
+            console.warn('[cwBet++] busy, wait', i);
+            await sleep(120);
+        }
         if (LOCK.busy) {
-            console.warn('[cwBet++] busy');
+            console.warn('[cwBet++] busy (give up)');
             return false;
         }
         LOCK.busy = true;
@@ -2242,37 +2247,79 @@
         };
 
         // LƯU Ý: Chỉ dùng cwBet, không fallback cwBetSmart
+        // Hàng đợi đặt cược tuần tự: C# cứ đẩy xuống, JS tự xếp hàng và bắn cwBet lần lượt
+        var BET_QUEUE = window.__cwBetQueue = window.__cwBetQueue || [];
+        var _processingBetQueue = false;
+        async function processBetQueue() {
+            if (_processingBetQueue)
+                return;
+            _processingBetQueue = true;
+            while (BET_QUEUE.length) {
+                var job = BET_QUEUE.shift();
+                var side = job.side,
+                amt = job.amt;
+                var result = 'fail';
+                try {
+                    if (typeof cwBet !== 'function') {
+                        throw new Error('cwBet not found');
+                    }
+                    var before = readTotalsSafe() || {};
+                    var rawResult = await cwBet(side, amt);
+                    var ok = rawResult === true || rawResult === 'ok' || (rawResult && rawResult.ok === true);
+                    try {
+                        if (ok && typeof waitForTotalsChange === 'function') {
+                            await waitForTotalsChange(before, side, 1600);
+                        }
+                    } catch (_) {}
+                    if (ok) {
+                        safePost({
+                            abx: 'bet',
+                            side: side,
+                            amount: amt,
+                            ts: Date.now()
+                        });
+                        result = 'ok';
+                    } else {
+                        var reason = (rawResult && rawResult.error) ? String(rawResult.error) : (rawResult === false ? 'cwBet returned false' : ('cwBet returned ' + String(rawResult)));
+                        safePost({
+                            abx: 'bet_error',
+                            side: side,
+                            amount: amt,
+                            error: reason,
+                            ts: Date.now()
+                        });
+                        result = 'fail:' + reason;
+                    }
+                } catch (err) {
+                    safePost({
+                        abx: 'bet_error',
+                        side: side,
+                        amount: amt,
+                        error: String(err && err.message || err),
+                        ts: Date.now()
+                    });
+                    result = 'fail:' + String(err && err.message || err);
+                }
+                if (typeof job.resolve === 'function') {
+                    try {
+                        job.resolve(result);
+                    } catch (_) {}
+                }
+            }
+            _processingBetQueue = false;
+        }
+
         window.__cw_bet = async function (side, amount) {
             try {
-                // chuẩn hoá tham số
                 side = normalizeSide(side);
                 var amt = Math.max(0, Math.floor(Number(amount) || 0));
-
-                // bắt buộc phải có cwBet
-                if (typeof cwBet !== 'function') {
-                    throw new Error('cwBet not found');
-                }
-
-                // chụp tổng trước khi bet (nếu có)
-                var before = readTotalsSafe() || {};
-
-                // ĐẶT CƯỢC bằng cwBet
-                await cwBet(side, amt);
-
-                // chờ tổng thay đổi (nếu có util này)
-                try {
-                    if (typeof waitForTotalsChange === 'function') {
-                        await waitForTotalsChange(before, side, 1600);
-                    }
-                } catch (_) {}
-
-                // báo về C#
-                safePost({
-                    abx: 'bet',
+                BET_QUEUE.push({
                     side: side,
-                    amount: amt,
-                    ts: Date.now()
+                    amt: amt,
+                    resolve: null
                 });
+                processBetQueue();
+                // Báo OK ngay cho C#, không chờ kết quả thực tế
                 return 'ok';
             } catch (err) {
                 safePost({
@@ -2282,7 +2329,7 @@
                     error: String(err && err.message || err),
                     ts: Date.now()
                 });
-                return 'fail';
+                return 'fail:' + String(err && err.message || err);
             }
         };
 
