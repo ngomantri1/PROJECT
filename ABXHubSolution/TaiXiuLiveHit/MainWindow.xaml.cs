@@ -1792,8 +1792,8 @@ Ví dụ không hợp lệ:
                 try { await SyncLoginFieldAsync("pass", p); } catch { }
             }
 
-            // Bấm đăng nhập sớm
-            await TryAutoLoginAsync(500, force: true);
+            // Bấm đăng nhập sớm (tạm tắt auto-login để sau này cần thì mở lại)
+            //await TryAutoLoginAsync(500, force: true);
         }
 
 

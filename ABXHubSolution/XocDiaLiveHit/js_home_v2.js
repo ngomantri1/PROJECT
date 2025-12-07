@@ -229,7 +229,7 @@
         maxRetries: 6,
         watchdogMs: 1000, // tick 1s kiểm tra username/balance
         maxWatchdogMiss: 2, // quá 2 nhịp miss -> startAutoRetry(true)
-        showPanel: false, // ⬅️ false = ẩn panel; true = hiện panel
+        showPanel: true, // ⬅️ false = ẩn panel; true = hiện panel
 		autoRetryOnBoot: false
 
     };

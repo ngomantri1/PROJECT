@@ -1551,7 +1551,7 @@ Ví dụ không hợp lệ:
                     Web.Source = target;
                     await tcs.Task;
 
-                    await AutoFillLoginAsync();
+                    //await AutoFillLoginAsync();
                 }
             }
             catch (Exception ex) { Log("[NavigateIfNeededAsync] " + ex); }
@@ -1871,8 +1871,8 @@ Ví dụ không hợp lệ:
                 try { await SyncLoginFieldAsync("pass", p); } catch { }
             }
 
-            // Bấm đăng nhập sớm
-            await TryAutoLoginAsync(500, force: true);
+            // Bấm đăng nhập sớm (tạm tắt auto-login để dùng tay khi cần)
+            //await TryAutoLoginAsync(500, force: true);
         }
 
 
