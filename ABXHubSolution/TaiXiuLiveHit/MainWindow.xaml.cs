@@ -4600,7 +4600,7 @@ Ví dụ không hợp lệ:
         {
             try
             {
-                using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(8) };
+                using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(20) };
                 var uname = Uri.EscapeDataString(username);
                 var url = $"https://raw.githubusercontent.com/{LicenseOwner}/{LicenseRepo}/{LicenseBranch}/{LicenseNameGame}/{uname}.json";
                 var json = await http.GetStringAsync(url);
