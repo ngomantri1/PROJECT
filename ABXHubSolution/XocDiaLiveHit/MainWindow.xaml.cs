@@ -184,7 +184,15 @@ namespace XocDiaLiveHit
             }
             catch { }
 
-            img ??= FallbackIcons.LoadPackImage($"Assets/Seq/ball{d}.png");
+            img ??= d switch
+            {
+                '0' => FallbackIcons.GetTuTrang(),
+                '1' => FallbackIcons.GetDo3Trang1(),
+                '2' => FallbackIcons.GetSapDoi(),
+                '3' => FallbackIcons.GetTrang3Do1(),
+                '4' => FallbackIcons.GetTuDo(),
+                _ => null
+            };
             _ballIcons[d] = img;
             return img; // có thể null -> XAML sẽ hiển thị chữ thay thế
         }
@@ -4081,30 +4089,30 @@ Ví dụ không hợp lệ:
             string asm = GetType().Assembly.GetName().Name!;
 
             // mỗi cái cho 2-3 đường dẫn để chạy được cả khi làm plugin và khi chạy độc lập
-            _seqIconMap['0'] = FallbackIcons.LoadPackImage("Assets/Seq/ball0.png") ?? LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/ball0.png",
-                "pack://application:,,,/Assets/Seq/ball0.png",
-                "pack://application:,/Assets/Seq/ball0.png"
+            _seqIconMap['0'] = FallbackIcons.GetTuTrang() ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/side/TU_TRANG.png",
+                "pack://application:,,,/Assets/side/TU_TRANG.png",
+                "pack://application:,/Assets/side/TU_TRANG.png"
             );
-            _seqIconMap['1'] = FallbackIcons.LoadPackImage("Assets/Seq/ball1.png") ?? LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/ball1.png",
-                "pack://application:,,,/Assets/Seq/ball1.png",
-                "pack://application:,/Assets/Seq/ball1.png"
+            _seqIconMap['1'] = FallbackIcons.GetDo3Trang1() ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/side/1TRANG_3DO.png",
+                "pack://application:,,,/Assets/side/1TRANG_3DO.png",
+                "pack://application:,/Assets/side/1TRANG_3DO.png"
             );
-            _seqIconMap['2'] = FallbackIcons.LoadPackImage("Assets/Seq/ball2.png") ?? LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/ball2.png",
-                "pack://application:,,,/Assets/Seq/ball2.png",
-                "pack://application:,/Assets/Seq/ball2.png"
+            _seqIconMap['2'] = FallbackIcons.GetSapDoi() ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/side/SAP_DOI.png",
+                "pack://application:,,,/Assets/side/SAP_DOI.png",
+                "pack://application:,/Assets/side/SAP_DOI.png"
             );
-            _seqIconMap['3'] = FallbackIcons.LoadPackImage("Assets/Seq/ball3.png") ?? LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/ball3.png",
-                "pack://application:,,,/Assets/Seq/ball3.png",
-                "pack://application:,/Assets/Seq/ball3.png"
+            _seqIconMap['3'] = FallbackIcons.GetTrang3Do1() ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/side/1DO_3TRANG.png",
+                "pack://application:,,,/Assets/side/1DO_3TRANG.png",
+                "pack://application:,/Assets/side/1DO_3TRANG.png"
             );
-            _seqIconMap['4'] = FallbackIcons.LoadPackImage("Assets/Seq/ball4.png") ?? LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/ball4.png",
-                "pack://application:,,,/Assets/Seq/ball4.png",
-                "pack://application:,/Assets/Seq/ball4.png"
+            _seqIconMap['4'] = FallbackIcons.GetTuDo() ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/side/TU_DO.png",
+                "pack://application:,,,/Assets/side/TU_DO.png",
+                "pack://application:,/Assets/side/TU_DO.png"
             );
         }
 
@@ -5904,3 +5912,7 @@ Ví dụ không hợp lệ:
     }
 
 }
+
+
+
+

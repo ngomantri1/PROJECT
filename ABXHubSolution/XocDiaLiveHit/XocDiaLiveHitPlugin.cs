@@ -136,11 +136,11 @@ namespace XocDiaLiveHit
             SetImg("ImgLE", "Assets/side/LE.png");
             SetImg("ImgTHANG", "Assets/kq/THANG.png");
             SetImg("ImgTHUA", "Assets/kq/THUA.png");
-            SetImg("ImgBALL0", "Assets/Seq/ball0.png");
-            SetImg("ImgBALL1", "Assets/Seq/ball1.png");
-            SetImg("ImgBALL2", "Assets/Seq/ball2.png");
-            SetImg("ImgBALL3", "Assets/Seq/ball3.png");
-            SetImg("ImgBALL4", "Assets/Seq/ball4.png");
+            SetImg("ImgBALL0", "Assets/side/TU_TRANG.png");
+            SetImg("ImgBALL1", "Assets/side/1TRANG_3DO.png");
+            SetImg("ImgBALL2", "Assets/side/SAP_DOI.png");
+            SetImg("ImgBALL3", "Assets/side/1DO_3TRANG.png");
+            SetImg("ImgBALL4", "Assets/side/TU_DO.png");
             SetImg("ImgTU_TRANG", "Assets/side/TU_TRANG.png");
             SetImg("ImgTU_DO", "Assets/side/TU_DO.png");
             SetImg("ImgSAP_DOI", "Assets/side/SAP_DOI.png");

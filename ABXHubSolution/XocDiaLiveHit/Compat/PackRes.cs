@@ -38,21 +38,21 @@ namespace XocDiaLiveHit
             EnsureImage(app.Resources, "ImgCHAN", "Assets/side/CHAN.png");
             EnsureImage(app.Resources, "ImgTHANG", "Assets/kq/THANG.png");
             EnsureImage(app.Resources, "ImgTHUA", "Assets/kq/THUA.png");
-            EnsureImage(app.Resources, "ImgBALL0", "Assets/Seq/ball0.png");
-            EnsureImage(app.Resources, "ImgBALL1", "Assets/Seq/ball1.png");
-            EnsureImage(app.Resources, "ImgBALL2", "Assets/Seq/ball2.png");
-            EnsureImage(app.Resources, "ImgBALL3", "Assets/Seq/ball3.png");
-            EnsureImage(app.Resources, "ImgBALL4", "Assets/Seq/ball4.png");
+            EnsureImage(app.Resources, "ImgBALL0", "Assets/side/TU_TRANG.png");
+            EnsureImage(app.Resources, "ImgBALL1", "Assets/side/1TRANG_3DO.png");
+            EnsureImage(app.Resources, "ImgBALL2", "Assets/side/SAP_DOI.png");
+            EnsureImage(app.Resources, "ImgBALL3", "Assets/side/1DO_3TRANG.png");
+            EnsureImage(app.Resources, "ImgBALL4", "Assets/side/TU_DO.png");
             EnsureImage(app.Resources, "ImgTU_TRANG", "Assets/side/TU_TRANG.png");
             EnsureImage(app.Resources, "ImgTU_DO", "Assets/side/TU_DO.png");
             EnsureImage(app.Resources, "ImgSAP_DOI", "Assets/side/SAP_DOI.png");
             EnsureImage(app.Resources, "ImgTRANG3_DO1", "Assets/side/1DO_3TRANG.png");
             EnsureImage(app.Resources, "ImgDO3_TRANG1", "Assets/side/1TRANG_3DO.png");
-            EnsureImage(app.Resources, "ImgBALL0", "pack://application:,,,/XocDiaLiveHit;component/Assets/Seq/ball0.png");
-            EnsureImage(app.Resources, "ImgBALL1", "pack://application:,,,/XocDiaLiveHit;component/Assets/Seq/ball1.png");
-            EnsureImage(app.Resources, "ImgBALL2", "pack://application:,,,/XocDiaLiveHit;component/Assets/Seq/ball2.png");
-            EnsureImage(app.Resources, "ImgBALL3", "pack://application:,,,/XocDiaLiveHit;component/Assets/Seq/ball3.png");
-            EnsureImage(app.Resources, "ImgBALL4", "pack://application:,,,/XocDiaLiveHit;component/Assets/Seq/ball4.png");
+            EnsureImage(app.Resources, "ImgBALL0", "pack://application:,,,/XocDiaLiveHit;component/Assets/side/TU_TRANG.png");
+            EnsureImage(app.Resources, "ImgBALL1", "pack://application:,,,/XocDiaLiveHit;component/Assets/side/1TRANG_3DO.png");
+            EnsureImage(app.Resources, "ImgBALL2", "pack://application:,,,/XocDiaLiveHit;component/Assets/side/SAP_DOI.png");
+            EnsureImage(app.Resources, "ImgBALL3", "pack://application:,,,/XocDiaLiveHit;component/Assets/side/1DO_3TRANG.png");
+            EnsureImage(app.Resources, "ImgBALL4", "pack://application:,,,/XocDiaLiveHit;component/Assets/side/TU_DO.png");
 
             // 3. đăng ký converter (XAML của bạn đang dùng StaticResource mấy cái này)
             if (!app.Resources.Contains("SideToIconConverter"))
