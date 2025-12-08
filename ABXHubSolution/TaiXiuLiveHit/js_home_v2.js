@@ -253,6 +253,9 @@
     const TAIL_XOCDIA_BTN =
         'div.container[1]/div.hot-game__content[2]/div[6]/div.list-game__bottom--item.game-item[1]/div.game-thumb[1]/div.hover-overlay[1]/div.button[1]/span[1]';
 
+    const TAIL_USER_INFO_ARROW =
+        'div.menu__maxWidth.d-flex[1]/div.d-flex.align-items-center[2]/div.menu__right[1]/div.user-logged.d-flex[1]/div.user-logged__info[1]/div.base-dropdown-header[1]/button.btn.btn-secondary[1]/i.base-dropdown-header__user__icon.icon-arrow-down[1]';
+
     // ======= Game Regex cho TÀI XỈU LIVE (dùng trên chuỗi đã norm() — không dấu, lowercase) =======
     // POS: các từ khóa liên quan Tài Xỉu / Sicbo
     const RE_XOCDIA_POS = /\b(?:tai|xiu|taixiu|sicbo|dice)\b/; // "tai", "xiu", "taixiu", "sicbo", "dice"
@@ -282,6 +285,8 @@
     };
 
     const ROOT_Z = 2147483647;
+
+    let _lastUserInfoExpand = 0;
 
     // ======= Utils =======
     const clip = (s, n) => {
@@ -796,6 +801,7 @@
                     // ---- Fallback DOM: đọc nhanh trong header khi S.* đang rỗng ----
                     function quickPickUsername() {
                         try {
+                            ensureUserInfoExpanded();
                             // 1) ƯU TIÊN: đọc theo ABS_USERNAME_TAIL (tên nhân vật trên trang profile)
                             if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
                                 try {
@@ -1357,8 +1363,65 @@
     }
 
     // ======= Username & Balance =======
+    function ensureUserInfoExpanded(force) {
+        try {
+            const now = Date.now();
+            if (!force && now - _lastUserInfoExpand < 1500)
+                return false;
+            let arrow = null;
+            try {
+                arrow = TAIL_USER_INFO_ARROW ? findByTail(TAIL_USER_INFO_ARROW) : null;
+            } catch (_) {
+                arrow = null;
+            }
+            if (!arrow) {
+                arrow = document.querySelector('i.base-dropdown-header__user__icon.icon-arrow-down');
+            }
+            let btn = arrow ? arrow.closest('button') : null;
+            if (!btn) {
+                btn = document.querySelector('.user-logged__info button.btn.btn-secondary, .user-logged__info .base-dropdown-header > button');
+            }
+            const target = arrow || btn;
+            if (!target)
+                return false;
+            const hit = btn || target;
+            const rect = hit.getBoundingClientRect();
+            const cx = Math.max(0, Math.floor(rect.left + rect.width / 2));
+            const cy = Math.max(0, Math.floor(rect.top + rect.height / 2));
+            const fire = (el, type) => {
+                try {
+                    el.dispatchEvent(new MouseEvent(type, {
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: cx,
+                        clientY: cy,
+                        view: window
+                    }));
+                } catch (_) {}
+            };
+            const seq = ['pointerover', 'mouseover', 'pointerenter', 'mouseenter', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+            for (let i = 0; i < 2; i++) {
+                for (const type of seq)
+                    fire(hit, type);
+            }
+            fire(hit, 'dblclick');
+            try {
+                if (hit !== target)
+                    fire(target, 'click');
+                if (typeof hit.click === 'function') {
+                    hit.click();
+                    hit.click();
+                }
+            } catch (_) {}
+            _lastUserInfoExpand = now;
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
     function findUserFromDOM() {
         try {
+            ensureUserInfoExpanded();
             // Ưu tiên tail tuyệt đối nếu có
             if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
                 const abs = findByTail(ABS_USERNAME_TAIL);

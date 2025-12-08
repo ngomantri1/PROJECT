@@ -223,15 +223,14 @@
         scanLinksBtnId: 'bscanl200',
         scanTextsBtnId: 'bscant200',
         overlayToggleBtnId: 'boverlay',
-        copyBtnId: 'bcopyinfo',
         loginBtnId: 'blogin',
         xocBtnId: 'bxoc',
         autoRetryIntervalMs: 5000,
         maxRetries: 6,
         watchdogMs: 1000, // tick 1s kiểm tra username/balance
         maxWatchdogMiss: 2, // quá 2 nhịp miss -> startAutoRetry(true)
-        showPanel: true, // ⬅️ false = ẩn panel; true = hiện panel
-		autoRetryOnBoot: false
+        showPanel: false, // ⬅️ false = ẩn panel; true = hiện panel
+        autoRetryOnBoot: false
 
     };
     // ABS selector cho Username (đường dẫn tuyệt đối bạn yêu cầu)
@@ -252,14 +251,14 @@
         'div.d-flex.align-items-center[2]/div.menu__right[1]/div.user-logged.d-flex[1]/div.user-logged__info[1]/div.base-dropdown-header[1]/button.btn.btn-secondary[1]/div.left[1]/p.base-dropdown-header__user__amount[1]';
 
     const TAIL_XOCDIA_BTN =
-        'div.livestream-section__live[2]/div.item-live[2]/div.live-stream[1]/div.player-wrapper[1]/div[1]/div.play-button[4]/div.play-overlay[1]/button.base-button.btn[1]';
+        'div.container[1]/div.hot-game__content[2]/div[6]/div.list-game__bottom--item.game-item[1]/div.game-thumb[1]/div.hover-overlay[1]/div.button[1]/span[1]';
 
-    const TAIL_USER_INFO_ARROW =
-        'div.menu__maxWidth.d-flex[1]/div.d-flex.align-items-center[2]/div.menu__right[1]/div.user-logged.d-flex[1]/div.user-logged__info[1]/div.base-dropdown-header[1]/button.btn.btn-secondary[1]/i.base-dropdown-header__user__icon.icon-arrow-down[1]';
+    // ======= Game Regex cho TÀI XỈU LIVE (dùng trên chuỗi đã norm() — không dấu, lowercase) =======
+    // POS: các từ khóa liên quan Tài Xỉu / Sicbo
+    const RE_XOCDIA_POS = /\b(?:tai|xiu|taixiu|sicbo|dice)\b/; // "tai", "xiu", "taixiu", "sicbo", "dice"
+    // NEG: Xóc Đĩa (game khác, không phải Tài Xỉu)
+    const RE_XOCDIA_NEG = /\bxoc(?:[-\s]*dia)?\b/; // "xoc", "xoc dia", "xoc-dia", "xocdia"
 
-    // ======= Game Regex (dùng trên chuỗi đã norm() — không dấu, lowercase) =======
-    const RE_XOCDIA_POS = /\bxoc(?:[-\s]*dia)?\b/; // "xoc", "xoc dia", "xoc-dia", "xocdia"
-    const RE_XOCDIA_NEG = /\b(?:tai|xiu|taixiu|sicbo|dice)\b/; // "tai", "xiu", "taixiu", "sicbo", "dice"
 
     // ======= State =======
     const S = {
@@ -283,8 +282,6 @@
     };
 
     const ROOT_Z = 2147483647;
-
-    let _lastUserInfoExpand = 0;
 
     // ======= Utils =======
     const clip = (s, n) => {
@@ -601,10 +598,9 @@
             '  <button id="' + CFG.scanLinksBtnId + '">Scan200LinksMap</button>',
             '  <button id="' + CFG.scanTextsBtnId + '">Scan200TextMap</button>',
             '  <button id="' + CFG.loginBtnId + '">Click Đăng Nhập</button>',
-            '  <button id="' + CFG.xocBtnId + '">Chơi Xóc Đĩa Live</button>',
+            '  <button id="' + CFG.xocBtnId + '">Chơi Tài Xỉu Live</button>',
             '  <button id="' + CFG.retryBtnId + '">Thử lại (tự động)</button>',
             '  <button id="' + CFG.overlayToggleBtnId + '">Overlay</button>',
-            '  <button id="' + CFG.copyBtnId + '">Copy Info</button>',
             '</div>',
             '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">',
             '  <span style="opacity:.8">URL:</span><input id="' + CFG.urlId + '" value="" placeholder="https://..." ',
@@ -688,11 +684,6 @@
             if (ov)
                 ov.style.display = (ov.style.display === 'none' ? 'block' : 'none');
         };
-        root.querySelector('#' + CFG.copyBtnId).onclick = async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            await copyInfoToClipboard();
-        };
         root.querySelector('#' + CFG.retryBtnId).onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -754,7 +745,7 @@
     function updateInfo(extra) {
         if (CFG.showPanel === false)
             return; // panel đang ẩn -> bỏ qua render
-        // Tính trạng thái hiển thị thật sự của khu vực xóc đĩa
+        // Tính trạng thái hiển thị thật sự của khu vực Tài Xỉu
         const live = (() => {
             const s = document.querySelector('.livestream-section__live');
             return !!(s && s.offsetParent !== null);
@@ -766,7 +757,7 @@
             '• Tên nhân vật: ' + (S.username ? S.username : '(?)'),
             '• Tài khoản: ' + balText,
             '• Title: ' + document.title,
-            '• Has Xóc Đĩa: ' + String(live)
+            '• Has Tài Xỉu: ' + String(live)
         ];
 
         if (extra)
@@ -779,53 +770,6 @@
         const u = document.getElementById(CFG.urlId);
         if (u)
             u.value = location.href;
-    }
-
-    async function copyInfoToClipboard() {
-        const box = document.getElementById(CFG.infoId);
-        if (!box)
-            return false;
-        const text = (box.textContent || '').trim();
-        if (!text) {
-            flashCopyFeedback(false);
-            return false;
-        }
-        let ok = false;
-        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-            try {
-                await navigator.clipboard.writeText(text);
-                ok = true;
-            } catch (_) {}
-        }
-        if (!ok) {
-            try {
-                const ta = document.createElement('textarea');
-                ta.value = text;
-                ta.style.position = 'fixed';
-                ta.style.opacity = '0';
-                document.body.appendChild(ta);
-                ta.focus();
-                ta.select();
-                ok = document.execCommand('copy');
-                document.body.removeChild(ta);
-            } catch (_) {}
-        }
-        flashCopyFeedback(ok);
-        return ok;
-    }
-
-    function flashCopyFeedback(ok) {
-        const box = document.getElementById(CFG.infoId);
-        if (!box)
-            return;
-        try {
-            box.style.transition = 'box-shadow 0.2s ease';
-            box.style.boxShadow = ok ? '0 0 0 2px #22c55e inset' : '0 0 0 2px #f97316 inset';
-            clearTimeout(box.__abx_copyFlashTimer);
-            box.__abx_copyFlashTimer = setTimeout(() => {
-                box.style.boxShadow = '';
-            }, 900);
-        } catch (_) {}
     }
 
     // === Automino Home <-> C# bridge (non-intrusive) ===
@@ -852,7 +796,6 @@
                     // ---- Fallback DOM: đọc nhanh trong header khi S.* đang rỗng ----
                     function quickPickUsername() {
                         try {
-                            ensureUserInfoExpanded();
                             // 1) ƯU TIÊN: đọc theo ABS_USERNAME_TAIL (tên nhân vật trên trang profile)
                             if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
                                 try {
@@ -900,6 +843,7 @@
                         } catch (_) {}
                         return '';
                     }
+
                     function quickPickBalance() {
                         try {
                             const header = document.querySelector('header.menu, header') || document;
@@ -1413,65 +1357,8 @@
     }
 
     // ======= Username & Balance =======
-    function ensureUserInfoExpanded(force) {
-        try {
-            const now = Date.now();
-            if (!force && now - _lastUserInfoExpand < 1500)
-                return false;
-            let arrow = null;
-            try {
-                arrow = TAIL_USER_INFO_ARROW ? findByTail(TAIL_USER_INFO_ARROW) : null;
-            } catch (_) {
-                arrow = null;
-            }
-            if (!arrow) {
-                arrow = document.querySelector('i.base-dropdown-header__user__icon.icon-arrow-down');
-            }
-            let btn = arrow ? arrow.closest('button') : null;
-            if (!btn) {
-                btn = document.querySelector('.user-logged__info button.btn.btn-secondary, .user-logged__info .base-dropdown-header > button');
-            }
-            const target = arrow || btn;
-            if (!target)
-                return false;
-            const hit = btn || target;
-            const rect = hit.getBoundingClientRect();
-            const cx = Math.max(0, Math.floor(rect.left + rect.width / 2));
-            const cy = Math.max(0, Math.floor(rect.top + rect.height / 2));
-            const fire = (el, type) => {
-                try {
-                    el.dispatchEvent(new MouseEvent(type, {
-                        bubbles: true,
-                        cancelable: true,
-                        clientX: cx,
-                        clientY: cy,
-                        view: window
-                    }));
-                } catch (_) {}
-            };
-            const seq = ['pointerover', 'mouseover', 'pointerenter', 'mouseenter', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
-            for (let i = 0; i < 2; i++) {
-                for (const type of seq)
-                    fire(hit, type);
-            }
-            fire(hit, 'dblclick');
-            try {
-                if (hit !== target)
-                    fire(target, 'click');
-                if (typeof hit.click === 'function') {
-                    hit.click();
-                    hit.click();
-                }
-            } catch (_) {}
-            _lastUserInfoExpand = now;
-            return true;
-        } catch (_) {
-            return false;
-        }
-    }
     function findUserFromDOM() {
         try {
-            ensureUserInfoExpanded();
             // Ưu tiên tail tuyệt đối nếu có
             if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
                 const abs = findByTail(ABS_USERNAME_TAIL);
@@ -2212,7 +2099,7 @@
         if (RE_XOCDIA_NEG.test(t) && !RE_XOCDIA_POS.test(t))
             return false;
 
-        // Đúng tiêu đề "xóc đĩa" → đúng game
+        // Đúng tiêu đề "Tài Xỉu" → đúng game
         if (RE_XOCDIA_POS.test(t))
             return true;
 
@@ -2259,9 +2146,8 @@
         // 1) Đảm bảo đang ở Home
         await ensureOnHome();
 
-        // 2) Tìm nút đúng (ưu tiên tail cố định)
+        // 2) Tìm nút đúng (ưu tiên tail cố định + 3 item đầu, trong đó Tài Xỉu Live là item 0)
         const resolveBtnFallback = () => {
-            // 1) Thử tail cố định trước
             const items = Array.from(document.querySelectorAll('.livestream-section__live .item-live'));
             const cand = [];
 
@@ -2327,20 +2213,24 @@
         }
 
         if (!btn) {
-            updateInfo('⚠ Không tìm thấy nút "Chơi Xóc Đĩa Live" trong ≤' + Math.round(WAIT_MS / 1000) + 's sau khi về trang Home.');
+            updateInfo('⚠ Không tìm thấy nút "Chơi Tài Xỉu Live" trong ≤' +
+                Math.round(WAIT_MS / 1000) + 's sau khi về trang Home.');
             return;
         }
 
         // Resolver click: ưu tiên nút đã tìm thấy (tail hoặc fallback); nếu không còn khả dụng, fallback tiếp
         const resolveBtnFallbackSafe = () => resolveBtnFallback();
-        const resolverForClick = () => (btn && isVisibleAndClickable(btn)) ? btn : resolveBtnFallbackSafe();
+        const resolverForClick = () =>
+        (btn && isVisibleAndClickable(btn)) ? btn : resolveBtnFallbackSafe();
 
         // 5) Click 1–3 lần (auto) + xuyên overlay
         const ok = await multiTryClick(resolverForClick, 3, isXocDiaLaunched);
         if (ok) {
-            updateInfo('→ Đã tự động click (đợi nút trong ≤' + Math.round(WAIT_MS / 1000) + 's, sau đó click 1–3 lần) để vào "Chơi Xóc Đĩa Live".');
+            updateInfo('→ Đã tự động click (đợi nút trong ≤' +
+                Math.round(WAIT_MS / 1000) +
+                's, sau đó click 1–3 lần) để vào "Chơi Tài Xỉu Live".');
         } else {
-            updateInfo('⚠ Không thể vào "Chơi Xóc Đĩa Live". Nút có thể bị khoá hoặc trang chặn điều hướng.');
+            updateInfo('⚠ Không thể vào "Chơi Tài Xỉu Live". Nút có thể bị khoá hoặc trang chặn điều hướng.');
         }
     }
 
