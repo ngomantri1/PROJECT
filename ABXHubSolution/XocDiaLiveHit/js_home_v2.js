@@ -230,7 +230,7 @@
         maxRetries: 6,
         watchdogMs: 1000, // tick 1s kiểm tra username/balance
         maxWatchdogMiss: 2, // quá 2 nhịp miss -> startAutoRetry(true)
-        showPanel: true, // ⬅️ false = ẩn panel; true = hiện panel
+        showPanel: false, // ⬅️ false = ẩn panel; true = hiện panel
 		autoRetryOnBoot: false
 
     };
@@ -1450,16 +1450,12 @@
                 } catch (_) {}
             };
             const seq = ['pointerover', 'mouseover', 'pointerenter', 'mouseenter', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
-            for (let i = 0; i < 2; i++) {
-                for (const type of seq)
-                    fire(hit, type);
-            }
-            fire(hit, 'dblclick');
+            for (const type of seq)
+                fire(hit, type);
             try {
                 if (hit !== target)
                     fire(target, 'click');
                 if (typeof hit.click === 'function') {
-                    hit.click();
                     hit.click();
                 }
             } catch (_) {}
@@ -1516,10 +1512,10 @@
                 const html = await res.text();
                 const doc = new DOMParser().parseFromString(html, 'text/html');
 
-                // --- Username (ƯU TIÊN ABS PATH) ---
+                // --- Username (UU TIEN ABS PATH) ---
                 let name = '';
                 try {
-                    const abs = findByTailIn(ABS_USERNAME_TAIL, doc); // dùng trên tài liệu fetch được
+                    const abs = findByTailIn(ABS_USERNAME_TAIL, doc); // dung tren tai lieu fetch duoc
                     if (abs) {
                         name = (abs.value != null ? String(abs.value)
                              : (abs.getAttribute && abs.getAttribute('value')) || abs.textContent || '').trim();
@@ -1527,9 +1523,14 @@
                 } catch (_) {}
 
                 if (!name) {
-                    // fallback cũ theo class
-                    const namePick = doc.querySelector('.base-dropdown-header__user__name, .full-name, .display-name, .username .full-name, [class*="display-name"]');
-                    name = namePick ? (namePick.textContent || '').trim() : '';
+                    const namePick = doc.querySelector('.base-dropdown-header__user__name, .full-name span, .display-name span, .username .full-name, [class*="display-name"] span, .user-profile__left .full-name input');
+                    if (namePick) {
+                        name = (namePick.value != null ? String(namePick.value)
+                             : (namePick.getAttribute && namePick.getAttribute('value')) || namePick.textContent || '').trim();
+                    }
+                }
+                if (!name) {
+                    name = extractUsernameFromHtml(html);
                 }
                 if (name)
                     updateUsername(name);

@@ -223,6 +223,7 @@
         scanLinksBtnId: 'bscanl200',
         scanTextsBtnId: 'bscant200',
         overlayToggleBtnId: 'boverlay',
+        copyBtnId: 'bcopyinfo',
         loginBtnId: 'blogin',
         xocBtnId: 'bxoc',
         autoRetryIntervalMs: 5000,
@@ -332,6 +333,44 @@
         } catch (_) {
             return (el.textContent || '').trim();
         }
+    }
+
+    function unescapeJsonString(str) {
+        if (typeof str !== 'string')
+            return '';
+        return str
+            .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => {
+                try {
+                    return String.fromCharCode(parseInt(hex, 16));
+                } catch (_) {
+                    return _;
+                }
+            })
+            .replace(/\\\"/g, '"')
+            .replace(/\\\\/g, '\\');
+    }
+
+    function extractUsernameFromHtml(html) {
+        if (!html || typeof html !== 'string')
+            return '';
+        const patterns = [
+            /"display[_-]?name"\s*:\s*"([^"]{2,80})"/i,
+            /"full[_-]?name"\s*:\s*"([^"]{2,80})"/i,
+            /"user[_-]?name"\s*:\s*"([^"]{2,80})"/i,
+            /"account[_-]?name"\s*:\s*"([^"]{2,80})"/i
+        ];
+        for (const re of patterns) {
+            const m = html.match(re);
+            if (m && m[1]) {
+                const cand = unescapeJsonString(m[1]).trim();
+                if (isLikelyUsername(cand))
+                    return cand;
+            }
+        }
+        const meta = html.match(/<meta[^>]+name=["']user-name["'][^>]+content=["']([^"']+)["']/i);
+        if (meta && meta[1] && isLikelyUsername(meta[1].trim()))
+            return meta[1].trim();
+        return '';
     }
 
     // đặt gần nhóm utils (trước/hoặc sau textOf)
@@ -606,6 +645,7 @@
             '  <button id="' + CFG.xocBtnId + '">Chơi Tài Xỉu Live</button>',
             '  <button id="' + CFG.retryBtnId + '">Thử lại (tự động)</button>',
             '  <button id="' + CFG.overlayToggleBtnId + '">Overlay</button>',
+            '  <button id="' + CFG.copyBtnId + '">Copy Info</button>',
             '</div>',
             '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">',
             '  <span style="opacity:.8">URL:</span><input id="' + CFG.urlId + '" value="" placeholder="https://..." ',
@@ -688,6 +728,11 @@
             const ov = $overlay();
             if (ov)
                 ov.style.display = (ov.style.display === 'none' ? 'block' : 'none');
+        };
+        root.querySelector('#' + CFG.copyBtnId).onclick = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            await copyInfoToClipboard();
         };
         root.querySelector('#' + CFG.retryBtnId).onclick = (e) => {
             e.preventDefault();
@@ -775,6 +820,53 @@
         const u = document.getElementById(CFG.urlId);
         if (u)
             u.value = location.href;
+    }
+
+    async function copyInfoToClipboard() {
+        const box = document.getElementById(CFG.infoId);
+        if (!box)
+            return false;
+        const text = (box.textContent || '').trim();
+        if (!text) {
+            flashCopyFeedback(false);
+            return false;
+        }
+        let ok = false;
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            try {
+                await navigator.clipboard.writeText(text);
+                ok = true;
+            } catch (_) {}
+        }
+        if (!ok) {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+            } catch (_) {}
+        }
+        flashCopyFeedback(ok);
+        return ok;
+    }
+
+    function flashCopyFeedback(ok) {
+        const box = document.getElementById(CFG.infoId);
+        if (!box)
+            return;
+        try {
+            box.style.transition = 'box-shadow 0.2s ease';
+            box.style.boxShadow = ok ? '0 0 0 2px #22c55e inset' : '0 0 0 2px #f97316 inset';
+            clearTimeout(box.__abx_copyFlashTimer);
+            box.__abx_copyFlashTimer = setTimeout(() => {
+                box.style.boxShadow = '';
+            }, 900);
+        } catch (_) {}
     }
 
     // === Automino Home <-> C# bridge (non-intrusive) ===
@@ -1400,16 +1492,12 @@
                 } catch (_) {}
             };
             const seq = ['pointerover', 'mouseover', 'pointerenter', 'mouseenter', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
-            for (let i = 0; i < 2; i++) {
-                for (const type of seq)
-                    fire(hit, type);
-            }
-            fire(hit, 'dblclick');
+            for (const type of seq)
+                fire(hit, type);
             try {
                 if (hit !== target)
                     fire(target, 'click');
                 if (typeof hit.click === 'function') {
-                    hit.click();
                     hit.click();
                 }
             } catch (_) {}
@@ -1466,10 +1554,10 @@
                 const html = await res.text();
                 const doc = new DOMParser().parseFromString(html, 'text/html');
 
-                // --- Username (ƯU TIÊN ABS PATH) ---
+                // --- Username (UU TIEN ABS PATH) ---
                 let name = '';
                 try {
-                    const abs = findByTailIn(ABS_USERNAME_TAIL, doc); // dùng trên tài liệu fetch được
+                    const abs = findByTailIn(ABS_USERNAME_TAIL, doc); // dung tren tai lieu fetch duoc
                     if (abs) {
                         name = (abs.value != null ? String(abs.value)
                              : (abs.getAttribute && abs.getAttribute('value')) || abs.textContent || '').trim();
@@ -1477,9 +1565,14 @@
                 } catch (_) {}
 
                 if (!name) {
-                    // fallback cũ theo class
-                    const namePick = doc.querySelector('.base-dropdown-header__user__name, .full-name, .display-name, .username .full-name, [class*="display-name"]');
-                    name = namePick ? (namePick.textContent || '').trim() : '';
+                    const namePick = doc.querySelector('.base-dropdown-header__user__name, .full-name span, .display-name span, .username .full-name, [class*="display-name"] span, .user-profile__left .full-name input');
+                    if (namePick) {
+                        name = (namePick.value != null ? String(namePick.value)
+                             : (namePick.getAttribute && namePick.getAttribute('value')) || namePick.textContent || '').trim();
+                    }
+                }
+                if (!name) {
+                    name = extractUsernameFromHtml(html);
                 }
                 if (name)
                     updateUsername(name);
@@ -1698,8 +1791,14 @@
                     } catch (_) {}
 
                     if (!valU) {
-                        const pickU = doc && doc.querySelector('.base-dropdown-header__user__name, .full-name, .display-name, .username .full-name, [class*="display-name"]');
-                        valU = pickU ? (pickU.textContent || '').trim() : '';
+                        const pickU = doc && doc.querySelector('.base-dropdown-header__user__name, .full-name span, .display-name span, .username .full-name, [class*="display-name"] span, .user-profile__left .full-name input');
+                        if (pickU) {
+                            valU = (pickU.value != null ? String(pickU.value)
+                                 : (pickU.getAttribute && pickU.getAttribute('value')) || pickU.textContent || '').trim();
+                        }
+                    }
+                    if (!valU && doc && doc.documentElement) {
+                        valU = extractUsernameFromHtml(doc.documentElement.outerHTML || '');
                     }
                     if (valU)
                         updateUsername(valU);
