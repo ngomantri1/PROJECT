@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -394,9 +395,11 @@ Ví dụ không hợp lệ:
             public string LeaseClientId { get; set; } = "";
             public string LastHomeUsername { get; set; } = "";
             public string TrialUntil { get; set; } = "";
-            public int BetStrategyIndex { get; set; } = 4; // mặc định "5. Theo cầu trước thông minh"
+            [JsonIgnore]
+            public int BetStrategyIndex { get; set; } = 5; // mặc định "5. Theo cầu trước thông minh"
             public string BetSeq { get; set; } = "";       // giá trị ô "CHUỖI CẦU"
             public string BetPatterns { get; set; } = "";  // giá trị ô "CÁC THẾ CẦU"
+            [JsonIgnore]
             public string MoneyStrategy { get; set; } = "MultiChain";//IncreaseWhenLose
             public double CutProfit { get; set; } = 0; // 0 = tắt cắt lãi
             public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
