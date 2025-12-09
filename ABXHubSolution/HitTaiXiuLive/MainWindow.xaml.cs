@@ -147,6 +147,7 @@ namespace HitTaiXiuLive
         private bool _uiReady = false;
         private bool _didStartupNav = false;
         private bool _webHooked = false;
+        private bool _devToolsOpened = false;
         private CancellationTokenSource? _navCts, _userCts, _passCts, _stakeCts;
 
         // ====== JS Awaiters ======
@@ -1583,6 +1584,12 @@ Ví dụ không hợp lệ:
 
                 // Dùng overload có _webEnv để chắc chắn dùng fixed runtime
                 await Web!.EnsureCoreWebView2Async(_webEnv);
+
+                if (!_devToolsOpened)
+                {
+                    try { Web.CoreWebView2.OpenDevToolsWindow(); _devToolsOpened = true; Log("[Web] DevTools opened."); }
+                    catch (Exception exDt) { Log("[Web] OpenDevToolsWindow failed: " + exDt.Message); }
+                }
             }
             catch (ArgumentException ex) when (ex.Message.Contains("already initialized"))
             {
@@ -1601,6 +1608,12 @@ Ví dụ không hợp lệ:
                     options: null
                 );
                 await Web!.EnsureCoreWebView2Async(_webEnv);
+
+                if (!_devToolsOpened)
+                {
+                    try { Web.CoreWebView2.OpenDevToolsWindow(); _devToolsOpened = true; Log("[Web] DevTools opened (fallback env)."); }
+                    catch (Exception exDt2) { Log("[Web] OpenDevToolsWindow failed: " + exDt2.Message); }
+                }
             }
 
             // 5) Gắn event 1 lần (đã có _webHooked guard bên trong)
@@ -1624,7 +1637,7 @@ Ví dụ không hợp lệ:
                     settings.IsWebMessageEnabled = true;
                     // (tuỳ chọn khác, giữ nguyên nếu bạn không cần)
                     // settings.AreDefaultContextMenusEnabled = false;
-                    // settings.AreDevToolsEnabled = true;
+                    settings.AreDevToolsEnabled = true;
                 }
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)

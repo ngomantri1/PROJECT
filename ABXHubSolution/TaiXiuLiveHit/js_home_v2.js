@@ -288,6 +288,7 @@
     const ROOT_Z = 2147483647;
 
     let _lastUserInfoExpand = 0;
+    let _userInfoArrowClicked = false;
 
     // ======= Utils =======
     const clip = (s, n) => {
@@ -1457,6 +1458,8 @@
     // ======= Username & Balance =======
     function ensureUserInfoExpanded(force) {
         try {
+            if (_userInfoArrowClicked && !force)
+                return false;
             const now = Date.now();
             if (!force && now - _lastUserInfoExpand < 1500)
                 return false;
@@ -1502,6 +1505,7 @@
                 }
             } catch (_) {}
             _lastUserInfoExpand = now;
+            _userInfoArrowClicked = true;
             return true;
         } catch (_) {
             return false;

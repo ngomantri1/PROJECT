@@ -230,7 +230,7 @@
         maxRetries: 6,
         watchdogMs: 1000, // tick 1s kiểm tra username/balance
         maxWatchdogMiss: 2, // quá 2 nhịp miss -> startAutoRetry(true)
-        showPanel: false, // ⬅️ false = ẩn panel; true = hiện panel
+        showPanel: true, // ⬅️ false = ẩn panel; true = hiện panel
         autoRetryOnBoot: false
 
     };
@@ -286,6 +286,10 @@
     };
 
     const ROOT_Z = 2147483647;
+
+    // Auto open login popup state
+    let _loginPopupTimer = null;
+    let _loginPopupDeadline = 0;
 
     let _lastUserInfoExpand = 0;
 
@@ -446,6 +450,17 @@
         return !!(n && (n.offsetParent !== null));
     }
 
+    function isLoginPopupVisible() {
+        const pass = Array.from(document.querySelectorAll('input[type="password"], input[placeholder*="mật khẩu" i], input[placeholder*="mat khau" i]'))
+            .find(isVisibleAndClickable);
+        if (pass)
+            return true;
+        const modal = document.querySelector('.modal.show, .modal-dialog, .modal-content, .dialog-login, .popup-login');
+        if (modal && modal.offsetParent !== null)
+            return true;
+        return false;
+    }
+
     async function onAuthStateMaybeChanged(reason = '') {
         // Chỉ cho phép chạy khi cổng đã mở (đã nhìn thấy nút "Đăng nhập")
         if (typeof canRunAuthLoop === 'function' && !canRunAuthLoop()) {
@@ -484,6 +499,7 @@
             }
             if (!S.username || !S.balance)
                 pumpAuthProbe(10000);
+            stopLoginPopupOpener();
             return;
         }
 
@@ -506,6 +522,7 @@
             // Chưa từng có tên → để panel hiển thị (?)
         }
         // Balance cũng không "đè 88" nếu không chắc
+        startLoginPopupOpener();
     }
 
     // === DOM Ready helper (thêm mới) ===
@@ -867,6 +884,30 @@
                 box.style.boxShadow = '';
             }, 900);
         } catch (_) {}
+    }
+
+    function stopLoginPopupOpener() {
+        if (_loginPopupTimer) {
+            clearInterval(_loginPopupTimer);
+            _loginPopupTimer = null;
+        }
+    }
+
+    function startLoginPopupOpener(maxMs = 20000, intervalMs = 1200) {
+        if (_loginPopupTimer)
+            return;
+        _loginPopupDeadline = Date.now() + maxMs;
+        _loginPopupTimer = setInterval(() => {
+            if (S.username || isLoggedInFromDOM() || isLoginPopupVisible()) {
+                stopLoginPopupOpener();
+                return;
+            }
+            if (Date.now() > _loginPopupDeadline) {
+                stopLoginPopupOpener();
+                return;
+            }
+            clickLoginButton();
+        }, Math.max(600, intervalMs));
     }
 
     // === Automino Home <-> C# bridge (non-intrusive) ===
@@ -2195,6 +2236,24 @@
             peelAndClick(btn, {
                 holdMs: 300
             });
+        } else {
+            // Fallback: nút vẽ bằng canvas -> click theo tọa độ trung tâm đáy (khoảng 80% chiều cao)
+            const x = Math.max(5, Math.min(innerWidth - 5, innerWidth * 0.5));
+            const y = Math.max(5, Math.min(innerHeight - 5, innerHeight * 0.8));
+            const target = document.elementFromPoint(x, y);
+            if (target) {
+                ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(t => {
+                    try {
+                        target.dispatchEvent(new MouseEvent(t, {
+                            bubbles: true,
+                            cancelable: true,
+                            clientX: x,
+                            clientY: y,
+                            view: window
+                        }));
+                    } catch (_) {}
+                });
+            }
         }
 
         // Sau khi kích login, chủ động chờ header lấp tên

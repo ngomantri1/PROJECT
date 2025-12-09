@@ -132,14 +132,15 @@ namespace TaiXiuLiveHit.Tasks
 
             // GỌI __cw_bet AN TOÀN (giữ nguyên như code hiện tại)
             var js =
-                "(function(){try{" +
+                "(async function(){try{" +
                 " if (typeof window.__cw_bet==='function'){" +
-                "   return window.__cw_bet('" + side + "', " + amount + ");" +
+                "   return await window.__cw_bet('" + side + "', " + amount + ");" +
                 " } else { return 'no'; }" +
                 "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
-            var r = await ctx.EvalJsAsync(js);
-            ctx.Log?.Invoke($"[BET-JS] result={r}");
+            var rRaw = await ctx.EvalJsAsync(js);
+            var r = (rRaw ?? "").Trim().Trim('"');
+            ctx.Log?.Invoke($"[BET-JS] result={rRaw}");
 
             // Chỉ coi là thành công khi JS trả về 'ok'
             bool ok = string.Equals(r, "ok", StringComparison.OrdinalIgnoreCase);
@@ -179,3 +180,6 @@ namespace TaiXiuLiveHit.Tasks
         }
     }
 }
+
+
+
