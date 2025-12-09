@@ -1541,8 +1541,17 @@ Ví dụ không hợp lệ:
             // Nếu đã init hoặc đã có CoreWebView2 thì bỏ qua
             if (_webInitDone || Web?.CoreWebView2 != null) return;
 
-            // 1) Bảo đảm fixed runtime được bung ra và lấy thư mục
-            var fixedDir = await EnsureFixedRuntimePresentAsync();
+            // 1) Bảo đảm fixed runtime được bung ra và lấy thư mục (có thể null nếu thiếu resource)
+            string? fixedDir = null;
+            try
+            {
+                fixedDir = await EnsureFixedRuntimePresentAsync();
+            }
+            catch (Exception ex)
+            {
+                Log("[WV2] EnsureFixedRuntimePresentAsync failed, fallback Evergreen: " + ex.Message);
+                fixedDir = null;
+            }
 
             // 2) Bảo đảm thư mục user-data tồn tại (khớp với XAML)
             System.IO.Directory.CreateDirectory(Wv2UserDataDir);

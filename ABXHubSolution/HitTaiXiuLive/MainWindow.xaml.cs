@@ -249,7 +249,7 @@ namespace HitTaiXiuLive
 
 
 
-        private const string DEFAULT_URL = "https://v.hit.club/"; // URL mặc định bạn muốn
+        private const string DEFAULT_URL = "v.hit.club"; // URL mặc định bạn muốn
         // === License repo/worker settings (CHỈNH LẠI CHO PHÙ HỢP) ===
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn
@@ -1462,10 +1462,12 @@ Ví dụ không hợp lệ:
                 if (needNav)
                 {
                     var tcs = new TaskCompletionSource<bool>();
+                    var navOk = false;
                     void Handler(object? s, CoreWebView2NavigationCompletedEventArgs e)
                     {
                         Web.NavigationCompleted -= Handler;
                         Log("[Web] NavigationCompleted: " + (e.IsSuccess ? "OK" : ("Err " + e.WebErrorStatus)));
+                        navOk = e.IsSuccess;
                         tcs.TrySetResult(true);
                     }
                     Web.NavigationCompleted += Handler;
@@ -1474,6 +1476,20 @@ Ví dụ không hợp lệ:
                     await tcs.Task;
 
                     await AutoFillLoginAsync();
+
+                    // Nếu điều hướng lỗi, thử fallback sang DEFAULT_URL
+                    if (!navOk && !string.Equals(target.ToString(), DEFAULT_URL, StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            Log("[Web] Fallback navigate DEFAULT_URL vì lỗi điều hướng đầu: " + target);
+                            Web.Source = new Uri(DEFAULT_URL);
+                        }
+                        catch (Exception ex2)
+                        {
+                            Log("[Web] Fallback navigate lỗi: " + ex2.Message);
+                        }
+                    }
                 }
             }
             catch (Exception ex) { Log("[NavigateIfNeededAsync] " + ex); }
@@ -1541,8 +1557,17 @@ Ví dụ không hợp lệ:
             // Nếu đã init hoặc đã có CoreWebView2 thì bỏ qua
             if (_webInitDone || Web?.CoreWebView2 != null) return;
 
-            // 1) Bảo đảm fixed runtime được bung ra và lấy thư mục
-            var fixedDir = await EnsureFixedRuntimePresentAsync();
+            // 1) Bảo đảm fixed runtime được bung ra và lấy thư mục (có thể null nếu thiếu resource)
+            string? fixedDir = null;
+            try
+            {
+                fixedDir = await EnsureFixedRuntimePresentAsync();
+            }
+            catch (Exception ex)
+            {
+                Log("[WV2] EnsureFixedRuntimePresentAsync failed, fallback Evergreen: " + ex.Message);
+                fixedDir = null;
+            }
 
             // 2) Bảo đảm thư mục user-data tồn tại (khớp với XAML)
             System.IO.Directory.CreateDirectory(Wv2UserDataDir);
