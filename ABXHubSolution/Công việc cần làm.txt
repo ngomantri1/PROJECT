@@ -1,14 +1,3 @@
-Kiểm tra trong file MainWindow.xaml.cs đoạn code nào đang tự động gọi làm động động đăng nhập trong file js_home_v2.js 
-Hãy chỉ ra cho tôi. Giờ tôi muốn bỏ tính năng đăng nhập đấy thì làm chỗ nào ? và sửa ra sao ?
-Tôi cần bạn xem cho tôi trong 2 project XocDiaLiveHit và TaiXiuLiveHit
-
-
-
-Tôi cần sửa file js_home_v2 trong cả project XocDiaLiveHit và TaiXiuLiveHit đều chung 1 cơ chế
-Hiện tại đang lấy tên nhân vật nhưng nhiều lúc chưa chính xác, muốn chính xác cần click vào thông tin người dùng trước khi thực hiện lấy tên nhân vật 
-Phải tìm ra đoạn code nào đang lấy tên nhân vật và phải thực hiện hàm click vào thôgn tin người dùng trước khi lấy tên nhân vật
-
-
 
 
 
