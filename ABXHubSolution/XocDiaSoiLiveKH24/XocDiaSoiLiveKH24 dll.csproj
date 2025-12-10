@@ -20,8 +20,8 @@
 
   <!-- ===== Debug: build DLL plugin cho Hub ===== -->
   <PropertyGroup Condition="'$(Configuration)'=='Debug'">
-    <!-- WPF app compile as Library để Hub load như plugin -->
-    <OutputType>WinExe</OutputType>
+    <!-- WPF app compile as Library để Hub load như plugin còn WinExe để chạy Debug -->
+    <OutputType>Library</OutputType>
 
     <DefineConstants>$(DefineConstants);DEBUG;TRACE;ABX_HUB</DefineConstants>
     <DebugType>portable</DebugType>
@@ -53,17 +53,17 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
   </ItemGroup>
 
-<!-- Nhúng JS vào resource -->
-<ItemGroup>
-  <None Remove="js_home_v2.js" />
-</ItemGroup>
-<ItemGroup>
-  <EmbeddedResource Include="js_home_v2.js" />
-</ItemGroup>
+  <!-- Nhúng JS vào resource -->
+  <ItemGroup>
+    <None Remove="js_home_v2.js" />
+    <None Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="js_home_v2.js" />
+  </ItemGroup>
 
   <!-- Release mới nhúng ZIP môi trường -->
   <ItemGroup Condition="'$(Configuration)'=='Release'">
-    <None Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
     <EmbeddedResource Include="ThirdParty\WebView2Fixed_win-x64.zip">
       <LogicalName>XocDiaSoiLiveKH24.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
     </EmbeddedResource>
@@ -79,6 +79,12 @@
   </ItemGroup>
 
   <!-- ===== RẤT QUAN TRỌNG: Debug chuyển App.xaml từ ApplicationDefinition -> Page ===== -->
+  <ItemGroup Condition="'$(Configuration)'=='Debug'">
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+    <!-- Debug không nhúng ZIP môi trường -->
+    <EmbeddedResource Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
+  </ItemGroup>
 
   <!-- ===== Kiểm soát file plugin để tránh duplicate compile ===== -->
   <!-- Bỏ mặc định trước, rồi Debug sẽ Include lại -->
