@@ -1234,6 +1234,25 @@ Ví dụ không hợp lệ:
                                     var snap = System.Text.Json.JsonSerializer.Deserialize<CwSnapshot>(msg);
                                     if (snap != null)
                                     {
+                                        // Ghi nhận username từ tick game (dùng làm _homeUsername nếu Home chưa gửi)
+                                        try
+                                        {
+                                            var userVal = snap.username ?? "";
+                                            if (!string.IsNullOrWhiteSpace(userVal))
+                                            {
+                                                var normalized = userVal.Trim().ToLowerInvariant();
+                                                _homeUsername = normalized;
+                                                _homeUsernameAt = DateTime.UtcNow;
+
+                                                if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
+                                                {
+                                                    _cfg.LastHomeUsername = _homeUsername;
+                                                    _ = SaveConfigAsync();
+                                                }
+                                            }
+                                        }
+                                        catch { /* ignore */ }
+
                                         // === NI-SEQUENCE & finalize đúng thời điểm (đuôi seq đổi) ===
                                         try
                                         {
@@ -1763,8 +1782,22 @@ Ví dụ không hợp lệ:
             var resName = FindResourceName("ThirdParty.WebView2Fixed_win-x64.zip")
                           ?? Wv2ZipResNameX64;
 
-            using var s = Assembly.GetExecutingAssembly().GetManifestResourceStream(resName)
-                           ?? throw new FileNotFoundException("Missing embedded resource: " + resName);
+            // Ưu tiên resource nhúng; fallback sang file ngoài nếu chạy Debug không nhúng
+            Stream? zipStream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resName);
+            if (zipStream == null)
+            {
+                var exeDir = AppDomain.CurrentDomain.BaseDirectory;
+                var zipPath = Path.Combine(exeDir, "ThirdParty", "WebView2Fixed_win-x64.zip");
+                if (!File.Exists(zipPath))
+                    zipPath = Path.Combine(exeDir, "WebView2Fixed_win-x64.zip");
+                if (File.Exists(zipPath))
+                {
+                    Log("[Web] Using external WebView2Fixed zip: " + zipPath);
+                    zipStream = File.OpenRead(zipPath);
+                }
+            }
+
+            using var s = zipStream ?? throw new FileNotFoundException("Missing WebView2Fixed zip: " + resName);
             using var za = new System.IO.Compression.ZipArchive(
                 s, System.IO.Compression.ZipArchiveMode.Read);
 
