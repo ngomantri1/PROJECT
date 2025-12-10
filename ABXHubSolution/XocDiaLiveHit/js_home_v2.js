@@ -230,7 +230,7 @@
         maxRetries: 6,
         watchdogMs: 1000, // tick 1s kiểm tra username/balance
         maxWatchdogMiss: 2, // quá 2 nhịp miss -> startAutoRetry(true)
-        showPanel: false, // ⬅️ false = ẩn panel; true = hiện panel
+        showPanel: true, // ⬅️ false = ẩn panel; true = hiện panel
 		autoRetryOnBoot: false
 
     };
@@ -850,52 +850,18 @@
             // Lấy state hiện tại để C# có thể poll
             window.__abx_hw_getState = function () {
                 try {
-                    // ---- Fallback DOM: đọc nhanh trong header khi S.* đang rỗng ----
+                    // ---- Fallback DOM: chỉ đọc tail tuyệt đối; không quét header
                     function quickPickUsername() {
                         try {
                             ensureUserInfoExpanded();
-                            // 1) ƯU TIÊN: đọc theo ABS_USERNAME_TAIL (tên nhân vật trên trang profile)
                             if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
-                                try {
-                                    const elAbs = findByTail(ABS_USERNAME_TAIL);
-                                    if (elAbs) {
-                                        const val = (elAbs.value != null
-                                             ? String(elAbs.value)
-                                             : (elAbs.getAttribute && elAbs.getAttribute('value')) || elAbs.textContent || '').trim();
-                                        if (val)
-                                            return val.replace(/\s+/g, ' ');
-                                    }
-                                } catch (_) {}
-                            }
-
-                            // 2) Fallback: lấy theo header như trước (khi không có form profile)
-                            const header = document.querySelector('header.menu, header') || document;
-
-                            const pri = header.querySelector(
-                                    '.user-logged__info .base-dropdown-header__user__name, p.base-dropdown-header__user__name');
-                            if (pri) {
-                                const t = (pri.textContent || '').trim();
-                                if (t)
-                                    return t;
-                            }
-
-                            const roots = [
-                                '.username',
-                                '.menu-account__info--user',
-                                '.user-logged',
-                                '.display-name',
-                                '.full-name'
-                            ];
-                            for (const sel of roots) {
-                                const el = header.querySelector(
-                                        sel + ' .full-name, ' +
-                                        sel + ' .display-name, ' +
-                                        sel + ' span.full-name, ' +
-                                        sel);
-                                if (el) {
-                                    const txt = (el.textContent || '').trim();
-                                    if (txt && !/^(vip|email|đăng|login)/i.test(txt))
-                                        return txt;
+                                const elAbs = findByTail(ABS_USERNAME_TAIL);
+                                if (elAbs) {
+                                    const val = (elAbs.value != null
+                                         ? String(elAbs.value)
+                                         : (elAbs.getAttribute && elAbs.getAttribute('value')) || elAbs.textContent || '').trim();
+                                    if (val)
+                                        return val.replace(/\s+/g, ' ');
                                 }
                             }
                         } catch (_) {}
@@ -1416,10 +1382,8 @@
     // ======= Username & Balance =======
     function ensureUserInfoExpanded(force) {
         try {
-            if (_userInfoArrowClicked && !force)
-                return false;
             const now = Date.now();
-            if (!force && now - _lastUserInfoExpand < 1500)
+            if (!force && _userInfoArrowClicked && now - _lastUserInfoExpand < 1500)
                 return false;
             let arrow = null;
             try {
@@ -1480,20 +1444,6 @@
                     return v;
             }
 
-            // Quét các vị trí có thể chứa username thật sự (không quét label)
-            const cand = document.querySelectorAll([
-                        'header .user-logged .base-dropdown-header__user__name',
-                        '.menu-account__info--user .display-name .full-name span',
-                        '.menu-account__info--user .username .full-name span',
-                        '.user-logged__info .user__name'
-                    ].join(','));
-
-            for (const el of cand) {
-                const txt = textOf(el);
-                if (isLikelyUsername(txt))
-                    return txt;
-            }
-
             return '';
         } catch (_) {
             return '';
@@ -1526,16 +1476,6 @@
                     }
                 } catch (_) {}
 
-                if (!name) {
-                    const namePick = doc.querySelector('.base-dropdown-header__user__name, .full-name span, .display-name span, .username .full-name, [class*="display-name"] span, .user-profile__left .full-name input');
-                    if (namePick) {
-                        name = (namePick.value != null ? String(namePick.value)
-                             : (namePick.getAttribute && namePick.getAttribute('value')) || namePick.textContent || '').trim();
-                    }
-                }
-                if (!name) {
-                    name = extractUsernameFromHtml(html);
-                }
                 if (name)
                     updateUsername(name);
 
@@ -1643,23 +1583,34 @@
         return val || (S.balance || '');
     }
 
+    function setUsernameLocal(u) {
+        if (u == null)
+            return;
+        const val = String(u).trim();
+        // Cập nhật state/UI cho panel, không quyết định gửi C#
+        S.username = val;
+        updateInfo();
+    }
+
     function updateUsername(u) {
         if (u == null)
             return;
         const val = String(u).trim();
-        if (!isLikelyUsername(val))
-            return; // ✨ thêm dòng này
 
-        S.username = val;
-        updateInfo();
+        // Rỗng hoặc không hợp lệ: chỉ lưu local, không gửi home_tick
+        if (!val || !isLikelyUsername(val)) {
+            setUsernameLocal(val);
+            try { console.debug('[HW] skip home_tick: username not likely:', val); } catch (_) {}
+            return;
+        }
 
-        // 🔔 NEW: đẩy ngay 1 gói lên C# (không chờ interval)
+        setUsernameLocal(val);
+
+        // Đẩy ngay 1 gói lên C# (không chờ interval)
         try {
             if (typeof window.__abx_hw_pushNow === 'function') {
-                // Nếu bạn đã có bridge pushNow thì dùng luôn
                 window.__abx_hw_pushNow();
             } else if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
-                // Fallback: tự gửi JSON theo format mà C# đang parse
                 window.chrome.webview.postMessage(JSON.stringify({
                         abx: 'home_tick',
                         username: S.username || '',
@@ -1669,8 +1620,7 @@
                         ts: Date.now()
                     }));
             }
-        } catch (_) { /* nuốt lỗi, không ảnh hưởng UI */
-        }
+        } catch (_) { /* ignore */ }
     }
 
     function updateBalance(b) {
@@ -1752,10 +1702,6 @@
                         }
                     } catch (_) {}
 
-                    if (!valU) {
-                        const pickU = doc && doc.querySelector('.base-dropdown-header__user__name, .full-name, .display-name, .username .full-name, [class*="display-name"]');
-                        valU = pickU ? (pickU.textContent || '').trim() : '';
-                    }
                     if (valU)
                         updateUsername(valU);
 
