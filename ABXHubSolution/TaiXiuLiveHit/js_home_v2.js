@@ -230,7 +230,7 @@
         maxRetries: 6,
         watchdogMs: 1000, // tick 1s kiểm tra username/balance
         maxWatchdogMiss: 2, // quá 2 nhịp miss -> startAutoRetry(true)
-        showPanel: false, // ⬅️ false = ẩn panel; true = hiện panel
+        showPanel: true, // ⬅️ false = ẩn panel; true = hiện panel
         autoRetryOnBoot: false
 
     };
@@ -1685,23 +1685,34 @@
         return val || (S.balance || '');
     }
 
+    function setUsernameLocal(u) {
+        if (u == null)
+            return;
+        const val = String(u).trim();
+        // Cập nhật state/UI cho panel, không quyết định gửi C#
+        S.username = val;
+        updateInfo();
+    }
+
     function updateUsername(u) {
         if (u == null)
             return;
         const val = String(u).trim();
-        if (!isLikelyUsername(val))
-            return; // ✨ thêm dòng này
 
-        S.username = val;
-        updateInfo();
+        // Rỗng hoặc không hợp lệ: chỉ lưu local, không gửi home_tick
+        if (!val || !isLikelyUsername(val)) {
+            setUsernameLocal(val);
+            try { console.debug('[HW] skip home_tick: username not likely:', val); } catch (_) {}
+            return;
+        }
 
-        // 🔔 NEW: đẩy ngay 1 gói lên C# (không chờ interval)
+        setUsernameLocal(val);
+
+        // Đẩy ngay 1 gói lên C# (không chờ interval)
         try {
             if (typeof window.__abx_hw_pushNow === 'function') {
-                // Nếu bạn đã có bridge pushNow thì dùng luôn
                 window.__abx_hw_pushNow();
             } else if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
-                // Fallback: tự gửi JSON theo format mà C# đang parse
                 window.chrome.webview.postMessage(JSON.stringify({
                         abx: 'home_tick',
                         username: S.username || '',
@@ -1711,8 +1722,7 @@
                         ts: Date.now()
                     }));
             }
-        } catch (_) { /* nuốt lỗi, không ảnh hưởng UI */
-        }
+        } catch (_) { /* ignore */ }
     }
 
     function updateBalance(b) {

@@ -1097,6 +1097,24 @@ Ví dụ không hợp lệ:
                                     var snap = System.Text.Json.JsonSerializer.Deserialize<CwSnapshot>(msg);
                                     if (snap != null)
                                     {
+                                        // Set _homeUsername from game tick when username is available
+                                        try
+                                        {
+                                            var userVal = snap.username ?? "";
+                                            if (!string.IsNullOrWhiteSpace(userVal))
+                                            {
+                                                var normalized = userVal.Trim().ToLowerInvariant();
+                                                _homeUsername = normalized;
+                                                _homeUsernameAt = DateTime.UtcNow;
+
+                                                if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
+                                                {
+                                                    _cfg.LastHomeUsername = _homeUsername;
+                                                    _ = SaveConfigAsync();
+                                                }
+                                            }
+                                        }
+                                        catch { /* ignore */ }
                                         // MỚI: log seq / session / username khi nhận tick từ JS để kiểm tra dữ liệu đẩy sang C#
                                         try
                                         {
