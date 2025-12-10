@@ -80,7 +80,8 @@ namespace HitTaiXiuLive.Tasks
                 // có plan → chờ đến lúc vào tiền
                 await WaitUntilNewRoundStart(ctx, ct);
 
-                string baseSession = snap?.session ?? string.Empty;
+                var snapNow = ctx.GetSnap();
+                string baseSession = snapNow?.session ?? string.Empty;
                 char plan = planned.Dequeue();
                 string side = ParityCharToSide(plan);
                 long stake;
