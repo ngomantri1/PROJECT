@@ -333,6 +333,44 @@
         }
     }
 
+    function unescapeJsonString(str) {
+        if (typeof str !== 'string')
+            return '';
+        return str
+            .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => {
+                try {
+                    return String.fromCharCode(parseInt(hex, 16));
+                } catch (_) {
+                    return _;
+                }
+            })
+            .replace(/\\\"/g, '"')
+            .replace(/\\\\/g, '\\');
+    }
+
+    function extractUsernameFromHtml(html) {
+        if (!html || typeof html !== 'string')
+            return '';
+        const patterns = [
+            /"display[_-]?name"\s*:\s*"([^"]{2,80})"/i,
+            /"full[_-]?name"\s*:\s*"([^"]{2,80})"/i,
+            /"user[_-]?name"\s*:\s*"([^"]{2,80})"/i,
+            /"account[_-]?name"\s*:\s*"([^"]{2,80})"/i
+        ];
+        for (const re of patterns) {
+            const m = html.match(re);
+            if (m && m[1]) {
+                const cand = unescapeJsonString(m[1]).trim();
+                if (isLikelyUsername(cand))
+                    return cand;
+            }
+        }
+        const meta = html.match(/<meta[^>]+name=["']user-name["'][^>]+content=["']([^"']+)["']/i);
+        if (meta && meta[1] && isLikelyUsername(meta[1].trim()))
+            return meta[1].trim();
+        return '';
+    }
+
     // đặt gần nhóm utils (trước/hoặc sau textOf)
     function isLikelyUsername(s) {
         const t = String(s || '').trim();
@@ -850,23 +888,58 @@
             // Lấy state hiện tại để C# có thể poll
             window.__abx_hw_getState = function () {
                 try {
-                    // ---- Fallback DOM: chỉ đọc tail tuyệt đối; không quét header
+                    // ---- Fallback DOM: đọc nhanh trong header khi S.* đang rỗng ----
                     function quickPickUsername() {
                         try {
                             ensureUserInfoExpanded();
+                            // 1) ƯU TIÊN: đọc theo ABS_USERNAME_TAIL (tên nhân vật trên trang profile)
                             if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
-                                const elAbs = findByTail(ABS_USERNAME_TAIL);
-                                if (elAbs) {
-                                    const val = (elAbs.value != null
-                                         ? String(elAbs.value)
-                                         : (elAbs.getAttribute && elAbs.getAttribute('value')) || elAbs.textContent || '').trim();
-                                    if (val)
-                                        return val.replace(/\s+/g, ' ');
+                                try {
+                                    const elAbs = findByTail(ABS_USERNAME_TAIL);
+                                    if (elAbs) {
+                                        const val = (elAbs.value != null
+                                             ? String(elAbs.value)
+                                             : (elAbs.getAttribute && elAbs.getAttribute('value')) || elAbs.textContent || '').trim();
+                                        if (val)
+                                            return val.replace(/\s+/g, ' ');
+                                    }
+                                } catch (_) {}
+                            }
+
+                            // 2) Fallback: lấy theo header như trước (khi không có form profile)
+                            const header = document.querySelector('header.menu, header') || document;
+
+                            const pri = header.querySelector(
+                                    '.user-logged__info .base-dropdown-header__user__name, p.base-dropdown-header__user__name');
+                            if (pri) {
+                                const t = (pri.textContent || '').trim();
+                                if (t)
+                                    return t;
+                            }
+
+                            const roots = [
+                                '.username',
+                                '.menu-account__info--user',
+                                '.user-logged',
+                                '.display-name',
+                                '.full-name'
+                            ];
+                            for (const sel of roots) {
+                                const el = header.querySelector(
+                                        sel + ' .full-name, ' +
+                                        sel + ' .display-name, ' +
+                                        sel + ' span.full-name, ' +
+                                        sel);
+                                if (el) {
+                                    const txt = (el.textContent || '').trim();
+                                    if (txt && !/^(vip|email|đăng|login)/i.test(txt))
+                                        return txt;
                                 }
                             }
                         } catch (_) {}
                         return '';
                     }
+
                     function quickPickBalance() {
                         try {
                             const header = document.querySelector('header.menu, header') || document;
@@ -1382,8 +1455,10 @@
     // ======= Username & Balance =======
     function ensureUserInfoExpanded(force) {
         try {
+            if (_userInfoArrowClicked && !force)
+                return false;
             const now = Date.now();
-            if (!force && _userInfoArrowClicked && now - _lastUserInfoExpand < 1500)
+            if (!force && now - _lastUserInfoExpand < 1500)
                 return false;
             let arrow = null;
             try {
@@ -1444,6 +1519,20 @@
                     return v;
             }
 
+            // Quét các vị trí có thể chứa username thật sự (không quét label)
+            const cand = document.querySelectorAll([
+                        'header .user-logged .base-dropdown-header__user__name',
+                        '.menu-account__info--user .display-name .full-name span',
+                        '.menu-account__info--user .username .full-name span',
+                        '.user-logged__info .user__name'
+                    ].join(','));
+
+            for (const el of cand) {
+                const txt = textOf(el);
+                if (isLikelyUsername(txt))
+                    return txt;
+            }
+
             return '';
         } catch (_) {
             return '';
@@ -1476,6 +1565,16 @@
                     }
                 } catch (_) {}
 
+                if (!name) {
+                    const namePick = doc.querySelector('.base-dropdown-header__user__name, .full-name span, .display-name span, .username .full-name, [class*="display-name"] span, .user-profile__left .full-name input');
+                    if (namePick) {
+                        name = (namePick.value != null ? String(namePick.value)
+                             : (namePick.getAttribute && namePick.getAttribute('value')) || namePick.textContent || '').trim();
+                    }
+                }
+                if (!name) {
+                    name = extractUsernameFromHtml(html);
+                }
                 if (name)
                     updateUsername(name);
 
@@ -1702,6 +1801,16 @@
                         }
                     } catch (_) {}
 
+                    if (!valU) {
+                        const pickU = doc && doc.querySelector('.base-dropdown-header__user__name, .full-name span, .display-name span, .username .full-name, [class*="display-name"] span, .user-profile__left .full-name input');
+                        if (pickU) {
+                            valU = (pickU.value != null ? String(pickU.value)
+                                 : (pickU.getAttribute && pickU.getAttribute('value')) || pickU.textContent || '').trim();
+                        }
+                    }
+                    if (!valU && doc && doc.documentElement) {
+                        valU = extractUsernameFromHtml(doc.documentElement.outerHTML || '');
+                    }
                     if (valU)
                         updateUsername(valU);
 

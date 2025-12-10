@@ -334,6 +334,10 @@ namespace XocDiaLiveHit
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
         private bool _isGameUi = false;              // trạng thái UI hiện hành
         private System.Windows.Threading.DispatcherTimer? _uiModeTimer;
+        private int _gameNavWatchdogGen = 0;         // phân thế hệ cho watchdog navigation
+        private bool _wv2Resetting = false;
+        private DateTime _lastWv2ResetUtc = DateTime.MinValue;
+        private string? _lastGameUrl = null;
 
         private static readonly TimeSpan GameTickFresh = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan HomeTickFresh = TimeSpan.FromSeconds(1.5);
@@ -1539,6 +1543,7 @@ Ví dụ không hợp lệ:
 
                 if (needNav)
                 {
+                    _lastGameUrl = target.ToString();
                     var tcs = new TaskCompletionSource<bool>();
                     void Handler(object? s, CoreWebView2NavigationCompletedEventArgs e)
                     {
@@ -3007,6 +3012,14 @@ Ví dụ không hợp lệ:
                     Log("[VaoXocDia_Click -> open-live(index=1)] " + rOpen);
                 }
 
+                // 4) Chờ điều hướng sang host games.* trước khi poll Cocos
+                var gameNavOk = await WaitForGameNavigationAsync(TimeSpan.FromSeconds(20));
+                if (!gameNavOk)
+                {
+                    Log("[VaoXocDia_Click] Timeout: chưa điều hướng tới games.*");
+                    return;
+                }
+
                 // 4) Cầu nối: đồng bộ & autostart khi đã vào bàn
                 if (_bridge != null)
                 {
@@ -3126,6 +3139,135 @@ Ví dụ không hợp lệ:
         {
             try { _autoLoginWatchCts?.Cancel(); } catch { }
             _autoLoginWatchCts = null;
+        }
+
+        // === WebView2 reset / watchdog ===
+        private static async Task DeleteDirectoryWithRetryAsync(string path, int attempts = 3, int delayMs = 400)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+                return;
+            for (int i = 0; i < attempts; i++)
+            {
+                try
+                {
+                    var di = new DirectoryInfo(path);
+                    foreach (var file in di.GetFiles("*", SearchOption.AllDirectories))
+                        { try { file.Attributes = FileAttributes.Normal; } catch { } }
+                    foreach (var dir in di.GetDirectories("*", SearchOption.AllDirectories))
+                        { try { dir.Attributes = FileAttributes.Normal; } catch { } }
+                    Directory.Delete(path, recursive: true);
+                    return;
+                }
+                catch { /* retry */ }
+                if (i < attempts - 1)
+                {
+                    try { await Task.Delay(delayMs); } catch { }
+                }
+            }
+        }
+
+        private async Task ResetWebViewProfileAndReloadAsync(string? url)
+        {
+            if (_wv2Resetting) return;
+            var now = DateTime.UtcNow;
+            if (now - _lastWv2ResetUtc < TimeSpan.FromSeconds(20))
+            {
+                Log("[WV2] Skip reset (recently attempted)");
+                return;
+            }
+            _wv2Resetting = true;
+            try
+            {
+                Log("[WV2] Reset profile + reload...");
+                _lastWv2ResetUtc = now;
+
+                try
+                {
+                    if (Web != null && Web.CoreWebView2 != null)
+                    {
+                        try { Web.CoreWebView2.Stop(); } catch { }
+                        try { Web.CoreWebView2.Navigate("about:blank"); } catch { }
+                    }
+                }
+                catch { }
+
+                _webInitDone = false;
+                _webHooked = false;
+                _webMsgHooked = false;
+                _frameHooked = false;
+                _domHooked = false;
+                _navModeHooked = false;
+
+                try { await DeleteDirectoryWithRetryAsync(Wv2UserDataDir); }
+                catch (Exception ex) { Log("[WV2] Delete user-data failed: " + ex.Message); }
+
+                await EnsureWebReadyAsync();
+                if (!string.IsNullOrWhiteSpace(url))
+                {
+                    _didStartupNav = false;
+                    await NavigateIfNeededAsync(url);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[WV2] Reset failed: " + ex);
+            }
+            finally
+            {
+                _wv2Resetting = false;
+            }
+        }
+
+        private async Task StartGameNavWatchdogAsync(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url) ||
+                !Uri.TryCreate(url, UriKind.Absolute, out var u) ||
+                !u.Host.StartsWith("games.", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var gen = Interlocked.Increment(ref _gameNavWatchdogGen);
+            try { await Task.Delay(TimeSpan.FromSeconds(20)); } catch { return; }
+            if (gen != _gameNavWatchdogGen) return;
+
+            var cur = Web?.Source?.ToString() ?? "";
+            try
+            {
+                if (Uri.TryCreate(cur, UriKind.Absolute, out var cu) &&
+                    !cu.Host.StartsWith("games.", StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+            catch { }
+
+            var lastTickAge = DateTime.UtcNow - _lastGameTickUtc;
+            if (lastTickAge <= TimeSpan.FromSeconds(20))
+                return;
+            if (DateTime.UtcNow - _lastWv2ResetUtc < TimeSpan.FromSeconds(20))
+                return;
+
+            Log("[WV2] Watchdog: không thấy game tick, reset profile + reload");
+            await ResetWebViewProfileAndReloadAsync(url ?? _lastGameUrl);
+        }
+
+        private async Task<bool> WaitForGameNavigationAsync(TimeSpan timeout)
+        {
+            var t0 = DateTime.UtcNow;
+            while (DateTime.UtcNow - t0 < timeout)
+            {
+                try
+                {
+                    var src = Web?.Source?.ToString() ?? "";
+                    if (!string.IsNullOrWhiteSpace(src) &&
+                        Uri.TryCreate(src, UriKind.Absolute, out var u) &&
+                        u.Host.StartsWith("games.", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _lastGameUrl = src;
+                        return true;
+                    }
+                }
+                catch { }
+                await Task.Delay(300);
+            }
+            return false;
         }
 
 
