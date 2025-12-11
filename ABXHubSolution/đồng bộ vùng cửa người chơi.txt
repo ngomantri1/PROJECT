@@ -1,0 +1,74 @@
+(() => {
+  const target = document.querySelector('.qR_lh.qR_rn.qR_ri');
+  if (!target) { alert('Không tìm thấy vùng cần mirror'); return; }
+  const source = target.closest('.kM_kN.kM_kR') || target;
+
+  let panel = document.getElementById('mirror-player-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'mirror-player-panel';
+    panel.style.cssText = `
+      position: fixed; top: 12px; left: 12px; z-index: 99999;
+      padding: 6px; border-radius: 10px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+      background: rgba(0,0,0,0.1);
+      cursor: move; user-select: none;
+    `;
+    document.body.appendChild(panel);
+    let ox=0, oy=0, drag=false;
+    panel.onmousedown = e => { drag=true; ox=e.clientX-panel.offsetLeft; oy=e.clientY-panel.offsetTop; };
+    document.onmouseup = () => drag=false;
+    document.onmousemove = e => { if(!drag) return; panel.style.left=(e.clientX-ox)+'px'; panel.style.top=(e.clientY-oy)+'px'; };
+  }
+
+  const copyStyles = (src, dst) => {
+    const cs = getComputedStyle(src);
+    const keys = [
+      'background','backgroundImage','backgroundColor','backgroundPosition','backgroundSize','backgroundRepeat',
+      'border','borderRadius','boxShadow','color','font','padding','margin','textShadow','textAlign'
+    ];
+    for (const k of keys) dst.style[k] = cs[k];
+    dst.style.width = cs.width;
+    dst.style.height = cs.height;
+  };
+  const cloneWithStyles = (src) => {
+    const clone = src.cloneNode(false);
+    copyStyles(src, clone);
+    for (const child of src.childNodes) {
+      clone.appendChild(child.nodeType === 1 ? cloneWithStyles(child) : child.cloneNode(true));
+    }
+    return clone;
+  };
+
+  let lastSig = '';
+  let scheduled = false;
+
+  const render = () => {
+    scheduled = false;
+    // snapshot để tránh render thừa
+    const cs = getComputedStyle(source);
+    const sig = source.outerHTML + '|' + cs.background + '|' + cs.color + '|' + cs.width + '|' + cs.height;
+    if (sig === lastSig) return;
+    lastSig = sig;
+
+    const clone = cloneWithStyles(source);
+    if (panel.firstChild) panel.replaceChild(clone, panel.firstChild);
+    else panel.appendChild(clone);
+  };
+
+  const schedule = () => {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(render);
+  };
+
+  const obs = new MutationObserver(schedule);
+  obs.observe(source, { childList: true, characterData: true, attributes: true, subtree: true });
+
+  // Fallback: 1s/lần để bắt thay đổi khó phát hiện
+  const timer = setInterval(schedule, 1000);
+
+  render();
+
+  // Để tắt: clearInterval(timer); obs.disconnect(); document.getElementById('mirror-player-panel')?.remove();
+})();

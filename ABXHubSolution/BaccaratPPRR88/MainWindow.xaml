@@ -1,4 +1,4 @@
-<Window
+﻿<Window
     x:Class="BaccaratPPRR88.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -6,7 +6,7 @@
     xmlns:local="clr-namespace:BaccaratPPRR88"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
-    Title="Xóc Đĩa Sới Live KH24 (Automino 0978.248.822)"
+    Title="Baccarat đa bàn sảnh PP (Automino 0978.248.822)"
     Width="1366"
     Height="768"
     Background="#F0F2F5"
@@ -114,6 +114,211 @@
             <Setter Property="Foreground" Value="{StaticResource TextSubtle}" />
         </Style>
 
+        <!--  Rounded template cho ListBoxItem  -->
+        <ControlTemplate x:Key="RoundedListBoxItemTemplate" TargetType="ListBoxItem">
+            <Border
+                x:Name="Bd"
+                Padding="{TemplateBinding Padding}"
+                Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="10">
+                <ContentPresenter />
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter TargetName="Bd" Property="Opacity" Value="0.6" />
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <!--  Style 1: Danh sách chuẩn  -->
+        <Style x:Key="RoomListStyle1" TargetType="ListBox">
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Template" Value="{StaticResource RoundedListBoxItemTemplate}" />
+                        <Setter Property="Padding" Value="10,6" />
+                        <Setter Property="Margin" Value="0,2" />
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="BorderBrush" Value="Transparent" />
+                        <Setter Property="BorderThickness" Value="1" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Cursor" Value="Hand" />
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#EEF2FF" />
+                                <Setter Property="BorderBrush" Value="#CBD5E1" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="#D6E4FF" />
+                                <Setter Property="BorderBrush" Value="#1D4ED8" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                                <Setter Property="Foreground" Value="#0F172A" />
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--  Style 2: Chip wrap  -->
+        <Style x:Key="RoomListStyle2" TargetType="ListBox">
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <WrapPanel ItemWidth="170" Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Template" Value="{StaticResource RoundedListBoxItemTemplate}" />
+                        <Setter Property="Padding" Value="8,6" />
+                        <Setter Property="Margin" Value="4" />
+                        <Setter Property="Background" Value="#F1F5F9" />
+                        <Setter Property="BorderBrush" Value="#E2E8F0" />
+                        <Setter Property="BorderThickness" Value="1" />
+                        <Setter Property="HorizontalContentAlignment" Value="Center" />
+                        <Setter Property="Cursor" Value="Hand" />
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#E0E7FF" />
+                                <Setter Property="BorderBrush" Value="#C7D2FE" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="#1D4ED8" />
+                                <Setter Property="BorderBrush" Value="#1D4ED8" />
+                                <Setter Property="Foreground" Value="White" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--  Style 3: Thẻ 2 cột  -->
+        <Style x:Key="RoomListStyle3" TargetType="ListBox">
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <WrapPanel ItemWidth="230" Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Template" Value="{StaticResource RoundedListBoxItemTemplate}" />
+                        <Setter Property="Padding" Value="12,10" />
+                        <Setter Property="Margin" Value="6" />
+                        <Setter Property="Background" Value="White" />
+                        <Setter Property="BorderBrush" Value="#E5E7EB" />
+                        <Setter Property="BorderThickness" Value="1" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Cursor" Value="Hand" />
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="BorderBrush" Value="#94A3B8" />
+                                <Setter Property="Background" Value="#F8FAFC" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="#E0F2FE" />
+                                <Setter Property="BorderBrush" Value="#0284C7" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--  Style 4: Danh sách gọn  -->
+        <Style x:Key="RoomListStyle4" TargetType="ListBox">
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Template" Value="{StaticResource RoundedListBoxItemTemplate}" />
+                        <Setter Property="Padding" Value="8,4" />
+                        <Setter Property="Margin" Value="0,2" />
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="BorderBrush" Value="Transparent" />
+                        <Setter Property="BorderThickness" Value="1" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Cursor" Value="Hand" />
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#F1F5F9" />
+                                <Setter Property="BorderBrush" Value="#E2E8F0" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="#E2E8F0" />
+                                <Setter Property="BorderBrush" Value="#94A3B8" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                                <Setter Property="Foreground" Value="#0F172A" />
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--  Style 5: Danh sách xen kẽ  -->
+        <Style x:Key="RoomListStyle5" TargetType="ListBox">
+            <Setter Property="AlternationCount" Value="2" />
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Template" Value="{StaticResource RoundedListBoxItemTemplate}" />
+                        <Setter Property="Padding" Value="10,6" />
+                        <Setter Property="Margin" Value="0,2" />
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="BorderBrush" Value="Transparent" />
+                        <Setter Property="BorderThickness" Value="1" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Cursor" Value="Hand" />
+                        <Style.Triggers>
+                            <Trigger Property="ItemsControl.AlternationIndex" Value="1">
+                                <Setter Property="Background" Value="#F8FAFC" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#EEF2FF" />
+                                <Setter Property="BorderBrush" Value="#CBD5E1" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="#CBD5FF" />
+                                <Setter Property="BorderBrush" Value="#1E3A8A" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                                <Setter Property="Foreground" Value="#0F172A" />
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <!--  Primary Button (Facebook blue)  -->
         <Style x:Key="PrimaryButton" TargetType="Button">
             <Setter Property="Background" Value="{StaticResource Blue}" />
@@ -489,6 +694,169 @@
                         </Border>
 
                         <Border
+                            x:Name="GroupRoomList"
+                            Style="{StaticResource Card}"
+                            Visibility="Collapsed">
+                            <StackPanel>
+                                <!-- Dropdown multi-select danh s?ch b?n -->
+                                <StackPanel Margin="6,0,6,0">
+                                    <Border
+                                        x:Name="RoomHeader"
+                                        Padding="10,8"
+                                        Background="White"
+                                        BorderBrush="{StaticResource CardBorder}"
+                                        BorderThickness="1"
+                                        CornerRadius="10"
+                                        Cursor="Hand"
+                                        MouseLeftButtonUp="RoomHeader_MouseLeftButtonUp">
+                                        <DockPanel LastChildFill="False">
+                                            <StackPanel DockPanel.Dock="Left">
+                                                <TextBlock
+                                                    FontSize="12"
+                                                    FontWeight="SemiBold"
+                                                    Foreground="#1D4ED8"
+                                                    Text="Danh sách bàn" />
+                                                <TextBlock
+                                                    x:Name="TxtRoomSummary"
+                                                    FontSize="14"
+                                                    FontWeight="Bold"
+                                                    Foreground="#111827"
+                                                    Text="Không có mục nào" />
+                                            </StackPanel>
+                                            <Button
+                                                x:Name="BtnReloadRoomList"
+                                                DockPanel.Dock="Right"
+                                                Width="44"
+                                                MinWidth="44"
+                                                MinHeight="36"
+                                                Padding="0"
+                                                Margin="6,0,0,0"
+                                                HorizontalAlignment="Right"
+                                                Click="BtnReloadRoomList_Click"
+                                                Style="{StaticResource PrimaryButton}"
+                                                ToolTip="Làm mới bàn">
+                                                <TextBlock
+                                                    FontFamily="Segoe MDL2 Assets"
+                                                    FontSize="18"
+                                                    Text="" />
+                                            </Button>
+                                        </DockPanel>
+                                    </Border>
+
+                                    <Popup
+                                        x:Name="RoomPopup"
+                                        Placement="Bottom"
+                                        PlacementTarget="{Binding ElementName=RoomHeader}"
+                                        StaysOpen="True"
+                                        AllowsTransparency="True">
+                                        <Border
+                                            Background="White"
+                                            BorderBrush="{StaticResource CardBorder}"
+                                            BorderThickness="1"
+                                            CornerRadius="10"
+                                            Padding="10"
+                                            Effect="{StaticResource SoftShadow}"
+                                            MinWidth="{Binding ActualWidth, ElementName=RoomHeader}">
+                                            <StackPanel>
+                                                <DockPanel Margin="0,0,0,6">
+                                                    <CheckBox
+                                                        x:Name="ChkRoomAll"
+                                                        MinWidth="100"
+                                                        VerticalAlignment="Center"
+                                                        FontWeight="SemiBold"
+                                                        Foreground="#111827"
+                                                        Click="ChkRoomAll_Click"
+                                                        Content="Chọn tất cả"
+                                                        IsThreeState="True" />
+                                                    <TextBlock
+                                                        x:Name="TxtRoomCount"
+                                                        DockPanel.Dock="Right"
+                                                        VerticalAlignment="Center"
+                                                        FontSize="12"
+                                                        Foreground="#374151"
+                                                        Text="0/0 đã chọn" />
+                                                </DockPanel>
+
+                                                <Border
+                                                    Background="#F9FAFB"
+                                                    BorderBrush="{StaticResource CardBorder}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8"
+                                                    Padding="6">
+                                                    <ScrollViewer
+                                                        MaxHeight="420"
+                                                        VerticalScrollBarVisibility="Auto"
+                                                        HorizontalScrollBarVisibility="Disabled">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <ItemsControl
+                                                                x:Name="RoomItemsCol1"
+                                                                ItemsSource="{Binding RoomOptionsCol1, RelativeSource={RelativeSource AncestorType=Window}}">
+                                                                <ItemsControl.ItemsPanel>
+                                                                    <ItemsPanelTemplate>
+                                                                        <StackPanel />
+                                                                    </ItemsPanelTemplate>
+                                                                </ItemsControl.ItemsPanel>
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <CheckBox
+                                                                            Margin="4,2"
+                                                                            Padding="6,2"
+                                                                            VerticalAlignment="Center"
+                                                                            VerticalContentAlignment="Center"
+                                                                            HorizontalContentAlignment="Left"
+                                                                            FontSize="13"
+                                                                            FontWeight="SemiBold"
+                                                                            Foreground="#111827"
+                                                                            Content="{Binding Name}"
+                                                                            IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                                            Checked="RoomItemCheck_Click"
+                                                                            Unchecked="RoomItemCheck_Click" />
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                            <ItemsControl
+                                                                x:Name="RoomItemsCol2"
+                                                                Grid.Column="1"
+                                                                Margin="10,0,0,0"
+                                                                ItemsSource="{Binding RoomOptionsCol2, RelativeSource={RelativeSource AncestorType=Window}}">
+                                                                <ItemsControl.ItemsPanel>
+                                                                    <ItemsPanelTemplate>
+                                                                        <StackPanel />
+                                                                    </ItemsPanelTemplate>
+                                                                </ItemsControl.ItemsPanel>
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <CheckBox
+                                                                            Margin="4,2"
+                                                                            Padding="6,2"
+                                                                            VerticalAlignment="Center"
+                                                                            VerticalContentAlignment="Center"
+                                                                            HorizontalContentAlignment="Left"
+                                                                            FontSize="13"
+                                                                            FontWeight="SemiBold"
+                                                                            Foreground="#111827"
+                                                                            Content="{Binding Name}"
+                                                                            IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                                            Checked="RoomItemCheck_Click"
+                                                                            Unchecked="RoomItemCheck_Click" />
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </Grid>
+                                                    </ScrollViewer>
+                                                </Border>
+                                            </StackPanel>
+                                        </Border>
+                                    </Popup>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border
                             x:Name="GroupStrategyMoney"
                             Style="{StaticResource Card}"
                             Visibility="Collapsed">
@@ -504,8 +872,8 @@
                                         x:Name="BtnGoHome"
                                         Grid.Column="1"
                                         MinWidth="150"
-                                        Padding="12,8"
                                         Margin="12,0,0,0"
+                                        Padding="12,8"
                                         HorizontalAlignment="Right"
                                         Click="BtnGoHome_Click"
                                         Content="Quay về trang chủ"
@@ -1653,3 +2021,27 @@
         </Grid>
     </DockPanel>
 </Window>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

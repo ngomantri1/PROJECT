@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -131,6 +131,26 @@ namespace BaccaratPPRR88
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
     }
+
+    public sealed class RoomOption : INotifyPropertyChanged
+    {
+        public string Name { get; set; } = "";
+
+        private bool _isSelected;
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (_isSelected == value) return;
+                _isSelected = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+            }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+    }
+
     public partial class MainWindow : Window
     {
         private const string AppLocalDirName = "BaccaratPPRR88"; // đổi thành tên bạn muốn
@@ -229,6 +249,28 @@ namespace BaccaratPPRR88
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
         private bool _lockGameUi = false;// NEW: khóa tạm để khỏi bị timer kéo về home sau khi mình chủ động vào game
         private System.Windows.Threading.DispatcherTimer? _uiModeTimer;
+
+        private bool _lastUiIsGame = false;
+
+
+
+        private readonly ObservableCollection<string> _roomList = new();
+        private readonly HashSet<string> _selectedRooms = new(StringComparer.OrdinalIgnoreCase);
+
+        public ObservableCollection<string> RoomList => _roomList;
+
+        private int _roomListLoading = 0;
+        private DateTime _roomListLastLoaded = DateTime.MinValue;
+
+        private readonly ObservableCollection<RoomOption> _roomOptions = new();
+        public ObservableCollection<RoomOption> RoomOptions => _roomOptions;
+        private readonly ObservableCollection<RoomOption> _roomOptionsCol1 = new();
+        private readonly ObservableCollection<RoomOption> _roomOptionsCol2 = new();
+        public ObservableCollection<RoomOption> RoomOptionsCol1 => _roomOptionsCol1;
+        public ObservableCollection<RoomOption> RoomOptionsCol2 => _roomOptionsCol2;
+
+        private CancellationTokenSource? _roomSaveCts;
+        private string _lastSavedRoomsSignature = "";
 
         private static readonly TimeSpan GameTickFresh = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan HomeTickFresh = TimeSpan.FromSeconds(1.5);
@@ -407,8 +449,9 @@ Ví dụ không hợp lệ:
 
             // Lưu chuỗi tiền theo từng MoneyStrategy
             public Dictionary<string, string> StakeCsvByMoney { get; set; } = new();
+            public List<string> SelectedRooms { get; set; } = new();
 
-            /// <summary>Đường dẫn file lưu trạng thái AI n-gram (JSON). Bỏ trống => dùng mặc định %LOCALAPPDATA%\Automino\ai\ngram_state_v1.json</summary>
+            /// <summary>Du?ng d?n file luu tr?ng th?i AI n-gram (JSON). B? tr?ng => d-ng m?c d?nh %LOCALAPPDATA%\Automino\ai_gram_state_v1.json</summary>
             public string AiNGramStatePath { get; set; } = "";
 
 
@@ -740,8 +783,13 @@ Ví dụ không hợp lệ:
             SetModeUi(false);
             BetGrid.ItemsSource = _betPage;
             this.PreviewKeyDown += MainWindow_PreviewKeyDown;
+            this.PreviewMouseDown += MainWindow_PreviewMouseDown_CloseRoomPopup;
+            this.StateChanged += MainWindow_StateChanged_CloseRoomPopup;
+            this.Deactivated += MainWindow_Deactivated_CloseRoomPopup;
+            this.IsVisibleChanged += MainWindow_IsVisibleChanged_CloseRoomPopup;
             // gọi async sau khi cửa sổ đã load
             this.Loaded += MainWindow_Loaded;
+            InitRoomDropdown();
 
         }
 
@@ -758,7 +806,7 @@ Ví dụ không hợp lệ:
                         e.Handled = true;
                     }
                 }
-                catch (Exception ex)
+            catch (Exception ex)
                 {
                     Log("[DevTools] " + ex.Message);
                 }
@@ -786,7 +834,7 @@ Ví dụ không hợp lệ:
 
                 // Hàng đợi log chờ ghi file
                 while (_fileLogQueue.TryDequeue(out _)) { }
-            }
+                }
             catch
             {
                 // nuốt lỗi, tránh crash app
@@ -800,7 +848,7 @@ Ví dụ không hợp lệ:
                 {
                     File.WriteAllText(logFile, string.Empty);
                 }
-            }
+                }
             catch (Exception)
             {
                 // ignore lỗi xoá file, tránh crash app
@@ -816,7 +864,7 @@ Ví dụ không hợp lệ:
                 {
                     Clipboard.SetText(TxtLog.Text);
                 }
-            }
+                }
             catch (Exception ex)
             {
                 Log("[CopyLog] " + ex.Message);
@@ -873,8 +921,8 @@ Ví dụ không hợp lệ:
                                 catch { }
                             });
                         }
-                    }
-                    catch { }
+                }
+            catch { }
                     await Task.Delay(UI_FLUSH_MS);
                 }
             });
@@ -902,8 +950,8 @@ Ví dụ không hợp lệ:
                                 File.AppendAllText(f, sb.ToString(), Encoding.UTF8);
                             }
                         }
-                    }
-                    catch { }
+                }
+            catch { }
                     await Task.Delay(FILE_FLUSH_MS);
                 }
             });
@@ -938,33 +986,41 @@ Ví dụ không hợp lệ:
             {
                 if (isGame)
                 {
-                    // ẩn vùng đăng nhập + điều hướng
                     if (GroupLoginNav != null)
                         GroupLoginNav.Visibility = Visibility.Collapsed;
 
-                    // hiện vùng chiến lược / quản lý vốn / trạng thái
                     if (GroupStrategyMoney != null)
                         GroupStrategyMoney.Visibility = Visibility.Visible;
                     if (GroupConsole != null)
                         GroupConsole.Visibility = Visibility.Visible;
                     if (GroupStatus != null)
                         GroupStatus.Visibility = Visibility.Visible;
+                    if (GroupRoomList != null)
+                        GroupRoomList.Visibility = Visibility.Visible;
+
+                    var now = DateTime.UtcNow;
+                    if (_roomListLoading == 0 &&
+                        (_roomList.Count == 0 || (now - _roomListLastLoaded) > TimeSpan.FromSeconds(10)))
+                    {
+                        _roomListLastLoaded = now;
+                        _ = RefreshRoomListAsync();
+                    }
                 }
                 else
                 {
-                    // hiện vùng đăng nhập + điều hướng
                     if (GroupLoginNav != null)
                         GroupLoginNav.Visibility = Visibility.Visible;
 
-                    // ẩn vùng chiến lược / quản lý vốn / trạng thái
                     if (GroupStrategyMoney != null)
                         GroupStrategyMoney.Visibility = Visibility.Collapsed;   // <--- sửa về Collapsed
                     if (GroupConsole != null)
                         GroupConsole.Visibility = Visibility.Collapsed;
                     if (GroupStatus != null)
                         GroupStatus.Visibility = Visibility.Collapsed;
+                    if (GroupRoomList != null)
+                        GroupRoomList.Visibility = Visibility.Collapsed;
                 }
-            }
+                }
             catch (Exception ex)
             {
                 Log("[SetModeUi] " + ex);
@@ -1035,6 +1091,153 @@ Ví dụ không hợp lệ:
             SetModeUi(isGame);
         }
 
+        private async Task RefreshRoomListAsync(bool userTriggered = false)
+        {
+            try
+            {
+                if (Interlocked.Exchange(ref _roomListLoading, 1) == 1)
+                {
+                    if (userTriggered) Log("[ROOM] Đang tải danh sách bàn, vui lòng chờ...");
+                    return;
+                }
+
+                _roomListLastLoaded = DateTime.UtcNow;
+
+                if (Web == null)
+                {
+                    if (userTriggered) Log("[ROOM] WebView chưa sẵn sàng.");
+                    return;
+                }
+
+                await EnsureWebReadyAsync();
+                if (Web?.CoreWebView2 == null)
+                {
+                    if (userTriggered) Log("[ROOM] CoreWebView2 chưa khởi tạo.");
+                    return;
+                }
+
+                var js = @"(function(){
+  try{
+    const primarySelector = '.rY_sn';
+    const keyAttrs = ['data-table-name','data-tablename','data-tableid','data-table-id','data-tabletitle','data-table-title','data-title','data-name','data-display-name','data-displayname','data-label','aria-label','title','alt'];
+    const seen = new Set();
+    const names = [];
+    const clean = (s)=> (s||'').trim();
+    const extract = (el)=>{
+      if(!el) return '';
+      for(const a of keyAttrs){
+        try{
+          const v = clean(el.getAttribute && el.getAttribute(a));
+          if(v) return v;
+        }catch(_){}
+      }
+      const text = clean(el.innerText || el.textContent || '');
+      return text;
+    };
+    const addName = (t)=>{
+      const v = clean(t);
+      if(!v) return;
+      const key = v.toLowerCase();
+      if(seen.has(key)) return;
+      seen.add(key);
+      names.push(v);
+    };
+    const collectRoots = (root)=>{
+      const list=[];
+      const stack=[root];
+      const visited=new Set();
+      while(stack.length){
+        const r=stack.pop();
+        if(!r || visited.has(r)) continue;
+        visited.add(r);
+        list.push(r);
+        try{
+          if(r.querySelectorAll){
+            r.querySelectorAll('*').forEach(el=>{
+              if(el && el.shadowRoot) stack.push(el.shadowRoot);
+            });
+          }
+        }catch(_){}
+      }
+      return list;
+    };
+    const scanPrimary = (root)=>{
+      if(!root) return;
+      const roots = collectRoots(root);
+      roots.forEach(rt=>{
+        try{
+          rt.querySelectorAll(primarySelector).forEach(el=>{
+            const t = extract(el);
+            if(t) addName(t);
+          });
+        }catch(_){}
+      });
+    };
+    scanPrimary(document);
+    const iframes = Array.from(document.querySelectorAll('iframe'));
+    for(const fr of iframes){
+      try{
+        const doc = fr.contentDocument || fr.contentWindow?.document;
+        scanPrimary(doc);
+      }catch(_){}
+    }
+    return names;
+  }catch(e){ return []; }
+})();";
+
+                List<string> list = new();
+                const int maxAttempts = 15;
+                for (int attempt = 0; attempt < maxAttempts; attempt++)
+                {
+                    var raw = await Web.ExecuteScriptAsync(js);
+                    list = string.IsNullOrWhiteSpace(raw)
+                        ? new List<string>()
+                        : (JsonSerializer.Deserialize<List<string>>(raw) ?? new List<string>());
+
+                    if (list.Count > 0) break;
+                    await Task.Delay(600); // chờ DOM lobby load
+                }
+
+                var clean = list
+                    .Select(x => x?.Trim() ?? "")
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+                    .Select(g => g.First())
+                    .OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+
+                if (clean.Count == 0)
+                {
+                    Log("[ROOM] Không tìm thấy bàn (DOM lobby chưa sẵn). Hãy thử bấm 'Lấy danh sách bàn' sau khi lobby load xong.");
+                }
+                else
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        _roomList.Clear();
+                        foreach (var name in clean) _roomList.Add(name);
+                        var cleanSet = new HashSet<string>(_roomList, StringComparer.OrdinalIgnoreCase);
+                        _selectedRooms.RemoveWhere(n => !cleanSet.Contains(n));
+                        RebuildRoomOptions();
+                        UpdateRoomSummary();
+                    });
+
+                    _cfg.SelectedRooms = _selectedRooms.ToList();
+                    _ = TriggerRoomSaveDebouncedAsync();
+                    Log($"[ROOM] Đã lấy {clean.Count} bàn.");
+
+                    _roomListLastLoaded = DateTime.UtcNow;
+                }
+                }
+            catch (Exception ex)
+            {
+                Log("[ROOM] Lỗi khi lấy danh sách bàn: " + ex.Message);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _roomListLoading, 0);
+            }
+        }
 
         // ====== Helpers ======
         private static string T(TextBox tb, string def = "") => (tb?.Text ?? def).Trim();
@@ -1124,6 +1327,27 @@ Ví dụ không hợp lệ:
                 if (ChkTrial != null) ChkTrial.IsChecked = _cfg.UseTrial;
                 ApplyCutUiFromConfig();
 
+                _selectedRooms.Clear();
+                if (_cfg.SelectedRooms != null)
+                {
+                    foreach (var r in _cfg.SelectedRooms)
+                    {
+                        var name = (r ?? "").Trim();
+                        if (!string.IsNullOrWhiteSpace(name))
+                            _selectedRooms.Add(name);
+                    }
+                }
+
+                // Prefill danh sách phòng từ cấu hình để lần mở sau vẫn thấy lựa chọn cũ
+                if (_roomList.Count == 0 && _selectedRooms.Count > 0)
+                {
+                    _roomList.Clear();
+                    foreach (var name in _selectedRooms) _roomList.Add(name);
+                }
+
+                RebuildRoomOptions();
+                UpdateRoomSummary();
+
 
             }
             catch (Exception ex) { Log("[LoadConfig] " + ex); }
@@ -1161,6 +1385,7 @@ Ví dụ không hợp lệ:
                 _cfg.UseTrial = (ChkTrial?.IsChecked == true);
                 _cfg.LeaseClientId = _leaseClientId;
                 _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
+                _cfg.SelectedRooms = _selectedRooms.ToList();
 
 
                 var dir = Path.GetDirectoryName(_cfgPath);
@@ -1327,8 +1552,8 @@ Ví dụ không hợp lệ:
                                                     _lockMajorMinorUpdates = true;
                                                 }
                                             }
-                                        }
-                                        catch { /* an toàn */ }
+                }
+            catch { /* an toàn */ }
 
                                         // Ghi lại niSeq vào snapshot cho UI
                                         snap.niSeq = _niSeq.ToString();
@@ -1391,8 +1616,8 @@ Ví dụ không hợp lệ:
                                                         LblStatusText.Visibility = Visibility.Collapsed;
                                                     }
                                                 }
-                                            }
-                                            catch { }
+                }
+            catch { }
                                         }));
                                     }
                                     if (ui == "game")
@@ -1550,13 +1775,13 @@ Ví dụ không hợp lệ:
                                 //    _lastHomeTickUtc = DateTime.UtcNow;
                                 //    return;
                                 //}
-                            }
-                            catch
+                }
+            catch
                             {
                                 // ignore non-JSON
                             }
-                        }
-                        catch (Exception ex2)
+                }
+            catch (Exception ex2)
                         {
                             Log("[WebMessageReceived] " + ex2);
                         }
@@ -1590,9 +1815,7 @@ Ví dụ không hợp lệ:
                     };
 
                 }
-
-
-            }
+                }
             catch (Exception ex)
             {
                 Log("[Web] EnsureWebReadyAsync " + ex);
@@ -1636,7 +1859,7 @@ Ví dụ không hợp lệ:
 
                     await AutoFillLoginAsync();
                 }
-            }
+                }
             catch (Exception ex) { Log("[NavigateIfNeededAsync] " + ex); }
         }
 
@@ -1827,7 +2050,7 @@ Ví dụ không hợp lệ:
 
                     Log("[Web] Host fixed runtime not found at: " + hubDir);
                 }
-            }
+                }
             catch
             {
                 // Bỏ qua lỗi detect host, sẽ fallback sang runtime riêng bên dưới
@@ -1868,7 +2091,7 @@ Ví dụ không hợp lệ:
             return targetDir;
         }
 
-        private bool CheckWebView2RuntimeOrNotify()
+                private bool CheckWebView2RuntimeOrNotify()
         {
             var ver = Microsoft.Web.WebView2.Core.CoreWebView2Environment.GetAvailableBrowserVersionString();
             if (string.IsNullOrEmpty(ver))
@@ -1881,9 +2104,7 @@ Ví dụ không hợp lệ:
             return true;
         }
 
-
-
-        private async Task<CancellationTokenSource> DebounceAsync(
+private async Task<CancellationTokenSource> DebounceAsync(
             CancellationTokenSource? oldCts, int delayMs, Func<Task> action)
         {
             oldCts?.Cancel();
@@ -2341,6 +2562,200 @@ Ví dụ không hợp lệ:
             catch (Exception ex) { Log("[ChkTrial] " + ex.Message); }
         }
 
+        private async void BtnReloadRoomList_Click(object sender, RoutedEventArgs e)
+        {
+            await RefreshRoomListAsync(true);
+        }
+
+        // ====== Dropdown đa chọn danh sách bàn ======
+        private void InitRoomDropdown()
+        {
+            RebuildRoomOptions();
+            UpdateRoomSummary();
+        }
+
+        private void RoomHeader_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if ((_roomOptions.Count == 0 || _roomList.Count == 0) && _roomListLoading == 0)
+            {
+                _ = RefreshRoomListAsync(true);
+            }
+            if (RoomPopup != null)
+                RoomPopup.IsOpen = !RoomPopup.IsOpen;
+        }
+
+        private void MainWindow_StateChanged_CloseRoomPopup(object? sender, EventArgs e)
+        {
+            if (WindowState == WindowState.Minimized)
+                CloseRoomPopup();
+        }
+
+        private void MainWindow_Deactivated_CloseRoomPopup(object? sender, EventArgs e)
+        {
+            CloseRoomPopup();
+        }
+
+        private void MainWindow_IsVisibleChanged_CloseRoomPopup(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (e.NewValue is bool visible && !visible)
+                CloseRoomPopup();
+        }
+
+        private void CloseRoomPopup()
+        {
+            if (RoomPopup != null && RoomPopup.IsOpen)
+                RoomPopup.IsOpen = false;
+        }
+
+        private void MainWindow_PreviewMouseDown_CloseRoomPopup(object sender, MouseButtonEventArgs e)
+        {
+            if (RoomPopup == null || !RoomPopup.IsOpen || RoomPopup.Child == null)
+                return;
+
+            if (IsDescendantOf(e.OriginalSource as DependencyObject, RoomPopup.Child) ||
+                IsDescendantOf(e.OriginalSource as DependencyObject, RoomHeader))
+            {
+                return;
+            }
+
+            RoomPopup.IsOpen = false;
+        }
+
+        private static bool IsDescendantOf(DependencyObject? source, DependencyObject? target)
+        {
+            if (source == null || target == null)
+                return false;
+
+            DependencyObject? current = source;
+            while (current != null)
+            {
+                if (current == target)
+                    return true;
+                current = VisualTreeHelper.GetParent(current);
+            }
+            return false;
+        }
+
+        private void RoomItem_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(RoomOption.IsSelected))
+                UpdateRoomSummary();
+        }
+
+        private void RoomItemCheck_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is CheckBox cb && cb.DataContext is RoomOption opt)
+            {
+                if (opt.IsSelected)
+                    _selectedRooms.Add(opt.Name);
+                else
+                    _selectedRooms.Remove(opt.Name);
+            }
+            UpdateRoomSummary();
+        }
+
+        private void ChkRoomAll_Click(object sender, RoutedEventArgs e)
+        {
+            var target = ChkRoomAll?.IsChecked == true;
+            foreach (var it in _roomOptions)
+                it.IsSelected = target;
+
+            var changed = SyncSelectedRoomsFromOptions();
+            UpdateRoomSummary();
+            if (changed) _ = TriggerRoomSaveDebouncedAsync();
+        }
+
+        private void RebuildRoomOptions()
+        {
+            _roomOptions.Clear();
+            _roomOptionsCol1.Clear();
+            _roomOptionsCol2.Clear();
+            foreach (var name in _roomList)
+            {
+                var item = new RoomOption { Name = name, IsSelected = _selectedRooms.Contains(name) };
+                item.PropertyChanged += RoomItem_PropertyChanged;
+                _roomOptions.Add(item);
+            }
+
+            if (_roomOptions.Count > 0)
+            {
+                var half = (_roomOptions.Count + 1) / 2;
+                for (int i = 0; i < _roomOptions.Count; i++)
+                {
+                    if (i < half) _roomOptionsCol1.Add(_roomOptions[i]);
+                    else _roomOptionsCol2.Add(_roomOptions[i]);
+                }
+            }
+        }
+
+        private bool SyncSelectedRoomsFromOptions()
+        {
+            var before = BuildRoomsSignature(_selectedRooms);
+            _selectedRooms.Clear();
+            foreach (var it in _roomOptions)
+                if (it.IsSelected) _selectedRooms.Add(it.Name);
+
+            _cfg.SelectedRooms = _selectedRooms.ToList();
+            var after = BuildRoomsSignature(_selectedRooms);
+            return !string.Equals(before, after, StringComparison.Ordinal);
+        }
+
+        private void UpdateRoomSummary()
+        {
+            var changed = SyncSelectedRoomsFromOptions();
+
+            int total = _roomOptions.Count;
+            int sel = _roomOptions.Count(i => i.IsSelected);
+
+            if (TxtRoomSummary != null)
+            {
+                if (sel <= 0)
+                    TxtRoomSummary.Text = "Không có mục nào";
+                else if (sel >= total && total > 0)
+                    TxtRoomSummary.Text = "Đã chọn tất cả";
+                else
+                    TxtRoomSummary.Text = $"Đã chọn {sel} / {total}";
+            }
+
+            if (TxtRoomCount != null)
+                TxtRoomCount.Text = $"{sel}/{total} đã chọn";
+
+            if (ChkRoomAll != null)
+            {
+                try { ChkRoomAll.Click -= ChkRoomAll_Click; } catch { }
+                if (sel == 0) ChkRoomAll.IsChecked = false;
+                else if (sel == total) ChkRoomAll.IsChecked = true;
+                else ChkRoomAll.IsChecked = null;
+                try { ChkRoomAll.Click += ChkRoomAll_Click; } catch { }
+            }
+
+            if (_uiReady && changed)
+                _ = TriggerRoomSaveDebouncedAsync();
+        }
+
+        private async Task TriggerRoomSaveDebouncedAsync()
+        {
+            if (!_uiReady) return;
+            _roomSaveCts = await DebounceAsync(_roomSaveCts, 300, async () =>
+            {
+                try
+                {
+                    var sig = BuildRoomsSignature(_selectedRooms);
+                    if (!string.Equals(sig, _lastSavedRoomsSignature, StringComparison.Ordinal))
+                    {
+                        _lastSavedRoomsSignature = sig;
+                        await SaveConfigAsync();
+                    }
+                }
+            catch { }
+            });
+        }
+
+        private static string BuildRoomsSignature(IEnumerable<string> rooms)
+        {
+            return string.Join("|", rooms.OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
+        }
+
 
 
         private void ApplyMoneyStrategyToUI(string id)
@@ -2763,8 +3178,8 @@ Ví dụ không hợp lệ:
 
         private void LogPacket(string kind, string? url, string preview, bool isBinary)
         {
-            var line = $"[PKT] {DateTime.Now:HH:mm:ss} {kind} {url ?? ""}\n      {preview}";
-            // Ghi file luôn (không chặn)
+            var line = $"[PKT] {DateTime.Now:HH:mm:ss} {kind} {url ?? ""} {preview}";
+            // Ghi file luôn (không chọn)
             EnqueueFile(line);
 
             // UI: mặc định tắt, hoặc lấy mẫu 1/N
@@ -2772,7 +3187,27 @@ Ví dụ không hợp lệ:
             {
                 _pktUiSample++;
                 if (_pktUiSample % PACKET_UI_SAMPLE_EVERY_N == 0)
-                    EnqueueUi(line);
+                {
+                    _pktUiSample = 0;
+
+                    var sb = new StringBuilder();
+                    sb.Append("[PKT] ").Append(kind).Append(' ');
+                    sb.Append(isBinary ? "bin" : "txt").Append(' ');
+                    sb.Append(url ?? "");
+                    sb.AppendLine();
+                    sb.Append(preview);
+                    var text = sb.ToString();
+                    _ = Dispatcher.InvokeAsync(() =>
+                    {
+                        try
+                        {
+                            TxtLog.Text = text;
+                            TxtLog.CaretIndex = TxtLog.Text.Length;
+                            TxtLog.ScrollToEnd();
+                        }
+                        catch { }
+                    });
+                }
             }
         }
 
@@ -2971,7 +3406,7 @@ Ví dụ không hợp lệ:
                         return "clicked";
                     return openRes;
                 }
-            }
+                }
             catch (Exception ex)
             {
                 Log("[ClickXocDiaTitle/find index ERR] " + ex.Message);
@@ -3131,8 +3566,8 @@ Ví dụ không hợp lệ:
                                 finally { _autoLoginBusy = false; }
                             }
                         }
-                    }
-                    catch { }
+                }
+            catch { }
                     await Task.Delay(400, cts.Token); // nhịp kiểm tra
                 }
             }, cts.Token);
@@ -3291,7 +3726,7 @@ Ví dụ không hợp lệ:
                             return res + " + csharp-nav";
                         }
                     }
-                    catch { /* bỏ qua */ }
+                    catch { /* b? qua */ }
                 }
 
                 return res;
@@ -3727,8 +4162,8 @@ Ví dụ không hợp lệ:
                                     return;
                                 }
                             }
-                        }
-                        catch (Exception exTrial)
+                }
+            catch (Exception exTrial)
                         {
                             Log("[Trial ERR] " + exTrial.Message);
                             MessageBox.Show("Không thể kết nối chế độ dùng thử.", "Automino",
@@ -3831,16 +4266,16 @@ Ví dụ không hợp lệ:
                                         // Không lấy được thông tin chắc chắn -> giữ nguyên, lần sau kiểm lại
                                         Log("[License re-check] license null/empty hoặc không parse được 'exp' -> giữ nguyên phiên.");
                                     }
-                                }
-                                catch (TaskCanceledException) { /* token canceled, bỏ qua */ }
+                }
+            catch (TaskCanceledException) { /* token canceled, bỏ qua */ }
                                 catch (Exception ex)
                                 {
                                     // Lỗi mạng/tạm thời -> KHÔNG dừng, chỉ log & thử lại lần sau
                                     Log("[License re-check] lỗi: " + ex.Message + " (bỏ qua, sẽ thử lại)");
                                 }
                             }
-                        }
-                        catch (TaskCanceledException) { /* token canceled */ }
+                }
+            catch (TaskCanceledException) { /* token canceled */ }
                     }, token);
                 }
 
@@ -4457,7 +4892,7 @@ Ví dụ không hợp lệ:
                         return text;
                     Log("[Bridge] HOME JS on disk is empty: " + diskPath);
                 }
-            }
+                }
             catch (Exception ex)
             {
                 Log("[Bridge] Read HOME JS on disk failed: " + ex.Message);
@@ -4637,8 +5072,8 @@ Ví dụ không hợp lệ:
                                 }
                             }
                         }
-                    }
-                    catch { }
+                }
+            catch { }
                 };
                 f.DOMContentLoaded += Frame_DOMContentLoaded_Bridge;
                 f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
@@ -4677,7 +5112,7 @@ Ví dụ không hợp lệ:
                     var ok = (bool)(mi.Invoke(Web.CoreWebView2, args) ?? false);
                     if (ok) return (CoreWebView2Frame?)args[1];
                 }
-            }
+                }
             catch { }
             return null;
         }
@@ -5102,7 +5537,7 @@ Ví dụ không hợp lệ:
                     try { Web.Dispose(); } catch { }
                     Web = null;
                 }
-            }
+                }
             catch { }
 
             // 4) reset các cờ đã hook để nếu mở lại thì hook lại từ đầu
@@ -5133,7 +5568,7 @@ Ví dụ không hợp lệ:
                     LblStatusText.Text = status;
                     LblStatusText.Visibility = Visibility.Visible;
                 }
-            }
+                }
             catch { /* ignore */ }
         }
 
@@ -5319,7 +5754,7 @@ Ví dụ không hợp lệ:
                 {
                     RefreshCurrentPage();   // (mục 3 bên dưới)
                 }
-            }
+                }
             catch { /* ignore */ }
         }
 
@@ -5469,7 +5904,7 @@ Ví dụ không hợp lệ:
                         try { File.Delete(f); } catch { /* ignore IO */ }
                     }
                 }
-            }
+                }
             catch { /* ignore */ }
         }
 
@@ -5582,7 +6017,8 @@ Ví dụ không hợp lệ:
             }
 
             // Tách nhiều quy tắc: ',', ';', '|', hoặc xuống dòng
-            var rules = System.Text.RegularExpressions.Regex.Split(s.Replace("\r", ""), @"[,\;\|\n]+");
+            var rules = System.Text.RegularExpressions.Regex.Split(s.Replace("\r", ""), @"[,\;\|
+]+");
             int idx = 0;
 
             foreach (var raw in rules)
@@ -5654,7 +6090,8 @@ Ví dụ không hợp lệ:
             }
 
             // Tách nhiều quy tắc: ',', ';', '|', hoặc xuống dòng
-            var rules = System.Text.RegularExpressions.Regex.Split(s.Replace("\r", ""), @"[,\;\|\n]+");
+            var rules = System.Text.RegularExpressions.Regex.Split(s.Replace("\r", ""), @"[,\;\|
+]+");
             int idx = 0;
 
             foreach (var raw in rules)
@@ -5947,4 +6384,14 @@ Ví dụ không hợp lệ:
     }
 
 }
+
+
+
+
+
+
+
+
+
+
 
