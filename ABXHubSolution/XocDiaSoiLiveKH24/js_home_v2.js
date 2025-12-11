@@ -3499,6 +3499,7 @@
                         // mặc định rỗng – nếu bạn muốn hard-code thì sửa ngay ở đây
                         window.__cw_loginUser = window.__cw_loginUser || '';
                         window.__cw_loginPass = window.__cw_loginPass || '';
+                        window.__cw_loginRemember = window.__cw_loginRemember || false;
 
                         /* nhận message từ C# để cập nhật user/pass
                         bên C# chỉ cần post:{ "__cw_cmd": "set_login", "user": "...", "pass": "..." }
@@ -3519,6 +3520,27 @@
                                     window.__cw_loginUser = d.user;
                                 if (typeof d.pass === 'string')
                                     window.__cw_loginPass = d.pass;
+                                if (typeof d.remember === 'boolean')
+                                    window.__cw_loginRemember = d.remember;
+                                try {
+                                    // mở popup nếu cần, sau đó điền + sync toggle nhớ tài khoản
+                                    if (typeof window.__cw_clickLoginIfNeed === 'function') {
+                                        window.__cw_clickLoginIfNeed();
+                                    }
+                                    // thử điền nhiều nhịp để khi popup vừa mở cũng được cập nhật
+                                    var tries = 0;
+                                    var tick = function () {
+                                        tries++;
+                                        try {
+                                            if (typeof window.__cw_fillLoginPopup === 'function') {
+                                                var r = window.__cw_fillLoginPopup();
+                                                if (r !== 'no-popup') return; // đã điền được -> dừng
+                                            }
+                                        } catch (_) {}
+                                        if (tries < 6) setTimeout(tick, 200);
+                                    };
+                                    tick();
+                                } catch (_) {}
                                 console.log('[auto-login] cập nhật credential từ host.');
                             }
 
@@ -3592,7 +3614,10 @@
                         /* tìm các EditBox trong popup và điền user/pass */
                         function __cw_fillLoginPopup() {
                             var root = findNodeByTail(POPUP_ROOT_TAIL);
-                            if (!root || !isNodeVisible(root)) {
+                            if ((!root || !isNodeVisible(root)) && cc && cc.director && cc.director.getScene) {
+                                root = cc.director.getScene(); // fallback: quét toàn scene nếu tail không khớp
+                            }
+                            if (!root) {
                                 return 'no-popup';
                             }
 
@@ -3653,17 +3678,112 @@
                             if (!passBox && boxes.length > 1)
                                 passBox = boxes[1];
 
-                            if (userBox && user) {
-                                userBox.eb.string = user;
+                            if (userBox) {
+                                userBox.eb.string = user || '';
                                 // một số version cần gọi _onDidEditEnded để refresh
                                 if (typeof userBox.eb._onDidEndedEditing === 'function')
                                     userBox.eb._onDidEndedEditing();
                             }
-                            if (passBox && pass) {
-                                passBox.eb.string = pass;
+                            if (passBox) {
+                                passBox.eb.string = pass || '';
                                 if (typeof passBox.eb._onDidEndedEditing === 'function')
                                     passBox.eb._onDidEndedEditing();
                             }
+
+                            // Bật/tắt checkbox "Ghi nhớ tài khoản" nếu có Toggle trong popup
+                            try {
+                                var toggles = [];
+                                (function walkToggle(n) {
+                                    if (!n)
+                                        return;
+                                    var tg = n.getComponent && n.getComponent(cc.Toggle);
+                                    if (tg) {
+                                        var lblTxt = '';
+                                        try {
+                                            var lbl = n.getComponentInChildren && n.getComponentInChildren(cc.Label);
+                                            lblTxt = (lbl && lbl.string) || '';
+                                        } catch (_) {}
+                                        toggles.push({
+                                            node: n,
+                                            tg: tg,
+                                            label: (lblTxt || '').toString().toLowerCase(),
+                                            tail: (function () {
+                                                try {
+                                                    var names = [],
+                                                    p = n;
+                                                    while (p) {
+                                                        names.push(p.name || '');
+                                                        p = p.parent;
+                                                    }
+                                                    return names.reverse().join('/').toLowerCase();
+                                                } catch (_) {
+                                                    return '';
+                                                }
+                                            })()
+                                        });
+                                    }
+                                    var kids = n.children || n._children || [];
+                                    for (var i = 0; i < kids.length; i++)
+                                        walkToggle(kids[i]);
+                                })(root);
+                                var remember = !!window.__cw_loginRemember;
+                                if (toggles.length > 0) {
+                                    var pick = null;
+                                    var reRem = /(ghi\s*nho|remember|luu\s*tai\s*khoan|luu\s*tk)/i;
+                                    for (var i = 0; i < toggles.length; i++) {
+                                        var t = toggles[i];
+                                        if (reRem.test(t.tail) || reRem.test(t.label)) {
+                                            pick = t;
+                                            break;
+                                        }
+                                    }
+                                    if (!pick)
+                                        pick = toggles[0];
+                                    if (pick && pick.tg && pick.tg.isChecked !== remember) {
+                                        pick.tg.isChecked = remember;
+                                        if (typeof pick.tg._updateCheckMark === 'function')
+                                            pick.tg._updateCheckMark();
+                                        if (Array.isArray(pick.tg.checkEvents))
+                                            cc.Component.EventHandler.emitEvents(pick.tg.checkEvents, new cc.Event.EventCustom('toggle', true));
+                                    }
+                                }
+
+                                // Fallback DOM checkbox (nếu popup là HTML thay vì Cocos Toggle)
+                                try {
+                                    var boxes = Array.from(document.querySelectorAll('input[type="checkbox"],input[type="radio"]'));
+                                    var targetBox = null;
+                                    var norm = function (s) { try { return (s || '').toString().trim().toLowerCase(); } catch (_) { return ''; } };
+                                    boxes.forEach(function (bx) {
+                                        if (targetBox)
+                                            return;
+                                        var lbl = '';
+                                        try {
+                                            if (bx.id) {
+                                                var lab = document.querySelector('label[for="' + bx.id + '"]');
+                                                if (lab)
+                                                    lbl = lab.innerText || lab.textContent || '';
+                                            }
+                                            if (!lbl && bx.closest('label'))
+                                                lbl = bx.closest('label').innerText || bx.closest('label').textContent || '';
+                                        } catch (_) { }
+                                        if (!lbl)
+                                            lbl = bx.getAttribute('aria-label') || '';
+                                        lbl = norm(lbl);
+                                        if (/ghi nhớ|ghi nho|remember/.test(lbl))
+                                            targetBox = bx;
+                                    });
+                                    if (!targetBox && boxes.length === 1)
+                                        targetBox = boxes[0];
+                                    if (targetBox && !!targetBox.checked !== remember) {
+                                        targetBox.checked = remember;
+                                        ['input', 'change', 'click'].forEach(function (t) {
+                                            try {
+                                                targetBox.dispatchEvent(new Event(t, { bubbles: true, cancelable: true }));
+                                            } catch (_) { }
+                                        });
+                                    }
+                                } catch (_) { }
+                            } catch (_) {}
 
                             //console.log('[auto-login] đã thử điền user/pass vào popup.');
                             return 'filled';

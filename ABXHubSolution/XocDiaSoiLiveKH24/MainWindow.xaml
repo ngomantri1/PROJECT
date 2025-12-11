@@ -431,6 +431,7 @@
                                         <CheckBox
                                             x:Name="ChkRemember"
                                             Grid.Column="0"
+                                            Click="ChkRemember_Click"
                                             Style="{StaticResource LoginCheckStyle}">
                                             <TextBlock
                                                 Text="Lưu tài khoản &amp; mật khẩu"

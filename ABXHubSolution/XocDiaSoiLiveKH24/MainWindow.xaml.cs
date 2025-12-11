@@ -1559,7 +1559,16 @@ Ví dụ không hợp lệ:
             if (_webInitDone || Web?.CoreWebView2 != null) return;
 
             // 1) Bảo đảm fixed runtime được bung ra và lấy thư mục
-            var fixedDir = await EnsureFixedRuntimePresentAsync();
+            string? fixedDir = null;
+            try
+            {
+                fixedDir = await EnsureFixedRuntimePresentAsync();
+            }
+            catch (Exception ex)
+            {
+                Log("[WV2] EnsureFixedRuntimePresentAsync failed, fallback Evergreen: " + ex.Message);
+                fixedDir = null;
+            }
 
             // 2) Bảo đảm thư mục user-data tồn tại (khớp với XAML)
             System.IO.Directory.CreateDirectory(Wv2UserDataDir);
@@ -1690,8 +1699,22 @@ Ví dụ không hợp lệ:
             var resName = FindResourceName("ThirdParty.WebView2Fixed_win-x64.zip")
                           ?? Wv2ZipResNameX64;
 
-            using var s = Assembly.GetExecutingAssembly().GetManifestResourceStream(resName)
-                           ?? throw new FileNotFoundException("Missing embedded resource: " + resName);
+            // Ưu tiên resource nhúng; fallback sang file ZIP ngoài nếu chạy Debug không nhúng
+            Stream? zipStream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resName);
+            if (zipStream == null)
+            {
+                var exeDir = AppDomain.CurrentDomain.BaseDirectory;
+                var zipPath = Path.Combine(exeDir, "ThirdParty", "WebView2Fixed_win-x64.zip");
+                if (!File.Exists(zipPath))
+                    zipPath = Path.Combine(exeDir, "WebView2Fixed_win-x64.zip");
+                if (File.Exists(zipPath))
+                {
+                    Log("[Web] Using external WebView2Fixed zip: " + zipPath);
+                    zipStream = File.OpenRead(zipPath);
+                }
+            }
+
+            using var s = zipStream ?? throw new FileNotFoundException("Missing WebView2Fixed zip: " + resName);
             using var za = new System.IO.Compression.ZipArchive(
                 s, System.IO.Compression.ZipArchiveMode.Read);
 
@@ -1766,6 +1789,7 @@ Ví dụ không hợp lệ:
             // 3. lấy user/pass từ panel WPF
             var u = T(TxtUser);   // ông đang có hàm T(...) lấy TextBox.Text
             var p = P(TxtPass);   // ông đang có hàm P(...) lấy PasswordBox.Password
+            var remember = (ChkRemember?.IsChecked == true);
 
             // 4. gửi credential sang JS để nó cập nhật window.__cw_loginUser / __cw_loginPass
             var payload = new
@@ -1773,16 +1797,23 @@ Ví dụ không hợp lệ:
                 __cw_cmd = "set_login",
                 user = u ?? "",
                 pass = p ?? "",
+                remember = remember,
                 autoSubmit = false   // KHÔNG cho JS tự bấm
             };
             string json = System.Text.Json.JsonSerializer.Serialize(payload);
             Web.CoreWebView2.PostWebMessageAsJson(json);
             Log("[AutoFill] sent set_login to webview");
 
-            // 5. bảo JS mở popup (nếu header còn nút) và ĐIỀN, nhưng KHÔNG bấm nút login
+            // 5. bảo JS mở popup (nếu header còn nút) và ĐIỀN, nhưng KHÔNG bấm nút login.
+            // Đồng bộ trực tiếp cả biến global để tránh race listener.
             var js = @"
         (async function(){
             try {
+                // cập nhật trực tiếp global
+                window.__cw_loginUser = " + JsonSerializer.Serialize(u ?? "") + @";
+                window.__cw_loginPass = " + JsonSerializer.Serialize(p ?? "") + @";
+                window.__cw_loginRemember = " + (remember ? "true" : "false") + @";
+
                 // mở popup nếu đang còn nút đăng nhập trên header
                 if (window.__cw_clickLoginIfNeed) {
                     window.__cw_clickLoginIfNeed();
@@ -1913,6 +1944,25 @@ Ví dụ không hợp lệ:
 
                     await ApplyBackgroundForStateAsync(); // đúng hành vi cũ sau khi có URL
                 }
+                else
+                {
+                    // Không điều hướng nhưng vẫn đồng bộ credential + checkbox vào web ở lần đầu
+                    await AutoFillLoginAsync();
+                }
+
+                // Retry đồng bộ muộn thêm một nhịp để chắc chắn JS listener đã sẵn sàng
+                _ = Dispatcher.InvokeAsync(async () =>
+                {
+                    try
+                    {
+                        // gửi lại 2 lần (400ms, 800ms) để bắt kịp khi JS/popup sẵn sàng
+                        await Task.Delay(400);
+                        await AutoFillLoginAsync();
+                        await Task.Delay(400);
+                        await AutoFillLoginAsync();
+                    }
+                    catch { /* ignore */ }
+                });
 
                 SetPlayButtonState(_taskCts != null); // (nếu trong SetPlayButtonState có SetConfigEditable thì sẽ khóa/mở các ô)
                 ApplyMouseShieldFromCheck();
@@ -1984,7 +2034,12 @@ Ví dụ không hợp lệ:
         // Checkbox Remember (đã thêm ở XAML)
         private async void ChkRemember_Click(object sender, RoutedEventArgs e)
         {
-            try { await SaveConfigAsync(); Log("[Remember] " + ((ChkRemember?.IsChecked == true) ? "ON" : "OFF")); }
+            try
+            {
+                await SaveConfigAsync();
+                Log("[Remember] " + ((ChkRemember?.IsChecked == true) ? "ON" : "OFF"));
+                await AutoFillLoginAsync(); // đồng bộ ngay checkbox nhớ tài khoản với web
+            }
             catch (Exception ex) { Log("[Remember] " + ex); }
         }
 
