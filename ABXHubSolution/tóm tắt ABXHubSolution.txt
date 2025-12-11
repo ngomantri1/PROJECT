@@ -1,0 +1,78 @@
+Dưới đây là tóm tắt bối cảnh từ một chat cũ.
+Hãy coi như bạn đã đọc toàn bộ lịch sử và code tương ứng, nhưng chỉ dùng thông tin trong tóm tắt này:
+
+
+
+Mục tiêu chính của project / bug
+
+WPF .NET 8 WebView2: tự động login, lấy username/balance từ Home, vào đúng game Xóc Đĩa/Tài Xỉu Live HIT (KH24).
+Bridge JS đặt cược, quản lý vốn/chiến lược; xử lý cache WebView2 hỏng, watchdog; đồng bộ checkbox “Lưu tài khoản & mật khẩu” với “Ghi nhớ tài khoản” trên popup game (KH24).
+Mới bổ sung nhu cầu đa bàn: lấy danh sách bàn (class .rM_r1) hiển thị, chọn/tạo bàn overlay 3x3 (đang skeleton).
+Tech stack (ngôn ngữ, framework, DB…)
+
+C# .NET 8 WPF, WebView2.
+JS inject (UMD) cho Home/Game.
+Không dùng DB; lưu JSON config AppData.
+Các file / module quan trọng đang liên quan
+
+XocDiaSoiLiveKH24/MainWindow.xaml(.cs): UI, WebView2 bridge, auto-login, set_mode, danh sách bàn UI.
+XocDiaSoiLiveKH24/js_home_v2.js: lấy username, auto-login popup KH24, findNodeByTail, fill login popup, sync toggle “Ghi nhớ”.
+XocDiaSoiLiveKH24/MultiTableConfig.cs, TableConfigStore.cs, TableOption.cs: skeleton config đa bàn.
+XocDiaSoiLiveKH24/Views/TableView.xaml(.cs): skeleton UserControl bàn (Play/Run, kết quả, timer, cược).
+XocDiaSoiLiveKH24/MainWindow.xaml card “Chiến lược & Chuỗi tiền” chứa luôn vùng “Danh sách bàn” (BtnReloadRoomList + ComboBox CmbRoomList).
+Tương tự module Xóc Đĩa/Tài Xỉu Live HIT khác: MainWindow.xaml(.cs), js_home_v2.js.
+Logic chính đã thiết kế (tên hàm, class, luồng xử lý)
+
+Auto-fill/login: AutoFillLoginAsync gửi {__cw_cmd:set_login} (user/pass/remember) + script cập nhật global + click popup nếu cần, fill popup; retry 400/800ms sau startup.
+WebMessage bridge: EnsureWebReadyAsync gắn WebMessageReceived một lần; xử lý abx=result/tick, cập nhật _homeUsername từ snap.username.
+Navigation: reset/watchdog; Web_NavigationCompleted inject bridge + AutoFillLoginAsync.
+Checkbox remember: ChkRemember_Click → SaveConfig + AutoFillLoginAsync (sync remember).
+Mode UI: SetModeUi(bool isGame): ẩn/hiện login vs. chiến lược/console/trạng thái; card “Danh sách bàn” nằm trong GroupStrategyMoney nên ẩn/hiện theo isGame.
+Danh sách bàn: RefreshRoomListAsync chạy JS query .rM_r1 innerText → distinct → RoomList ObservableCollection bound to CmbRoomList; BtnReloadRoomList_Click gọi refresh.
+Skeleton đa bàn:
+MultiTableConfig (SelectedTableIds, Layouts tỷ lệ 0..1, default 3x3).
+TableConfigStore (per table strategy/money/stake).
+TableView UserControl (TableName, ResultSequence, Countdown, WinAmount, PlayerBet, BankerBet, toggle Play/Run).
+Chưa gắn overlay vào MainWindow.
+Những lỗi đã gặp & nguyên nhân chính
+
+Checkbox remember không sync popup: listener chưa sẵn, tail/selector checkbox; đã fix bằng retry AutoFill và JS fill toggle, sync remember.
+Username sai do fallback header: đã bỏ, ưu tiên tail + snap.username.
+WebView2 cache hỏng/thiếu runtime: có WebView2Fixed fallback.
+Vùng “Danh sách bàn” không thấy: ban đầu đặt card riêng; sau đã chuyển vào card chiến lược, ẩn/hiện theo SetModeUi.
+Các giải pháp đã thử, giải pháp hiện tại đang dùng
+
+Auto-fill: clear fields, gửi set_login, fill popup nhiều nhịp, sync toggle “Ghi nhớ”.
+Listener sẵn sàng: gửi lại AutoFill sau 400/800ms.
+Username: lấy snap.username + ABS tail, bỏ header.
+WebView2: EnsureFixedRuntimePresentAsync + try/catch, fallback Evergreen.
+Danh sách bàn: thêm UI trong card chiến lược, RefreshRoomListAsync đọc .rM_r1.
+Việc còn dang dở / TODO
+
+Gắn thực sự overlay đa bàn 3x3 vào WebView (Canvas/Grid), tạo bàn theo chọn, reset vị trí/kích thước; bind TableView và lưu layout vào multiTables.json.
+Lưu/khôi phục lựa chọn bàn (SelectedTableIds) và TableConfig per bàn (tableSettings.json).
+Từ JS gửi danh sách bàn chuẩn hóa (id/name) thay vì chỉ text .rM_r1 nếu cần.
+Kiểm tra/tối ưu hiển thị “Danh sách bàn” sau khi SetModeUi chuyển trạng thái.
+Thêm hook lấy danh sách bàn khi vào giao diện đa bàn (tick từ JS).
+Hoàn thiện nghiệp vụ từng bàn (đặt cược, chiến lược riêng).
+
+
+
+
+
+Lưy ý : Kiểm tra và sửa lại code cho chính xác, chỉ sửa phần thay đổi của file
+Đọc/ghi file bằng UTF-8, Encoding UTF8, viết code chuẩn UTF-8
+Giao tiếp bằng tiếng việt
+Dựa trên bối cảnh đó, nhiệm vụ mới của bạn là:
+
+Tập trung vào project BaccaratPPRR88
+Ok giờ tôi tạo giao diện trong MainWindow.xaml và tạo cầu nối luôn
+Hãy tạo cho tôi 1 vùng giống như vùng chiến lược & chuỗi tiền
+Vị trí nằm giữa vùng đăng nhập & điều hướng với vùng chiến lược & chuỗi tiền
+Trong đó có dòng 1 là : Danh sách bàn + combobox danh sách bàn chơi
+danh sách bàn chơi được load tất cả các Class: rM_r1 dưới js lấy danh sách text đưa vào
+Lưy ý : Kiểm tra và sửa lại code cho chính xác, chỉ sửa phần thay đổi của file
+Đọc/ghi file bằng UTF-8, Encoding UTF8, viết code chuẩn UTF-8
+Giao tiếp bằng tiếng việt
+
+
