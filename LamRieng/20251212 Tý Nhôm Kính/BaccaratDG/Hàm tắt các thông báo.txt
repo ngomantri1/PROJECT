@@ -1,0 +1,72 @@
+(() => {
+    // các tail khả nghi từ log scan của bạn
+    const CLOSE_TAILS = [
+        'MainGame/Canvas/popupView-noHide/EventPopup/CloseBtn',
+        'MainGame/Canvas/popupView-noHide/offset-banner/Close_Btn',
+        'MainGame/Canvas/popupView-noHide/DailyPopup/Close_Btn'
+    ];
+
+    // ưu tiên hàm tìm node theo tail mà bạn đã có trong file dài
+    function findNodeByTailCompat(tail) {
+        if (window.__abx_findNodeByTail) return window.__abx_findNodeByTail(tail);
+        if (window.findNodeByTail) return window.findNodeByTail(tail);
+
+        // fallback: đi từ scene
+        if (!(window.cc && cc.director && cc.director.getScene)) return null;
+        const scene = cc.director.getScene();
+        const sceneName = scene.name;
+        let parts = tail.split('/').filter(Boolean);
+        if (parts[0] === sceneName) parts.shift();
+        let node = scene;
+        for (let i = 0; i < parts.length; i++) {
+            const name = parts[i];
+            const kids = node.children || node._children || [];
+            let found = null;
+            for (let j = 0; j < kids.length; j++) {
+                if (kids[j] && kids[j].name === name) {
+                    found = kids[j];
+                    break;
+                }
+            }
+            if (!found) return null;
+            node = found;
+        }
+        return node;
+    }
+
+    function clickNode(node) {
+        if (!node) return false;
+        try {
+            const btn = node.getComponent && node.getComponent(cc.Button);
+            if (btn) {
+                cc.Component.EventHandler.emitEvents(
+                    btn.clickEvents,
+                    new cc.Event.EventCustom('click', true)
+                );
+                console.log('[close-popup] clicked via cc.Button:', node.name);
+                return true;
+            }
+        } catch (e) { }
+
+        if (node._onTouchEnded) {
+            try {
+                node._onTouchEnded();
+                console.log('[close-popup] clicked via _onTouchEnded:', node.name);
+                return true;
+            } catch (e) { }
+        }
+        return false;
+    }
+
+    for (const tail of CLOSE_TAILS) {
+        const n = findNodeByTailCompat(tail);
+        if (n && clickNode(n)) {
+            console.log('[close-popup] DONE with tail =', tail);
+            return;
+        } else {
+            console.log('[close-popup] not found or not clickable:', tail);
+        }
+    }
+
+    console.warn('[close-popup] không đóng được popup nào, cần thêm đúng tail.');
+})();

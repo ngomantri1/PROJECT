@@ -3824,6 +3824,547 @@
     }
 }
 
+    // ======= Multi-table Overlay =======
+    (function installTableOverlay() {
+        const OVERLAY_ID = '__abx_table_overlay_root';
+        const RESET_BTN_ID = '__abx_table_overlay_reset';
+        const PANEL_CLASS = '__abx_table_panel';
+        const LAYOUT_KEY = '__abx_table_layout_v1';
+        const GAP = 8;
+        const MIN_W = 180;
+        const MIN_H = 140;
+
+        let rooms = [];
+        let layouts = loadLayouts();
+        const panelMap = new Map();
+        let cfg = {
+            // callback: (roomId) => HTMLElement | null
+            resolveDom: null,
+            selectorTemplate: '',
+            baseSelector: ''
+        };
+
+        function loadLayouts() {
+            try {
+                const raw = localStorage.getItem(LAYOUT_KEY);
+                if (!raw)
+                    return {};
+                const obj = JSON.parse(raw);
+                return (obj && typeof obj === 'object') ? obj : {};
+            } catch (_) {
+                return {};
+            }
+        }
+        function saveLayouts() {
+            try {
+                localStorage.setItem(LAYOUT_KEY, JSON.stringify(layouts || {}));
+            } catch (_) {}
+        }
+
+        function ensureStyles() {
+            if (document.getElementById('__abx_table_overlay_style'))
+                return;
+            const style = document.createElement('style');
+            style.id = '__abx_table_overlay_style';
+            style.textContent = `
+            #${OVERLAY_ID} {
+                position: fixed;
+                inset: 0;
+                z-index: 2147480000;
+                pointer-events: none;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} {
+                position: absolute;
+                background: #0b1d4a;
+                color: #f4f5fb;
+                border-radius: 12px;
+                box-shadow: 0 10px 26px rgba(0,0,0,0.35);
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+                pointer-events: auto;
+                border: 1px solid rgba(255,255,255,0.08);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 6px 10px;
+                gap: 8px;
+                background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+                user-select: none;
+                cursor: move;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head .title {
+                font-weight: 700;
+                font-size: 14px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head .actions {
+                display: flex;
+                gap: 6px;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head button {
+                border: none;
+                background: rgba(255,255,255,0.12);
+                color: #fefefe;
+                padding: 4px 6px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-weight: 600;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head button:hover {
+                background: rgba(255,255,255,0.22);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .body {
+                flex: 1;
+                background: #0f1733;
+                overflow: hidden;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .body > .mirror {
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .resize {
+                position: absolute;
+                width: 14px;
+                height: 14px;
+                right: 2px;
+                bottom: 2px;
+                cursor: se-resize;
+                background: rgba(255,255,255,0.15);
+                border-radius: 4px;
+            }
+            #${RESET_BTN_ID} {
+                position: fixed;
+                top: 8px;
+                right: 12px;
+                z-index: 2147480001;
+                padding: 8px 10px;
+                border-radius: 8px;
+                border: none;
+                background: #2563eb;
+                color: white;
+                font-weight: 700;
+                cursor: pointer;
+                pointer-events: auto;
+                box-shadow: 0 6px 18px rgba(0,0,0,0.22);
+            }`;
+            document.head.appendChild(style);
+        }
+
+        function ensureRoot() {
+            ensureStyles();
+            let root = document.getElementById(OVERLAY_ID);
+            if (!root) {
+                root = document.createElement('div');
+                root.id = OVERLAY_ID;
+                document.body.appendChild(root);
+            }
+            let resetBtn = document.getElementById(RESET_BTN_ID);
+            if (!resetBtn) {
+                resetBtn = document.createElement('button');
+                resetBtn.id = RESET_BTN_ID;
+                resetBtn.textContent = 'Reset layout';
+                resetBtn.addEventListener('click', () => resetLayout());
+                document.body.appendChild(resetBtn);
+            }
+            return root;
+        }
+
+        function clamp(v, min, max) {
+            return Math.max(min, Math.min(max, v));
+        }
+
+        function computeGrid(n) {
+            const cols = Math.ceil(Math.sqrt(n));
+            const rows = Math.ceil(n / cols);
+            return { cols, rows };
+        }
+
+        function defaultResolveDom(id) {
+            try {
+                const sel = [
+                    `[data-table-id="${id}"]`,
+                    `[data-id="${id}"]`,
+                    `[data-game-id="${id}"]`,
+                    `[data-tableid="${id}"]`,
+                    `.table-${id}`,
+                    `.table_${id}`
+                ].join(',');
+                const el = document.querySelector(sel);
+                if (el)
+                    return el;
+                if (cfg.selectorTemplate) {
+                    const s = cfg.selectorTemplate.replace(/\{id\}/g, id);
+                    const el2 = document.querySelector(s);
+                    if (el2)
+                        return el2;
+                }
+                if (cfg.baseSelector) {
+                    const matches = Array.from(document.querySelectorAll(cfg.baseSelector))
+                        .filter(node => node && node.innerText && node.innerText.includes(id));
+                    if (matches.length)
+                        return matches[0];
+                }
+            } catch (_) {}
+            return null;
+        }
+
+        function getPanelState(id) {
+            return panelMap.get(id);
+        }
+
+        function syncPanel(id) {
+            const st = getPanelState(id);
+            if (!st || !st.panel)
+                return;
+            const src = st.resolve(id);
+            if (!src || !src.isConnected) {
+                st.body.textContent = 'Kh?ng t?m th?y b?n ' + id;
+                st.lastSig = '';
+                return;
+            }
+            const cs = getComputedStyle(src);
+            const rect = src.getBoundingClientRect();
+            if (cs.display === 'none' || cs.visibility === 'hidden' || rect.width < 1 || rect.height < 1)
+                return;
+
+            const sig = [
+                src.outerHTML.length,
+                cs.width, cs.height,
+                cs.background, cs.color,
+                src.className,
+                src.getAttribute('data-state') || '',
+                src.textContent.length
+            ].join('|');
+            if (sig === st.lastSig)
+                return;
+            st.lastSig = sig;
+
+            const clone = cloneWithStyles(src);
+            const host = st.mirror;
+            if (host.firstChild)
+                host.replaceChild(clone, host.firstChild);
+            else
+                host.appendChild(clone);
+        }
+
+        function scheduleSync(id) {
+            const st = getPanelState(id);
+            if (!st)
+                return;
+            if (st.scheduled)
+                return;
+            st.scheduled = true;
+            requestAnimationFrame(() => {
+                st.scheduled = false;
+                syncPanel(id);
+            });
+        }
+
+        function attachObserver(id, src) {
+            const st = getPanelState(id);
+            if (!st)
+                return;
+            if (st.obs)
+                st.obs.disconnect();
+            if (!src)
+                return;
+            st.obs = new MutationObserver(() => scheduleSync(id));
+            st.obs.observe(src, {
+                childList: true,
+                characterData: true,
+                attributes: true,
+                subtree: true
+            });
+        }
+
+        function cloneWithStyles(src) {
+            const clone = src.cloneNode(false);
+            copyStylesAll(src, clone);
+            for (const child of src.childNodes) {
+                clone.appendChild(child.nodeType === 1 ? cloneWithStyles(child) : child.cloneNode(true));
+            }
+            return clone;
+        }
+
+        function copyStylesAll(src, dst) {
+            const cs = getComputedStyle(src);
+            for (const prop of cs) {
+                dst.style.setProperty(prop, cs.getPropertyValue(prop), cs.getPropertyPriority(prop));
+            }
+            dst.style.width = cs.width;
+            dst.style.height = cs.height;
+        }
+
+        function createPanel(room, idx) {
+            const root = ensureRoot();
+            let panel = document.createElement('div');
+            panel.className = PANEL_CLASS;
+            panel.dataset.id = room.id;
+
+            const head = document.createElement('div');
+            head.className = 'head';
+            const title = document.createElement('div');
+            title.className = 'title';
+            title.textContent = room.name || room.id;
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const btnPlay = document.createElement('button');
+            btnPlay.textContent = 'Play';
+            btnPlay.addEventListener('click', () => {
+                try {
+                    window.chrome?.webview?.postMessage?.({ type: 'table_play', id: room.id });
+                } catch (_) {}
+            });
+            const btnClose = document.createElement('button');
+            btnClose.textContent = '?';
+            btnClose.title = '??ng';
+            btnClose.addEventListener('click', () => {
+                panel.style.display = 'none';
+            });
+            actions.append(btnPlay, btnClose);
+            head.append(title, actions);
+
+            const body = document.createElement('div');
+            body.className = 'body';
+            const mirror = document.createElement('div');
+            mirror.className = 'mirror';
+            body.appendChild(mirror);
+
+            const resize = document.createElement('div');
+            resize.className = 'resize';
+
+            panel.append(head, body, resize);
+            root.appendChild(panel);
+
+            const st = {
+                id: room.id,
+                panel,
+                body,
+                mirror,
+                obs: null,
+                lastSig: '',
+                scheduled: false,
+                resolve: (id) => {
+                    if (typeof cfg.resolveDom === 'function')
+                        return cfg.resolveDom(id);
+                    return defaultResolveDom(id);
+                }
+            };
+            panelMap.set(room.id, st);
+            makeDraggable(panel, head);
+            makeResizable(panel, resize);
+            placePanel(panel, idx);
+            const src = st.resolve(room.id);
+            attachObserver(room.id, src);
+            scheduleSync(room.id);
+        }
+
+        function placePanel(panel, idx, forceGrid = false) {
+            const root = ensureRoot();
+            const rc = root.getBoundingClientRect();
+            const n = rooms.length || 1;
+            const { cols, rows } = computeGrid(n);
+            const gap = GAP;
+            const baseW = Math.max(MIN_W, (rc.width - gap * (cols + 1)) / cols);
+            const baseH = Math.max(MIN_H, (rc.height - gap * (rows + 1)) / rows);
+            const id = panel.dataset.id;
+            const saved = !forceGrid && layouts && layouts[id];
+            let x, y, w, h;
+            if (saved) {
+                ({ x, y, w, h } = layouts[id]);
+                x = clamp(x, 0, rc.width - MIN_W);
+                y = clamp(y, 0, rc.height - MIN_H);
+                w = clamp(w, MIN_W, rc.width);
+                h = clamp(h, MIN_H, rc.height);
+            } else {
+                const col = idx % cols;
+                const row = Math.floor(idx / cols);
+                w = baseW;
+                h = baseH;
+                x = gap + col * (baseW + gap);
+                y = gap + row * (baseH + gap);
+            }
+            panel.style.width = w + 'px';
+            panel.style.height = h + 'px';
+            panel.style.left = x + 'px';
+            panel.style.top = y + 'px';
+        }
+
+        function makeDraggable(panel, handle) {
+            let dragging = false;
+            let startX = 0;
+            let startY = 0;
+            let origX = 0;
+            let origY = 0;
+            const root = ensureRoot();
+            const onDown = (e) => {
+                e.preventDefault();
+                dragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                origX = parseFloat(panel.style.left) || 0;
+                origY = parseFloat(panel.style.top) || 0;
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            };
+            const onMove = (e) => {
+                if (!dragging)
+                    return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                const rc = root.getBoundingClientRect();
+                const w = panel.getBoundingClientRect().width;
+                const h = panel.getBoundingClientRect().height;
+                let nx = clamp(origX + dx, 0, rc.width - w);
+                let ny = clamp(origY + dy, 0, rc.height - h);
+                panel.style.left = nx + 'px';
+                panel.style.top = ny + 'px';
+            };
+            const onUp = () => {
+                if (!dragging)
+                    return;
+                dragging = false;
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                persistLayout(panel);
+            };
+            handle.addEventListener('mousedown', onDown);
+        }
+
+        function makeResizable(panel, handle) {
+            let resizing = false;
+            let startX = 0;
+            let startY = 0;
+            let origW = 0;
+            let origH = 0;
+            const root = ensureRoot();
+            const onDown = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                resizing = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                const rc = panel.getBoundingClientRect();
+                origW = rc.width;
+                origH = rc.height;
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            };
+            const onMove = (e) => {
+                if (!resizing)
+                    return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                const rootRect = root.getBoundingClientRect();
+                const left = parseFloat(panel.style.left) || 0;
+                const top = parseFloat(panel.style.top) || 0;
+                let nw = clamp(origW + dx, MIN_W, rootRect.width - left);
+                let nh = clamp(origH + dy, MIN_H, rootRect.height - top);
+                panel.style.width = nw + 'px';
+                panel.style.height = nh + 'px';
+            };
+            const onUp = () => {
+                if (!resizing)
+                    return;
+                resizing = false;
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                persistLayout(panel);
+            };
+            handle.addEventListener('mousedown', onDown);
+        }
+
+        function persistLayout(panel) {
+            const id = panel.dataset.id;
+            const rc = panel.getBoundingClientRect();
+            layouts[id] = {
+                x: rc.left,
+                y: rc.top,
+                w: rc.width,
+                h: rc.height
+            };
+            saveLayouts();
+        }
+
+        function layoutAll(forceGrid = false) {
+            rooms.forEach((r, idx) => {
+                const st = getPanelState(r.id);
+                if (!st || !st.panel)
+                    return;
+                placePanel(st.panel, idx, forceGrid);
+            });
+        }
+
+        function renderRooms(list, options = {}) {
+            cfg = Object.assign(cfg, options || {});
+            rooms = (list || []).map(r => {
+                if (typeof r === 'string')
+                    return { id: r, name: r };
+                if (r && r.id)
+                    return { id: r.id, name: r.name || r.id };
+                return null;
+            }).filter(Boolean);
+
+            const root = ensureRoot();
+            // remove stale panels
+            Array.from(panelMap.keys()).forEach(id => {
+                if (!rooms.find(r => r.id === id)) {
+                    const st = getPanelState(id);
+                    if (st && st.panel && st.panel.parentElement === root)
+                        root.removeChild(st.panel);
+                    if (st && st.obs)
+                        st.obs.disconnect();
+                    panelMap.delete(id);
+                    delete layouts[id];
+                }
+            });
+
+            rooms.forEach((room, idx) => {
+                if (!panelMap.has(room.id)) {
+                    createPanel(room, idx);
+                }
+            });
+
+            layoutAll(false);
+        }
+
+        function resetLayout() {
+            layouts = {};
+            saveLayouts();
+            layoutAll(true);
+        }
+
+        function hide() {
+            const root = document.getElementById(OVERLAY_ID);
+            const btn = document.getElementById(RESET_BTN_ID);
+            if (root)
+                root.style.display = 'none';
+            if (btn)
+                btn.style.display = 'none';
+        }
+
+        function show() {
+            const root = ensureRoot();
+            root.style.display = '';
+            const btn = document.getElementById(RESET_BTN_ID);
+            if (btn)
+                btn.style.display = '';
+        }
+
+        window.__abxTableOverlay = {
+            render: renderRooms,
+            reset: resetLayout,
+            hide,
+            show
+        };
+    })();
+
     // ======= Boot =======
     function ensureOverlayHost() {
     // đảm bảo overlay tồn tại và listeners đã gắn

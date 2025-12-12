@@ -1,0 +1,106 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
+  <!-- ===== Common ===== -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Prefer32Bit>false</Prefer32Bit>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <AssemblyName>TaiXiuLiveHit</AssemblyName>
+  </PropertyGroup>
+
+  <!-- Stamp cho Release đổi tên EXE -->
+  <PropertyGroup>
+    <BuildStamp Condition="'$(BuildStamp)'==''">$([System.DateTime]::Now.ToString("yyMMdd-HHmmss"))</BuildStamp>
+  </PropertyGroup>
+
+  <!-- ===== Debug: build DLL plugin cho Hub ===== -->
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <!-- WPF app compile as Library để Hub load như plugin -->
+    <OutputType>WinExe</OutputType>
+
+    <DefineConstants>$(DefineConstants);DEBUG;TRACE;ABX_HUB</DefineConstants>
+    <DebugType>portable</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <Optimize>false</Optimize>
+    <Deterministic>false</Deterministic>
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+
+  </PropertyGroup>
+
+  <!-- ===== Release: 1-file EXE độc lập (giữ nguyên nghiệp vụ) ===== -->
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <DefineConstants>$(DefineConstants);STANDALONE</DefineConstants>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+  <!-- ===== Packages & resources ===== -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
+  </ItemGroup>
+
+  <!-- Nhúng JS vào resource -->
+  <ItemGroup>
+    <None Remove="js_home_v2.js" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="js_home_v2.js" />
+  </ItemGroup>
+
+  <!-- Release mới nhúng ZIP môi trường -->
+  <ItemGroup Condition="'$(Configuration)'=='Release'">
+    <None Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
+    <EmbeddedResource Include="ThirdParty\WebView2Fixed_win-x64.zip">
+      <LogicalName>TaiXiuLiveHit.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- Tài nguyên ảnh/icon -->
+  <ItemGroup>
+    <Resource Include="Assets\**\*.png" />
+    <Resource Include="Assets\**\*.jpg" />
+    <Resource Include="Assets\AppIcon.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+  </ItemGroup>
+
+  <!-- ===== RẤT QUAN TRỌNG: Debug chuyển App.xaml từ ApplicationDefinition -> Page ===== -->
+  <ItemGroup Condition="'$(Configuration)'=='Debug'">
+    <!-- Debug không nhúng ZIP môi trường -->
+    <EmbeddedResource Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
+  </ItemGroup>
+
+  <!-- ===== Kiểm soát file plugin để tránh duplicate compile ===== -->
+  <!-- Bỏ mặc định trước, rồi Debug sẽ Include lại -->
+
+  <!-- ===== Release rename & cleanup (giữ nguyên) ===== -->
+  <Target Name="RenamePublishedExeWithStamp" AfterTargets="Publish" Condition="'$(Configuration)'=='Release'">
+    <PropertyGroup>
+      <PublishedExe>$(PublishDir)$(AssemblyName).exe</PublishedExe>
+      <StampedExe>$(PublishDir)$(AssemblyName)_$(BuildStamp).exe</StampedExe>
+    </PropertyGroup>
+    <Move SourceFiles="$(PublishedExe)" DestinationFiles="$(StampedExe)" Condition="Exists('$(PublishedExe)')" />
+  </Target>
+
+  <Target Name="CleanWebView2LooseDlls" AfterTargets="Publish" Condition="'$(Configuration)'=='Release'">
+    <ItemGroup>
+      <_Wv2Loose Include="$(PublishDir)Microsoft.Web.WebView2*.dll" />
+      <_TfmsDir Include="$(PublishDir)net8.0-windows\" />
+    </ItemGroup>
+    <Delete Files="@(_Wv2Loose)" />
+    <RemoveDir Directories="@(_TfmsDir)" Condition="Exists('%(_TfmsDir.Identity)')" />
+  </Target>
+
+</Project>

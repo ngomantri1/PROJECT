@@ -1,0 +1,240 @@
+(function () {
+    'use strict';
+
+    if (!(window.cc && cc.director && cc.director.getScene)) {
+        console.log('Không tìm thấy cc.director.getScene (chưa vào game?).');
+        return;
+    }
+
+    var V2 = cc.v2 || cc.Vec2;
+
+    function wRect(node) {
+        try {
+            var p = node.convertToWorldSpaceAR(new V2(0, 0));
+            var cs = node.getContentSize
+                ? node.getContentSize()
+                : (node._contentSize || { width: 0, height: 0 });
+            return {
+                x: p.x || 0,
+                y: p.y || 0,
+                w: cs.width || 0,
+                h: cs.height || 0
+            };
+        } catch (e) {
+            return { x: 0, y: 0, w: 0, h: 0 };
+        }
+    }
+
+    function tailOf(n, limit) {
+        limit = limit || 16;
+        var names = [];
+        var cur = n, c = 0;
+        while (cur && c < 64) {
+            if (cur.name) names.push(cur.name);
+            cur = cur.parent || cur._parent || null;
+            c++;
+        }
+        names.reverse();
+        return names.slice(-limit).join('/');
+    }
+
+    function walkNodes(cb) {
+        var scene = cc.director.getScene();
+        if (!scene) return;
+        var stack = [scene];
+        var seen = [];
+        function seenHas(x) { return seen.indexOf(x) !== -1; }
+        function seenAdd(x) { if (!seenHas(x)) seen.push(x); }
+
+        while (stack.length) {
+            var n = stack.pop();
+            if (!n || seenHas(n)) continue;
+            seenAdd(n);
+            try { cb(n); } catch (e) { }
+            var kids = (n.children || n._children) || [];
+            for (var i = 0; i < kids.length; i++) {
+                var k = kids[i];
+                if (k && !seenHas(k)) stack.push(k);
+            }
+        }
+    }
+
+    // ---- 1) Dump toàn bộ node có "SoiCau" trong tail ----
+    function dumpSoiCauNodes() {
+        var rows = [];
+        walkNodes(function (n) {
+            var tail = tailOf(n, 16);
+            var tl = tail.toLowerCase();
+            if (tl.indexOf('soicau') === -1) return;  // chỉ quan tâm vùng SoiCau
+
+            var r = wRect(n);
+            var labelText = null;
+            var spriteName = null;
+            var comps = n._components || [];
+
+            for (var i = 0; i < comps.length; i++) {
+                var c = comps[i];
+                if (!c) continue;
+
+                // Label / LabelAtlas
+                if (labelText === null && typeof c.string !== 'undefined') {
+                    try {
+                        labelText = (c.string != null ? String(c.string) : '');
+                    } catch (e) { }
+                }
+
+                // Sprite
+                if (spriteName === null) {
+                    var sf = null;
+                    try {
+                        sf = c.spriteFrame || c._spriteFrame || null;
+                    } catch (e) { }
+                    if (sf && sf.name) {
+                        try {
+                            spriteName = String(sf.name);
+                        } catch (e) { }
+                    }
+                }
+            }
+
+            rows.push({
+                nodeName: n.name || '',
+                tail: tail,
+                x: r.x,
+                y: r.y,
+                w: r.w,
+                h: r.h,
+                labelText: labelText,
+                spriteName: spriteName
+            });
+        });
+
+        console.log('=== DUMP SoiCau (tất cả node liên quan) ===');
+        console.log('Tổng số node:', rows.length);
+        console.table(rows);
+
+        return rows;
+    }
+
+    // ---- 2) Thử đoán digit & ghép chuỗi TK ----
+    function guessDigit(row) {
+        // Ưu tiên text
+        if (row.labelText != null) {
+            var t = String(row.labelText).trim();
+            if (/^[0-4]$/.test(t)) return parseInt(t, 10);
+        }
+
+        // Sau đó tới spriteName (ví dụ: soicau_num3, font_2, v.v.)
+        if (row.spriteName) {
+            var name = String(row.spriteName);
+            var m = name.match(/([0-4])(?!.*[0-9])/); // lấy chữ số 0-4 cuối cùng
+            if (m) return parseInt(m[1], 10);
+        }
+        return null;
+    }
+
+    function median(arr) {
+        var b = arr.slice().sort(function (x, y) { return x - y; });
+        return b.length ? b[Math.floor(b.length / 2)] : 0;
+    }
+
+    function clusterByX(items) {
+        if (!items.length) return [];
+        var xs = [];
+        for (var i = 0; i < items.length; i++) {
+            var X = Math.round(items[i].x);
+            if (xs.indexOf(X) === -1) xs.push(X);
+        }
+        xs.sort(function (a, b) { return a - b; });
+
+        var diffs = [];
+        for (var j = 1; j < xs.length; j++) diffs.push(xs[j] - xs[j - 1]);
+        var spacing = diffs.length ? median(diffs) : 28;
+        var thr = Math.max(8, Math.round(spacing * 0.6));
+
+        var cols = [];
+        var sorted = items.slice().sort(function (a, b) { return a.x - b.x; });
+
+        for (var k = 0; k < sorted.length; k++) {
+            var it = sorted[k];
+            var col = null;
+            for (var c = 0; c < cols.length; c++) {
+                if (Math.abs(cols[c].cx - it.x) <= thr) {
+                    col = cols[c];
+                    break;
+                }
+            }
+            if (!col) {
+                col = { cx: it.x, items: [] };
+                cols.push(col);
+            }
+            col.items.push(it);
+            col.cx = (col.cx * (col.items.length - 1) + it.x) / col.items.length;
+        }
+
+        cols.sort(function (a, b) { return a.cx - b.cx; }); // trái → phải
+        for (var ci = 0; ci < cols.length; ci++) {
+            cols[ci].items.sort(function (a, b) { return b.y - a.y; }); // trên → dưới
+        }
+        return cols;
+    }
+
+    function readTKSeqFromDump(rows) {
+        var cells = [];
+        for (var i = 0; i < rows.length; i++) {
+            var d = guessDigit(rows[i]);
+            if (d == null) continue;
+            cells.push({
+                v: d,
+                x: rows[i].x + rows[i].w / 2,
+                y: rows[i].y + rows[i].h / 2,
+                tail: rows[i].tail
+            });
+        }
+
+        console.log('Số ô đoán được digit (0-4):', cells.length);
+        console.table(cells);
+
+        if (!cells.length) {
+            return { seq: '', cells: [], cols: [], colStrings: [] };
+        }
+
+        var cols = clusterByX(cells);
+        var parts = [];
+
+        for (var i = 0; i < cols.length; i++) {
+            var col = cols[i];
+            var topDown = (i % 2 === 0); // cột 1 T↓, cột 2 B↑, ...
+            var arr = col.items.slice();
+            if (!topDown) arr.reverse();
+
+            var s = '';
+            for (var k = 0; k < arr.length; k++) {
+                s += String(arr[k].v);
+            }
+            parts.push(s);
+        }
+
+        return {
+            seq: parts.join(''),
+            cells: cells,
+            cols: cols,
+            colStrings: parts
+        };
+    }
+
+    // ---- chạy debug ----
+    var rows = dumpSoiCauNodes();
+    var tk = readTKSeqFromDump(rows);
+
+    console.log('=== KẾT QUẢ TK (đoán từ Label + Sprite) ===');
+    console.log('Chuỗi từng cột (trái→phải, zig-zag):', tk.colStrings);
+    console.log('SEQ =', tk.seq);
+
+    // tiện gọi lại sau:
+    window.cwScanSoiCau = dumpSoiCauNodes;
+    window.cwReadTKSeq = function () {
+        var rows2 = dumpSoiCauNodes();
+        return readTKSeqFromDump(rows2);
+    };
+})();
