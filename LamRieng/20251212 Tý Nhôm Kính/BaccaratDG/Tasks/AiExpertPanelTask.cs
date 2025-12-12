@@ -22,9 +22,9 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using static BaccaratDG.Tasks.TaskUtil;
+using static BaccaratPPRR88.Tasks.TaskUtil;
 
-namespace BaccaratDG.Tasks
+namespace BaccaratPPRR88.Tasks
 {
     public sealed class AiExpertPanelTask : IBetTask
     {
@@ -58,10 +58,10 @@ namespace BaccaratDG.Tasks
             public bool ContrarianEnabled { get; set; } = true;
         }
 
-        // AppData\Local\BaccaratDG\a15\ai15.config.json
+        // AppData\Local\BaccaratPPRR88\a15\ai15.config.json
         private static readonly string ConfigDir =
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                         "BaccaratDG", "a15");
+                         "BaccaratPPRR88", "a15");
         private static readonly string ConfigFile =
             Path.Combine(ConfigDir, "ai15.config.json");
 

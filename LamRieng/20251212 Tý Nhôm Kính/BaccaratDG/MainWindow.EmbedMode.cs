@@ -1,6 +1,6 @@
 ﻿using System.Windows;
 
-namespace BaccaratDG
+namespace BaccaratPPRR88
 {
     public partial class MainWindow
     {

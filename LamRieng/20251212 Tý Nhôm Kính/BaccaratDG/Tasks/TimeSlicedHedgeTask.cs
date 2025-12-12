@@ -1,8 +1,8 @@
 ﻿using System.Threading;
 using System.Threading.Tasks;
-using static BaccaratDG.Tasks.TaskUtil;
+using static BaccaratPPRR88.Tasks.TaskUtil;
 
-namespace BaccaratDG.Tasks
+namespace BaccaratPPRR88.Tasks
 {
     /// <summary>
     /// 11) Time-sliced hedge (block 10 tay):

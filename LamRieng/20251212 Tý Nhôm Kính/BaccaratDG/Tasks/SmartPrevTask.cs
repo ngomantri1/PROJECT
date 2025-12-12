@@ -2,9 +2,9 @@
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using static BaccaratDG.Tasks.TaskUtil;
+using static BaccaratPPRR88.Tasks.TaskUtil;
 
-namespace BaccaratDG.Tasks
+namespace BaccaratPPRR88.Tasks
 {
     public sealed class SmartPrevTask : IBetTask
     {

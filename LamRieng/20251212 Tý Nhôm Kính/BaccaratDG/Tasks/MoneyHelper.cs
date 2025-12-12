@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace BaccaratDG.Tasks
+namespace BaccaratPPRR88.Tasks
 {
     internal static class MoneyHelper
     {

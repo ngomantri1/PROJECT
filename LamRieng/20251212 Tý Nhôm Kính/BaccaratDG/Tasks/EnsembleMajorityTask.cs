@@ -2,9 +2,9 @@
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using static BaccaratDG.Tasks.TaskUtil;
+using static BaccaratPPRR88.Tasks.TaskUtil;
 
-namespace BaccaratDG.Tasks
+namespace BaccaratPPRR88.Tasks
 {
     /// <summary>
     /// 10) Ensemble majority: 5 "chuyên gia" bỏ phiếu:

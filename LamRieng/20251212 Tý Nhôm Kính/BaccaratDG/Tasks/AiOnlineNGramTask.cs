@@ -7,9 +7,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using static BaccaratDG.Tasks.TaskUtil;
+using static BaccaratPPRR88.Tasks.TaskUtil;
 
-namespace BaccaratDG.Tasks
+namespace BaccaratPPRR88.Tasks
 {
     /// <summary>
     /// 14) AI học tại chỗ (n-gram) — đặt liên tục, học online, nâng có kiểm soát khi s≥SafetyTrigger/s≥8.
@@ -70,7 +70,7 @@ namespace BaccaratDG.Tasks
 
         // ===== đường dẫn =====
         private static string AppLocalDir()
-            => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BaccaratDG", "ai");
+            => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BaccaratPPRR88", "ai");
 
         private static string GetDefaultStatePath()
         {

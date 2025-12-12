@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 
-namespace BaccaratDG
+namespace BaccaratPPRR88
 {
     internal sealed class WebView2LiveBridge
     {

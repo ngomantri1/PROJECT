@@ -1,6 +1,6 @@
 ﻿using System.Windows.Controls;
 
-namespace BaccaratDG.Views
+namespace BaccaratPPRR88.Views
 {
     public partial class PluginStubView : UserControl
     {

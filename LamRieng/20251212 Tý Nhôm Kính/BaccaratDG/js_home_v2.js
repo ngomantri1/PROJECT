@@ -1,4194 +1,4666 @@
-(() => {
+﻿(function () {
     'use strict';
+    // Muốn hiện và ẩn bảng điều khiển home watch thì tìm dòng sau : showPanel: false // ⬅️ false = ẩn panel; true = hiện panel
+    if (window.self !== window.top) {
+        return;
+    }
+    function isTelemetry(u) {
+        try {
+            const href = typeof u === 'string' ? u : (u && u.url) || '';
+            const url = new URL(href, location.href);
+            // chặn MỌI request tới host ap.stape.info (kể cả events_cfc…)
+            return url.hostname === 'stape.info' || url.hostname.endsWith('.stape.info');
+        } catch (_) {
+            return /(^|\.)stape\.info/.test(String(u || ''));
+        }
+    }
 
-    // tên gì cũng được, miễn là gọi được lại
-    function boot() {
+    // --- MUTE TELEMETRY SỚM NHẤT (fetch, XHR, sendBeacon) ---
+    (function installTelemetryMutes() {
+        if (window.__abx_telemetry_hooked)
+            return;
+        window.__abx_telemetry_hooked = true;
 
-        (() => {
-            'use strict';
-            /* =========================================================
-            CanvasWatch + MoneyMap + BetMap + TextMap + Scan200Text
-            + TK Sequence (restore): LEFT→RIGHT columns, zig-zag T↓/B↑
-            (Compat build: no spread operator, no optional chaining)
-            + FIX: totals CHẴN/LẺ by (x,tail) — CHẴN x=591, LẺ x=973,
-            tail = 'XDLive/Canvas/Bg/footer/listLabel/totalBet'
-            + STANDARDIZED EXPORTS: moneyTailList(), pickByXTail()
-            ========================================================= */
-            //root.style.display='none';  //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-
-            var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-            try {
-                if (window[NS] && window[NS].teardown) {
-                    window[NS].teardown();
+        // 1) fetch
+        const origFetch = window.fetch;
+        if (typeof origFetch === 'function') {
+            window.fetch = function (input, init) {
+                const url = typeof input === 'string' ? input : (input && input.url) || '';
+                if (isTelemetry(url)) {
+                    return Promise.resolve(new Response('', {
+                            status: 204,
+                            statusText: 'No Content'
+                        }));
                 }
-            } catch (e) {}
 
-            // === CW host/DOM command bridge (clear_autostart) =====================
-            // CW host/DOM command bridge (clear_autostart)
-            (function () {
+                return origFetch.apply(this, arguments);
+            };
+        }
+
+        // 2) XHR
+        const XHR = window.XMLHttpRequest;
+        if (XHR && XHR.prototype) {
+            const open = XHR.prototype.open;
+            const send = XHR.prototype.send;
+
+            XHR.prototype.open = function (method, url) {
                 try {
-                    if (window.__cw_cmd_hooked)
-                        return;
-                    window.__cw_cmd_hooked = 1;
-                    if (typeof window.__cw_autostart === 'undefined')
-                        window.__cw_autostart = 0;
-                    if (typeof window.__cw_autostart_href === 'undefined')
-                        window.__cw_autostart_href = '';
-
-                    function _cwHandleCmd(evOrObj) {
-                        try {
-                            var d = evOrObj && (evOrObj.data || evOrObj);
-                            if (typeof d === 'string') {
-                                try {
-                                    d = JSON.parse(d);
-                                } catch (_) {
-                                    d = {};
-                                }
-                            }
-                            if (d && d.__cw_cmd === 'clear_autostart') {
-                                window.__cw_autostart = 0;
-                                window.__cw_autostart_href = '';
-                            }
-                        } catch (_) {}
-                    }
-                    try {
-                        window.addEventListener('message', _cwHandleCmd, true);
-                    } catch (_) {}
-                    try {
-                        if (window.chrome && window.chrome.webview) {
-                            window.chrome.webview.addEventListener('message', function (e) {
-                                _cwHandleCmd(e);
-                            });
-                        }
-                    } catch (_) {}
+                    this.__abx_url = typeof url === 'string' ? url : String(url);
                 } catch (_) {}
-            })();
+                return open.apply(this, arguments);
+            };
+            XHR.prototype.send = function (body) {
+                const u = this.__abx_url || '';
+                if (isTelemetry(u)) {
+                    try {
+                        this.abort();
+                    } catch (_) {}
+                    return; // nuốt luôn
+                }
+                return send.apply(this, arguments);
+            };
 
-            if (!(window.cc && cc.director && cc.director.getScene)) {
+        }
+
+        // 3) sendBeacon
+        if (navigator && typeof navigator.sendBeacon === 'function') {
+            const origSB = navigator.sendBeacon.bind(navigator);
+            navigator.sendBeacon = (url, data) =>
+            isTelemetry(url) ? true : origSB(url, data);
+
+        }
+    })();
+
+    function installTelemetryMutesInFrame(win) {
+        try {
+            if (!win || win.__abx_telemetry_hooked)
+                return;
+            const w = win;
+            w.__abx_telemetry_hooked = true;
+            // fetch
+            const of = w.fetch;
+            if (typeof of === 'function') {
+                w.fetch = function (input, init) {
+                    const url = typeof input === 'string' ? input : (input && input.url) || '';
+                    return isTelemetry(url) ? Promise.resolve(new w.Response('', {
+                            status: 204,
+                            statusText: 'No Content'
+                        }))
+                     : of.apply(this, arguments);
+                };
+            }
+            // XHR
+            const X = w.XMLHttpRequest;
+            if (X && X.prototype) {
+                const _open = X.prototype.open,
+                _send = X.prototype.send;
+                X.prototype.open = function (m, u) {
+                    try {
+                        this.__abx_url = String(u);
+                    } catch (_) {}
+                    return _open.apply(this, arguments);
+                };
+                X.prototype.send = function (body) {
+                    if (isTelemetry(this.__abx_url || '')) {
+                        try {
+                            this.abort();
+                        } catch (_) {}
+                        return;
+                    }
+                    return _send.apply(this, arguments);
+                };
+            }
+            // sendBeacon
+            if (w.navigator && typeof w.navigator.sendBeacon === 'function') {
+                const sb = w.navigator.sendBeacon.bind(w.navigator);
+                w.navigator.sendBeacon = (url, data) => isTelemetry(url) ? true : sb(url, data);
+            }
+        } catch (_) {}
+    }
+
+    // --- Hết: MUTE TELEMETRY ---
+    // === BEGIN TEXTMAP GUARD (đặt trước khi return ở games.*) ===
+    (function installTextMapGuard() {
+        if (window.__cw_tm_installed)
+            return;
+        window.__cw_tm_installed = true;
+
+        // Map sống chung toàn trang (không thay thế, chỉ merge)
+        let _map = window.__cw_textMap || {};
+        window.__cw_textMap = _map;
+
+        // Setter tiện dụng cho code bên ngoài muốn nạp thêm map
+        window.__cw_setTextMap = function (partial) {
+            try {
+                if (!partial || typeof partial !== 'object')
+                    return;
+                const n = Object.keys(partial).length;
+                if (n < 5) {
+                    console.warn("SKIPPED setTextMap: empty/small mapping");
+                    return;
+                }
+                Object.assign(_map, partial);
+            } catch (_) {}
+        };
+
+        // Getter an toàn (có mặc định)
+        window.__cw_getText = function (key, fallback = "") {
+            try {
+                const v = _map && _map[key];
+                return (v == null ? fallback : v);
+            } catch (_) {
+                return fallback;
+            }
+        };
+
+        // Chặn các đoạn script reset về {} hoặc set map rỗng
+        // - Trường hợp page dùng biến toàn cục TextMap => ta bọc bằng accessor
+        try {
+            let backing = _map;
+            Object.defineProperty(window, 'TextMap', {
+                configurable: true,
+                enumerable: false,
+                get() {
+                    return backing;
+                },
+                set(v) {
+                    try {
+                        if (!v || typeof v !== 'object') {
+                            console.warn("SKIPPED setting TextMap: not an object");
+                            return;
+                        }
+                        const n = Object.keys(v).length;
+                        if (n < 5) {
+                            console.warn("SKIPPED setting TextMap: empty/small mapping");
+                            return;
+                        }
+                        // không replace, chỉ merge để không mất key cũ
+                        Object.assign(backing, v);
+                    } catch (_) {}
+                }
+            });
+        } catch (_) { /* nếu trang đã định nghĩa sẵn thì bỏ qua */
+        }
+
+        // Tiện ích chờ map “đủ lớn” trước khi dùng
+        window.__cw_waitForTextMap = async function (minKeys = 50, timeout = 8000, step = 80) {
+            const t0 = Date.now();
+            while (Date.now() - t0 < timeout) {
+                try {
+                    if (_map && Object.keys(_map).length >= minKeys)
+                        return _map;
+                } catch (_) {}
+                await new Promise(r => setTimeout(r, step));
+            }
+            throw new Error("TextMap not ready");
+        };
+
+        // (Optional) xuất ra global để debug nhanh: __cw_textMap
+    })();
+    // === END TEXTMAP GUARD ===
+
+    // Skip toàn bộ Home Watch ở domain game
+    if (/^games\./i.test(location.hostname)) {
+        console.debug('[HomeWatch] Skip on game host');
+        return;
+    }
+
+    // Chạy 1 lần duy nhất và chỉ ở top window (không chạy trong iframe)
+    if (window.__abx_hw_installed)
+        return; // chỉ kiểm tra, KHÔNG set ở đây
+
+    // ======= Config =======
+    const CFG = {
+        panelId: '__abx_hw_root',
+        overlayId: '__abx_overlay',
+        highlightCls: '__abx_box',
+        selectedCls: '__abx_selected',
+        infoId: 'hwinfo',
+        urlId: 'hwurl',
+        retryBtnId: 'bretry',
+        linksBtnId: 'blinks',
+        textsBtnId: 'btext',
+        closePopupBtnId: 'bclosepopup', // NEW: nút ClosePopup
+        scanLinksBtnId: 'bscanl200',
+        scanTextsBtnId: 'bscant200',
+        scanClosePopupBtnId: 'bscanclose200', // NEW: nút Scan200ClosePopup
+        overlayToggleBtnId: 'boverlay',
+        loginBtnId: 'blogin',
+        xocBtnId: 'bxoc',
+        copyInfoBtnId: 'bcopyinfo', // ← THÊM DÒNG NÀY
+        autoRetryIntervalMs: 5000,
+        maxRetries: 6,
+        watchdogMs: 1000,
+        maxWatchdogMiss: 2,
+        showPanel: true,
+        autoRetryOnBoot: false
+    };
+
+    // ABS selector cho Username (đường dẫn tuyệt đối bạn yêu cầu)
+    const ABS_USERNAME_TAIL =
+        'div.user-profile[1]/div.main[2]/div.user-profile__left[1]/div.user-profile__form-input[1]/div.full-name[2]/div.base-input.disabled[1]/div.base-input__wrap.has-value[1]/input[1]';
+    // --- ABS selector cho số dư (đường dẫn tuyệt đối bạn yêu cầu)
+    const ABS_BALANCE_SEL =
+        'div.d-flex.align-items-center:nth-of-type(2) > div.menu__right > div.user-logged.d-flex > div.user-logged__info > div.base-dropdown-header > button.btn.btn-secondary > div.left > p.base-dropdown-header__user__amount';
+
+    // --- host helpers ---
+    const isGameHost = () => /^games\./i.test(location.hostname);
+
+    // Root popup đăng nhập (lấy từ Scan200ClosePopup bên bản Copy)
+    const TAIL_LOGIN_POPUP_ROOT =
+        'div.modal-dialog[1]/div.modal-content[1]/gupw-login-box.ng-scope.ng-isolate-scope[1]';
+    const TAIL_LOGIN_USER_INPUT =
+        'div.modal-dialog[1]/div.modal-content[1]/gupw-login-box.ng-scope.ng-isolate-scope[1]/div._3N2lRww2b9eZP-F5fSS-Rq[2]/div._1OoWQtNHBngCIoug1-MRj3[2]/form.ng-pristine.ng-invalid[1]/div._3kf2U2RqwnANN5VYWFRt8X[1]/input.ng-pristine.ng-untouched[1]';
+    const TAIL_LOGIN_PASS_INPUT =
+        'div.modal-dialog[1]/div.modal-content[1]/gupw-login-box.ng-scope.ng-isolate-scope[1]/div._3N2lRww2b9eZP-F5fSS-Rq[2]/div._1OoWQtNHBngCIoug1-MRj3[2]/form.ng-pristine.ng-invalid[1]/div.ng-isolate-scope._3kf2U2RqwnANN5VYWFRt8X[2]/input.ng-pristine.ng-untouched[1]';
+    const TAIL_LOGIN_CAPTCHA_INPUT =
+        'div.modal-content[1]/gupw-login-box.ng-scope.ng-isolate-scope[1]/div._3N2lRww2b9eZP-F5fSS-Rq[2]/div._1OoWQtNHBngCIoug1-MRj3[2]/form.ng-pristine.ng-invalid[1]/div.ng-scope._3kf2U2RqwnANN5VYWFRt8X[3]/gupw-captcha-login-box.ng-isolate-scope[1]/input.ng-pristine.ng-untouched[1]';
+    const LOGIN_POPUP_SELECTOR =
+        '.tcg_modal_wrap.loginPopupModal, .tcg_modal_wrap.publicModal, .tcg_modal_wrap, ' +
+        '.loginPopupModal, .popup-login, .login-popup, .modal-login, .login__popup, .v--modal-box, .v--modal-overlay';
+    // N£t dang nh?p trˆn header (tail m?i b?n cung c?p)
+    const TAIL_LOGIN_BTN =
+        'gupw-header.ng-isolate-scope[1]/header._3vHaytPTEUCSbrofAXU7Cb[1]/section.dM4IN4vP0qOz6g1PSzWml[1]/div.TFkX-2VIsaFZW7t64YI07[1]/div.Rn_gRU5eCS1c_8asbKpT1[2]/div[1]/div.ng-scope.XHBKId8UUI4X-RJ2-t7aR[1]/button.ng-scope._2mBNgBjbvImj-b_6WuwAFm[1]';
+
+    // Danh sách popup quảng cáo/thông báo cần auto tắt
+    const CLOSE_POPUP_ROOT_TAILS = [
+        // Popup thông báo RR88 HƯỞNG VẠ MIỄN LU...
+        'html.windows-os[1]/body._style[1]/div[2]/div.br_index_main.br_main[3]/div.v--modal-overlay[2]/div.v--modal-background-click[1]/div.v--modal-box.v--modal[2]/div.tcg_modal_wrap.publicModal[1]',
+        // Overlay bọc ngoài
+        'html.windows-os[1]/body._style[1]/div[2]/div.br_index_main.br_main[3]/div.v--modal-overlay[2]',
+        // Tail thông báo cần đóng thêm
+        'body.vi.modal-open[1]/div.modal.fade[1]/div.modal-dialog[1]/div.modal-content[1]/gupw-dialog-marquee.ng-scope.ng-isolate-scope[1]/aside.M0RLBhDgSoQFqxO29GIML[1]/div._9PbX_LFgnXvcTnC_3cq6B[2]/span.ng-scope[1]'
+    ];
+
+    const TAIL_BALANCE =
+        'div.d-flex.align-items-center[2]/div.menu__right[1]/div.user-logged.d-flex[1]/div.user-logged__info[1]/div.base-dropdown-header[1]/button.btn.btn-secondary[1]/div.left[1]/p.base-dropdown-header__user__amount[1]';
+
+    const TAIL_XOCDIA_BTN =
+        'div.livestream-section__live[2]/div.item-live[2]/div.live-stream[1]/div.player-wrapper[1]/div[1]/div.play-button[4]/div.play-overlay[1]/button.base-button.btn[1]';
+
+    // Nút "PP trực tuyến" trên header (Casino LIVE)
+    const TAIL_PP_TRUC_TUYEN =
+        'div.header_nav[1]/div.header_nav_list[1]/div.nav_item.active[2]/div.dropdown_menu.LIVE[2]/div.drop_bg[1]/ul.drop_ul.noCenter[2]/li[1]/span.desc[2]';
+
+    // Bản dự phòng nếu lúc đó tab Casino chưa có class "active"
+    const TAIL_PP_TRUC_TUYEN_ALT =
+        'div.header_nav[1]/div.header_nav_list[1]/div.nav_item[2]/div.dropdown_menu.LIVE[2]/div.drop_bg[1]/ul.drop_ul.noCenter[2]/li[1]/span.desc[2]';
+    // Tìm nút "PP trực tuyến" theo tail + text, chỉ nhận khi đang visible
+    function findPPProviderButton() {
+        // 1) Ưu tiên tìm theo 2 tail đã cấu hình
+        const tails = [TAIL_PP_TRUC_TUYEN, TAIL_PP_TRUC_TUYEN_ALT];
+
+        for (const t of tails) {
+            if (!t)
+                continue;
+            const el = findByTail(t);
+            if (el && isVisibleAndClickable(el)) {
+                return el;
+            }
+        }
+
+        // 2) Fallback: quét theo text "PP trực tuyến" trong header
+        const candidates = Array.from(
+                document.querySelectorAll('span.desc, li, a, button, div'));
+
+        for (const el of candidates) {
+            const txt = (el.textContent || '').trim().toLowerCase();
+            if (!txt)
+                continue;
+
+            if (txt.includes('pp trực tuyến') && isVisibleAndClickable(el)) {
+                return el;
+            }
+        }
+
+        return null;
+    }
+
+    // ======= Game Regex (dùng trên chuỗi đã norm() — không dấu, lowercase) =======
+    const RE_XOCDIA_POS = /\bxoc(?:[-\s]*dia)?\b/; // "xoc", "xoc dia", "xoc-dia", "xocdia"
+    const RE_XOCDIA_NEG = /\b(?:tai|xiu|taixiu|sicbo|dice)\b/; // "tai", "xiu", "taixiu", "sicbo", "dice"
+
+    // ======= State =======
+    const S = {
+        showL: false,
+        showT: false,
+        showP: false, // NEW: map popup
+        items: {
+            link: [],
+            text: [],
+            popup: []// NEW: danh sách popup
+        },
+        selected: null,
+        username: '',
+        balance: '',
+        autoTimer: null,
+        inflightProbe: false,
+        retries: 0,
+        fetchDone: false,
+        pumpTimer: null,
+        watchdogTimer: null,
+        missStreak: 0,
+        authGateOpened: false,
+        loginPopupTimer: null, // NEW: timer auto click login
+        loginPostProbeStarted: false // NEW: tránh start probe trùng
+    };
+
+    const ROOT_Z = 2147483647;
+
+    // ======= Utils =======
+    const clip = (s, n) => {
+        s = (s || '').replace(/\s+/g, ' ').trim();
+        return s.length > n ? s.slice(0, n) : s;
+    };
+    const rectOf = el => {
+        const r = el.getBoundingClientRect();
+        return {
+            x: Math.round(r.left | 0),
+            y: Math.round(r.top | 0),
+            w: Math.round(r.width | 0),
+            h: Math.round(r.height | 0)
+        };
+    };
+    const area = r => Math.max(0, r.w) * Math.max(0, r.h);
+    const smallFirst = (a, b) => {
+        const da = area(a.rect),
+        db = area(b.rect);
+        if (da !== db)
+            return da - db;
+        return a.idx - b.idx;
+    };
+    const norm = s => (s || '').toString().normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    // log tiện dụng cho luồng baccarat
+    const bLog = (msg) => {
+        try {
+            updateInfo && updateInfo('[bacc] ' + msg);
+        } catch (_) {}
+        try {
+            console && console.warn && console.warn('[BaccMulti]', msg);
+        } catch (_) {}
+    };
+
+    async function waitFor(test, timeout = 8000, step = 120) {
+        const t0 = Date.now();
+        while (Date.now() - t0 < timeout) {
+            try {
+                const v = test();
+                if (v)
+                    return v;
+            } catch (_) {}
+            await wait(step);
+        }
+        return null;
+    }
+
+    function textOf(el) {
+        try {
+            return (el.innerText || el.textContent || '').trim();
+        } catch (_) {
+            return (el.textContent || '').trim();
+        }
+    }
+
+    // đặt gần nhóm utils (trước/hoặc sau textOf)
+    function isLikelyUsername(s) {
+        const t = String(s || '').trim();
+        if (!t)
+            return false;
+        // loại các nhãn phổ biến / label
+        if (/(tên\s*hiển\s*thị|tên\s*đăng\s*nhập|đăng\s*nhập|login|email|mật\s*khẩu|vip)/i.test(t))
+            return false;
+        // độ dài hợp lý cho tên nhân vật
+        if (t.length < 2 || t.length > 40)
+            return false;
+        // phải có ít nhất 1 chữ hoặc số (kể cả có dấu tiếng Việt)
+        if (!/[A-Za-zÀ-ỹ0-9]/.test(t))
+            return false;
+        return true;
+    }
+
+    function cssTail(el) {
+        const parts = [];
+        let e = el,
+        depth = 0;
+        while (e && e.nodeType === 1 && depth < 8) {
+            let name = e.tagName.toLowerCase();
+            const cls = (e.className || '').toString().trim().split(/\s+/).filter(Boolean).slice(0, 2).join('.');
+            if (cls)
+                name += '.' + cls;
+            let i = 1,
+            s = e.previousElementSibling;
+            while (s) {
+                if (s.tagName === e.tagName)
+                    i++;
+                s = s.previousElementSibling;
+            }
+            name += '[' + i + ']';
+            parts.push(name);
+            e = e.parentElement;
+            depth++;
+        }
+        return parts.reverse().join('/');
+    }
+
+    const $panel = () => document.getElementById(CFG.panelId);
+    const $overlay = () => document.getElementById(CFG.overlayId);
+
+    // Bật/tắt log khi debug số dư
+    const DEBUG_BAL = false; // đổi true khi cần theo dõi
+
+    function balLog(...args) {
+        if (!DEBUG_BAL)
+            return;
+        // Dùng mức debug để không làm bẩn console khi không cần
+        console.debug('[HW][BAL]', ...args); // hiển thị khi bật Verbose/Debug. :contentReference[oaicite:2]{index=2}
+    }
+
+    function isLoggedInFromDOM() {
+        // 1) Có tên -> chắc chắn logged-in
+        const v = findUserFromDOM();
+        if (v && v.trim())
+            return true;
+        // 2) Có khối user đang HIỂN THỊ -> tạm xem là logged-in
+        const block = document.querySelector('.user-logged, .base-dropdown-header__user__name, .user__name, .header .user-info, .hd_login .user-name, .logined_wrap');
+        if (block && block.offsetParent !== null)
+            return true;
+        // 3) Thấy nút/khối Đăng xuất hoặc số dư trên header
+        const logoutBtn = Array.from(document.querySelectorAll('a,button')).find(el => /dang\s*xuat|logout/i.test(norm(textOf(el))));
+        if (logoutBtn && logoutBtn.offsetParent !== null)
+            return true;
+        const balanceNode = Array.from(document.querySelectorAll('.balance, .balance-text, .user-balance, .nav_item .balance, .balance-box .balance, .logined_wrap .balance-box'))
+            .find(el => /\d/.test(norm(textOf(el))));
+        if (balanceNode && balanceNode.offsetParent !== null)
+            return true;
+        return false;
+    }
+    function closeLoginPopupIfLoggedIn() {
+        try {
+            if (!isLoggedInFromDOM())
+                return;
+
+            // Xóa overlay/modal nếu đang che
+            const hideOverlays = () => {
+                const sels = [
+                    '.v--modal-overlay', '.v--modal-box',
+                    '.modal-mask', '.modal-backdrop', '.modal-overlay', '.modal',
+                    '.tcg_modal_wrap.loginPopupModal', '.tcg_modal_wrap.publicModal', '.tcg_modal_wrap'
+                ];
+                const nodes = Array.from(document.querySelectorAll(sels.join(',')));
+                nodes.forEach(n => { try { n.style.display = 'none'; n.remove(); } catch (_) {} });
+                try { document.body.classList.remove('modal-open', 'overflow-hidden'); document.body.style.overflow = ''; } catch (_) {}
+                try { console && console.warn && console.warn('[HomeWatch] removed overlays:', nodes.length); } catch (_) {}
+            };
+
+            const roots = [];
+            try {
+                if (typeof TAIL_LOGIN_POPUP_ROOT === 'string' && TAIL_LOGIN_POPUP_ROOT) {
+                    const r = findByTail(TAIL_LOGIN_POPUP_ROOT);
+                    if (r) roots.push(r);
+                }
+            } catch (_) {}
+            roots.push(
+                ...Array.from(document.querySelectorAll(
+                    '.tcg_modal_wrap.loginPopupModal, .tcg_modal_wrap.publicModal, .tcg_modal_wrap, .loginPopupModal, .popup-login, .login-popup, .modal-login, .login__popup, .v--modal-box, .v--modal-overlay'))
+            );
+            // thêm: tìm modal chứa input password để ẩn cha gần nhất
+            const pwdParents = Array.from(document.querySelectorAll('input[type="password"]'))
+                .map(i => i.closest('.v--modal-box, .v--modal-overlay, .tcg_modal_wrap, .modal, .popup, .loginPopupModal, .login-popup, .modal-login'))
+                .filter(Boolean);
+            roots.push(...pwdParents);
+
+            // thử click nút X nếu có; nếu không, gỡ nguyên overlay cha
+            const closeBtn = Array.from(document.querySelectorAll('.v--modal__close, .tcg_modal_wrap .close, .tcg_modal_wrap .icon-close, .loginPopupModal .icon-close, .loginPopupModal .close'))
+                .find(isVisibleAndClickable);
+            if (closeBtn) {
+                try { closeBtn.click(); } catch (_) {}
+                hideOverlays();
+            } else {
+                roots.forEach(r => {
+                    try {
+                        const ov = r.closest('.v--modal-overlay, .v--modal-box') || r;
+                        ov.style.display = 'none';
+                        ov.remove();
+                    } catch (_) {}
+                });
+                hideOverlays();
+            }
+        } catch (_) {}
+    }
+
+    // Tick định kỳ để đóng popup login nếu đã đăng nhập mà popup vẫn còn
+    if (!window.__abx_close_login_timer) {
+        window.__abx_close_login_timer = setInterval(() => {
+            try {
+                if (!isLoggedInFromDOM())
+                    return;
+                closeLoginPopupIfLoggedIn();
+            } catch (_) {}
+        }, 1200);
+    }
+    function showHostMismatchAlertIfAny() {
+        try {
+            const cfgHost = (window.__abx_cfg_url_host || '').toLowerCase();
+            const currHost = (location && location.host || '').toLowerCase();
+            if (cfgHost && currHost && cfgHost !== currHost) {
+                alert('Host khác với cấu hình:\nĐã đăng nhập ở: ' + cfgHost + '\nNhưng hiện tại: ' + currHost + '\nCookie sẽ không dùng chung, có thể bật lại popup đăng nhập.');
+            }
+        } catch (_) { }
+    }
+
+    function isClearlyLoggedOut() {
+        // Chỉ coi như logged-out khi có nút/khối đăng nhập HIỂN THỊ rõ ràng
+        const n = document.querySelector(
+                '.user-not-login, .btn-login, a[href*="/login"], button[onclick*="login"], [data-action="login"]');
+        return !!(n && (n.offsetParent !== null));
+    }
+
+    async function onAuthStateMaybeChanged(reason = '') {
+        // Chỉ cho phép chạy khi cổng đã mở (đã nhìn thấy nút "Đăng nhập")
+        if (typeof canRunAuthLoop === 'function' && !canRunAuthLoop()) {
+            return;
+        }
+
+        // Nếu đã có tên rồi thì luôn "giữ" cho đến khi CHẮC CHẮN logout
+        const hadName = !!S.username;
+
+        // Heuristic "đã login?"
+        const loggedIn = !!document.querySelector('.user-logged, .base-dropdown-header__user__name, [class*="user-logged"]');
+
+        if (loggedIn) {
+            closeLoginPopupIfLoggedIn();
+            // Nếu đã nhận diện là login nhưng chưa có tên → ép kéo 1 lần
+            if (!S.username) {
+                S.fetchDone = false; // cho phép fetch lại
+                try {
+                    await tryFetchUserProfile();
+                } catch (_) {}
+                if (!S.username)
+                    probeIframeOnce(); // fallback iframe
+            }
+
+            // ĐANG LOGIN: đọc lại ngay và cập nhật số dư
+            const u = findUserFromDOM();
+            if (u)
+                updateUsername(u);
+            const b = findBalance();
+            if (b)
+                updateBalance(b);
+            // Nếu chưa ra tên thì thử fetch trang profile (nếu cùng origin)
+            if (!S.username) {
+                try {
+                    await tryFetchUserProfile();
+                } catch (_) {}
+            }
+            if (!S.username || !S.balance)
+                pumpAuthProbe(10000);
+            return;
+        }
+
+        // KHÔNG THẤY DẤU VẾT LOGIN: chỉ coi là logout khi chắc chắn trong khoảng dài hơn
+        const CONFIRM_MS = 1800; // trước đây 600ms → tăng để tránh false positive
+        const start = Date.now();
+        while (Date.now() - start < CONFIRM_MS) {
+            // Nếu trong thời gian chờ mà thấy dấu hiệu login lại thì thôi
+            const back = !!document.querySelector('.user-logged, .base-dropdown-header__user__name, [class*="user-logged"]');
+            if (back)
+                return;
+            await new Promise(r => setTimeout(r, 120));
+        }
+
+        // Đến đây mới coi như logout thật.
+        if (hadName) {
+            // Giữ tên cũ trên UI cho đến khi lần sau lấy được tên mới
+            // (KHÔNG gọi updateUsername('') để không hiển thị (?))
+        } else {
+            // Chưa từng có tên → để panel hiển thị (?)
+        }
+        // Balance cũng không "đè 88" nếu không chắc
+    }
+
+    // === DOM Ready helper (thêm mới) ===
+    function onDomReady(cb) {
+        const ready = document.readyState;
+        if (ready === 'interactive' || ready === 'complete') {
+            try {
+                cb();
+            } catch (e) {
+                console.error('[HomeWatch] onDomReady cb error', e);
+            }
+            return;
+        }
+        const done = () => {
+            document.removeEventListener('DOMContentLoaded', done);
+            document.removeEventListener('readystatechange', rs);
+            try {
+                cb();
+            } catch (e) {
+                console.error('[HomeWatch] onDomReady cb error', e);
+            }
+        };
+        const rs = () => {
+            const s = document.readyState;
+            if (s === 'interactive' || s === 'complete')
+                done();
+        };
+        document.addEventListener('DOMContentLoaded', done, {
+            once: true
+        });
+        document.addEventListener('readystatechange', rs);
+    }
+
+    // Tail -> CSS
+    function cssFromTail(tail) {
+        const segs = String(tail || '').trim().split('/').filter(Boolean).map(seg => {
+            const m = seg.match(/^([a-zA-Z0-9_-]+)((?:\.[a-zA-Z0-9_-]+)*)?(?:\[(\d+)\])?$/);
+            if (!m)
+                return seg;
+            const tag = m[1],
+            cls = (m[2] || ''),
+            nth = m[3] ? `:nth-of-type(${m[3]})` : '';
+            return `${tag}${cls}${nth}`;
+        });
+        return segs.join(' > ');
+    }
+    function findByTail(tail) {
+        try {
+            return document.querySelector(cssFromTail(tail));
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function findByTailIn(tail, rootDoc) {
+        try {
+            const css = cssFromTail(tail);
+            const doc = rootDoc || document;
+            return doc.querySelector(css);
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function setInputValue(el, val) {
+        if (!el)
+            return false;
+        const next = val == null ? '' : String(val);
+        if (el.value !== next) {
+            try {
+                el.focus({
+                    preventScroll: true
+                });
+            } catch (_) {}
+            el.value = next;
+        }
+        try {
+            el.dispatchEvent(new Event('input', {
+                bubbles: true
+            }));
+        } catch (_) {}
+        try {
+            el.dispatchEvent(new Event('change', {
+                bubbles: true
+            }));
+        } catch (_) {}
+        return true;
+    }
+
+    function setCheckboxState(el, checked) {
+        if (!el)
+            return false;
+        const next = !!checked;
+        if (el.checked !== next)
+            el.checked = next;
+        try {
+            el.dispatchEvent(new Event('input', {
+                bubbles: true
+            }));
+        } catch (_) {}
+        try {
+            el.dispatchEvent(new Event('change', {
+                bubbles: true
+            }));
+        } catch (_) {}
+        return true;
+    }
+
+    function getLoginPopupRoot() {
+        let root = null;
+        try {
+            if (typeof TAIL_LOGIN_POPUP_ROOT === 'string' && TAIL_LOGIN_POPUP_ROOT) {
+                root = findByTail(TAIL_LOGIN_POPUP_ROOT);
+                if (root && root.isConnected)
+                    return root;
+            }
+        } catch (_) {}
+        try {
+            root = document.querySelector(LOGIN_POPUP_SELECTOR);
+            if (root && root.isConnected)
+                return root;
+        } catch (_) {}
+        try {
+            const pwParent = Array.from(document.querySelectorAll('input[type="password"]'))
+                .map((i) => {
+                    try {
+                        return i.closest(LOGIN_POPUP_SELECTOR);
+                    } catch (_) {
+                        return null;
+                    }
+                })
+                .find(Boolean);
+            if (pwParent && pwParent.isConnected)
+                return pwParent;
+        } catch (_) {}
+        return document.body || document.documentElement || document;
+    }
+
+    function resolveLoginField(tail, fallbackSelector) {
+        try {
+            if (tail) {
+                const el = findByTail(tail);
+                if (el && el.isConnected)
+                    return el;
+            }
+        } catch (_) {}
+        if (!fallbackSelector)
+            return null;
+        const root = getLoginPopupRoot();
+        let el = null;
+        try {
+            el = root && root.querySelector(fallbackSelector);
+        } catch (_) {}
+        if (el && el.isConnected)
+            return el;
+        try {
+            el = document.querySelector(fallbackSelector);
+        } catch (_) {
+            el = null;
+        }
+        return (el && el.isConnected) ? el : null;
+    }
+
+    function fillLoginField(tail, fallbackSelector, value) {
+        const el = resolveLoginField(tail, fallbackSelector);
+        return setInputValue(el, value);
+    }
+
+    function syncRememberFlag(checked) {
+        if (typeof checked !== 'boolean')
+            return false;
+        const root = getLoginPopupRoot();
+        const sel = 'input[type="checkbox"][name*="remember" i], input[type="checkbox"][id*="remember" i], input[type="checkbox"][ng-model*="remember" i], .remember input[type="checkbox"]';
+        let el = null;
+        try {
+            el = root && root.querySelector(sel);
+        } catch (_) {
+            el = null;
+        }
+        if (!el || !el.isConnected) {
+            try {
+                el = document.querySelector(sel);
+            } catch (_) {
+                el = null;
+            }
+        }
+        if (!el || !el.isConnected) {
+            try {
+                el = root && root.querySelector('input[type="checkbox"]');
+            } catch (_) {
+                el = null;
+            }
+        }
+        return setCheckboxState(el, checked);
+    }
+
+    function handleSetLoginCommand(payload) {
+        try {
+            const info = payload || {};
+            const user = (info.user ?? info.username ?? '') || '';
+            const pass = (info.pass ?? info.password ?? '') || '';
+            const code = (info.code ?? info.captcha ?? '') || '';
+            const remember = info.remember;
+
+            fillLoginField(TAIL_LOGIN_USER_INPUT,
+                'input[name="username"], input[name="account"], input[placeholder*="đăng" i], input[placeholder*="tài khoản" i], input[placeholder*="dang" i], input[type="text"]',
+                user);
+            fillLoginField(TAIL_LOGIN_PASS_INPUT, 'input[type="password"]', pass);
+            fillLoginField(TAIL_LOGIN_CAPTCHA_INPUT,
+                'gupw-captcha-login-box input, input[name*="captcha" i], input[placeholder*="mã" i], input[placeholder*="ma" i]',
+                code);
+            if (typeof remember === 'boolean')
+                syncRememberFlag(remember);
+        } catch (err) {
+            console.warn('[HomeWatch] set_login error', err);
+        }
+    }
+
+    // NEW: nhận biết popup đăng nhập đã hiển thị hay chưa
+    function isLoginPopupVisible() {
+        try {
+            if (typeof TAIL_LOGIN_POPUP_ROOT === 'string' && TAIL_LOGIN_POPUP_ROOT) {
+                const el = findByTail(TAIL_LOGIN_POPUP_ROOT);
+                if (el && el.offsetParent !== null)
+                    return true;
+            }
+            // fallback heuristics: một số class/modal phổ biến
+            const el2 = document.querySelector(LOGIN_POPUP_SELECTOR);
+            return !!(el2 && el2.offsetParent !== null);
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function findLoginButton() {
+        // Ưu tiên tail cố định (header RR88 mới)
+        let btn = null;
+        try {
+            if (typeof TAIL_LOGIN_BTN === 'string' && TAIL_LOGIN_BTN) {
+                btn = findByTail(TAIL_LOGIN_BTN);
+            }
+        } catch (_) {}
+
+        // Fallback: layout header mới
+        if (!btn) {
+            btn = document.querySelector('div.header .hd_login .submit_btn, header .hd_login .submit_btn');
+        }
+
+        // Fallback cũ: header.menu + nút base-button
+        if (!btn) {
+            btn = document.querySelector('header.menu .user-not-login .base-button.btn');
+        }
+
+        // Fallback cuối: quét theo text "Đăng nhập"
+        if (!btn) {
+            btn = Array.from(document.querySelectorAll('button, a, [role="button"], span.submit_btn'))
+                .find(el => norm(textOf(el)).includes('dang nhap'));
+        }
+
+        return btn && btn.isConnected ? btn : null;
+    }
+
+    function canRunAuthLoop() {
+        if (S.authGateOpened)
+            return true;
+
+        // ✅ MỞ CỔNG nếu nhận diện trạng thái đã login (không cần đợi thấy nút)
+        const loggedInBlock = document.querySelector('.user-logged, .base-dropdown-header__user__name, .user__name');
+        if (loggedInBlock && loggedInBlock.offsetParent !== null) {
+            S.authGateOpened = true;
+            return true;
+        }
+
+        // Cơ chế cũ: mở khi nhìn thấy nút Đăng nhập
+        const btn = findLoginButton();
+        if (btn)
+            S.authGateOpened = true;
+
+        return S.authGateOpened;
+    }
+
+    // ======= Panel =======
+    function ensureRoot() {
+        if (window.__abx_hw_installed)
+            return;
+        if ($panel()) {
+            window.__abx_hw_installed = true;
+            return;
+        }
+        // Nếu inject ở document_start, body có thể chưa có
+        const mount = document.body || document.documentElement;
+        if (!mount) {
+            console.warn('[HomeWatch] ensureRoot: <body> chưa có, sẽ đợi DOM...');
+            onDomReady(ensureRoot);
+            return;
+        }
+        // Nếu cấu hình ẩn panel thì chỉ cần "ẩn nếu đã có" và thoát
+        if (CFG.showPanel === false) {
+            const maybe = document.getElementById('__abx_hw_root')
+                 || document.querySelector('.abx-homewatch-root,[data-abx-root="homewatch"]');
+            if (maybe)
+                maybe.style.display = 'none';
+            window.__abx_hw_installed = true; // ⬅️ đánh dấu đã cài, tránh gọi lại
+            return;
+        }
+
+        const root = document.createElement('div');
+        // đảm bảo dễ điều khiển/toggle bằng id & class cố định
+        root.id = CFG.panelId; // sẽ là "__abx_hw_root" sau khi đổi ở Bước 1
+        root.classList.add('abx-homewatch-root'); // class dấu hiệu (phòng khi id đổi)
+        root.style.display = ''; // bật hiển thị khi showPanel === true
+
+        root.id = CFG.panelId;
+        root.style.cssText = [
+            'position:fixed', 'left:16px', 'top:80px', 'min-width:720px', 'max-width:92vw',
+            'background:#0b1120', 'color:#e5e7eb', 'border:1px solid #1e40af', 'border-radius:12px',
+            'padding:10px 12px', 'font:12px/1.35 Consolas,ui-monospace,monospace',
+            'z-index:' + ROOT_Z, 'box-shadow:0 8px 28px rgba(0,0,0,.45)', 'user-select:none'
+        ].join(';');
+        root.innerHTML = [
+            '<div id="hwtitle" style="font-weight:700;margin-bottom:8px;cursor:move">Home Watch</div>',
+            '<div id="hwbar" style="display:flex;gap:8px;align-items:center;margin-bottom:8px">',
+            '  <button id="' + CFG.linksBtnId + '">LinksMap</button>',
+            '  <button id="' + CFG.textsBtnId + '">TextMap</button>',
+            '  <button id="' + CFG.closePopupBtnId + '">ClosePopup</button>',
+            '  <button id="' + CFG.scanLinksBtnId + '">Scan200LinksMap</button>',
+            '  <button id="' + CFG.scanTextsBtnId + '">Scan200TextMap</button>',
+            '  <button id="' + CFG.scanClosePopupBtnId + '">Scan200ClosePopup</button>',
+            '  <button id="' + CFG.loginBtnId + '">Click Đăng Nhập</button>',
+            '  <button id="' + CFG.xocBtnId + '">Chơi Xóc Đĩa Live</button>',
+            '  <button id="' + CFG.retryBtnId + '">Thử lại (tự động)</button>',
+            '  <button id="' + CFG.overlayToggleBtnId + '">Overlay</button>',
+            '  <button id="' + CFG.copyInfoBtnId + '">Copy Info</button>',
+            '</div>',
+            '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">',
+            '  <span style="opacity:.8">URL:</span><input id="' + CFG.urlId + '" value="" placeholder="https://..." ',
+            '     style="flex:1;min-width:300px;background:#0b122e;border:1px solid #334155;color:#e5e7eb;padding:6px 8px;border-radius:6px">',
+            '  <button id="bgo">Go</button>',
+            '</div>',
+            '<div id="' + CFG.infoId + '" style="white-space:pre;min-height:98px;padding:8px;background:#0b122e;border:1px dashed #334155;border-radius:8px"></div>'
+        ].join('');
+        mount.appendChild(root);
+        window.__abx_hw_installed = true;
+        root.querySelectorAll('button').forEach(b => {
+            b.style.cssText = 'background:#0b122e;border:1px solid #334155;color:#e5e7eb;padding:6px 10px;border-radius:8px;cursor:pointer';
+            b.addEventListener('mouseenter', () => b.style.borderColor = '#60a5fa');
+            b.addEventListener('mouseleave', () => b.style.borderColor = '#334155');
+            // Không cho kéo panel khi bấm nút
+            b.addEventListener('pointerdown', e => e.stopPropagation());
+        });
+
+        // Devtools-lite: cho phép chạy JS tùy ý và xem kết quả (trong top window)
+        (function attachDevRunner() {
+            if (root.querySelector('#hw_dev_runner'))
+                return;
+            const wrap = document.createElement('div');
+            wrap.id = 'hw_dev_runner';
+            wrap.style.marginTop = '8px';
+
+            const ta = document.createElement('textarea');
+            ta.id = 'hw_dev_code';
+            ta.placeholder = 'Dán JS rồi bấm Run (chạy trong top window)';
+            ta.style.width = '100%';
+            ta.style.height = '82px';
+            ta.style.background = '#0b122e';
+            ta.style.border = '1px solid #334155';
+            ta.style.color = '#e5e7eb';
+            ta.style.borderRadius = '8px';
+            ta.style.padding = '6px 8px';
+            ta.style.font = '12px/1.35 Consolas,ui-monospace,monospace';
+
+            const btnRow = document.createElement('div');
+            btnRow.style.display = 'flex';
+            btnRow.style.gap = '6px';
+            btnRow.style.marginTop = '4px';
+
+            const btn = document.createElement('button');
+            btn.textContent = 'Run JS';
+            btn.style.background = '#0b122e';
+            btn.style.border = '1px solid #334155';
+            btn.style.color = '#e5e7eb';
+            btn.style.padding = '6px 10px';
+            btn.style.borderRadius = '8px';
+            btn.style.cursor = 'pointer';
+
+            const btnCopy = document.createElement('button');
+            btnCopy.textContent = 'Copy';
+            btnCopy.style.background = '#0b122e';
+            btnCopy.style.border = '1px solid #334155';
+            btnCopy.style.color = '#e5e7eb';
+            btnCopy.style.padding = '6px 10px';
+            btnCopy.style.borderRadius = '8px';
+            btnCopy.style.cursor = 'pointer';
+
+            const out = document.createElement('pre');
+            out.id = 'hw_dev_output';
+            out.style.maxHeight = '140px';
+            out.style.overflow = 'auto';
+            out.style.background = '#0b122e';
+            out.style.color = '#22c55e';
+            out.style.padding = '6px 8px';
+            out.style.border = '1px dashed #334155';
+            out.style.borderRadius = '8px';
+            out.style.whiteSpace = 'pre-wrap';
+            out.style.marginTop = '4px';
+            out.textContent = 'Kết quả sẽ hiển thị ở đây...';
+
+            const dump = (val) => {
+                try {
+                    return JSON.stringify(val, null, 2);
+                } catch (_) {
+                    try {
+                        return String(val);
+                    } catch (_) {
+                        return Object.prototype.toString.call(val);
+                    }
+                }
+            };
+
+            btn.onclick = () => {
+                try {
+                    const code = ta.value || '';
+                    const val = eval(code);
+                    out.textContent = dump(val);
+                } catch (e) {
+                    out.textContent = 'Error: ' + e;
+                }
+            };
+
+            btnCopy.onclick = async() => {
+                try {
+                    const txt = out.textContent || '';
+                    if (navigator?.clipboard?.writeText) {
+                        await navigator.clipboard.writeText(txt);
+                    } else {
+                        const taTmp = document.createElement('textarea');
+                        taTmp.value = txt;
+                        document.body.appendChild(taTmp);
+                        taTmp.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(taTmp);
+                    }
+                    out.textContent = txt || '(đã copy chuỗi rỗng)';
+                } catch (e) {
+                    out.textContent = 'Copy error: ' + e;
+                }
+            };
+
+            wrap.appendChild(ta);
+            btnRow.appendChild(btn);
+            btnRow.appendChild(btnCopy);
+            wrap.appendChild(btnRow);
+            wrap.appendChild(out);
+            root.appendChild(wrap);
+        })();
+
+        // drag bằng title
+        (function () {
+            const bar = root.querySelector('#hwtitle');
+            if (!bar) {
+                console.warn('[HomeWatch] ensureRoot: thiếu #hwtitle');
                 return;
             }
-
-            /* ---------------- utils ---------------- */
-            var V2 = (cc.v2 || cc.Vec2);
-            var sleep = function (ms) {
-                return new Promise(function (r) {
-                    setTimeout(r, ms);
-                });
-            };
-            var clamp01 = function (x) {
-                x = Number(x) || 0;
-                if (x < 0)
-                    x = 0;
-                if (x > 1)
-                    x = 1;
-                return x;
-            };
-            var jitter = function (a, b) {
-                return a + (Math.random() * (b - a));
-            };
-            var esc = function (s) {
-                s = String(s);
-                return s.replace(/[&<>]/g, function (m) {
-                    return ({
-                        '&': '&amp;',
-                        '<': '&lt;',
-                        '>': '&gt;'
-                    }
-                        [m]);
-                });
-            };
-            var isMoneyText = function (t) {
-                t = (t || '').trim();
-                return /^[0-9][0-9.,]*(?:[KMB])?$/i.test(t);
-            };
-            function moneyOf(raw) {
-                if (raw == null)
-                    return null;
-                var s = String(raw).trim().toUpperCase(),
-                mul = 1;
-                if (/[KMB]$/.test(s)) {
-                    if (/K$/.test(s))
-                        mul = 1e3;
-                    else if (/M$/.test(s))
-                        mul = 1e6;
-                    else
-                        mul = 1e9;
-                    s = s.slice(0, -1).replace(/,/g, '').replace(/[^\d.]/g, '');
-                    var v = parseFloat(s);
-                    return isFinite(v) ? Math.round(v * mul) : null;
-                }
-                var d = s.replace(/\D/g, '');
-                if (!d)
-                    return null;
-                return parseInt(d, 10);
-            }
-            var fmt = function (v) {
-                if (v == null)
-                    return '--';
-                var a = Math.abs(v);
-                if (a >= 1e9)
-                    return (v / 1e9).toFixed(2) + 'B';
-                if (a >= 1e6)
-                    return (v / 1e6).toFixed(2) + 'M';
-                if (a >= 1e3)
-                    return (v / 1e3).toFixed(2) + 'K';
-                return String(v);
-            };
-            var cssRect = function (r) {
-                return {
-                    left: r.x + 'px',
-                    top: r.y + 'px',
-                    width: r.w + 'px',
-                    height: r.h + 'px'
-                };
-            };
-            var area = function (r) {
-                return (r.w || 0) * (r.h || 0);
-            };
-            var seqBootTicks = 0; // số lần tick đầu tiên dùng full chuỗi từ bảng SoiCau
-            function dist2(x1, y1, x2, y2) {
-                var dx = x1 - x2,
-                dy = y1 - y2;
-                return dx * dx + dy * dy;
-            }
-
-            function getComp(n, T) {
-                try {
-                    return n && n.getComponent ? n.getComponent(T) : null;
-                } catch (e) {
-                    return null;
-                }
-            }
-            function getComps(n, T) {
-                try {
-                    return n && n.getComponents ? n.getComponents(T) : null;
-                } catch (e) {
-                    return null;
-                }
-            }
-
-            /* ---------------- scene helpers ---------------- */
-            function wRect(node) {
-                try {
-                    var p = node.convertToWorldSpaceAR(new V2(0, 0));
-                    var cs = node.getContentSize ? node.getContentSize() : (node._contentSize || {
-                        width: 0,
-                        height: 0
-                    });
-                    return {
-                        x: p.x || 0,
-                        y: p.y || 0,
-                        w: cs.width || 0,
-                        h: cs.height || 0
-                    };
-                } catch (e) {
-                    return {
-                        x: 0,
-                        y: 0,
-                        w: 0,
-                        h: 0
-                    };
-                }
-            }
-            function tailOf(n, limit) {
-                limit = limit || 12;
-                var a = [];
-                try {
-                    var t = n,
-                    c = 0;
-                    while (t && c < 64) {
-                        if (t.name)
-                            a.push(t.name);
-                        t = t.parent || t._parent || null;
-                        c++;
-                    }
-                } catch (e) {}
-                a.reverse();
-                return a.slice(-limit).join('/');
-            }
-            function walkNodes(cb) {
-                var scene = cc.director.getScene();
-                if (!scene)
+            let down = false,
+            ox = 0,
+            oy = 0;
+            bar.addEventListener('pointerdown', e => {
+                down = true;
+                ox = e.clientX - root.offsetLeft;
+                oy = e.clientY - root.offsetTop;
+                bar.setPointerCapture(e.pointerId);
+            });
+            bar.addEventListener('pointermove', e => {
+                if (!down)
                     return;
-                var st = [scene],
-                seen = [];
-                function seenHas(x) {
-                    return seen.indexOf(x) !== -1;
-                }
-                function seenAdd(x) {
-                    if (seen.indexOf(x) === -1)
-                        seen.push(x);
-                }
-                while (st.length) {
-                    var n = st.pop();
-                    if (!n || seenHas(n))
-                        continue;
-                    seenAdd(n);
-                    try {
-                        cb(n);
-                    } catch (e) {}
-                    var kids = (n.children || n._children) || [];
-                    for (var i = 0; i < kids.length; i++) {
-                        var k = kids[i];
-                        if (k && !seenHas(k))
-                            st.push(k);
-                    }
-                }
+                root.style.left = (e.clientX - ox) + 'px';
+                root.style.top = (e.clientY - oy) + 'px';
+            });
+            bar.addEventListener('pointerup', e => {
+                down = false;
+                try {
+                    bar.releasePointerCapture(e.pointerId);
+                } catch (_) {}
+            });
+        })();
+
+        // events
+        root.querySelector('#bgo').onclick = () => {
+            const u = root.querySelector('#' + CFG.urlId).value.trim();
+            if (/^https?:\/\//i.test(u))
+                location.href = u;
+        };
+        root.querySelector('#' + CFG.linksBtnId).onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            clearSelected();
+            toggle('link');
+        };
+        root.querySelector('#' + CFG.textsBtnId).onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            clearSelected();
+            toggle('text');
+        };
+        root.querySelector('#' + CFG.closePopupBtnId).onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            clearSelected();
+
+            // Khi bấm ClosePopup: thử đóng tất cả popup / overlay hiện có
+            try {
+                console.debug('[HomeWatch] ClosePopup button -> closeAdsAndCovers()');
+                closeAdsAndCovers();
+            } catch (_) {}
+
+            // Vẫn bật overlay popup map để bạn nhìn được vùng đã xử lý
+            toggle('popup');
+        };
+
+        root.querySelector('#' + CFG.scanLinksBtnId).onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            scanLinks(500);
+        };
+        root.querySelector('#' + CFG.scanTextsBtnId).onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            scanTexts(500);
+        };
+        root.querySelector('#' + CFG.scanClosePopupBtnId).onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            scanClosePopups(500);
+        };
+        root.querySelector('#' + CFG.overlayToggleBtnId).onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const ov = $overlay();
+            if (ov)
+                ov.style.display = (ov.style.display === 'none' ? 'block' : 'none');
+        };
+
+        root.querySelector('#' + CFG.copyInfoBtnId).onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            copyInfoBox(); // gọi hàm copy bên dưới
+        };
+        root.querySelector('#' + CFG.retryBtnId).onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!isGameHost()) {
+                startAutoRetry(true);
+            } else {
+                updateInfo('⚠ Đang ở trang game — bỏ qua auto-retry để tránh request /account/* trên game host.');
             }
-            function collectLabels() {
-                var out = [];
-                walkNodes(function (n) {
-                    var comps = (n._components || []);
-                    for (var i = 0; i < comps.length; i++) {
-                        var c = comps[i];
-                        if (c && typeof c.string !== 'undefined') {
-                            var text = (typeof c.string !== 'undefined' && c.string != null ? c.string : '');
-                            text = String(text);
-                            var r = wRect(n);
-                            var tail = tailOf(n, 12);
-                            out.push({
-                                text: text,
-                                x: r.x,
-                                y: r.y,
-                                w: r.w,
-                                h: r.h,
-                                tail: tail,
-                                tl: tail.toLowerCase(),
-                                n: {
-                                    x: r.x / innerWidth,
-                                    y: r.y / innerHeight,
-                                    w: r.w / innerWidth,
-                                    h: r.h / innerHeight
-                                },
-                                val: moneyOf(text)
-                            });
-                        }
-                    }
+        };
+        root.querySelector('#' + CFG.loginBtnId).onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            S.fetchDone = false;
+            S.inflightProbe = false;
+            S.retries = 0;
+            clickLoginButton();
+        };
+        root.querySelector('#' + CFG.xocBtnId).onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            clickXocDiaLive();
+        };
+
+        const ubox = root.querySelector('#' + CFG.urlId);
+        if (ubox)
+            ubox.value = location.href;
+    }
+
+    (function hookHistory() {
+        if (window.__abx_hist_hooked)
+            return;
+        window.__abx_hist_hooked = true;
+        const rawPush = history.pushState,
+        rawReplace = history.replaceState;
+        function wrap(fn) {
+            return function () {
+                const r = fn.apply(this, arguments);
+                try {
+                    onAuthStateMaybeChanged('history');
+                    pumpAuthProbe(6000, 200); // ⬅️ bơm đọc 6s sau mỗi điều hướng SPA
+                } catch (_) {}
+                return r;
+            };
+        }
+
+        if (typeof rawPush === 'function')
+            history.pushState = wrap(rawPush);
+        if (typeof rawReplace === 'function')
+            history.replaceState = wrap(rawReplace);
+        addEventListener('popstate', () => {
+            try {
+                onAuthStateMaybeChanged('popstate');
+                pumpAuthProbe(6000, 200); // ⬅️ bơm 6s sau thao tác back/forward
+            } catch (_) {}
+        }); // back/forward
+
+    })();
+
+    function updateInfo(extra) {
+        if (CFG.showPanel === false)
+            return; // panel đang ẩn -> bỏ qua render
+        // Tính trạng thái hiển thị thật sự của khu vực xóc đĩa
+        const live = (() => {
+            const s = document.querySelector('.livestream-section__live');
+            return !!(s && s.offsetParent !== null);
+        })();
+        const loggedIn = isLoggedInFromDOM();
+        const balText = S.balance ? S.balance : (loggedIn ? '0' : '(?)');
+        const L = [
+            '• URL : ' + location.href,
+            '• Tên nhân vật: ' + (S.username ? S.username : '(?)'),
+            '• Tài khoản: ' + balText,
+            '• Title: ' + document.title,
+            '• Has Xóc Đĩa: ' + String(live)
+        ];
+
+        if (extra)
+            L.push('', extra);
+
+        const box = document.getElementById(CFG.infoId);
+        if (box)
+            box.textContent = L.join('\n');
+
+        const u = document.getElementById(CFG.urlId);
+        if (u)
+            u.value = location.href;
+    }
+
+    function copyInfoBox() {
+        try {
+            const box = document.getElementById(CFG.infoId);
+            if (!box)
+                return;
+
+            const txt = (box.innerText || box.textContent || '').trim();
+            if (!txt)
+                return;
+
+            // Ưu tiên Clipboard API
+            if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                navigator.clipboard.writeText(txt).catch(() => { /* nuốt lỗi */
                 });
-                return out;
+            } else {
+                // Fallback execCommand cho WebView2 / trình duyệt cũ
+                const ta = document.createElement('textarea');
+                ta.value = txt;
+                ta.setAttribute('readonly', 'readonly');
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                ta.style.top = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                try {
+                    document.execCommand('copy');
+                } catch (_) {}
+                document.body.removeChild(ta);
             }
-            function collectButtons() {
-                var out = [];
-                walkNodes(function (n) {
-                    var btns = getComps(n, cc.Button);
-                    if (btns && btns.length) {
-                        var r = wRect(n);
-                        out.push({
-                            x: r.x,
-                            y: r.y,
-                            w: r.w,
-                            h: r.h,
-                            tail: tailOf(n, 12),
-                            tl: tailOf(n, 12).toLowerCase()
-                        });
-                    }
-                });
-                return out;
-            }
-            function collectProgress() {
-                var bars = [];
-                walkNodes(function (n) {
-                    var comps = getComps(n, cc.ProgressBar);
-                    if (comps && comps.length) {
-                        var r = wRect(n);
-                        for (var i = 0; i < comps.length; i++) {
-                            bars.push({
-                                comp: comps[i],
-                                rect: r
-                            });
-                        }
-                    }
-                });
-                if (!bars.length)
-                    return null;
-                var H = innerHeight,
-                cs = bars.filter(function (b) {
-                    var r = b.rect;
-                    return r.w > 300 && r.h >= 6 && r.h <= 60 && r.y < H * 0.75;
-                });
-                var bar = (cs[0] || bars[0]).comp;
-                var pr = (bar && typeof bar.progress !== 'undefined') ? bar.progress : 0;
-                return clamp01(Number(pr));
-            }
+        } catch (_) {}
+    }
 
-            /* ---------------- MoneyMap ---------------- */
-            function buildMoneyRects() {
-                var ls = collectLabels(),
-                out = [];
-                for (var i = 0; i < ls.length; i++) {
-                    var L = ls[i];
-                    if (!isMoneyText(L.text))
-                        continue;
-                    var x = Math.round(L.x),
-                    y = Math.round(L.y),
-                    w = Math.round(L.w),
-                    h = Math.round(L.h);
-                    out.push({
-                        txt: L.text,
-                        val: moneyOf(L.text),
-                        x: x,
-                        y: y,
-                        w: w,
-                        h: h,
-                        n: {
-                            x: x / innerWidth,
-                            y: y / innerHeight,
-                            w: w / innerWidth,
-                            h: h / innerHeight
-                        },
-                        tail: L.tail,
-                        tl: L.tl
-                    });
-                }
-                return out;
-            }
-
-            /* ---------------- NEW: TextMap ---------------- */
-            function isTextCandidate(txt) {
-                if (!txt)
-                    return false;
-                var s = String(txt).trim();
-                if (!s)
-                    return false;
-                if (isMoneyText(s))
-                    return false;
-                if (/^\d{1,2}$/.test(s))
-                    return false;
-                if (/[A-Za-zÀ-ỹ]/i.test(s))
-                    return true;
-                if (/[@._-]/.test(s))
-                    return true;
-                if (/[^\w\s]/.test(s) && s.length >= 3)
-                    return true;
-                return s.length >= 4;
-            }
-            function buildTextRects() {
-                var ls = collectLabels(),
-                out = [];
-                for (var i = 0; i < ls.length; i++) {
-                    var L = ls[i];
-                    var s = (L.text || '').trim();
-                    if (!isTextCandidate(s))
-                        continue;
-                    var x = Math.round(L.x),
-                    y = Math.round(L.y),
-                    w = Math.round(L.w),
-                    h = Math.round(L.h);
-                    out.push({
-                        text: s,
-                        x: x,
-                        y: y,
-                        w: w,
-                        h: h,
-                        n: {
-                            x: x / innerWidth,
-                            y: y / innerHeight,
-                            w: w / innerWidth,
-                            h: h / innerHeight
-                        },
-                        tail: L.tail,
-                        tl: L.tl
-                    });
-                }
-                return out;
-            }
-
-            function readTKSeq() {
-                // --- helper: đoán digit 0–4 từ 1 node ---
-                function guessDigit(row) {
-                    // Ưu tiên text
-                    if (row.labelText != null) {
-                        var t = String(row.labelText).trim();
-                        if (/^[0-4]$/.test(t)) {
-                            return parseInt(t, 10);
-                        }
-                    }
-                    // Sau đó tới spriteName (soi chữ số 0–4 cuối cùng trong tên)
-                    if (row.spriteName != null) {
-                        var m = String(row.spriteName).match(/([0-4])(?!.*[0-9])/);
-                        if (m) {
-                            return parseInt(m[1], 10);
-                        }
-                    }
-                    return null;
-                }
-
-                // --- helper: gom các ô theo cột X ---
-                function clusterByXForTK(items) {
-                    if (!items || !items.length)
-                        return [];
-
-                    // Lấy các X khác nhau
-                    var xs = [];
-                    for (var i = 0; i < items.length; i++) {
-                        var X = Math.round(items[i].x);
-                        if (xs.indexOf(X) === -1)
-                            xs.push(X);
-                    }
-                    xs.sort(function (a, b) {
-                        return a - b;
-                    });
-
-                    // Ước lượng khoảng cách cột
-                    var diffs = [];
-                    for (var j = 1; j < xs.length; j++)
-                        diffs.push(xs[j] - xs[j - 1]);
-                    var spacing = diffs.length ? diffs.slice().sort(function (a, b) {
-                        return a - b;
-                    })[Math.floor(diffs.length / 2)] : 28;
-                    var thr = Math.max(8, Math.round(spacing * 0.6));
-
-                    var cols = [];
-                    var sorted = items.slice().sort(function (a, b) {
-                        return a.x - b.x;
-                    });
-
-                    for (var k = 0; k < sorted.length; k++) {
-                        var it = sorted[k];
-                        var col = null;
-
-                        for (var c = 0; c < cols.length; c++) {
-                            if (Math.abs(cols[c].cx - it.x) <= thr) {
-                                col = cols[c];
-                                break;
-                            }
-                        }
-
-                        if (!col) {
-                            col = {
-                                cx: it.x,
-                                items: []
-                            };
-                            cols.push(col);
-                        }
-
-                        col.items.push(it);
-                        col.cx = (col.cx * (col.items.length - 1) + it.x) / col.items.length;
-                    }
-
-                    // TRÁI → PHẢI
-                    cols.sort(function (a, b) {
-                        return a.cx - b.cx;
-                    });
-
-                    return cols;
-                }
-
-                // --- 1) Quét toàn bộ node, chỉ lấy vùng SoiCauContent/…/KhungContent/NoteInfo ---
-                var rows = [];
-
-                walkNodes(function (n) {
-                    var tail = tailOf(n, 16) || "";
-                    var tl = tail.toLowerCase();
-
-                    // Chỉ lấy đúng khu vực bảng Soi Cầu
-                    if (tl.indexOf("soicaucontent") === -1)
-                        return;
-                    if (tl.indexOf("khungcontent") === -1)
-                        return;
-                    if (tl.indexOf("noteinfo") === -1)
-                        return;
-
-                    var r = wRect(n);
-
-                    var labelText = null;
-                    var spriteName = null;
-                    var comps = n._components || [];
-
-                    // Label
-                    for (var i = 0; i < comps.length; i++) {
-                        var c = comps[i];
-                        if (!c)
-                            continue;
-                        if (labelText === null && typeof c.string !== "undefined") {
-                            try {
-                                labelText = (c.string != null ? String(c.string) : "");
-                            } catch (e) {}
-                        }
-                    }
-
-                    // Sprite
-                    for (var j = 0; j < comps.length; j++) {
-                        var c2 = comps[j];
-                        if (!c2)
-                            continue;
-                        if (spriteName != null)
-                            break;
-                        var sf = null;
+    // === Automino Home <-> C# bridge (non-intrusive) ===
+    (function () {
+        try {
+            // Gửi an toàn lên host (WebView2)
+            function safePost(d) {
+                try {
+                    if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function') {
                         try {
-                            sf = c2.spriteFrame || c2._spriteFrame || null;
-                        } catch (e2) {}
-                        if (sf && sf.name) {
-                            try {
-                                spriteName = String(sf.name);
-                            } catch (e3) {}
-                        }
+                            chrome.webview.postMessage(JSON.stringify(d));
+                        } catch (_) {}
+                    } else {
+                        try {
+                            parent.postMessage(d, '*');
+                        } catch (_) {}
+                    }
+                } catch (_) {}
+            }
+
+            // Lấy state hiện tại để C# có thể poll
+            window.__abx_hw_getState = function () {
+                try {
+                    // ---- Fallback DOM: đọc nhanh trong header khi S.* đang rỗng ----
+                    function quickPickUsername() {
+                        try {
+                            // 1) ƯU TIÊN: đọc theo ABS_USERNAME_TAIL (tên nhân vật trên trang profile)
+                            if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
+                                try {
+                                    const elAbs = findByTail(ABS_USERNAME_TAIL);
+                                    if (elAbs) {
+                                        const val = (elAbs.value != null
+                                             ? String(elAbs.value)
+                                             : (elAbs.getAttribute && elAbs.getAttribute('value')) || elAbs.textContent || '').trim();
+                                        if (val)
+                                            return val.replace(/\s+/g, ' ');
+                                    }
+                                } catch (_) {}
+                            }
+
+                            // 2) Fallback: lấy theo header như trước (khi không có form profile)
+                            const header = document.querySelector('header.menu, header') || document;
+
+                            const pri = header.querySelector(
+                                    '.user-logged__info .base-dropdown-header__user__name, p.base-dropdown-header__user__name');
+                            if (pri) {
+                                const t = (pri.textContent || '').trim();
+                                if (t)
+                                    return t;
+                            }
+
+                            const roots = [
+                                '.username',
+                                '.menu-account__info--user',
+                                '.user-logged',
+                                '.display-name',
+                                '.full-name'
+                            ];
+                            for (const sel of roots) {
+                                const el = header.querySelector(
+                                        sel + ' .full-name, ' +
+                                        sel + ' .display-name, ' +
+                                        sel + ' span.full-name, ' +
+                                        sel);
+                                if (el) {
+                                    const txt = (el.textContent || '').trim();
+                                    if (txt && !/^(vip|email|đăng|login)/i.test(txt))
+                                        return txt;
+                                }
+                            }
+                        } catch (_) {}
+                        return '';
+                    }
+                    function quickPickBalance() {
+                        try {
+                            const header = document.querySelector('header.menu, header') || document;
+                            const el = header.querySelector('.base-dropdown-header__user__amount, .user__amount, .user-amount, .balance, [class*="amount"]');
+                            if (el) {
+                                const raw = (el.textContent || '').replace(/\s+/g, ' ').trim();
+                                const m = raw.match(/(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:\s*(VND|đ|₫|k|K|m|M))?/);
+                                if (m)
+                                    return m[1].replace(/[^\d]/g, '');
+                            }
+                        } catch (_) {}
+                        return '';
                     }
 
-                    rows.push({
-                        x: r.x + r.w / 2,
-                        y: r.y + r.h / 2,
+                    const u = (typeof S !== 'undefined' && S.username) || quickPickUsername() || '';
+                    const b = (typeof S !== 'undefined' && S.balance) || quickPickBalance() || '';
+
+                    return {
+                        abx: 'home_state',
+                        username: String(u || ''),
+                        balance: String(b || ''),
+                        href: String(location.href || ''),
+                        title: String(document.title || ''),
+                        ts: Date.now()
+                    };
+                } catch (_) {
+                    return {
+                        abx: 'home_state',
+                        username: '',
+                        balance: '',
+                        href: String(location.href || ''),
+                        title: String(document.title || ''),
+                        ts: Date.now()
+                    };
+                }
+            };
+            // Đẩy một gói ngay lập tức
+            window.__abx_hw_pushNow = function () {
+                try {
+                    var st = (typeof window.__abx_hw_getState === 'function') ? window.__abx_hw_getState() : null;
+                    if (st) {
+                        st.abx = 'home_tick';
+                        // dùng kênh gửi an toàn đã có
+                        if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function') {
+                            chrome.webview.postMessage(JSON.stringify(st));
+                        } else {
+                            parent.postMessage(st, '*');
+                        }
+                    }
+                } catch (_) {}
+            };
+
+            // Đẩy định kỳ state về C#
+            window.__abx_hw_startPush = function (intervalMs) {
+                try {
+                    intervalMs = Math.max(300, Math.floor(+intervalMs || 800));
+                    if (window.__hw_pushTid) {
+                        clearInterval(window.__hw_pushTid);
+                        window.__hw_pushTid = 0;
+                    }
+                    window.__hw_pushTid = setInterval(function () {
+                        try {
+                            var st = (typeof window.__abx_hw_getState === 'function') ? window.__abx_hw_getState() : null;
+                            if (st) {
+                                st.abx = 'home_tick';
+                                safePost(st);
+                            }
+                        } catch (_) {}
+                    }, intervalMs);
+                    try {
+                        window.__abx_hw_pushNow && window.__abx_hw_pushNow();
+                    } catch (_) {}
+                    return true;
+                } catch (_) {
+                    return false;
+                }
+            };
+
+            window.__abx_hw_stopPush = function () {
+                try {
+                    if (window.__hw_pushTid) {
+                        clearInterval(window.__hw_pushTid);
+                        window.__hw_pushTid = 0;
+                    }
+                } catch (_) {}
+            };
+        } catch (_) {}
+    })();
+
+    // ===== Public APIs để C# gọi theo "hàm" =====
+    window.__abx_hw_clickLogin = function () {
+        try {
+            if (typeof clickLoginButton === 'function') {
+                clickLoginButton();
+                if (typeof onAuthStateMaybeChanged === 'function')
+                    onAuthStateMaybeChanged('api-login');
+                if (typeof isGameHost === 'function' && !isGameHost() && typeof startAutoRetry === 'function')
+                    startAutoRetry(true);
+                return 'ok';
+            }
+            return 'no-fn';
+        } catch (e) {
+            return 'err:' + (e && e.message || e);
+        }
+    };
+
+    window.__abx_hw_clickPlayXDL = function () {
+        try {
+            if (typeof clickBaccNhieuBanFromHome === 'function') {
+                var p = clickBaccNhieuBanFromHome();
+                if (p && typeof p.then === 'function') {
+                    p.catch(function (e) {
+                        console.warn('[__abx_hw_clickPlayXDL]', e);
+                    });
+                }
+                return 'ok';
+            }
+            return 'no-fn';
+        } catch (e) {
+            return 'err:' + (e && e.message || e);
+        }
+    };
+
+    // ===== Nghe lệnh từ host để "gọi theo nút" =====
+    // (C# sẽ PostWebMessageAsJson({cmd: '...'}) xuống đây)
+    if (window.chrome && window.chrome.webview && !window.__abx_cmd_listener) {
+        window.__abx_cmd_listener = true;
+        window.chrome.webview.addEventListener('message', (e) => {
+            let payload = {};
+            try {
+                payload = (typeof e.data === 'string') ? JSON.parse(e.data) : (e && e.data) || {};
+            } catch (_) {
+                payload = (e && e.data) || {};
+            }
+            if (!payload || typeof payload !== 'object')
+                payload = {};
+            const cmdRaw = payload.cmd || payload.__cw_cmd || '';
+            const cmd = String(cmdRaw || '');
+            switch (cmd) {
+            case 'home_click_login':
+                try {
+                    if (typeof clickLoginButton === 'function')
+                        clickLoginButton();
+                    if (typeof onAuthStateMaybeChanged === 'function')
+                        onAuthStateMaybeChanged('host-login');
+                    if (typeof isGameHost === 'function' && !isGameHost() && typeof startAutoRetry === 'function')
+                        startAutoRetry(true);
+                } catch (_) {}
+                break;
+            case 'home_click_xoc':
+                try {
+                    if (typeof clickBaccNhieuBanFromHome === 'function') {
+                        var p2 = clickBaccNhieuBanFromHome();
+                        if (p2 && typeof p2.catch === 'function') {
+                            p2.catch(function (e) {
+                                console.warn('[host-msg home_click_xoc]', e);
+                            });
+                        }
+                    }
+                } catch (_) {}
+                break;
+            case 'home_start_push':
+                try {
+                    const ms = (payload && payload.ms) || 800;
+                    if (typeof window.__abx_hw_startPush === 'function')
+                        window.__abx_hw_startPush(ms);
+                } catch (_) {}
+                break;
+            case 'set_login':
+            case 'home_set_login':
+                handleSetLoginCommand(payload);
+                break;
+            }
+        });
+    }
+
+    // ======= Overlay / Map =======
+    function ensureOverlay() {
+        // Nếu đã có overlay thì dùng lại
+        let ov = $overlay();
+        if (!ov) {
+            // Tạo host overlay
+            ov = document.createElement('div');
+            ov.id = CFG.overlayId;
+            ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:' + (ROOT_Z - 1) + ';pointer-events:none';
+
+            // Fallback mount: body chưa có thì đợi DOM rồi gọi lại
+            const mount = document.body || document.documentElement;
+            if (!mount) {
+                onDomReady(ensureOverlay);
+                return null;
+            }
+            mount.appendChild(ov);
+        }
+
+        // Gắn listeners chỉ 1 lần (idempotent)
+        if (!window.__abx_overlay_listeners) {
+            window.__abx_overlay_listeners = true;
+
+            const rerender = () => {
+                try {
+                    if (typeof window.__abx_overlay_rerender === 'function') {
+                        window.__abx_overlay_rerender();
+                    }
+                } catch (_) {}
+            };
+
+            // Cập nhật overlay khi cuộn / đổi kích thước / tab quay lại
+            window.addEventListener('scroll', rerender, {
+                passive: true
+            });
+            window.addEventListener('resize', rerender, {
+                passive: true
+            });
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden)
+                    rerender();
+            });
+        }
+
+        return ov;
+    }
+
+    function clearOverlay(kind) {
+        const ov = ensureOverlay();
+        if (ov)
+            ov.innerHTML = '';
+        if (kind) {
+            S.items[kind] = [];
+        } else {
+            S.items.link = [];
+            S.items.text = [];
+            S.items.popup = []; // NEW
+        }
+    }
+
+    function mkBadge(n) {
+        const b = document.createElement('div');
+        b.textContent = String(n);
+        b.style.cssText = ['position:absolute', 'top:-8px', 'left:-8px', 'padding:2px 5px', 'font-size:10px', 'line-height:1', 'background:#0b1120', 'color:#e5e7eb', 'border:1px solid #60a5fa', 'border-radius:999px', 'pointer-events:none', 'box-shadow:0 0 0 1px rgba(0,0,0,.3)'].join(';');
+        return b;
+    }
+    function mkBox(item, kind) {
+        const d = document.createElement('div');
+        d.className = CFG.highlightCls + ' ' + (kind === 'link' ? '__abx_link' : '__abx_text');
+        d.style.cssText = ['position:absolute', 'border:1px dashed #60a5fa', 'border-radius:4px', 'box-sizing:border-box', 'left:' + item.rect.x + 'px', 'top:' + item.rect.y + 'px', 'width:' + item.rect.w + 'px', 'height:' + item.rect.h + 'px', 'pointer-events:auto', 'background:rgba(59,130,246,.08)'].join(';');
+        d.dataset.id = item.idx;
+        d.dataset.ord = item.ord || '';
+        d.appendChild(mkBadge(item.ord || ''));
+        d.addEventListener('mouseenter', () => showInfo(kind, item));
+        // Click box không làm panel di chuyển
+        d.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            selectBox(d);
+        });
+        return d;
+    }
+    function selectBox(d) {
+        if (S.selected) {
+            S.selected.classList.remove(CFG.selectedCls);
+            S.selected.style.border = '1px dashed #60a5fa';
+        }
+        d.classList.add(CFG.selectedCls);
+        d.style.border = '2px solid #ef4444';
+        S.selected = d;
+    }
+    function clearSelected() {
+        if (!S.selected)
+            return;
+        S.selected.style.border = '1px dashed #60a5fa';
+        S.selected.classList.remove(CFG.selectedCls);
+        S.selected = null;
+    }
+
+    function collectLinks() {
+        const arr = [];
+        let i = 0;
+        document.querySelectorAll('a,button,[role="button"],[onclick],input[type="submit"],input[type="button"]').forEach(el => {
+            const r = rectOf(el);
+            if (r.w <= 0 || r.h <= 0)
+                return;
+            arr.push({
+                idx: ++i,
+                el,
+                rect: r,
+                tag: el.tagName.toLowerCase(),
+                href: (el.getAttribute('href') || '')
+            });
+        });
+        return arr;
+    }
+    function collectTexts() {
+        if (!document.body)
+            return [];
+        const arr = [];
+        let i = 0;
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+            acceptNode: n => (n.nodeValue || '').trim().length > 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
+        });
+        let node;
+        while (node = walker.nextNode()) {
+            const el = node.parentElement;
+            if (!el)
+                continue;
+            const r = rectOf(el);
+            if (r.w <= 0 || r.h <= 0)
+                continue;
+            arr.push({
+                idx: ++i,
+                el,
+                rect: r,
+                tag: el.tagName.toLowerCase(),
+                text: (node.nodeValue || '').trim()
+            });
+        }
+        // ===== DEEP SOURCES: thêm "text chìm" =====
+        // helper: push item text cho cùng element, có gắn nguồn (src)
+        function pushDeep(el, text, srcTag) {
+            const t = (text || '').toString().trim();
+            if (!t)
+                return;
+            const r = rectOf(el);
+            if (r.w <= 0 || r.h <= 0)
+                return; // vẫn ưu tiên phần tử có hình chữ nhật hiển thị
+            arr.push({
+                idx: ++i,
+                el,
+                rect: r,
+                tag: el.tagName.toLowerCase(),
+                text: t,
+                src: srcTag || 'deep'
+            });
+        }
+
+        // 1) IMG alt/title
+        document.querySelectorAll('img[alt], img[title]').forEach(img => {
+            if (img.hasAttribute('alt'))
+                pushDeep(img, img.getAttribute('alt'), 'img@alt');
+            if (img.hasAttribute('title'))
+                pushDeep(img, img.getAttribute('title'), 'img@title');
+        });
+
+        // 2) Bất kỳ phần tử có title
+        document.querySelectorAll('[title]').forEach(el => {
+            // tránh lặp lại với IMG (đã lấy bên trên)
+            if (el.tagName.toLowerCase() === 'img')
+                return;
+            pushDeep(el, el.getAttribute('title'), 'el@title');
+        });
+
+        // 3) ARIA: aria-label / aria-labelledby
+        document.querySelectorAll('[aria-label], [aria-labelledby]').forEach(el => {
+            const ariaLabel = el.getAttribute('aria-label') || '';
+            if (ariaLabel)
+                pushDeep(el, ariaLabel, 'aria-label');
+            const ref = el.getAttribute('aria-labelledby');
+            if (ref) {
+                const txt = ref.split(/\s+/).map(id => {
+                    const t = document.getElementById(id);
+                    return t ? (t.innerText || t.textContent || '') : '';
+                }).join(' ').replace(/\s+/g, ' ').trim();
+                if (txt)
+                    pushDeep(el, txt, 'aria-labelledby');
+            }
+        });
+
+        // 4) INPUT/TEXTAREA/SELECT: placeholder, value, option selected
+        document.querySelectorAll('input, textarea, select').forEach(el => {
+            const tag = el.tagName.toLowerCase();
+            const ph = el.getAttribute('placeholder');
+            if (ph)
+                pushDeep(el, ph, tag + '@placeholder');
+
+            if (tag === 'input' || tag === 'textarea') {
+                const v = el.value != null ? String(el.value) : '';
+                if (v)
+                    pushDeep(el, v, tag + '@value');
+            } else if (tag === 'select') {
+                const opt = el.selectedIndex >= 0 ? el.options[el.selectedIndex] : null;
+                const optText = opt ? (opt.text || '').trim() : '';
+                if (optText)
+                    pushDeep(el, optText, 'select@selected');
+            }
+        });
+
+        // 5) DATA-* label thường gặp
+        document.querySelectorAll('[data-label],[data-title],[data-text],[data-name]').forEach(el => {
+            ['data-label', 'data-title', 'data-text', 'data-name'].forEach(k => {
+                if (el.hasAttribute(k))
+                    pushDeep(el, el.getAttribute(k), k);
+            });
+        });
+
+        // 6) Pseudo-element ::before / ::after (nếu có content)
+        function unquote(s) {
+            const m = /^['"](.*)['"]$/.exec(s || '');
+            return m ? m[1] : s;
+        }
+        document.querySelectorAll('body *').forEach(el => {
+            // bỏ qua các node quá lớn để tránh chậm (có thể giữ nguyên nếu cần)
+            if (!(el instanceof HTMLElement))
+                return;
+            const cs = getComputedStyle(el, '::before').content;
+            if (cs && cs !== 'none')
+                pushDeep(el, unquote(cs), '::before');
+            const ca = getComputedStyle(el, '::after').content;
+            if (ca && ca !== 'none')
+                pushDeep(el, unquote(ca), '::after');
+        });
+
+        return arr;
+    }
+
+    // NEW: thu thập các popup/modal lớn đang che màn hình (quảng cáo, thông báo,...)
+    function collectPopups() {
+        if (!document.body)
+            return [];
+        const arr = [];
+        let i = 0;
+        const panel = $panel();
+        const ov = $overlay();
+        const vw = Math.max(innerWidth, document.documentElement.clientWidth || 0);
+        const vh = Math.max(innerHeight, document.documentElement.clientHeight || 0);
+        const screenArea = Math.max(1, vw * vh);
+
+        document.querySelectorAll('body *').forEach(el => {
+            if (!(el instanceof HTMLElement))
+                return;
+            if (panel && (panel.contains(el) || el.contains(panel)))
+                return;
+            if (ov && (ov.contains(el) || el.contains(ov)))
+                return;
+
+            const cs = getComputedStyle(el);
+            if (!/(fixed|absolute|sticky)/.test(cs.position))
+                return;
+            if (cs.display === 'none' || cs.visibility === 'hidden')
+                return;
+            if (parseFloat(cs.opacity || '1') <= 0)
+                return;
+
+            const r = rectOf(el);
+            if (r.w <= 40 || r.h <= 40)
+                return;
+
+            const a = r.w * r.h;
+            const ratio = a / screenArea;
+            const cx = r.x + r.w / 2;
+            const cy = r.y + r.h / 2;
+            const centerish = (cx > vw * 0.2 && cx < vw * 0.8 && cy > vh * 0.15 && cy < vh * 0.85);
+
+            // nhỏ quá và không nằm giữa màn hình thì bỏ
+            if (!centerish && ratio < 0.05)
+                return;
+
+            const name = ((el.className || '') + ' ' + (el.id || '')).toLowerCase();
+            const hasKeyword = /(modal|popup|dialog|overlay|backdrop|login|signin|sign-in|dangnhap|đăng\s*nhập|quangcao|banner)/.test(name);
+
+            // nếu không có keyword thì yêu cầu to hơn
+            if (!hasKeyword && ratio < 0.1)
+                return;
+
+            arr.push({
+                idx: ++i,
+                el,
+                rect: r,
+                tag: el.tagName.toLowerCase(),
+                src: 'popup'
+            });
+        });
+
+        return arr;
+    }
+
+    const assignOrder = (items) => {
+        items.forEach((it, i) => it.ord = i + 1);
+        return items;
+    };
+
+    function render(kind) {
+        const ov = ensureOverlay();
+        clearOverlay(kind);
+        const items = (kind === 'link')
+         ? collectLinks()
+         : (kind === 'text'
+             ? collectTexts()
+             : collectPopups());
+        items.sort(smallFirst);
+        assignOrder(items);
+        S.items[kind] = items;
+        const draw = items.slice().reverse();
+        draw.forEach(it => ov.appendChild(mkBox(it, kind)));
+    }
+    const renderLinks = () => render('link');
+    const renderTexts = () => render('text');
+    const renderPopups = () => render('popup'); // NEW
+
+    // NEW: rerender overlay cho cả 3 map khi scroll/resize
+    window.__abx_overlay_rerender = () => {
+        try {
+            clearOverlay();
+            if (S.showL)
+                renderLinks();
+            if (S.showT)
+                renderTexts();
+            if (S.showP)
+                renderPopups();
+        } catch (_) {}
+    };
+
+    function toggle(kind) {
+        ensureOverlay();
+        clearSelected();
+        if (kind === 'link') {
+            S.showL = !S.showL;
+            if (S.showL)
+                renderLinks();
+            else
+                clearOverlay('link');
+        } else if (kind === 'text') {
+            S.showT = !S.showT;
+            if (S.showT)
+                renderTexts();
+            else
+                clearOverlay('text');
+        } else if (kind === 'popup') {
+            S.showP = !S.showP;
+            if (S.showP)
+                renderPopups();
+            else
+                clearOverlay('popup');
+        }
+    }
+
+    function showInfo(kind, item) {
+        try {
+            const el = item && item.el ? item.el : null;
+            if (!el)
+                return;
+            const r = rectOf(el);
+            const txt = (item && item.text) ? clip(item.text, 140) : clip(textOf(el), 140);
+            const src = item && item.src ? String(item.src) : 'visible';
+            const info = [
+                'Kind : ' + kind,
+                'Tag  : ' + (el.tagName),
+                'Class: ' + (el.className || '').toString(),
+                'Href : ' + (el.getAttribute && el.getAttribute('href') || ''),
+                'Src  : ' + src,
+                'Text : ' + txt,
+                'Rect : [' + [r.x, r.y, r.w, r.h].join(', ') + ']',
+                'Tail : ' + cssTail(el)
+            ].join('\n');
+            updateInfo(info);
+        } catch (_) {}
+    }
+
+    // ======= Scan200 theo thứ tự ord =======
+    function getOrdered(kind) {
+        let base;
+        if (kind === 'link')
+            base = collectLinks();
+        else if (kind === 'text')
+            base = collectTexts();
+        else
+            base = collectPopups();
+
+        let list = (S.items[kind] && S.items[kind].length)
+         ? S.items[kind].slice()
+         : assignOrder(base.sort(smallFirst));
+
+        list.sort((a, b) => (a.ord || 0) - (b.ord || 0));
+        return list;
+    }
+
+    function scanLinks(limit) {
+        const all = getOrdered('link');
+        const list = all.slice(0, Math.max(1, Math.min(limit || 200, all.length)));
+        console.group('[link] Scan ' + list.length + '/' + all.length);
+        list.forEach(it => {
+            const r = rectOf(it.el);
+            console.log(
+                '[link]',
+                it.ord, '\t',
+                "'" + clip(textOf(it.el), 140) + "'", '\t',
+                "'" + (it.el.getAttribute('href') || '') + "'", '\t',
+                r.x, r.y, r.w, r.h, '\t',
+                "'" + cssTail(it.el) + "'");
+        });
+
+        try {
+            console.table(list.map(it => {
+                    const r = rectOf(it.el);
+                    return {
+                        index: it.ord,
+                        text: clip(textOf(it.el), 60),
+                        href: (it.el.getAttribute('href') || ''),
+                        x: r.x,
+                        y: r.y,
                         w: r.w,
                         h: r.h,
-                        tail: tail,
-                        labelText: labelText,
-                        spriteName: spriteName
-                    });
-                });
-
-                // --- 2) Chuyển rows => cells có digit 0–4 ---
-                var cells = [];
-                for (var rIndex = 0; rIndex < rows.length; rIndex++) {
-                    var row = rows[rIndex];
-                    var d = guessDigit(row);
-                    if (d == null)
-                        continue;
-
-                    cells.push({
-                        v: d,
-                        x: row.x,
-                        y: row.y,
-                        tail: row.tail
-                    });
-                }
-
-                var info = {
-                    seq: "",
-                    cells: [],
-                    cols: [],
-                    colStrings: []
-                };
-                if (!cells.length)
-                    return info;
-
-                // --- 3) Gom theo cột X (TRÁI → PHẢI) ---
-                var cols = clusterByXForTK(cells);
-                var colStrings = [];
-
-                // --- 4) Trong mỗi cột: đọc **DƯỚI → TRÊN** ---
-                for (var ci = 0; ci < cols.length; ci++) {
-                    var col = cols[ci];
-
-                    // sort theo y GIẢM dần: y lớn hơn là thấp hơn → DƯỚI → TRÊN
-                    var arr = col.items.slice().sort(function (a, b) {
-                        return b.y - a.y;
-                    });
-
-                    var s = "";
-                    for (var k2 = 0; k2 < arr.length; k2++) {
-                        s += String(arr[k2].v);
-                    }
-                    colStrings.push(s);
-                }
-
-                // --- 4b) BỎ cột thống kê "40"/"04" ở bên trái nếu nó cách xa bảng chính ---
-                if (cols.length >= 2) {
-                    var xs = [];
-                    for (var xi = 0; xi < cols.length; xi++) {
-                        xs.push(cols[xi].cx);
-                    }
-                    var diffs = [];
-                    for (var di = 1; di < xs.length; di++) {
-                        diffs.push(xs[di] - xs[di - 1]);
-                    }
-                    var spacing = 0;
-                    if (diffs.length) {
-                        var sortedDiffs = diffs.slice().sort(function (a, b) {
-                            return a - b;
-                        });
-                        spacing = sortedDiffs[Math.floor(sortedDiffs.length / 2)];
-                    }
-                    var firstGap = xs[1] - xs[0];
-
-                    // Nếu cột đầu là "40"/"04" và khoảng cách tới cột kế tiếp lớn hơn nhiều so với spacing chuẩn
-                    // => coi là cột thống kê, bỏ khỏi chuỗi kết quả
-                    if (spacing > 0 &&
-                        firstGap > spacing * 1.4 &&
-                        (colStrings[0] === "40" || colStrings[0] === "04")) {
-                        cols = cols.slice(1);
-                        colStrings = colStrings.slice(1);
-                    }
-                }
-
-                var seq = colStrings.join("");
-
-                // Nếu bảng chỉ có 2 số thống kê (thường là "40" hoặc "04") thì bỏ qua luôn
-                var isBareStats =
-                    (cells.length <= 2 && seq.length <= 2) ||
-                (cells.length <= 4 && (seq === "40" || seq === "04"));
-                if (isBareStats) {
-                    console.log('[TK] Bảng kết quả đang trống, bỏ qua seq =', seq, 'cells =', cells.length);
-                    seq = "";
-                }
-
-                info.seq = seq;
-                info.cells = cells;
-                info.cols = cols;
-                info.colStrings = colStrings;
-                return info;
-            }
-
-            // Ghép chuỗi từ bảng TK (boardSeq) vào lịch sử prev (S.seq),
-            // chỉ giữ tối đa 50 kết quả cuối cùng (bên phải là mới nhất)
-            function mergeSeq(prev, boardSeq) {
-                prev = String(prev || '');
-                boardSeq = String(boardSeq || '').replace(/[^0-4]/g, '');
-                if (!boardSeq) {
-                    return prev;
-                }
-
-                // Lần đầu: nhận luôn toàn bộ chuỗi trên bảng
-                if (!prev) {
-                    if (boardSeq.length > 50) {
-                        return boardSeq.slice(boardSeq.length - 50);
-                    }
-                    return boardSeq;
-                }
-
-                var maxK = Math.min(prev.length, boardSeq.length);
-                var kMatch = 0;
-
-                // Tìm overlap lớn nhất: suffix(prev,k) == prefix(boardSeq,k)
-                for (var k = maxK; k >= 0; k--) {
-                    var suf = prev.slice(prev.length - k);
-                    var pre = boardSeq.slice(0, k);
-                    if (suf === pre) {
-                        kMatch = k;
-                        break;
-                    }
-                }
-
-                var extra = boardSeq.slice(kMatch); // phần mới (thường là 1 số)
-                var merged = prev + extra;
-
-                // Chỉ giữ 50 số mới nhất (từ phải sang trái)
-                if (merged.length > 50) {
-                    merged = merged.slice(merged.length - 50);
-                }
-                return merged;
-            }
-
-            /* ---------------- resolver/auto ---------------- */
-            function resolve(poolSig, sig) {
-                if (!sig)
-                    return null;
-                var end5 = String(sig.tail || '').toLowerCase().split('/').slice(-5).join('/');
-                var cands = poolSig.filter(function (m) {
-                    return m.tl.indexOf(end5, Math.max(0, m.tl.length - end5.length)) !== -1;
-                });
-                if (!cands.length) {
-                    var parts = end5.split('/');
-                    for (var len = 4; len >= 2 && !cands.length; len--) {
-                        var e = parts.slice(-len).join('/');
-                        cands = poolSig.filter(function (m) {
-                            return m.tl.indexOf(e, Math.max(0, m.tl.length - e.length)) !== -1;
-                        });
-                    }
-                }
-                if (!cands.length)
-                    return null;
-                var ax = (sig.anchorN && sig.anchorN.x || 0) + (sig.anchorN && sig.anchorN.w || 0) / 2;
-                var ay = (sig.anchorN && sig.anchorN.y || 0) + (sig.anchorN && sig.anchorN.h || 0) / 2;
-                cands.sort(function (A, B) {
-                    var Axc = A.n.x + A.n.w / 2,
-                    Ayc = A.n.y + A.n.h / 2;
-                    var Bxc = B.n.x + B.n.w / 2,
-                    Byc = B.n.y + B.n.h / 2;
-                    var dA = dist2(Axc, Ayc, ax, ay),
-                    dB = dist2(Bxc, Byc, ax, ay);
-                    return dA - dB || area(A) - area(B);
-                });
-                return cands[0];
-            }
-            function autoBindAcc(S) {
-                if (S.selAcc)
-                    return;
-                var list = S.money && S.money.length ? S.money : buildMoneyRects();
-                var cand = list.filter(function (m) {
-                    var t = m.tl;
-                    return (t.indexOf('/footer/khungmoney/moneylb') !== -1);
-                });
-                cand = cand.filter(function (m) {
-                    var t = m.tl;
-                    return (t.indexOf('jackpot') === -1 && t.indexOf('/footer/totalbetlb') !== t.length - ('/footer/totalbetlb'.length));
-                });
-                if (!cand.length)
-                    return;
-                cand.sort(function (a, b) {
-                    return (a.n.y - b.n.y) || (area(b) - area(a));
-                });
-                var acc = cand[cand.length - 1];
-                S.selAcc = {
-                    tail: acc.tail,
-                    anchorN: {
-                        x: acc.n.x,
-                        y: acc.n.y,
-                        w: acc.n.w,
-                        h: acc.n.h
-                    }
-                };
-            }
-
-            /* ---------------- helpers for totals by (x, tail) ---------------- */
-            const TAIL_LOCKED_STATUS = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Center/StateGameContent/Locked';
-            var TAIL_TOTAL_EXACT = 'XDLive/Canvas/Bg/footer/listLabel/totalBet';
-            // --- các tail đọc ở màn home ---
-            var TAIL_HOME_BALANCE = 'MainGame/Canvas/widget-top-view/wrapAvatar/btnShop/lbCoin'; // màn home
-            var TAIL_GAME_BALANCE = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Info_Content/PlayerBalance/AccountBalance'; // trong phòng Xóc Đĩa
-            // danh sách ưu tiên: trong game trước, không có thì mới dùng ở home
-            var TAIL_BALANCES = [
-                TAIL_GAME_BALANCE,
-                TAIL_HOME_BALANCE
-            ];
-            var TAIL_HOME_NICK = 'MainGame/Canvas/widget-top-view/wrapAvatar/lbNickName';
-            var X_CHAN = 591; // CHẴN
-            var X_LE = 973; // LẺ
-            // --- NEW extra totals (by x under same tail) ---
-            var X_SAPDOI = 783; // SẤP ĐÔI
-            var X_TUTRANG = 561; // TỨ TRẮNG
-            var X_TUDO = 1004; // TỨ ĐỎ
-            var X_3DO = 856; // 3 ĐỎ
-            var X_3TRANG = 709; // 3 TRẮNG
-
-            function tailEquals(t, exact) {
-                if (t == null)
-                    return false;
-                var s1 = String(t),
-                s2 = String(exact);
-                return s1 === s2 || s1.toLowerCase() === s2.toLowerCase();
-            }
-            /** return full list (not truncated) filtered by tail */
-            function moneyTailList(tailExact) {
-                var list = buildMoneyRects();
-                var out = [];
-                for (var i = 0; i < list.length; i++) {
-                    var it = list[i];
-                    if (tailEquals(it.tail, tailExact))
-                        out.push(it);
-                }
-                return out.sort(function (a, b) {
-                    return a.y - b.y || a.x - b.x;
-                });
-            }
-            /** pick by exact x (falling back to closest x if exact not found) under the given tail */
-            function pickByXTail(list, xTarget, tailExact) {
-                var arr = [];
-                for (var i = 0; i < list.length; i++) {
-                    var it = list[i];
-                    if (tailEquals(it.tail, tailExact))
-                        arr.push(it);
-                }
-                // prefer exact x match
-                for (var j = 0; j < arr.length; j++) {
-                    if (arr[j].x === xTarget)
-                        return arr[j];
-                }
-                // fallback: nearest by |x-xTarget|
-                var best = null,
-                bestDx = 1e9;
-                for (var k = 0; k < arr.length; k++) {
-                    var dx = Math.abs(arr[k].x - xTarget);
-                    if (dx < bestDx) {
-                        best = arr[k];
-                        bestDx = dx;
-                    }
-                }
-                return best;
-            }
-
-            function readHomeBalance() {
-                try {
-                    // duyệt lần lượt các tail trong danh sách:
-                    // 1) TAIL_GAME_BALANCE (trong phòng Xóc Đĩa)
-                    // 2) TAIL_HOME_BALANCE (màn home)
-                    var n = null;
-
-                    for (var i = 0; i < TAIL_BALANCES.length && !n; i++) {
-                        var tail = TAIL_BALANCES[i];
-                        n =
-                            (window.findNodeByTailCompat && window.findNodeByTailCompat(tail)) ||
-                        (window.__abx_findNodeByTail && window.__abx_findNodeByTail(tail));
-                    }
-
-                    // không tìm được node nào → trả null
-                    if (!n)
-                        return {
-                            val: null,
-                            raw: null
-                        };
-
-                    // đọc text từ cc.Label
-                    var lbl = n.getComponent && n.getComponent(cc.Label);
-                    var txt = lbl && lbl.string != null ? String(lbl.string).trim() : '';
-                    var val = moneyOf(txt);
-
-                    return {
-                        val: val,
-                        raw: txt
+                        tail: cssTail(it.el)
                     };
-                } catch (e) {
+                }));
+        } catch (_) {}
+        console.groupEnd();
+    }
+    function scanTexts(limit) {
+        const all = getOrdered('text');
+        const list = all.slice(0, Math.max(1, Math.min(limit || 200, all.length)));
+        console.group('[text] Scan ' + list.length + '/' + all.length);
+        list.forEach(it => {
+            const r = rectOf(it.el);
+            console.log(
+                '[text]',
+                it.ord, '\t',
+                "'" + clip(it.text || textOf(it.el), 180) + "'", '\t',
+                r.x, r.y, r.w, r.h, '\t',
+                "'" + cssTail(it.el) + "'", '\t',
+                '[' + (it.src || 'visible') + ']');
+        });
+
+        try {
+            console.table(list.map(it => {
+                    const r = rectOf(it.el);
                     return {
-                        val: null,
-                        raw: null
+                        index: it.ord,
+                        text: clip(it.text || textOf(it.el), 80),
+                        src: it.src || 'visible',
+                        x: r.x,
+                        y: r.y,
+                        w: r.w,
+                        h: r.h,
+                        tail: cssTail(it.el)
                     };
-                }
+                }));
+        } catch (_) {}
+        console.groupEnd();
+    }
+
+    function scanClosePopups(limit) {
+        const all = getOrdered('popup');
+        const list = all.slice(0, Math.max(1, Math.min(limit || 200, all.length)));
+
+        console.group('[popup] Scan ' + list.length + '/' + all.length);
+        list.forEach(it => {
+            const r = rectOf(it.el);
+            console.log(
+                '[popup]',
+                it.ord, '\t',
+                "'" + clip(it.text || textOf(it.el), 180) + "'", '\t',
+                r.x, r.y, r.w, r.h, '\t',
+                "'" + cssTail(it.el) + "'", '\t',
+                '[' + (it.src || 'popup') + ']');
+        });
+        try {
+            console.table(list.map(it => {
+                    const r = rectOf(it.el);
+                    return {
+                        index: it.ord,
+                        text: clip(it.text || textOf(it.el), 80),
+                        src: it.src || 'popup',
+                        x: r.x,
+                        y: r.y,
+                        w: r.w,
+                        h: r.h,
+                        tail: cssTail(it.el)
+                    };
+                }));
+        } catch (_) {}
+        console.groupEnd();
+    }
+
+    // ======= Username & Balance =======
+    function findUserFromDOM() {
+        try {
+            // Ưu tiên tail tuyệt đối nếu có
+            if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
+                const abs = findByTail(ABS_USERNAME_TAIL);
+                const v = abs && (abs.value || abs.textContent || '').trim();
+                if (isLikelyUsername(v))
+                    return v;
             }
 
-            // đọc nickname ở màn home, luôn tự đi scene, KHÔNG dùng __abx_findNodeByTail
-            function readHomeNick() {
-                try {
-                    if (!(window.cc && cc.director && cc.director.getScene))
-                        return '';
+            // Quét các vị trí có thể chứa username thật sự (không quét label)
+            const cand = document.querySelectorAll([
+                        'header .user-logged .base-dropdown-header__user__name',
+                        '.menu-account__info--user .display-name .full-name span',
+                        '.menu-account__info--user .username .full-name span',
+                        '.user-logged__info .user__name'
+                    ].join(','));
 
-                    var scene = cc.director.getScene();
-                    var parts = String(TAIL_HOME_NICK || '').split('/').filter(Boolean);
-                    // nếu tail bắt đầu bằng tên scene thì bỏ đi
-                    if (parts[0] === scene.name)
-                        parts.shift();
-
-                    var node = scene;
-                    for (var i = 0; i < parts.length; i++) {
-                        var name = parts[i];
-                        var kids = node.children || node._children || [];
-                        var found = null;
-                        for (var j = 0; j < kids.length; j++) {
-                            if (kids[j] && kids[j].name === name) {
-                                found = kids[j];
-                                break;
-                            }
-                        }
-                        if (!found)
-                            return ''; // đi sai nhánh thì coi như không có
-                        node = found;
-                    }
-
-                    var lbl = node.getComponent && node.getComponent(cc.Label);
-                    var txt = lbl && lbl.string != null ? String(lbl.string).trim() : '';
+            for (const el of cand) {
+                const txt = textOf(el);
+                if (isLikelyUsername(txt))
                     return txt;
-                } catch (e) {
-                    return '';
-                }
             }
 
-            function findNodeByTailCompat(tail) {
-                // ưu tiên hàm sẵn có nếu web đã tiêm
-                if (window.__abx_findNodeByTail)
-                    return window.__abx_findNodeByTail(tail);
-                if (window.findNodeByTail)
-                    return window.findNodeByTail(tail);
+            return '';
+        } catch (_) {
+            return '';
+        }
+    }
 
-                // fallback tự đi từ scene
-                if (!(window.cc && cc.director && cc.director.getScene))
-                    return null;
-                var scene = cc.director.getScene();
-                var parts = String(tail || '').split('/').filter(Boolean);
-                if (parts[0] === scene.name)
-                    parts.shift();
+    // --- Prefer fetch first; iframe is fallback ---
+    async function tryFetchUserProfile() {
+        if (isGameHost())
+            return false;
+        const urls = guessProfileUrls();
+        for (const u of urls) {
+            try {
+                const res = await fetch(u, {
+                    credentials: 'include'
+                });
+                if (!res.ok)
+                    continue;
 
-                var node = scene;
-                for (var i = 0; i < parts.length; i++) {
-                    var name = parts[i];
-                    var kids = node.children || node._children || [];
-                    var found = null;
-                    for (var j = 0; j < kids.length; j++) {
-                        if (kids[j] && kids[j].name === name) {
-                            found = kids[j];
-                            break;
-                        }
-                    }
-                    if (!found)
-                        return null;
-                    node = found;
-                }
-                return node;
-            }
+                const html = await res.text();
+                const doc = new DOMParser().parseFromString(html, 'text/html');
 
-            function __cw_readStatusSmart() {
+                // --- Username (ƯU TIÊN ABS PATH) ---
+                let name = '';
                 try {
-                    const find = (window.findNodeByTailCompat || window.__abx_findNodeByTail || window.findNodeByTail);
-                    if (!find)
-                        return null;
-                    const n = find(TAIL_LOCKED_STATUS);
-                    if (!n)
-                        return null; // không có node Locked → để null
-                    const on = !!(n.activeInHierarchy || n.active);
-                    return on ? 'locked' : 'open';
+                    const abs = findByTailIn(ABS_USERNAME_TAIL, doc); // dùng trên tài liệu fetch được
+                    if (abs) {
+                        name = (abs.value != null ? String(abs.value)
+                             : (abs.getAttribute && abs.getAttribute('value')) || abs.textContent || '').trim();
+                    }
+                } catch (_) {}
+
+                if (!name) {
+                    // fallback cũ theo class
+                    const namePick = doc.querySelector('.base-dropdown-header__user__name, .full-name, .display-name, .username .full-name, [class*="display-name"]');
+                    name = namePick ? (namePick.textContent || '').trim() : '';
+                }
+                if (name)
+                    updateUsername(name);
+
+                // --- Balance ---
+                let bal = '';
+                const balPick = doc.querySelector(
+                        '.base-dropdown-header__user__amount, .user__amount, .user-amount, .balance, [class*="amount"]');
+                if (balPick) {
+                    const raw = (balPick.textContent || '').replace(/\s+/g, ' ').trim();
+                    const m = raw.match(/(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:\s*(VND|đ|₫|k|K|m|M))?/);
+                    if (m)
+                        bal = m[1].replace(/[^\d]/g, '');
+                }
+                if (bal)
+                    updateBalance(bal);
+
+                if (name || bal)
+                    return true; // lấy được ít nhất 1 thứ là coi như thành công
+            } catch (_) { /* thử URL kế */
+            }
+        }
+        return false;
+    }
+
+    function guessProfileUrls() {
+        // Thu link “account|profile|user” trong DOM cùng origin
+        const fromDom = Array.from(document.querySelectorAll('a[href]'))
+            .map(a => a.getAttribute('href'))
+            .map(h => {
+                try {
+                    return new URL(h, location.href);
                 } catch {
                     return null;
                 }
-            }
-            window.findNodeByTailCompat = window.findNodeByTailCompat || findNodeByTailCompat;
-            // Export standardized helpers
-            window.moneyTailList = moneyTailList;
-            window.pickByXTail = pickByXTail;
-            window.cwPickChan = function () {
-                return pickByXTail(moneyTailList(TAIL_TOTAL_EXACT), X_CHAN, TAIL_TOTAL_EXACT);
-            };
-            window.cwPickLe = function () {
-                return pickByXTail(moneyTailList(TAIL_TOTAL_EXACT), X_LE, TAIL_TOTAL_EXACT);
-            };
+            })
+            .filter(u =>
+                u
+                 && u.origin === location.origin
+                 && /(\/|^)(account|profile|user)(\/|$)/i.test(u.pathname) // chỉ nhận path "trang" tài khoản
+                 && !/^\/api\//i.test(u.pathname) // loại mọi API
+                 && !/\.(json|js|css|png|jpe?g|gif|webp|svg)$/i.test(u.pathname) // loại file tĩnh
+            )
 
-            /* ---------------- totals (using x & tail) ---------------- */
-            function totals(S) {
-                S.money = buildMoneyRects(); // quét hết tiền
+            .map(u => u.pathname);
 
-                // 1) totals trong phòng (chan/le/...): vẫn để y như cũ
-                var list = moneyTailList(TAIL_TOTAL_EXACT);
-                var mC = pickByXTail(list, X_CHAN, TAIL_TOTAL_EXACT);
-                var mL = pickByXTail(list, X_LE, TAIL_TOTAL_EXACT);
-                var mSD = pickByXTail(list, X_SAPDOI, TAIL_TOTAL_EXACT);
-                var mTT = pickByXTail(list, X_TUTRANG, TAIL_TOTAL_EXACT);
-                var m3T = pickByXTail(list, X_3TRANG, TAIL_TOTAL_EXACT);
-                var m3D = pickByXTail(list, X_3DO, TAIL_TOTAL_EXACT);
-                var mTD = pickByXTail(list, X_TUDO, TAIL_TOTAL_EXACT);
+        // Mặc định: chỉ /account/user-profile để console sạch
+        const defaults = ['/account/user-profile'];
 
-                // 2) thử đọc tiền ở màn home
-                var homeBal = readHomeBalance(); // {val, raw}
-
-                // 3) nếu không có thì mới dùng autoBindAcc cũ
-                var rA = null;
-                if (!homeBal.val) {
-                    if (!S.selAcc)
-                        autoBindAcc(S);
-                    rA = resolve(S.money, S.selAcc);
-                }
-
-                return {
-                    C: mC ? mC.val : null,
-                    L: mL ? mL.val : null,
-                    A: homeBal.val ? homeBal.val : (rA ? rA.val : null),
-                    SD: mSD ? mSD.val : null,
-                    TT: mTT ? mTT.val : null,
-                    T3T: m3T ? m3T.val : null,
-                    T3D: m3D ? m3D.val : null,
-                    TD: mTD ? mTD.val : null,
-
-                    rawC: mC ? mC.txt : null,
-                    rawL: mL ? mL.txt : null,
-                    rawA: homeBal.raw ? homeBal.raw : (rA ? rA.txt : null),
-                    rawSD: mSD ? mSD.txt : null,
-                    rawTT: mTT ? mTT.txt : null,
-                    rawT3T: m3T ? m3T.txt : null,
-                    rawT3D: m3D ? m3D.txt : null,
-                    rawTD: mTD ? mTD.txt : null
-                };
-            }
-
-            function sampleTotalsNow() {
-                try {
-                    return totals(S);
-                } catch (e) {
-                    return {
-                        C: null,
-                        L: null,
-                        A: null
-                    };
-                }
-            }
-            async function waitForTotalsChange(before, side, timeout) {
-                timeout = timeout || 1400;
-                var t0 = (performance && performance.now ? performance.now() : Date.now());
-                var last = before;
-                while (((performance && performance.now ? performance.now() : Date.now()) - t0) < timeout) {
-                    await sleep(90);
-                    var cur = sampleTotalsNow();
-                    if ((side === 'CHAN' && cur.C !== last.C) || (side === 'LE' && cur.L !== last.L) || (cur.A !== last.A))
-                        return true;
-                    last = cur;
-                }
+        // Gộp + khử trùng lặp (ưu tiên defaults trước)
+        const seen = new Set();
+        return [...defaults, ...fromDom].filter(p => {
+            if (seen.has(p))
                 return false;
+            seen.add(p);
+            return true;
+        });
+    }
+
+    // ƯU TIÊN: selector lấy trực tiếp số dư trong header (của NET88)
+    // Ưu tiên selector số dư (đường dẫn cụ thể bạn muốn trước tiên)
+
+    function findBalance() {
+        // (Gate) Chỉ cho phép khi đã "thấy" nút Đăng nhập (header đã sẵn)
+        if (typeof canRunAuthLoop === 'function' && !canRunAuthLoop()) {
+            return S.balance || '';
+        }
+
+        // Chỉ soi trong header để tránh dính jackpot/số khác
+        const header = document.querySelector('header.menu, header');
+        if (!header)
+            return S.balance || '';
+
+        // ⬇️ DÙNG DUY NHẤT selector path cố định bạn yêu cầu
+        let el = null;
+        try {
+            el = header.querySelector(ABS_BALANCE_SEL);
+        } catch (_) {
+            el = null;
+        }
+
+        // Không tìm thấy đúng path → giữ giá trị cũ
+        if (!el)
+            return S.balance || '';
+
+        // Né các vùng không phải header-balance
+        if (el.closest('.livestream-section, .slots, .jackpot, .bingo, .lottery, .mini-games')) {
+            return S.balance || '';
+        }
+
+        const raw = (el.textContent || '').trim();
+        if (!raw)
+            return S.balance || '';
+
+        // Cho phép "0" hoặc số có nhóm nghìn / ≥1 chữ số
+        // (Nếu muốn chặt như trước: thay \d{1,} -> \d{4,})
+        const m = raw.replace(/\s+/g, ' ')
+            .match(/(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:\s*(VND|đ|₫))?/i);
+        if (!m)
+            return S.balance || '';
+
+        const val = m[1].replace(/\s+/g, '');
+        if (typeof balLog === 'function')
+            balLog('hit', ABS_BALANCE_SEL, 'value=', val);
+
+        return val || (S.balance || '');
+    }
+
+    function updateUsername(u) {
+        if (u == null)
+            return;
+        const val = String(u).trim();
+        if (!isLikelyUsername(val))
+            return; // ✨ thêm dòng này
+
+        S.username = val;
+        updateInfo();
+
+        // 🔔 NEW: đẩy ngay 1 gói lên C# (không chờ interval)
+        try {
+            if (typeof window.__abx_hw_pushNow === 'function') {
+                // Nếu bạn đã có bridge pushNow thì dùng luôn
+                window.__abx_hw_pushNow();
+            } else if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
+                // Fallback: tự gửi JSON theo format mà C# đang parse
+                window.chrome.webview.postMessage(JSON.stringify({
+                        abx: 'home_tick',
+                        username: S.username || '',
+                        balance: String(S.balance ?? ''),
+                        href: String(location.href || ''),
+                        title: String(document.title || ''),
+                        ts: Date.now()
+                    }));
             }
+        } catch (_) { /* nuốt lỗi, không ảnh hưởng UI */
+        }
+    }
 
-            /* ---------------- state & UI ---------------- */
-            var S = {
-                running: false,
-                timer: null,
-                tickMs: 240,
-                prog: null,
-                status: 'ĐỢI MỞ BÁT',
-                money: [],
-                text: [],
-                selC: null,
-                selL: null,
-                selAcc: null,
-                focus: null,
-                showMoney: false,
-                showBet: false,
-                showText: false,
-                showButton: false,
-                stakeK: 1,
-                seq: ""
-            };
+    function updateBalance(b) {
+        if (b == null)
+            return;
+        const val = String(b).replace(/\s+/g, ' ').trim();
+        if (!val)
+            return; // giữ nguyên triết lý không xoá giá trị cũ
 
-            var ROOT = '__cw_root_allin';
-            var _old = document.getElementById(ROOT);
-            if (_old)
-                try {
-                    _old.remove();
-                } catch (e) {}
-            var root = document.createElement('div');
-            root.id = ROOT;
-            root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
-            document.body.appendChild(root);
+        S.balance = val;
+        updateInfo();
 
-            var panel = document.createElement('div');
-            panel.style.cssText = 'position:fixed;top:10px;right:10px;width:820px;background:#08130f;color:#bff;border:1px solid #0a0;border-radius:10px;padding:8px;font:12px/1.35 Consolas,monospace;pointer-events:auto;z-index:2147483647';
-            panel.innerHTML = '' +
-                '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;cursor:move">' +
-                '<b style="color:#9f9">Canvas Watch</b>' +
-                '<span id="cwState" style="margin-left:auto;color:#9f9">IDLE</span>' +
-                '</div>' +
-                '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">' +
-                '<button id="bStart">Start</button>' +
-                '<button id="bStop">Stop</button>' +
-                '<button id="bMoney">MoneyMap</button>' +
-                '<button id="bBet">BetMap</button>' +
-                '<button id="bText">TextMap</button>' +
-                '<button id="bButton">ButtonMap</button>' +
-                '<button id="bScanMoney">Scan200Money</button>' +
-                '<button id="bScanBet">Scan200Bet</button>' +
-                '<button id="bScanText">Scan200Text</button>' +
-                '<button id="bScanButton">Scan200Button</button>' +
-                '</div>' +
-                '<div style="display:flex;gap:10px;align-items:center;margin-bottom:6px">' +
-                '<span>Tiền (×1K)</span>' +
-                '<input id="iStake" value="1" style="width:60px;background:#0b1b16;border:1px solid #3a6;color:#bff;padding:2px 4px;border-radius:4px">' +
-                '<button id="bBetC">Bet CHẴN</button>' +
-                '<button id="bBetL">Bet LẺ</button>' +
-                '</div>' +
-                '<div id="cwInfo" style="white-space:pre;color:#9f9;line-height:1.45"></div>';
-            //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-            root.style.display='none';
-            var btns = panel.querySelectorAll('button');
-            for (var bi = 0; bi < btns.length; bi++) {
-                var b = btns[bi];
-                b.style.cssText = 'padding:4px 6px;background:#113015;color:#bff;border:1px solid #3a6;border-radius:4px;cursor:pointer';
-                b.onmouseenter = (function (b) {
-                    return function () {
-                        b.style.background = '#1a3c1f';
-                    };
-                })(b);
-                b.onmouseleave = (function (b) {
-                    return function () {
-                        b.style.background = '#113015';
-                    };
-                })(b);
+        // 🔔 NEW: đẩy ngay 1 gói lên C# (không chờ interval)
+        try {
+            if (typeof window.__abx_hw_pushNow === 'function') {
+                window.__abx_hw_pushNow();
+            } else if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
+                window.chrome.webview.postMessage(JSON.stringify({
+                        abx: 'home_tick',
+                        username: S.username || '',
+                        balance: String(S.balance ?? ''),
+                        href: String(location.href || ''),
+                        title: String(document.title || ''),
+                        ts: Date.now()
+                    }));
             }
-            root.appendChild(panel);
+        } catch (_) {}
+    }
 
-            // Drag
+    function probeIframeOnce() {
+        if (isGameHost())
+            return; // không chạy ở trang game
+        if (S.username && S.balance)
+            return; // ⬅️ chỉ bỏ qua khi đã có cả tên lẫn số dư
+
+        if (S.retries >= CFG.maxRetries)
+            return;
+        if (S.inflightProbe)
+            return; // đang chạy rồi
+
+        let paths = guessProfileUrls().filter(p => !/^\/api\//i.test(p) && !/\.(json|js|css|png|jpe?g|gif|webp|svg)$/i.test(p));
+        if (!paths || !paths.length)
+            paths = ['/account/user-profile']; // fallback cứng sang HTML
+
+        if (!paths || !paths.length)
+            return;
+
+        S.inflightProbe = true; // khóa re-entrance
+
+        const idx = S.retries % paths.length;
+        const iframe = document.createElement('iframe');
+        iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:5px;height:5px;visibility:hidden;border:0';
+        iframe.sandbox = 'allow-same-origin allow-scripts';
+        iframe.setAttribute('data-abx', 'probe');
+
+        S.retries++;
+        let settled = false;
+        const cleanup = () => {
+            if (settled)
+                return;
+            settled = true;
             try {
-                var header = panel.firstElementChild || panel;
-                header.style.cursor = 'move';
-                var dragging = false,
-                sx = 0,
-                sy = 0,
-                startLeft = 0,
-                startTop = 0;
-                var onDown = function (e) {
-                    if (e.button !== 0)
-                        return;
-                    dragging = true;
-                    var r = panel.getBoundingClientRect();
-                    startLeft = r.left;
-                    startTop = r.top;
-                    sx = e.clientX;
-                    sy = e.clientY;
-                    panel.style.left = startLeft + 'px';
-                    panel.style.top = startTop + 'px';
-                    panel.style.right = 'auto';
-                    panel.style.bottom = 'auto';
-                    document.addEventListener('mousemove', onMove);
-                    document.addEventListener('mouseup', onUp);
-                    e.preventDefault();
-                };
-                var onMove = function (e) {
-                    if (!dragging)
-                        return;
-                    var dx = e.clientX - sx,
-                    dy = e.clientY - sy;
-                    panel.style.left = (startLeft + dx) + 'px';
-                    panel.style.top = (startTop + dy) + 'px';
-                };
-                var onUp = function () {
-                    if (!dragging)
-                        return;
-                    dragging = false;
-                    document.removeEventListener('mousemove', onMove);
-                    document.removeEventListener('mouseup', onUp);
-                };
-                header.addEventListener('mousedown', onDown);
-            } catch (e) {}
+                iframe.remove();
+            } catch (_) {}
+            S.inflightProbe = false;
+        };
 
-            function setStateUI() {
-                panel.querySelector('#cwState').textContent = S.running ? 'OPEN' : 'IDLE';
-            }
-
-            var layerMoney = document.createElement('div');
-            layerMoney.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:auto;z-index:2147483645;';
-            root.appendChild(layerMoney);
-            var layerBet = document.createElement('div');
-            layerBet.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:auto;z-index:2147483645;';
-            root.appendChild(layerBet);
-            var layerText = document.createElement('div');
-            layerText.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:auto;z-index:2147483645;';
-            root.appendChild(layerText);
-            var layerButton = document.createElement('div');
-            layerButton.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:auto;z-index:2147483645;';
-            root.appendChild(layerButton);
-
-            var focusBox = document.createElement('div');
-            focusBox.style.cssText = 'position:fixed;border:2px dashed #ffd866;background:#ffd80022;display:none;pointer-events:none;z-index:2147483647;';
-            root.appendChild(focusBox);
-            function showFocus(r) {
-                if (!r) {
-                    focusBox.style.display = 'none';
-                    return;
-                }
-                var st = cssRect(r);
-                for (var k in st) {
-                    focusBox.style[k] = st[k];
-                }
-                focusBox.style.display = '';
-            }
-
-            /* ---------------- render maps ---------------- */
-            function renderMoney() {
-                layerMoney.innerHTML = '';
-                var bg = document.createElement('div');
-                bg.style.cssText = 'position:absolute;inset:0;background:transparent;';
-                layerMoney.appendChild(bg);
-                var list = S.money && S.money.length ? S.money : buildMoneyRects();
-                for (var i = 0; i < list.length; i++) {
-                    var m = list[i];
-                    var d = document.createElement('div');
-                    d.style.cssText = 'position:fixed;outline:1px dashed #0ff;background:#00ffff22;';
-                    var st = cssRect(m);
-                    for (var k in st) {
-                        d.style[k] = st[k];
-                    }
-                    d.title = m.txt + ' (' + fmt(m.val) + ')\n' + m.tail;
-                    d.onmouseup = (function (m) {
-                        return function (ev) {
-                            ev.stopPropagation();
-                            S.focus = {
-                                rect: {
-                                    x: m.x,
-                                    y: m.y,
-                                    w: m.w,
-                                    h: m.h
-                                },
-                                tail: m.tail,
-                                txt: m.txt,
-                                val: m.val,
-                                kind: 'money'
-                            };
-                            showFocus(S.focus.rect);
-                            updatePanel();
-                        };
-                    })(m);
-                    layerMoney.appendChild(d);
-                }
-                layerMoney.onmouseup = function () {
-                    S.focus = null;
-                    showFocus(null);
-                    updatePanel();
-                };
-            }
-            function renderBet() {
-                layerBet.innerHTML = '';
-                var btns = collectButtons().filter(function (b) {
-                    return b.w >= 16 && b.h >= 12;
-                });
-                var ordered = btns.slice().sort(function (a, b) {
-                    return (b.w * b.h) - (a.w * a.h);
-                });
-                for (var i = 0; i < ordered.length; i++) {
-                    var b = ordered[i];
-                    var d = document.createElement('div');
-                    d.style.cssText = 'position:fixed;outline:1px dashed #f80;background:#ff880022;';
-                    var st = cssRect(b);
-                    for (var k in st) {
-                        d.style[k] = st[k];
-                    }
-                    d.title = '[Button]\n' + b.tail;
-                    d.onmouseup = (function (b) {
-                        return function (ev) {
-                            ev.stopPropagation();
-                            S.focus = {
-                                rect: {
-                                    x: b.x,
-                                    y: b.y,
-                                    w: b.w,
-                                    h: b.h
-                                },
-                                tail: b.tail,
-                                txt: '',
-                                val: null,
-                                kind: 'bet'
-                            };
-                            showFocus(S.focus.rect);
-                            updatePanel();
-                        };
-                    })(b);
-                    layerBet.appendChild(d);
-                }
-                layerBet.onmouseup = function () {
-                    S.focus = null;
-                    showFocus(null);
-                    updatePanel();
-                };
-            }
-            function renderText() {
-                layerText.innerHTML = '';
-                var texts = S.text || [];
-                var ordered = texts.slice().sort(function (a, b) {
-                    return (b.w * b.h) - (a.w * a.h);
-                });
-                for (var i = 0; i < ordered.length; i++) {
-                    var t = ordered[i];
-                    var d = document.createElement('div');
-                    d.style.cssText = 'position:fixed;outline:1px dashed #88f;background:#8888ff22;';
-                    var st = cssRect(t);
-                    for (var k in st) {
-                        d.style[k] = st[k];
-                    }
-                    d.title = '"' + t.text + '"\n' + t.tail;
-                    d.onmouseup = (function (t) {
-                        return function (ev) {
-                            ev.stopPropagation();
-                            S.focus = {
-                                rect: {
-                                    x: t.x,
-                                    y: t.y,
-                                    w: t.w,
-                                    h: t.h
-                                },
-                                tail: t.tail,
-                                txt: t.text,
-                                val: moneyOf(t.text),
-                                kind: 'text'
-                            };
-                            showFocus(S.focus.rect);
-                            updatePanel();
-                        };
-                    })(t);
-                    layerText.appendChild(d);
-                }
-                layerText.onmouseup = function () {
-                    S.focus = null;
-                    showFocus(null);
-                    updatePanel();
-                };
-            }
-
-            function renderButton() {
-                layerButton.innerHTML = '';
-                // lấy tất cả nút có cc.Button (đang xài sẵn collectButtons)
-                var btns = collectButtons().sort(function (a, b) {
-                    return (b.w * b.h) - (a.w * a.h);
-                });
-                for (var i = 0; i < btns.length; i++) {
-                    var b = btns[i];
-                    // bỏ qua nút quá nhỏ vô hình hoàn toàn
-                    if (b.w <= 4 || b.h <= 4)
-                        continue;
-
-                    var d = document.createElement('div');
-                    d.style.cssText = 'position:fixed;outline:1px dashed #ff0;background:#ffff0022;';
-                    var st = cssRect(b);
-                    for (var k in st)
-                        d.style[k] = st[k];
-                    d.title = '[Button]\n' + b.tail;
-
-                    d.onmouseup = (function (b) {
-                        return function (ev) {
-                            ev.stopPropagation();
-                            S.focus = {
-                                rect: {
-                                    x: b.x,
-                                    y: b.y,
-                                    w: b.w,
-                                    h: b.h
-                                },
-                                tail: b.tail,
-                                txt: '',
-                                val: null,
-                                kind: 'button'
-                            };
-                            showFocus(S.focus.rect);
-                            updatePanel();
-                        };
-                    })(b);
-
-                    layerButton.appendChild(d);
-                }
-
-                layerButton.onmouseup = function () {
-                    S.focus = null;
-                    showFocus(null);
-                    updatePanel();
-                };
-            }
-
-            /* ---------------- panel info ---------------- */
-            function updatePanel() {
-                var t = S._lastTotals || {
-                    C: null,
-                    L: null,
-                    A: null,
-                    rawC: null,
-                    rawL: null,
-                    rawA: null
-                };
-
-                // ƯU TIÊN đọc lại từ UI home
-                var nickNow = readHomeNick(); // cố gắng đọc từ tail home
-                if (nickNow) {
-                    S.lastNick = nickNow; // cập nhật cache
-                }
-                var nick = S.lastNick || '--'; // lấy cái mới nhất mình đang có
-                var stDisp = (S.status === 'locked') ? 'Đợi kết quả' :
-                (S.status === 'open') ? 'Cho phép đặt cược' : (S.status || '--');
-                var f = S.focus;
-                var base =
-                    '• Trạng thái: ' + stDisp + ' | Prog: ' + (S.prog == null ? '--' : (((S.prog * 100) | 0) + '%')) + ' | Phiên: ' + (S.sessionText || '--') + '\n' +
-                    '• TK : ' + fmt(t.A) +
-                    '|NickName: ' + nick +
-                    '|CHẴN: ' + fmt(t.C) +
-                    '|SẤP ĐÔI: ' + fmt(t.SD) +
-                    '|LẺ :' + fmt(t.L) +
-                    '|TỨ TRẮNG: ' + fmt(t.TT) +
-                    '|3 TRẮNG: ' + fmt(t.T3T) +
-                    '|3 ĐỎ: ' + fmt(t.T3D) +
-                    '|TỨ ĐỎ: ' + fmt(t.TD) + '\n' +
-                    '• Focus: ' + (f ? f.kind : '-') + '\n' +
-                    '  tail: ' + (f ? f.tail : '-') + '\n' +
-                    '  txt : ' + (f ? (f.txt != null ? f.txt : '-') : '-') + '\n' +
-                    '  val : ' + (f && f.val != null ? fmt(f.val) : '-');
-
-                var seqHtml = 'Chuỗi kết quả : <i>--</i>';
-                var seqStr = S.seq || '';
-                if (seqStr && seqStr.length) {
-                    var head = esc(seqStr.slice(0, -1));
-                    var last = esc(seqStr.slice(-1));
-                    seqHtml = 'Chuỗi kết quả : <span>' + head + '</span><span style="color:#f66">' + last + '</span>';
-                }
-                panel.querySelector('#cwInfo').innerHTML = esc(base) + '\n' + seqHtml;
-
-            }
-
-            /* ---------------- scan tools ---------------- */
-            function scan200Money() {
-                var money = buildMoneyRects().sort(function (a, b) {
-                    return a.y - b.y;
-                }).slice(0, 200)
-                    .map(function (m) {
-                        return {
-                            txt: m.txt,
-                            val: m.val,
-                            x: m.x,
-                            y: m.y,
-                            w: m.w,
-                            h: m.h,
-                            tail: m.tail
-                        };
-                    });
-                console.log('(Money index x200)\ttxt\tval\tx\ty\tw\th\ttail');
-                for (var i = 0; i < money.length; i++) {
-                    var r = money[i];
-                    console.log(i + "\t'" + r.txt + "'\t" + r.val + "\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
-                }
-                console.log(money);
-            }
-            function scan200Bet() {
-                var btns = collectButtons().filter(function (b) {
-                    return b.w >= 16 && b.h >= 12;
-                })
-                    .sort(function (a, b) {
-                        return a.y - b.y;
-                    }).slice(0, 200)
-                    .map(function (b) {
-                        return {
-                            x: b.x,
-                            y: b.y,
-                            w: b.w,
-                            h: b.h,
-                            tail: b.tail
-                        };
-                    });
-                console.log('(Bet index x200)\tx\ty\tw\th\ttail');
-                for (var i = 0; i < btns.length; i++) {
-                    var r = btns[i];
-                    console.log(i + "\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
-                }
-                console.log(btns);
-            }
-            function scan200Text() {
-                var texts = buildTextRects().sort(function (a, b) {
-                    return a.y - b.y;
-                }).slice(0, 200)
-                    .map(function (t) {
-                        return {
-                            text: t.text,
-                            x: t.x,
-                            y: t.y,
-                            w: t.w,
-                            h: t.h,
-                            tail: t.tail
-                        };
-                    });
-                console.log('(Text index x200)\ttext\tx\ty\tw\th\ttail');
-                for (var i = 0; i < texts.length; i++) {
-                    var r = texts[i];
-                    console.log(i + "\t'" + r.text + "'\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
-                }
+        iframe.onload = () => {
+            try {
+                const doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
                 try {
-                    console.table(texts);
-                } catch (e) {
-                    console.log(texts);
-                }
-                return texts;
-            }
-
-            function scan200Button() {
-                // lấy tất cả nút từ collectButtons() rồi chuẩn hóa giống mấy hàm scan khác
-                var btns = collectButtons()
-                    .sort(function (a, b) {
-                        return a.y - b.y;
-                    })
-                    .slice(0, 200)
-                    .map(function (b) {
-                        return {
-                            x: b.x,
-                            y: b.y,
-                            w: b.w,
-                            h: b.h,
-                            tail: b.tail
-                        };
-                    });
-
-                console.log('(Button index x200)\tx\ty\tw\th\ttail');
-                for (var i = 0; i < btns.length; i++) {
-                    var r = btns[i];
-                    console.log(
-                        i + '\t' +
-                        r.x + '\t' +
-                        r.y + '\t' +
-                        r.w + '\t' +
-                        r.h + '\t' +
-                        "'" + r.tail + "'");
-                }
-
-                // >>> DÒNG QUAN TRỌNG: lưu lại để đoạn click dùng
-                window.__abx_buttons = btns;
-
-                return btns;
-            }
-
-            /* =====================================================
-            CHIP BETTING CORE (compat)
-            ===================================================== */
-            var CHIP_TAIL_ROW4 = 'xdlive/canvas/bg/tipdealer/tabtipdealer/tipcontent/views/contentchat/row4/itemtip/lbmoney';
-            var DENOMS_DESC = [10000000, 5000000, 1000000, 500000, 100000, 50000, 20000, 10000, 5000, 2000, 1000];
-            var cfgBet = {
-                delayPick: 220,
-                delayTap: 260,
-                delayBetweenSteps: 280
-            };
-
-            function clickAtWin(x, y) {
-                var c = document.querySelector('canvas');
-                if (!c)
-                    return false;
-                var clientX = Math.round(x),
-                clientY = Math.round(y);
-                try {
-                    c.dispatchEvent(new PointerEvent('pointerdown', {
-                            bubbles: true,
-                            cancelable: true,
-                            pointerType: 'mouse',
-                            isPrimary: true,
-                            clientX: clientX,
-                            clientY: clientY,
-                            buttons: 1
-                        }));
-                } catch (e) {}
-                try {
-                    c.dispatchEvent(new MouseEvent('mousedown', {
-                            bubbles: true,
-                            cancelable: true,
-                            clientX: clientX,
-                            clientY: clientY,
-                            buttons: 1
-                        }));
-                } catch (e) {}
-                try {
-                    c.dispatchEvent(new PointerEvent('pointerup', {
-                            bubbles: true,
-                            cancelable: true,
-                            pointerType: 'mouse',
-                            isPrimary: true,
-                            clientX: clientX,
-                            clientY: clientY
-                        }));
-                } catch (e) {}
-                try {
-                    c.dispatchEvent(new MouseEvent('mouseup', {
-                            bubbles: true,
-                            cancelable: true,
-                            clientX: clientX,
-                            clientY: clientY
-                        }));
-                } catch (e) {}
-                try {
-                    c.dispatchEvent(new MouseEvent('click', {
-                            bubbles: true,
-                            cancelable: true,
-                            clientX: clientX,
-                            clientY: clientY
-                        }));
-                } catch (e) {}
-                try {
-                    if ('Touch' in window) {
-                        var touch = new Touch({
-                            identifier: Date.now() % 100000,
-                            target: c,
-                            clientX: clientX,
-                            clientY: clientY,
-                            screenX: clientX,
-                            screenY: clientY,
-                            pageX: clientX,
-                            pageY: clientY
-                        });
-                        var ts = [touch];
-                        c.dispatchEvent(new TouchEvent('touchstart', {
-                                bubbles: true,
-                                cancelable: true,
-                                touches: ts,
-                                targetTouches: ts,
-                                changedTouches: ts
-                            }));
-                        c.dispatchEvent(new TouchEvent('touchend', {
-                                bubbles: true,
-                                cancelable: true,
-                                touches: [],
-                                targetTouches: [],
-                                changedTouches: ts
-                            }));
-                    }
-                } catch (e) {}
-                try {
-                    window.dispatchEvent(new MouseEvent('click', {
-                            bubbles: true,
-                            cancelable: true,
-                            clientX: clientX,
-                            clientY: clientY
-                        }));
-                } catch (e) {}
-                return true;
-            }
-            function clickRectCenter(r) {
-                var cx = r.x + r.w / 2,
-                cy = r.y + r.h / 2;
-                return clickAtWin(jitter(cx - 2, cx + 2), jitter(cy - 2, cy + 2));
-            }
-            function getChipRects() {
-                var labs = collectLabels().filter(function (l) {
-                    return l.tl.indexOf(CHIP_TAIL_ROW4, Math.max(0, l.tl.length - CHIP_TAIL_ROW4.length)) !== -1;
-                });
-                var byVal = {};
-                for (var i = 0; i < labs.length; i++) {
-                    var it = labs[i];
-                    if (!it.val)
-                        continue;
-                    var cur = byVal[it.val];
-                    if (!cur || (it.w * it.h) > (cur.w * cur.h))
-                        byVal[it.val] = {
-                            val: it.val,
-                            x: it.x,
-                            y: it.y,
-                            w: it.w,
-                            h: it.h
-                        };
-                }
-                var arr = [];
-                for (var k in byVal) {
-                    arr.push(byVal[k]);
-                }
-                arr.sort(function (a, b) {
-                    return a.val - b.val;
-                });
-                return arr;
-            }
-            function getTargets() {
-                var btns = collectButtons();
-                function pick(key) {
-                    var cand = btns.filter(function (b) {
-                        return b.tl.indexOf('/footer/' + key, Math.max(0, b.tl.length - ('/footer/' + key).length)) !== -1;
-                    });
-                    if (!cand.length)
-                        return null;
-                    cand.sort(function (a, b) {
-                        return (b.w * b.h) - (a.w * a.h);
-                    });
-                    return cand[0];
-                }
-                return {
-                    chan: pick('chan'),
-                    le: pick('le')
-                };
-            }
-            async function pickChip(val, chips) {
-                var c = null;
-                for (var i = 0; i < chips.length; i++) {
-                    if (chips[i].val === val) {
-                        c = chips[i];
-                        break;
-                    }
-                }
-                if (!c) {
-                    console.warn('[cwPick] no chip', val);
-                    return false;
-                }
-                var ok = clickRectCenter(c);
-                await sleep(cfgBet.delayPick);
-                return ok;
-            }
-            async function tapSide(side) {
-                var tgts = getTargets();
-                var tgt = (side === 'CHAN' ? tgts.chan : tgts.le);
-                if (!tgt) {
-                    console.warn('[cwTapTarget] no target', side);
-                    return false;
-                }
-                var ok = clickRectCenter(tgt);
-                await sleep(cfgBet.delayTap);
-                return ok;
-            }
-            function makePlanSmart(amount) {
-                var chips = getChipRects();
-                var avail = [];
-                for (var i = 0; i < DENOMS_DESC.length; i++) {
-                    var v = DENOMS_DESC[i];
-                    for (var j = 0; j < chips.length; j++) {
-                        if (chips[j].val === v) {
-                            avail.push(v);
-                            break;
-                        }
-                    }
-                }
-                var plan = [],
-                rest = amount;
-                for (var ai = 0; ai < avail.length; ai++) {
-                    var v = avail[ai];
-                    if (rest <= 0)
-                        break;
-                    var cnt = Math.floor(rest / v);
-                    if (cnt > 0) {
-                        plan.push({
-                            val: v,
-                            count: cnt
-                        });
-                        rest -= cnt * v;
-                    }
-                }
-                return {
-                    plan: plan,
-                    rest: rest,
-                    chips: chips
-                };
-            }
-            var _busy = false;
-            async function cwBetSmart(side, amount) {
-                if (_busy) {
-                    console.warn('[CW BET] đang chạy');
-                    return;
-                }
-                _busy = true;
-                try {
-                    var amt = Math.max(0, Math.floor(amount || 0));
-                    var res = makePlanSmart(amt);
-                    var plan = res.plan,
-                    chips = res.chips;
-                    if (!plan.length) {
-                        console.warn('[CW BET] Không lập được plan');
-                        return;
-                    }
-                    for (var s = 0; s < plan.length; s++) {
-                        var step = plan[s];
-                        for (var i = 0; i < step.count; i++) {
-                            var okPick = await pickChip(step.val, chips);
-                            if (!okPick) {
-                                console.warn('[CW BET] pick failed', step.val);
-                            }
-                            var before = sampleTotalsNow();
-                            var applied = false;
-                            for (var attempt = 0; attempt < 3 && !applied; attempt++) {
-                                await tapSide(side);
-                                applied = await waitForTotalsChange(before, side, 1400);
-                                if (!applied && attempt === 1) {
-                                    await sleep(80);
-                                    await pickChip(step.val, chips);
-                                }
-                            }
-                            if (!applied) {
-                                var tgt = (side === 'CHAN' ? getTargets().chan : getTargets().le);
-                                if (tgt) {
-                                    var offsets = [[0, 0], [0.15, 0], [-0.15, 0], [0, 0.15], [0, -0.15]];
-                                    for (var k = 0; k < offsets.length; k++) {
-                                        var ox = offsets[k][0],
-                                        oy = offsets[k][1];
-                                        var r = {
-                                            x: tgt.x + tgt.w * 0.5 + tgt.w * ox,
-                                            y: tgt.y + tgt.h * 0.5 + tgt.h * oy,
-                                            w: 1,
-                                            h: 1
-                                        };
-                                        clickRectCenter(r);
-                                        await sleep(cfgBet.delayTap);
-                                        if (await waitForTotalsChange(before, side, 900)) {
-                                            applied = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                            await sleep(cfgBet.delayBetweenSteps);
-                        }
-                    }
-                } catch (e) {
-                    console.error('[CW BET][ERR]', e);
-                } finally {
-                    _busy = false;
-                }
-            }
-            window.cwBetSmart = cwBetSmart;
-
-            /* ---------------- cwBet classic ---------------- */
-            var ALLOWED_SET = {
-                '1000': 1,
-                '5000': 1,
-                '10000': 1,
-                '50000': 1,
-                '100000': 1,
-                '500000': 1,
-                '1000000': 1,
-                '5000000': 1
-            };
-            var DENOMS = [5000000, 1000000, 500000, 100000, 50000, 10000, 5000, 1000];
-
-            function active(n) {
-                return !n || n.activeInHierarchy !== false;
-            }
-            function hasBtn(n) {
-                return !!getComp(n, cc.Button);
-            }
-            function hasTgl(n) {
-                return !!getComp(n, cc.Toggle);
-            }
-            function clickable(n) {
-                return hasBtn(n) || hasTgl(n) || n._touchListener;
-            }
-            function emitClick(node) {
-                var b = getComp(node, cc.Button);
-                if (b && b.interactable !== false) {
+                    // Username (ƯU TIÊN ABS PATH trong tài liệu iframe)
+                    let valU = '';
                     try {
-                        cc.Component.EventHandler.emitEvents(b.clickEvents, new cc.Event.EventCustom('click', true));
-                    } catch (e) {}
-                    return true;
-                }
-                var t = getComp(node, cc.Toggle);
-                if (t && t.interactable !== false) {
-                    try {
-                        t.isChecked = true;
-                        if (t._emitToggleEvents)
-                            t._emitToggleEvents();
-                    } catch (e) {}
-                    return true;
-                }
-                try {
-                    var cam = cc.Camera.findCamera(node);
-                    var sp = cam.worldToScreen(node.convertToWorldSpaceAR(cc.v2()));
-                    var fs = cc.view.getFrameSize(),
-                    vs = cc.view.getVisibleSize();
-                    var x = sp.x * (fs.width / vs.width),
-                    y = sp.y * (fs.height / vs.height);
-                    var cvs = document.querySelector('canvas');
-                    cvs.dispatchEvent(new PointerEvent('pointerdown', {
-                            clientX: x,
-                            clientY: y,
-                            buttons: 1,
-                            bubbles: true
-                        }));
-                    cvs.dispatchEvent(new PointerEvent('pointerup', {
-                            clientX: x,
-                            clientY: y,
-                            buttons: 1,
-                            bubbles: true
-                        }));
-                    return true;
-                } catch (e) {
-                    return false;
-                }
-            }
-            function clickableOf(node, depth) {
-                depth = depth || 5;
-                var cur = node,
-                d = 0;
-                while (cur && d <= depth) {
-                    if (clickable(cur))
-                        return cur;
-                    cur = cur.parent;
-                    d++;
-                }
-                return node;
-            }
-
-            /* expose helpers cho reactor dùng */
-            window.collectButtons = window.collectButtons || collectButtons;
-            window.buildTextRects = window.buildTextRects || buildTextRects;
-            window.clickRectCenter = window.clickRectCenter || clickRectCenter;
-            window.emitClick = window.emitClick || emitClick;
-            window.clickableOf = window.clickableOf || clickableOf;
-
-            function NORM(s) {
-                return String(s || '').normalize('NFD').replace(/[\u0300-\u036F]/g, '').toUpperCase();
-            }
-            function findSide(side) {
-                var WANT = /CHAN/i.test(side) ? 'CHAN' : 'LE';
-                var hit = null;
-                (function walk(n) {
-                    if (hit || !active(n))
-                        return;
-                    var lb = getComp(n, cc.Label) || getComp(n, cc.RichText);
-                    var ok = false;
-                    if (lb && typeof lb.string !== 'undefined') {
-                        var s = NORM(lb.string);
-                        ok = (WANT === 'CHAN') ? /(CHAN|EVEN)\b/.test(s) : /(\bLE\b|ODD)\b/.test(s);
-                    }
-                    if (!ok) {
-                        var names = [],
-                        p;
-                        for (p = n; p; p = p.parent)
-                            names.push(p.name || '');
-                        var path = names.reverse().join('/').toLowerCase();
-                        ok = (WANT === 'CHAN') ? /chan|even/.test(path) : (/\ble\b|odd/.test(path));
-                    }
-                    if (ok && clickable(n)) {
-                        hit = n;
-                        return;
-                    }
-                    var kids = n.children || [];
-                    for (var i = 0; i < kids.length; i++)
-                        walk(kids[i]);
-                })(cc.director.getScene());
-                return hit;
-            }
-
-            function parseAmountLoose(txt) {
-                if (!txt)
-                    return null;
-                var s = NORM(txt);
-                var m = s.match(/(\d+)\s*(K|M)\b/);
-                if (m) {
-                    var v = +m[1];
-                    v *= (m[2] === 'K' ? 1e3 : 1e6);
-                    return ALLOWED_SET[String(v)] ? v : null;
-                }
-                m = s.match(/(\d{1,3}(?:[.,\s]\d{3})+|\d{4,9})/);
-                if (m) {
-                    var v2 = parseInt(m[1].replace(/[^\d]/g, ''), 10);
-                    if (v2 % 1000 === 0 && ALLOWED_SET[String(v2)])
-                        return v2;
-                }
-                return null;
-            }
-
-            async function tryOpenChipPanel() {
-                var key = /CHIP|COIN|PHINH|CHON|CHOOSE|MENH|BET/i;
-                var cand = null;
-                (function walk(n) {
-                    if (cand || !active(n))
-                        return;
-                    var l = (getComp(n, cc.Label) && getComp(n, cc.Label).string) || (getComp(n, cc.RichText) && getComp(n, cc.RichText).string) || '';
-                    var names = [],
-                    p;
-                    for (p = n; p; p = p.parent)
-                        names.push(p.name || '');
-                    var path = names.reverse().join('/');
-                    if (key.test(l) || key.test(path))
-                        if (clickable(n))
-                            cand = n;
-                    var kids = n.children || [];
-                    for (var i = 0; i < kids.length; i++)
-                        walk(kids[i]);
-                })(cc.director.getScene());
-                if (cand) {
-                    emitClick(clickableOf(cand));
-                    await sleep(220);
-                }
-            }
-
-            function wideScan() {
-                var q = [cc.director.getScene()],
-                best = {};
-                function getBest(val) {
-                    return best[String(val)];
-                }
-                function setBest(val, obj) {
-                    best[String(val)] = obj;
-                }
-                while (q.length) {
-                    var n = q.shift();
-                    if (!active(n))
-                        continue;
-                    var texts = [];
-                    var lb = getComp(n, cc.Label);
-                    if (lb && typeof lb.string !== 'undefined')
-                        texts.push(lb.string);
-                    var rt = getComp(n, cc.RichText);
-                    if (rt && typeof rt.string !== 'undefined')
-                        texts.push(rt.string);
-                    var sp = getComp(n, cc.Sprite);
-                    var sfn = sp && sp.spriteFrame ? sp.spriteFrame.name : '';
-                    if (sfn)
-                        texts.push(sfn);
-                    texts.push(n.name || '');
-                    for (var ti = 0; ti < texts.length; ti++) {
-                        var t = texts[ti];
-                        var val = parseAmountLoose(t);
-                        if (!val)
-                            continue;
-                        var score = 0;
-                        if (clickable(n))
-                            score += 6;
-                        var names = [],
-                        p;
-                        for (p = n; p; p = p.parent)
-                            names.push(p.name || '');
-                        var path = names.reverse().join('/').toLowerCase();
-                        if (/chip|coin|bet|chon|choose|phinh|menh/.test(path))
-                            score += 3;
-                        if (NORM(t).indexOf(String(val)) !== -1)
-                            score += 2;
-                        var hit = clickableOf(n);
-                        if (hit !== n)
-                            score += 1;
-                        var old = getBest(val);
-                        if (!old || score > old.score)
-                            setBest(val, {
-                                node: hit,
-                                score: score
-                            });
-                    }
-                    var kids = n.children || [];
-                    for (var i = 0; i < kids.length; i++)
-                        q.push(kids[i]);
-                }
-                var map = {};
-                for (var k in best) {
-                    map[k] = {
-                        entry: best[k].node,
-                        node: best[k].node
-                    };
-                }
-                return map;
-            }
-
-            var prevScan = window.cwScanChips;
-            window.cwScanChips = function () {
-                var m = prevScan ? (prevScan() || {}) : {};
-                if (m && Object.keys(m).length)
-                    return m;
-                m = wideScan();
-                if (!Object.keys(m).length)
-                    console.warn('[cwScanChips++] chưa thấy chip.');
-                else {
-                    var keys = Object.keys(m).map(function (x) {
-                        return +x;
-                    }).sort(function (a, b) {
-                        return a - b;
-                    });
-                    var rows = keys.map(function (v) {
-                        return {
-                            amount: v,
-                            node: (m[v] && m[v].node ? m[v].node.name : '?')
-                        };
-                    });
-                    try {
-                        console.table(rows);
-                    } catch (e) {
-                        console.log(rows);
-                    }
-                }
-                return m;
-            };
-
-            var prevFocus = window.cwFocusChip;
-            window.cwFocusChip = async function (amount) {
-                var val = Math.max(0, Math.floor(+amount || 0));
-                if (!ALLOWED_SET[String(val)])
-                    throw new Error('Mệnh giá không hợp lệ: ' + amount);
-                var map = window.cwScanChips() || {};
-                if (!map[String(val)]) {
-                    await tryOpenChipPanel();
-                    await sleep(180);
-                    map = wideScan();
-                }
-                if (!map[String(val)]) {
-                    var hit = null;
-                    (function walk(n) {
-                        if (hit || !active(n))
-                            return;
-                        var texts = [];
-                        var lb = getComp(n, cc.Label);
-                        if (lb && typeof lb.string !== 'undefined')
-                            texts.push(lb.string);
-                        var rt = getComp(n, cc.RichText);
-                        if (rt && typeof rt.string !== 'undefined')
-                            texts.push(rt.string);
-                        var sp = getComp(n, cc.Sprite);
-                        var sfn = sp && sp.spriteFrame ? sp.spriteFrame.name : '';
-                        if (sfn)
-                            texts.push(sfn);
-                        texts.push(n.name || '');
-                        for (var i = 0; i < texts.length; i++) {
-                            if (parseAmountLoose(texts[i]) === val) {
-                                hit = clickableOf(n);
-                                return;
-                            }
-                        }
-                        var kids = n.children || [];
-                        for (var k = 0; k < kids.length; k++)
-                            walk(kids[k]);
-                    })(cc.director.getScene());
-                    if (hit) {
-                        emitClick(hit);
-                        await sleep(140);
-                        var t = getComp(hit, cc.Toggle);
-                        if (t && !t.isChecked) {
-                            t.isChecked = true;
-                            if (t._emitToggleEvents)
-                                t._emitToggleEvents();
-                        }
-                        return true;
-                    }
-                    console.warn('[cwFocusChip++] không tìm thấy phỉnh:', val);
-                    return false;
-                }
-                var info = map[String(val)];
-                if (!info || !info.node) {
-                    console.warn('[cwFocusChip++] map thiếu node', val);
-                    return false;
-                }
-                emitClick(info.node);
-                await sleep(140);
-                var tg = getComp(info.node, cc.Toggle);
-                if (tg && !tg.isChecked) {
-                    tg.isChecked = true;
-                    if (tg._emitToggleEvents)
-                        tg._emitToggleEvents();
-                }
-                return true;
-            };
-
-            window.cwDumpChips = function () {
-                var m = wideScan();
-                var keys = Object.keys(m).map(function (x) {
-                    return +x;
-                }).sort(function (a, b) {
-                    return a - b;
-                });
-                var rows = keys.map(function (v) {
-                    return {
-                        amount: v,
-                        node: (m[v] && m[v].node ? m[v].node.name : '?')
-                    };
-                });
-                try {
-                    console.table(rows);
-                } catch (e) {
-                    console.log(rows);
-                }
-                return rows;
-            };
-
-            var old_cwBet = (typeof window.cwBet === 'function') ? window.cwBet.bind(window) : null;
-            var LOCK = (window.__cwBetLockFix = window.__cwBetLockFix || {
-                    busy: false
-                });
-            async function withLock(fn) {
-                if (LOCK.busy) {
-                    console.warn('[cwBet++] busy');
-                    return false;
-                }
-                LOCK.busy = true;
-                try {
-                    return await fn();
-                } finally {
-                    LOCK.busy = false;
-                }
-            }
-
-            function makePlan(X, availableSet) {
-                var rest = Math.max(0, Math.floor(+X || 0));
-                var plan = [];
-                for (var i = 0; i < DENOMS.length; i++) {
-                    var d = DENOMS[i];
-                    if (d <= rest && availableSet[d]) {
-                        var c = Math.floor(rest / d);
-                        if (c > 0) {
-                            plan.push({
-                                val: d,
-                                count: c
-                            });
-                            rest -= c * d;
-                        }
-                    }
-                }
-                return {
-                    plan: plan,
-                    rest: rest
-                };
-            }
-
-            // ================= KH24: helpers cho bet CHẴN / LẺ ===================
-            var KH24_TAIL_TOTAL_CHAN = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Center/GateContent/Chan_Gate/TotalBet/Amount';
-            var KH24_TAIL_TOTAL_LE = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Center/GateContent/Le_Gate/TotalBet/Amount';
-
-            function kh24ReadTotals() {
-                if (typeof moneyTailList !== 'function')
-                    return {
-                        chan: 0,
-                        le: 0
-                    };
-
-                function sumTail(tailExact) {
-                    var list = moneyTailList(tailExact) || [];
-                    var s = 0;
-                    for (var i = 0; i < list.length; i++)
-                        s += Number(list[i].val || 0);
-                    return s;
-                }
-
-                return {
-                    chan: sumTail(KH24_TAIL_TOTAL_CHAN),
-                    le: sumTail(KH24_TAIL_TOTAL_LE)
-                };
-            }
-
-            function kh24GetGates() {
-                if (typeof collectButtons !== 'function')
-                    return {
-                        chan: null,
-                        le: null
-                    };
-
-                var btns = collectButtons();
-                var chan = null,
-                le = null;
-
-                for (var i = 0; i < btns.length; i++) {
-                    var t = String(btns[i].tail || '').toLowerCase();
-                    if (t.indexOf('/center/gatecontent/chan_gate') !== -1)
-                        chan = btns[i];
-                    else if (t.indexOf('/center/gatecontent/le_gate') !== -1)
-                        le = btns[i];
-                }
-                return {
-                    chan: chan,
-                    le: le
-                };
-            }
-
-            function kh24GetChipButtons() {
-                if (typeof collectButtons !== 'function')
-                    return {};
-
-                var btns = collectButtons();
-                var map = {}; // { value -> rect }
-
-                for (var i = 0; i < btns.length; i++) {
-                    var b = btns[i];
-                    var tail = String(b.tail || '').toLowerCase();
-
-                    // MainGame/.../Center/ChipContent/Chip_Btn_50M
-                    var m = /chipcontent\/chip_btn_([0-9]+)(k|m)/i.exec(tail);
-                    if (!m)
-                        continue;
-
-                    var raw = parseInt(m[1], 10);
-                    var unit = m[2].toLowerCase();
-                    var val = raw * (unit === 'k' ? 1000 : 1000000);
-
-                    var cur = map[val];
-                    if (!cur || (b.w * b.h) > (cur.w * cur.h)) {
-                        map[val] = {
-                            x: b.x,
-                            y: b.y,
-                            w: b.w,
-                            h: b.h,
-                            tail: b.tail
-                        };
-                    }
-                }
-
-                return map;
-            }
-
-            function kh24MakePlan(amount, chipMap) {
-                var vals = Object.keys(chipMap)
-                    .map(function (v) {
-                        return parseInt(v, 10);
-                    })
-                    .sort(function (a, b) {
-                        return b - a;
-                    }); // lớn -> nhỏ
-
-                var plan = [];
-                var rest = amount;
-
-                for (var i = 0; i < vals.length; i++) {
-                    var v = vals[i];
-                    if (rest < v)
-                        continue;
-                    var cnt = Math.floor(rest / v);
-                    if (cnt <= 0)
-                        continue;
-                    plan.push({
-                        val: v,
-                        count: cnt
-                    });
-                    rest -= v * cnt;
-                }
-                return {
-                    plan: plan,
-                    rest: rest
-                };
-            }
-
-            function kh24ClickBox(box) {
-                if (!box)
-                    return false;
-
-                // 1) ưu tiên emitClick theo node/tail (giống console)
-                try {
-                    var node = null;
-
-                    if (typeof findNodeByTailCompat === 'function') {
-                        node = findNodeByTailCompat(box.tail);
-                    } else if (typeof window.__cw_findNodeByTailCompat === 'function') {
-                        node = window.__cw_findNodeByTailCompat(box.tail);
-                    } else if (typeof window.__abx_findNodeByTail === 'function') {
-                        node = window.__abx_findNodeByTail(box.tail);
-                    } else if (typeof window.findNodeByTail === 'function') {
-                        node = window.findNodeByTail(box.tail);
-                    }
-
-                    if (node) {
-                        node = (typeof clickableOf === 'function') ? clickableOf(node) : node;
-                        if (emitClick(node))
-                            return true;
-                    }
-                } catch (e) {
-                    console.warn('[KH24] kh24ClickBox emitClick error:', e);
-                }
-
-                // 2) fallback: clickRectCenter nếu có
-                if (typeof clickRectCenter === 'function')
-                    return clickRectCenter(box);
-
-                return false;
-            }
-
-            async function kh24BetSide(side, amount) {
-                side = String(side || '').toUpperCase();
-                amount = Math.max(0, Math.floor(amount || 0));
-
-                // KHÔNG cố bet nếu amount = 0 → coi như KH24 không xử lý
-                if (!amount)
-                    return undefined; // <-- ĐỔI: undefined = KH24 không làm gì
-
-                var gates = kh24GetGates();
-                var gate = (side === 'CHAN') ? gates.chan : gates.le;
-                if (!gate)
-                    return undefined; // <-- KH24 không đủ dữ liệu để chạy
-
-                var chips = kh24GetChipButtons();
-                if (!Object.keys(chips).length)
-                    return undefined; // <-- không có chip, cho cwBet fallback
-
-                var planInfo = kh24MakePlan(amount, chips);
-                var plan = planInfo.plan,
-                rest = planInfo.rest;
-                if (!plan.length || rest > 0)
-                    return undefined; // <-- không lập được plan, cho fallback
-
-                var appliedTotal = 0; // tổng tiền thực sự được cộng
-
-                for (var s = 0; s < plan.length; s++) {
-                    var step = plan[s];
-                    var chipBtn = chips[step.val];
-                    if (!chipBtn)
-                        continue;
-
-                    for (var n = 0; n < step.count; n++) {
-                        var before = kh24ReadTotals();
-
-                        kh24ClickBox(chipBtn);
-                        await sleep(220);
-
-                        kh24ClickBox(gate);
-                        await sleep(260);
-
-                        var after = kh24ReadTotals();
-                        var delta = (side === 'CHAN')
-                         ? (after.chan - before.chan)
-                         : (after.le - before.le);
-
-                        if (delta > 0)
-                            appliedTotal += delta;
-                    }
-                }
-
-                // Ở đây CHẮC CHẮN KH24 đã THỬ bắn (có gate, chip, plan)
-                // → trả TRUE/FALSE nhưng KHÔNG cho cwBet fallback nữa
-                return appliedTotal > 0;
-            }
-            // ================= END KH24 helpers ===================
-            window.cwBet = async function (side, amount) {
-                if (amount == null || isNaN(amount)) {
-                    if (old_cwBet)
-                        return old_cwBet(side);
-                    var btn = findSide(side);
-                    if (!btn) {
-                        console.warn('[cwBet++] không thấy nút cửa:', side);
-                        return false;
-                    }
-                    emitClick(btn);
-                    await sleep(80);
-                    return true;
-                }
-
-                side = String(side || '').toUpperCase();
-                var raw = Math.max(0, Math.floor(+amount || 0));
-                if (!raw) {
-                    console.warn('[cwBet++] amount=0');
-                    return false;
-                }
-                var X = raw - (raw % 1000);
-
-                return withLock(async function () {
-
-                    // --- ƯU TIÊN ĐƯỜNG KH24 CHO CHẴN / LẺ ---
-                    if (side === 'CHAN' || side === 'LE') {
-                        try {
-                            if (typeof kh24BetSide === 'function') {
-                                var kh24Result = await kh24BetSide(side, X);
-
-                                // KH24 đã THỰC SỰ xử lý (có gate/chip/plan) → không cho fallback nữa
-                                if (kh24Result !== undefined) {
-                                    return !!kh24Result; // true/false dựa trên appliedTotal
-                                }
-                                // Nếu kh24Result === undefined → KH24 chịu, cho phép rơi xuống fallback
-                            }
-                        } catch (e) {
-                            console.warn('[cwBet++][KH24] kh24BetSide error:', e);
-                        }
-                    }
-                    // --- HẾT KH24, FALLBACK VỀ LOGIC CHUNG ---
-                    var btn = findSide(side);
-                    if (!btn) {
-                        console.warn('[cwBet++] không thấy nút cửa:', side);
-                        return false;
-                    }
-
-                    var map = window.cwScanChips() || {};
-                    if (!Object.keys(map).length) {
-                        await tryOpenChipPanel();
-                        await sleep(200);
-                        map = wideScan();
-                    }
-                    var availSet = {};
-                    var ks = Object.keys(map);
-                    for (var i = 0; i < ks.length; i++)
-                        availSet[ks[i]] = 1;
-                    if (!Object.keys(availSet).length) {
-                        console.warn('[cwBet++] không thấy chip nào');
-                        return false;
-                    }
-
-                    if (availSet[String(X)]) {
-                        await window.cwFocusChip(X);
-                        emitClick(btn);
-                        await sleep(120);
-                        return true;
-                    }
-
-                    var res = makePlan(X, availSet);
-                    var plan = res.plan,
-                    rest = res.rest;
-                    if (!plan.length || rest > 0) {
-                        var haveKeys = Object.keys(availSet).map(function (x) {
-                            return +x;
-                        }).sort(function (a, b) {
-                            return b - a;
-                        });
-                        console.warn('[cwBet++] không thể tách đủ số tiền', {
-                            X: X,
-                            have: haveKeys
-                        });
-                        return false;
-                    }
-                    var planStr = [];
-                    for (var p = 0; p < plan.length; p++) {
-                        planStr.push(plan[p].count + '×' + plan[p].val.toLocaleString());
-                    }
-                    console.log('[cwBet++] plan:', planStr.join(' + '));
-
-                    for (var s = 0; s < plan.length; s++) {
-                        var step = plan[s];
-                        var ok = await window.cwFocusChip(step.val).catch(function () {
-                            return false;
-                        });
-                        if (!ok) {
-                            console.warn('[cwBet++] không focus được chip', step.val);
-                            return false;
-                        }
-                        for (var i2 = 0; i2 < step.count; i2++) {
-                            if (!emitClick(btn))
-                                console.warn('[cwBet++] click cửa thất bại', {
-                                    side: side,
-                                    denom: step.val,
-                                    turn: i2 + 1
-                                });
-                            await sleep(100);
-                        }
-                    }
-                    console.log('[cwBet++] DONE ►', {
-                        side: side,
-                        amount: X
-                    });
-                    return true;
-                });
-            };
-
-            // --- game open helpers (xóc đĩa sới, tài xỉu sới) ---
-            function __cw_clickGameByTails(tails) {
-                if (!tails || !tails.length)
-                    return '';
-
-                for (var i = 0; i < tails.length; i++) {
-                    var tail = tails[i];
-                    if (!tail)
-                        continue;
-
-                    var node = null;
-
-                    // 1) ưu tiên mấy hàm có sẵn nếu nó hoạt động
-                    if (typeof window.__cw_findNodeByTailCompat === 'function') {
-                        node = window.__cw_findNodeByTailCompat(tail);
-                    } else if (typeof window.__abx_findNodeByTail === 'function') {
-                        node = window.__abx_findNodeByTail(tail);
-                    } else if (typeof window.findNodeByTail === 'function') {
-                        node = window.findNodeByTail(tail);
-                    }
-
-                    // 2) FALLBACK GIỐNG CONSOLE: tự lần từ scene xuống
-                    if (!node && window.cc && cc.director && cc.director.getScene) {
-                        var scene = cc.director.getScene();
-                        var sceneName = scene && scene.name;
-                        var parts = tail.split('/').filter(Boolean);
-                        if (parts[0] === sceneName)
-                            parts.shift();
-
-                        var cur = scene;
-                        for (var j = 0; j < parts.length && cur; j++) {
-                            var name = parts[j];
-                            var kids = cur.children || cur._children || [];
-                            var found = null;
-                            for (var k = 0; k < kids.length; k++) {
-                                if (kids[k] && kids[k].name === name) {
-                                    found = kids[k];
-                                    break;
-                                }
-                            }
-                            if (!found) {
-                                cur = null;
-                                break;
-                            }
-                            cur = found;
-                        }
-                        node = cur;
-                    }
-
-                    if (!node) {
-                        console.log('[game-click] tail NOT FOUND (after fallback):', tail);
-                        continue;
-                    }
-
-                    // 3) click cocos
-                    var clicked = false;
-                    try {
-                        var btn = node.getComponent && node.getComponent(cc.Button);
-                        if (btn) {
-                            cc.Component.EventHandler.emitEvents(
-                                btn.clickEvents,
-                                new cc.Event.EventCustom('click', true));
-                            clicked = true;
-                        } else if (typeof node._onTouchEnded === 'function') {
-                            node._onTouchEnded();
-                            clicked = true;
-                        }
-                    } catch (e) {
-                        console.warn('[game-click] error when clicking', tail, e);
-                    }
-
-                    if (clicked) {
-                        console.log('[game-click] ✅ CLICKED tail =', tail, 'node =', node.name);
-                        return tail;
-                    } else {
-                        console.log('[game-click] node found but NOT clickable:', tail, 'node =', node.name);
-                    }
-                }
-
-                console.warn('[game-click] ❌ none clicked, need correct tail');
-                return '';
-            }
-
-            // 1) Xóc Đĩa Sới (bạn đã test ok)
-            window.__cw_openXocDiaSoi = function () {
-                return __cw_clickGameByTails([
-                        'MainGame/Canvas/widget-left/offset-left/scrollview-game/mask/view/content/page_game_XocDiaLive/btnXocDia'
-                    ]);
-            };
-
-            // 2) Tài Xỉu Sới live (TX SỚI CAY ME)
-            window.__cw_openTaiXiuSoiLive = function () {
-                return __cw_clickGameByTails([
-                        // cái này thấy trong scan200button của bạn (index 40)
-                        'MainGame/Canvas/widget-left/offset-left/scrollview-game/mask/view/content/page_game_TaiXiuSoi/btnXocDia',
-                        // phòng hờ nếu sau này nó dùng đúng tên "tai xiu live"
-                        'MainGame/Canvas/widget-left/offset-left/scrollview-game/mask/view/content/page_game_TaiXiuLive/btnTaiXiuLive'
-                    ]);
-            };
-
-            console.log('[READY] CW merged (compat + TextMap + Scan200Text + TK sequence + Totals by (x,tail) + standardized exports).');
-
-            /* ---------------- tick & controls ---------------- */
-            function statusByProg(p) {
-                // Ngưỡng chống rung cho số thực gần 0
-                var EPS = 0.001;
-
-                // Quy tắc ông chủ yêu cầu:
-                // - p > 0      → lấy text tail 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage'
-                // - p = 0      → lấy text tail 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting'
-                var TAIL_MSG = 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage';
-                var TAIL_WAIT = 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting';
-
-                // Chọn text theo tail, so khớp theo kiểu "đuôi" để chống thay đổi prefix
-                function pickTextByTailEnd(tailEnd) {
-                    try {
-                        var texts = buildTextRects(); // [{text,x,y,w,h,tail}, ...]
-                        var best = null,
-                        bestArea = -1;
-                        var tailEndL = String(tailEnd || '').toLowerCase();
-
-                        for (var i = 0; i < texts.length; i++) {
-                            var t = texts[i];
-                            var tl = String(t.tail || '').toLowerCase();
-                            if (!tl.endsWith(tailEndL))
-                                continue;
-
-                            var ar = (t.w || 0) * (t.h || 0);
-                            if (ar > bestArea) {
-                                best = t;
-                                bestArea = ar;
-                            }
-                        }
-                        return best ? String(best.text || '').trim() : '';
-                    } catch (e) {
-                        return '';
-                    }
-                }
-
-                p = +p || 0;
-                var tail = (p > EPS) ? TAIL_MSG : TAIL_WAIT;
-                var txt = pickTextByTailEnd(tail);
-
-                // Fallback nhẹ khi không tìm thấy text
-                if (txt)
-                    return txt;
-                return "";
-            }
-
-            // đặt ở cùng chỗ cũ của ông
-            var __cw_autoLoginBootAt = Date.now();
-            var __cw_autoLoginLast = 0;
-            var __cw_autoLoginPaused = false; // true = đang login rồi, đừng mở popup nữa
-
-            function __cw_autoLoginWatcher() {
-                // chưa có hàm click thì thôi
-                if (typeof window.__cw_clickLoginIfNeed !== 'function')
-                    return;
-
-                var now = Date.now();
-
-                // 1) chờ game ổn định 3s đầu để tránh case đã login sẵn mà header vẫn vẽ
-                if (now - __cw_autoLoginBootAt < 3000)
-                    return;
-
-                // 2) throttle: 1s gọi 1 lần thôi, khỏi spam
-                if (now - __cw_autoLoginLast < 1000)
-                    return;
-                __cw_autoLoginLast = now;
-
-                // 3) nếu đang pause vì đã login rồi thì kiểm tra xem nút header có quay lại không (logout)
-                if (__cw_autoLoginPaused) {
-                    var rCheck = window.__cw_clickLoginIfNeed();
-                    // nếu header quay lại (tức rCheck != 'header-hidden' && rCheck != 'no-header')
-                    // thì bật lại auto
-                    if (rCheck !== 'header-hidden' && rCheck !== 'no-header') {
-                        __cw_autoLoginPaused = false; // cho chạy lại ở vòng sau
-                    }
-                    return;
-                }
-
-                // 4) bình thường: thử click
-                var r = window.__cw_clickLoginIfNeed();
-
-                // nếu game báo là header đã ẩn hoặc không còn nút → coi như login xong → pause
-                if (r === 'header-hidden' || r === 'no-header') {
-                    __cw_autoLoginPaused = true;
-                }
-                // nếu r === 'popup-open' hay 'clicked-header' thì để vòng sau nó tự fill tiếp
-            }
-
-            // 1) hàm tìm node theo tail dùng chung cho toàn bộ file
-            // ĐẶT PHẦN NÀY LÊN TRÊN, trước __cw_closeAnnoyingPopups
-            if (!window.__cw_findNodeByTailCompat) {
-                window.__cw_findNodeByTailCompat = function (tail) {
-                    if (!tail)
-                        return null;
-
-                    // ưu tiên các hàm đã có sẵn do bạn inject ở nơi khác
-                    if (window.__abx_findNodeByTail)
-                        return window.__abx_findNodeByTail(tail);
-                    if (window.findNodeByTail)
-                        return window.findNodeByTail(tail);
-
-                    // fallback đi từ scene cocos
-                    if (!(window.cc && cc.director && cc.director.getScene))
-                        return null;
-                    const scene = cc.director.getScene();
-                    if (!scene)
-                        return null;
-
-                    const sceneName = scene.name;
-                    const parts = String(tail).split('/').filter(Boolean);
-                    let i = 0;
-                    if (parts[0] === sceneName)
-                        i = 1;
-
-                    let node = scene;
-                    for (; i < parts.length; i++) {
-                        const name = parts[i];
-                        const kids = node.children || node._children || [];
-                        let found = null;
-                        for (let j = 0; j < kids.length; j++) {
-                            if (kids[j] && kids[j].name === name) {
-                                found = kids[j];
-                                break;
-                            }
-                        }
-                        if (!found)
-                            return null;
-                        node = found;
-                    }
-                    return node;
-                };
-            }
-
-            // đóng các popup thông báo KH24 nếu có
-            function __cw_closeAnnoyingPopups() {
-                try {
-                    const LOGIN_ROOT = 'MainGame/Canvas/loginView';
-
-                    // thứ tự từ cũ tới mới
-                    const CLOSE_TAILS = [
-                        'MainGame/Canvas/popupView-noHide/EventPopup/CloseBtn',
-                        'MainGame/Canvas/popupView-noHide/offset-banner/Close_Btn',
-                        'MainGame/Canvas/popupView-noHide/DailyPopup/Close_Btn',
-                        // cái bạn vừa thêm cho popup “Thời gian từ 12h trưa...”
-                        'MainGame/Canvas/Xocdia_MD_View_Ngang/PopupManager/ThongBaoPopup/CloseBtn'
-                    ];
-
-                    // luôn dùng 1 hàm tìm node đã được định nghĩa sẵn bên ngoài
-                    var findNodeByTailCompat = (
-                        window.__abx_findNodeByTail ||
-                        window.findNodeByTail ||
-                        window.__cw_findNodeByTailCompat ||
-                        null);
-                    if (!findNodeByTailCompat)
-                        return;
-
-                    // nếu đang ở màn login thì không đóng để khỏi phá thao tác người dùng
-                    const loginNode = findNodeByTailCompat(LOGIN_ROOT);
-                    if (loginNode && loginNode.activeInHierarchy !== false) {
-                        return;
-                    }
-
-                    // hàm click chung
-                    function clickNode(node) {
-                        if (!node)
-                            return false;
-
-                        // không click mấy node đang ẩn
-                        if (node.activeInHierarchy === false)
-                            return false;
-
-                        // ưu tiên cc.Button
-                        try {
-                            const btn = node.getComponent && node.getComponent(cc.Button);
-                            if (btn) {
-                                cc.Component.EventHandler.emitEvents(
-                                    btn.clickEvents,
-                                    new cc.Event.EventCustom('click', true));
-                                return true;
-                            }
-                        } catch (e) {}
-
-                        // fallback cho mấy node tự xử lý touch
-                        try {
-                            if (typeof node._onTouchEnded === 'function') {
-                                node._onTouchEnded();
-                                return true;
-                            }
-                        } catch (e) {}
-
-                        return false;
-                    }
-
-                    for (let i = 0; i < CLOSE_TAILS.length; i++) {
-                        const tail = CLOSE_TAILS[i];
-                        const n = findNodeByTailCompat(tail);
-                        // không có → thử tail khác
-                        if (!n)
-                            continue;
-                        // có nhưng đang ẩn → thử tail khác
-                        if (n.activeInHierarchy === false)
-                            continue;
-
-                        if (clickNode(n)) {
-                            // chỉ log cái đóng được và thoát
-                            // console.log('[__cw_closeAnnoyingPopups] closed', tail);
-                            break;
-                        }
-                    }
-                } catch (e) {
-                    // nuốt lỗi để không làm hỏng tick
-                    // console.warn('[__cw_closeAnnoyingPopups] err', e);
-                }
-            }
-
-            function tick() {
-                // 1) lo đăng nhập trước
-                __cw_autoLoginWatcher();
-                // 2) rồi mới dọn popup thông báo
-                __cw_closeAnnoyingPopups();
-                var p = collectProgress();
-                if (p != null)
-                    S.prog = p;
-                var st = (typeof __cw_readStatusSmart === 'function') ? __cw_readStatusSmart() : null;
-                if (st)
-                    S.status = st; // chỉ cập nhật khi đọc được 'locked' | 'open'
-                var T = totals(S);
-                S._lastTotals = T;
-                // 3) TK sequence (ổn định vài nhịp đầu, rồi mới chỉ ghép phần mới)
-                var tk = readTKSeq();
-                var boardSeq = (tk && tk.seq) ? tk.seq : '';
-
-                if (boardSeq) {
-                    if (!S.seq || seqBootTicks < 3) {
-                        // Giai đoạn khởi động: tin hoàn toàn vào bảng SoiCầu
-                        seqBootTicks++;
-                        // Dùng mergeSeq với prev = '' để cắt còn 50 số cuối & lọc 0-4
-                        S.seq = mergeSeq('', boardSeq);
-                    } else {
-                        // Sau khi đã ổn định thì chỉ ghép phần mới vào đuôi
-                        S.seq = mergeSeq(S.seq, boardSeq);
-                    }
-                } else {
-                    // Bảng kết quả đang TRỐNG → chuỗi kết quả cũng phải trống
-                    S.seq = '';
-                    seqBootTicks = 0; // lần sau có dữ liệu lại boot từ đầu
-                }
-
-                // keep focus
-                if (S.focus) {
-                    var all = collectLabels().filter(function (l) {
-                        return l.tail === S.focus.tail;
-                    });
-                    if (all.length) {
-                        var prev = S.focus.rect || {
-                            x: 0,
-                            y: 0,
-                            w: 0,
-                            h: 0
-                        };
-                        all.sort(function (a, b) {
-                            var da = (a.x - prev.x) * (a.x - prev.x) + (a.y - prev.y) * (a.y - prev.y);
-                            var db = (b.x - prev.x) * (b.x - prev.x) + (b.y - prev.y) * (b.y - prev.y);
-                            return da - db;
-                        });
-                        var r = all[0];
-                        S.focus.rect = {
-                            x: r.x,
-                            y: r.y,
-                            w: r.w,
-                            h: r.h
-                        };
-                        var txt = String(r.text || '');
-                        S.focus.txt = txt;
-                        S.focus.val = (moneyOf(txt) != null ? moneyOf(txt) : (/^\d$/.test(txt) ? +txt : null));
-                        showFocus(S.focus.rect);
-                    }
-                }
-
-                if (S.showMoney) {
-                    S.money = buildMoneyRects();
-                    renderMoney();
-                }
-                if (S.showText) {
-                    S.text = buildTextRects();
-                    renderText();
-                }
-                updatePanel();
-            }
-            function start() {
-                if (S.running)
-                    return;
-                S.running = true;
-                S.timer = setInterval(tick, S.tickMs);
-                tick();
-                setStateUI();
-            }
-            function stop() {
-                if (!S.running)
-                    return;
-                S.running = false;
-                try {
-                    clearInterval(S.timer);
-                } catch (e) {}
-                S.timer = null;
-                setStateUI();
-            }
-
-            panel.querySelector('#bStart').onclick = function () {
-                start();
-            };
-            panel.querySelector('#bStop').onclick = function () {
-                stop();
-            };
-            panel.querySelector('#bMoney').onclick = function () {
-                S.showMoney = !S.showMoney;
-                layerMoney.style.display = S.showMoney ? '' : 'none';
-                if (S.showMoney) {
-                    S.money = buildMoneyRects();
-                    renderMoney();
-                } else {
-                    S.focus = null;
-                    showFocus(null);
-                }
-                panel.style.zIndex = '2147483647';
-            };
-            panel.querySelector('#bBet').onclick = function () {
-                S.showBet = !S.showBet;
-                layerBet.style.display = S.showBet ? '' : 'none';
-                if (S.showBet) {
-                    renderBet();
-                } else {
-                    S.focus = null;
-                    showFocus(null);
-                }
-                panel.style.zIndex = '2147483647';
-            };
-            panel.querySelector('#bText').onclick = function () {
-                S.showText = !S.showText;
-                layerText.style.display = S.showText ? '' : 'none';
-                if (S.showText) {
-                    S.text = buildTextRects();
-                    renderText();
-                } else {
-                    S.focus = null;
-                    showFocus(null);
-                }
-                panel.style.zIndex = '2147483647';
-            };
-            panel.querySelector('#bButton').onclick = function () {
-                S.showButton = !S.showButton;
-                layerButton.style.display = S.showButton ? '' : 'none';
-                if (S.showButton) {
-                    renderButton();
-                } else {
-                    S.focus = null;
-                    showFocus(null);
-                }
-                panel.style.zIndex = '2147483647';
-            };
-            panel.querySelector('#bScanMoney').onclick = function () {
-                scan200Money();
-            };
-            panel.querySelector('#bScanBet').onclick = function () {
-                scan200Bet();
-            };
-            panel.querySelector('#bScanText').onclick = function () {
-                scan200Text();
-            };
-            panel.querySelector('#bScanButton').onclick = function () {
-                scan200Button();
-            };
-
-            panel.querySelector('#bBetC').addEventListener('click', async function () {
-                var n = parseFloat(document.getElementById('iStake').value || '1');
-                var amount = Math.max(0, Math.floor((isFinite(n) ? n : 1))) * 1000;
-                try {
-                    window.chrome && window.chrome.webview && window.chrome.webview.postMessage && window.chrome.webview.postMessage(JSON.stringify({
-                            abx: 'cwBet',
-                            side: 'CHAN',
-                            amount: amount,
-                            ts: Date.now()
-                        }));
-                } catch (e) {}
-                try {
-                    await cwBet('CHAN', amount);
-                } catch (e) {}
-            }, true);
-            panel.querySelector('#bBetL').addEventListener('click', async function () {
-                var n = parseFloat(document.getElementById('iStake').value || '1');
-                var amount = Math.max(0, Math.floor((isFinite(n) ? n : 1))) * 1000;
-                try {
-                    window.chrome && window.chrome.webview && window.chrome.webview.postMessage && window.chrome.webview.postMessage(JSON.stringify({
-                            abx: 'cwBet',
-                            side: 'LE',
-                            amount: amount,
-                            ts: Date.now()
-                        }));
-                } catch (e) {}
-                try {
-                    await cwBet('LE', amount);
-                } catch (e) {}
-            }, true);
-
-            function onKey(e) {
-                var t = e.target;
-                if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable))
-                    return;
-                var k = (e.key || '').toLowerCase();
-                if (k === 's')
-                    (S.running ? stop() : start());
-                else if (k === 'm')
-                    panel.querySelector('#bMoney').click();
-                else if (k === 'b')
-                    panel.querySelector('#bBet').click();
-                else if (k === 't')
-                    panel.querySelector('#bText').click();
-            }
-            document.addEventListener('keydown', onKey);
-            start();
-
-            function teardown() {
-                try {
-                    stop();
-                } catch (e) {}
-                try {
-                    document.removeEventListener('keydown', onKey);
-                } catch (e) {}
-                try {
-                    root.remove();
-                } catch (e) {}
-            }
-            window[NS] = {
-                teardown: teardown
-            };
-
-            /* === CW Bridge: push snapshot -> C#, receive bet <- C# =================== */
-        ;
-            (() => {
-                'use strict';
-
-                // xác định đang ở màn hình game (cocos) hay không
-                function __cw_isGameUi() {
-                    try {
-                        // 1) nếu cocos đã lên scene thì coi như là game
-                        if (window.cc && cc.director && cc.director.getScene) {
-                            var sc = cc.director.getScene();
-                            if (sc && sc.name) {
-                                var n = sc.name.toLowerCase();
-                                // bạn có thể siết thêm theo tên
-                                if (n.indexOf('xocdia') !== -1 || n.indexOf('xd') !== -1) {
-                                    return true;
-                                }
-                            }
-                            // có scene rồi thì coi như game
-                            return true;
-                        }
-
-                        // 2) fallback theo host
-                        var h = (location && location.hostname ? location.hostname : '').toLowerCase();
-                        if (h.startsWith('games.'))
-                            return true;
-
-                        // 3) còn lại coi như home
-                        return false;
-                    } catch (e) {
-                        return false;
-                    }
-                }
-
-                /* ... GIỮ NGUYÊN TOÀN BỘ PHẦN TRÊN CỦA BẠN ...
-                (từ đầu file tới ngay trước đoạn "/* === CW Bridge ..." cũ)
-                Mình không thay gì ở đó, mình chỉ dán lại nguyên phần dưới
-                vì phần trên của bạn dài và đang chạy ok.
-                 */
-
-                /* === CW Bridge: push snapshot -> C#, receive bet <- C# =================== */
-                (function () {
-                    try {
-                        if (!window.chrome || !chrome.webview || !chrome.webview.postMessage) {
-                            console.warn('[CW] chrome.webview.postMessage not available');
+                        const abs = findByTailIn(ABS_USERNAME_TAIL, doc);
+                        if (abs) {
+                            valU = (abs.value != null ? String(abs.value)
+                                 : (abs.getAttribute && abs.getAttribute('value')) || abs.textContent || '').trim();
                         }
                     } catch (_) {}
 
-                    function safePost(obj) {
+                    if (!valU) {
+                        const pickU = doc && doc.querySelector('.base-dropdown-header__user__name, .full-name, .display-name, .username .full-name, [class*="display-name"]');
+                        valU = pickU ? (pickU.textContent || '').trim() : '';
+                    }
+                    if (valU)
+                        updateUsername(valU);
+
+                    // Balance
+                    const pickB = doc && doc.querySelector(
+                            '.base-dropdown-header__user__amount, .user__amount, .user-amount, .balance, [class*="amount"]');
+                    if (pickB) {
+                        const raw = (pickB.textContent || '').replace(/\s+/g, ' ').trim();
+                        const m = raw.match(/(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:\s*(VND|đ|₫|k|K|m|M))?/);
+                        if (m)
+                            updateBalance(m[1].replace(/[^\d]/g, ''));
+                    }
+                } catch (_) {}
+
+            } catch (_) {}
+            setTimeout(cleanup, 50);
+        };
+
+        iframe.onerror = cleanup;
+        iframe.src = paths[idx];
+        (document.body || document.documentElement).appendChild(iframe);
+    }
+
+    // Cấu hình đề xuất:
+    CFG.autoRetryOnBoot = false; // KHÔNG tự chạy khi boot
+
+    function startAutoRetry(force = false) {
+        if (isGameHost())
+            return; // không auto-retry ở domain games.*
+        if (typeof canRunAuthLoop === 'function' && !canRunAuthLoop())
+            return; //
+        if (S.username && !force)
+            return;
+
+        // dọn timer cũ (nếu có)
+        if (S.autoTimer) {
+            clearTimeout(S.autoTimer);
+            S.autoTimer = null;
+        }
+        S.retries = 0;
+        S.fetchDone = false;
+
+        let interval = CFG.autoRetryIntervalMs || 5000; // 5s mặc định
+
+        const loop = async() => {
+            // đã có username → dừng
+            if (S.username) {
+                S.autoTimer = null;
+                return;
+            }
+
+            // nếu đạt trần cố gắng → dừng
+            if (S.retries >= CFG.maxRetries) {
+                S.autoTimer = null;
+                return;
+            }
+
+            // 1) thử DOM nhanh ngay trong trang
+            if (!S.username) {
+                const fast = findUserFromDOM && findUserFromDOM();
+                if (fast) {
+                    updateUsername(fast);
+                    S.autoTimer = null;
+                    return;
+                }
+            }
+
+            // 2) thử fetch trang profile (êm hơn) — CHỈ 1 LẦN
+            if (!S.fetchDone) {
+                let ok = false;
+                try {
+                    ok = await tryFetchUserProfile();
+                } catch (_) {}
+                S.fetchDone = true; // không lặp lại fetch ở các vòng sau
+                if (ok) {
+                    S.autoTimer = null;
+                    return;
+                }
+            }
+            probeIframeOnce();
+
+            // backoff tăng dần, tối đa 60s
+            interval = Math.min(interval * 2, 60000);
+            S.autoTimer = setTimeout(loop, interval);
+        };
+
+        // chạy vòng đầu tiên
+        S.autoTimer = setTimeout(loop, 0);
+    }
+
+    function pumpAuthProbe(durationMs = 12000, step = 350) {
+        if (!canRunAuthLoop())
+            return; // ⬅️ chỉ cho phép auto-retry khi thấy "Đăng nhập"
+        const t0 = Date.now();
+        if (S.pumpTimer)
+            clearInterval(S.pumpTimer);
+        S.pumpTimer = setInterval(async() => {
+            try {
+                // 1) DOM trước
+                const u = findUserFromDOM();
+                if (u)
+                    updateUsername(u);
+                const b = findBalance();
+                if (b)
+                    updateBalance(b);
+
+                // 2) Nếu vẫn chưa có username, thử fetch 1 lần (êm)
+                if (!S.username && !S.fetchDone) {
+                    S.fetchDone = true;
+                    try {
+                        await tryFetchUserProfile();
+                    } catch (_) {}
+                }
+
+                // 3) Nếu đã có tên + (có hoặc chưa có số dư), cứ tiếp tục đọc số dư trong khoảng thời gian
+                //    Khi đã có tên và đã có lần đọc số dư hợp lệ, hoặc quá thời gian → dừng
+                if ((S.username && S.balance) || (Date.now() - t0 > durationMs)) {
+                    clearInterval(S.pumpTimer);
+                    S.pumpTimer = null;
+                }
+            } catch (_) {}
+        }, step);
+    }
+
+    function startUsernameWatchdog() {
+        if (!canRunAuthLoop())
+            return;
+        // clear trước
+        if (S.watchdogTimer) {
+            clearInterval(S.watchdogTimer);
+            S.watchdogTimer = null;
+        }
+        S.missStreak = 0;
+
+        const tick = async() => {
+            if (isGameHost())
+                return; // chỉ chạy ở Home
+            if (isClearlyLoggedOut()) { // đang logout rõ ràng -> reset miss
+                S.missStreak = 0;
+                return;
+            }
+
+            // 1) Ưu tiên đọc DOM nhanh
+            const u = findUserFromDOM();
+            if (u) {
+                updateUsername(u);
+                S.missStreak = 0;
+            } else {
+                // 2) Không thấy -> bơm đọc ngắn + thỉnh thoảng fetch
+                S.missStreak++;
+                pumpAuthProbe(5000, 200);
+                if (!S.fetchDone && (S.missStreak % 2 === 1)) {
+                    try {
+                        await tryFetchUserProfile();
+                    } catch (_) {}
+                }
+                // 3) Quá 3 nhịp vẫn "?" -> gọi auto-retry theo đề xuất
+                if (S.missStreak >= (CFG.maxWatchdogMiss || 3)) {
+                    S.fetchDone = false;
+                    startAutoRetry(true);
+                    S.missStreak = 0;
+                }
+            }
+
+            // Luôn cố cập nhật số dư theo DOM mỗi nhịp
+            const b = findBalance();
+            if (b)
+                updateBalance(b);
+            // Nếu vẫn chưa có balance, thỉnh thoảng thử kéo từ /account/*
+            if (!S.balance && (S.missStreak % 3 === 0)) {
+                try {
+                    await tryFetchUserProfile();
+                } catch (_) {}
+            }
+
+        };
+
+        S.watchdogTimer = setInterval(tick, CFG.watchdogMs || 2000);
+    }
+
+    function ensureObserver() {
+        if (!canRunAuthLoop())
+            return; // ⬅️ chưa mở cổng thì không đọc DOM
+        try {
+            if (S.mo)
+                return S.mo; // chỉ gắn 1 lần
+            let t = null;
+            const run = () => {
+                t = null;
+
+                // 1) DOM trước
+                if (!S.username) {
+                    const v = findUserFromDOM();
+                    if (v)
+                        updateUsername(v);
+                }
+                const b = findBalance();
+                if (b && b !== S.balance)
+                    updateBalance(b);
+
+                // 2) Nếu DOM vừa thay đổi, thử “bơm” đọc nhanh (SPA thường render trễ)
+                try {
+                    onAuthStateMaybeChanged('mut'); // ⬅️ kích hoạt fetch/iframe fallback khi cần
+                    pumpAuthProbe(4000, 300); // ⬅️ bơm 4s để chốt Username/Balance sớm
+                } catch (_) {}
+            };
+
+            const onMut = () => {
+                clearTimeout(t);
+                t = setTimeout(run, 150);
+                // Cài mute telemetry cho những iframe same-origin mới xuất hiện
+                try {
+                    document.querySelectorAll('iframe:not([data-abx-tmuted="1"])').forEach(f => {
                         try {
-                            if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function') {
-                                chrome.webview.postMessage(JSON.stringify(obj));
-                            } else {
-                                parent.postMessage(obj, '*');
+                            const w = f.contentWindow;
+                            if (w && w.location && w.location.origin === location.origin) {
+                                installTelemetryMutesInFrame(w);
+                                f.setAttribute('data-abx-tmuted', '1');
+                                f.addEventListener('load', () => installTelemetryMutesInFrame(f.contentWindow));
                             }
-                        } catch (e) {
-                            try {
-                                parent.postMessage(obj, '*');
-                            } catch (_) {}
+                        } catch (_) {}
+                    });
+                } catch (_) {}
+
+            };
+            const mo = new MutationObserver(onMut);
+            // 👇 BẮT BUỘC: bắt mọi thay đổi DOM để cập nhật username/balance
+            mo.observe(document.documentElement, {
+                subtree: true,
+                childList: true,
+                characterData: true,
+                attributes: true
+            });
+            onAuthStateMaybeChanged('mo'); // phát hiện trạng thái có thể thay đổi
+            S.mo = mo;
+            return mo;
+        } catch (_) {}
+    }
+
+    // ======= Overlay handling (close / peel / force click) =======
+    function tryCloseCommonOverlays() {
+        // Chỉ đóng các popup/modal thực sự, bỏ qua phần tử nằm trong header/nav để không chạm dropdown Casino/PP
+        const shouldSkip = (el) => {
+            try {
+                return !!el.closest('.header, .header_nav, .header_nav_list, .nav_item, .nav_item_btn, .dropdown_menu');
+            } catch (_) {
+                return false;
+            }
+        };
+
+        document.querySelectorAll('.swal2-container, .swal2-popup, .swal2-backdrop-show, .modal.show, .modal-backdrop')
+        .forEach(n => {
+            if (!n || shouldSkip(n))
+                return;
+            const c = n.querySelector('.swal2-close, .btn-close, .close, [data-action="close"], .swal2-confirm');
+            if (c) {
+                try {
+                    c.click();
+                } catch (_) {}
+            }
+        });
+    }
+
+    // NEW: tìm root popup theo tail & auto đóng các popup đã biết (thông báo / quảng cáo)
+    function findPopupRootFromTail(tail) {
+        if (!tail)
+            return null;
+
+        let root = null;
+
+        // 1) thử tail tuyệt đối
+        try {
+            root = findByTail(tail);
+        } catch (_) {}
+        if (root && root.isConnected)
+            return root;
+
+        // 2) fallback: lấy segment cuối cùng trong tail -> selector theo class
+        try {
+            const parts = String(tail).split('/').filter(Boolean);
+            const last = parts[parts.length - 1] || '';
+            const m = last.match(/^([a-zA-Z0-9_-]+)((?:\.[a-zA-Z0-9_-]+)+)/);
+            if (m) {
+                const css = m[1] + m[2]; // ví dụ: div.tcg_modal_wrap.publicModal
+                root = document.querySelector(css);
+                if (root && root.isConnected)
+                    return root;
+            }
+        } catch (_) {}
+
+        // 3) fallback đặc biệt cho publicModal RR88
+        try {
+            if (String(tail).includes('publicModal')) {
+                root = document.querySelector('.tcg_modal_wrap.publicModal');
+                if (root && root.isConnected)
+                    return root;
+            }
+        } catch (_) {}
+
+        return null;
+    }
+
+    // Helper: tìm nút close (X / Close / Exit...) gần một popup root
+    function findCloseButtonForRoot(root) {
+        if (!root || !(root instanceof HTMLElement))
+            return null;
+
+        const CLOSE_SELECTOR =
+            '.v--modal-close, .modal__close, .modal-close, .btn-close, .close, ' +
+            '[data-action="close"], [data-dismiss="modal"]';
+
+        const tryQuery = (node) => {
+            try {
+                if (!node || !node.querySelector)
+                    return null;
+                const el = node.querySelector(CLOSE_SELECTOR);
+                if (el && el.offsetParent !== null)
+                    return el;
+            } catch (_) {}
+            return null;
+        };
+
+        // 1) Ưu tiên tìm ngay bên trong root
+        let target = tryQuery(root);
+        if (target)
+            return target;
+
+        // 2) Thử trên các ancestor gần (box, overlay...)
+        let p = root.parentElement;
+        while (p && p !== document.body) {
+            target = tryQuery(p);
+            if (target)
+                return target;
+            p = p.parentElement;
+        }
+
+        // 3) Fallback: tìm các element nhỏ có text / label giống nút đóng
+        const vw = Math.max(innerWidth || 0, document.documentElement.clientWidth || 0);
+        const vh = Math.max(innerHeight || 0, document.documentElement.clientHeight || 0);
+
+        const cand = [];
+        const pushIfGood = (el) => {
+            if (!el || !(el instanceof HTMLElement))
+                return;
+            if (el.offsetParent === null)
+                return;
+
+            const r = el.getBoundingClientRect();
+            if (!r || r.width <= 8 || r.height <= 8 ||
+                r.width > vw * 0.5 || r.height > vh * 0.5)
+                return;
+
+            const raw = (el.innerText || el.textContent || '').trim();
+            const normRaw = norm(raw);
+            const mix = (normRaw + ' ' +
+                norm(el.getAttribute && el.getAttribute('aria-label') || '') + ' ' +
+                norm(el.getAttribute && el.getAttribute('title') || '') + ' ' +
+                norm(el.className || '') + ' ' +
+                norm(el.id || '')).trim();
+
+            const hasXOnly = /^[x×✕✖✗✘]{1,2}$/i.test(raw);
+            const hasKeyword =
+                /(^x$|\bdong\b|\btat\b|\bthoat\b|close|exit|cancel|\bhuy\b)/.test(mix);
+
+            if (!hasXOnly && !hasKeyword)
+                return;
+
+            cand.push({
+                el,
+                r
+            });
+        };
+
+        try {
+            root.querySelectorAll('button, [role="button"], a, div, span, i')
+            .forEach(pushIfGood);
+        } catch (_) {}
+
+        p = root.parentElement;
+        let depth = 0;
+        while (p && p !== document.body && depth < 3) {
+            try {
+                p.querySelectorAll('button, [role="button"], a, div, span, i')
+                .forEach(pushIfGood);
+            } catch (_) {}
+            p = p.parentElement;
+            depth++;
+        }
+
+        if (!cand.length)
+            return null;
+
+        // Chọn candidate gần góc phải trên màn hình (thường là nút X)
+        const tx = vw * 0.95;
+        const ty = vh * 0.05;
+        let best = cand[0];
+        let bestScore = Infinity;
+
+        cand.forEach(c => {
+            const cx = c.r.x + c.r.width / 2;
+            const cy = c.r.y + c.r.height / 2;
+            const dx = Math.abs(cx - tx);
+            const dy = Math.abs(cy - ty);
+            const area = c.r.width * c.r.height;
+            const score = dx + dy + area * 0.01;
+            if (score < bestScore) {
+                bestScore = score;
+                best = c;
+            }
+        });
+
+        return best && best.el ? best.el : null;
+    }
+
+    function forceClosePublicModalRR88() {
+        let closed = false;
+        try {
+            const nodes = document.querySelectorAll('.tcg_modal_wrap.publicModal');
+            nodes.forEach(root => {
+                // không hiển thị thì bỏ qua
+                if (!root || root.offsetParent === null)
+                    return;
+
+                // 1) Ưu tiên tìm nút X / Close / Exit gần popup
+                let target = findCloseButtonForRoot(root);
+
+                // 2) Nếu vẫn chưa có, fallback nút "Kiểm tra" (logic cũ)
+                if (!target) {
+                    try {
+                        const candBtns =
+                            root.querySelectorAll('button, .base-button.btn, [role="button"], a');
+                        for (const el of candBtns) {
+                            const t = norm(textOf(el));
+                            if (t && t.includes('kiem tra')) {
+                                target = el;
+                                break;
+                            }
+                        }
+                    } catch (_) {}
+                }
+
+                // 3) Nếu vẫn chưa có -> click nền overlay
+                if (!target) {
+                    const bg = root.closest('.v--modal-background-click');
+                    const ov = root.closest('.v--modal-overlay');
+                    target = bg || ov || root;
+                }
+
+                if (target && typeof target.click === 'function') {
+                    // Ghi log để xem trong log C#
+                    console.debug(
+                        '[HomeWatch] forceClosePublicModalRR88 click',
+                        target.tagName,
+                        norm(textOf(target) || ''));
+                    try {
+                        target.click();
+                        closed = true;
+                    } catch (_) {}
+                }
+            });
+        } catch (_) {}
+        return closed;
+    }
+
+    function closeKnownPopupRoots() {
+        if (!CLOSE_POPUP_ROOT_TAILS || !CLOSE_POPUP_ROOT_TAILS.length)
+            return false;
+
+        let closed = false;
+
+        // Ưu tiên đóng popup "Thông báo RR88" theo class, không phụ thuộc tail tuyệt đối
+        if (forceClosePublicModalRR88())
+            closed = true;
+
+        CLOSE_POPUP_ROOT_TAILS.forEach((tail) => {
+            try {
+                const root = findPopupRootFromTail(tail);
+                if (!root || root.offsetParent === null)
+                    return;
+
+                // 1) Ưu tiên nút X / Close / Exit... gần popup
+                let target = findCloseButtonForRoot(root);
+
+                // 2) Nếu chưa có thì quét thêm các button có text đóng
+                if (!target) {
+                    try {
+                        const btns =
+                            root.querySelectorAll('button, .base-button.btn, [role="button"], a');
+                        const candid = Array.from(btns).find(el => {
+                            const t = norm(textOf(el));
+                            return t.includes('dong') || t.includes('tat') ||
+                            t.includes('close') || t.includes('ok') ||
+                            t.includes('exit') || t.includes('xac nhan');
+                        });
+                        if (candid)
+                            target = candid;
+                    } catch (_) {}
+                }
+
+                // 3) Nếu vẫn chưa có -> click vùng nền overlay (v--modal-background-click)
+                if (!target) {
+                    let p = root;
+                    while (p && p !== document.body) {
+                        if (/\bv--modal-background-click\b/.test(p.className) ||
+                            /\bmodal-backdrop\b/.test(p.className)) {
+                            target = p;
+                            break;
+                        }
+                        p = p.parentElement;
+                    }
+                }
+
+                // 4) Cuối cùng: click luôn root
+                if (!target)
+                    target = root;
+
+                if (target && typeof target.click === 'function') {
+                    console.debug(
+                        '[HomeWatch] closeKnownPopupRoots click',
+                        target.tagName,
+                        norm(textOf(target) || ''),
+                        'tail=',
+                        tail);
+                    try {
+                        target.click();
+                        closed = true;
+                    } catch (_) {}
+                }
+            } catch (_) {}
+        });
+
+        return closed;
+    }
+
+    function tempHideBigOverlays(target, holdMs = 0) {
+        const removed = [];
+        const vw = innerWidth,
+        vh = innerHeight;
+        document.querySelectorAll('body *').forEach(n => {
+            if (!(n instanceof HTMLElement))
+                return;
+            if ($panel() && ($panel().contains(n) || n.contains($panel())))
+                return;
+            const s = getComputedStyle(n);
+            if (!/(fixed|sticky|absolute)/.test(s.position))
+                return;
+            const zi = parseFloat(s.zIndex || '0');
+            if (isNaN(zi) || zi < 1000)
+                return;
+            if (s.visibility === 'hidden' || s.display === 'none')
+                return;
+            const r = n.getBoundingClientRect();
+            if (r.width * r.height < vw * vh * 0.2)
+                return; // chỉ ẩn những lớp che lớn >20% màn hình
+            if (n.contains(target) || target.contains(n))
+                return;
+            const prevDisp = n.style.display,
+            prevVis = n.style.visibility;
+            n.setAttribute('data-abx-hide', '1');
+            n.style.setProperty('display', 'none', 'important');
+            removed.push({
+                n,
+                prevDisp,
+                prevVis
+            });
+        });
+        const restore = () => removed.forEach(x => {
+            x.n.style.display = x.prevDisp;
+            x.n.style.visibility = x.prevVis;
+            x.n.removeAttribute('data-abx-hide');
+        });
+        if (holdMs > 0)
+            setTimeout(restore, holdMs);
+        return {
+            restore
+        };
+    }
+    function isVisibleAndClickable(el) {
+        if (!el || !el.isConnected)
+            return false;
+        const s = getComputedStyle(el);
+        if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity || '1') < 0.05)
+            return false;
+        const r = el.getBoundingClientRect();
+        if (r.width <= 1 || r.height <= 1)
+            return false;
+        return true;
+    }
+    function peelAndClick(el, {
+        holdMs = 600
+    } = {}) {
+        if (!el)
+            return;
+        try {
+            el.scrollIntoView({
+                block: 'center',
+                inline: 'center'
+            });
+        } catch (_) {}
+        const r = el.getBoundingClientRect();
+        const cx = Math.max(0, Math.min(innerWidth - 1, Math.round(r.left + Math.max(1, r.width) / 2)));
+        const cy = Math.max(0, Math.min(innerHeight - 1, Math.round(r.top + Math.max(1, r.height) / 2)));
+
+        tryCloseCommonOverlays();
+        const hidden = tempHideBigOverlays(el, holdMs);
+
+        const peeled = [];
+        const peelOnce = () => {
+            const top = document.elementFromPoint(cx, cy);
+            if (!top)
+                return false;
+            if (top === el || el.contains(top))
+                return true;
+            const prevPE = top.style.pointerEvents;
+            top.style.setProperty('pointer-events', 'none', 'important');
+            peeled.push({
+                node: top,
+                prevPE
+            });
+            return false;
+        };
+        let ok = false,
+        guard = 25;
+        while (guard-- > 0) {
+            if (peelOnce()) {
+                ok = true;
+                break;
+            }
+        }
+
+        const restorePE = () => peeled.reverse().forEach(k => k.node.style.pointerEvents = k.prevPE);
+        const doClick = () => {
+            try {
+                el.click();
+            } catch (_) {}
+            try {
+                const target = document.elementFromPoint(cx, cy) || el;
+                ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(t => {
+                    target.dispatchEvent(new MouseEvent(t, {
+                            bubbles: true,
+                            cancelable: true,
+                            clientX: cx,
+                            clientY: cy,
+                            view: window
+                        }));
+                });
+            } catch (_) {}
+        };
+        try {
+            doClick();
+        } finally {
+            setTimeout(restorePE, 0); /* big overlays restore tự động sau holdMs */
+        }
+    }
+
+    // Bọc tiện ích theo tên bạn yêu cầu
+    function closeAdsAndCovers() {
+        tryCloseCommonOverlays();
+        closeKnownPopupRoots(); // NEW: đóng thêm các popup/thông báo theo tail cố định
+        // Không giữ ẩn quá lâu tại trang Home, chỉ peel khi click
+    }
+
+
+    // ====== Scan/Click "Baccarat nhieu ban" qua bridge frame/top ======
+    (function setupBaccFrameBridge() {
+        if (window.__abx_bacc_bridge_installed)
+            return;
+        window.__abx_bacc_bridge_installed = true;
+
+        const logInfo = (msg) => { try { updateInfo && updateInfo(msg); } catch (_) { console.log(msg); } };
+        try { logInfo('[baccBridge] installed at ' + (location && location.href ? location.href : '')); } catch (_) {}
+        const norm = (s) => (s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+        const buildTail = (el, doc) => {
+            if (!el || !el.tagName)
+                return '';
+            const segs = [];
+            let n = el;
+            const root = doc.documentElement;
+            while (n && n.nodeType === 1 && n !== root && segs.length < 10) {
+                const tag = n.tagName.toLowerCase();
+                const parent = n.parentElement;
+                let idx = 1;
+                if (parent) {
+                    const sib = Array.from(parent.children).filter(c => c.tagName === n.tagName);
+                    idx = sib.indexOf(n) + 1;
+                }
+                segs.push(tag + '[' + idx + ']');
+                n = parent;
+            }
+            return segs.reverse().join('/');
+        };
+
+        const scanBaccCards = (doc, scope) => {
+            const hits = [];
+            const nodes = Array.from(doc.querySelectorAll(
+                '.game-card, [class*="game-card"], ' +
+                '.game-item, [class*="game-item"], ' +
+                '.casino_detail .game-list .game-item, .casino_detail .game-list li, ' +
+                '.casino_list .game-card, li, [aria-label], [title], [data-name], [data-game-name], img[alt], img[title]'
+            ));
+            nodes.forEach((card, idx) => {
+                const txt = norm([
+                    card.innerText || '',
+                    card.getAttribute('aria-label') || '',
+                    card.getAttribute('title') || '',
+                    card.getAttribute('data-name') || '',
+                    card.getAttribute('data-game-name') || ''
+                ].join(' '));
+                const imgTxt = norm(
+                    Array.from(card.querySelectorAll('img[alt],img[title]'))
+                        .map(img => img.alt || img.title || '')
+                        .join(' ')
+                );
+                const t = txt + ' ' + imgTxt;
+                const hasBacc = /\bbaccarat\b/.test(t);
+                const hasMulti = /(nhieu\s*ban|multi[\s_-]*table|multi[\s_-]*baccarat)/i.test(t);
+                if (!hasBacc && !hasMulti)
+                    return;
+                let score = 0;
+                if (hasBacc) score += 6;
+                if (hasMulti) score += 6;
+                if (/nhieu\s*ban/i.test(t)) score += 2;
+                if (/multi/.test(t)) score += 1;
+                if (idx <= 2) score += 1;
+                const r = card.getBoundingClientRect();
+                hits.push({
+                    scope,
+                    score,
+                    tail: buildTail(card, doc),
+                    text: (card.innerText || '').trim().slice(0, 80),
+                    attrs: ((card.getAttribute('aria-label') || '') + ' ' + (card.getAttribute('title') || '')).trim().slice(0, 80),
+                    rect: Math.round(r.x) + ',' + Math.round(r.y) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height)
+                });
+            });
+            hits.sort((a, b) => b.score - a.score);
+            return hits;
+        };
+
+        const frameHandler = (evt) => {
+            try {
+                const data = evt && evt.data || {};
+                const cmd = data.cmd || '';
+                if (cmd === 'abx_scan_bacc') {
+                    const hits = scanBaccCards(document, 'frame');
+                    evt.source && evt.source.postMessage({ cmd: 'abx_scan_bacc_result', hits, idx: data.idx }, '*');
+                } else if (cmd === 'abx_click_bacc_tail') {
+                    const tail = data.tail || '';
+                    let el = null;
+                    try { el = findByTail ? findByTail(tail) : null; } catch (_) {}
+                    if (!el) {
+                        const parts = tail.split('/').filter(Boolean);
+                        const last = parts[parts.length - 1] || '';
+                        const m = last.match(/^([a-z0-9_-]+)(\.[a-z0-9_.-]+)?/i);
+                        if (m) {
+                            const sel = m[2] ? (m[1] + m[2].replace(/\./g, '.')) : m[1];
+                            el = document.querySelector(sel);
                         }
                     }
-
-                    var _pushTimer = null;
-                    var _lastJson = '';
-
-                    function shallowChanged(obj) {
-                        var s = '';
-                        try {
-                            s = JSON.stringify(obj);
-                        } catch (_) {}
-                        if (s && s !== _lastJson) {
-                            _lastJson = s;
-                            return true;
+                    let res = 'not-found';
+                    if (el) {
+                        const btn = el.querySelector('a,button') || el;
+                        try { peelAndClick ? peelAndClick(btn, { holdMs: 400 }) : btn.click(); res = 'ok'; }
+                        catch (e) {
+                            try { btn.click(); res = 'ok'; } catch (e2) { res = 'err:' + (e2 && e2.message || e2); }
                         }
-                        return false;
                     }
+                    evt.source && evt.source.postMessage({ cmd: 'abx_click_bacc_tail_result', tail, result: res, idx: data.idx }, '*');
+                }
+            } catch (_) {}
+        };
 
-                    function readProgressVal() {
-                        try {
-                            var cp = (typeof collectProgress === 'function') ? collectProgress() : null;
-                            if (typeof cp === 'number')
-                                return cp;
-                            if (cp && typeof cp.val === 'number')
-                                return cp.val;
-                            if (cp && typeof cp.progress === 'number')
-                                return cp.progress;
-                        } catch (_) {}
-                        return null;
-                    }
+        if (window !== window.top) {
+            window.addEventListener('message', frameHandler, false);
+        } else {
+            window.__abx_scanBaccFrames = () => {
+                const iframes = Array.from(document.querySelectorAll('iframe'));
+                iframes.forEach((ifr, idx) => {
+                    try { ifr.contentWindow && ifr.contentWindow.postMessage({ cmd: 'abx_scan_bacc', idx }, '*'); } catch (_) {}
+                });
+                const hitsTop = scanBaccCards(document, 'top');
+                window.__abx_scan_bacc_hits = hitsTop;
+                logInfo('[scanBacc] top hits=' + hitsTop.length + ', iframes=' + iframes.length);
+                try { console.table(hitsTop.slice(0, 10)); } catch (_) {}
+                return hitsTop;
+            };
+            window.__abx_clickBaccTailInFrames = (tail) => {
+                const iframes = Array.from(document.querySelectorAll('iframe'));
+                iframes.forEach((ifr, idx) => {
+                    try { ifr.contentWindow && ifr.contentWindow.postMessage({ cmd: 'abx_click_bacc_tail', tail, idx }, '*'); } catch (_) {}
+                });
+            };
+            window.addEventListener('message', (evt) => {
+                const data = evt && evt.data || {};
+                if (data.cmd === 'abx_scan_bacc_result' && data.hits) {
+                    window.__abx_scan_bacc_hits = (window.__abx_scan_bacc_hits || []).concat(data.hits);
+                    logInfo('[scanBacc frame] +' + data.hits.length + ' (total=' + window.__abx_scan_bacc_hits.length + ')');
+                    try { console.table(data.hits.slice(0, 10)); } catch (_) {}
+                    try { updateInfo && updateInfo('[scanBacc frames] +' + data.hits.length); } catch (_) {}
+                }
+                if (data.cmd === 'abx_click_bacc_tail_result') {
+                    try { updateInfo && updateInfo('clickBacc tail ' + data.tail + ': ' + data.result); } catch (_) {}
+                }
+            }, false);
+        }
+    })();
 
-                    function readTotalsSafe() {
+    // === Login helpers: auto click nút "Đăng nhập" cho tới khi popup hiện ra ===
+    function clickLoginButtonOnce() {
+        // Nếu đã đăng nhập thì không click nữa
+        if (isLoggedInFromDOM()) {
+            return false;
+        }
+        // Nếu popup đăng nhập đã hiện, không bấm nút header nữa
+        if (isLoginPopupVisible()) {
+            return false;
+        }
+        const btn = findLoginButton();
+        if (btn && isVisibleAndClickable(btn)) {
+            peelAndClick(btn, {
+                holdMs: 300
+            });
+            return true;
+        }
+        return false;
+    }
+
+    // API public để host (C#) có thể bấm nút "Đăng nhập" ngay trên popup đăng nhập
+    // Trả về true nếu tìm được nút và đã click, false nếu không tìm thấy.
+    window.__cw_clickPopupLogin = function () {
+        try {
+            // Nếu đã đăng nhập hoặc nút/khối logout/username đã hiển thị → bỏ qua
+            if (isLoggedInFromDOM()) {
+                return false;
+            }
+
+            // 1) Xác định root của popup đăng nhập
+            let root = null;
+            try {
+                if (typeof TAIL_LOGIN_POPUP_ROOT === 'string' && TAIL_LOGIN_POPUP_ROOT) {
+                    root = findByTail(TAIL_LOGIN_POPUP_ROOT);
+                }
+            } catch (_) {}
+
+            if (!root || !root.isConnected) {
+                root = document.querySelector(LOGIN_POPUP_SELECTOR);
+            }
+
+            // Nếu popup chưa mở thì không làm gì
+            if (!root || !root.isConnected || root.offsetParent === null) {
+                // fallback: tìm modal chứa input password
+                const pwParent = Array.from(document.querySelectorAll('input[type="password"]'))
+                    .map(i => {
                         try {
-                            return (typeof sampleTotalsNow === 'function') ? sampleTotalsNow() : null;
+                            return i.closest(LOGIN_POPUP_SELECTOR);
                         } catch (_) {
                             return null;
                         }
-                    }
-
-                    function readSeqSafe() {
-                        // ƯU TIÊN lấy từ lịch sử S.seq (đã merge + cắt 50 kết quả)
-                        try {
-                            if (typeof S === 'object' && typeof S.seq === 'string' && S.seq.length) {
-                                return S.seq;
-                            }
-                        } catch (_) {}
-
-                        // Fallback: nếu vì lý do gì đó S.seq chưa có thì đọc trực tiếp từ bảng
-                        try {
-                            if (typeof readTKSeq === 'function') {
-                                var r = readTKSeq();
-                                return (r && r.seq) ? r.seq : '';
-                            }
-                        } catch (_) {}
-
-                        return '';
-                    }
-
-                    // === thay thế đoạn window.__cw_startPush cũ bằng đoạn này ===
-                    window.__cw_startPush = function (tickMs) {
-                        try {
-                            if (!tickMs || tickMs < 200)
-                                tickMs = 400;
-
-                            // hủy timer cũ nếu có
-                            if (window.__cw_pushTimer) {
-                                clearInterval(window.__cw_pushTimer);
-                                window.__cw_pushTimer = null;
-                            }
-
-                            // helper: tìm node theo tail nếu ở file lớn bạn đã có sẵn
-                            function findNodeSafe(tail) {
-                                if (!tail)
-                                    return null;
-                                if (window.__abx_findNodeByTail)
-                                    return window.__abx_findNodeByTail(tail);
-                                if (window.findNodeByTail)
-                                    return window.findNodeByTail(tail);
-
-                                // fallback rất an toàn
-                                if (!(window.cc && cc.director && cc.director.getScene))
-                                    return null;
-                                var scene = cc.director.getScene();
-                                if (!scene)
-                                    return null;
-                                var sceneName = scene.name;
-                                var parts = String(tail).split('/').filter(Boolean);
-                                if (parts[0] === sceneName)
-                                    parts.shift();
-
-                                var node = scene;
-                                for (var i = 0; i < parts.length; i++) {
-                                    var name = parts[i];
-                                    var kids = node.children || node._children || [];
-                                    var found = null;
-                                    for (var j = 0; j < kids.length; j++) {
-                                        if (kids[j] && kids[j].name === name) {
-                                            found = kids[j];
-                                            break;
-                                        }
-                                    }
-                                    if (!found)
-                                        return null;
-                                    node = found;
-                                }
-                                return node;
-                            }
-
-                            // helper: nhận diện đang ở HOME hay GAME
-                            function detectUiMode() {
-                                try {
-                                    var sceneName = '';
-                                    if (window.cc && cc.director && cc.director.getScene) {
-                                        var sc = cc.director.getScene();
-                                        if (sc)
-                                            sceneName = sc.name || '';
-                                    }
-
-                                    // ưu tiên 1: có loginView -> xem như HOME
-                                    var loginNode = findNodeSafe('MainGame/Canvas/loginView');
-                                    if (loginNode && loginNode.activeInHierarchy !== false) {
-                                        return {
-                                            ui: 'home',
-                                            via: 'loginView',
-                                            scene: sceneName
-                                        };
-                                    }
-
-                                    // ưu tiên 2: có list game bên trái -> cũng là HOME
-                                    var listNode =
-                                        findNodeSafe('MainGame/Canvas/widget-left/offset-left/scrollview-game')
-                                         || findNodeSafe('MainGame/Canvas/widget-left/offset-left/scrollview-game/mask/view/content');
-
-                                    if (listNode && listNode.activeInHierarchy !== false) {
-                                        return {
-                                            ui: 'home',
-                                            via: 'game-list',
-                                            scene: sceneName
-                                        };
-                                    }
-
-                                    // ưu tiên 3: có view xóc đĩa ngang -> GAME
-                                    var xdNode = findNodeSafe('MainGame/Canvas/Xocdia_MD_View_Ngang');
-                                    if (xdNode && xdNode.activeInHierarchy !== false) {
-                                        return {
-                                            ui: 'game',
-                                            via: 'xocdia-view',
-                                            scene: sceneName
-                                        };
-                                    }
-
-                                    // fallback: nhìn scene name
-                                    if (sceneName && sceneName.indexOf('Xocdia') !== -1) {
-                                        return {
-                                            ui: 'game',
-                                            via: 'scene-name',
-                                            scene: sceneName
-                                        };
-                                    }
-
-                                    return {
-                                        ui: 'unknown',
-                                        via: 'none',
-                                        scene: sceneName
-                                    };
-                                } catch (e) {
-                                    return {
-                                        ui: 'unknown',
-                                        via: 'err:' + e.message,
-                                        scene: ''
-                                    };
-                                }
-                            }
-
-                            // --- Tails cho nickname ở GAME, PHIÊN & status (đa biến thể) ---
-                            const TAIL_NICK_GAME = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Info_Content/PlayerName/DisplayName_Lb';
-                            const TAIL_NICK_HOME = 'MainGame/Canvas/widget-top-view/wrapAvatar/lbNickName';
-
-                            // NEW: thử nhiều tail cho "Phiên cược"
-                            const TAIL_SESSION_CANDS = [
-                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/SessionContent/Session_Lb', // layout cũ
-                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Info_Content/Session_Lb', // KH24/biến thể mới
-                                'MainGame/Canvas/Xocdia_MD_View_Doc/Top/SessionContent/Session_Lb', // layout dọc
-                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Info_Content/SessionContent/Session_Lb' // một số bàn khác
-                            ];
-
-                            // Status có thể nằm ở nhiều nơi
-                            const TAIL_STATUS_CANDS = [
-                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Info_Content/Status_Lb',
-                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Info_Content/Lock_Lb',
-                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/StatusContent/Status_Lb',
-                            ];
-
-                            // đọc text từ node: ưu tiên cc.Label, rồi đến cc.RichText
-                            function getLabelText(node) {
-                                try {
-                                    var lb = node && node.getComponent && node.getComponent(cc.Label);
-                                    if (lb && typeof lb.string !== 'undefined')
-                                        return String(lb.string);
-                                    var rt = node && node.getComponent && node.getComponent(cc.RichText);
-                                    if (rt && typeof rt.string !== 'undefined')
-                                        return String(rt.string);
-                                } catch (_) {}
-                                return null;
-                            }
-
-                            // helper đọc text theo tail (đúng bản, KHÔNG để rơi lỗi rồi trả null)
-                            function readLabelByTail(tail) {
-                                try {
-                                    var n = findNodeSafe(tail);
-                                    if (!n)
-                                        return null;
-                                    var t = getLabelText(n);
-                                    return (t == null ? null : String(t).trim());
-                                } catch (_) {
-                                    return null;
-                                }
-                            }
-
-                            // nickname: ưu tiên GAME, fallback HOME
-                            function readNickSmart() {
-                                return readLabelByTail(TAIL_NICK_GAME) || readLabelByTail(TAIL_NICK_HOME) || null;
-                            }
-
-                            // PHIÊN CƯỢC: chỉ đọc khi đang ở GAME, ưu tiên đúng tail SessionContent/Session_Lb
-                            function readSessionText() {
-                                try {
-                                    var ui = detectUiMode();
-                                    if (!ui || ui.ui !== 'game')
-                                        return null;
-
-                                    // 1) ƯU TIÊN đúng đuôi SessionContent/Session_Lb như ông chủ yêu cầu
-                                    var PREFERRED = 'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/SessionContent/Session_Lb';
-                                    var s0 = readLabelByTail(PREFERRED);
-                                    if (s0 && /^#\d{3,}$/.test(s0.trim()))
-                                        return s0.trim();
-
-                                    // 2) Các biến thể còn lại (nếu có)
-                                    for (var i = 0; i < TAIL_SESSION_CANDS.length; i++) {
-                                        var tail = TAIL_SESSION_CANDS[i];
-                                        if (tail === PREFERRED)
-                                            continue; // đã thử ở trên
-                                        var s = readLabelByTail(tail);
-                                        if (s && /^#\d{3,}$/.test(s.trim()))
-                                            return s.trim();
-                                    }
-
-                                    // 3) Fallback an toàn: CHỈ quét label có tail kết thúc bằng 'session_lb'
-                                    //    để tránh nhặt nhầm các label '#' ở nơi khác
-                                    var labs = collectLabels();
-                                    var best = null;
-                                    for (var k = 0; k < labs.length; k++) {
-                                        var tl = String(labs[k].tail || '').toLowerCase();
-                                        if (tl.endsWith('/session_lb') || tl.indexOf('sessioncontent/session_lb') !== -1) {
-                                            var txt = String(labs[k].text || '').trim();
-                                            if (/^#\d{3,}$/.test(txt)) {
-                                                best = txt;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    return best || null;
-                                } catch (_) {
-                                    return null;
-                                }
-                            }
-
-                            window.__cw_pushTimer = setInterval(function () {
-                                try {
-                                    // 1) đọc tiến trình & status (ưu tiên text)
-                                    var p = readProgressVal();
-                                    var st = (typeof __cw_readStatusSmart === 'function') ? __cw_readStatusSmart() : null;
-
-                                    // NEW: ánh xạ prog theo status: open = 1, locked = 0, còn lại fallback p cũ
-                                    var prog = p;
-                                    if (st === 'open') {
-                                        prog = 1;
-                                    } else if (st === 'locked') {
-                                        prog = 0;
-                                    }
-                                    var session = readSessionText();
-                                    var uiInfo = detectUiMode();
-                                    if (!uiInfo) {
-                                        uiInfo = {
-                                            ui: 'unknown',
-                                            via: 'none',
-                                            scene: ''
-                                        };
-                                    }
-
-                                    // 2) nick thông minh: GAME trước, HOME sau; rồi cache vào S.lastNick
-                                    var nickNow = readNickSmart() || readHomeNick() || '';
-                                    if (nickNow)
-                                        S.lastNick = nickNow;
-
-                                    // 3) totals an toàn, và nếu đang ở HOME thì chèn số dư màn HOME vào A/rawA
-                                    var tots = readTotalsSafe() || {};
-                                    if (uiInfo.ui === 'home') {
-                                        var hb = readHomeBalance(); // { val, raw }
-                                        if (hb && hb.val != null) {
-                                            tots.A = hb.val;
-                                            tots.rawA = hb.raw;
-                                        }
-                                    }
-
-                                    // 4) cập nhật UI nội bộ cho panel
-                                    S.status = st;
-                                    S.sessionText = session || null;
-
-                                    // 5) gói snapshot đẩy sang C#
-                                    var snap = {
-                                        abx: 'tick',
-                                        prog: prog, // dùng 0/1 theo status
-                                        totals: tots, // dùng totals đã được patch ở HOME
-                                        seq: readSeqSafe(),
-                                        status: String(st || ''),
-                                        session: session || undefined, // giữ nguyên định dạng cũ
-                                        nick: S.lastNick || '',
-                                        ui: uiInfo.ui,
-                                        ui_via: uiInfo.via,
-                                        scene: uiInfo.scene,
-                                        ts: Date.now()
-                                    };
-
-                                    // 6) gửi nếu thay đổi (đỡ spam kênh webview)
-                                    if (shallowChanged(snap)) {
-                                        if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
-                                            window.chrome.webview.postMessage(JSON.stringify(snap));
-                                        } else if (window.external && typeof window.external.notify === 'function') {
-                                            window.external.notify(JSON.stringify(snap));
-                                        } else {
-                                            // không có kênh gửi thì bỏ qua
-                                        }
-                                    }
-                                } catch (err) {
-                                    // nuốt lỗi để không làm vỡ vòng tick
-                                    // console.warn('[__cw_startPush] tick err', err);
-                                }
-                            }, tickMs);
-
-                        } catch (e) {
-                            // console.warn('[__cw_startPush] init err', e);
-                        }
-                    };
-
-                    window.__cw_stopPush = function () {
-                        if (window.__cw_pushTimer) {
-                            clearInterval(window.__cw_pushTimer);
-                            window.__cw_pushTimer = null;
-                        }
-                        return 'stopped';
-                    };
-
-                    // hàm bet bridge: CHỈ báo thành công khi thực sự có thay đổi tiền
-                    window.__cw_bet = async function (side, amount) {
-                        try {
-                            side = (String(side || '').toUpperCase() === 'CHAN') ? 'CHAN' : 'LE';
-                            var amt = Math.max(0, Math.floor(Number(amount) || 0));
-
-                            if (typeof cwBet !== 'function') {
-                                throw new Error('cwBet not found');
-                            }
-
-                            var before = (typeof readTotalsSafe === 'function')
-                             ? (readTotalsSafe() || {})
-                             : null;
-
-                            // gọi core cwBet (có KH24 bên trong)
-                            var okCore = await cwBet(side, amt);
-
-                            // kiểm tra tổng tiền có đổi không
-                            var changed = false;
-                            if (before && typeof waitForTotalsChange === 'function') {
-                                try {
-                                    changed = await waitForTotalsChange(before, side, 1600);
-                                } catch (_) {}
-                            }
-
-                            // CHỈ báo lỗi "no_totals_change" khi:
-                            //  - đã đọc được snapshot ban đầu (before != null)
-                            //  - core cwBet trả về false
-                            //  - và tổng tiền thực sự không đổi
-                            if (before && !okCore && !changed) {
-                                // không đặt được → báo lỗi cho C#
-                                safePost({
-                                    abx: 'bet_error',
-                                    side: side,
-                                    amount: amt,
-                                    error: 'no_totals_change',
-                                    ts: Date.now()
-                                });
-                                return 'fail';
-                            }
-
-                            // chỉ khi đặt OK mới báo [BET] cho C#
-
-                            safePost({
-                                abx: 'bet',
-                                side: side,
-                                amount: amt,
-                                ts: Date.now()
-                            });
-                            return 'ok';
-                        } catch (err) {
-                            safePost({
-                                abx: 'bet_error',
-                                side: side,
-                                amount: amount,
-                                error: String(err && err.message || err),
-                                ts: Date.now()
-                            });
-                            return 'fail';
-                        }
-                    };
-
-                    /* === LOGIN HELPER (ĐÃ SỬA) ======================================= */
-                    (function () {
-                        /* =================== AUTO LOGIN WATCHER =================== */
-                        /* các tail bạn đang dùng */
-                        var HEADER_LOGIN_TAIL = 'MainGame/Canvas/widget-header/group-login/btn-Login';
-                        var POPUP_LOGIN_BTN_TAIL = 'MainGame/Canvas/loginView/offset-login/btn-Login';
-                        var POPUP_ROOT_TAIL = 'MainGame/Canvas/loginView';
-
-                        /* chỗ này mình làm biến toàn cục để C# có thể bắn vào */
-                        // mặc định rỗng – nếu bạn muốn hard-code thì sửa ngay ở đây
-                        window.__cw_loginUser = window.__cw_loginUser || '';
-                        window.__cw_loginPass = window.__cw_loginPass || '';
-                        window.__cw_loginRemember = window.__cw_loginRemember || false;
-
-                        /* nhận message từ C# để cập nhật user/pass
-                        bên C# chỉ cần post:{ "__cw_cmd": "set_login", "user": "...", "pass": "..." }
-                         */
-                        (function () {
-                            function onMsg(ev) {
-                                var d = ev && (ev.data || ev);
-                                if (typeof d === 'string') {
-                                    try {
-                                        d = JSON.parse(d);
-                                    } catch (_) {
-                                        d = null;
-                                    }
-                                }
-                                if (!d || d.__cw_cmd !== 'set_login')
-                                    return;
-                                if (typeof d.user === 'string')
-                                    window.__cw_loginUser = d.user;
-                                if (typeof d.pass === 'string')
-                                    window.__cw_loginPass = d.pass;
-                                if (typeof d.remember === 'boolean')
-                                    window.__cw_loginRemember = d.remember;
-                                try {
-                                    // mở popup nếu cần, sau đó điền + sync toggle nhớ tài khoản
-                                    if (typeof window.__cw_clickLoginIfNeed === 'function') {
-                                        window.__cw_clickLoginIfNeed();
-                                    }
-                                    // thử điền nhiều nhịp để khi popup vừa mở cũng được cập nhật
-                                    var tries = 0;
-                                    var tick = function () {
-                                        tries++;
-                                        try {
-                                            if (typeof window.__cw_fillLoginPopup === 'function') {
-                                                var r = window.__cw_fillLoginPopup();
-                                                if (r !== 'no-popup') return; // đã điền được -> dừng
-                                            }
-                                        } catch (_) {}
-                                        if (tries < 6) setTimeout(tick, 200);
-                                    };
-                                    tick();
-                                } catch (_) {}
-                                console.log('[auto-login] cập nhật credential từ host.');
-                            }
-
-                            try {
-                                window.addEventListener('message', onMsg, true);
-                            } catch (_) {}
-                            try {
-                                if (window.chrome && window.chrome.webview) {
-                                    window.chrome.webview.addEventListener('message', onMsg);
-                                }
-                            } catch (_) {}
-                        })();
-
-                        /* hàm này bạn đã có ở dưới – mình dùng lại.
-                        nếu tên hàm của bạn khác thì khỏi tạo lại. */
-                        function findNodeByTail(tail) {
-                            try {
-                                if (!(window.cc && cc.director && cc.director.getScene))
-                                    return null;
-                                var scene = cc.director.getScene();
-                                if (!scene)
-                                    return null;
-
-                                var parts = String(tail || '').split('/').filter(Boolean);
-                                if (parts.length && parts[0] === scene.name) {
-                                    parts.shift();
-                                }
-
-                                var node = scene;
-                                for (var i = 0; i < parts.length; i++) {
-                                    var name = parts[i];
-                                    var kids = node.children || node._children || [];
-                                    var found = null;
-                                    for (var j = 0; j < kids.length; j++) {
-                                        if (kids[j] && kids[j].name === name) {
-                                            found = kids[j];
-                                            break;
-                                        }
-                                    }
-                                    if (!found)
-                                        return null;
-                                    node = found;
-                                }
-                                return node;
-                            } catch (_) {
-                                return null;
-                            }
-                        }
-
-                        function isNodeVisible(node) {
-                            if (!node)
-                                return false;
-                            if (node.activeInHierarchy === false)
-                                return false;
-                            try {
-                                if (typeof node.getOpacity === 'function') {
-                                    if (node.getOpacity() <= 0)
-                                        return false;
-                                } else if (typeof node.opacity === 'number' && node.opacity <= 0) {
-                                    return false;
-                                }
-                            } catch (_) {}
-                            try {
-                                var sz = node.getContentSize ? node.getContentSize() : (node._contentSize || null);
-                                if (sz && (sz.width === 0 || sz.height === 0))
-                                    return false;
-                            } catch (_) {}
-                            return true;
-                        }
-
-                        /* tìm các EditBox trong popup và điền user/pass */
-                        function __cw_fillLoginPopup() {
-                            var root = findNodeByTail(POPUP_ROOT_TAIL);
-                            if ((!root || !isNodeVisible(root)) && cc && cc.director && cc.director.getScene) {
-                                root = cc.director.getScene(); // fallback: quét toàn scene nếu tail không khớp
-                            }
-                            if (!root) {
-                                return 'no-popup';
-                            }
-
-                            // gom tất cả editbox ở dưới popup
-                            var boxes = [];
-                            (function walk(n) {
-                                if (!n)
-                                    return;
-                                var eb = n.getComponent && n.getComponent(cc.EditBox);
-                                if (eb) {
-                                    boxes.push({
-                                        node: n,
-                                        eb: eb,
-                                        tail: (function () {
-                                            // nếu file gốc của bạn đã có tailOf thì nên dùng tailOf(n, 12)
-                                            try {
-                                                var names = [],
-                                                p = n;
-                                                while (p) {
-                                                    names.push(p.name || '');
-                                                    p = p.parent;
-                                                }
-                                                return names.reverse().join('/').toLowerCase();
-                                            } catch (_) {
-                                                return '';
-                                            }
-                                        })()
-                                    });
-                                }
-                                var kids = n.children || n._children || [];
-                                for (var i = 0; i < kids.length; i++)
-                                    walk(kids[i]);
-                            })(root);
-
-                            if (!boxes.length) {
-                                console.warn('[auto-login] không tìm thấy EditBox nào trong popup.');
-                                return 'no-editbox';
-                            }
-
-                            var user = window.__cw_loginUser || '';
-                            var pass = window.__cw_loginPass || '';
-
-                            // đoán ô user/pass theo tail
-                            var userBox = null,
-                            passBox = null;
-                            for (var i = 0; i < boxes.length; i++) {
-                                var t = boxes[i].tail;
-                                if (!userBox && /user|account|acc|tai[_-]?khoan|taikhoan/i.test(t)) {
-                                    userBox = boxes[i];
-                                }
-                                if (!passBox && /pass|pwd|mat[_-]?khau|matkhau/i.test(t)) {
-                                    passBox = boxes[i];
-                                }
-                            }
-                            // nếu vẫn chưa đoán được thì lấy lần lượt
-                            if (!userBox)
-                                userBox = boxes[0];
-                            if (!passBox && boxes.length > 1)
-                                passBox = boxes[1];
-
-                            if (userBox) {
-                                userBox.eb.string = user || '';
-                                // một số version cần gọi _onDidEditEnded để refresh
-                                if (typeof userBox.eb._onDidEndedEditing === 'function')
-                                    userBox.eb._onDidEndedEditing();
-                            }
-                            if (passBox) {
-                                passBox.eb.string = pass || '';
-                                if (typeof passBox.eb._onDidEndedEditing === 'function')
-                                    passBox.eb._onDidEndedEditing();
-                            }
-
-                            // Bật/tắt checkbox "Ghi nhớ tài khoản" nếu có Toggle trong popup
-                            try {
-                                var toggles = [];
-                                (function walkToggle(n) {
-                                    if (!n)
-                                        return;
-                                    var tg = n.getComponent && n.getComponent(cc.Toggle);
-                                    if (tg) {
-                                        var lblTxt = '';
-                                        try {
-                                            var lbl = n.getComponentInChildren && n.getComponentInChildren(cc.Label);
-                                            lblTxt = (lbl && lbl.string) || '';
-                                        } catch (_) {}
-                                        toggles.push({
-                                            node: n,
-                                            tg: tg,
-                                            label: (lblTxt || '').toString().toLowerCase(),
-                                            tail: (function () {
-                                                try {
-                                                    var names = [],
-                                                    p = n;
-                                                    while (p) {
-                                                        names.push(p.name || '');
-                                                        p = p.parent;
-                                                    }
-                                                    return names.reverse().join('/').toLowerCase();
-                                                } catch (_) {
-                                                    return '';
-                                                }
-                                            })()
-                                        });
-                                    }
-                                    var kids = n.children || n._children || [];
-                                    for (var i = 0; i < kids.length; i++)
-                                        walkToggle(kids[i]);
-                                })(root);
-                                var remember = !!window.__cw_loginRemember;
-                                if (toggles.length > 0) {
-                                    var pick = null;
-                                    var reRem = /(ghi\s*nho|remember|luu\s*tai\s*khoan|luu\s*tk)/i;
-                                    for (var i = 0; i < toggles.length; i++) {
-                                        var t = toggles[i];
-                                        if (reRem.test(t.tail) || reRem.test(t.label)) {
-                                            pick = t;
-                                            break;
-                                        }
-                                    }
-                                    if (!pick)
-                                        pick = toggles[0];
-                                    if (pick && pick.tg && pick.tg.isChecked !== remember) {
-                                        pick.tg.isChecked = remember;
-                                        if (typeof pick.tg._updateCheckMark === 'function')
-                                            pick.tg._updateCheckMark();
-                                        if (Array.isArray(pick.tg.checkEvents))
-                                            cc.Component.EventHandler.emitEvents(pick.tg.checkEvents, new cc.Event.EventCustom('toggle', true));
-                                    }
-                                }
-
-                                // Fallback DOM checkbox (nếu popup là HTML thay vì Cocos Toggle)
-                                try {
-                                    var boxes = Array.from(document.querySelectorAll('input[type="checkbox"],input[type="radio"]'));
-                                    var targetBox = null;
-                                    var norm = function (s) { try { return (s || '').toString().trim().toLowerCase(); } catch (_) { return ''; } };
-                                    boxes.forEach(function (bx) {
-                                        if (targetBox)
-                                            return;
-                                        var lbl = '';
-                                        try {
-                                            if (bx.id) {
-                                                var lab = document.querySelector('label[for="' + bx.id + '"]');
-                                                if (lab)
-                                                    lbl = lab.innerText || lab.textContent || '';
-                                            }
-                                            if (!lbl && bx.closest('label'))
-                                                lbl = bx.closest('label').innerText || bx.closest('label').textContent || '';
-                                        } catch (_) { }
-                                        if (!lbl)
-                                            lbl = bx.getAttribute('aria-label') || '';
-                                        lbl = norm(lbl);
-                                        if (/ghi nhớ|ghi nho|remember/.test(lbl))
-                                            targetBox = bx;
-                                    });
-                                    if (!targetBox && boxes.length === 1)
-                                        targetBox = boxes[0];
-                                    if (targetBox && !!targetBox.checked !== remember) {
-                                        targetBox.checked = remember;
-                                        ['input', 'change', 'click'].forEach(function (t) {
-                                            try {
-                                                targetBox.dispatchEvent(new Event(t, { bubbles: true, cancelable: true }));
-                                            } catch (_) { }
-                                        });
-                                    }
-                                } catch (_) { }
-                            } catch (_) {}
-
-                            //console.log('[auto-login] đã thử điền user/pass vào popup.');
-                            return 'filled';
-                        }
-
-                        /* hàm click như bạn đang có – giữ nguyên ý tưởng */
-                        window.__cw_clickLoginIfNeed = function () {
-                            // nếu popup đang mở thì chỉ điền
-                            var popupBtn = findNodeByTail(POPUP_LOGIN_BTN_TAIL);
-                            if (popupBtn && isNodeVisible(popupBtn)) {
-                                __cw_fillLoginPopup();
-                                return 'popup-open';
-                            }
-
-                            // nếu nút header còn thì click
-                            var header = findNodeByTail(HEADER_LOGIN_TAIL);
-                            if (!header) {
-                                return 'no-header';
-                            }
-                            if (!isNodeVisible(header)) {
-                                return 'header-hidden';
-                            }
-
-                            var btn = header.getComponent && header.getComponent(cc.Button);
-                            if (btn) {
-                                cc.Component.EventHandler.emitEvents(btn.clickEvents, new cc.Event.EventCustom('click', true));
-                                console.log('[auto-login] click header login.');
-                                return 'clicked-header';
-                            }
-
-                            // fallback DOM như code cũ của bạn
-                            var list = window.__abx_buttons || [];
-                            for (var i = 0; i < list.length; i++) {
-                                var it = list[i];
-                                if (it.tail === HEADER_LOGIN_TAIL) {
-                                    var cx = Math.round(it.x + it.w / 2);
-                                    var cy = Math.round(it.y + it.h / 2);
-                                    var canvas = document.querySelector('canvas') || document.body;
-                                    ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (t) {
-                                        canvas.dispatchEvent(new MouseEvent(t, {
-                                                bubbles: true,
-                                                cancelable: true,
-                                                clientX: cx,
-                                                clientY: cy,
-                                                button: 0
-                                            }));
-                                    });
-                                    console.log('[auto-login] DOM click header login.');
-                                    return 'dom-fallback-clicked';
-                                }
-                            }
-
-                            return 'fail';
-                        };
-
-                        // danh sách tail có thể thay đổi sau này
-                        const TAILS = [
-                            'MainGame/Canvas/loginView/offset-login/btn-Login'
-                            // sau này cần thêm thì push thêm ở đây
-                        ];
-
-                        // 1) HÀM DÙNG CHUNG – GIỮ MỘT BẢN DUY NHẤT Ở NGOÀI
-                        function findNodeByTailCompat(tail) {
-                            if (window.__abx_findNodeByTail)
-                                return window.__abx_findNodeByTail(tail);
-                            if (window.findNodeByTail)
-                                return window.findNodeByTail(tail);
-
-                            if (!(window.cc && cc.director && cc.director.getScene))
-                                return null;
-                            const scene = cc.director.getScene();
-                            if (!scene)
-                                return null;
-
-                            const sceneName = scene.name;
-                            let parts = String(tail || '').split('/').filter(Boolean);
-                            if (parts[0] === sceneName)
-                                parts.shift();
-
-                            let node = scene;
-                            for (let i = 0; i < parts.length; i++) {
-                                const name = parts[i];
-                                const kids = node.children || node._children || [];
-                                let found = null;
-                                for (let j = 0; j < kids.length; j++) {
-                                    if (kids[j] && kids[j].name === name) {
-                                        found = kids[j];
-                                        break;
-                                    }
-                                }
-                                if (!found)
-                                    return null;
-                                node = found;
-                            }
-                            return node;
-                        }
-
-                        // 2) HÀM NHẬN DIỆN HOME – ĐẶT Ở ĐÂY
-                        function __cw_isHomeScreen() {
-                            const HOME_TAILS = [
-                                'MainGame/Canvas/widget-topRight-noHide/group-login/btn-Login',
-                                'MainGame/Canvas/widget-header/group-login/btn-Login'
-                            ];
-                            for (const t of HOME_TAILS) {
-                                const n = findNodeByTailCompat(t);
-                                if (n && n.activeInHierarchy !== false)
-                                    return true;
-                            }
-
-                            const GAME_HINTS = [
-                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Top/Exit_Btn',
-                                'MainGame/Canvas/Xocdia_MD_View_Ngang/Center/GateContent/Chan_Gate'
-                            ];
-                            for (const t of GAME_HINTS) {
-                                const n = findNodeByTailCompat(t);
-                                if (n && n.activeInHierarchy !== false)
-                                    return false;
-                            }
-
-                            return false;
-                        }
-                        window.__cw_isHomeScreen = __cw_isHomeScreen;
-
-                        function clickCocosButton(node) {
-                            if (!node)
-                                return false;
-                            // Button chuẩn
-                            try {
-                                const btn = node.getComponent && node.getComponent(cc.Button);
-                                if (btn) {
-                                    cc.Component.EventHandler.emitEvents(
-                                        btn.clickEvents,
-                                        new cc.Event.EventCustom('click', true));
-                                    console.log('[cw-popup-login] clicked via cc.Button');
-                                    return true;
-                                }
-                            } catch (e) {
-                                console.warn('[cw-popup-login] btn click error', e);
-                            }
-
-                            // fallback: nếu node có _onTouchEnded
-                            try {
-                                if (node._onTouchEnded) {
-                                    node._onTouchEnded();
-                                    console.log('[cw-popup-login] clicked via _onTouchEnded');
-                                    return true;
-                                }
-                            } catch (e2) {}
-
-                            return false;
-                        }
-
-                        // HÀM PUBLIC để C# gọi
-                        window.__cw_clickPopupLogin = function () {
-                            if (!(window.cc && cc.director && cc.director.getScene)) {
-                                console.warn('[cw-popup-login] cocos chưa sẵn sàng');
-                                return false;
-                            }
-
-                            // thử từng tail
-                            for (let i = 0; i < TAILS.length; i++) {
-                                const tail = TAILS[i];
-                                const node = findNodeByTailCompat(tail);
-                                if (!node) {
-                                    continue;
-                                }
-                                if (clickCocosButton(node)) {
-                                    console.log('[cw-popup-login] ĐÃ CLICK popup login bằng tail =', tail);
-                                    return true;
-                                } else {
-                                    console.warn('[cw-popup-login] tìm thấy node nhưng click không được:', tail);
-                                }
-                            }
-
-                            // nếu không tìm được node theo tail, thử lấy từ danh sách scan200Button (nếu ông đã lưu)
-                            if (window.__abx_buttons && window.__abx_buttons.length) {
-                                for (let i = 0; i < window.__abx_buttons.length; i++) {
-                                    const b = window.__abx_buttons[i];
-                                    if (!b || !b.tail)
-                                        continue;
-                                    // so đuôi tail
-                                    for (let k = 0; k < TAILS.length; k++) {
-                                        const want = TAILS[k].toLowerCase();
-                                        if (b.tail.toLowerCase().endsWith(want.toLowerCase())) {
-                                            // dựng lại node từ tail này
-                                            const node = findNodeByTailCompat(b.tail);
-                                            if (node && clickCocosButton(node)) {
-                                                console.log('[cw-popup-login] CLICK từ __abx_buttons với tail =', b.tail);
-                                                return true;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            console.warn('[cw-popup-login] Không click được nút popup login nào trong danh sách.');
-                            return false;
-                        };
-
-                    })();
-
-                    /* ================================================================== */
-
-                })(); // hết CW bridge
-
-            })(); // hết toàn file
-
-
-        })();
-        // cuối hàm boot, THÊM 3 DÒNG NÀY:
-        if (window.__cw_startPush) {
-            // 800ms/lần → nhỏ hơn 1.5s HomeTickFresh bên C#
-            window.__cw_startPush(800);
-        }
-
-    }
-
-    // đợi cocos sẵn sàng rồi mới boot
-    if (window.cc && cc.director && cc.director.getScene) {
-        // đã sẵn sàng
-        boot();
-    } else {
-        // chưa sẵn sàng → thăm dò 500ms/lần
-        var __cw_wait_tm = setInterval(function () {
-            if (window.cc && cc.director && cc.director.getScene) {
-                clearInterval(__cw_wait_tm);
-                console.log('[js_home_v2] Cocos sẵn sàng → chạy boot()');
-                boot();
+                    })
+                    .find(Boolean);
+                if (!pwParent || pwParent.offsetParent === null)
+                    return false;
+                root = pwParent;
             }
-        }, 500);
-    }
-})();
 
-// ===== Realtime reactors: close notice + re-login (robust) =====
-(function () {
-    if (!window.cc || !cc.director || !cc.director.getScene)
-        return;
+            // 2) Nếu user/pass chưa được điền → không click, tránh mở popup nếu đã login
+            const userFilled = !!(root.querySelector('input[name="username"], input[type="text"]')?.value || '').trim();
+            const passFilled = !!(root.querySelector('input[type="password"]')?.value || '').trim();
+            if (!userFilled || !passFilled) {
+                return false;
+            }
 
-    const TICK_MS = 150;
-    const TTL_MS = 7000; // chống spam cùng 1 mục tiêu
-    const TOPR = () => innerWidth;
-    const TOPH = () => innerHeight;
+            // 3) Tìm nút submit trong popup
+            const candSel =
+                'button.submit_btn, .submit_btn[role="button"], button[type="submit"], .btn-login, .base-button.btn';
+            let btn = Array.from(root.querySelectorAll(candSel)).find(isVisibleAndClickable) || null;
 
-    const seen = new Map(); // key -> expiresAt
-    let lastScene = '';
-    let timer = null;
+            // Fallback: quét toàn bộ button theo text "Đăng nhập"
+            if (!btn) {
+                const all = Array.from(
+                        root.querySelectorAll('button, a, [role="button"], input[type="submit"]'));
+                btn = all.find(el => {
+                    const t = norm(textOf(el));
+                    return t.includes('dang nhap') || t.includes('login');
+                }) || null;
+            }
 
-    function now() {
-        return performance && performance.now ? performance.now() : Date.now();
-    }
-    function alive(n) {
-        try {
-            return n && cc.isValid(n) && n.activeInHierarchy !== false;
-        } catch (_) {
+            if (!btn || !isVisibleAndClickable(btn)) {
+                return false;
+            }
+
+            // 4) Thực hiện click xuyên overlay nếu cần
+            peelAndClick(btn, {
+                holdMs: 400
+            });
+            return true;
+        } catch (e) {
+            console.warn('[__cw_clickPopupLogin] ERR', e);
             return false;
         }
-    }
-    function cooldown(key, ms = TTL_MS) {
-        const t = now();
-        const old = seen.get(key) || 0;
-        if (old > t)
-            return true; // đang cooldown
-        seen.set(key, t + ms);
-        return false;
-    }
-    function resetAll() {
-        seen.clear();
-    }
-
-    // --- Heuristic: tìm nút đóng thông báo ---
-    function findNoticeClose() {
-        try {
-            const btns = (window.collectButtons ? window.collectButtons() : []).filter(b => {
-                // vùng góc phải trên của pop-up
-                const rightSide = b.x > TOPR() * 0.55;
-                const highArea = b.w >= 24 && b.h >= 24 && b.w <= 140 && b.h <= 140;
-                const topBand = b.y < TOPH() * 0.50;
-                return rightSide && topBand && highArea;
-            });
-
-            // Ưu tiên tail gợi ý "close"
-            let cand = btns.filter(b => /close|btnclose|buttonclose|dong|x_|_x$/i.test(b.tail || ''));
-            if (!cand.length)
-                cand = btns;
-            if (!cand.length)
-                return null;
-
-            cand.sort((a, b) => (a.y - b.y) || (a.x - b.x)); // cái cao & sát góc trước
-            return cand[0];
-        } catch (_) {
-            return null;
-        }
-    }
-
-    // --- Heuristic: tìm “Đăng nhập lại / Reconnect” và nút gần đó ---
-    function findRelogin() {
-        try {
-            const texts = (window.buildTextRects ? window.buildTextRects() : []);
-            const want = texts.filter(t => /đăng\s*nhập\s*lại|kết\s*nối\s*lại|re\s*login|reconnect|login\s*again/i.test(t.text || ''));
-            if (!want.length)
-                return null;
-
-            // tìm button gần nhất với text này
-            const btns = (window.collectButtons ? window.collectButtons() : []);
-            function d2(ax, ay, bx, by) {
-                const dx = ax - bx,
-                dy = ay - by;
-                return dx * dx + dy * dy;
-            }
-
-            let best = null,
-            bestD = 1e18;
-            for (const w of want) {
-                const cx = w.x + w.w / 2,
-                cy = w.y + w.h / 2;
-                for (const b of btns) {
-                    const bx = b.x + b.w / 2,
-                    by = b.y + b.h / 2;
-                    const dist = d2(cx, cy, bx, by);
-                    if (dist < bestD) {
-                        bestD = dist;
-                        best = b;
-                    }
-                }
-            }
-            return best || null;
-        } catch (_) {
-            return null;
-        }
-    }
-
-    async function clickButtonBox(b) {
-        if (!b)
-            return false;
-        const r = {
-            x: b.x,
-            y: b.y,
-            w: b.w,
-            h: b.h
-        };
-        if (window.clickRectCenter)
-            return clickRectCenter(r);
-        // fallback dùng emitClick theo tail
-        const n = window.findNodeByTailCompat ? window.findNodeByTailCompat(b.tail) : null;
-        if (alive(n)) {
-            const hit = window.clickableOf ? window.clickableOf(n) : n;
-            return window.emitClick ? window.emitClick(hit) : false;
-        }
-        return false;
-    }
-
-    async function tick() {
-        try {
-            // Reset khi đổi scene
-            const sc = (cc.director.getScene() && cc.director.getScene().name) || '';
-            if (sc && sc !== lastScene) {
-                lastScene = sc;
-                resetAll();
-            }
-
-            // 1) Close thông báo nếu có
-            const closeBtn = findNoticeClose();
-            if (closeBtn && !cooldown('notice:' + closeBtn.x + ',' + closeBtn.y)) {
-                await clickButtonBox(closeBtn);
-            }
-
-            // 2) Nút "Đăng nhập lại/Kết nối lại"
-            const relogBtn = findRelogin();
-            if (relogBtn && !cooldown('relogin:' + relogBtn.x + ',' + relogBtn.y)) {
-                await clickButtonBox(relogBtn);
-            }
-
-        } catch (e) { /* noop */
-        }
-    }
-
-    // Public API để bật/tắt
-    window.cwReactor = window.cwReactor || {
-        start() {
-            if (timer)
-                return;
-            lastScene = (cc.director.getScene() && cc.director.getScene().name) || '';
-            resetAll();
-            timer = setInterval(tick, TICK_MS);
-            console.log('[cwReactor] START', {
-                tick: TICK_MS
-            });
-        },
-        stop() {
-            if (!timer)
-                return;
-            clearInterval(timer);
-            timer = null;
-            console.log('[cwReactor] STOP');
-        },
-        kick() {
-            tick();
-        } // chạy 1 nhịp ngay lập tức
     };
 
-    // auto start sớm nhưng an toàn: để 1 frame cho scene dựng xong
-    requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-            window.cwReactor.start();
-        });
-    });
+    function startLoginPostProbe() {
+        // tránh bị start trùng nhiều lần cho 1 phiên login
+        if (S.loginPostProbeStarted)
+            return;
+        S.loginPostProbeStarted = true;
 
-})();
+        // giống logic cũ trong clickLoginButton: chờ header có user-logged rồi mới kéo info
+        waitFor(() => !!document.querySelector('.user-logged, .base-dropdown-header__user__name'), 15000, 250)
+        .then(async ok => {
+            S.loginPostProbeStarted = false; // reset cho lần sau
+            if (!ok)
+                return;
+
+            const u = findUserFromDOM();
+            if (u)
+                updateUsername(u);
+            const b = findBalance();
+            if (b)
+                updateBalance(b);
+            if (!S.username) {
+                try {
+                    await tryFetchUserProfile();
+                } catch (_) {}
+            }
+            pumpAuthProbe(12000);
+        });
+    }
+
+    function stopLoginAutoClick(msg) {
+        if (S.loginPopupTimer) {
+            clearInterval(S.loginPopupTimer);
+            S.loginPopupTimer = null;
+        }
+        if (msg)
+            updateInfo(msg);
+    }
+
+    function startLoginAutoClick() {
+        // Nếu đã có timer auto-click rồi thì thôi, tránh tạo nhiều vòng lặp trùng
+        if (S.loginPopupTimer)
+            return;
+
+        // Nếu đã login thì khỏi auto click nữa
+        if (isLoggedInFromDOM()) {
+            stopLoginAutoClick('Đã đăng nhập — không auto click nút "Đăng nhập" nữa.');
+            return;
+        }
+
+        // Nếu popup login đang mở sẵn thì không cần auto click
+        if (isLoginPopupVisible()) {
+            // chưa start timer nên chỉ bỏ qua
+            return;
+        }
+
+        // bóc bớt quảng cáo/cover che nút login
+        closeAdsAndCovers();
+
+        const started = Date.now();
+        const MAX_MS = 15000; // tối đa ~15s
+
+        const tick = () => {
+            // 1) Nếu trong lúc đang chạy mà đã login → dừng hẳn
+            if (isLoggedInFromDOM()) {
+                stopLoginAutoClick('Đã thấy trạng thái đăng nhập — dừng auto click nút "Đăng nhập".');
+                return;
+            }
+
+            // 2) Nếu popup login đang mở → chờ người dùng thao tác,
+            //    KHÔNG click thêm nhưng vẫn giữ timer để sau khi đóng popup sẽ click lại
+            if (isLoginPopupVisible()) {
+                return;
+            }
+
+            // 3) Hết thời gian mà vẫn chưa thấy popup -> dừng để tránh spam
+            if (Date.now() - started > MAX_MS) {
+                stopLoginAutoClick('⚠ Auto click nút "Đăng nhập" quá ' + Math.round(MAX_MS / 1000) + 's nhưng chưa thấy popup.');
+                return;
+            }
+
+            // 4) Thử click 1 lần
+            const ok = clickLoginButtonOnce();
+            if (ok)
+                startLoginPostProbe(); // bắt đầu vòng lấy Username/Balance sau khi login
+        };
+
+        // bắn ngay 1 phát đầu tiên
+        tick();
+        // sau đó 1.2s click lại 1 lần cho tới khi popup mở / timeout / đã login
+        S.loginPopupTimer = setInterval(tick, 1200);
+        updateInfo('Đang auto click nút "Đăng nhập" trong tối đa ' + Math.round(MAX_MS / 1000) + 's (1.2s/lần)...');
+    }
+
+    // ======= Actions =======
+    function clickLoginButton() {
+        try {
+            // Nếu đã login thì không auto-click nút Đăng nhập nữa
+            if (isLoggedInFromDOM()) {
+                stopLoginAutoClick('Đã đăng nhập — không auto click nút "Đăng nhập".');
+                return;
+            }
+            // Thử chờ ngắn xem có nhận diện login sau khi DOM đầy đủ không
+            waitFor(() => isLoggedInFromDOM(), 2500, 150).then((ok) => {
+                if (ok) {
+                    stopLoginAutoClick('Đã đăng nhập (sau chờ) — không auto click nút "Đăng nhập".');
+                    return;
+                }
+                // Nếu popup login đã hiện rồi thì KHÔNG click nút nữa
+                // và cũng KHÔNG dừng timer (nếu đang chạy), để khi anh đóng popup
+                // timer vẫn tiếp tục click lại nút "Đăng nhập".
+                if (isLoginPopupVisible()) {
+                    return;
+                }
+                // Bắt đầu vòng auto-click
+                startLoginAutoClick();
+            });
+        } catch (e) {
+            console.error('[HomeWatch] clickLoginButton error', e);
+        }
+    }
+
+    async function ensureOnHome() {
+        // Ưu tiên: nếu header + tab Casino đã render thì coi như đang ở Home
+        const headerCasino = document.querySelector(
+                'div.header div.header_title div.header_bottom div.header_nav div.header_nav_list div.nav_item div.nav_item_btn.LIVE div.name1');
+        if (headerCasino && headerCasino.offsetParent !== null)
+            return true;
+
+        // Đã ở Home và khu vực live hiển thị -> OK (fallback cũ)
+        const sec0 = document.querySelector('.livestream-section__live');
+        if (sec0 && sec0.offsetParent !== null)
+            return true;
+
+        // 1) Đóng overlay/ads trước để click logo không bị chặn
+        tryCloseCommonOverlays();
+
+        // 2) Thử click logo để về "/"
+        const logo = document.querySelector('header .menu-left__logo a, a.main-logo, a[href="/"]');
+        if (logo) {
+            try {
+                logo.click();
+            } catch (_) {}
+        } else if (location.pathname !== '/') {
+            // Không có logo -> điều hướng thẳng về Home
+            location.assign('/');
+        }
+
+        // 3) Đợi phần live render (tối đa 12s)
+        const ok = await waitFor(() => {
+            const s = document.querySelector('.livestream-section__live');
+            return s && s.offsetParent !== null;
+        }, 12000, 150);
+
+        // 4) Fallback cứng: chưa thấy thì ép về Home một lần nữa
+        if (!ok && location.pathname !== '/') {
+            location.assign('/');
+            await wait(1200);
+            return !!(document.querySelector('.livestream-section__live'));
+        }
+        return !!ok;
+    }
+
+    function isXocDiaLaunched() {
+        const t = norm(document.title || '');
+
+        // Nếu title có từ khóa Tài/Xỉu/Sicbo mà KHÔNG có "xóc" → chắc chắn sai game
+        if (RE_XOCDIA_NEG.test(t) && !RE_XOCDIA_POS.test(t))
+            return false;
+
+        // Đúng tiêu đề "xóc đĩa" → đúng game
+        if (RE_XOCDIA_POS.test(t))
+            return true;
+
+        // Thử soi src của iframe (nếu game chạy trong iframe)
+        const ifr = Array.from(document.querySelectorAll('iframe'))
+            .find(f => RE_XOCDIA_POS.test(norm(f.src || '')));
+        if (ifr)
+            return true;
+
+        // Mặc định: chưa xác nhận được
+        return false;
+    }
+
+    async function multiTryClick(resolveBtn, attempts = 50, isOk = () => false, delayMs = 200, holdMs = 600) {
+        for (let i = 0; i < attempts; i++) {
+            let b = resolveBtn();
+            if (!b)
+                break;
+            peelAndClick(b, {
+                holdMs: holdMs
+            });
+            const ok = await waitFor(() => !b.isConnected || !isVisibleAndClickable(b) || isOk(), 1800, 120);
+            if (ok)
+                return true;
+            await wait(delayMs);
+        }
+        return isOk();
+    }
+
+    // Chờ tối đa maxWaitMs cho nút render trước khi click
+    async function waitButtonUpTo(resolveBtn, maxWaitMs = 10000, step = 200) {
+        const t0 = Date.now();
+        let found = null;
+        while (Date.now() - t0 < maxWaitMs) {
+            found = resolveBtn();
+            if (found && found.isConnected)
+                return found;
+            await wait(step);
+        }
+        return null;
+    }
+
+    // Nhant dien trang lobby PP khi da chuyen han sang client.pragmaticplaylive.net
+    function isOnPPLobby() {
+        try {
+            return /client\.pragmaticplaylive\.net/i.test(location.hostname) &&
+                /\/desktop\/lobby(2)?/i.test(location.pathname);
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Click "Baccarat nhieu ban" truc tiep trong trang lobby PP (same-origin)
+    async function clickBaccNhieuBanInPPLobby(maxWaitMs = 10000) {
+        const log = (m) => { try { updateInfo && updateInfo(m); } catch (_) {} };
+        const tailFor = (el) => {
+            try {
+                const segs = [];
+                let n = el;
+                const root = document.documentElement;
+                while (n && n.nodeType === 1 && n !== root && segs.length < 12) {
+                    const tag = n.tagName.toLowerCase();
+                    const parent = n.parentElement;
+                    const idx = parent ? Array.from(parent.children).filter(c => c.tagName === n.tagName).indexOf(n) + 1 : 1;
+                    segs.push(tag + '[' + idx + ']');
+                    n = parent;
+                }
+                return segs.reverse().join('/');
+            } catch (_) {
+                return '';
+            }
+        };
+        const matchCard = (el) => {
+            const t = norm([
+                el.textContent || '',
+                el.getAttribute('aria-label') || '',
+                el.getAttribute('title') || '',
+                el.getAttribute('alt') || ''
+            ].join(' '));
+            return t.includes('baccarat') && (t.includes('nhieu ban') || t.includes('multi') || t.includes('many table'));
+        };
+        const collectNodes = () => {
+            const out = [];
+            const stack = [document.documentElement];
+            while (stack.length) {
+                const node = stack.pop();
+                if (!node || node.nodeType !== 1) continue;
+                const el = node;
+                if (['A', 'BUTTON', 'DIV', 'SPAN', 'IMG'].includes(el.tagName))
+                    out.push(el);
+                for (const k of Array.from(el.children || [])) stack.push(k);
+                if (el.shadowRoot) {
+                    for (const k of Array.from(el.shadowRoot.children || [])) stack.push(k);
+                }
+            }
+            return out;
+        };
+        const resolveCard = () => {
+            const TAILS = [
+                'div.bq_bt[2]/section[2]/div.eF_eG.fk_fl[1]/div.fk_fm.fk_fp[1]/div.eI_eJ[3]/div.eq_er.eq_eu[1]/div.eq_ev[1]/div.mT_mU.mT_mV[1]'
+            ];
+            for (const t of TAILS) {
+                try {
+                    const el = findByTail ? findByTail(t) : null;
+                    if (el && isVisibleAndClickable(el)) {
+                        const clickable = el.closest('a,button,[role="button"],.mT_mU,.mT_mV,.eq_ev,.eq_er') || el;
+                        if (isVisibleAndClickable(clickable))
+                            return clickable;
+                    }
+                } catch (_) { }
+            }
+
+            // Bám text nhưng chấm điểm để tránh trúng container lớn
+            const nodes = collectNodes();
+            const cands = [];
+            for (const el of nodes) {
+                if (!matchCard(el))
+                    continue;
+                const clickable = el.closest('a,button,[role=\"button\"],.game-card,.eq_er,.eq_ev') || el;
+                if (!isVisibleAndClickable(clickable))
+                    continue;
+                const r = clickable.getBoundingClientRect();
+                const area = r.width * r.height;
+                const textLen = norm((clickable.textContent || '') + ' ' + (clickable.getAttribute('aria-label') || '')).length;
+                let score = 0;
+                if (['A', 'BUTTON'].includes(clickable.tagName)) score += 10;
+                if ((clickable.getAttribute('role') || '').toLowerCase() === 'button') score += 6;
+                score += Math.max(0, 2000 - Math.min(area, 2000)) / 200; // ưu tiên diện tích nhỏ
+                score += Math.max(0, 120 - Math.min(textLen, 120)) / 20; // ưu tiên text ngắn
+                cands.push({ el: clickable, score, area, textLen });
+            }
+            if (!cands.length)
+                return null;
+            cands.sort((a, b) => b.score - a.score);
+            return cands[0].el;
+        };
+
+        log('Dang tim "Baccarat nhieu ban" trong lobby PP...');
+        const t0 = Date.now();
+        while (Date.now() - t0 < maxWaitMs) {
+            if (!isOnPPLobby()) {
+                log('Khong o lobby PP, bo tim card.');
+                return 'not-lobby';
+            }
+            const card = resolveCard();
+            if (card) {
+                log('Thay card, tail=' + tailFor(card));
+                try { console && console.warn && console.warn('[BaccMulti] click card'); } catch (_) {}
+                try { card.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch (_) {}
+                const forceClick = (el) => {
+                    try {
+                        const r = el.getBoundingClientRect();
+                        const cx = r.left + r.width / 2;
+                        const cy = r.top + r.height / 2;
+                        const tgt = document.elementFromPoint(cx, cy) || el;
+                        tgt.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: cx, clientY: cy }));
+                        return true;
+                    } catch (_) { return false; }
+                };
+                try { peelAndClick(card, { holdMs: 400 }); }
+                catch (_) {
+                    try { card.click(); }
+                    catch (_) { forceClick(card); }
+                }
+                return 'ok';
+            }
+            await wait(400);
+        }
+        log('Khong tim thay "Baccarat nhieu ban" trong lobby PP (het wait).');
+        try { console && console.warn && console.warn('[BaccMulti] no card after wait'); } catch (_) {}
+        return 'no-card';
+    }
+    async function clickBaccNhieuBanFromHome() {
+        // Guard: tránh click lặp khi đang load vào game
+        const now = Date.now();
+        const guardMs = 3000; // 3s hạn chế lặp
+        const logStep = (m) => {
+            try { updateInfo && updateInfo('[bacc] ' + m); } catch (_) {}
+            try { console && console.warn && console.warn('[BaccMulti]', m); } catch (_) {}
+        };
+        logStep('start, url=' + (location.href || '') + ', guard_until=' + (window.__abx_bacc_loading_until || 0));
+        if (window.__abx_bacc_loading_until && now < window.__abx_bacc_loading_until) {
+            logStep('Dang trong chu ky vao game, bo qua. guard_until=' + window.__abx_bacc_loading_until + ', now=' + now);
+            try { updateInfo && updateInfo('⚠ Đang trong chu kỳ vào game (guard), bỏ qua.'); } catch (_) {}
+            return 'skip-guard';
+        }
+        window.__abx_bacc_loading_until = now + guardMs;
+
+        // Neu dang o thang trang lobby PP thi click ngay tai do
+        if (isOnPPLobby()) {
+            logStep('dang o lobby PP -> click tai cho');
+            return await clickBaccNhieuBanInPPLobby();
+        }
+        // Home + PP truc tuyen + Baccarat nhieu ban (PP)
+        try {
+            if (typeof updateInfo === 'function')
+                updateInfo('Dang co gang vao game "Baccarat nhieu ban" (PP) tu trang Home...');
+
+            await ensureOnHome();
+            logStep('ensureOnHome done, url=' + (location.href || ''));
+            closeAdsAndCovers();
+
+            // Thoi gian tre chu dong de trang Home/Dropdown Casino load day du
+            const DELAY_BEFORE_FLOW = 1200;   // ms sau khi bat flow tu login
+            const DELAY_AFTER_CASINO = 600;   // ms sau khi tab Casino active truoc khi click PP
+            await wait(DELAY_BEFORE_FLOW);
+
+            // tam dung auto close popup 5s de dropdown khong bi dong ngay
+            const savedAutoClose = window.__abx_auto_close_popup;
+            if (savedAutoClose) {
+                clearInterval(savedAutoClose);
+                window.__abx_auto_close_popup = null;
+                setTimeout(() => {
+                    if (!window.__abx_auto_close_popup)
+                        window.__abx_auto_close_popup = setInterval(() => { try { closeAdsAndCovers(); } catch (_) {} }, 2000);
+                }, 5000);
+            }
+
+            try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) {}
+
+            const log = (m) => { try { updateInfo && updateInfo(m); } catch (_) {} };
+            const safeClick = (el, holdMs = 400) => {
+                if (!el) return false;
+                try { peelAndClick(el, { holdMs }); return true; } catch (_) {}
+                try { el.click(); return true; } catch (_) {}
+                return false;
+            };
+            const openCasinoDropdown = () => {
+                try {
+                    const nav = document.querySelector('.nav_item_btn.LIVE, .nav_item.LIVE, .nav_item_btn');
+                    if (nav)
+                        nav.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                } catch (_) {}
+            };
+
+            const casinoTails = [
+                'div.header[1]/div.header_title[1]/div.header_bottom[2]/div.header_nav[1]/div.header_nav_list[1]/div.nav_item[2]/div.nav_item_btn.LIVE[1]/div.name1[1]',
+                'div.header_nav[1]/div.header_nav_list[1]/div.nav_item[2]/div.nav_item_btn.LIVE[1]',
+                'div.header_nav[1]/div.header_nav_list[1]/div.nav_item.active[2]/div.nav_item_btn.LIVE[1]'
+            ];
+            const resolveCasinoTab = () => {
+                for (const t of casinoTails) {
+                    const btn = findByTail(t);
+                    if (btn && isVisibleAndClickable(btn))
+                        return btn.closest('.nav_item_btn.LIVE') || btn;
+                }
+                const byText = Array.from(document.querySelectorAll('div.header_nav_list .nav_item_btn.LIVE, .nav_item_btn.LIVE .name1'))
+                    .find(el => norm(el.textContent || '').includes('casino'));
+                if (byText && isVisibleAndClickable(byText))
+                    return byText.closest('.nav_item_btn.LIVE') || byText;
+                const byClass = document.querySelector('div.header_nav_list .nav_item_btn.LIVE');
+                if (byClass && isVisibleAndClickable(byClass))
+                    return byClass;
+                return null;
+            };
+
+            const ensurePPDropdownOpen = () => {
+                try {
+                    // click/hover nav LIVE thêm lần nữa để dropdown chắc chắn mở
+                    const nav = document.querySelector('.nav_item_btn.LIVE, .nav_item.LIVE, .nav_item_btn');
+                    if (nav) {
+                        nav.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                        nav.click?.();
+                    }
+                } catch (_) {}
+            };
+
+            const resolvePP_TailAndText = () => {
+                const tails = [TAIL_PP_TRUC_TUYEN, TAIL_PP_TRUC_TUYEN_ALT];
+                for (const t of tails) {
+                    if (!t) continue;
+                    try {
+                        const el = findByTail(t);
+                        if (el && el.isConnected)
+                            return el;
+                    } catch (_) {}
+                }
+                return Array.from(document.querySelectorAll('span.desc, li, a, button, div'))
+                    .find(el => /pp\s*truc\s*tuyen/i.test(norm(el.textContent)));
+            };
+            const resolvePP_ByBroadText = () => {
+                const match = (el) => /pp\s*(live|truc\s*tuyen)|pragmatic\s*play|pragmatic/.test(norm(el.textContent));
+                return Array.from(document.querySelectorAll('li, a, button, span, div'))
+                    .find(el => match(el));
+            };
+            const resolvePP_ClickParent = () => {
+                const el = resolvePP_TailAndText() || resolvePP_ByBroadText();
+                if (!el) return null;
+                return el.closest('li, .dropdown_menu, .nav_item, .nav_item_btn') || el;
+            };
+
+            // pha 1: click Casino toi da 8 lan
+            let activeCasino = false;
+            for (let i = 0; i < 8; i++) {
+                const btn = resolveCasinoTab();
+                const navItem = btn?.closest('.nav_item');
+                activeCasino = !!(navItem && /\bactive\b/.test(navItem.className));
+                if (!activeCasino && btn)
+                    safeClick(btn, 450);
+                if (activeCasino)
+                    break;
+                await wait(800);
+            }
+
+            if (activeCasino && DELAY_AFTER_CASINO > 0)
+                await wait(DELAY_AFTER_CASINO);
+
+            // pha 2: click PP truc tuyen voi nhieu phuong an
+            const strategies = [
+                { name: 'tail+text', resolver: resolvePP_TailAndText },
+                { name: 'broad-text', resolver: resolvePP_ByBroadText },
+                { name: 'parent-fallback', resolver: resolvePP_ClickParent }
+            ];
+            let gotPP = false;
+            let usedStrat = '';
+            for (const strat of strategies) {
+                for (let i = 0; i < 6; i++) {
+                    const ppBtn = strat.resolver();
+                    if (ppBtn && safeClick(ppBtn, 400)) {
+                        gotPP = true;
+                        usedStrat = strat.name;
+                        break;
+                    }
+                    await wait(1000);
+                }
+                if (gotPP)
+                    break;
+                ensurePPDropdownOpen();
+            }
+
+            if (!gotPP) {
+                if (typeof updateInfo === 'function')
+                    updateInfo('Khong click duoc nut "PP truc tuyen". Co the bi overlay/che.');
+                return 'no-pp-click';
+            }
+
+            if (usedStrat && typeof updateInfo === 'function')
+                updateInfo('Da click PP truc tuyen (strategy: ' + usedStrat + ')');
+
+            await wait(800); // cho danh sach game PP load
+            // đợi listing render + đóng overlay để tránh click sớm khi còn /seamless
+            const ensurePpListingReady = async () => {
+                const DEADLINE = 6000;
+                const start = Date.now();
+                while (Date.now() - start < DEADLINE) {
+                    try { closeAdsAndCovers(); } catch (_) {}
+                    const hasList = document.querySelector('.casino_detail .game-list, .casino_list .game-card, .game-item');
+                    if (hasList && hasList.offsetParent !== null)
+                        return true;
+                    await wait(200);
+                }
+                return false;
+            };
+            const listReady = await ensurePpListingReady();
+            logStep('listing ready=' + listReady + ' href=' + (location.href || ''));
+
+            // 4) tim card "Baccarat nhieu ban" (PP)
+            if (typeof updateInfo === 'function')
+                updateInfo('Dang tim game "Baccarat nhieu ban" (PP)...');
+
+            const RE_BACC = /\bbaccarat\b/i;
+            const RE_MULTI = /(nhieu\s*ban|multi[\s_-]*table|multi[\s_-]*baccarat)/i;
+            const RE_PP = /\bpp\b|pragmatic/i;
+
+            // scan nhanh tren trang hien tai (khong can tai su dung bridge)
+            const resolveGameCardSimple = () => {
+                const nodes = Array.from(document.querySelectorAll('a,button,div,span'));
+                for (const el of nodes) {
+                    const t = norm([
+                        el.textContent || '',
+                        el.getAttribute('aria-label') || '',
+                        el.getAttribute('title') || ''
+                    ].join(' '));
+                    if (t.includes('baccarat') && t.includes('nhieu ban') && isVisibleAndClickable(el)) {
+                        const clickable = el.closest('a,button') || el;
+                        if (isVisibleAndClickable(clickable))
+                            return clickable;
+                    }
+                }
+                return null;
+            };
+
+            const resolveGameCard = () => {
+                const cards = Array.from(document.querySelectorAll(
+                    '.casino_detail .game-list .game-item,' +
+                    '.casino_detail .game-list li,' +
+                    '.casino_list .game-card'));
+
+                if (!cards.length)
+                    return null;
+
+                const cand = [];
+
+                cards.forEach((card, idx) => {
+                    const txt = norm(card.innerText || '');
+                    const imgTxt = norm(
+                        Array.from(card.querySelectorAll('img[alt],img[title]'))
+                            .map(img => img.alt || img.title || '')
+                            .join(' '));
+
+                    const t = txt + ' ' + imgTxt;
+                    let score = 0;
+
+                    if (RE_BACC.test(t)) score += 6;
+                    if (RE_MULTI.test(t)) score += 6;
+                    if (RE_PP.test(t)) score += 4;
+                    if (/nhieu\s*ban/i.test(t)) score += 2;
+                    if (idx <= 2) score += 1;
+
+                    if (score > 0 && isVisibleAndClickable(card)) {
+                        cand.push({ el: card, score });
+                    }
+                });
+
+                if (!cand.length)
+                    return null;
+                cand.sort((a, b) => b.score - a.score);
+                return cand[0].el;
+            };
+
+            const WAIT_GAME_MS = 12000;
+            let card = await waitButtonUpTo(resolveGameCard, WAIT_GAME_MS, 200);
+
+            // fallback scan đơn giản nếu chưa thấy
+            if (!card)
+                card = resolveGameCardSimple();
+
+            if (!card) {
+                logStep('no-card found, url=' + (location.href || ''));
+                if (typeof updateInfo === 'function')
+                    updateInfo('Khong tim thay game "Baccarat nhieu ban" (PP).');
+                return 'no-game';
+            }
+
+            // 5) Click card / nut Play
+            const resolverForClick = () => {
+                if (card && isVisibleAndClickable(card)) {
+                    const btn = card.querySelector('a,button') || card;
+                    if (isVisibleAndClickable(btn))
+                        return btn;
+                }
+
+                const other = resolveGameCard();
+                if (!other)
+                    return null;
+
+                const btn2 = other.querySelector('a,button') || other;
+                return isVisibleAndClickable(btn2) ? btn2 : null;
+            };
+
+            // thử điều hướng thẳng nếu card có href/data-url (để tránh bị kẹt ở seamless)
+            const directHref =
+                (card && (card.getAttribute('href') || (card.dataset && (card.dataset.href || card.dataset.url)))) ||
+                (card && card.closest('a') ? card.closest('a').href : '');
+            if (directHref) {
+                logStep('found card href, navigate direct: ' + directHref);
+                try { location.href = directHref; window.__abx_bacc_loading_until = Date.now() + guardMs; return 'nav-href'; } catch (_) {}
+            }
+
+            const ok = await multiTryClick(resolverForClick, 50, () => false, 200, 700);
+            if (!ok) {
+                if (typeof updateInfo === 'function') {
+                    const info = [
+                        'Khong the click vao game "Baccarat nhieu ban" (PP). Nut co the bi khoa hoac trang chan dieu huong.',
+                        'URL: ' + (location.href || ''),
+                        'Title: ' + (document.title || '')
+                    ].join('\\n');
+                    updateInfo(info);
+                }
+                logStep('no-click after retries, url=' + (location.href || ''));
+                // fallback: nếu card có href/data-url thì điều hướng thẳng
+                const href =
+                    (card && (card.getAttribute('href') || (card.dataset && (card.dataset.href || card.dataset.url)))) ||
+                    (card && card.closest('a') ? card.closest('a').href : '');
+                if (href) {
+                    logStep('click fail -> navigate direct ' + href);
+                    try { location.href = href; return 'nav-href'; } catch (_) {}
+                }
+                try { console && console.warn && console.warn('[BaccMulti] no-click', { href: location.href, title: document.title }); } catch (_) {}
+                return 'no-click';
+            }
+
+            if (typeof updateInfo === 'function')
+                updateInfo('Da click vao game "Baccarat nhieu ban" (PP).');
+
+            return 'ok';
+        } catch (e) {
+            try { console && console.warn && console.warn('[HomeWatch] clickBaccNhieuBanFromHome error:', e); } catch (_) {}
+            return 'err:' + (e && e.message ? e.message : String(e));
+        }
+    }
+
+    // Reset guard khi quay ve home (tranh mang guard tu PP ve khien lan sau bi chan)
+    if (!window.__abx_bacc_guard_reset) {
+        window.__abx_bacc_guard_reset = setInterval(() => {
+            try {
+                const href = location.href || '';
+                const host = (new URL(href, location.href)).hostname || '';
+                const isHomeHost = /rr\d+\.com/i.test(host) || host.includes('rr5309.com') || host.includes('www.rr');
+                if (isHomeHost && window.__abx_bacc_loading_until) {
+                    window.__abx_bacc_loading_until = 0;
+                    try { updateInfo && updateInfo('[bacc] reset guard on home host'); } catch (_) {}
+                    try { console && console.warn && console.warn('[BaccMulti] reset guard on home host'); } catch (_) {}
+                }
+            } catch (_) {}
+        }, 1000);
+    }    // Auto retry trong lobby PP: cu thay lobby thi thu click "Baccarat nhieu ban"
+      if (!window.__abx_bacc_lobby_retry) {
+          let __abx_bacc_auto_state = '';
+          window.__abx_bacc_lobby_retry = setInterval(async () => {
+              try {
+                  if (!isOnPPLobby()) {
+                      if (__abx_bacc_auto_state !== 'not-lobby') {
+                          try { updateInfo && updateInfo('[bacc-auto] Skip: chua o lobby PP'); } catch (_) {}
+                          __abx_bacc_auto_state = 'not-lobby';
+                      }
+                      return;
+                  }
+                  // tránh spam khi vừa click/đang load game
+                  if (window.__abx_bacc_loading_until && Date.now() < window.__abx_bacc_loading_until) {
+                      if (__abx_bacc_auto_state !== 'guard') {
+                          try { updateInfo && updateInfo('[bacc-auto] Guard active, doi het thoi gian...'); } catch (_) {}
+                          __abx_bacc_auto_state = 'guard';
+                      }
+                      return;
+                  }
+                  try { updateInfo && updateInfo('[bacc-auto] Dang thu click "Baccarat nhieu ban" trong lobby...'); } catch (_) {}
+                  const res = await clickBaccNhieuBanInPPLobby(6000);
+                  try { console && console.warn && console.warn('[BaccMulti][auto] result:', res); } catch (_) {}
+                  try { updateInfo && updateInfo('[bacc-auto] Ket qua: ' + res); } catch (_) {}
+                  __abx_bacc_auto_state = 'res:' + res;
+                  if (res === 'ok') {
+                      window.__abx_bacc_loading_until = Date.now() + 5000;
+                  }
+              } catch (_) { }
+          }, 200);
+      }
+
+    async function clickXocDiaLive() {
+    // 1) Đảm bảo đang ở Home
+    await ensureOnHome();
+
+    // 2) Tìm nút đúng (ưu tiên tail cố định)
+    const resolveBtnFallback = () => {
+        // 1) Thử tail cố định trước
+        const items = Array.from(document.querySelectorAll('.livestream-section__live .item-live'));
+        const cand = [];
+
+        items.forEach((it, idx) => {
+            // văn bản toàn item + alt/title ảnh
+            const scopeTxt = norm([
+                        it.innerText,
+                        ...Array.from(it.querySelectorAll('img[alt],img[title]'))
+                        .map(img => img.alt || img.title || '')
+                    ].join(' '));
+
+            // Tài Xỉu / Sicbo / Dice => điểm dương, Xóc Đĩa => điểm âm
+            const wCtxPos = RE_XOCDIA_POS.test(scopeTxt) ? 6 : 0;
+            const wCtxNeg = RE_XOCDIA_NEG.test(scopeTxt) ? -10 : 0;
+
+            const btns = Array.from(
+                    it.querySelectorAll('.play-overlay button.base-button.btn, button.base-button.btn, a.base-button.btn'));
+
+            btns.forEach(b => {
+                const lbl = norm(textOf(b));
+                const wBtnPos = RE_XOCDIA_POS.test(lbl) ? 4 : 0;
+                const wBtnNeg = RE_XOCDIA_NEG.test(lbl) ? -10 : 0;
+
+                // 🔥 ƯU TIÊN THỨ TỰ ITEM:
+                // - idx === 0: Tài Xỉu Live (item đầu tiên) -> +3
+                // - idx 1, 2: vẫn được cộng nhẹ +1
+                const idxBoost = (idx === 0 ? 3 : (idx <= 2 ? 1 : 0));
+
+                const score = wCtxPos + wCtxNeg + wBtnPos + wBtnNeg + idxBoost;
+                cand.push({
+                    el: b,
+                    score,
+                    idx
+                });
+            });
+        });
+
+        // Sắp xếp theo score, lấy cái tốt nhất và còn click được
+        cand.sort((a, b) => b.score - a.score);
+        const top = cand.find(c => c.score > 0 && isVisibleAndClickable(c.el));
+        return top ? top.el : null; // ❗ KHÔNG fallback “nút thứ 2” nữa
+    };
+
+    // 3) Đóng quảng cáo/cover phổ biến trước
+    closeAdsAndCovers();
+
+    // 4) Chờ nút theo 2 pha: 5s chỉ tail, rồi phần còn lại cho fallback (tổng ≤12s)
+    const WAIT_MS = 12000;
+    const TAIL_ONLY_MS = 5000;
+
+    // Pha 1: chỉ đợi tail cố định
+    const tailBtn = await waitButtonUpTo(() => {
+        const b = findByTail(TAIL_XOCDIA_BTN);
+        return (b && isVisibleAndClickable(b)) ? b : null;
+    }, TAIL_ONLY_MS, 200);
+
+    let btn = tailBtn;
+
+    // Pha 2: nếu chưa có tail, đợi phần còn lại cho các điều kiện fallback
+    if (!btn) {
+        const restMs = Math.max(0, WAIT_MS - TAIL_ONLY_MS);
+        btn = await waitButtonUpTo(resolveBtnFallback, restMs, 200);
+    }
+
+    if (!btn) {
+        updateInfo('⚠ Không tìm thấy nút "Chơi Xóc Đĩa Live" trong ≤' + Math.round(WAIT_MS / 1000) + 's sau khi về trang Home.');
+        return;
+    }
+
+    // Resolver click: ưu tiên nút đã tìm thấy (tail hoặc fallback); nếu không còn khả dụng, fallback tiếp
+    const resolveBtnFallbackSafe = () => resolveBtnFallback();
+    const resolverForClick = () => (btn && isVisibleAndClickable(btn)) ? btn : resolveBtnFallbackSafe();
+
+    // 5) Click 1–3 lần (auto) + xuyên overlay
+    const ok = await multiTryClick(resolverForClick, 3, isXocDiaLaunched);
+    if (ok) {
+        updateInfo('→ Đã tự động click (đợi nút trong ≤' + Math.round(WAIT_MS / 1000) + 's, sau đó click 1–3 lần) để vào "Chơi Xóc Đĩa Live".');
+    } else {
+        updateInfo('⚠ Không thể vào "Chơi Xóc Đĩa Live". Nút có thể bị khoá hoặc trang chặn điều hướng.');
+    }
+}
+
+    // ======= Multi-table Overlay =======
+    (function installTableOverlay() {
+        const OVERLAY_ID = '__abx_table_overlay_root';
+        const RESET_BTN_ID = '__abx_table_overlay_reset';
+        const PANEL_CLASS = '__abx_table_panel';
+        const LAYOUT_KEY = '__abx_table_layout_v1';
+        const GAP = 8;
+        const MIN_W = 180;
+        const MIN_H = 140;
+
+        let rooms = [];
+        let layouts = loadLayouts();
+        const panelMap = new Map();
+        let cfg = {
+            // callback: (roomId) => HTMLElement | null
+            resolveDom: null,
+            selectorTemplate: '',
+            baseSelector: ''
+        };
+
+        function loadLayouts() {
+            try {
+                const raw = localStorage.getItem(LAYOUT_KEY);
+                if (!raw)
+                    return {};
+                const obj = JSON.parse(raw);
+                return (obj && typeof obj === 'object') ? obj : {};
+            } catch (_) {
+                return {};
+            }
+        }
+        function saveLayouts() {
+            try {
+                localStorage.setItem(LAYOUT_KEY, JSON.stringify(layouts || {}));
+            } catch (_) {}
+        }
+
+        function ensureStyles() {
+            if (document.getElementById('__abx_table_overlay_style'))
+                return;
+            const style = document.createElement('style');
+            style.id = '__abx_table_overlay_style';
+            style.textContent = `
+            #${OVERLAY_ID} {
+                position: fixed;
+                inset: 0;
+                z-index: 2147480000;
+                pointer-events: none;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} {
+                position: absolute;
+                background: #0b1d4a;
+                color: #f4f5fb;
+                border-radius: 12px;
+                box-shadow: 0 10px 26px rgba(0,0,0,0.35);
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+                pointer-events: auto;
+                border: 1px solid rgba(255,255,255,0.08);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 6px 10px;
+                gap: 8px;
+                background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+                user-select: none;
+                cursor: move;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head .title {
+                font-weight: 700;
+                font-size: 14px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head .actions {
+                display: flex;
+                gap: 6px;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head button {
+                border: none;
+                background: rgba(255,255,255,0.12);
+                color: #fefefe;
+                padding: 4px 6px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-weight: 600;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head button:hover {
+                background: rgba(255,255,255,0.22);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .body {
+                flex: 1;
+                background: #0f1733;
+                overflow: hidden;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .body > .mirror {
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .resize {
+                position: absolute;
+                width: 14px;
+                height: 14px;
+                right: 2px;
+                bottom: 2px;
+                cursor: se-resize;
+                background: rgba(255,255,255,0.15);
+                border-radius: 4px;
+            }
+            #${RESET_BTN_ID} {
+                position: fixed;
+                top: 8px;
+                right: 12px;
+                z-index: 2147480001;
+                padding: 8px 10px;
+                border-radius: 8px;
+                border: none;
+                background: #2563eb;
+                color: white;
+                font-weight: 700;
+                cursor: pointer;
+                pointer-events: auto;
+                box-shadow: 0 6px 18px rgba(0,0,0,0.22);
+            }`;
+            document.head.appendChild(style);
+        }
+
+        function ensureRoot() {
+            ensureStyles();
+            let root = document.getElementById(OVERLAY_ID);
+            if (!root) {
+                root = document.createElement('div');
+                root.id = OVERLAY_ID;
+                document.body.appendChild(root);
+            }
+            let resetBtn = document.getElementById(RESET_BTN_ID);
+            if (!resetBtn) {
+                resetBtn = document.createElement('button');
+                resetBtn.id = RESET_BTN_ID;
+                resetBtn.textContent = 'Reset layout';
+                resetBtn.addEventListener('click', () => resetLayout());
+                document.body.appendChild(resetBtn);
+            }
+            return root;
+        }
+
+        function clamp(v, min, max) {
+            return Math.max(min, Math.min(max, v));
+        }
+
+        function computeGrid(n) {
+            const cols = Math.ceil(Math.sqrt(n));
+            const rows = Math.ceil(n / cols);
+            return { cols, rows };
+        }
+
+        function defaultResolveDom(id) {
+            try {
+                const sel = [
+                    `[data-table-id="${id}"]`,
+                    `[data-id="${id}"]`,
+                    `[data-game-id="${id}"]`,
+                    `[data-tableid="${id}"]`,
+                    `.table-${id}`,
+                    `.table_${id}`
+                ].join(',');
+                const el = document.querySelector(sel);
+                if (el)
+                    return el;
+                if (cfg.selectorTemplate) {
+                    const s = cfg.selectorTemplate.replace(/\{id\}/g, id);
+                    const el2 = document.querySelector(s);
+                    if (el2)
+                        return el2;
+                }
+                if (cfg.baseSelector) {
+                    const matches = Array.from(document.querySelectorAll(cfg.baseSelector))
+                        .filter(node => node && node.innerText && node.innerText.includes(id));
+                    if (matches.length)
+                        return matches[0];
+                }
+            } catch (_) {}
+            return null;
+        }
+
+        function getPanelState(id) {
+            return panelMap.get(id);
+        }
+
+        function syncPanel(id) {
+            const st = getPanelState(id);
+            if (!st || !st.panel)
+                return;
+            const src = st.resolve(id);
+            if (!src || !src.isConnected) {
+                st.body.textContent = 'Kh?ng t?m th?y b?n ' + id;
+                st.lastSig = '';
+                return;
+            }
+            const cs = getComputedStyle(src);
+            const rect = src.getBoundingClientRect();
+            if (cs.display === 'none' || cs.visibility === 'hidden' || rect.width < 1 || rect.height < 1)
+                return;
+
+            const sig = [
+                src.outerHTML.length,
+                cs.width, cs.height,
+                cs.background, cs.color,
+                src.className,
+                src.getAttribute('data-state') || '',
+                src.textContent.length
+            ].join('|');
+            if (sig === st.lastSig)
+                return;
+            st.lastSig = sig;
+
+            const clone = cloneWithStyles(src);
+            const host = st.mirror;
+            if (host.firstChild)
+                host.replaceChild(clone, host.firstChild);
+            else
+                host.appendChild(clone);
+        }
+
+        function scheduleSync(id) {
+            const st = getPanelState(id);
+            if (!st)
+                return;
+            if (st.scheduled)
+                return;
+            st.scheduled = true;
+            requestAnimationFrame(() => {
+                st.scheduled = false;
+                syncPanel(id);
+            });
+        }
+
+        function attachObserver(id, src) {
+            const st = getPanelState(id);
+            if (!st)
+                return;
+            if (st.obs)
+                st.obs.disconnect();
+            if (!src)
+                return;
+            st.obs = new MutationObserver(() => scheduleSync(id));
+            st.obs.observe(src, {
+                childList: true,
+                characterData: true,
+                attributes: true,
+                subtree: true
+            });
+        }
+
+        function cloneWithStyles(src) {
+            const clone = src.cloneNode(false);
+            copyStylesAll(src, clone);
+            for (const child of src.childNodes) {
+                clone.appendChild(child.nodeType === 1 ? cloneWithStyles(child) : child.cloneNode(true));
+            }
+            return clone;
+        }
+
+        function copyStylesAll(src, dst) {
+            const cs = getComputedStyle(src);
+            for (const prop of cs) {
+                dst.style.setProperty(prop, cs.getPropertyValue(prop), cs.getPropertyPriority(prop));
+            }
+            dst.style.width = cs.width;
+            dst.style.height = cs.height;
+        }
+
+        function createPanel(room, idx) {
+            const root = ensureRoot();
+            let panel = document.createElement('div');
+            panel.className = PANEL_CLASS;
+            panel.dataset.id = room.id;
+
+            const head = document.createElement('div');
+            head.className = 'head';
+            const title = document.createElement('div');
+            title.className = 'title';
+            title.textContent = room.name || room.id;
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const btnPlay = document.createElement('button');
+            btnPlay.textContent = 'Play';
+            btnPlay.addEventListener('click', () => {
+                try {
+                    window.chrome?.webview?.postMessage?.({ type: 'table_play', id: room.id });
+                } catch (_) {}
+            });
+            const btnClose = document.createElement('button');
+            btnClose.textContent = '?';
+            btnClose.title = '??ng';
+            btnClose.addEventListener('click', () => {
+                panel.style.display = 'none';
+            });
+            actions.append(btnPlay, btnClose);
+            head.append(title, actions);
+
+            const body = document.createElement('div');
+            body.className = 'body';
+            const mirror = document.createElement('div');
+            mirror.className = 'mirror';
+            body.appendChild(mirror);
+
+            const resize = document.createElement('div');
+            resize.className = 'resize';
+
+            panel.append(head, body, resize);
+            root.appendChild(panel);
+
+            const st = {
+                id: room.id,
+                panel,
+                body,
+                mirror,
+                obs: null,
+                lastSig: '',
+                scheduled: false,
+                resolve: (id) => {
+                    if (typeof cfg.resolveDom === 'function')
+                        return cfg.resolveDom(id);
+                    return defaultResolveDom(id);
+                }
+            };
+            panelMap.set(room.id, st);
+            makeDraggable(panel, head);
+            makeResizable(panel, resize);
+            placePanel(panel, idx);
+            const src = st.resolve(room.id);
+            attachObserver(room.id, src);
+            scheduleSync(room.id);
+        }
+
+        function placePanel(panel, idx, forceGrid = false) {
+            const root = ensureRoot();
+            const rc = root.getBoundingClientRect();
+            const n = rooms.length || 1;
+            const { cols, rows } = computeGrid(n);
+            const gap = GAP;
+            const baseW = Math.max(MIN_W, (rc.width - gap * (cols + 1)) / cols);
+            const baseH = Math.max(MIN_H, (rc.height - gap * (rows + 1)) / rows);
+            const id = panel.dataset.id;
+            const saved = !forceGrid && layouts && layouts[id];
+            let x, y, w, h;
+            if (saved) {
+                ({ x, y, w, h } = layouts[id]);
+                x = clamp(x, 0, rc.width - MIN_W);
+                y = clamp(y, 0, rc.height - MIN_H);
+                w = clamp(w, MIN_W, rc.width);
+                h = clamp(h, MIN_H, rc.height);
+            } else {
+                const col = idx % cols;
+                const row = Math.floor(idx / cols);
+                w = baseW;
+                h = baseH;
+                x = gap + col * (baseW + gap);
+                y = gap + row * (baseH + gap);
+            }
+            panel.style.width = w + 'px';
+            panel.style.height = h + 'px';
+            panel.style.left = x + 'px';
+            panel.style.top = y + 'px';
+        }
+
+        function makeDraggable(panel, handle) {
+            let dragging = false;
+            let startX = 0;
+            let startY = 0;
+            let origX = 0;
+            let origY = 0;
+            const root = ensureRoot();
+            const onDown = (e) => {
+                e.preventDefault();
+                dragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                origX = parseFloat(panel.style.left) || 0;
+                origY = parseFloat(panel.style.top) || 0;
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            };
+            const onMove = (e) => {
+                if (!dragging)
+                    return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                const rc = root.getBoundingClientRect();
+                const w = panel.getBoundingClientRect().width;
+                const h = panel.getBoundingClientRect().height;
+                let nx = clamp(origX + dx, 0, rc.width - w);
+                let ny = clamp(origY + dy, 0, rc.height - h);
+                panel.style.left = nx + 'px';
+                panel.style.top = ny + 'px';
+            };
+            const onUp = () => {
+                if (!dragging)
+                    return;
+                dragging = false;
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                persistLayout(panel);
+            };
+            handle.addEventListener('mousedown', onDown);
+        }
+
+        function makeResizable(panel, handle) {
+            let resizing = false;
+            let startX = 0;
+            let startY = 0;
+            let origW = 0;
+            let origH = 0;
+            const root = ensureRoot();
+            const onDown = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                resizing = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                const rc = panel.getBoundingClientRect();
+                origW = rc.width;
+                origH = rc.height;
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            };
+            const onMove = (e) => {
+                if (!resizing)
+                    return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                const rootRect = root.getBoundingClientRect();
+                const left = parseFloat(panel.style.left) || 0;
+                const top = parseFloat(panel.style.top) || 0;
+                let nw = clamp(origW + dx, MIN_W, rootRect.width - left);
+                let nh = clamp(origH + dy, MIN_H, rootRect.height - top);
+                panel.style.width = nw + 'px';
+                panel.style.height = nh + 'px';
+            };
+            const onUp = () => {
+                if (!resizing)
+                    return;
+                resizing = false;
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                persistLayout(panel);
+            };
+            handle.addEventListener('mousedown', onDown);
+        }
+
+        function persistLayout(panel) {
+            const id = panel.dataset.id;
+            const rc = panel.getBoundingClientRect();
+            layouts[id] = {
+                x: rc.left,
+                y: rc.top,
+                w: rc.width,
+                h: rc.height
+            };
+            saveLayouts();
+        }
+
+        function layoutAll(forceGrid = false) {
+            rooms.forEach((r, idx) => {
+                const st = getPanelState(r.id);
+                if (!st || !st.panel)
+                    return;
+                placePanel(st.panel, idx, forceGrid);
+            });
+        }
+
+        function renderRooms(list, options = {}) {
+            cfg = Object.assign(cfg, options || {});
+            rooms = (list || []).map(r => {
+                if (typeof r === 'string')
+                    return { id: r, name: r };
+                if (r && r.id)
+                    return { id: r.id, name: r.name || r.id };
+                return null;
+            }).filter(Boolean);
+
+            const root = ensureRoot();
+            // remove stale panels
+            Array.from(panelMap.keys()).forEach(id => {
+                if (!rooms.find(r => r.id === id)) {
+                    const st = getPanelState(id);
+                    if (st && st.panel && st.panel.parentElement === root)
+                        root.removeChild(st.panel);
+                    if (st && st.obs)
+                        st.obs.disconnect();
+                    panelMap.delete(id);
+                    delete layouts[id];
+                }
+            });
+
+            rooms.forEach((room, idx) => {
+                if (!panelMap.has(room.id)) {
+                    createPanel(room, idx);
+                }
+            });
+
+            layoutAll(false);
+        }
+
+        function resetLayout() {
+            layouts = {};
+            saveLayouts();
+            layoutAll(true);
+        }
+
+        function hide() {
+            const root = document.getElementById(OVERLAY_ID);
+            const btn = document.getElementById(RESET_BTN_ID);
+            if (root)
+                root.style.display = 'none';
+            if (btn)
+                btn.style.display = 'none';
+        }
+
+        function show() {
+            const root = ensureRoot();
+            root.style.display = '';
+            const btn = document.getElementById(RESET_BTN_ID);
+            if (btn)
+                btn.style.display = '';
+        }
+
+        window.__abxTableOverlay = {
+            render: renderRooms,
+            reset: resetLayout,
+            hide,
+            show
+        };
+    })();
+
+    // ======= Boot =======
+    function ensureOverlayHost() {
+    // đảm bảo overlay tồn tại và listeners đã gắn
+    return ensureOverlay();
+}
+    // NEW: loop định kỳ để tự động đóng popup/thông báo
+    function ensureAutoClosePopups() {
+    if (window.__abx_auto_close_popup)
+        return;
+    window.__abx_auto_close_popup = setInterval(() => {
+        try {
+            closeAdsAndCovers();
+        } catch (_) {}
+    }, 2000); // 2s/lần, đủ để tắt popup mà không spam
+}
+
+    function boot() {
+    try {
+        onDomReady(() => {
+            ensureRoot();
+            ensureOverlayHost();
+            ensureAutoClosePopups(); // NEW: auto đóng popup/thông báo
+            // Nếu đã nhận diện đang đăng nhập -> mở cổng ngay
+            try {
+                if (isLoggedInFromDOM()) {
+                    S.authGateOpened = true;
+                }
+            } catch (_) {}
+
+            // Sau boot – kiểm tra lại khi tab trở lại foreground (login popup/redirect)
+            if (!window.__abx_vis_listener) {
+                window.__abx_vis_listener = true;
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden) {
+                        onAuthStateMaybeChanged('vis'); // cập nhật username -> fetch/iframe nếu cần
+                        const bv = findBalance();
+                        if (bv)
+                            updateBalance(bv);
+                    }
+                });
+
+            }
+
+            // Chỉ khi nhìn thấy nút "Đăng nhập" mới bắt đầu các tiến trình Username/Balance
+            waitFor(() => !!findLoginButton(), 30000, 150).then(ok => {
+                if (ok) {
+                    S.authGateOpened = true;
+                    // có thể bơm nhẹ một vòng để điền nhanh
+                    pumpAuthProbe(4000, 300);
+
+                    // NEW: nếu CHƯA login và popup đăng nhập CHƯA hiển thị
+                    // thì tự động bật vòng auto click nút "Đăng nhập"
+                    try {
+                        if (!isLoginPopupVisible() && !isLoggedInFromDOM()) {
+                            startLoginAutoClick();
+                        }
+                    } catch (_) {}
+                }
+            });
+
+            // Cài mute telemetry trong các iframe cùng origin
+            Array.from(document.querySelectorAll('iframe')).forEach(f => {
+                try {
+                    const w = f.contentWindow;
+                    if (w && w.location && w.location.origin === location.origin) {
+                        installTelemetryMutesInFrame(w);
+                        f.setAttribute('data-abx-tmuted', '1'); // đánh dấu đã mute
+                        f.addEventListener('load', () => installTelemetryMutesInFrame(f.contentWindow));
+
+                    }
+                } catch (_) {}
+            });
+
+            // cập nhật ngay lần đầu theo DOM hiện có (chỉ set khi có giá trị)
+            const u0 = canRunAuthLoop() ? findUserFromDOM() : '';
+            if (u0)
+                updateUsername(u0);
+            ensureObserver();
+            const b0 = canRunAuthLoop() ? findBalance() : '';
+            if (b0)
+                updateBalance(b0);
+
+            updateInfo(); // <— render panel
+            startUsernameWatchdog();
+
+            // one-shot: sau 500ms nếu vẫn chưa có username thì fetch profile / iframe
+            setTimeout(async() => {
+                if (!S.username) {
+                    const ok = await tryFetchUserProfile();
+                    if (!ok)
+                        probeIframeOnce();
+                }
+            }, 500);
+
+            // one-shot: khi trang “pageshow” (SPA quay lại / điều hướng xong) thử lại 1 lần
+            window.addEventListener('pageshow', async() => {
+                if (!S.username) {
+                    const ok = await tryFetchUserProfile();
+                    if (!ok)
+                        probeIframeOnce();
+                }
+                const bp = findBalance();
+                if (bp)
+                    updateBalance(bp);
+                pumpAuthProbe(8000, 200);
+            }, {
+                once: true
+            });
+
+        });
+
+    } catch (e) {
+        console.error('[HomeWatch] boot error', e);
+    }
+}
+    boot();
+    })();

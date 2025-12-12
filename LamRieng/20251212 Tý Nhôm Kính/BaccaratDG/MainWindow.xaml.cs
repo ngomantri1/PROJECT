@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -13,8 +13,8 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using static System.Net.Mime.MediaTypeNames;
 using static System.Runtime.InteropServices.JavaScript.JSType;
-using BaccaratDG;
-using BaccaratDG.Tasks;
+using BaccaratPPRR88;
+using BaccaratPPRR88.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Globalization;
@@ -29,13 +29,13 @@ using System.ComponentModel;
 using System.Linq;
 using System.Collections.ObjectModel;
 using System.Windows.Data;
-using static BaccaratDG.MainWindow;
+using static BaccaratPPRR88.MainWindow;
 using System.Windows.Input;
 
 
 
 
-namespace BaccaratDG
+namespace BaccaratPPRR88
 {
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Assets (pack URI).
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Resources (pack URI).
@@ -131,9 +131,29 @@ namespace BaccaratDG
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
     }
+
+    public sealed class RoomOption : INotifyPropertyChanged
+    {
+        public string Name { get; set; } = "";
+
+        private bool _isSelected;
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (_isSelected == value) return;
+                _isSelected = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+            }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+    }
+
     public partial class MainWindow : Window
     {
-        private const string AppLocalDirName = "BaccaratDG"; // đổi thành tên bạn muốn
+        private const string AppLocalDirName = "BaccaratPPRR88"; // đổi thành tên bạn muốn
         // ====== App paths ======
         private readonly string _appDataDir;
         private readonly string _cfgPath;
@@ -147,7 +167,8 @@ namespace BaccaratDG
         private bool _uiReady = false;
         private bool _didStartupNav = false;
         private bool _webHooked = false;
-        private CancellationTokenSource? _navCts, _userCts, _passCts, _stakeCts;
+        private CancellationTokenSource? _navCts, _userCts, _passCts, _stakeCts, _verifyCts;
+
 
         // ====== JS Awaiters ======
         private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _jsAwaiters =
@@ -191,11 +212,8 @@ namespace BaccaratDG
         // Cache & cờ để không inject lặp lại
         private string? _appJs;
         private string? _homeJs;  // nội dung js_home_v2.js
-        private bool _webMsgHooked; // để gắn WebMessageReceived đúng 1 lần
-
-
-
-
+        private bool _webMsgHooked; // �`��� g��_n WebMessageReceived �`A�ng 1 l��n
+        private string? _lastForcedLobbyUrl; // luu URL lobby PP da force navigate
         private string? _topForwardId, _appJsRegId;           // id script TOP_FORWARD
                                                               // ID riêng cho autostart của trang Home (đừng dùng chung với _homeJsRegId)
         private string? _homeAutoStartId;
@@ -229,9 +247,30 @@ namespace BaccaratDG
                                                                  // --- UI mode monitor ---
         private DateTime _lastGameTickUtc = DateTime.MinValue;
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
-        private bool _isGameUi = false;              // trạng thái UI hiện hành
         private bool _lockGameUi = false;// NEW: khóa tạm để khỏi bị timer kéo về home sau khi mình chủ động vào game
         private System.Windows.Threading.DispatcherTimer? _uiModeTimer;
+
+        private bool _lastUiIsGame = false;
+
+
+
+        private readonly ObservableCollection<string> _roomList = new();
+        private readonly HashSet<string> _selectedRooms = new(StringComparer.OrdinalIgnoreCase);
+
+        public ObservableCollection<string> RoomList => _roomList;
+
+        private int _roomListLoading = 0;
+        private DateTime _roomListLastLoaded = DateTime.MinValue;
+
+        private readonly ObservableCollection<RoomOption> _roomOptions = new();
+        public ObservableCollection<RoomOption> RoomOptions => _roomOptions;
+        private readonly ObservableCollection<RoomOption> _roomOptionsCol1 = new();
+        private readonly ObservableCollection<RoomOption> _roomOptionsCol2 = new();
+        public ObservableCollection<RoomOption> RoomOptionsCol1 => _roomOptionsCol1;
+        public ObservableCollection<RoomOption> RoomOptionsCol2 => _roomOptionsCol2;
+
+        private CancellationTokenSource? _roomSaveCts;
+        private string _lastSavedRoomsSignature = "";
 
         private static readonly TimeSpan GameTickFresh = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan HomeTickFresh = TimeSpan.FromSeconds(1.5);
@@ -410,8 +449,9 @@ Ví dụ không hợp lệ:
 
             // Lưu chuỗi tiền theo từng MoneyStrategy
             public Dictionary<string, string> StakeCsvByMoney { get; set; } = new();
+            public List<string> SelectedRooms { get; set; } = new();
 
-            /// <summary>Đường dẫn file lưu trạng thái AI n-gram (JSON). Bỏ trống => dùng mặc định %LOCALAPPDATA%\Automino\ai\ngram_state_v1.json</summary>
+            /// <summary>Du?ng d?n file luu tr?ng th?i AI n-gram (JSON). B? tr?ng => d-ng m?c d?nh %LOCALAPPDATA%\Automino\ai_gram_state_v1.json</summary>
             public string AiNGramStatePath { get; set; } = "";
 
 
@@ -441,12 +481,18 @@ Ví dụ không hợp lệ:
 
 
         private AppConfig _cfg = new();
+        // JsonOptions cho log: giữ nguyên ký tự Unicode (tiếng Việt) thay vì \uXXXX
+        private static readonly JsonSerializerOptions LogJsonOptions = new JsonSerializerOptions
+        {
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
 
         // ====== LOGGING (mới: batch, không đơ UI) ======
         // UI
         private readonly ConcurrentQueue<string> _uiLogQueue = new();
         private readonly LinkedList<string> _uiLines = new(); // buffer giữ tối đa N dòng
-        private const int UI_MAX_LINES = 1000;
+        private const int UI_MAX_LINES = 3000;
         private const int UI_FLUSH_MS = 300;
 
         // File
@@ -456,9 +502,9 @@ Ví dụ không hợp lệ:
         // Pump
         private CancellationTokenSource? _logPumpCts;
 
-        // Packet lines -> UI? (mặc định: không)
+        // Packet lines -> UI? (tắt để tránh tràn UI, chỉ log file)
         private const bool SHOW_PACKET_LINES_IN_UI = false;
-        private const int PACKET_UI_SAMPLE_EVERY_N = 20; // nếu bật ở trên, mỗi N gói mới đẩy 1 dòng lên UI
+        private const int PACKET_UI_SAMPLE_EVERY_N = 2;
         private int _pktUiSample = 0;
         private bool _lockJsRegistered = false;
         // Map ảnh cho từng ký tự
@@ -469,7 +515,7 @@ Ví dụ không hợp lệ:
         private double _winTotal = 0;
         private CoreWebView2Environment? _webEnv;
         private bool _webInitDone;
-        private const string Wv2ZipResNameX64 = "BaccaratDG.ThirdParty.WebView2Fixed_win-x64.zip";
+        private const string Wv2ZipResNameX64 = "BaccaratPPRR88.ThirdParty.WebView2Fixed_win-x64.zip";
         // Thư mục cache bền vững cho runtime (không bị dọn như %TEMP%)
         private static string Wv2BaseDir =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -600,6 +646,103 @@ Ví dụ không hợp lệ:
     })();
   }catch(_){}
 })();";
+        private const string CONSOLE_HOOK_JS = @"
+(function(){
+  try{
+    if (window.__abx_console_hooked) return;
+    window.__abx_console_hooked = 1;
+
+    // Giới hạn tối đa số log gửi sang host để tránh bắn vô hạn
+    var LIMIT = 1000;
+    var count = 0;
+
+    // Chỉ forward log của HomeWatch / scan tool
+    // Ví dụ: '[HomeWatch] ...', '[HW][BAL] ...', '[link] Scan...', '[text] ...', '[popup] ...'
+    var PREFIX_RE = /^\s*\[(?:HomeWatch|HW|link|text|popup)\b/i;
+
+    function shouldForward(level, args){
+      try{
+        if (!args || !args.length) return false;
+
+        // Cho phép tắt tap runtime: window.__abx_console_tap = 0;
+        if (window.__abx_console_tap === 0) return false;
+
+        var head = args[0];
+        if (head == null) return false;
+
+        var s;
+        if (typeof head === 'string') {
+          s = head;
+        } else if (head && head.message) {
+          s = String(head.message);
+        } else {
+          s = String(head);
+        }
+
+        return PREFIX_RE.test(s);
+      } catch(e){
+        return false;
+      }
+    }
+
+    function send(level, args){
+      try{
+        if (count >= LIMIT) return; // quá LIMIT thì ngừng forward thêm
+        count++;
+
+        var parts = [];
+        for (var i = 0; i < args.length; i++){
+          var v = args[i];
+          try{
+            if (typeof v === 'object') {
+              parts.push(JSON.stringify(v));
+            } else {
+              parts.push(String(v));
+            }
+          } catch(e){
+            parts.push(String(v));
+          }
+        }
+        var msg = parts.join(' ');
+
+        if (window.chrome && window.chrome.webview &&
+            typeof window.chrome.webview.postMessage === 'function'){
+          window.chrome.webview.postMessage(JSON.stringify({
+            abx: 'console',
+            level: level,
+            message: msg
+          }));
+        }
+      } catch(e){}
+    }
+
+    var origLog   = console.log   ? console.log.bind(console)   : function(){};
+    var origWarn  = console.warn  ? console.warn.bind(console)  : origLog;
+    var origError = console.error ? console.error.bind(console) : origWarn;
+    var origDebug = console.debug ? console.debug.bind(console) : origLog;
+
+    console.log = function(){
+      try{ if (shouldForward('log', arguments))   send('log',   arguments); }catch(e){}
+      return origLog.apply(console, arguments);
+    };
+
+    console.warn = function(){
+      try{ if (shouldForward('warn', arguments))  send('warn',  arguments); }catch(e){}
+      return origWarn.apply(console, arguments);
+    };
+
+    console.error = function(){
+      try{ if (shouldForward('error', arguments)) send('error', arguments); }catch(e){}
+      return origError.apply(console, arguments);
+    };
+
+    console.debug = function(){
+      try{ if (shouldForward('debug', arguments)) send('debug', arguments); }catch(e){}
+      return origDebug.apply(console, arguments);
+    };
+  } catch(e){}
+})();";
+
 
 
 
@@ -640,8 +783,13 @@ Ví dụ không hợp lệ:
             SetModeUi(false);
             BetGrid.ItemsSource = _betPage;
             this.PreviewKeyDown += MainWindow_PreviewKeyDown;
+            this.PreviewMouseDown += MainWindow_PreviewMouseDown_CloseRoomPopup;
+            this.StateChanged += MainWindow_StateChanged_CloseRoomPopup;
+            this.Deactivated += MainWindow_Deactivated_CloseRoomPopup;
+            this.IsVisibleChanged += MainWindow_IsVisibleChanged_CloseRoomPopup;
             // gọi async sau khi cửa sổ đã load
             this.Loaded += MainWindow_Loaded;
+            InitRoomDropdown();
 
         }
 
@@ -658,7 +806,7 @@ Ví dụ không hợp lệ:
                         e.Handled = true;
                     }
                 }
-                catch (Exception ex)
+            catch (Exception ex)
                 {
                     Log("[DevTools] " + ex.Message);
                 }
@@ -667,14 +815,73 @@ Ví dụ không hợp lệ:
 
 
         // ====== Log helpers (batch) ======
+
+        // Clear log (UI + file log hôm nay)
+        // Clear log (UI + file log hôm nay)
+        private void BtnClearLog_Click(object sender, RoutedEventArgs e)
+        {
+            // 1) Xóa ngay nội dung đang hiển thị
+            TxtLog.Clear();
+
+            // 2) Xóa buffer / queue trong bộ nhớ để vòng pump không đổ lại log cũ
+            try
+            {
+                // Danh sách dòng đang giữ để build lại UI
+                _uiLines.Clear();
+
+                // Hàng đợi log chờ đẩy lên UI
+                while (_uiLogQueue.TryDequeue(out _)) { }
+
+                // Hàng đợi log chờ ghi file
+                while (_fileLogQueue.TryDequeue(out _)) { }
+                }
+            catch
+            {
+                // nuốt lỗi, tránh crash app
+            }
+
+            // 3) Xóa nội dung file log của hôm nay
+            try
+            {
+                var logFile = Path.Combine(_logDir, $"{DateTime.Now:yyyyMMdd}.log");
+                if (File.Exists(logFile))
+                {
+                    File.WriteAllText(logFile, string.Empty);
+                }
+                }
+            catch (Exception)
+            {
+                // ignore lỗi xoá file, tránh crash app
+            }
+        }
+
+
+        private void BtnCopyLog_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (TxtLog != null && !string.IsNullOrEmpty(TxtLog.Text))
+                {
+                    Clipboard.SetText(TxtLog.Text);
+                }
+                }
+            catch (Exception ex)
+            {
+                Log("[CopyLog] " + ex.Message);
+            }
+        }
+
+
         private void EnqueueUi(string line)
         {
             _uiLogQueue.Enqueue(line);
         }
+        // Tắt log ra file: không enqueue nữa, chỉ giữ log trên UI (txtLog)
         private void EnqueueFile(string line)
         {
             _fileLogQueue.Enqueue(line);
         }
+
         private void StartLogPump()
         {
             if (_logPumpCts != null) return;
@@ -688,36 +895,38 @@ Ví dụ không hợp lệ:
                 {
                     try
                     {
+                        bool hadItem = false;
                         while (_uiLogQueue.TryDequeue(out var line))
                         {
                             _uiLines.AddLast(line);
                             if (_uiLines.Count > UI_MAX_LINES) _uiLines.RemoveFirst();
+                            hadItem = true;
                         }
 
-                        //if (hadItem && TxtLog != null)
-                        //{
-                        //    var sb = new StringBuilder(_uiLines.Count * 64);
-                        //    foreach (var ln in _uiLines)
-                        //    {
-                        //        sb.AppendLine(ln);
-                        //    }
-                        //    var text = sb.ToString();
-                        //    await Dispatcher.InvokeAsync(() =>
-                        //    {
-                        //        try
-                        //        {
-                        //            TxtLog.Text = text;
-                        //            TxtLog.CaretIndex = TxtLog.Text.Length;
-                        //            TxtLog.ScrollToEnd();
-                        //        }
-                        //        catch { }
-                        //    });
-                        //}
-                    }
-                    catch { }
+                        if (hadItem && TxtLog != null)
+                        {
+                            var sb = new StringBuilder(_uiLines.Count * 64);
+                            foreach (var ln in _uiLines)
+                                sb.AppendLine(ln);
+
+                            var text = sb.ToString();
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                try
+                                {
+                                    TxtLog.Text = text;
+                                    TxtLog.CaretIndex = TxtLog.Text.Length;
+                                    TxtLog.ScrollToEnd();
+                                }
+                                catch { }
+                            });
+                        }
+                }
+            catch { }
                     await Task.Delay(UI_FLUSH_MS);
                 }
             });
+
 
             // File pump
             _ = Task.Run(async () =>
@@ -741,8 +950,8 @@ Ví dụ không hợp lệ:
                                 File.AppendAllText(f, sb.ToString(), Encoding.UTF8);
                             }
                         }
-                    }
-                    catch { }
+                }
+            catch { }
                     await Task.Delay(FILE_FLUSH_MS);
                 }
             });
@@ -777,33 +986,41 @@ Ví dụ không hợp lệ:
             {
                 if (isGame)
                 {
-                    // ẩn vùng đăng nhập + điều hướng
                     if (GroupLoginNav != null)
                         GroupLoginNav.Visibility = Visibility.Collapsed;
 
-                    // hiện vùng chiến lược / quản lý vốn / trạng thái
                     if (GroupStrategyMoney != null)
                         GroupStrategyMoney.Visibility = Visibility.Visible;
                     if (GroupConsole != null)
                         GroupConsole.Visibility = Visibility.Visible;
                     if (GroupStatus != null)
                         GroupStatus.Visibility = Visibility.Visible;
+                    if (GroupRoomList != null)
+                        GroupRoomList.Visibility = Visibility.Visible;
+
+                    var now = DateTime.UtcNow;
+                    if (_roomListLoading == 0 &&
+                        (_roomList.Count == 0 || (now - _roomListLastLoaded) > TimeSpan.FromSeconds(10)))
+                    {
+                        _roomListLastLoaded = now;
+                        _ = RefreshRoomListAsync();
+                    }
                 }
                 else
                 {
-                    // hiện vùng đăng nhập + điều hướng
                     if (GroupLoginNav != null)
                         GroupLoginNav.Visibility = Visibility.Visible;
 
-                    // ẩn vùng chiến lược / quản lý vốn / trạng thái
                     if (GroupStrategyMoney != null)
                         GroupStrategyMoney.Visibility = Visibility.Collapsed;   // <--- sửa về Collapsed
                     if (GroupConsole != null)
                         GroupConsole.Visibility = Visibility.Collapsed;
                     if (GroupStatus != null)
                         GroupStatus.Visibility = Visibility.Collapsed;
+                    if (GroupRoomList != null)
+                        GroupRoomList.Visibility = Visibility.Collapsed;
                 }
-            }
+                }
             catch (Exception ex)
             {
                 Log("[SetModeUi] " + ex);
@@ -815,7 +1032,7 @@ Ví dụ không hợp lệ:
 
         private string GetAiNGramStatePath()
         {
-            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\BaccaratDG
+            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\BaccaratPPRR88
             var aiDir = System.IO.Path.Combine(_appDataDir, "ai");
             System.IO.Directory.CreateDirectory(aiDir);
             return System.IO.Path.Combine(aiDir, "ngram_state_v1.json");
@@ -826,40 +1043,25 @@ Ví dụ không hợp lệ:
             try
             {
                 var src = Web?.Source?.ToString() ?? "";
-                if (string.IsNullOrWhiteSpace(src)) return _isGameUi;
-                var host = new Uri(src).Host;
-                // games.* => đang ở trang game
-                return host.StartsWith("games.", StringComparison.OrdinalIgnoreCase);
+                if (string.IsNullOrWhiteSpace(src)) return false;
+
+                var uri = new Uri(src);
+                var host = uri.Host.ToLowerInvariant();
+
+                // Nhận diện trang game theo host của nhà cung cấp
+                if (host.StartsWith("games.", StringComparison.OrdinalIgnoreCase) ||
+                    host.Contains("pragmaticplaylive"))
+                    return true;    // game
+
+                return false;       // home
             }
-            catch { return _isGameUi; }
+            catch { return false; }
         }
 
         private void RecomputeUiMode()
         {
-            var now = DateTime.UtcNow;
-            var recentGame = (now - _lastGameTickUtc) <= GameTickFresh;
-            var recentHome = (now - _lastHomeTickUtc) <= HomeTickFresh;
-
-            bool nextIsGame;
-            if (recentGame && !recentHome)
-                nextIsGame = true;
-            else if (!recentGame && recentHome)
-                nextIsGame = false;
-            else if (recentGame && recentHome)
-                nextIsGame = false;   // ưu tiên home nếu cả 2 cùng tươi
-            else
-                nextIsGame = GetIsGameByUrlFallback();
-
-            // chỉ thực hiện khi khác trạng thái hiện tại
-            if (nextIsGame != _isGameUi)
-            {
-                // nếu đang bị khóa ở game thì không cho chuyển về home
-                if (_lockGameUi && !nextIsGame)
-                    return;
-
-                ApplyUiMode(nextIsGame);
-                _isGameUi = nextIsGame;
-            }
+            var nextIsGame = GetIsGameByUrlFallback(); // quyết định UI thuần theo URL
+            ApplyUiMode(nextIsGame);
         }
 
 
@@ -886,13 +1088,156 @@ Ví dụ không hợp lệ:
 
         private void ApplyUiMode(bool isGame)
         {
-            // nếu đang khóa ở game thì không cho ai gọi về home
-            if (_lockGameUi && !isGame)
-                return;
-
             SetModeUi(isGame);
         }
 
+        private async Task RefreshRoomListAsync(bool userTriggered = false)
+        {
+            try
+            {
+                if (Interlocked.Exchange(ref _roomListLoading, 1) == 1)
+                {
+                    if (userTriggered) Log("[ROOM] Đang tải danh sách bàn, vui lòng chờ...");
+                    return;
+                }
+
+                _roomListLastLoaded = DateTime.UtcNow;
+
+                if (Web == null)
+                {
+                    if (userTriggered) Log("[ROOM] WebView chưa sẵn sàng.");
+                    return;
+                }
+
+                await EnsureWebReadyAsync();
+                if (Web?.CoreWebView2 == null)
+                {
+                    if (userTriggered) Log("[ROOM] CoreWebView2 chưa khởi tạo.");
+                    return;
+                }
+
+                var js = @"(function(){
+  try{
+    const primarySelector = '.rY_sn';
+    const keyAttrs = ['data-table-name','data-tablename','data-tableid','data-table-id','data-tabletitle','data-table-title','data-title','data-name','data-display-name','data-displayname','data-label','aria-label','title','alt'];
+    const seen = new Set();
+    const names = [];
+    const clean = (s)=> (s||'').trim();
+    const extract = (el)=>{
+      if(!el) return '';
+      for(const a of keyAttrs){
+        try{
+          const v = clean(el.getAttribute && el.getAttribute(a));
+          if(v) return v;
+        }catch(_){}
+      }
+      const text = clean(el.innerText || el.textContent || '');
+      return text;
+    };
+    const addName = (t)=>{
+      const v = clean(t);
+      if(!v) return;
+      const key = v.toLowerCase();
+      if(seen.has(key)) return;
+      seen.add(key);
+      names.push(v);
+    };
+    const collectRoots = (root)=>{
+      const list=[];
+      const stack=[root];
+      const visited=new Set();
+      while(stack.length){
+        const r=stack.pop();
+        if(!r || visited.has(r)) continue;
+        visited.add(r);
+        list.push(r);
+        try{
+          if(r.querySelectorAll){
+            r.querySelectorAll('*').forEach(el=>{
+              if(el && el.shadowRoot) stack.push(el.shadowRoot);
+            });
+          }
+        }catch(_){}
+      }
+      return list;
+    };
+    const scanPrimary = (root)=>{
+      if(!root) return;
+      const roots = collectRoots(root);
+      roots.forEach(rt=>{
+        try{
+          rt.querySelectorAll(primarySelector).forEach(el=>{
+            const t = extract(el);
+            if(t) addName(t);
+          });
+        }catch(_){}
+      });
+    };
+    scanPrimary(document);
+    const iframes = Array.from(document.querySelectorAll('iframe'));
+    for(const fr of iframes){
+      try{
+        const doc = fr.contentDocument || fr.contentWindow?.document;
+        scanPrimary(doc);
+      }catch(_){}
+    }
+    return names;
+  }catch(e){ return []; }
+})();";
+
+                List<string> list = new();
+                const int maxAttempts = 15;
+                for (int attempt = 0; attempt < maxAttempts; attempt++)
+                {
+                    var raw = await Web.ExecuteScriptAsync(js);
+                    list = string.IsNullOrWhiteSpace(raw)
+                        ? new List<string>()
+                        : (JsonSerializer.Deserialize<List<string>>(raw) ?? new List<string>());
+
+                    if (list.Count > 0) break;
+                    await Task.Delay(600); // chờ DOM lobby load
+                }
+
+                var clean = list
+                    .Select(x => x?.Trim() ?? "")
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+                    .Select(g => g.First())
+                    .OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+
+                if (clean.Count == 0)
+                {
+                    Log("[ROOM] Không tìm thấy bàn (DOM lobby chưa sẵn). Hãy thử bấm 'Lấy danh sách bàn' sau khi lobby load xong.");
+                }
+                else
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        _roomList.Clear();
+                        foreach (var name in clean) _roomList.Add(name);
+                        var cleanSet = new HashSet<string>(_roomList, StringComparer.OrdinalIgnoreCase);
+                        _selectedRooms.RemoveWhere(n => !cleanSet.Contains(n));
+                        RebuildRoomOptions();
+                        UpdateRoomSummary();
+                    });
+
+                    _cfg.SelectedRooms = _selectedRooms.ToList();
+                    _ = TriggerRoomSaveDebouncedAsync();
+                    Log($"[ROOM] Đã lấy {clean.Count} bàn.");
+
+                    _roomListLastLoaded = DateTime.UtcNow;
+                }
+                }
+            catch (Exception ex)
+            {
+                Log("[ROOM] Lỗi khi lấy danh sách bàn: " + ex.Message);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _roomListLoading, 0);
+            }
+        }
 
         // ====== Helpers ======
         private static string T(TextBox tb, string def = "") => (tb?.Text ?? def).Trim();
@@ -982,6 +1327,27 @@ Ví dụ không hợp lệ:
                 if (ChkTrial != null) ChkTrial.IsChecked = _cfg.UseTrial;
                 ApplyCutUiFromConfig();
 
+                _selectedRooms.Clear();
+                if (_cfg.SelectedRooms != null)
+                {
+                    foreach (var r in _cfg.SelectedRooms)
+                    {
+                        var name = (r ?? "").Trim();
+                        if (!string.IsNullOrWhiteSpace(name))
+                            _selectedRooms.Add(name);
+                    }
+                }
+
+                // Prefill danh sách phòng từ cấu hình để lần mở sau vẫn thấy lựa chọn cũ
+                if (_roomList.Count == 0 && _selectedRooms.Count > 0)
+                {
+                    _roomList.Clear();
+                    foreach (var name in _selectedRooms) _roomList.Add(name);
+                }
+
+                RebuildRoomOptions();
+                UpdateRoomSummary();
+
 
             }
             catch (Exception ex) { Log("[LoadConfig] " + ex); }
@@ -1019,6 +1385,7 @@ Ví dụ không hợp lệ:
                 _cfg.UseTrial = (ChkTrial?.IsChecked == true);
                 _cfg.LeaseClientId = _leaseClientId;
                 _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
+                _cfg.SelectedRooms = _selectedRooms.ToList();
 
 
                 var dir = Path.GetDirectoryName(_cfgPath);
@@ -1112,6 +1479,8 @@ Ví dụ không hợp lệ:
                                 if (root.TryGetProperty("ui", out var uiEl))
                                     ui = uiEl.GetString() ?? "";
                                 var uname = root.TryGetProperty("nick", out var uEl) ? (uEl.GetString() ?? "") : "";
+
+
                                 if (!string.IsNullOrWhiteSpace(uname))
                                 {
                                     var normalized = uname.Trim().ToLowerInvariant();
@@ -1183,8 +1552,8 @@ Ví dụ không hợp lệ:
                                                     _lockMajorMinorUpdates = true;
                                                 }
                                             }
-                                        }
-                                        catch { /* an toàn */ }
+                }
+            catch { /* an toàn */ }
 
                                         // Ghi lại niSeq vào snapshot cho UI
                                         snap.niSeq = _niSeq.ToString();
@@ -1247,8 +1616,8 @@ Ví dụ không hợp lệ:
                                                         LblStatusText.Visibility = Visibility.Collapsed;
                                                     }
                                                 }
-                                            }
-                                            catch { }
+                }
+            catch { }
                                         }));
                                     }
                                     if (ui == "game")
@@ -1406,13 +1775,13 @@ Ví dụ không hợp lệ:
                                 //    _lastHomeTickUtc = DateTime.UtcNow;
                                 //    return;
                                 //}
-                            }
-                            catch
+                }
+            catch
                             {
                                 // ignore non-JSON
                             }
-                        }
-                        catch (Exception ex2)
+                }
+            catch (Exception ex2)
                         {
                             Log("[WebMessageReceived] " + ex2);
                         }
@@ -1446,9 +1815,7 @@ Ví dụ không hợp lệ:
                     };
 
                 }
-
-
-            }
+                }
             catch (Exception ex)
             {
                 Log("[Web] EnsureWebReadyAsync " + ex);
@@ -1492,7 +1859,7 @@ Ví dụ không hợp lệ:
 
                     await AutoFillLoginAsync();
                 }
-            }
+                }
             catch (Exception ex) { Log("[NavigateIfNeededAsync] " + ex); }
         }
 
@@ -1558,7 +1925,7 @@ Ví dụ không hợp lệ:
             // Nếu đã init hoặc đã có CoreWebView2 thì bỏ qua
             if (_webInitDone || Web?.CoreWebView2 != null) return;
 
-            // 1) Bảo đảm fixed runtime được bung ra và lấy thư mục
+            // 1) Bảo đảm fixed runtime được bung ra và lấy thư mục (có thể null nếu thiếu resource)
             string? fixedDir = null;
             try
             {
@@ -1628,6 +1995,10 @@ Ví dụ không hợp lệ:
                     settings.AreDevToolsEnabled = true;
                 }
 
+                // THAY CHO ConsoleMessageReceived:
+                // inject JS hook console.* để gửi log JS về C# qua WebMessage
+                _ = Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(CONSOLE_HOOK_JS);
+
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
                 // Điều hướng mọi window.open về cùng WebView2
                 _ = Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(@"
@@ -1645,7 +2016,7 @@ Ví dụ không hợp lệ:
                 // Bật CDP network tap (không cần await)
                 _ = EnableCdpNetworkTapAsync();
 
-                // Cập nhật nền ngay theo trạng thái hiện tại (trắng khi chưa nhập URL, trong suốt khi đã điều hướng)
+                // Cập nhật nền ngay theo trạng thái hiện tại
                 _ = ApplyBackgroundForStateAsync();
             }
             catch (Exception ex)
@@ -1653,6 +2024,7 @@ Ví dụ không hợp lệ:
                 Log("[HookWebViewEventsOnce] " + ex);
             }
         }
+
 
 
 
@@ -1678,13 +2050,13 @@ Ví dụ không hợp lệ:
 
                     Log("[Web] Host fixed runtime not found at: " + hubDir);
                 }
-            }
+                }
             catch
             {
                 // Bỏ qua lỗi detect host, sẽ fallback sang runtime riêng bên dưới
             }
 
-            // 1) Runtime riêng của BaccaratDG (dùng khi chạy EXE độc lập)
+            // 1) Runtime riêng của BaccaratPPRR88 (dùng khi chạy EXE độc lập)
             var baseDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 AppLocalDirName, "WebView2Fixed");
@@ -1699,22 +2071,8 @@ Ví dụ không hợp lệ:
             var resName = FindResourceName("ThirdParty.WebView2Fixed_win-x64.zip")
                           ?? Wv2ZipResNameX64;
 
-            // Ưu tiên resource nhúng; fallback sang file ZIP ngoài nếu chạy Debug không nhúng
-            Stream? zipStream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resName);
-            if (zipStream == null)
-            {
-                var exeDir = AppDomain.CurrentDomain.BaseDirectory;
-                var zipPath = Path.Combine(exeDir, "ThirdParty", "WebView2Fixed_win-x64.zip");
-                if (!File.Exists(zipPath))
-                    zipPath = Path.Combine(exeDir, "WebView2Fixed_win-x64.zip");
-                if (File.Exists(zipPath))
-                {
-                    Log("[Web] Using external WebView2Fixed zip: " + zipPath);
-                    zipStream = File.OpenRead(zipPath);
-                }
-            }
-
-            using var s = zipStream ?? throw new FileNotFoundException("Missing WebView2Fixed zip: " + resName);
+            using var s = Assembly.GetExecutingAssembly().GetManifestResourceStream(resName)
+                           ?? throw new FileNotFoundException("Missing embedded resource: " + resName);
             using var za = new System.IO.Compression.ZipArchive(
                 s, System.IO.Compression.ZipArchiveMode.Read);
 
@@ -1733,7 +2091,7 @@ Ví dụ không hợp lệ:
             return targetDir;
         }
 
-        private bool CheckWebView2RuntimeOrNotify()
+                private bool CheckWebView2RuntimeOrNotify()
         {
             var ver = Microsoft.Web.WebView2.Core.CoreWebView2Environment.GetAvailableBrowserVersionString();
             if (string.IsNullOrEmpty(ver))
@@ -1746,9 +2104,7 @@ Ví dụ không hợp lệ:
             return true;
         }
 
-
-
-        private async Task<CancellationTokenSource> DebounceAsync(
+private async Task<CancellationTokenSource> DebounceAsync(
             CancellationTokenSource? oldCts, int delayMs, Func<Task> action)
         {
             oldCts?.Cancel();
@@ -1786,53 +2142,133 @@ Ví dụ không hợp lệ:
                 return;
             }
 
-            // 3. lấy user/pass từ panel WPF
-            var u = T(TxtUser);   // ông đang có hàm T(...) lấy TextBox.Text
-            var p = P(TxtPass);   // ông đang có hàm P(...) lấy PasswordBox.Password
+            // 3. lấy user/pass/mã xác minh + trạng thái nhớ mật khẩu từ panel WPF
+            var u = T(TxtUser);              // T(...) lấy TextBox.Text
+            var p = P(TxtPass);              // P(...) lấy PasswordBox.Password
+            var c = T(TxtVerify);            // NEW: mã xác minh (có thể rỗng)
             var remember = (ChkRemember?.IsChecked == true);
 
-            // 4. gửi credential sang JS để nó cập nhật window.__cw_loginUser / __cw_loginPass
+            // 4. Gửi credential sang JS bridge cũ (giữ nguyên logic __cw_cmd để không phá code đang chạy)
             var payload = new
             {
                 __cw_cmd = "set_login",
                 user = u ?? "",
                 pass = p ?? "",
-                remember = remember,
-                autoSubmit = false   // KHÔNG cho JS tự bấm
+                code = c ?? "",              // NEW
+                remember,                    // NEW
+                autoSubmit = false           // KHÔNG cho JS tự bấm
             };
             string json = System.Text.Json.JsonSerializer.Serialize(payload);
             Web.CoreWebView2.PostWebMessageAsJson(json);
             Log("[AutoFill] sent set_login to webview");
 
-            // 5. bảo JS mở popup (nếu header còn nút) và ĐIỀN, nhưng KHÔNG bấm nút login.
-            // Đồng bộ trực tiếp cả biến global để tránh race listener.
-            var js = @"
-        (async function(){
-            try {
-                // cập nhật trực tiếp global
-                window.__cw_loginUser = " + JsonSerializer.Serialize(u ?? "") + @";
-                window.__cw_loginPass = " + JsonSerializer.Serialize(p ?? "") + @";
-                window.__cw_loginRemember = " + (remember ? "true" : "false") + @";
+            // 5. Mở popup và tự điền trực tiếp vào form login của RR88 (kể cả mã xác minh + checkbox nhớ mật khẩu)
+            var jsUser = System.Text.Json.JsonSerializer.Serialize(u ?? "");
+            var jsPass = System.Text.Json.JsonSerializer.Serialize(p ?? "");
+            var jsCode = System.Text.Json.JsonSerializer.Serialize(c ?? "");
+            var jsRemember = remember ? "true" : "false";
 
+            var js = $@"
+        (async function(){{
+            try {{
                 // mở popup nếu đang còn nút đăng nhập trên header
-                if (window.__cw_clickLoginIfNeed) {
+                if (window.__cw_clickLoginIfNeed) {{
                     window.__cw_clickLoginIfNeed();
-                }
+                }}
+
                 // đợi popup render ra
                 await new Promise(r => setTimeout(r, 200));
-                // điền user/pass vừa gửi ở bước 4
-                if (window.__cw_fillLoginPopup) {
+
+                // cho bridge cũ (nếu có) tự điền user/pass
+                if (window.__cw_fillLoginPopup) {{
                     window.__cw_fillLoginPopup();
-                }
-                // KHÔNG gọi window.__cw_clickPopupLogin() ở đây
-            } catch (e) {
+                }}
+
+                // NEW: tự điền user/pass/mã xác minh + tick 'Ghi nhớ mật khẩu' vào popup RR88
+                try {{
+                    var user = {jsUser};
+                    var pass = {jsPass};
+                    var code = {jsCode};
+                    var remember = {jsRemember};
+
+                    var form = document.querySelector('form.login-form');
+                    if (form) {{
+                        // USER
+                        var uInput = form.querySelector('input[autocomplete=""username""], input[name*=""user"" i], input[type=""text""], input[placeholder*=""tên người dùng"" i]');
+                        if (uInput) {{
+                            uInput.value = user || '';
+                            uInput.dispatchEvent(new Event('input',{{ bubbles:true }}));
+                            uInput.dispatchEvent(new Event('change',{{ bubbles:true }}));
+                        }}
+
+                        // PASS
+                        var pInput = form.querySelector('input[type=""password""], input[name*=""pass"" i]');
+                        if (pInput) {{
+                            pInput.value = pass || '';
+                            pInput.dispatchEvent(new Event('input',{{ bubbles:true }}));
+                            pInput.dispatchEvent(new Event('change',{{ bubbles:true }}));
+                        }}
+
+                        // VERIFY CODE (Mã xác minh)
+                        var cInput = form.querySelector('input[name*=""code"" i], input[placeholder*=""mã xác minh"" i]');
+                        if (cInput) {{
+                            cInput.value = code || '';
+                            cInput.dispatchEvent(new Event('input',{{ bubbles:true }}));
+                            cInput.dispatchEvent(new Event('change',{{ bubbles:true }}));
+                        }}
+
+                        // Ghi nhớ mật khẩu (checkbox remPass_checkbox)
+                        var rem = form.querySelector('input.remPass_checkbox');
+                        if (rem) {{
+                            rem.checked = !!remember;
+                            rem.dispatchEvent(new Event('input',{{ bubbles:true }}));
+                            rem.dispatchEvent(new Event('change',{{ bubbles:true }}));
+                        }}
+                    }}
+                }} catch(_){{
+                    // bỏ qua lỗi DOM nhỏ
+                }}
+
+                // KHÔNG tự click nút login ở đây
+            }} catch (e) {{
                 console.warn('[AutoFillLoginAsync js] error', e);
-            }
-        })();
-    ";
+            }}
+        }})();";
             await Web.CoreWebView2.ExecuteScriptAsync(js);
 
             Log("[AutoFill] done (filled only, no click)");
+        }
+
+        private async Task SyncRememberCheckboxAsync()
+        {
+            try
+            {
+                if (!IsWebAlive) return;
+                await EnsureWebReadyAsync();
+                if (!IsWebAlive) return;
+
+                var remember = (ChkRemember?.IsChecked == true) ? "true" : "false";
+
+                var js = $@"
+        (function(){{
+            try {{
+                var form = document.querySelector('form.login-form');
+                if (!form) return;
+                var rem = form.querySelector('input.remPass_checkbox');
+                if (!rem) return;
+                rem.checked = {remember};
+                rem.dispatchEvent(new Event('input',{{ bubbles:true }}));
+                rem.dispatchEvent(new Event('change',{{ bubbles:true }}));
+            }} catch(e) {{
+                console.warn('[SyncRememberCheckboxAsync]', e);
+            }}
+        }})();";
+                await Web.CoreWebView2.ExecuteScriptAsync(js);
+            }
+            catch (Exception ex)
+            {
+                Log("[SyncRememberCheckboxAsync] " + ex);
+            }
         }
 
 
@@ -1902,6 +2338,7 @@ Ví dụ không hợp lệ:
                     if (TxtUrl != null) TxtUrl.TextChanged += TxtUrl_TextChanged;
                     if (TxtUser != null) TxtUser.TextChanged += TxtUser_TextChanged;
                     if (TxtPass != null) TxtPass.PasswordChanged += TxtPass_PasswordChanged;
+                    if (TxtVerify != null) TxtVerify.TextChanged += TxtVerify_TextChanged;
                     if (TxtStakeCsv != null) TxtStakeCsv.TextChanged += TxtStakeCsv_TextChanged;
                     if (CmbBetStrategy != null) CmbBetStrategy.SelectionChanged += CmbBetStrategy_SelectionChanged;
                     if (TxtChuoiCau != null) TxtChuoiCau.TextChanged += TxtChuoiCau_TextChanged;
@@ -1944,25 +2381,6 @@ Ví dụ không hợp lệ:
 
                     await ApplyBackgroundForStateAsync(); // đúng hành vi cũ sau khi có URL
                 }
-                else
-                {
-                    // Không điều hướng nhưng vẫn đồng bộ credential + checkbox vào web ở lần đầu
-                    await AutoFillLoginAsync();
-                }
-
-                // Retry đồng bộ muộn thêm một nhịp để chắc chắn JS listener đã sẵn sàng
-                _ = Dispatcher.InvokeAsync(async () =>
-                {
-                    try
-                    {
-                        // gửi lại 2 lần (400ms, 800ms) để bắt kịp khi JS/popup sẵn sàng
-                        await Task.Delay(400);
-                        await AutoFillLoginAsync();
-                        await Task.Delay(400);
-                        await AutoFillLoginAsync();
-                    }
-                    catch { /* ignore */ }
-                });
 
                 SetPlayButtonState(_taskCts != null); // (nếu trong SetPlayButtonState có SetConfigEditable thì sẽ khóa/mở các ô)
                 ApplyMouseShieldFromCheck();
@@ -2019,6 +2437,27 @@ Ví dụ không hợp lệ:
             await SaveConfigAsync();
             await NavigateIfNeededAsync(T(TxtUrl).Trim());
         }
+
+        private async void BtnGoHome_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // Reset force-lobby guard when returning to home
+                _lastForcedLobbyUrl = null;
+
+                var home = (_cfg?.Url ?? DEFAULT_URL)?.Trim();
+                if (string.IsNullOrWhiteSpace(home))
+                    home = DEFAULT_URL;
+                if (!Regex.IsMatch(home, @"^[a-zA-Z][a-zA-Z0-9+.-]*://", RegexOptions.IgnoreCase))
+                    home = "https://" + home;
+
+                await NavigateIfNeededAsync(home);
+            }
+            catch (Exception ex)
+            {
+                Log("[GoHome] " + ex.Message);
+            }
+        }
         private void Exit_Click(object sender, RoutedEventArgs e) => Close();
         private void StartLoop_Click(object sender, RoutedEventArgs e)
         {
@@ -2038,7 +2477,7 @@ Ví dụ không hợp lệ:
             {
                 await SaveConfigAsync();
                 Log("[Remember] " + ((ChkRemember?.IsChecked == true) ? "ON" : "OFF"));
-                await AutoFillLoginAsync(); // đồng bộ ngay checkbox nhớ tài khoản với web
+                await SyncRememberCheckboxAsync(); // đồng bộ ô Ghi nhớ mật khẩu trên web
             }
             catch (Exception ex) { Log("[Remember] " + ex); }
         }
@@ -2106,10 +2545,215 @@ Ví dụ không hợp lệ:
             });
         }
 
+        private async void TxtVerify_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (!_uiReady) return;
+            _verifyCts = await DebounceAsync(_verifyCts, 150, async () =>
+            {
+                // Mã xác minh không cần lưu config – chỉ sync sang web
+                await AutoFillLoginAsync();
+            });
+        }
+
+
         private async void ChkTrial_Click(object sender, RoutedEventArgs e)
         {
             try { await SaveConfigAsync(); }
             catch (Exception ex) { Log("[ChkTrial] " + ex.Message); }
+        }
+
+        private async void BtnReloadRoomList_Click(object sender, RoutedEventArgs e)
+        {
+            await RefreshRoomListAsync(true);
+        }
+
+        // ====== Dropdown đa chọn danh sách bàn ======
+        private void InitRoomDropdown()
+        {
+            RebuildRoomOptions();
+            UpdateRoomSummary();
+        }
+
+        private void RoomHeader_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if ((_roomOptions.Count == 0 || _roomList.Count == 0) && _roomListLoading == 0)
+            {
+                _ = RefreshRoomListAsync(true);
+            }
+            if (RoomPopup != null)
+                RoomPopup.IsOpen = !RoomPopup.IsOpen;
+        }
+
+        private void MainWindow_StateChanged_CloseRoomPopup(object? sender, EventArgs e)
+        {
+            if (WindowState == WindowState.Minimized)
+                CloseRoomPopup();
+        }
+
+        private void MainWindow_Deactivated_CloseRoomPopup(object? sender, EventArgs e)
+        {
+            CloseRoomPopup();
+        }
+
+        private void MainWindow_IsVisibleChanged_CloseRoomPopup(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (e.NewValue is bool visible && !visible)
+                CloseRoomPopup();
+        }
+
+        private void CloseRoomPopup()
+        {
+            if (RoomPopup != null && RoomPopup.IsOpen)
+                RoomPopup.IsOpen = false;
+        }
+
+        private void MainWindow_PreviewMouseDown_CloseRoomPopup(object sender, MouseButtonEventArgs e)
+        {
+            if (RoomPopup == null || !RoomPopup.IsOpen || RoomPopup.Child == null)
+                return;
+
+            if (IsDescendantOf(e.OriginalSource as DependencyObject, RoomPopup.Child) ||
+                IsDescendantOf(e.OriginalSource as DependencyObject, RoomHeader))
+            {
+                return;
+            }
+
+            RoomPopup.IsOpen = false;
+        }
+
+        private static bool IsDescendantOf(DependencyObject? source, DependencyObject? target)
+        {
+            if (source == null || target == null)
+                return false;
+
+            DependencyObject? current = source;
+            while (current != null)
+            {
+                if (current == target)
+                    return true;
+                current = VisualTreeHelper.GetParent(current);
+            }
+            return false;
+        }
+
+        private void RoomItem_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(RoomOption.IsSelected))
+                UpdateRoomSummary();
+        }
+
+        private void RoomItemCheck_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is CheckBox cb && cb.DataContext is RoomOption opt)
+            {
+                if (opt.IsSelected)
+                    _selectedRooms.Add(opt.Name);
+                else
+                    _selectedRooms.Remove(opt.Name);
+            }
+            UpdateRoomSummary();
+        }
+
+        private void ChkRoomAll_Click(object sender, RoutedEventArgs e)
+        {
+            var target = ChkRoomAll?.IsChecked == true;
+            foreach (var it in _roomOptions)
+                it.IsSelected = target;
+
+            var changed = SyncSelectedRoomsFromOptions();
+            UpdateRoomSummary();
+            if (changed) _ = TriggerRoomSaveDebouncedAsync();
+        }
+
+        private void RebuildRoomOptions()
+        {
+            _roomOptions.Clear();
+            _roomOptionsCol1.Clear();
+            _roomOptionsCol2.Clear();
+            foreach (var name in _roomList)
+            {
+                var item = new RoomOption { Name = name, IsSelected = _selectedRooms.Contains(name) };
+                item.PropertyChanged += RoomItem_PropertyChanged;
+                _roomOptions.Add(item);
+            }
+
+            if (_roomOptions.Count > 0)
+            {
+                var half = (_roomOptions.Count + 1) / 2;
+                for (int i = 0; i < _roomOptions.Count; i++)
+                {
+                    if (i < half) _roomOptionsCol1.Add(_roomOptions[i]);
+                    else _roomOptionsCol2.Add(_roomOptions[i]);
+                }
+            }
+        }
+
+        private bool SyncSelectedRoomsFromOptions()
+        {
+            var before = BuildRoomsSignature(_selectedRooms);
+            _selectedRooms.Clear();
+            foreach (var it in _roomOptions)
+                if (it.IsSelected) _selectedRooms.Add(it.Name);
+
+            _cfg.SelectedRooms = _selectedRooms.ToList();
+            var after = BuildRoomsSignature(_selectedRooms);
+            return !string.Equals(before, after, StringComparison.Ordinal);
+        }
+
+        private void UpdateRoomSummary()
+        {
+            var changed = SyncSelectedRoomsFromOptions();
+
+            int total = _roomOptions.Count;
+            int sel = _roomOptions.Count(i => i.IsSelected);
+
+            if (TxtRoomSummary != null)
+            {
+                if (sel <= 0)
+                    TxtRoomSummary.Text = "Không có mục nào";
+                else if (sel >= total && total > 0)
+                    TxtRoomSummary.Text = "Đã chọn tất cả";
+                else
+                    TxtRoomSummary.Text = $"Đã chọn {sel} / {total}";
+            }
+
+            if (TxtRoomCount != null)
+                TxtRoomCount.Text = $"{sel}/{total} đã chọn";
+
+            if (ChkRoomAll != null)
+            {
+                try { ChkRoomAll.Click -= ChkRoomAll_Click; } catch { }
+                if (sel == 0) ChkRoomAll.IsChecked = false;
+                else if (sel == total) ChkRoomAll.IsChecked = true;
+                else ChkRoomAll.IsChecked = null;
+                try { ChkRoomAll.Click += ChkRoomAll_Click; } catch { }
+            }
+
+            if (_uiReady && changed)
+                _ = TriggerRoomSaveDebouncedAsync();
+        }
+
+        private async Task TriggerRoomSaveDebouncedAsync()
+        {
+            if (!_uiReady) return;
+            _roomSaveCts = await DebounceAsync(_roomSaveCts, 300, async () =>
+            {
+                try
+                {
+                    var sig = BuildRoomsSignature(_selectedRooms);
+                    if (!string.Equals(sig, _lastSavedRoomsSignature, StringComparison.Ordinal))
+                    {
+                        _lastSavedRoomsSignature = sig;
+                        await SaveConfigAsync();
+                    }
+                }
+            catch { }
+            });
+        }
+
+        private static string BuildRoomsSignature(IEnumerable<string> rooms)
+        {
+            return string.Join("|", rooms.OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
         }
 
 
@@ -2341,6 +2985,9 @@ Ví dụ không hợp lệ:
         {
             try
             {
+                // Allow forcing lobby again on each home-start flow
+                _lastForcedLobbyUrl = null;
+
                 await EnsureWebReadyAsync();
                 var r = await Web.CoreWebView2.ExecuteScriptAsync(
                     "(typeof window.__abx_hw_clickPlayXDL==='function') ? window.__abx_hw_clickPlayXDL() : 'no-fn';"
@@ -2531,8 +3178,8 @@ Ví dụ không hợp lệ:
 
         private void LogPacket(string kind, string? url, string preview, bool isBinary)
         {
-            var line = $"[PKT] {DateTime.Now:HH:mm:ss} {kind} {url ?? ""}\n      {preview}";
-            // Ghi file luôn (không chặn)
+            var line = $"[PKT] {DateTime.Now:HH:mm:ss} {kind} {url ?? ""} {preview}";
+            // Ghi file luôn (không chọn)
             EnqueueFile(line);
 
             // UI: mặc định tắt, hoặc lấy mẫu 1/N
@@ -2540,7 +3187,27 @@ Ví dụ không hợp lệ:
             {
                 _pktUiSample++;
                 if (_pktUiSample % PACKET_UI_SAMPLE_EVERY_N == 0)
-                    EnqueueUi(line);
+                {
+                    _pktUiSample = 0;
+
+                    var sb = new StringBuilder();
+                    sb.Append("[PKT] ").Append(kind).Append(' ');
+                    sb.Append(isBinary ? "bin" : "txt").Append(' ');
+                    sb.Append(url ?? "");
+                    sb.AppendLine();
+                    sb.Append(preview);
+                    var text = sb.ToString();
+                    _ = Dispatcher.InvokeAsync(() =>
+                    {
+                        try
+                        {
+                            TxtLog.Text = text;
+                            TxtLog.CaretIndex = TxtLog.Text.Length;
+                            TxtLog.ScrollToEnd();
+                        }
+                        catch { }
+                    });
+                }
             }
         }
 
@@ -2739,7 +3406,7 @@ Ví dụ không hợp lệ:
                         return "clicked";
                     return openRes;
                 }
-            }
+                }
             catch (Exception ex)
             {
                 Log("[ClickXocDiaTitle/find index ERR] " + ex.Message);
@@ -2776,41 +3443,17 @@ Ví dụ không hợp lệ:
                 Log("[AutoLoginWatch] " + res);
 
                 // đợi nhẹ để trang xử lý login (nếu có)
-                await Task.Delay(900);
+                await Task.Delay(400);
 
-                // 2) Tiếp tục gọi API JS: mở Xóc Đĩa Sới Live
-                var rPlay = await Web.ExecuteScriptAsync(@"
-                (function () {
-                    try {
-                        // hàm JS bạn đã tạo ở phía trang
-                        if (typeof window.__cw_openXocDiaSoi === 'function') {
-                            var r = window.__cw_openXocDiaSoi();
-                
-                            // chuẩn hóa giá trị trả về một chút để C# dễ kiểm tra
-                            if (r === true || r === 'ok') return 'ok';
-                            return r || 'called';
-                        }
-                        return 'no-api';
-                    } catch (e) {
-                        return 'err:' + (e && e.message ? e.message : e);
-                    }
-                })();
-                ");
-                Log("[HOME] open xoc-dia-soi via JS => " + rPlay);
+                // 2) Sau khi bấm nút login xong thì dùng HomeClickPlayAsync để mở Baccarat nhiều bàn
+                var okPlay = await HomeClickPlayAsync();
+                Log("[HOME] play baccarat-nhieu-ban via HomeClickPlayAsync => " + okPlay);
+
+                // 3) Không dùng fallback C# vào Xóc Đĩa nữa để tránh mở sai game
 
 
-                // 3) Fallback: nếu JS API không có/không ok, quay về hành vi cũ
-                var okByJs = (rPlay ?? "").IndexOf("ok", StringComparison.OrdinalIgnoreCase) >= 0;
-                if (!okByJs)
-                {
-                    var goHome = await ClickHomeLogoAsync(12000);
-                    Log("[VaoXocDia_Click -> home] " + goHome);
+                // 3) Không dùng fallback C# vào Xóc Đĩa nữa để tránh mở sai game
 
-                    await Task.Delay(300);
-
-                    var rOpen = await OpenLiveItemImmediatelyAsync(1, 25000);
-                    Log("[VaoXocDia_Click -> open-live(index=1)] " + rOpen);
-                }
 
                 // 4) Cầu nối: đồng bộ & autostart khi đã vào bàn
                 //if (_bridge != null)
@@ -2923,8 +3566,8 @@ Ví dụ không hợp lệ:
                                 finally { _autoLoginBusy = false; }
                             }
                         }
-                    }
-                    catch { }
+                }
+            catch { }
                     await Task.Delay(400, cts.Token); // nhịp kiểm tra
                 }
             }, cts.Token);
@@ -3083,7 +3726,7 @@ Ví dụ không hợp lệ:
                             return res + " + csharp-nav";
                         }
                     }
-                    catch { /* bỏ qua */ }
+                    catch { /* b? qua */ }
                 }
 
                 return res;
@@ -3519,8 +4162,8 @@ Ví dụ không hợp lệ:
                                     return;
                                 }
                             }
-                        }
-                        catch (Exception exTrial)
+                }
+            catch (Exception exTrial)
                         {
                             Log("[Trial ERR] " + exTrial.Message);
                             MessageBox.Show("Không thể kết nối chế độ dùng thử.", "Automino",
@@ -3623,37 +4266,37 @@ Ví dụ không hợp lệ:
                                         // Không lấy được thông tin chắc chắn -> giữ nguyên, lần sau kiểm lại
                                         Log("[License re-check] license null/empty hoặc không parse được 'exp' -> giữ nguyên phiên.");
                                     }
-                                }
-                                catch (TaskCanceledException) { /* token canceled, bỏ qua */ }
+                }
+            catch (TaskCanceledException) { /* token canceled, bỏ qua */ }
                                 catch (Exception ex)
                                 {
                                     // Lỗi mạng/tạm thời -> KHÔNG dừng, chỉ log & thử lại lần sau
                                     Log("[License re-check] lỗi: " + ex.Message + " (bỏ qua, sẽ thử lại)");
                                 }
                             }
-                        }
-                        catch (TaskCanceledException) { /* token canceled */ }
+                }
+            catch (TaskCanceledException) { /* token canceled */ }
                     }, token);
                 }
 
 
-                BaccaratDG.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
+                BaccaratPPRR88.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
                 {
-                    0 => new BaccaratDG.Tasks.SeqParityFollowTask(),     // 1
-                    1 => new BaccaratDG.Tasks.PatternParityTask(),       // 2
-                    2 => new BaccaratDG.Tasks.SmartPrevTask(),           // 3
-                    3 => new BaccaratDG.Tasks.RandomParityTask(),        // 4
-                    4 => new BaccaratDG.Tasks.AiStatParityTask(),        // 5
-                    5 => new BaccaratDG.Tasks.StateTransitionBiasTask(), // 6
-                    6 => new BaccaratDG.Tasks.RunLengthBiasTask(),       // 7
-                    7 => new BaccaratDG.Tasks.EnsembleMajorityTask(),    // 8
-                    8 => new BaccaratDG.Tasks.TimeSlicedHedgeTask(),    // 9
-                    9 => new BaccaratDG.Tasks.KnnSubsequenceTask(),     // 10
-                    10 => new BaccaratDG.Tasks.DualScheduleHedgeTask(),  // 11
-                    11 => new BaccaratDG.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 12
-                    12 => new BaccaratDG.Tasks.AiExpertPanelTask(), // 13
-                    13 => new BaccaratDG.Tasks.Top10PatternFollowTask(), // 14
-                    _ => new BaccaratDG.Tasks.SmartPrevTask(),
+                    0 => new BaccaratPPRR88.Tasks.SeqParityFollowTask(),     // 1
+                    1 => new BaccaratPPRR88.Tasks.PatternParityTask(),       // 2
+                    2 => new BaccaratPPRR88.Tasks.SmartPrevTask(),           // 3
+                    3 => new BaccaratPPRR88.Tasks.RandomParityTask(),        // 4
+                    4 => new BaccaratPPRR88.Tasks.AiStatParityTask(),        // 5
+                    5 => new BaccaratPPRR88.Tasks.StateTransitionBiasTask(), // 6
+                    6 => new BaccaratPPRR88.Tasks.RunLengthBiasTask(),       // 7
+                    7 => new BaccaratPPRR88.Tasks.EnsembleMajorityTask(),    // 8
+                    8 => new BaccaratPPRR88.Tasks.TimeSlicedHedgeTask(),    // 9
+                    9 => new BaccaratPPRR88.Tasks.KnnSubsequenceTask(),     // 10
+                    10 => new BaccaratPPRR88.Tasks.DualScheduleHedgeTask(),  // 11
+                    11 => new BaccaratPPRR88.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 12
+                    12 => new BaccaratPPRR88.Tasks.AiExpertPanelTask(), // 13
+                    13 => new BaccaratPPRR88.Tasks.Top10PatternFollowTask(), // 14
+                    _ => new BaccaratPPRR88.Tasks.SmartPrevTask(),
                 };
 
 
@@ -3704,7 +4347,7 @@ Ví dụ không hợp lệ:
             try
             {
                 StopTask();
-                BaccaratDG.Tasks.TaskUtil.ClearBetCooldown();
+                BaccaratPPRR88.Tasks.TaskUtil.ClearBetCooldown();
                 _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[Loop] stopped");
                 SetPlayButtonState(false);
@@ -3869,7 +4512,7 @@ Ví dụ không hợp lệ:
             return (s.Length <= take) ? s : s.Substring(s.Length - take, take);
         }
 
-        // đặt trong MainWindow.xaml.cs (project BaccaratDG)
+        // đặt trong MainWindow.xaml.cs (project BaccaratPPRR88)
 
         // load thử lần lượt các uri, cái nào được thì dùng, không được thì trả về null
         private static ImageSource? LoadImgSafe(params string[] uris)
@@ -4237,10 +4880,28 @@ Ví dụ không hợp lệ:
 
         private async Task<string> LoadHomeJsAsync()
         {
+            // Ưu tiên đọc file ngoài (cùng thư mục exe) để thay nóng không cần rebuild
+            try
+            {
+                var diskPath = Path.Combine(AppContext.BaseDirectory, "js_home_v2.js");
+                if (File.Exists(diskPath))
+                {
+                    var text = RemoveUtf8Bom(await File.ReadAllTextAsync(diskPath));
+                    Log($"[Bridge] Loaded HOME JS from disk: {diskPath} (len={text.Length})");
+                    if (!string.IsNullOrWhiteSpace(text))
+                        return text;
+                    Log("[Bridge] HOME JS on disk is empty: " + diskPath);
+                }
+                }
+            catch (Exception ex)
+            {
+                Log("[Bridge] Read HOME JS on disk failed: " + ex.Message);
+            }
+
             try
             {
                 var resName = FindResourceName("js_home_v2.js")
-                              ?? "BaccaratDG.js_home_v2.js"; // fallback tên logic
+                              ?? "BaccaratPPRR88.js_home_v2.js"; // fallback tên logic
                 var text = ReadEmbeddedText(resName);   // helper sẵn có
                 text = RemoveUtf8Bom(text);             // helper sẵn có
 
@@ -4369,8 +5030,61 @@ Ví dụ không hợp lệ:
                 Log("[Bridge] Frame injected + autostart armed.");
 
                 // Hook lifecycle của CHÍNH frame này
+                string lastFrameNavUri = "";
+                f.NavigationStarting += (s2, e2) =>
+                {
+                    try
+                    {
+                        lastFrameNavUri = e2.Uri ?? "";
+                        Log($"[Frame NavStart] id={f.Name} uri={lastFrameNavUri}");
+
+                        // Neu iframe vao lobby PP thi dieu huong top window sang cung URL de cung origin
+                        // chi force 1 lan: neu da force hoac top da o host pragmaticplaylive thi bo qua
+                        if (!string.IsNullOrEmpty(_lastForcedLobbyUrl))
+                        {
+                            // da force roi, khong lam tiep
+                        }
+                        else if (Web?.CoreWebView2 != null &&
+                                 Uri.TryCreate(Web.CoreWebView2.Source, UriKind.Absolute, out var topUri) &&
+                                 topUri.Host.Contains("pragmaticplaylive.net"))
+                        {
+                            // top da o pragmaticplaylive, bo qua
+                        }
+                        else if (!string.IsNullOrEmpty(lastFrameNavUri) &&
+                            Uri.TryCreate(lastFrameNavUri, UriKind.Absolute, out var u))
+                        {
+                            var host = u.Host.ToLowerInvariant();
+                            var path = u.AbsolutePath.ToLowerInvariant();
+                            if (host.Contains("client.pragmaticplaylive.net") && path.Contains("/desktop/lobby"))
+                            {
+                                if (!string.Equals(_lastForcedLobbyUrl, u.ToString(), StringComparison.Ordinal))
+                                {
+                                    _lastForcedLobbyUrl = u.ToString();
+                                    try
+                                    {
+                                        Web?.CoreWebView2?.Navigate(_lastForcedLobbyUrl);
+                                        Log("[Frame NavStart] force top navigate to lobby: " + _lastForcedLobbyUrl);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Log("[Frame NavStart] force lobby err: " + ex.Message);
+                                    }
+                                }
+                            }
+                        }
+                }
+            catch { }
+                };
                 f.DOMContentLoaded += Frame_DOMContentLoaded_Bridge;
                 f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
+                f.NavigationCompleted += (s2, e2) =>
+                {
+                    try
+                    {
+                        Log($"[Frame NavDone] id={f.Name} uri={lastFrameNavUri}");
+                    }
+                    catch { }
+                };
             }
             catch (Exception ex)
             {
@@ -4398,7 +5112,7 @@ Ví dụ không hợp lệ:
                     var ok = (bool)(mi.Invoke(Web.CoreWebView2, args) ?? false);
                     if (ok) return (CoreWebView2Frame?)args[1];
                 }
-            }
+                }
             catch { }
             return null;
         }
@@ -4823,7 +5537,7 @@ Ví dụ không hợp lệ:
                     try { Web.Dispose(); } catch { }
                     Web = null;
                 }
-            }
+                }
             catch { }
 
             // 4) reset các cờ đã hook để nếu mở lại thì hook lại từ đầu
@@ -4854,7 +5568,7 @@ Ví dụ không hợp lệ:
                     LblStatusText.Text = status;
                     LblStatusText.Visibility = Visibility.Visible;
                 }
-            }
+                }
             catch { /* ignore */ }
         }
 
@@ -5040,7 +5754,7 @@ Ví dụ không hợp lệ:
                 {
                     RefreshCurrentPage();   // (mục 3 bên dưới)
                 }
-            }
+                }
             catch { /* ignore */ }
         }
 
@@ -5190,7 +5904,7 @@ Ví dụ không hợp lệ:
                         try { File.Delete(f); } catch { /* ignore IO */ }
                     }
                 }
-            }
+                }
             catch { /* ignore */ }
         }
 
@@ -5303,7 +6017,8 @@ Ví dụ không hợp lệ:
             }
 
             // Tách nhiều quy tắc: ',', ';', '|', hoặc xuống dòng
-            var rules = System.Text.RegularExpressions.Regex.Split(s.Replace("\r", ""), @"[,\;\|\n]+");
+            var rules = System.Text.RegularExpressions.Regex.Split(s.Replace("\r", ""), @"[,\;\|
+]+");
             int idx = 0;
 
             foreach (var raw in rules)
@@ -5375,7 +6090,8 @@ Ví dụ không hợp lệ:
             }
 
             // Tách nhiều quy tắc: ',', ';', '|', hoặc xuống dòng
-            var rules = System.Text.RegularExpressions.Regex.Split(s.Replace("\r", ""), @"[,\;\|\n]+");
+            var rules = System.Text.RegularExpressions.Regex.Split(s.Replace("\r", ""), @"[,\;\|
+]+");
             int idx = 0;
 
             foreach (var raw in rules)
@@ -5668,3 +6384,14 @@ Ví dụ không hợp lệ:
     }
 
 }
+
+
+
+
+
+
+
+
+
+
+

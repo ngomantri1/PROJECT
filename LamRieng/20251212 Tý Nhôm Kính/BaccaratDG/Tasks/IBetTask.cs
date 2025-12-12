@@ -1,8 +1,8 @@
 ﻿using System.Threading;
 using System.Threading.Tasks;
-using BaccaratDG.Tasks;
+using BaccaratPPRR88.Tasks;
 
-namespace BaccaratDG.Tasks
+namespace BaccaratPPRR88.Tasks
 {
     public interface IBetTask
     {

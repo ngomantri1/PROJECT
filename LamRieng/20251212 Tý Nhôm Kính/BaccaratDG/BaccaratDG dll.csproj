@@ -10,7 +10,7 @@
     <Prefer32Bit>false</Prefer32Bit>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
-    <AssemblyName>BaccaratDG</AssemblyName>
+    <AssemblyName>BaccaratPPRR88</AssemblyName>
   </PropertyGroup>
 
   <!-- Stamp cho Release đổi tên EXE -->
@@ -65,7 +65,7 @@
   <!-- Release mới nhúng ZIP môi trường -->
   <ItemGroup Condition="'$(Configuration)'=='Release'">
     <EmbeddedResource Include="ThirdParty\WebView2Fixed_win-x64.zip">
-      <LogicalName>BaccaratDG.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
+      <LogicalName>BaccaratPPRR88.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 
@@ -89,14 +89,14 @@
   <!-- ===== Kiểm soát file plugin để tránh duplicate compile ===== -->
   <!-- Bỏ mặc định trước, rồi Debug sẽ Include lại -->
   <ItemGroup>
-    <Compile Remove="BaccaratDGPlugin.cs" />
-    <Compile Remove="BaccaratDGPlugin.Hub.cs" />
+    <Compile Remove="BaccaratPPRR88Plugin.cs" />
+    <Compile Remove="BaccaratPPRR88Plugin.Hub.cs" />
     <Compile Remove="PluginProbe.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)'=='Debug'">
-    <Compile Include="BaccaratDGPlugin.cs" />
+    <Compile Include="BaccaratPPRR88Plugin.cs" />
     <Compile Include="PluginProbe.cs" />
-    <Compile Include="BaccaratDGPlugin.Hub.cs" Condition="Exists('BaccaratDGPlugin.Hub.cs')" />
+    <Compile Include="BaccaratPPRR88Plugin.Hub.cs" Condition="Exists('BaccaratPPRR88Plugin.Hub.cs')" />
   </ItemGroup>
 
   <!-- ===== Tham chiếu ABX.Core đúng bản của Hub (không copy local) ===== -->
