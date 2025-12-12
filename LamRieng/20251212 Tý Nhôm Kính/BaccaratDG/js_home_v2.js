@@ -253,11 +253,23 @@
         'div.modal-dialog[1]/div.modal-content[1]/gupw-login-box.ng-scope.ng-isolate-scope[1]/div._3N2lRww2b9eZP-F5fSS-Rq[2]/div._1OoWQtNHBngCIoug1-MRj3[2]/form.ng-pristine.ng-invalid[1]/div._3kf2U2RqwnANN5VYWFRt8X[1]/input.ng-pristine.ng-untouched[1]';
     const TAIL_LOGIN_PASS_INPUT =
         'div.modal-dialog[1]/div.modal-content[1]/gupw-login-box.ng-scope.ng-isolate-scope[1]/div._3N2lRww2b9eZP-F5fSS-Rq[2]/div._1OoWQtNHBngCIoug1-MRj3[2]/form.ng-pristine.ng-invalid[1]/div.ng-isolate-scope._3kf2U2RqwnANN5VYWFRt8X[2]/input.ng-pristine.ng-untouched[1]';
-    const TAIL_LOGIN_CAPTCHA_INPUT =
-        'div.modal-content[1]/gupw-login-box.ng-scope.ng-isolate-scope[1]/div._3N2lRww2b9eZP-F5fSS-Rq[2]/div._1OoWQtNHBngCIoug1-MRj3[2]/form.ng-pristine.ng-invalid[1]/div.ng-scope._3kf2U2RqwnANN5VYWFRt8X[3]/gupw-captcha-login-box.ng-isolate-scope[1]/input.ng-pristine.ng-untouched[1]';
+    const TAIL_LOGIN_CAPTCHA_INPUTS = [
+        'div.modal-content[1]/gupw-login-box.ng-scope.ng-isolate-scope[1]/div._3N2lRww2b9eZP-F5fSS-Rq[2]/div._1OoWQtNHBngCIoug1-MRj3[2]/form.ng-invalid.ng-invalid-required[1]/div.ng-scope._3kf2U2RqwnANN5VYWFRt8X[3]/gupw-captcha-login-box.ng-isolate-scope[1]/input.ng-empty.ng-invalid[1]',
+        'div.modal-content[1]/gupw-login-box.ng-scope.ng-isolate-scope[1]/div._3N2lRww2b9eZP-F5fSS-Rq[2]/div._1OoWQtNHBngCIoug1-MRj3[2]/form.ng-pristine.ng-invalid[1]/div.ng-scope._3kf2U2RqwnANN5VYWFRt8X[3]/gupw-captcha-login-box.ng-isolate-scope[1]/input.ng-pristine.ng-untouched[1]'
+    ];
+    const TAIL_LOGIN_REMEMBER_INPUT =
+        'div.modal-dialog[1]/div.modal-content[1]/gupw-login-box.ng-scope.ng-isolate-scope[1]/div._3N2lRww2b9eZP-F5fSS-Rq[2]/div._1OoWQtNHBngCIoug1-MRj3[2]/form.ng-dirty.ng-valid-parse[1]/div.ng-scope.ng-isolate-scope[4]/input.ng-untouched.ng-valid[1]';
+    const TAIL_LOGIN_POPUP_BTNS = [
+        'div.modal-content[1]/gupw-login-box.ng-scope.ng-isolate-scope[1]/div._3N2lRww2b9eZP-F5fSS-Rq[2]/div._1OoWQtNHBngCIoug1-MRj3[2]/form.ng-dirty.ng-valid-parse[1]/div._1eaDDqXK18F0I6yJ56FIwp[5]/button._1elJEDoklSJeZCRhRorPTp[1]/span.ng-scope[1]',
+        'div.modal-dialog[1]/div.modal-content[1]/gupw-login-box.ng-scope.ng-isolate-scope[1]/div._3N2lRww2b9eZP-F5fSS-Rq[2]/div._1OoWQtNHBngCIoug1-MRj3[2]/form.ng-dirty.ng-valid-parse[1]/div._1eaDDqXK18F0I6yJ56FIwp[5]/button._1elJEDoklSJeZCRhRorPTp[1]/span.ng-scope[1]',
+        'div.modal-dialog[1]/div.modal-content[1]/gupw-login-box.ng-scope.ng-isolate-scope[1]/div._3N2lRww2b9eZP-F5fSS-Rq[2]/div._1OoWQtNHBngCIoug1-MRj3[2]/form.ng-dirty.ng-submitted[1]/div._1eaDDqXK18F0I6yJ56FIwp[5]/button._1elJEDoklSJeZCRhRorPTp[1]',
+        'div.modal-dialog[1]/div.modal-content[1]/gupw-login-box.ng-scope.ng-isolate-scope[1]/div._3N2lRww2b9eZP-F5fSS-Rq[2]/div._1OoWQtNHBngCIoug1-MRj3[2]/form[1]/div._1eaDDqXK18F0I6yJ56FIwp[5]/button._1elJEDoklSJeZCRhRorPTp[1]'
+    ];
     const LOGIN_POPUP_SELECTOR =
         '.tcg_modal_wrap.loginPopupModal, .tcg_modal_wrap.publicModal, .tcg_modal_wrap, ' +
         '.loginPopupModal, .popup-login, .login-popup, .modal-login, .login__popup, .v--modal-box, .v--modal-overlay';
+    const LOGIN_CAPTCHA_FALLBACK_SELECTOR =
+        'gupw-captcha-login-box input, input[name*="captcha" i], input[placeholder*="mã" i], input[placeholder*="ma" i]';
     // N£t dang nh?p trˆn header (tail m?i b?n cung c?p)
     const TAIL_LOGIN_BTN =
         'gupw-header.ng-isolate-scope[1]/header._3vHaytPTEUCSbrofAXU7Cb[1]/section.dM4IN4vP0qOz6g1PSzWml[1]/div.TFkX-2VIsaFZW7t64YI07[1]/div.Rn_gRU5eCS1c_8asbKpT1[2]/div[1]/div.ng-scope.XHBKId8UUI4X-RJ2-t7aR[1]/button.ng-scope._2mBNgBjbvImj-b_6WuwAFm[1]';
@@ -342,7 +354,8 @@
         missStreak: 0,
         authGateOpened: false,
         loginPopupTimer: null, // NEW: timer auto click login
-        loginPostProbeStarted: false // NEW: tránh start probe trùng
+        loginPostProbeStarted: false, // NEW: tránh start probe trùng
+        loginSubmitTs: 0
     };
 
     const ROOT_Z = 2147483647;
@@ -448,6 +461,7 @@
 
     // Bật/tắt log khi debug số dư
     const DEBUG_BAL = false; // đổi true khi cần theo dõi
+    const LOGIN_SUBMIT_GUARD_MS = 6000;
 
     function balLog(...args) {
         if (!DEBUG_BAL)
@@ -456,23 +470,45 @@
         console.debug('[HW][BAL]', ...args); // hiển thị khi bật Verbose/Debug. :contentReference[oaicite:2]{index=2}
     }
 
+    function setLoginSubmitGuard() {
+        S.loginSubmitTs = Date.now();
+    }
+
+    function clearLoginSubmitGuard() {
+        S.loginSubmitTs = 0;
+    }
+
+    function isLoginSubmitGuardActive() {
+        if (!S.loginSubmitTs)
+            return false;
+        if (Date.now() - S.loginSubmitTs > LOGIN_SUBMIT_GUARD_MS) {
+            S.loginSubmitTs = 0;
+            return false;
+        }
+        return true;
+    }
+
     function isLoggedInFromDOM() {
+        const markLoggedIn = () => {
+            clearLoginSubmitGuard();
+            return true;
+        };
         // 1) Có tên -> chắc chắn logged-in
         const v = findUserFromDOM();
         if (v && v.trim())
-            return true;
+            return markLoggedIn();
         // 2) Có khối user đang HIỂN THỊ -> tạm xem là logged-in
         const block = document.querySelector('.user-logged, .base-dropdown-header__user__name, .user__name, .header .user-info, .hd_login .user-name, .logined_wrap');
         if (block && block.offsetParent !== null)
-            return true;
+            return markLoggedIn();
         // 3) Thấy nút/khối Đăng xuất hoặc số dư trên header
         const logoutBtn = Array.from(document.querySelectorAll('a,button')).find(el => /dang\s*xuat|logout/i.test(norm(textOf(el))));
         if (logoutBtn && logoutBtn.offsetParent !== null)
-            return true;
+            return markLoggedIn();
         const balanceNode = Array.from(document.querySelectorAll('.balance, .balance-text, .user-balance, .nav_item .balance, .balance-box .balance, .logined_wrap .balance-box'))
             .find(el => /\d/.test(norm(textOf(el))));
         if (balanceNode && balanceNode.offsetParent !== null)
-            return true;
+            return markLoggedIn();
         return false;
     }
     function closeLoginPopupIfLoggedIn() {
@@ -756,13 +792,16 @@
     }
 
     function resolveLoginField(tail, fallbackSelector) {
-        try {
-            if (tail) {
-                const el = findByTail(tail);
+        const tails = Array.isArray(tail) ? tail : (tail ? [tail] : []);
+        for (const t of tails) {
+            try {
+                if (!t)
+                    continue;
+                const el = findByTail(t);
                 if (el && el.isConnected)
                     return el;
-            }
-        } catch (_) {}
+            } catch (_) {}
+        }
         if (!fallbackSelector)
             return null;
         const root = getLoginPopupRoot();
@@ -788,28 +827,8 @@
     function syncRememberFlag(checked) {
         if (typeof checked !== 'boolean')
             return false;
-        const root = getLoginPopupRoot();
-        const sel = 'input[type="checkbox"][name*="remember" i], input[type="checkbox"][id*="remember" i], input[type="checkbox"][ng-model*="remember" i], .remember input[type="checkbox"]';
-        let el = null;
-        try {
-            el = root && root.querySelector(sel);
-        } catch (_) {
-            el = null;
-        }
-        if (!el || !el.isConnected) {
-            try {
-                el = document.querySelector(sel);
-            } catch (_) {
-                el = null;
-            }
-        }
-        if (!el || !el.isConnected) {
-            try {
-                el = root && root.querySelector('input[type="checkbox"]');
-            } catch (_) {
-                el = null;
-            }
-        }
+        const sel = 'input[type="checkbox"][name*="remember" i], input[type="checkbox"][id*="remember" i], input[type="checkbox"][ng-model*="remember" i], .remember input[type="checkbox"], input[type="checkbox"]';
+        const el = resolveLoginField(TAIL_LOGIN_REMEMBER_INPUT, sel);
         return setCheckboxState(el, checked);
     }
 
@@ -825,14 +844,43 @@
                 'input[name="username"], input[name="account"], input[placeholder*="đăng" i], input[placeholder*="tài khoản" i], input[placeholder*="dang" i], input[type="text"]',
                 user);
             fillLoginField(TAIL_LOGIN_PASS_INPUT, 'input[type="password"]', pass);
-            fillLoginField(TAIL_LOGIN_CAPTCHA_INPUT,
-                'gupw-captcha-login-box input, input[name*="captcha" i], input[placeholder*="mã" i], input[placeholder*="ma" i]',
-                code);
+            fillLoginField(TAIL_LOGIN_CAPTCHA_INPUTS, LOGIN_CAPTCHA_FALLBACK_SELECTOR, code);
             if (typeof remember === 'boolean')
                 syncRememberFlag(remember);
         } catch (err) {
             console.warn('[HomeWatch] set_login error', err);
         }
+    }
+
+    function focusLoginCaptchaField() {
+        const el = resolveLoginField(TAIL_LOGIN_CAPTCHA_INPUTS, LOGIN_CAPTCHA_FALLBACK_SELECTOR);
+        if (!el)
+            return false;
+        const hasValue = typeof el.value === 'string' && el.value.trim().length > 0;
+        if (hasValue)
+            return false;
+        try {
+            peelAndClick(el, {
+                holdMs: 200
+            });
+        } catch (_) {}
+        try {
+            el.focus({
+                preventScroll: true
+            });
+        } catch (_) {
+            try {
+                el.focus();
+            } catch (_) {}
+        }
+        try {
+            el.click();
+        } catch (_) {}
+        try {
+            if (typeof el.select === 'function')
+                el.select();
+        } catch (_) {}
+        return true;
     }
 
     // NEW: nhận biết popup đăng nhập đã hiển thị hay chưa
@@ -1444,6 +1492,10 @@
         } catch (_) {}
     })();
 
+    window.__cw_focusCaptcha = focusLoginCaptchaField;
+    window.__cw_isLoggedInFromDom = isLoggedInFromDOM;
+    window.__cw_isLoginPopupVisible = isLoginPopupVisible;
+
     // ===== Public APIs để C# gọi theo "hàm" =====
     window.__abx_hw_clickLogin = function () {
         try {
@@ -1526,6 +1578,11 @@
             case 'set_login':
             case 'home_set_login':
                 handleSetLoginCommand(payload);
+                break;
+            case 'focus_captcha':
+            case 'home_focus_captcha':
+            case 'focus_code':
+                focusLoginCaptchaField();
                 break;
             }
         });
@@ -3121,6 +3178,9 @@
         if (isLoggedInFromDOM()) {
             return false;
         }
+        if (isLoginSubmitGuardActive()) {
+            return false;
+        }
         // Nếu popup đăng nhập đã hiện, không bấm nút header nữa
         if (isLoginPopupVisible()) {
             return false;
@@ -3181,18 +3241,66 @@
             }
 
             // 3) Tìm nút submit trong popup
-            const candSel =
-                'button.submit_btn, .submit_btn[role="button"], button[type="submit"], .btn-login, .base-button.btn';
-            let btn = Array.from(root.querySelectorAll(candSel)).find(isVisibleAndClickable) || null;
+            const resolveSubmitTarget = (el) => {
+                if (!el || !el.isConnected)
+                    return null;
+                const tag = ((el.tagName || '') + '').toLowerCase();
+                if (tag === 'button' || tag === 'input' || tag === 'a')
+                    return el;
+                try {
+                    if (typeof el.matches === 'function' && el.matches('.submit_btn, [role="button"], .btn-login, .base-button.btn'))
+                        return el;
+                } catch (_) {}
+                if (typeof el.closest === 'function') {
+                    try {
+                        const pick = el.closest('button, input, a, [role="button"], .submit_btn, .btn-login, .base-button.btn');
+                        if (pick && pick.isConnected)
+                            return pick;
+                    } catch (_) {}
+                }
+                return null;
+            };
+            let btn = null;
+            const popupBtnTails = Array.isArray(TAIL_LOGIN_POPUP_BTNS) ? TAIL_LOGIN_POPUP_BTNS :
+                (TAIL_LOGIN_POPUP_BTNS ? [TAIL_LOGIN_POPUP_BTNS] : []);
+            for (const t of popupBtnTails) {
+                if (!t)
+                    continue;
+                try {
+                    const cand = findByTail(t);
+                    const target = resolveSubmitTarget(cand);
+                    if (target && isVisibleAndClickable(target)) {
+                        btn = target;
+                        break;
+                    }
+                } catch (_) {}
+            }
+            if (!btn) {
+                const candSel =
+                    'button.submit_btn, .submit_btn[role="button"], button[type="submit"], .btn-login, .base-button.btn';
+                for (const el of root.querySelectorAll(candSel)) {
+                    const target = resolveSubmitTarget(el);
+                    if (target && isVisibleAndClickable(target)) {
+                        btn = target;
+                        break;
+                    }
+                }
+            }
 
-            // Fallback: quét toàn bộ button theo text "Đăng nhập"
+            // Fallback: qu?t to?n b? button theo text "Đăng nhập"
             if (!btn) {
                 const all = Array.from(
                         root.querySelectorAll('button, a, [role="button"], input[type="submit"]'));
-                btn = all.find(el => {
-                    const t = norm(textOf(el));
-                    return t.includes('dang nhap') || t.includes('login');
-                }) || null;
+                for (const el of all) {
+                    const target = resolveSubmitTarget(el) || el;
+                    if (!target || !isVisibleAndClickable(target))
+                        continue;
+                    const t = norm(textOf(target));
+                    if (t.includes('dang nhap') || t.includes('login')) {
+                        btn = target;
+                        break;
+                    }
+                }
             }
 
             if (!btn || !isVisibleAndClickable(btn)) {
@@ -3203,6 +3311,10 @@
             peelAndClick(btn, {
                 holdMs: 400
             });
+            setLoginSubmitGuard();
+            try {
+                startLoginPostProbe();
+            } catch (_) {}
             return true;
         } catch (e) {
             console.warn('[__cw_clickPopupLogin] ERR', e);
@@ -3254,7 +3366,13 @@
 
         // Nếu đã login thì khỏi auto click nữa
         if (isLoggedInFromDOM()) {
-            stopLoginAutoClick('Đã đăng nhập — không auto click nút "Đăng nhập" nữa.');
+            stopLoginAutoClick('Đã đăng nhập - không auto click nút "Đăng nhập" nữa.');
+            return;
+        }
+        if (isLoginSubmitGuardActive()) {
+            try {
+                updateInfo && updateInfo('Đang chờ hoàn tất đăng nhập...');
+            } catch (_) {}
             return;
         }
 
@@ -3273,7 +3391,11 @@
         const tick = () => {
             // 1) Nếu trong lúc đang chạy mà đã login → dừng hẳn
             if (isLoggedInFromDOM()) {
-                stopLoginAutoClick('Đã thấy trạng thái đăng nhập — dừng auto click nút "Đăng nhập".');
+                stopLoginAutoClick('Đã thấy trạng thái đăng nhập - dừng auto click nút "Đăng nhập".');
+                return;
+            }
+
+            if (isLoginSubmitGuardActive()) {
                 return;
             }
 
@@ -3307,13 +3429,22 @@
         try {
             // Nếu đã login thì không auto-click nút Đăng nhập nữa
             if (isLoggedInFromDOM()) {
-                stopLoginAutoClick('Đã đăng nhập — không auto click nút "Đăng nhập".');
+                stopLoginAutoClick('Đã đăng nhập - không auto click nút "Đăng nhập".');
+                return;
+            }
+            if (isLoginSubmitGuardActive()) {
+                try {
+                    updateInfo && updateInfo('Đang chờ hoàn tất đăng nhập...');
+                } catch (_) {}
                 return;
             }
             // Thử chờ ngắn xem có nhận diện login sau khi DOM đầy đủ không
             waitFor(() => isLoggedInFromDOM(), 2500, 150).then((ok) => {
                 if (ok) {
-                    stopLoginAutoClick('Đã đăng nhập (sau chờ) — không auto click nút "Đăng nhập".');
+                    stopLoginAutoClick('Đã đăng nhập (sau chờ) - không auto click nút "Đăng nhập".');
+                    return;
+                }
+                if (isLoginSubmitGuardActive()) {
                     return;
                 }
                 // Nếu popup login đã hiện rồi thì KHÔNG click nút nữa

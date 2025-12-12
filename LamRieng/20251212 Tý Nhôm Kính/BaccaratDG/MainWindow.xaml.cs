@@ -2211,8 +2211,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                         // VERIFY CODE (Mã xác minh)
                         var cInput = form.querySelector('input[name*=""code"" i], input[placeholder*=""mã xác minh"" i]');
-                        if (cInput) {{
-                            cInput.value = code || '';
+                        var normalizedCode = (code || '').trim();
+                        if (cInput && normalizedCode) {{
+                            cInput.value = normalizedCode;
                             cInput.dispatchEvent(new Event('input',{{ bubbles:true }}));
                             cInput.dispatchEvent(new Event('change',{{ bubbles:true }}));
                         }}
@@ -2247,27 +2248,39 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 await EnsureWebReadyAsync();
                 if (!IsWebAlive) return;
 
-                var remember = (ChkRemember?.IsChecked == true) ? "true" : "false";
-
-                var js = $@"
-        (function(){{
-            try {{
-                var form = document.querySelector('form.login-form');
-                if (!form) return;
-                var rem = form.querySelector('input.remPass_checkbox');
-                if (!rem) return;
-                rem.checked = {remember};
-                rem.dispatchEvent(new Event('input',{{ bubbles:true }}));
-                rem.dispatchEvent(new Event('change',{{ bubbles:true }}));
-            }} catch(e) {{
-                console.warn('[SyncRememberCheckboxAsync]', e);
-            }}
-        }})();";
-                await Web.CoreWebView2.ExecuteScriptAsync(js);
+                var remember = (ChkRemember?.IsChecked == true);
+                var payload = JsonSerializer.Serialize(new
+                {
+                    cmd = "home_set_login",
+                    remember
+                });
+                Web.CoreWebView2.PostWebMessageAsJson(payload);
+                Log($"[SyncRememberCheckboxAsync] sent remember={remember}");
             }
             catch (Exception ex)
             {
                 Log("[SyncRememberCheckboxAsync] " + ex);
+            }
+        }
+
+        private void TxtVerify_GotFocus(object sender, RoutedEventArgs e)
+        {
+            SendFocusCaptchaCommand();
+        }
+
+        private void SendFocusCaptchaCommand()
+        {
+            try
+            {
+                if (Web?.CoreWebView2 == null)
+                    return;
+                var payload = JsonSerializer.Serialize(new { cmd = "focus_captcha" });
+                Web.CoreWebView2.PostWebMessageAsJson(payload);
+                Log("[FocusCaptcha] request sent");
+            }
+            catch (Exception ex)
+            {
+                Log("[FocusCaptcha] " + ex.Message);
             }
         }
 
@@ -2338,7 +2351,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     if (TxtUrl != null) TxtUrl.TextChanged += TxtUrl_TextChanged;
                     if (TxtUser != null) TxtUser.TextChanged += TxtUser_TextChanged;
                     if (TxtPass != null) TxtPass.PasswordChanged += TxtPass_PasswordChanged;
-                    if (TxtVerify != null) TxtVerify.TextChanged += TxtVerify_TextChanged;
+                    if (TxtVerify != null)
+                    {
+                        TxtVerify.TextChanged += TxtVerify_TextChanged;
+                        TxtVerify.GotFocus += TxtVerify_GotFocus;
+                    }
                     if (TxtStakeCsv != null) TxtStakeCsv.TextChanged += TxtStakeCsv_TextChanged;
                     if (CmbBetStrategy != null) CmbBetStrategy.SelectionChanged += CmbBetStrategy_SelectionChanged;
                     if (TxtChuoiCau != null) TxtChuoiCau.TextChanged += TxtChuoiCau_TextChanged;
@@ -2945,6 +2962,54 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return res;
         }
 
+        private async Task<bool> WaitForLoginCompletedAsync(int timeoutMs = 8000, int pollMs = 250, int settleMs = 1500)
+        {
+            try
+            {
+                if (!IsWebAlive)
+                    return false;
+                await EnsureWebReadyAsync();
+                if (!IsWebAlive)
+                    return false;
+
+                var sw = Stopwatch.StartNew();
+                DateTime? stableSince = null;
+                var script = "(function(){try{var logged=(window.__cw_isLoggedInFromDom&&window.__cw_isLoggedInFromDom())?'1':'0';var href=String(location.href||'');var popup=(window.__cw_isLoginPopupVisible&&window.__cw_isLoginPopupVisible())?'1':'0';return logged+'|'+href+'|'+popup;}catch(e){return '0||1';}})();";
+                while (sw.ElapsedMilliseconds < timeoutMs)
+                {
+                    var res = await ExecJsAsyncStr(script) ?? "0||1";
+                    var parts = res.Split('|');
+                    var logged = parts.Length > 0 && parts[0] == "1";
+                    var href = parts.Length > 1 ? parts[1] : string.Empty;
+                    var popupVisible = parts.Length > 2 && parts[2] == "1";
+                    var onLoginPage = href.IndexOf("/login", StringComparison.OrdinalIgnoreCase) >= 0;
+                    var stable = logged && !onLoginPage && !popupVisible;
+                    if (stable)
+                    {
+                        if (stableSince == null)
+                            stableSince = DateTime.UtcNow;
+                        if ((DateTime.UtcNow - stableSince.Value).TotalMilliseconds >= settleMs)
+                        {
+                            Log("[LoginGuard] Logged-in detected (stable).");
+                            return true;
+                        }
+                    }
+                    else
+                    {
+                        stableSince = null;
+                    }
+                    await Task.Delay(Math.Max(100, pollMs));
+                }
+                Log($"[LoginGuard] Timeout chờ trạng thái đăng nhập ổn định ({timeoutMs} ms).");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Log("[LoginGuard] Error: " + ex.Message);
+                return false;
+            }
+        }
+
 
 
 
@@ -3433,68 +3498,55 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private async void VaoXocDia_Click(object sender, RoutedEventArgs e)
         {
+            var restartWatcher = _autoLoginWatchCts != null;
+            StopAutoLoginWatcher();
             try
             {
                 await SaveConfigAsync();
                 await EnsureWebReadyAsync();
 
-                // 1) Ưu tiên gọi API JS: click Login trước
-                var res = await ClickLoginButtonAsync();
-                Log("[AutoLoginWatch] " + res);
+                var loginReady = await WaitForLoginCompletedAsync(2000, 250, 800);
+                if (!loginReady)
+                {
+                    await AutoFillLoginAsync();
+                    SendFocusCaptchaCommand();
 
-                // đợi nhẹ để trang xử lý login (nếu có)
-                await Task.Delay(400);
+                    var res = await ClickLoginButtonAsync();
+                    Log("[AutoLoginWatch] " + res);
 
-                // 2) Sau khi bấm nút login xong thì dùng HomeClickPlayAsync để mở Baccarat nhiều bàn
+                    loginReady = await WaitForLoginCompletedAsync(15000, 400, 2000);
+                    Log("[LoginGuard] wait result = " + loginReady);
+                }
+                else
+                {
+                    Log("[LoginGuard] ?? nh?n di?n phi?n ??ng nh?p s?n c?.");
+                }
+
+                if (!loginReady)
+                {
+                    Log("[HOME] Kh?ng x?c nh?n ???c tr?ng th?i ??ng nh?p. Vui l?ng ho?n t?t ??ng nh?p th? c?ng r?i nh?n l?i.");
+                    return;
+                }
+
                 var okPlay = await HomeClickPlayAsync();
                 Log("[HOME] play baccarat-nhieu-ban via HomeClickPlayAsync => " + okPlay);
 
-                // 3) Không dùng fallback C# vào Xóc Đĩa nữa để tránh mở sai game
-
-
-                // 3) Không dùng fallback C# vào Xóc Đĩa nữa để tránh mở sai game
-
-
-                // 4) Cầu nối: đồng bộ & autostart khi đã vào bàn
-                //if (_bridge != null)
-                //{
-                //    // nếu bạn có sửa JS ngoài, nạp lại và re-register
-                //    var latestJs = await LoadAppJsAsyncFallback();
-                //    if (!string.IsNullOrEmpty(latestJs))
-                //        await _bridge.UpdateAppJsAsync(latestJs);
-
-                //    await _bridge.ForceRefreshAsync();
-                //}
-
-                // 5) Poll cocos sẵn sàng (giữ nguyên như cũ)
-                //var ok = false;
-                //for (int i = 0; i < 100; i++)
-                //{
-                //    var ready = await Web.ExecuteScriptAsync(@"
-                //(function(){ try{ return !!(window.cc && cc.director && cc.director.getScene); }
-                //             catch(e){ return false; } })()");
-                //    Log("[VaoXocDia_Click -> load xoc dia live] " + ready);
-                //    if (bool.TryParse(ready, out var b) && b) { ok = true; break; }
-                //    await Task.Delay(300);
-                //}
-                //if (!ok) Log("[CW] Game not ready (Cocos scene not found)");
-
-                // 6) Bật push tick bên canvas (như cũ)
                 await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[CW] start push 240ms");
-                // NEW: đánh dấu là mình CHỦ ĐỘNG vào game
                 _lockGameUi = true;
-                _lastGameTickUtc = DateTime.UtcNow;     // để timer thấy cũng hợp lý
+                _lastGameTickUtc = DateTime.UtcNow;
                 ApplyUiMode(true);
             }
             catch (Exception ex)
             {
                 Log("[VaoXocDia_Click] " + ex);
             }
+            finally
+            {
+                if (restartWatcher)
+                    StartAutoLoginWatcher();
+            }
         }
-
-
-
 
         // Bật watcher: khi thấy nút "Đăng nhập" hoặc ô user/pass hiển thị → tự login
         private void StartAutoLoginWatcher()
@@ -6384,13 +6436,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
     }
 
 }
-
-
-
-
-
-
-
 
 
 
