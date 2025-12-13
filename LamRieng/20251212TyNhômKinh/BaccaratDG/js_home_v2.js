@@ -2385,6 +2385,39 @@
                 }
             } catch (_) {}
         });
+        // Nếu iframe top không trả về gì, thử quét fallback ngay trong top để có log
+        setTimeout(() => {
+            try {
+                logFrameScanDebug('request_fallback_top', { kind, limit, reqId });
+                const all = getOrdered(kind === 'link' ? 'link' : kind === 'popup' ? 'popup' : 'text');
+                const list = all.slice(0, Math.max(1, Math.min(limit || 200, all.length)));
+                postHomeWatchLog({
+                    abx: 'hw_scan_res',
+                    kind,
+                    count: list.length,
+                    raw: all.length,
+                    href: String(location.href || ''),
+                    reqId,
+                    readyState: document.readyState,
+                    hasBody: !!document.body,
+                    bodyChildren: document.body ? document.body.childElementCount : 0,
+                    reason: document.body ? (list.length ? 'ok' : 'empty_top') : 'no_body',
+                    items: list.slice(0, 30).map(it => {
+                        const r = rectOf(it.el);
+                        return {
+                            index: it.ord,
+                            text: clip(it.text || textOf(it.el), 80),
+                            src: it.src || 'visible',
+                            x: r.x,
+                            y: r.y,
+                            w: r.w,
+                            h: r.h,
+                            tail: cssTail(it.el)
+                        };
+                    })
+                });
+            } catch (_) {}
+        }, 800);
     }
 
     function forwardScanToChildFrames(kind, limit, reqId) {
@@ -2412,6 +2445,24 @@
                     }
                 } catch (_) {}
             });
+            // fallback: log thông tin nếu không gửi được do CORS
+            if (frames.every(f => {
+                try {
+                    return !f.contentWindow;
+                } catch (_) {
+                    return true;
+                }
+            })) {
+                postHomeWatchLog({
+                    abx: 'hw_scan_res',
+                    kind,
+                    count: 0,
+                    raw: 0,
+                    href: String(location.href || ''),
+                    reqId: reqId || '',
+                    reason: 'no_access_child_frames'
+                });
+            }
         } catch (_) {}
     }
 
