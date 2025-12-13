@@ -2067,24 +2067,48 @@
         };
     }
 
-    function getAutomationRect(stage) {
-        if (!stage || !stage.rect)
-            return null;
-        const normalized = normalizeRect(stage.rect, getReferenceViewport());
-        return clampRect(scaleNormalizedRect(normalized, getViewportSize().w, getViewportSize().h));
+    function getAutomationBaseRect() {
+        let baseRect = null;
+        if (S.captureLast && S.captureLast.rect)
+            baseRect = cloneRect(S.captureLast.rect);
+        else if (captureSelectionRect)
+            baseRect = cloneRect(captureSelectionRect);
+        if (baseRect && baseRect.w > 0 && baseRect.h > 0)
+            return baseRect;
+        const viewport = getViewportSize();
+        return {
+            x: 0,
+            y: 0,
+            w: Math.max(1, viewport.w),
+            h: Math.max(1, viewport.h)
+        };
     }
 
-    function getAutomationClickPoint(stage) {
+    function resolveStageRect(stage) {
+        if (!stage || !stage.rect)
+            return null;
+        const baseRect = getAutomationBaseRect();
+        const rect = {
+            x: baseRect.x + (stage.rect.x || 0),
+            y: baseRect.y + (stage.rect.y || 0),
+            w: Math.max(1, stage.rect.w || 1),
+            h: Math.max(1, stage.rect.h || 1)
+        };
+        return clampRect(rect);
+    }
+
+    function resolveStageClick(stage) {
         if (!stage || !stage.click)
             return null;
-        const normalized = normalizePoint(stage.click, getReferenceViewport());
+        const baseRect = getAutomationBaseRect();
         const viewport = getViewportSize();
-        const scaled = scaleNormalizedPoint(normalized, viewport.w, viewport.h);
-        if (!scaled)
-            return null;
+        const point = {
+            x: baseRect.x + (stage.click.x || 0),
+            y: baseRect.y + (stage.click.y || 0)
+        };
         return {
-            x: clamp(Math.round(scaled.x), 0, viewport.w - 1),
-            y: clamp(Math.round(scaled.y), 0, viewport.h - 1)
+            x: clamp(Math.round(point.x), 0, viewport.w - 1),
+            y: clamp(Math.round(point.y), 0, viewport.h - 1)
         };
     }
 
@@ -2608,8 +2632,8 @@
 
     const automationConfig = {
         referenceViewport: {
-            width: 1920,
-            height: 1080
+            width: 1366,
+            height: 768
         },
         templateBase: {
             start: {
@@ -2737,23 +2761,10 @@
         return board;
     }
 
-    function normalizeAutomationRect(rect) {
-        if (!rect || typeof rect !== 'object')
-            return getDefaultCaptureRect();
-        const vw = document.documentElement.clientWidth || window.innerWidth || 1;
-        const vh = document.documentElement.clientHeight || window.innerHeight || 1;
-        const x = clamp(Math.round(rect.x || 0), 0, Math.max(0, vw - 1));
-        const y = clamp(Math.round(rect.y || 0), 0, Math.max(0, vh - 1));
-        const baseRect = automationConfig.templateBase.start.rect || { w: 160, h: 120 };
-        const w = Math.max(1, Math.min(Math.round(rect.w || 0) || baseRect.w, Math.max(1, vw - x)));
-        const h = Math.max(1, Math.min(Math.round(rect.h || 0) || baseRect.h, Math.max(1, vh - y)));
-        return { x, y, w, h };
-    }
-
     async function captureRegion(rect) {
         if (!rect)
             return null;
-        const normalized = normalizeAutomationRect(rect);
+        const normalized = clampRect(rect);
         try {
             return await requestCapturePreviewFromHost(normalized);
         } catch (_) {
@@ -2977,27 +2988,27 @@
             while (S.templateAutomationRunning) {
                 const stage = board.state.lock ? board.end : board.start;
                 if (!stage) {
-                    updateAutomationStatus(`[${board.id}] Stage không hợp lệ`);
+                    updateAutomationStatus(`[${board.id}] Stage kh?ng h?p l?`);
                     await wait(interval);
                     continue;
                 }
                 const sample = findTemplateByName(stage.name);
                 if (!sample) {
-                    updateAutomationStatus(`[${board.id}] Chưa có mẫu ${stage.name}`);
+                    updateAutomationStatus(`[${board.id}] Ch?a c? m?u ${stage.name}`);
                     await wait(interval);
                     continue;
                 }
+                const targetRect = resolveStageRect(stage);
                 let similarity = 0;
                 try {
-                    const targetRect = getAutomationRect(stage);
                     if (!targetRect) {
-                        updateAutomationStatus(`[${board.id}] Rect ${stage.name} không hợp lệ`);
+                        updateAutomationStatus(`[${board.id}] Rect ${stage.name} kh?ng h?p l?`);
                         await wait(interval);
                         continue;
                     }
                     similarity = await compareTemplateToRect(sample, targetRect);
                 } catch (err) {
-                    updateAutomationStatus(`[${board.id}] Lỗi so sánh: ` + (err && err.message || err));
+                    updateAutomationStatus(`[${board.id}] L?i so s?nh: ` + (err && err.message || err));
                     await wait(interval);
                     continue;
                 }
@@ -3005,13 +3016,13 @@
                 const pct = Math.round(similarity * 100);
                 if (similarity >= threshold) {
                     if (!board.state.lock) {
-                        const clickPoint = getAutomationClickPoint(stage);
+                        const clickPoint = resolveStageClick(stage);
                         if (clickPoint) {
                             simulateClickAt(clickPoint.x, clickPoint.y);
                             board.state.lock = true;
                             updateAutomationStatus(`[${board.id}] ${stage.name} ${pct}% -> click`);
                         } else {
-                            updateAutomationStatus(`[${board.id}] Click point ${stage.name} không hợp lệ`);
+                            updateAutomationStatus(`[${board.id}] Click point ${stage.name} kh?ng h?p l?`);
                         }
                         await wait(afterMatchDelay);
                     } else {
@@ -3020,15 +3031,14 @@
                         await wait(afterMatchDelay);
                     }
                 } else {
-                    updateAutomationStatus(`[${board.id}] ${stage.name} ${pct}% chưa đúng`);
+                    updateAutomationStatus(`[${board.id}] ${stage.name} ${pct}% ch?a ??ng`);
                     await wait(interval);
                 }
             }
         } catch (err) {
-            updateAutomationStatus(`[${board.id}] Lỗi tự động: ` + (err && err.message || err));
+            updateAutomationStatus(`[${board.id}] L?i t? ??ng: ` + (err && err.message || err));
         }
     }
-
     async function runTemplateAutomationLoop() {
         updateAutomationStatus('Khởi động tự động');
         try {
