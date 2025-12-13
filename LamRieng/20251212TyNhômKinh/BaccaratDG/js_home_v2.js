@@ -1897,17 +1897,44 @@
     function collectTexts() {
         const state = { i: 0, frames: [] };
         const results = [];
-        const visit = (win, srcTag, depth = 0) => {
-            const fallbackLabel = srcTag || (depth === 0 ? 'top' : 'frame');
+        const describeFrameEl = (el, idx) => {
+            try {
+                const src = el.getAttribute('src') || '';
+                const name = el.getAttribute('name') || '';
+                const id = el.getAttribute('id') || '';
+                const label = clip(src || name || id || ('frame#' + idx), 200);
+                return { label, src, name, id, idx };
+            } catch (_) {
+                return { label: 'frame#' + idx, idx };
+            }
+        };
+        const visit = (win, meta, depth = 0) => {
+            const fallbackLabel = (meta && meta.label) || (meta && meta.src) || (meta && meta.name) || (depth === 0 ? 'top' : 'frame');
             let doc;
             try {
                 doc = win.document;
             } catch (_) {
-                state.frames.push({ src: fallbackLabel, depth, count: 0, reason: 'blocked_access', bodyChildren: 0, bodyTextLen: 0 });
+                state.frames.push({
+                    src: fallbackLabel,
+                    depth,
+                    count: 0,
+                    reason: 'blocked_access',
+                    bodyChildren: 0,
+                    bodyTextLen: 0,
+                    meta: meta || null
+                });
                 return;
             }
             if (!doc || !doc.body) {
-                state.frames.push({ src: fallbackLabel, depth, count: 0, reason: 'no_body', bodyChildren: 0, bodyTextLen: 0 });
+                state.frames.push({
+                    src: fallbackLabel,
+                    depth,
+                    count: 0,
+                    reason: 'no_body',
+                    bodyChildren: 0,
+                    bodyTextLen: 0,
+                    meta: meta || null
+                });
                 return;
             }
 
@@ -2051,17 +2078,24 @@
 
             // Đệ quy sang các iframe con (nếu cùng origin truy cập được)
             try {
-                const frames = win.frames;
-                for (let i = 0; i < frames.length; i++) {
-                    const f = frames[i];
-                    if (!f || f === win)
-                        continue;
-                    visit(f, label, depth + 1);
-                }
+                const frames = Array.from(doc.querySelectorAll('iframe'));
+                frames.forEach((ifr, idx) => {
+                    try {
+                        const metaChild = describeFrameEl(ifr, idx);
+                        const wChild = ifr.contentWindow;
+                        if (wChild && wChild !== win)
+                            visit(wChild, metaChild, depth + 1);
+                        else
+                            state.frames.push({ src: metaChild.label, depth: depth + 1, count: 0, reason: 'no_contentWindow', bodyChildren: 0, bodyTextLen: 0, meta: metaChild });
+                    } catch (_) {
+                        const metaChild = describeFrameEl(ifr, idx);
+                        state.frames.push({ src: metaChild.label, depth: depth + 1, count: 0, reason: 'blocked_access', bodyChildren: 0, bodyTextLen: 0, meta: metaChild });
+                    }
+                });
             } catch (_) {}
         };
 
-        visit(window, 'top', 0);
+        visit(window, { label: 'top' }, 0);
         try {
             postHomeWatchLog({
                 abx: 'textmap_frames',
