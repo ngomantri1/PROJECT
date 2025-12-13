@@ -381,9 +381,21 @@
     };
     const rectOf = el => {
         const r = el.getBoundingClientRect();
+        let x = r.left | 0,
+        y = r.top | 0;
+        // Nếu phần tử nằm trong iframe, cộng dồn offset của frame cha để quy về tọa độ top
+        try {
+            let win = el.ownerDocument && el.ownerDocument.defaultView;
+            while (win && win !== window && win.frameElement) {
+                const fr = win.frameElement.getBoundingClientRect();
+                x += fr.left | 0;
+                y += fr.top | 0;
+                win = win.parent;
+            }
+        } catch (_) {}
         return {
-            x: Math.round(r.left | 0),
-            y: Math.round(r.top | 0),
+            x: Math.round(x),
+            y: Math.round(y),
             w: Math.round(r.width | 0),
             h: Math.round(r.height | 0)
         };
