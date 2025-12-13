@@ -1898,14 +1898,18 @@
         const state = { i: 0, frames: [] };
         const results = [];
         const visit = (win, srcTag, depth = 0) => {
+            const fallbackLabel = srcTag || (depth === 0 ? 'top' : 'frame');
             let doc;
             try {
                 doc = win.document;
             } catch (_) {
+                state.frames.push({ src: fallbackLabel, depth, count: 0, reason: 'blocked_access', bodyChildren: 0, bodyTextLen: 0 });
                 return;
             }
-            if (!doc || !doc.body)
+            if (!doc || !doc.body) {
+                state.frames.push({ src: fallbackLabel, depth, count: 0, reason: 'no_body', bodyChildren: 0, bodyTextLen: 0 });
                 return;
+            }
 
             const label = (() => {
                 try {
@@ -1913,8 +1917,12 @@
                     if (href)
                         return clip(href, 140);
                 } catch (_) {}
-                return srcTag || (depth === 0 ? 'top' : 'frame');
+                return fallbackLabel;
             })();
+            let bodyTextLen = 0;
+            try {
+                bodyTextLen = (doc.body.innerText || '').trim().length;
+            } catch (_) {}
 
             const NF = win.NodeFilter || NodeFilter;
             const walker = doc.createTreeWalker(doc.body, NF.SHOW_TEXT, {
@@ -1939,7 +1947,14 @@
                 });
             }
             const added = results.length - before;
-            state.frames.push({ src: label, depth, count: added });
+            state.frames.push({
+                src: label,
+                depth,
+                count: added,
+                bodyChildren: doc.body ? doc.body.childElementCount : 0,
+                bodyTextLen,
+                reason: added > 0 ? 'ok' : 'no_visible_text'
+            });
 
             // ===== DEEP SOURCES: thêm "text chìm" =====
             const pushDeep = (el, text, srcTagDeep) => {
@@ -2053,6 +2068,7 @@
                 count: results.length,
                 frames: state.frames.slice(0, 15),
                 framesCount: state.frames.length,
+                blockedFrames: state.frames.filter(f => f.reason === 'blocked_access').length,
                 section: 'collectTexts'
             });
         } catch (_) {}
@@ -2488,6 +2504,10 @@
                 const limit = d.limit || 200;
                 const ready = document.readyState;
                 const hasBody = !!document.body;
+                let bodyTextLen = 0;
+                try {
+                    bodyTextLen = (document.body && document.body.innerText || '').trim().length;
+                } catch (_) {}
                 forwardScanToChildFrames(kind, limit, d.reqId || '');
                 logFrameScanDebug('frame_collect_begin', {
                     kind,
@@ -2495,7 +2515,8 @@
                     reqId: d.reqId || '',
                     ready,
                     hasBody,
-                    bodyChildren: hasBody ? document.body.childElementCount : 0
+                    bodyChildren: hasBody ? document.body.childElementCount : 0,
+                    bodyTextLen
                 });
                 const all = getOrdered(kind === 'link' ? 'link' : kind === 'popup' ? 'popup' : 'text');
                 const list = all.slice(0, Math.max(1, Math.min(limit, all.length)));

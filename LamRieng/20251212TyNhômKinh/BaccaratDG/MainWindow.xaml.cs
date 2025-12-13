@@ -5164,22 +5164,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 var f = e.Frame;
-
-                // Tiêm ngay (idempotent)
-                _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                try
-                {
-                    var mi = f.GetType().GetMethod("AddScriptToExecuteOnDocumentCreatedAsync");
-                    if (mi != null && !string.IsNullOrEmpty(_homeJs))
-                        _ = (Task)mi.Invoke(f, new object[] { _homeJs })!;
-                }
-                catch { }
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = f.ExecuteScriptAsync(_appJs);
-                if (!string.IsNullOrEmpty(_homeJs))
-                    _ = f.ExecuteScriptAsync(_homeJs);
-                _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
-                Log("[Bridge] Frame injected + autostart armed.");
+                LogFrameDetails(f, "created");
+                _ = InjectFrameScriptsAsync(f, "FrameCreated");
 
                 // Hook lifecycle của CHÍNH frame này
                 string lastFrameNavUri = "";
@@ -5188,7 +5174,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     try
                     {
                         lastFrameNavUri = e2.Uri ?? "";
-                        Log($"[Frame NavStart] id={f.Name} uri={lastFrameNavUri}");
+                        Log($"[Frame NavStart] name={f.Name} uri={lastFrameNavUri}");
 
                         // Neu iframe vao lobby PP thi dieu huong top window sang cung URL de cung origin
                         // chi force 1 lan: neu da force hoac top da o host pragmaticplaylive thi bo qua
@@ -5233,7 +5219,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 {
                     try
                     {
-                        Log($"[Frame NavDone] id={f.Name} uri={lastFrameNavUri}");
+                        Log($"[Frame NavDone] name={f.Name} uri={lastFrameNavUri} success={e2.IsSuccess} status={e2.WebErrorStatus}");
+                        LogFrameDetails(f, "nav_done");
                     }
                     catch { }
                 };
@@ -5276,14 +5263,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var f = sender as CoreWebView2Frame;
                 if (f == null) return;
 
-                _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = f.ExecuteScriptAsync(_appJs);
-                if (!string.IsNullOrEmpty(_homeJs))
-                    _ = f.ExecuteScriptAsync(_homeJs);
-                _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
-
-                Log("[Bridge] Frame DOMContentLoaded -> reinjected + autostart.");
+                LogFrameDetails(f, "dom_loaded");
+                _ = InjectFrameScriptsAsync(f, "Frame.DOMContentLoaded");
             }
             catch (Exception ex)
             {
@@ -5299,19 +5280,66 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var f = sender as CoreWebView2Frame;
                 if (f == null) return;
 
+                LogFrameDetails(f, "nav_completed");
+                _ = InjectFrameScriptsAsync(f, "Frame.NavigationCompleted");
+            }
+            catch (Exception ex)
+            {
+                Log("[Bridge.Frame NavigationCompleted] " + ex.Message);
+            }
+        }
+
+        private async Task InjectFrameScriptsAsync(CoreWebView2Frame f, string reason)
+        {
+            try
+            {
+                // Tiêm (idempotent) + autostart
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
+                try
+                {
+                    var mi = f.GetType().GetMethod("AddScriptToExecuteOnDocumentCreatedAsync");
+                    if (mi != null && !string.IsNullOrEmpty(_homeJs))
+                        _ = (Task)mi.Invoke(f, new object[] { _homeJs })!;
+                }
+                catch { }
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
                 if (!string.IsNullOrEmpty(_homeJs))
                     _ = f.ExecuteScriptAsync(_homeJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
 
-                Log("[Bridge] Frame NavigationCompleted -> reinjected + autostart.");
+                Log($"[FrameInject] {reason} ok name={f.Name}");
             }
             catch (Exception ex)
             {
-                Log("[Bridge.Frame NavigationCompleted] " + ex.Message);
+                Log($"[FrameInject] {reason} err: {ex.Message}");
             }
+        }
+
+        private void LogFrameDetails(CoreWebView2Frame f, string tag)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var raw = await f.ExecuteScriptAsync(
+                        "(function(){try{return JSON.stringify({href:location.href||'',name:window.name||'',src:(window.frameElement&&window.frameElement.getAttribute('src'))||''});}catch(e){return JSON.stringify({href:'',name:'',src:'',err:String(e)})}})();");
+                    var info = JsonSerializer.Deserialize<FrameInfoLog>(raw ?? "{}") ?? new FrameInfoLog();
+                    Log($"[FrameInfo][{tag}] name={info.name} href={info.href} src={info.src} err={info.err}");
+                }
+                catch (Exception ex)
+                {
+                    Log($"[FrameInfo][{tag}] err: {ex.Message}");
+                }
+            });
+        }
+
+        private class FrameInfoLog
+        {
+            public string? href { get; set; }
+            public string? name { get; set; }
+            public string? src { get; set; }
+            public string? err { get; set; }
         }
 
 
