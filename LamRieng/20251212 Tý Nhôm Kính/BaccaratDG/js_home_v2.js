@@ -461,8 +461,7 @@
     (function installDgWebSocketTap() {
         try {
             const host = String(location.hostname || '');
-            // Chỉ hook bên trong iframe DreamGaming/DingDang (bao gồm cloudfront mirror)
-            if (!/(dingdang|dreamgaming|ywjxi\.com|izogcnj\.com)/i.test(host))
+            if (IS_TOP)
                 return;
             if (!window.WebSocket || window.__abx_dg_ws_hooked)
                 return;
