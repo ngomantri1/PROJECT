@@ -1,9 +1,7 @@
 ﻿(function () {
     'use strict';
     // Muốn hiện và ẩn bảng điều khiển home watch thì tìm dòng sau : showPanel: false // ⬅️ false = ẩn panel; true = hiện panel
-    if (window.self !== window.top) {
-        return;
-    }
+    const IS_TOP = window.self === window.top;
     function isTelemetry(u) {
         try {
             const href = typeof u === 'string' ? u : (u && u.url) || '';
@@ -200,7 +198,7 @@
     // === END TEXTMAP GUARD ===
 
     // Skip toàn bộ Home Watch ở domain game
-    if (/^games\./i.test(location.hostname)) {
+    if (IS_TOP && /^games\./i.test(location.hostname)) {
         console.debug('[HomeWatch] Skip on game host');
         return;
     }
@@ -1201,16 +1199,19 @@
             e.preventDefault();
             e.stopPropagation();
             scanLinks(500);
+            scanInFrames('__abx_hw_scanLinks', 500);
         };
         root.querySelector('#' + CFG.scanTextsBtnId).onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
             scanTexts(500);
+            scanInFrames('__abx_hw_scanTexts', 500);
         };
         root.querySelector('#' + CFG.scanClosePopupBtnId).onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
             scanClosePopups(500);
+            scanInFrames('__abx_hw_scanClosePopups', 500);
         };
         root.querySelector('#' + CFG.overlayToggleBtnId).onclick = (e) => {
             e.preventDefault();
@@ -2104,6 +2105,55 @@
         } catch (_) {}
         console.groupEnd();
     }
+
+    // Cho phép top g?i scan trong các iframe đã được tiêm JS
+    function scanInFrames(fnName, limit) {
+        const frames = Array.from(document.querySelectorAll('iframe'));
+        if (!frames.length)
+            return;
+        frames.forEach((f) => {
+            let handled = false;
+            try {
+                const w = f.contentWindow;
+                const fn = w && w[fnName];
+                if (typeof fn === 'function') {
+                    fn.call(w, limit);
+                    handled = true;
+                }
+            } catch (_) {}
+            if (!handled) {
+                try {
+                    const w = f.contentWindow;
+                    if (w && w.postMessage) {
+                        w.postMessage({
+                            abx: 'hw_scan',
+                            fn: fnName,
+                            limit: limit
+                        }, '*');
+                    }
+                } catch (_) {}
+            }
+        });
+    }
+
+    // Xu?t ra global đ? contentWindow c¢ th? nh?n l?i g?i t? top
+    window.__abx_hw_scanLinks = scanLinks;
+    window.__abx_hw_scanTexts = scanTexts;
+    window.__abx_hw_scanClosePopups = scanClosePopups;
+
+    // L?ng nghe yêu c?u scan qua postMessage (dùng cho iframe cross-origin)
+    window.addEventListener('message', (evt) => {
+        try {
+            const d = evt && evt.data;
+            if (!d || typeof d !== 'object')
+                return;
+            if (d.abx !== 'hw_scan' || !d.fn)
+                return;
+            const fn = window[d.fn];
+            if (typeof fn === 'function')
+                fn.call(window, d.limit);
+        } catch (_) {}
+    }, false);
 
     // ======= Username & Balance =======
     function findUserFromDOM() {
@@ -4814,5 +4864,7 @@
         console.error('[HomeWatch] boot error', e);
     }
 }
-    boot();
+    if (IS_TOP) {
+        boot();
+    }
     })();
