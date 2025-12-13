@@ -449,10 +449,12 @@
         try {
             if (IS_TOP)
                 return false;
-            if (!window.WebSocket || window.__abx_dg_ws_hooked)
+            if (!window.WebSocket)
                 return false;
-            window.__abx_dg_ws_hooked = true;
-            const OrigWS = window.WebSocket;
+            const guardKey = '__abx_dg_ws_guard';
+            if (!forceLog && window[guardKey])
+                return true;
+            window[guardKey] = true;
             const logWs = (phase, info) => {
                 try {
                     postHomeWatchLog(Object.assign({
@@ -462,56 +464,98 @@
                     }, info || {}));
                 } catch (_) {}
             };
-
-            window.WebSocket = function (...args) {
-                const ws = new OrigWS(...args);
-                const url = args && args[0] ? String(args[0]) : '';
-                logWs('open', { url });
-
-                ws.addEventListener('message', (evt) => {
-                    const data = evt.data;
-                    let sample = '';
-                    let jsonSample = '';
-                    try {
-                        if (typeof data === 'string') {
-                            sample = data.slice(0, 600);
-                            const parsed = tryParseJsonSample(sample);
-                            if (parsed)
-                                jsonSample = parsed;
-                        } else if (data instanceof ArrayBuffer) {
-                            sample = '[arraybuffer len=' + data.byteLength + ']';
-                        } else if (data instanceof Blob) {
-                            sample = '[blob len=' + data.size + ']';
-                        } else {
-                            sample = '[' + (typeof data) + ']';
-                        }
-                    } catch (err) {
-                        sample = '[parse_error: ' + err.message + ']';
-                    }
-                    logWs('message', {
-                        url,
-                        sample,
-                        json: jsonSample
+            const copyStaticProps = (src, dest) => {
+                try {
+                    Object.getOwnPropertyNames(src || {}).forEach(name => {
+                        if (name === 'prototype')
+                            return;
+                        const desc = Object.getOwnPropertyDescriptor(src, name);
+                        if (desc)
+                            Object.defineProperty(dest, name, desc);
                     });
-                });
-
-                ws.addEventListener('close', (evt) => {
-                    logWs('close', {
-                        url,
-                        code: evt.code,
-                        reason: evt.reason || '',
-                        clean: evt.wasClean
-                    });
-                });
-                ws.addEventListener('error', () => {
-                    logWs('error', { url });
-                });
-                return ws;
+                } catch (_) {}
             };
-            window.WebSocket.prototype = OrigWS.prototype;
-            if (forceLog)
-                logWs('hook_ready', { message: 'manual hook' });
-            return true;
+            const makeHook = (OrigWS) => {
+                if (!OrigWS || OrigWS.__abx_ws_wrapped)
+                    return null;
+                const Hooked = function (...args) {
+                    const ws = new OrigWS(...args);
+                    const url = args && args[0] ? String(args[0]) : '';
+                    logWs('open', { url });
+
+                    ws.addEventListener('message', (evt) => {
+                        const data = evt.data;
+                        let sample = '';
+                        let jsonSample = '';
+                        try {
+                            if (typeof data === 'string') {
+                                sample = data.slice(0, 600);
+                                const parsed = tryParseJsonSample(sample);
+                                if (parsed)
+                                    jsonSample = parsed;
+                            } else if (data instanceof ArrayBuffer) {
+                                sample = '[arraybuffer len=' + data.byteLength + ']';
+                            } else if (data instanceof Blob) {
+                                sample = '[blob len=' + data.size + ']';
+                            } else {
+                                sample = '[' + (typeof data) + ']';
+                            }
+                        } catch (err) {
+                            sample = '[parse_error: ' + err.message + ']';
+                        }
+                        logWs('message', {
+                            url,
+                            sample,
+                            json: jsonSample
+                        });
+                    });
+
+                    ws.addEventListener('close', (evt) => {
+                        logWs('close', {
+                            url,
+                            code: evt.code,
+                            reason: evt.reason || '',
+                            clean: evt.wasClean
+                        });
+                    });
+                    ws.addEventListener('error', () => {
+                        logWs('error', { url });
+                    });
+                    return ws;
+                };
+                Hooked.prototype = OrigWS.prototype;
+                copyStaticProps(OrigWS, Hooked);
+                Hooked.__abx_ws_wrapped = true;
+                Hooked.__abx_ws_base = OrigWS;
+                return Hooked;
+            };
+            const ensureHooked = (label) => {
+                const ctor = window.WebSocket;
+                if (!ctor)
+                    return false;
+                if (ctor.__abx_ws_wrapped)
+                    return true;
+                const wrapped = makeHook(ctor);
+                if (!wrapped)
+                    return false;
+                window.WebSocket = wrapped;
+                logWs('hook_ready', { message: label });
+                return true;
+            };
+            const tag = forceLog ? 'manual frame hook' : 'auto frame hook';
+            const ok = ensureHooked(tag);
+            if (!window.__abx_ws_guard_timer) {
+                window.__abx_ws_guard_timer = setInterval(() => {
+                    try {
+                        if (!window.WebSocket)
+                            return;
+                        if (window.WebSocket.__abx_ws_wrapped)
+                            return;
+                        ensureHooked('rehook');
+                    } catch (_) {}
+                }, 1500);
+            }
+            return ok;
         } catch (err) {
             try {
                 postHomeWatchLog({
