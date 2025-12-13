@@ -3,7 +3,7 @@
 
     const log = (...args) => {
         if (window.console && typeof window.console.log === 'function')
-            console.log('[TextMap Test]', ...args);
+            console.log('[HomeWatch] TextMapTest', ...args);
     };
 
     const dumpTextMap = () => {
