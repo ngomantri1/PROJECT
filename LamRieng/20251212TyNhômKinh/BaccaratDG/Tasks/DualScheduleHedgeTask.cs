@@ -1,8 +1,8 @@
 ﻿using System.Threading;
 using System.Threading.Tasks;
-using static BaccaratPPRR88.Tasks.TaskUtil;
+using static BaccaratDG.Tasks.TaskUtil;
 
-namespace BaccaratPPRR88.Tasks
+namespace BaccaratDG.Tasks
 {
     /// <summary>
     /// 13) Lịch hai lớp (10 tay):

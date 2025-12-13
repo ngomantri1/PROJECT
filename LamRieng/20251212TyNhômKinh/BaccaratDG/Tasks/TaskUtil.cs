@@ -7,7 +7,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 
-namespace BaccaratPPRR88.Tasks
+namespace BaccaratDG.Tasks
 {
     internal static class TaskUtil
     {

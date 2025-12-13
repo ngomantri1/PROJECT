@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Linq;
 using System.Windows.Data;
 
-namespace BaccaratPPRR88
+namespace BaccaratDG
 {
     /// <summary>
     /// Converter tính chiều rộng tiến độ.

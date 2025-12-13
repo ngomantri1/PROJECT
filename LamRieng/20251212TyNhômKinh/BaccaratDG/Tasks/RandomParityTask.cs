@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
-using static BaccaratPPRR88.Tasks.TaskUtil;
+using static BaccaratDG.Tasks.TaskUtil;
 
-namespace BaccaratPPRR88.Tasks
+namespace BaccaratDG.Tasks
 {
     /// <summary>6) Cửa đặt ngẫu nhiên (random) – giữ nguyên quản lý vốn như SmartPrevTask</summary>
     public sealed class RandomParityTask : IBetTask

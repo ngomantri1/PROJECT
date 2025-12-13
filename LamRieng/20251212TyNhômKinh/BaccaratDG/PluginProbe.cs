@@ -5,7 +5,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
 
-namespace BaccaratPPRR88
+namespace BaccaratDG
 {
     internal static class PluginProbe
     {
@@ -17,7 +17,7 @@ namespace BaccaratPPRR88
                 var baseDir = AppContext.BaseDirectory;
                 var logDir = Path.Combine(baseDir, "Plugins");
                 Directory.CreateDirectory(logDir);
-                var log = Path.Combine(logDir, "BaccaratPPRR88.probe.log");
+                var log = Path.Combine(logDir, "BaccaratDG.probe.log");
 
                 void write(string s) => File.AppendAllText(log, $"[{DateTime.Now:HH:mm:ss.fff}] {s}{Environment.NewLine}");
 
@@ -53,7 +53,7 @@ namespace BaccaratPPRR88
             {
                 try
                 {
-                    File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "Plugins", "BaccaratPPRR88.probe.log"),
+                    File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "Plugins", "BaccaratDG.probe.log"),
                         "[ERR] " + ex + Environment.NewLine);
                 }
                 catch { }

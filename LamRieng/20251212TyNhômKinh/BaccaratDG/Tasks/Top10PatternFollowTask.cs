@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using static BaccaratPPRR88.Tasks.TaskUtil;
+using static BaccaratDG.Tasks.TaskUtil;
 
-namespace BaccaratPPRR88.Tasks
+namespace BaccaratDG.Tasks
 {
     /// <summary>
     /// 16) Theo chuỗi Top10 từ cửa sổ 50 phiên (C/L)

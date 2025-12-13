@@ -10,7 +10,7 @@
     <Prefer32Bit>false</Prefer32Bit>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
-    <AssemblyName>TaiXiuLiveHit</AssemblyName>
+    <AssemblyName>BaccaratDG</AssemblyName>
   </PropertyGroup>
 
   <!-- Stamp cho Release đổi tên EXE -->
@@ -63,7 +63,7 @@
   <ItemGroup Condition="'$(Configuration)'=='Release'">
     <None Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
     <EmbeddedResource Include="ThirdParty\WebView2Fixed_win-x64.zip">
-      <LogicalName>TaiXiuLiveHit.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
+      <LogicalName>BaccaratDG.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

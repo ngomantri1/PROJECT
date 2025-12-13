@@ -13,8 +13,8 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using static System.Net.Mime.MediaTypeNames;
 using static System.Runtime.InteropServices.JavaScript.JSType;
-using BaccaratPPRR88;
-using BaccaratPPRR88.Tasks;
+using BaccaratDG;
+using BaccaratDG.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Globalization;
@@ -29,13 +29,13 @@ using System.ComponentModel;
 using System.Linq;
 using System.Collections.ObjectModel;
 using System.Windows.Data;
-using static BaccaratPPRR88.MainWindow;
+using static BaccaratDG.MainWindow;
 using System.Windows.Input;
 
 
 
 
-namespace BaccaratPPRR88
+namespace BaccaratDG
 {
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Assets (pack URI).
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Resources (pack URI).
@@ -153,7 +153,7 @@ namespace BaccaratPPRR88
 
     public partial class MainWindow : Window
     {
-        private const string AppLocalDirName = "BaccaratPPRR88"; // đổi thành tên bạn muốn
+        private const string AppLocalDirName = "BaccaratDG"; // đổi thành tên bạn muốn
         // ====== App paths ======
         private readonly string _appDataDir;
         private readonly string _cfgPath;
@@ -515,7 +515,7 @@ Ví dụ không hợp lệ:
         private double _winTotal = 0;
         private CoreWebView2Environment? _webEnv;
         private bool _webInitDone;
-        private const string Wv2ZipResNameX64 = "BaccaratPPRR88.ThirdParty.WebView2Fixed_win-x64.zip";
+        private const string Wv2ZipResNameX64 = "BaccaratDG.ThirdParty.WebView2Fixed_win-x64.zip";
         // Thư mục cache bền vững cho runtime (không bị dọn như %TEMP%)
         private static string Wv2BaseDir =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -1107,7 +1107,7 @@ Ví dụ không hợp lệ:
 
         private string GetAiNGramStatePath()
         {
-            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\BaccaratPPRR88
+            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\BaccaratDG
             var aiDir = System.IO.Path.Combine(_appDataDir, "ai");
             System.IO.Directory.CreateDirectory(aiDir);
             return System.IO.Path.Combine(aiDir, "ngram_state_v1.json");
@@ -2131,7 +2131,7 @@ Ví dụ không hợp lệ:
                 // Bỏ qua lỗi detect host, sẽ fallback sang runtime riêng bên dưới
             }
 
-            // 1) Runtime riêng của BaccaratPPRR88 (dùng khi chạy EXE độc lập)
+            // 1) Runtime riêng của BaccaratDG (dùng khi chạy EXE độc lập)
             var baseDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 AppLocalDirName, "WebView2Fixed");
@@ -4400,23 +4400,23 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 }
 
 
-                BaccaratPPRR88.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
+                BaccaratDG.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
                 {
-                    0 => new BaccaratPPRR88.Tasks.SeqParityFollowTask(),     // 1
-                    1 => new BaccaratPPRR88.Tasks.PatternParityTask(),       // 2
-                    2 => new BaccaratPPRR88.Tasks.SmartPrevTask(),           // 3
-                    3 => new BaccaratPPRR88.Tasks.RandomParityTask(),        // 4
-                    4 => new BaccaratPPRR88.Tasks.AiStatParityTask(),        // 5
-                    5 => new BaccaratPPRR88.Tasks.StateTransitionBiasTask(), // 6
-                    6 => new BaccaratPPRR88.Tasks.RunLengthBiasTask(),       // 7
-                    7 => new BaccaratPPRR88.Tasks.EnsembleMajorityTask(),    // 8
-                    8 => new BaccaratPPRR88.Tasks.TimeSlicedHedgeTask(),    // 9
-                    9 => new BaccaratPPRR88.Tasks.KnnSubsequenceTask(),     // 10
-                    10 => new BaccaratPPRR88.Tasks.DualScheduleHedgeTask(),  // 11
-                    11 => new BaccaratPPRR88.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 12
-                    12 => new BaccaratPPRR88.Tasks.AiExpertPanelTask(), // 13
-                    13 => new BaccaratPPRR88.Tasks.Top10PatternFollowTask(), // 14
-                    _ => new BaccaratPPRR88.Tasks.SmartPrevTask(),
+                    0 => new BaccaratDG.Tasks.SeqParityFollowTask(),     // 1
+                    1 => new BaccaratDG.Tasks.PatternParityTask(),       // 2
+                    2 => new BaccaratDG.Tasks.SmartPrevTask(),           // 3
+                    3 => new BaccaratDG.Tasks.RandomParityTask(),        // 4
+                    4 => new BaccaratDG.Tasks.AiStatParityTask(),        // 5
+                    5 => new BaccaratDG.Tasks.StateTransitionBiasTask(), // 6
+                    6 => new BaccaratDG.Tasks.RunLengthBiasTask(),       // 7
+                    7 => new BaccaratDG.Tasks.EnsembleMajorityTask(),    // 8
+                    8 => new BaccaratDG.Tasks.TimeSlicedHedgeTask(),    // 9
+                    9 => new BaccaratDG.Tasks.KnnSubsequenceTask(),     // 10
+                    10 => new BaccaratDG.Tasks.DualScheduleHedgeTask(),  // 11
+                    11 => new BaccaratDG.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 12
+                    12 => new BaccaratDG.Tasks.AiExpertPanelTask(), // 13
+                    13 => new BaccaratDG.Tasks.Top10PatternFollowTask(), // 14
+                    _ => new BaccaratDG.Tasks.SmartPrevTask(),
                 };
 
 
@@ -4467,7 +4467,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 StopTask();
-                BaccaratPPRR88.Tasks.TaskUtil.ClearBetCooldown();
+                BaccaratDG.Tasks.TaskUtil.ClearBetCooldown();
                 _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[Loop] stopped");
                 SetPlayButtonState(false);
@@ -4632,7 +4632,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return (s.Length <= take) ? s : s.Substring(s.Length - take, take);
         }
 
-        // đặt trong MainWindow.xaml.cs (project BaccaratPPRR88)
+        // đặt trong MainWindow.xaml.cs (project BaccaratDG)
 
         // load thử lần lượt các uri, cái nào được thì dùng, không được thì trả về null
         private static ImageSource? LoadImgSafe(params string[] uris)
@@ -5021,7 +5021,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 var resName = FindResourceName("js_home_v2.js")
-                              ?? "BaccaratPPRR88.js_home_v2.js"; // fallback tên logic
+                              ?? "BaccaratDG.js_home_v2.js"; // fallback tên logic
                 var text = ReadEmbeddedText(resName);   // helper sẵn có
                 text = RemoveUtf8Bom(text);             // helper sẵn có
 
@@ -5164,8 +5164,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 var f = e.Frame;
-                LogFrameDetails(f, "created");
-                _ = InjectFrameScriptsAsync(f, "FrameCreated");
+                // đảm bảo trên UI thread
+                Dispatcher.InvokeAsync(() =>
+                {
+                    try
+                    {
+                        LogFrameDetails(f, "created");
+                        _ = InjectFrameScriptsAsync(f, "FrameCreated");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log("[FrameCreated.Dispatcher] " + ex.Message);
+                    }
+                });
 
                 // Hook lifecycle của CHÍNH frame này
                 string lastFrameNavUri = "";
@@ -5217,13 +5228,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
                 f.NavigationCompleted += (s2, e2) =>
                 {
-                    try
+                    Dispatcher.InvokeAsync(() =>
                     {
-                        Log($"[Frame NavDone] name={f.Name} uri={lastFrameNavUri} success={e2.IsSuccess} status={e2.WebErrorStatus}");
-                        LogFrameDetails(f, "nav_done");
-                        TryInjectForGameFrame(f, lastFrameNavUri, "NavDone");
-                    }
-                    catch { }
+                        try
+                        {
+                            Log($"[Frame NavDone] name={f.Name} uri={lastFrameNavUri} success={e2.IsSuccess} status={e2.WebErrorStatus}");
+                            LogFrameDetails(f, "nav_done");
+                            TryInjectForGameFrame(f, lastFrameNavUri, "NavDone");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log("[Frame NavDone.Dispatcher] " + ex.Message);
+                        }
+                    });
                 };
             }
             catch (Exception ex)
@@ -5264,9 +5281,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var f = sender as CoreWebView2Frame;
                 if (f == null) return;
 
-                LogFrameDetails(f, "dom_loaded");
-                _ = InjectFrameScriptsAsync(f, "Frame.DOMContentLoaded");
-                TryInjectForGameFrame(f, null, "DOMLoaded");
+                Dispatcher.InvokeAsync(() =>
+                {
+                    try
+                    {
+                        LogFrameDetails(f, "dom_loaded");
+                        _ = InjectFrameScriptsAsync(f, "Frame.DOMContentLoaded");
+                        TryInjectForGameFrame(f, null, "DOMLoaded");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log("[Bridge.Frame DOMContentLoaded.Dispatcher] " + ex.Message);
+                    }
+                });
             }
             catch (Exception ex)
             {
@@ -5282,9 +5309,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var f = sender as CoreWebView2Frame;
                 if (f == null) return;
 
-                LogFrameDetails(f, "nav_completed");
-                _ = InjectFrameScriptsAsync(f, "Frame.NavigationCompleted");
-                TryInjectForGameFrame(f, e.NavigationId.ToString(), "NavCompleted");
+                Dispatcher.InvokeAsync(() =>
+                {
+                    try
+                    {
+                        LogFrameDetails(f, "nav_completed");
+                        _ = InjectFrameScriptsAsync(f, "Frame.NavigationCompleted");
+                        TryInjectForGameFrame(f, e.NavigationId.ToString(), "NavCompleted");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log("[Bridge.Frame NavigationCompleted.Dispatcher] " + ex.Message);
+                    }
+                });
             }
             catch (Exception ex)
             {

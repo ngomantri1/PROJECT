@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Windows.Media;
-using BaccaratPPRR88;
+using BaccaratDG;
 
-namespace BaccaratPPRR88
+namespace BaccaratDG
 {
     public sealed class CwTotals
     {

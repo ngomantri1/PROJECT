@@ -2,7 +2,7 @@
 using System.Threading.Tasks;
 using System.Windows.Threading;
 
-namespace BaccaratPPRR88.Tasks
+namespace BaccaratDG.Tasks
 {
     public sealed class GameContext
     {

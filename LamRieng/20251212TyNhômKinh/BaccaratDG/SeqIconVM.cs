@@ -2,7 +2,7 @@
 using System.Runtime.CompilerServices;
 using System.Windows.Media;
 
-namespace BaccaratPPRR88
+namespace BaccaratDG
 {
     // ViewModel nhỏ cho icon chuỗi (C/L, Win/Lose ...) – khớp code đang set ImageSource
     public sealed class SeqIconVM : INotifyPropertyChanged

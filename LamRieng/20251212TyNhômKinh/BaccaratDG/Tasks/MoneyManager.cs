@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace BaccaratPPRR88.Tasks
+namespace BaccaratDG.Tasks
 {
     /// <summary>Điều phối mức tiền theo 4 kiểu quản lý vốn.</summary>
     internal sealed class MoneyManager
