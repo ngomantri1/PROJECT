@@ -5359,20 +5359,28 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private void LogFrameDetails(CoreWebView2Frame f, string tag)
         {
-            _ = Task.Run(async () =>
+            try
             {
-                try
+                var rawTask = f.ExecuteScriptAsync(
+                    "(function(){try{return JSON.stringify({href:location.href||'',name:window.name||'',src:(window.frameElement&&window.frameElement.getAttribute('src'))||''});}catch(e){return JSON.stringify({href:'',name:'',src:'',err:String(e)})}})();");
+                rawTask.ContinueWith(t =>
                 {
-                    var raw = await f.ExecuteScriptAsync(
-                        "(function(){try{return JSON.stringify({href:location.href||'',name:window.name||'',src:(window.frameElement&&window.frameElement.getAttribute('src'))||''});}catch(e){return JSON.stringify({href:'',name:'',src:'',err:String(e)})}})();");
-                    var info = JsonSerializer.Deserialize<FrameInfoLog>(raw ?? "{}") ?? new FrameInfoLog();
-                    Log($"[FrameInfo][{tag}] name={info.name} href={info.href} src={info.src} err={info.err}");
-                }
-                catch (Exception ex)
-                {
-                    Log($"[FrameInfo][{tag}] err: {ex.Message}");
-                }
-            });
+                    try
+                    {
+                        var raw = t.IsCompletedSuccessfully ? t.Result : "";
+                        var info = JsonSerializer.Deserialize<FrameInfoLog>(raw ?? "{}") ?? new FrameInfoLog();
+                        Log($"[FrameInfo][{tag}] name={info.name} href={info.href} src={info.src} err={info.err}");
+                    }
+                    catch (Exception ex2)
+                    {
+                        Log($"[FrameInfo][{tag}] err: {ex2.Message}");
+                    }
+                }, TaskScheduler.FromCurrentSynchronizationContext());
+            }
+            catch (Exception ex)
+            {
+                Log($"[FrameInfo][{tag}] err: {ex.Message}");
+            }
         }
 
         private class FrameInfoLog
@@ -5400,6 +5408,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 Log($"[FrameGame] inject game frame name={f.Name} uriHint={hint}");
                 _ = InjectFrameScriptsAsync(f, $"GameFrame.{reason}");
+                // Thử gọi scanTexts để xác nhận script hoạt động
+                _ = f.ExecuteScriptAsync("try{scanTexts && scanTexts(500);}catch(_){ }");
             }
             catch (Exception ex)
             {
