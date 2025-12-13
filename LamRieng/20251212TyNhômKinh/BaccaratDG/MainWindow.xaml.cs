@@ -5444,21 +5444,20 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var deferral = e.GetDeferral();
                 try
                 {
-                    var env = Web?.CoreWebView2?.Environment;
-                    if (env == null)
-                        return;
-                    using var stream = await env.CreateWebResourceResponseAsync(e.Request);
-                    var orig = stream;
-                    string html;
-                    using (var reader = new StreamReader(orig.Content, Encoding.UTF8, true, 8192, true))
+                    // Tự fetch HTML rồi chèn home JS
+                    string html = "";
+                    using (var http = new HttpClient())
                     {
-                        html = await reader.ReadToEndAsync();
+                        html = await http.GetStringAsync(uri);
                     }
                     var injected = new StringBuilder();
                     injected.Append("<script>").Append(_homeJs ?? "").Append("</script>");
                     injected.Append(html);
                     var bytes = Encoding.UTF8.GetBytes(injected.ToString());
                     var mem = new MemoryStream(bytes);
+                    var env = Web?.CoreWebView2?.Environment;
+                    if (env == null)
+                        return;
                     var resp = env.CreateWebResourceResponse(mem, 200, "OK", "Content-Type: text/html; charset=utf-8");
                     e.Response = resp;
                     Log("[Bridge] Injected home JS into iframe response: " + uri);
