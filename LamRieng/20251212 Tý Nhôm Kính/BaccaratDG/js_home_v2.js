@@ -426,6 +426,95 @@
         }
     }
 
+    function tryParseJsonSample(text, limit = 1200) {
+        try {
+            const trimmed = String(text || '').trim();
+            if (!trimmed || (trimmed[0] !== '{' && trimmed[0] !== '['))
+                return null;
+            const obj = JSON.parse(trimmed);
+            const str = JSON.stringify(obj);
+            return str.length > limit ? str.slice(0, limit) + '…' : str;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    (function installDgWebSocketTap() {
+        try {
+            const host = String(location.hostname || '');
+            // Chỉ hook bên trong iframe DreamGaming/DingDang
+            if (!/(dingdang|dreamgaming)/i.test(host))
+                return;
+            if (!window.WebSocket || window.__abx_dg_ws_hooked)
+                return;
+            window.__abx_dg_ws_hooked = true;
+            const OrigWS = window.WebSocket;
+            const logWs = (phase, info) => {
+                try {
+                    postHomeWatchLog(Object.assign({
+                        abx: 'dg_ws',
+                        phase,
+                        host,
+                        href: String(location.href || '')
+                    }, info || {}));
+                } catch (_) {}
+            };
+
+            window.WebSocket = function (...args) {
+                const ws = new OrigWS(...args);
+                const url = args && args[0] ? String(args[0]) : '';
+                logWs('open', { url });
+
+                ws.addEventListener('message', (evt) => {
+                    let sample = '';
+                    let jsonSample = null;
+                    try {
+                        const data = evt.data;
+                        if (typeof data === 'string') {
+                            sample = data.slice(0, 600);
+                            jsonSample = tryParseJsonSample(sample);
+                        } else if (data instanceof ArrayBuffer) {
+                            sample = '[arraybuffer len=' + data.byteLength + ']';
+                        } else if (data instanceof Blob) {
+                            sample = '[blob len=' + data.size + ' type=' + data.type + ']';
+                        } else {
+                            sample = '[' + (typeof data) + ']';
+                        }
+                    } catch (err) {
+                        sample = '[error parsing message: ' + err.message + ']';
+                    }
+                    logWs('message', {
+                        url,
+                        sample,
+                        json: jsonSample
+                    });
+                });
+
+                ws.addEventListener('close', (evt) => {
+                    logWs('close', {
+                        url,
+                        code: evt.code,
+                        reason: evt.reason || '',
+                        clean: evt.wasClean
+                    });
+                });
+                ws.addEventListener('error', () => {
+                    logWs('error', { url });
+                });
+                return ws;
+            };
+            window.WebSocket.prototype = OrigWS.prototype;
+        } catch (err) {
+            try {
+                postHomeWatchLog({
+                    abx: 'dg_ws',
+                    phase: 'hook_error',
+                    message: err.message || String(err)
+                });
+            } catch (_) {}
+        }
+    })();
+
     // đặt gần nhóm utils (trước/hoặc sau textOf)
     function isLikelyUsername(s) {
         const t = String(s || '').trim();
