@@ -1199,19 +1199,19 @@
             e.preventDefault();
             e.stopPropagation();
             scanLinks(500);
-            scanInFrames('__abx_hw_scanLinks', 500);
+            requestFrameScan('link', 500);
         };
         root.querySelector('#' + CFG.scanTextsBtnId).onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
             scanTexts(500);
-            scanInFrames('__abx_hw_scanTexts', 500);
+            requestFrameScan('text', 500);
         };
         root.querySelector('#' + CFG.scanClosePopupBtnId).onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
             scanClosePopups(500);
-            scanInFrames('__abx_hw_scanClosePopups', 500);
+            requestFrameScan('popup', 500);
         };
         root.querySelector('#' + CFG.overlayToggleBtnId).onclick = (e) => {
             e.preventDefault();
@@ -2106,56 +2106,172 @@
         console.groupEnd();
     }
 
-    // Cho phép top g?i scan trong các iframe đã được tiêm JS
-    function scanInFrames(fnName, limit) {
+    // Allow top window to ask iframes to scan and return results
+    const describeFrame = (f) => {
+        const info = {
+            id: f.id || '',
+            name: f.name || '',
+            src: ''
+        };
+        try {
+            info.src = f.getAttribute('src') || '';
+        } catch (_) {}
+        try {
+            if (f.contentWindow && f.contentWindow.location) {
+                info.current = String(f.contentWindow.location.href || '');
+            }
+        } catch (_) {
+            info.current = '';
+        }
+        return info;
+    };
+
+    function logFrameScanDebug(message, extra) {
+        try {
+            const payload = Object.assign({
+                abx: 'frame_scan_debug',
+                href: String(location.href || ''),
+                message: message
+            }, extra || {});
+            postHomeWatchLog(payload);
+            console.debug('[frame_scan]', message, extra || '');
+        } catch (_) {}
+    }
+
+    function requestFrameScan(kind, limit) {
+        if (!IS_TOP)
+            return;
         const frames = Array.from(document.querySelectorAll('iframe'));
         if (!frames.length)
             return;
-        frames.forEach((f) => {
-            let handled = false;
+        const reqId = 'fscan_' + Date.now().toString(36) + '_' + Math.random().toString(16).slice(2, 8);
+        logFrameScanDebug('request', {
+            kind,
+            limit,
+            reqId,
+            frames: frames.map((f, idx) => Object.assign({ idx }, describeFrame(f)))
+        });
+        frames.forEach((f, idx) => {
             try {
                 const w = f.contentWindow;
-                const fn = w && w[fnName];
-                if (typeof fn === 'function') {
-                    fn.call(w, limit);
-                    handled = true;
+                if (w && w.postMessage) {
+                    w.postMessage({
+                        abx: 'hw_scan_req',
+                        kind: kind || 'text',
+                        limit: limit || 200,
+                        reqId,
+                        idx
+                    }, '*');
                 }
             } catch (_) {}
-            if (!handled) {
-                try {
-                    const w = f.contentWindow;
-                    if (w && w.postMessage) {
-                        w.postMessage({
-                            abx: 'hw_scan',
-                            fn: fnName,
-                            limit: limit
-                        }, '*');
-                    }
-                } catch (_) {}
-            }
         });
     }
 
-    // Xu?t ra global đ? contentWindow c¢ th? nh?n l?i g?i t? top
     window.__abx_hw_scanLinks = scanLinks;
     window.__abx_hw_scanTexts = scanTexts;
     window.__abx_hw_scanClosePopups = scanClosePopups;
 
-    // L?ng nghe yêu c?u scan qua postMessage (dùng cho iframe cross-origin)
     window.addEventListener('message', (evt) => {
         try {
             const d = evt && evt.data;
             if (!d || typeof d !== 'object')
                 return;
-            if (d.abx !== 'hw_scan' || !d.fn)
+
+            if (d.abx === 'hw_scan' && d.fn) {
+                const fn = window[d.fn];
+                if (typeof fn === 'function')
+                    fn.call(window, d.limit);
                 return;
-            const fn = window[d.fn];
-            if (typeof fn === 'function')
-                fn.call(window, d.limit);
+            }
+
+            if (d.abx === 'hw_scan_req') {
+                const kind = d.kind || 'text';
+                const limit = d.limit || 200;
+                const ready = document.readyState;
+                const hasBody = !!document.body;
+                logFrameScanDebug('frame_collect_begin', {
+                    kind,
+                    limit,
+                    reqId: d.reqId || '',
+                    ready,
+                    hasBody,
+                    bodyChildren: hasBody ? document.body.childElementCount : 0
+                });
+                const all = getOrdered(kind === 'link' ? 'link' : kind === 'popup' ? 'popup' : 'text');
+                const list = all.slice(0, Math.max(1, Math.min(limit, all.length)));
+                const payload = {
+                    abx: 'hw_scan_res',
+                    kind,
+                    count: list.length,
+                    raw: all.length,
+                    href: String(location.href || ''),
+                    reqId: d.reqId || '',
+                    readyState: ready,
+                    hasBody,
+                    bodyChildren: hasBody ? document.body.childElementCount : 0,
+                    reason: hasBody ? (list.length ? 'ok' : 'empty') : 'no_body',
+                    items: list.slice(0, 30).map(it => {
+                        const r = rectOf(it.el);
+                        return {
+                            index: it.ord,
+                            text: clip(it.text || textOf(it.el), 80),
+                            src: it.src || (kind === 'popup' ? 'popup' : 'visible'),
+                            x: r.x,
+                            y: r.y,
+                            w: r.w,
+                            h: r.h,
+                            tail: cssTail(it.el)
+                        };
+                    })
+                };
+                try {
+                    if (evt.source && typeof evt.source.postMessage === 'function')
+                        evt.source.postMessage(payload, '*');
+                } catch (_) {}
+                try {
+                    postHomeWatchLog(payload);
+                } catch (_) {}
+            }
         } catch (_) {}
     }, false);
 
-    // ======= Username & Balance =======
+    if (IS_TOP) {
+        window.addEventListener('message', (evt) => {
+            try {
+                const d = evt && evt.data;
+                if (!d || typeof d !== 'object')
+                    return;
+                if (d.abx !== 'hw_scan_res')
+                    return;
+                logFrameScanDebug('frame_response', {
+                    reqId: d.reqId || '',
+                    kind: d.kind || 'text',
+                    count: d.count || 0,
+                    raw: d.raw || 0,
+                    frameHref: d.href || '',
+                    readyState: d.readyState || '',
+                    hasBody: d.hasBody,
+                    bodyChildren: d.bodyChildren,
+                    reason: d.reason || ''
+                });
+                postHomeWatchLog({
+                    abx: 'textmap_scan_frame',
+                    kind: d.kind || 'text',
+                    count: d.count || 0,
+                    raw: d.raw || 0,
+                    frameHref: d.href || '',
+                    reqId: d.reqId || ''
+                });
+                try {
+                    console.group(`[frame scan] ${d.href || ''}`);
+                    console.table(d.items || []);
+                    console.groupEnd();
+                } catch (_) {}
+            } catch (_) {}
+        }, false);
+    }
+
+// ======= Username & Balance =======
     function findUserFromDOM() {
         try {
             // Ưu tiên tail tuyệt đối nếu có
