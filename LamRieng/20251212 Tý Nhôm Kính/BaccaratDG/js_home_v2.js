@@ -445,6 +445,95 @@
         }, false);
     }
 
+    function installFrameWsHook(forceLog) {
+        try {
+            if (IS_TOP)
+                return false;
+            if (!window.WebSocket || window.__abx_dg_ws_hooked)
+                return false;
+            window.__abx_dg_ws_hooked = true;
+            const OrigWS = window.WebSocket;
+            const logWs = (phase, info) => {
+                try {
+                    postHomeWatchLog(Object.assign({
+                        abx: 'dg_ws',
+                        phase,
+                        href: String(location.href || '')
+                    }, info || {}));
+                } catch (_) {}
+            };
+
+            window.WebSocket = function (...args) {
+                const ws = new OrigWS(...args);
+                const url = args && args[0] ? String(args[0]) : '';
+                logWs('open', { url });
+
+                ws.addEventListener('message', (evt) => {
+                    const data = evt.data;
+                    let sample = '';
+                    let jsonSample = '';
+                    try {
+                        if (typeof data === 'string') {
+                            sample = data.slice(0, 600);
+                            const parsed = tryParseJsonSample(sample);
+                            if (parsed)
+                                jsonSample = parsed;
+                        } else if (data instanceof ArrayBuffer) {
+                            sample = '[arraybuffer len=' + data.byteLength + ']';
+                        } else if (data instanceof Blob) {
+                            sample = '[blob len=' + data.size + ']';
+                        } else {
+                            sample = '[' + (typeof data) + ']';
+                        }
+                    } catch (err) {
+                        sample = '[parse_error: ' + err.message + ']';
+                    }
+                    logWs('message', {
+                        url,
+                        sample,
+                        json: jsonSample
+                    });
+                });
+
+                ws.addEventListener('close', (evt) => {
+                    logWs('close', {
+                        url,
+                        code: evt.code,
+                        reason: evt.reason || '',
+                        clean: evt.wasClean
+                    });
+                });
+                ws.addEventListener('error', () => {
+                    logWs('error', { url });
+                });
+                return ws;
+            };
+            window.WebSocket.prototype = OrigWS.prototype;
+            if (forceLog)
+                logWs('hook_ready', { message: 'manual hook' });
+            return true;
+        } catch (err) {
+            try {
+                postHomeWatchLog({
+                    abx: 'dg_ws',
+                    phase: 'hook_error',
+                    message: err.message || String(err)
+                });
+            } catch (_) {}
+            return false;
+        }
+    }
+    installFrameWsHook(false);
+    window.addEventListener('message', (evt) => {
+        try {
+            const d = evt && evt.data;
+            if (!d || typeof d !== 'object')
+                return;
+            if (d.abx === 'hw_ws_hook')
+                installFrameWsHook(true);
+        } catch (_) {}
+    }, false);
+
     function tryParseJsonSample(text, limit = 1200) {
         try {
             const trimmed = String(text || '').trim();
@@ -2201,7 +2290,7 @@
 
     window.__abx_hw_scanLinks = scanLinks;
     window.__abx_hw_scanTexts = scanTexts;
-    window.__abx_hw_scanClosePopups = scanClosePopups;
+        window.__abx_hw_scanClosePopups = scanClosePopups;
 
     window.addEventListener('message', (evt) => {
         try {
@@ -5016,3 +5105,18 @@
         boot();
     }
     })();
+    if (IS_TOP) {
+        window.__abx_request_ws_hook = function () {
+            const frames = Array.from(document.querySelectorAll('iframe'));
+            frames.forEach(f => {
+                try {
+                    const w = f.contentWindow;
+                    if (w && w.postMessage) {
+                        w.postMessage({
+                            abx: 'hw_ws_hook'
+                        }, '*');
+                    }
+                } catch (_) {}
+            });
+        };
+    }
