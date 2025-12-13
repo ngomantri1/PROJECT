@@ -5058,6 +5058,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (_homeJsRegId == null && !string.IsNullOrEmpty(_homeJs))
                 _homeJsRegId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(_homeJs);
 
+            // Intercept iframe game HTML để chèn home JS (ddnewpc/index.html trên new-dd-cn.*)
+            try
+            {
+                Web.CoreWebView2.AddWebResourceRequestedFilter("https://new-dd-cn.*ddnewpc/index.html*", CoreWebView2WebResourceContext.Document);
+                Web.CoreWebView2.WebResourceRequested -= WebResourceRequested_InjectGameHtml;
+                Web.CoreWebView2.WebResourceRequested += WebResourceRequested_InjectGameHtml;
+                Log("[Bridge] WebResourceRequested filter registered for ddnewpc iframe.");
+            }
+            catch (Exception ex)
+            {
+                Log("[Bridge] register filter error: " + ex.Message);
+            }
+
             // NEW: đăng ký Home JS
             if (_autoStartId == null)
                 _autoStartId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(FRAME_AUTOSTART);
@@ -5414,6 +5427,54 @@ private async Task<CancellationTokenSource> DebounceAsync(
             catch (Exception ex)
             {
                 Log($"[FrameGame] err {reason}: {ex.Message}");
+            }
+        }
+
+        private async void WebResourceRequested_InjectGameHtml(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
+        {
+            try
+            {
+                var uri = e.Request?.Uri ?? "";
+                if (string.IsNullOrEmpty(uri))
+                    return;
+                var lower = uri.ToLowerInvariant();
+                if (!lower.Contains("new-dd-cn") || !lower.Contains("ddnewpc/index.html"))
+                    return;
+
+                var deferral = e.GetDeferral();
+                try
+                {
+                    var env = Web?.CoreWebView2?.Environment;
+                    if (env == null)
+                        return;
+                    using var stream = await env.CreateWebResourceResponseAsync(e.Request);
+                    var orig = stream;
+                    string html;
+                    using (var reader = new StreamReader(orig.Content, Encoding.UTF8, true, 8192, true))
+                    {
+                        html = await reader.ReadToEndAsync();
+                    }
+                    var injected = new StringBuilder();
+                    injected.Append("<script>").Append(_homeJs ?? "").Append("</script>");
+                    injected.Append(html);
+                    var bytes = Encoding.UTF8.GetBytes(injected.ToString());
+                    var mem = new MemoryStream(bytes);
+                    var resp = env.CreateWebResourceResponse(mem, 200, "OK", "Content-Type: text/html; charset=utf-8");
+                    e.Response = resp;
+                    Log("[Bridge] Injected home JS into iframe response: " + uri);
+                }
+                catch (Exception ex)
+                {
+                    Log("[Bridge] InjectGameHtml err: " + ex.Message);
+                }
+                finally
+                {
+                    deferral?.Complete();
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[Bridge] WebResourceRequested handler err: " + ex.Message);
             }
         }
 
