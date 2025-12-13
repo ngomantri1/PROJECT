@@ -76,6 +76,12 @@
     </Resource>
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Assets\**\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
   <!-- ===== RẤT QUAN TRỌNG: Debug chuyển App.xaml từ ApplicationDefinition -> Page ===== -->
   <ItemGroup Condition="'$(Configuration)'=='Debug'">
     <!-- Debug không nhúng ZIP môi trường -->

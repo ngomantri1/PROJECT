@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using static System.Net.Mime.MediaTypeNames;
 using static System.Runtime.InteropServices.JavaScript.JSType;
+using System.Runtime.InteropServices;
 using BaccaratDG;
 using BaccaratDG.Tasks;
 using System.Windows.Media;
@@ -31,6 +32,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Data;
 using static BaccaratDG.MainWindow;
 using System.Windows.Input;
+using System.Windows.Threading;
 
 
 
@@ -211,6 +213,29 @@ namespace BaccaratDG
 
         // Cache & cờ để không inject lặp lại
         private string? _appJs;
+        private bool _templateAutomationRunning = false;
+        private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+        private const uint MOUSEEVENTF_LEFTUP = 0x0004;
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetCursorPos(out POINT lpPoint);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetCursorPos(int x, int y);
+
+        [DllImport("user32.dll")]
+        private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT
+        {
+            public int X;
+            public int Y;
+        }
+        private readonly Brush _runButtonIdleBrush = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+        private readonly Brush _runButtonStopBrush = new SolidColorBrush(Color.FromRgb(220, 53, 69));
         private string? _homeJs;  // nội dung js_home_v2.js
         private bool _webMsgHooked; // �`��� g��_n WebMessageReceived �`A�ng 1 l��n
         private string? _lastForcedLobbyUrl; // luu URL lobby PP da force navigate
@@ -870,6 +895,11 @@ Ví dụ không hợp lệ:
 
             // 2) Sau đó mới dựng UI
             InitializeComponent();
+            (_runButtonIdleBrush as SolidColorBrush)?.Freeze();
+            _runButtonStopBrush.Freeze();
+            BtnInjectJs.Background = _runButtonIdleBrush;
+            BtnInjectJs.Foreground = Brushes.White;
+            UpdateRunButtonState(false);
             this.ShowInTaskbar = true;                       // có icon riêng
             this.WindowStartupLocation = WindowStartupLocation.CenterScreen; // tuỳ, cho đẹp
             // đảm bảo về Home UI lúc khởi động
@@ -1731,6 +1761,78 @@ Ví dụ không hợp lệ:
                                     return;
                                 }
 
+                                if (abxStr == "capture_template")
+                                {
+                                    var reqId = root.TryGetProperty("id", out var idEl2) ? (idEl2.GetString() ?? "") : "";
+                                    int RectVal(JsonElement elem, string prop, int fallback)
+                                    {
+                                        if (!elem.TryGetProperty(prop, out var value) || value.ValueKind != JsonValueKind.Number)
+                                            return fallback;
+                                        if (value.TryGetInt32(out var iv))
+                                            return iv;
+                                        if (value.TryGetDouble(out var dv))
+                                            return Convert.ToInt32(Math.Round(dv));
+                                        return fallback;
+                                    }
+                                    int rectX = 0, rectY = 0, rectW = 0, rectH = 0;
+                                    if (root.TryGetProperty("rect", out var rectEl) && rectEl.ValueKind == JsonValueKind.Object)
+                                    {
+                                        rectX = RectVal(rectEl, "x", 0);
+                                        rectY = RectVal(rectEl, "y", 0);
+                                        rectW = RectVal(rectEl, "w", 0);
+                                        rectH = RectVal(rectEl, "h", 0);
+                                    }
+                                    string imageData = null;
+                                    string errorMsg = null;
+                                    if (Web.CoreWebView2 == null)
+                                    {
+                                        errorMsg = "webview not ready";
+                                    }
+                                    else
+                                    {
+                                        try
+                                        {
+                                            using var ms = new MemoryStream();
+                                            await Web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms);
+                                            ms.Position = 0;
+                                            var bmp = new BitmapImage();
+                                            bmp.BeginInit();
+                                            bmp.CacheOption = BitmapCacheOption.OnLoad;
+                                            bmp.StreamSource = ms;
+                                            bmp.EndInit();
+                                            bmp.Freeze();
+                                            var clampX = Math.Max(0, Math.Min(rectX, bmp.PixelWidth - 1));
+                                            var clampY = Math.Max(0, Math.Min(rectY, bmp.PixelHeight - 1));
+                                            var clampW = Math.Max(1, Math.Min(rectW > 0 ? rectW : bmp.PixelWidth, bmp.PixelWidth - clampX));
+                                            var clampH = Math.Max(1, Math.Min(rectH > 0 ? rectH : bmp.PixelHeight, bmp.PixelHeight - clampY));
+                                            var crop = new CroppedBitmap(bmp, new Int32Rect(clampX, clampY, clampW, clampH));
+                                            crop.Freeze();
+                                            using var outMs = new MemoryStream();
+                                            var encoder = new PngBitmapEncoder();
+                                            encoder.Frames.Add(BitmapFrame.Create(crop));
+                                            encoder.Save(outMs);
+                                            imageData = Convert.ToBase64String(outMs.ToArray());
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            errorMsg = ex.Message;
+                                        }
+                                    }
+                                    var response = new
+                                    {
+                                        cmd = "capture_template_result",
+                                        id = reqId,
+                                        image = string.IsNullOrEmpty(imageData) ? null : ("data:image/png;base64," + imageData),
+                                        error = string.IsNullOrEmpty(errorMsg) ? null : errorMsg
+                                    };
+                                    try
+                                    {
+                                        Web.CoreWebView2?.PostWebMessageAsString(JsonSerializer.Serialize(response));
+                                    }
+                                    catch { }
+                                    return;
+                                }
+
                                 // 3) bet ok → tạo dòng placeholder (Result/WinLose = "-") và SHOW TRANG 1
                                 if (abxStr == "bet")
                                 {
@@ -1779,6 +1881,52 @@ Ví dụ không hợp lệ:
                                     long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
                                     string error = root.TryGetProperty("error", out var ee) ? (ee.GetString() ?? "") : "";
                                     Log($"[BET][ERR] {side} {amount} :: {error}");
+                                    return;
+                                }
+
+                                if (abxStr == "auto_click")
+                                {
+                                    double? screenX = null;
+                                    double? screenY = null;
+                                    double? pageX = null;
+                                    double? pageY = null;
+                                    var devicePixelRatio = 1.0;
+                                    var viewportScale = 1.0;
+                                    if (root.TryGetProperty("screen", out var screen) && screen.ValueKind == JsonValueKind.Object)
+                                    {
+                                        screenX = GetDouble(screen, "x");
+                                        screenY = GetDouble(screen, "y");
+                                    }
+                                    if (root.TryGetProperty("point", out var point) && point.ValueKind == JsonValueKind.Object)
+                                    {
+                                        pageX = GetDouble(point, "x");
+                                        pageY = GetDouble(point, "y");
+                                    }
+                                    if (root.TryGetProperty("devicePixelRatio", out var dp) && dp.TryGetDouble(out var dpVal) && dpVal > 0)
+                                        devicePixelRatio = dpVal;
+                                    if (root.TryGetProperty("viewportScale", out var vp) && vp.TryGetDouble(out var vpVal) && vpVal > 0)
+                                        viewportScale = vpVal;
+
+                                    await Dispatcher.InvokeAsync(() =>
+                                    {
+                                        var tx = screenX;
+                                        var ty = screenY;
+                                        if (!tx.HasValue || !ty.HasValue)
+                                        {
+                                            if (pageX.HasValue && pageY.HasValue)
+                                            {
+                                                var phys = EstimatePhysicalCoordinates(pageX.Value, pageY.Value, devicePixelRatio, viewportScale);
+                                                tx = phys.X;
+                                                ty = phys.Y;
+                                            }
+                                            else
+                                            {
+                                                return;
+                                            }
+                                        }
+                                        var clicked = PerformPhysicalClick((int)Math.Round(tx.Value), (int)Math.Round(ty.Value));
+                                        Log($"[auto_click] clicked={clicked} x={(int)Math.Round(tx.Value)} y={(int)Math.Round(ty.Value)}");
+                                    }, DispatcherPriority.Background);
                                     return;
                                 }
 
@@ -2536,12 +2684,26 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             try
             {
-                var ok = await InjectHomeJsNowAsync();
-                Log("[InjectHomeJs] " + (ok ? "ok" : "failed"));
+                if (_templateAutomationRunning)
+                {
+                    var stopResult = await StopTemplateAutomationLoopAsync();
+                    _templateAutomationRunning = false;
+                    UpdateRunButtonState(false);
+                    Log("[TemplateAutomation] stop -> " + (stopResult ?? "null"));
+                    return;
+                }
+
+                await SendTemplateAssetsToJsAsync();
+                var startResult = await StartTemplateAutomationFromJsAsync();
+                var running = string.Equals(startResult, "started", StringComparison.OrdinalIgnoreCase)
+                           || string.Equals(startResult, "already-running", StringComparison.OrdinalIgnoreCase);
+                _templateAutomationRunning = running;
+                UpdateRunButtonState(running);
+                Log("[TemplateAutomation] " + (running ? "running" : "failed") + " -> " + (startResult ?? "null"));
             }
             catch (Exception ex)
             {
-                Log("[InjectHomeJs] " + ex.Message);
+                Log("[TemplateAutomation] " + ex.Message);
             }
         }
 
@@ -3156,6 +3318,60 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 Log($"[HOME] cmd home_start_push ms={ms}");
             }
             catch { }
+        }
+
+        private Point EstimatePhysicalCoordinates(double pageX, double pageY, double devicePixelRatio, double viewportScale)
+        {
+            if (Web == null)
+                return new Point(pageX, pageY);
+
+            var source = PresentationSource.FromVisual(Web);
+            var transform = source?.CompositionTarget?.TransformToDevice ?? Matrix.Identity;
+            var topLeft = Web.PointToScreen(new Point(0, 0));
+            var topLeftPhysical = new Point(topLeft.X * transform.M11, topLeft.Y * transform.M22);
+            var ratio = Math.Max(0.1, devicePixelRatio * viewportScale);
+            return new Point(
+                topLeftPhysical.X + pageX * ratio,
+                topLeftPhysical.Y + pageY * ratio
+            );
+        }
+
+        private bool PerformPhysicalClick(int x, int y)
+        {
+            if (x < 0 || y < 0)
+                return false;
+
+            var success = false;
+            var hasBackup = GetCursorPos(out var backup);
+            try
+            {
+                SetCursorPos(x, y);
+                mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+                success = true;
+            }
+            catch (Exception ex)
+            {
+                Log("[auto_click] click error: " + ex.Message);
+            }
+            finally
+            {
+                if (hasBackup)
+                {
+                    SetCursorPos(backup.X, backup.Y);
+                }
+            }
+
+            return success;
+        }
+
+        private static double? GetDouble(JsonElement parent, string property)
+        {
+            if (parent.ValueKind != JsonValueKind.Object)
+                return null;
+            if (parent.TryGetProperty(property, out var el) && el.TryGetDouble(out var val))
+                return val;
+            return null;
         }
 
 
@@ -5166,6 +5382,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 await Web.CoreWebView2.ExecuteScriptAsync(_homeJs);
+                await SendTemplateAssetsToJsAsync();
                 return true;
             }
             catch (Exception ex)
@@ -5174,6 +5391,154 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 return false;
             }
         }
+
+        private async Task SendTemplateAssetsToJsAsync()
+        {
+            if (!IsWebAlive || Web?.CoreWebView2 == null)
+                return;
+
+            var assets = await BuildTemplateAssetsAsync();
+            if (assets.Count == 0)
+                return;
+
+            var payload = new
+            {
+                cmd = "load_templates",
+                templates = assets.Select(asset => new
+                {
+                    name = asset.Name,
+                    image = asset.Image,
+                    threshold = asset.Threshold,
+                    ts = asset.Ts
+                }).ToArray()
+            };
+
+            try
+            {
+                Web.CoreWebView2.PostWebMessageAsString(JsonSerializer.Serialize(payload, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                }));
+            }
+            catch (Exception ex)
+            {
+                Log("[TemplateAssets] send failed: " + ex.Message);
+            }
+        }
+
+        private async Task<List<TemplateAsset>> BuildTemplateAssetsAsync()
+        {
+            var assets = new List<TemplateAsset>();
+            var baseDir = AppContext.BaseDirectory ?? AppDomain.CurrentDomain.BaseDirectory;
+            var pngDir = Path.Combine(baseDir, "Assets", "png");
+            if (!Directory.Exists(pngDir))
+                return assets;
+
+            const double threshold = 0.8;
+
+            foreach (var file in Directory.EnumerateFiles(pngDir, "*.png"))
+            {
+                try
+                {
+                    var bytes = await File.ReadAllBytesAsync(file);
+                    var name = Path.GetFileNameWithoutExtension(file) ?? "";
+                    if (string.IsNullOrWhiteSpace(name))
+                        continue;
+                    var image = "data:image/png;base64," + Convert.ToBase64String(bytes);
+                    var ts = new DateTimeOffset(File.GetLastWriteTimeUtc(file)).ToUnixTimeMilliseconds();
+                    assets.Add(new TemplateAsset(name.Trim(), image, threshold, ts));
+                }
+                catch (Exception ex)
+                {
+                    Log("[TemplateAssets] read failed " + file + ": " + ex.Message);
+                }
+            }
+
+            return assets;
+        }
+
+        private static string? ParseScriptResult(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return null;
+            var trimmed = raw.Trim();
+            if (string.Equals(trimmed, "null", StringComparison.OrdinalIgnoreCase))
+                return null;
+            try
+            {
+                return JsonSerializer.Deserialize<string>(trimmed);
+            }
+            catch
+            {
+                return trimmed.Trim('"');
+            }
+        }
+
+        private async Task<string?> StartTemplateAutomationFromJsAsync()
+        {
+            if (!IsWebAlive || Web?.CoreWebView2 == null)
+                return null;
+
+            try
+            {
+                var script = @"
+                    (function(){
+                        if (typeof window.__abx_hw_startTemplateLoop === 'function')
+                            return window.__abx_hw_startTemplateLoop();
+                        return 'no-loop';
+                    })();
+                ";
+                var raw = await Web.CoreWebView2.ExecuteScriptAsync(script);
+                var parsed = ParseScriptResult(raw);
+                var result = parsed ?? raw;
+                Log("[TemplateAutomation] start -> " + (result ?? "null"));
+                return parsed;
+            }
+            catch (Exception ex)
+            {
+                Log("[TemplateAutomation] start failed: " + ex.Message);
+                return null;
+            }
+        }
+
+        private void UpdateRunButtonState(bool running)
+        {
+            if (BtnInjectJs == null)
+                return;
+
+            BtnInjectJs.Content = running ? "Dừng" : "RUN";
+            BtnInjectJs.Background = running ? _runButtonStopBrush : _runButtonIdleBrush;
+            BtnInjectJs.Foreground = Brushes.White;
+        }
+
+        private async Task<string?> StopTemplateAutomationLoopAsync()
+        {
+            if (!IsWebAlive || Web?.CoreWebView2 == null)
+                return null;
+
+            try
+            {
+                var script = @"
+                    (function(){
+                        if (typeof window.__abx_hw_stopTemplateLoop === 'function')
+                            return window.__abx_hw_stopTemplateLoop();
+                        return 'no-loop';
+                    })();
+                ";
+                var raw = await Web.CoreWebView2.ExecuteScriptAsync(script);
+                var parsed = ParseScriptResult(raw);
+                var result = parsed ?? raw;
+                Log("[TemplateAutomation] stop -> " + (result ?? "null"));
+                return parsed;
+            }
+            catch (Exception ex)
+            {
+                Log("[TemplateAutomation] stop failed: " + ex.Message);
+                return null;
+            }
+        }
+
+        private sealed record TemplateAsset(string Name, string Image, double Threshold, long Ts);
 
 
         private void CoreWebView2_FrameCreated_Bridge(object? sender, CoreWebView2FrameCreatedEventArgs e)

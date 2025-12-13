@@ -245,7 +245,14 @@
         xocBtnId: 'bxoc',
         copyInfoBtnId: 'bcopyinfo', // ← THÊM DÒNG NÀY
         captureBtnId: 'bcapture',
+        captureHideBtnId: 'bhidecapture',
+        captureTemplateBtnId: 'btemplate',
+        captureTemplateImportBtnId: 'btemplate_import',
+        captureCoordBtnId: 'bcoord',
+        captureLogCopyBtnId: 'blogcopy',
         captureStatusId: 'hwcapture',
+        captureTemplateListId: 'hwcapture_tpls',
+        captureLogId: 'hwcapture_log',
         autoRetryIntervalMs: 5000,
         maxRetries: 6,
         watchdogMs: 1000,
@@ -255,7 +262,15 @@
     };
 
     let captureButtonEl = null;
+    let captureHideBtnEl = null;
+    let captureTemplateBtnEl = null;
+    let captureTemplateImportBtnEl = null;
+    let captureCoordBtnEl = null;
     let captureStatusEl = null;
+    let captureTemplateListEl = null;
+    let captureTemplateImportInput = null;
+    let captureLogCopyBtnEl = null;
+    let captureLogEl = null;
     let captureHoverEl = null;
     let capturePersistEl = null;
     let captureSelectionEl = null;
@@ -383,7 +398,14 @@
         loginPostProbeStarted: false, // NEW: tránh start probe trùng
         loginSubmitTs: 0,
         captureActive: false,
-        captureLast: null
+        captureLast: null,
+        captureLastHidden: true,
+        templateSamples: [],
+        lastCoordinates: null,
+        coordCaptureActive: false,
+        templateAutomationRunning: false,
+        templateAutomationLock: false,
+        templateAutomationStatus: ''
     };
 
     const ROOT_Z = 2147483647;
@@ -1200,7 +1222,12 @@
             '  <button id="' + CFG.retryBtnId + '">Thử lại (tự động)</button>',
             '  <button id="' + CFG.overlayToggleBtnId + '">Overlay</button>',
             '  <button id="' + CFG.copyInfoBtnId + '">Copy Info</button>',
+            '  <button id="' + CFG.captureLogCopyBtnId + '">Copy log</button>',
             '  <button id="' + CFG.captureBtnId + '">Capture vùng</button>',
+            '  <button id="' + CFG.captureHideBtnId + '">Ẩn khung</button>',
+            '  <button id="' + CFG.captureTemplateBtnId + '">Lưu mẫu</button>',
+            '  <button id="' + CFG.captureTemplateImportBtnId + '">Nạp mẫu</button>',
+            '  <button id="' + CFG.captureCoordBtnId + '">Lấy toạ độ</button>',
             '</div>',
             '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">',
             '  <span style="opacity:.8">URL:</span><input id="' + CFG.urlId + '" value="" placeholder="https://..." ',
@@ -1208,7 +1235,9 @@
             '  <button id="bgo">Go</button>',
             '</div>',
             '<div id="' + CFG.infoId + '" style="white-space:pre;min-height:98px;padding:8px;background:#0b122e;border:1px dashed #334155;border-radius:8px"></div>',
-            '<div id="' + CFG.captureStatusId + '" style="margin-top:6px;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:8px;font-size:11px;line-height:1.35;min-height:34px;white-space:pre-line"></div>'
+            '<div id="' + CFG.captureStatusId + '" style="margin-top:6px;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:8px;font-size:11px;line-height:1.35;min-height:34px;white-space:pre-line"></div>',
+            '<div id="' + CFG.captureTemplateListId + '" style="margin-top:6px;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:8px;font-size:11px;line-height:1.35;min-height:48px;max-height:160px;overflow:auto"></div>',
+            '<div id="' + CFG.captureLogId + '" style="margin-top:6px;padding:8px;background:#020617;border:1px solid #0f172a;border-radius:8px;font-size:11px;line-height:1.35;min-height:80px;max-height:140px;overflow:auto;white-space:pre-line"></div>'
         ].join('');
         mount.appendChild(root);
         window.__abx_hw_installed = true;
@@ -1419,11 +1448,59 @@
             e.stopPropagation();
             copyInfoBox(); // gọi hàm copy bên dưới
         };
+        const logCopyBtn = root.querySelector('#' + CFG.captureLogCopyBtnId);
+        if (logCopyBtn) {
+            captureLogCopyBtnEl = logCopyBtn;
+            logCopyBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                copyCaptureLog();
+            };
+        }
+
         root.querySelector('#' + CFG.captureBtnId).onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
             toggleCaptureMode();
         };
+        const hideBtn = root.querySelector('#' + CFG.captureHideBtnId);
+        if (hideBtn) {
+            captureHideBtnEl = hideBtn;
+            hideBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                togglePersistOverlay();
+            };
+        }
+        const templateBtn = root.querySelector('#' + CFG.captureTemplateBtnId);
+        if (templateBtn) {
+            captureTemplateBtnEl = templateBtn;
+            templateBtn.onclick = async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                await captureTemplateSample();
+            };
+        }
+        const importBtn = root.querySelector('#' + CFG.captureTemplateImportBtnId);
+        if (importBtn) {
+            captureTemplateImportBtnEl = importBtn;
+            importBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                ensureTemplateImportInput();
+                if (captureTemplateImportInput)
+                    captureTemplateImportInput.click();
+            };
+        }
+        const coordBtn = root.querySelector('#' + CFG.captureCoordBtnId);
+        if (coordBtn) {
+            captureCoordBtnEl = coordBtn;
+            coordBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleCoordMode();
+            };
+        }
         root.querySelector('#' + CFG.retryBtnId).onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -1452,8 +1529,13 @@
             ubox.value = location.href;
         captureButtonEl = root.querySelector('#' + CFG.captureBtnId);
         captureStatusEl = document.getElementById(CFG.captureStatusId);
+        captureTemplateListEl = document.getElementById(CFG.captureTemplateListId);
         updateCaptureButtonLabel();
+        updateCaptureHideButton();
         updateCaptureStatus();
+        captureLogEl = document.getElementById(CFG.captureLogId);
+        updateCaptureTemplateList();
+        updateCaptureControlStates();
     }
 
     (function hookHistory() {
@@ -1553,6 +1635,21 @@
                 document.body.removeChild(ta);
             }
         } catch (_) {}
+    }
+
+    function copyCaptureLog() {
+        if (!captureLogEl)
+            return;
+        const txt = (captureLogEl.innerText || captureLogEl.textContent || '').trim();
+        if (!txt) {
+            updateCaptureStatus('Log chưa có dữ liệu để copy.');
+            return;
+        }
+        writeTextToClipboard(txt).then(() => {
+            updateCaptureStatus('Đã copy log Home Watch.');
+        }).catch(() => {
+            updateCaptureStatus('Copy log không thành công.');
+        });
     }
 
     // === Automino Home <-> C# bridge (non-intrusive) ===
@@ -1798,6 +1895,10 @@
                         window.__abx_hw_startPush(ms);
                 } catch (_) {}
                 break;
+            case 'load_templates':
+                if (payload && Array.isArray(payload.templates))
+                    loadTemplatesFromHost(payload.templates);
+                break;
             case 'set_login':
             case 'home_set_login':
                 handleSetLoginCommand(payload);
@@ -1806,6 +1907,20 @@
             case 'home_focus_captcha':
             case 'focus_code':
                 focusLoginCaptchaField();
+                break;
+            case 'capture_template_result':
+                if (payload && payload.id) {
+                    const pending = captureTemplatePending.get(payload.id);
+                    if (pending) {
+                        clearTimeout(pending.timer);
+                        captureTemplatePending.delete(payload.id);
+                        if (payload.error) {
+                            pending.reject(new Error(payload.error));
+                        } else {
+                            pending.resolve(payload.image || '');
+                        }
+                    }
+                }
                 break;
             }
         });
@@ -1876,7 +1991,7 @@
         w: 160,
         h: 120
     };
-    const CAPTURE_MIN_DRAG = 6;
+    const CAPTURE_MIN_DRAG = 1;
     const CAPTURE_RESIZE_MARGIN = 6;
 
     const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
@@ -1895,24 +2010,836 @@
         el.id = CAPTURE_ID_PREFIX + kind;
         el.style.position = 'fixed';
         el.style.pointerEvents = 'none';
-        el.style.borderRadius = '8px';
+        el.style.borderRadius = '0';
         el.style.display = 'none';
         el.style.zIndex = (ROOT_Z - 2).toString();
         mount.appendChild(el);
         if (kind === 'hover') {
-            el.style.border = '2px dashed rgba(251, 191, 36, .9)';
-            el.style.background = 'rgba(251, 191, 36, .2)';
+            el.style.border = '1px dashed rgba(251, 191, 36, .9)';
+            el.style.background = 'rgba(251, 191, 36, .15)';
             captureHoverEl = el;
         } else if (kind === 'persist') {
-            el.style.border = '2px solid rgba(16, 185, 129, .9)';
+            el.style.border = '1px solid rgba(16, 185, 129, .9)';
             el.style.background = 'rgba(16, 185, 129, .18)';
             capturePersistEl = el;
         } else {
-            el.style.border = '2px dashed rgba(248, 113, 113, .9)';
+            el.style.border = '1px dashed rgba(248, 113, 113, .9)';
             el.style.background = 'rgba(248, 113, 113, .18)';
             captureSelectionEl = el;
         }
         return el;
+    }
+
+    function hidePersistOverlay() {
+        const persist = ensureCaptureElement('persist');
+        if (persist)
+            persist.style.display = 'none';
+    }
+
+    let captureLayerEl = null;
+    let captureLayerEvents = false;
+    let captureActivePointerId = null;
+    let html2canvasLoader = null;
+    let captureClipboardText = '';
+    const captureTemplatePending = new Map();
+    let captureTemplateSeq = 0;
+
+    function ensureCaptureLayer() {
+        if (captureLayerEl)
+            return captureLayerEl;
+        const layer = document.createElement('div');
+        layer.id = CAPTURE_ID_PREFIX + 'layer';
+        layer.style.position = 'fixed';
+        layer.style.top = '0';
+        layer.style.left = '0';
+        layer.style.width = '100%';
+        layer.style.height = '100%';
+        layer.style.zIndex = (ROOT_Z - 2).toString();
+        layer.style.pointerEvents = 'auto';
+        layer.style.background = 'transparent';
+        layer.style.display = 'none';
+        layer.style.cursor = 'crosshair';
+        document.body.appendChild(layer);
+        captureLayerEl = layer;
+        return layer;
+    }
+
+    function attachCaptureLayerEvents() {
+        if (captureLayerEvents)
+            return;
+        const layer = ensureCaptureLayer();
+        layer.addEventListener('pointerdown', handleCapturePointerDown, true);
+        layer.addEventListener('pointermove', handleCaptureMove, true);
+        layer.addEventListener('pointerup', handleCapturePointerUp, true);
+        layer.addEventListener('pointercancel', handleCapturePointerUp, true);
+        captureLayerEvents = true;
+    }
+
+    function detachCaptureLayerEvents() {
+        if (!captureLayerEvents || !captureLayerEl)
+            return;
+        captureLayerEl.removeEventListener('pointerdown', handleCapturePointerDown, true);
+        captureLayerEl.removeEventListener('pointermove', handleCaptureMove, true);
+        captureLayerEl.removeEventListener('pointerup', handleCapturePointerUp, true);
+        captureLayerEl.removeEventListener('pointercancel', handleCapturePointerUp, true);
+        captureLayerEvents = false;
+    }
+
+    function showCaptureLayer() {
+        const layer = ensureCaptureLayer();
+        layer.style.display = 'block';
+    }
+
+    function hideCaptureLayer() {
+        if (captureLayerEl)
+            captureLayerEl.style.display = 'none';
+        captureActivePointerId = null;
+    }
+
+    function toggleCoordMode() {
+        if (S.coordCaptureActive) {
+            S.coordCaptureActive = false;
+            hideCaptureLayer();
+            detachCaptureLayerEvents();
+            updateCaptureStatus('Đã hủy chế độ lấy tọa độ.');
+            updateCaptureControlStates();
+            return;
+        }
+        if (S.captureActive) {
+            stopCaptureMode('cancel', 'Chế độ capture tạm dừng để lấy tọa độ.');
+        }
+        S.coordCaptureActive = true;
+        showCaptureLayer();
+        attachCaptureLayerEvents();
+        updateCaptureStatus('Nhấn vào vị trí cần lấy tọa độ, Esc để hủy.');
+        updateCaptureControlStates();
+    }
+
+    function recordCoordinate(x, y) {
+        S.lastCoordinates = { x: Math.round(x), y: Math.round(y), ts: Date.now() };
+        S.coordCaptureActive = false;
+        hideCaptureLayer();
+        detachCaptureLayerEvents();
+        updateCaptureControlStates();
+        const coordText = S.lastCoordinates.x + ',' + S.lastCoordinates.y;
+        writeTextToClipboard(coordText).then(() => {
+            updateCaptureStatus('Da luu to? d?: ' + coordText + ' (da copy clipboard)');
+        }).catch(() => {
+            updateCaptureStatus('Da luu to? d?: ' + coordText + ' (copy clipboard khong duoc)');
+        });
+        return S.lastCoordinates;
+    }
+
+    function loadHtml2Canvas() {
+        if (window.html2canvas)
+            return Promise.resolve(window.html2canvas);
+        if (html2canvasLoader)
+            return html2canvasLoader;
+        html2canvasLoader = new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+            script.onload = () => {
+                if (window.html2canvas)
+                    resolve(window.html2canvas);
+                else
+                    reject(new Error('html2canvas unavailable after load'));
+            };
+            script.onerror = () => reject(new Error('Failed to load html2canvas'));
+            document.head.appendChild(script);
+        });
+        return html2canvasLoader;
+    }
+
+    function requestCapturePreviewFromHost(rect) {
+        if (!(window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function')) {
+            return Promise.reject(new Error('host capture unavailable'));
+        }
+        return new Promise((resolve, reject) => {
+            const id = `capture_template_${Date.now()}_${captureTemplateSeq++}`;
+            const timer = setTimeout(() => {
+                if (captureTemplatePending.delete(id))
+                    reject(new Error('host capture timeout'));
+            }, 11000);
+            captureTemplatePending.set(id, { resolve, reject, timer });
+            try {
+                window.chrome.webview.postMessage(JSON.stringify({
+                    abx: 'capture_template',
+                    id,
+                    rect: {
+                        x: rect.x,
+                        y: rect.y,
+                        w: rect.w,
+                        h: rect.h
+                    }
+                }));
+            } catch (err) {
+                clearTimeout(timer);
+                captureTemplatePending.delete(id);
+                reject(err);
+            }
+        });
+    }
+
+    async function captureTemplateViaHtml2Canvas(rect) {
+        const html2canvas = await loadHtml2Canvas();
+        const canvas = await html2canvas(document.documentElement, {
+            backgroundColor: null,
+            logging: false,
+            useCORS: true,
+            width: document.documentElement.scrollWidth,
+            height: document.documentElement.scrollHeight,
+            scale: window.devicePixelRatio || 1
+        });
+        const crop = document.createElement('canvas');
+        crop.width = Math.max(1, rect.w);
+        crop.height = Math.max(1, rect.h);
+        const docScrollX = window.scrollX || window.pageXOffset || 0;
+        const docScrollY = window.scrollY || window.pageYOffset || 0;
+        const ctx = crop.getContext('2d');
+        if (ctx && canvas) {
+            ctx.drawImage(canvas, rect.x + docScrollX, rect.y + docScrollY, rect.w, rect.h, 0, 0, crop.width, crop.height);
+        }
+        return crop.toDataURL('image/png');
+    }
+
+    async function captureTemplateSample() {
+        if (S.coordCaptureActive) {
+            updateCaptureStatus('Đang ở chế độ lấy tọa độ, thoát trước khi lưu mẫu.');
+            return;
+        }
+        if (!S.captureActive && !captureSelectionRect) {
+            updateCaptureStatus('Chưa chọn vùng capture để lưu mẫu.');
+            return;
+        }
+        const rect = captureSelectionRect || getDefaultCaptureRect();
+        const overlayKinds = ['hover', 'selection', 'persist'];
+        const binding = overlayKinds.map(kind => ensureCaptureElement(kind));
+        const prevDisplays = binding.map(el => el ? el.style.display : '');
+        try {
+            binding.forEach(el => {
+                if (el)
+                    el.style.display = 'none';
+            });
+            let dataUrl;
+            try {
+                dataUrl = await requestCapturePreviewFromHost(rect);
+            } catch (err) {
+                dataUrl = await captureTemplateViaHtml2Canvas(rect);
+            }
+            const name = prompt('Tên bộ mẫu (mặc định: sample-<số>)', `sample-${S.templateSamples.length + 1}`) || `sample-${S.templateSamples.length + 1}`;
+            let threshold = parseFloat(prompt('Tỉ lệ giống tối thiểu (%) (60-100)', '80'));
+            if (isNaN(threshold) || threshold < 0)
+                threshold = 60;
+            if (threshold > 100)
+                threshold = 100;
+            const sample = {
+                name: name.trim() || `sample-${S.templateSamples.length + 1}`,
+                rect: cloneRect(rect),
+                threshold: Math.min(1, Math.max(0, threshold / 100)),
+                image: dataUrl,
+                ts: Date.now()
+            };
+            S.templateSamples.push(sample);
+            const saved = saveTemplateFiles(sample, dataUrl);
+            updateCaptureTemplateList();
+            updateCaptureStatus(`Đã lưu mẫu "${sample.name}" (${Math.round(sample.threshold * 100)}%) → ${saved.pngName}`);
+        } catch (err) {
+            updateCaptureStatus('Lỗi lưu mẫu: ' + (err && err.message ? err.message : err));
+        } finally {
+            binding.forEach((el, idx) => {
+                if (el)
+                    el.style.display = prevDisplays[idx] || '';
+            });
+        }
+    }
+
+    function downloadBlob(blob, fileName) {
+        if (!blob || !fileName)
+            return;
+        try {
+            const a = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            a.href = url;
+            a.download = fileName;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 600);
+        } catch (_) {}
+    }
+
+    function downloadDataUrl(dataUrl, fileName) {
+        if (!dataUrl || !fileName)
+            return;
+        const commaIdx = dataUrl.indexOf(',');
+        if (commaIdx === -1)
+            return;
+        const header = dataUrl.substring(0, commaIdx);
+        const payload = dataUrl.substring(commaIdx + 1);
+        const mimeMatch = header.match(/data:([^;]+);base64/);
+        const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+        const binary = atob(payload);
+        const arr = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++)
+            arr[i] = binary.charCodeAt(i);
+        downloadBlob(new Blob([arr], { type: mime }), fileName);
+    }
+
+    function sanitizeFileName(name) {
+        const safe = (name || 'template')
+            .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '')
+            .replace(/\s+/g, '_')
+            .replace(/^\.+/, '')
+            .trim();
+        return safe || 'template';
+    }
+
+    function saveTemplateFiles(sample, dataUrl) {
+        const baseName = sanitizeFileName(sample.name);
+        const base = `${baseName}-${Date.now()}`;
+        const pngName = `${base}.png`;
+        const metaName = `${base}.json`;
+        downloadDataUrl(dataUrl, pngName);
+        const meta = {
+            name: sample.name,
+            rect: cloneRect(sample.rect),
+            threshold: sample.threshold,
+            ts: sample.ts,
+            imageFile: pngName
+        };
+        downloadBlob(new Blob([JSON.stringify(meta, null, 2)], { type: 'application/json' }), metaName);
+        return { pngName, metaName };
+    }
+
+    function ensureTemplateImportInput() {
+        if (captureTemplateImportInput)
+            return captureTemplateImportInput;
+        if (!document.body)
+            return null;
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.multiple = true;
+        input.accept = '.json,.png';
+        input.setAttribute('webkitdirectory', '');
+        input.setAttribute('directory', '');
+        input.style.display = 'none';
+        input.addEventListener('change', () => {
+            const files = input.files;
+            if (files && files.length)
+                loadTemplatesFromFiles(files);
+            else
+                updateCaptureStatus('Chưa chọn file mẫu nào.');
+            input.value = '';
+        });
+        document.body.appendChild(input);
+        captureTemplateImportInput = input;
+        return input;
+    }
+
+    async function loadTemplatesFromFiles(fileList) {
+        if (!fileList || fileList.length === 0) {
+            updateCaptureStatus('Chưa chọn file mẫu nào.');
+            return;
+        }
+        const files = Array.from(fileList);
+        const jsonFiles = files.filter(f => f.name.toLowerCase().endsWith('.json'));
+        if (!jsonFiles.length) {
+            updateCaptureStatus('Không tìm thấy file JSON mẫu trong thư mục.');
+            return;
+        }
+        const loaded = [];
+        for (const metaFile of jsonFiles) {
+            try {
+                const text = await metaFile.text();
+                const meta = JSON.parse(text);
+                if (!meta || typeof meta !== 'object')
+                    continue;
+                const imageFile = findTemplateImageFile(meta.imageFile, files);
+                if (!imageFile)
+                    continue;
+                const dataUrl = await readFileAsDataUrl(imageFile);
+                const rect = meta.rect && typeof meta.rect === 'object' ? cloneRect(meta.rect) : getDefaultCaptureRect();
+                const sample = {
+                    name: typeof meta.name === 'string' && meta.name.trim() ? meta.name.trim() : imageFile.name.replace(/\.[^.]+$/, ''),
+                    rect,
+                    threshold: typeof meta.threshold === 'number' ? Math.max(0, Math.min(1, meta.threshold)) : 1,
+                    image: dataUrl,
+                    ts: typeof meta.ts === 'number' ? meta.ts : Date.now()
+                };
+                S.templateSamples.push(sample);
+                loaded.push(sample.name);
+            } catch (err) {
+                console.warn('[HomeWatch] load template failed', metaFile.name, err);
+            }
+        }
+        if (loaded.length) {
+            updateCaptureTemplateList();
+            updateCaptureStatus('Đã nạp ' + loaded.length + ' mẫu: ' + loaded.join(', '));
+        } else {
+            updateCaptureStatus('Không tìm thấy mẫu hợp lệ trong thư mục mẫu.');
+        }
+    }
+
+    function findTemplateImageFile(targetName, files) {
+        if (!targetName)
+            return null;
+        const lowered = targetName.toLowerCase();
+        for (const file of files) {
+            if (file.name.toLowerCase() === lowered)
+                return file;
+            const rel = (file.webkitRelativePath || '').toLowerCase();
+            if (rel.endsWith(lowered))
+                return file;
+        }
+        return null;
+    }
+
+    function readFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = () => reject(reader.error);
+            reader.onload = () => resolve(reader.result || '');
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function updateCaptureHideButton() {
+        if (!captureHideBtnEl)
+            return;
+        const hasLast = !!(S.captureLast && S.captureLast.rect);
+        captureHideBtnEl.disabled = !hasLast;
+        captureHideBtnEl.textContent = S.captureLastHidden ? 'Hiện khung' : 'Ẩn khung';
+        if (!hasLast) {
+            captureHideBtnEl.textContent = 'Ẩn khung';
+        }
+    }
+
+    function updateCaptureControlStates() {
+        if (captureButtonEl)
+            captureButtonEl.disabled = !!S.coordCaptureActive;
+        if (captureTemplateBtnEl)
+            captureTemplateBtnEl.disabled = !!S.coordCaptureActive;
+        if (captureCoordBtnEl)
+            captureCoordBtnEl.textContent = S.coordCaptureActive ? 'Đang lấy tọa độ' : 'Lấy tọa độ';
+    }
+
+    function updateCaptureTemplateList() {
+        if (!captureTemplateListEl)
+            return;
+        captureTemplateListEl.innerHTML = '';
+        const help = document.createElement('div');
+        help.style.fontSize = '11px';
+        help.style.opacity = '.75';
+        help.style.marginBottom = '6px';
+        help.style.lineHeight = '1.4';
+        help.innerHTML = [
+            '<strong>Huong dan:</strong> Capture: keo/di chuyen, Enter de luu, Esc de huy.',
+            'Luu mau: tao PNG + JSON (cung thu muc) voi ty le 60-100%.',
+            'Nạp mẫu: dung nut "Nạp mẫu" va chon thu muc chua cac cap .png/.json.',
+            'Lay toa do: an nut, click vao vi tri, dung Ctrl+V de paste.',
+            'An/hien khung: vui long nhan lai de xem vung luu.'
+        ].join('<br>');
+        captureTemplateListEl.appendChild(help);
+        if (!S.templateSamples.length) {
+            const empty = document.createElement('div');
+            empty.textContent = 'Chua co mau nao. Chon vung capture, nhan Luu mau de them.';
+            empty.style.opacity = '.6';
+            empty.style.fontSize = '11px';
+            captureTemplateListEl.appendChild(empty);
+            return;
+        }
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.justifyContent = 'space-between';
+        header.style.alignItems = 'center';
+        header.style.fontSize = '12px';
+        header.style.marginBottom = '6px';
+        const title = document.createElement('strong');
+        title.textContent = 'Mau da luu';
+        const count = document.createElement('span');
+        count.textContent = `${S.templateSamples.length} mau`;
+        count.style.opacity = '.7';
+        header.appendChild(title);
+        header.appendChild(count);
+        captureTemplateListEl.appendChild(header);
+        const list = document.createElement('div');
+        list.style.display = 'flex';
+        list.style.flexDirection = 'column';
+        list.style.gap = '4px';
+        S.templateSamples.forEach((sample, idx) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px;border-radius:6px;border:1px solid rgba(59,130,246,.6);background:rgba(59,130,246,.08);cursor:pointer;';
+            row.title = 'Click de copy thong tin mau: name|x,y,w,h|tyle';
+            const info = document.createElement('div');
+            info.style.flex = '1';
+            info.style.fontSize = '11px';
+            info.style.wordBreak = 'break-word';
+            info.textContent = `${idx + 1}. ${sample.name} — ${sample.rect.w}x${sample.rect.h} @${sample.rect.x},${sample.rect.y} (${Math.round(sample.threshold * 100)}%)`;
+            row.appendChild(info);
+            const badge = document.createElement('span');
+            badge.textContent = `${Math.round(sample.threshold * 100)}%`;
+            badge.style.fontSize = '10px';
+            badge.style.padding = '2px 6px';
+            badge.style.borderRadius = '999px';
+            badge.style.border = '1px solid rgba(255,255,255,.3)';
+            badge.style.opacity = '.8';
+            row.appendChild(badge);
+            row.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                const clipText = `${sample.name}|${sample.rect.x},${sample.rect.y},${sample.rect.w},${sample.rect.h}|${Math.round(sample.threshold * 100)}%`;
+                writeTextToClipboard(clipText).then(() => {
+                    updateCaptureStatus(`Da copy mau "${sample.name}".`);
+                }).catch(() => {
+                    updateCaptureStatus(`Copy mau "${sample.name}" that bai.`);
+                });
+            });
+            list.appendChild(row);
+        });
+        captureTemplateListEl.appendChild(list);
+    }
+
+    function getCaptureTemplates() {
+        return S.templateSamples.map(sample => ({
+            name: sample.name,
+            rect: cloneRect(sample.rect),
+            threshold: sample.threshold,
+            image: sample.image,
+            ts: sample.ts
+        }));
+    }
+
+    window.__abx_hw_captureTemplates = getCaptureTemplates;
+
+    const automationConfig = {
+        start: {
+            name: 'batdau',
+            rect: { x: 685, y: 84, w: 23, h: 20 },
+            click: { x: 670, y: 186 },
+            threshold: 0.8
+        },
+        end: {
+            name: 'ketthuc',
+            rect: { x: 374, y: 113, w: 45, h: 20 },
+            threshold: 0.8
+        },
+        interval: 700,
+        afterMatchDelay: 1500
+    };
+
+    const templateBitmapCache = new Map();
+    let templateAutomationPromise = null;
+
+    function normalizeAutomationRect(rect) {
+        if (!rect || typeof rect !== 'object')
+            return getDefaultCaptureRect();
+        const vw = document.documentElement.clientWidth || window.innerWidth || 1;
+        const vh = document.documentElement.clientHeight || window.innerHeight || 1;
+        const x = clamp(Math.round(rect.x || 0), 0, Math.max(0, vw - 1));
+        const y = clamp(Math.round(rect.y || 0), 0, Math.max(0, vh - 1));
+        const w = Math.max(1, Math.min(Math.round(rect.w || 0) || automationConfig.start.rect.w, Math.max(1, vw - x)));
+        const h = Math.max(1, Math.min(Math.round(rect.h || 0) || automationConfig.start.rect.h, Math.max(1, vh - y)));
+        return { x, y, w, h };
+    }
+
+    async function captureRegion(rect) {
+        const normalized = normalizeAutomationRect(rect);
+        try {
+            return await requestCapturePreviewFromHost(normalized);
+        } catch (_) {
+            return await captureTemplateViaHtml2Canvas(normalized);
+        }
+    }
+
+    async function loadTemplatesFromHost(entries) {
+        if (!Array.isArray(entries) || !entries.length)
+            return;
+        const added = [];
+        for (const entry of entries) {
+            if (!entry || typeof entry.name !== 'string' || !entry.name.trim() || typeof entry.image !== 'string')
+                continue;
+            const normalized = entry.name.trim();
+            const exists = S.templateSamples.some(sample => (sample.name || '').trim().toLowerCase() === normalized.toLowerCase());
+            if (exists)
+                continue;
+            const sample = {
+                name: normalized,
+                rect: entry.rect && typeof entry.rect === 'object' ? cloneRect(entry.rect) : null,
+                threshold: typeof entry.threshold === 'number' ? Math.max(0, Math.min(1, entry.threshold)) : 1,
+                image: entry.image,
+                ts: typeof entry.ts === 'number' ? entry.ts : Date.now()
+            };
+            S.templateSamples.push(sample);
+            added.push(sample.name);
+        }
+        if (added.length) {
+            updateCaptureTemplateList();
+            updateCaptureStatus('Đã nạp mẫu host: ' + added.join(', '));
+        }
+    }
+
+    function findTemplateByName(name) {
+        if (!name)
+            return null;
+        const lower = name.trim().toLowerCase();
+        return S.templateSamples.find(sample => (sample.name || '').trim().toLowerCase() === lower) || null;
+    }
+
+    async function createBitmapFromDataUrl(dataUrl) {
+        if (!dataUrl)
+            return null;
+        const response = await fetch(dataUrl);
+        const blob = await response.blob();
+        return await createImageBitmap(blob);
+    }
+
+    async function ensureTemplateBitmap(sample) {
+        if (!sample || !sample.image)
+            return null;
+        const cacheKey = sample.image;
+        if (templateBitmapCache.has(cacheKey))
+            return templateBitmapCache.get(cacheKey);
+        try {
+            const bitmap = await createBitmapFromDataUrl(sample.image);
+            if (bitmap)
+                templateBitmapCache.set(cacheKey, bitmap);
+            return bitmap;
+        } catch (err) {
+            console.warn('[Template] decode failed', err);
+            return null;
+        }
+    }
+
+    function getImageDataFromBitmap(bitmap, width, height) {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d');
+        if (!context)
+            return null;
+        context.drawImage(bitmap, 0, 0, width, height);
+        return context.getImageData(0, 0, width, height);
+    }
+
+    async function compareTemplateToRect(sample, rect) {
+        if (!sample)
+            return 0;
+        const targetDataUrl = await captureRegion(rect || sample.rect || automationConfig.start.rect);
+        if (!targetDataUrl)
+            return 0;
+        const [templateBitmap, targetBitmap] = await Promise.all([
+            ensureTemplateBitmap(sample),
+            createBitmapFromDataUrl(targetDataUrl)
+        ]);
+        if (!templateBitmap || !targetBitmap)
+            return 0;
+        const width = Math.min(templateBitmap.width, targetBitmap.width);
+        const height = Math.min(templateBitmap.height, targetBitmap.height);
+        if (width <= 0 || height <= 0)
+            return 0;
+        const templateData = getImageDataFromBitmap(templateBitmap, width, height);
+        const targetData = getImageDataFromBitmap(targetBitmap, width, height);
+        if (!templateData || !targetData)
+            return 0;
+        let diff = 0;
+        const totalPixels = width * height;
+        for (let i = 0; i < totalPixels; i++) {
+            const offset = i * 4;
+            diff += Math.abs(templateData.data[offset] - targetData.data[offset]);
+            diff += Math.abs(templateData.data[offset + 1] - targetData.data[offset + 1]);
+            diff += Math.abs(templateData.data[offset + 2] - targetData.data[offset + 2]);
+        }
+        const maxDiff = totalPixels * 3 * 255;
+        return maxDiff > 0 ? Math.max(0, 1 - diff / maxDiff) : 0;
+    }
+
+    function simulateClickAt(pageX, pageY) {
+        requestHostClick(pageX, pageY);
+        const scrollX = window.scrollX || window.pageXOffset || 0;
+        const scrollY = window.scrollY || window.pageYOffset || 0;
+        const viewX = clamp(Math.round(pageX - scrollX), 0, window.innerWidth - 1);
+        const viewY = clamp(Math.round(pageY - scrollY), 0, window.innerHeight - 1);
+        const target = document.elementFromPoint(viewX, viewY) || document.body;
+        if (!target)
+            return;
+        const events = ['pointerover', 'pointerenter', 'mouseover', 'mousemove', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+        for (const type of events) {
+            target.dispatchEvent(new MouseEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                clientX: viewX,
+                clientY: viewY,
+                button: 0
+            }));
+        }
+    }
+
+    function postHostMessage(payload) {
+        try {
+            if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function') {
+                chrome.webview.postMessage(JSON.stringify(payload));
+            }
+        } catch (_) {}
+    }
+
+    function requestHostClick(pageX, pageY) {
+        try {
+            if (!(window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function'))
+                return;
+            const devicePixelRatio = Math.max(0.1, window.devicePixelRatio || 1);
+            const viewportScale = (window.visualViewport && typeof window.visualViewport.scale === 'number') ? window.visualViewport.scale : 1;
+            const screenX = Math.round((window.screenX + pageX) * devicePixelRatio);
+            const screenY = Math.round((window.screenY + pageY) * devicePixelRatio);
+            postHostMessage({
+                abx: 'auto_click',
+                point: { x: pageX, y: pageY },
+                screen: { x: screenX, y: screenY },
+                devicePixelRatio,
+                viewportScale,
+                ts: Date.now()
+            });
+        } catch (_) {}
+    }
+
+    function updateAutomationStatus(message) {
+        S.templateAutomationStatus = message;
+        updateCaptureStatus('Tự động: ' + message);
+        appendAutomationLog(message);
+    }
+
+    function appendAutomationLog(message) {
+        if (!captureLogEl || !message)
+            return;
+        const entry = document.createElement('div');
+        entry.textContent = '• ' + message;
+        entry.style.fontSize = '11px';
+        entry.style.padding = '2px 0';
+        entry.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
+        entry.style.marginBottom = '2px';
+        entry.style.opacity = '.9';
+        captureLogEl.appendChild(entry);
+        while (captureLogEl.children.length > 120)
+            captureLogEl.removeChild(captureLogEl.firstChild);
+        captureLogEl.scrollTop = captureLogEl.scrollHeight;
+    }
+
+    async function runTemplateAutomationLoop() {
+        updateAutomationStatus('Khởi động tự động');
+        try {
+            while (S.templateAutomationRunning) {
+                const config = S.templateAutomationLock ? automationConfig.end : automationConfig.start;
+                const sample = findTemplateByName(config.name);
+                if (!sample) {
+                    updateAutomationStatus(`Chưa có mẫu ${config.name}`);
+                    await wait(automationConfig.interval);
+                    continue;
+                }
+                let similarity = 0;
+                try {
+                    similarity = await compareTemplateToRect(sample, config.rect);
+                } catch (err) {
+                    updateAutomationStatus('Lỗi so sánh: ' + (err && err.message || err));
+                    await wait(automationConfig.interval);
+                    continue;
+                }
+                const threshold = typeof config.threshold === 'number' ? config.threshold : sample.threshold || 0.8;
+                const pct = Math.round(similarity * 100);
+                if (similarity >= threshold) {
+                    if (!S.templateAutomationLock) {
+                        simulateClickAt(config.click.x, config.click.y);
+                        S.templateAutomationLock = true;
+                        updateAutomationStatus(`${config.name} ${pct}% -> click`);
+                        await wait(automationConfig.afterMatchDelay);
+                    } else {
+                        S.templateAutomationLock = false;
+                        updateAutomationStatus(`${config.name} ${pct}% -> unlock`);
+                        await wait(automationConfig.afterMatchDelay);
+                    }
+                } else {
+                    updateAutomationStatus(`${config.name} ${pct}% chưa đúng`);
+                    await wait(automationConfig.interval);
+                }
+            }
+        } finally {
+            S.templateAutomationRunning = false;
+            S.templateAutomationLock = false;
+            updateAutomationStatus('Đã dừng tự động');
+        }
+    }
+
+    function startTemplateAutomation() {
+        if (S.templateAutomationRunning) {
+            updateAutomationStatus('Đang chạy');
+            return 'already-running';
+        }
+        S.templateAutomationRunning = true;
+        S.templateAutomationLock = false;
+        templateAutomationPromise = runTemplateAutomationLoop()
+            .catch(err => updateAutomationStatus('Lỗi auto: ' + (err && err.message || err)))
+            .finally(() => {
+                templateAutomationPromise = null;
+            });
+        return 'started';
+    }
+
+    function stopTemplateAutomation() {
+        if (!S.templateAutomationRunning) {
+            updateAutomationStatus('Đã dừng');
+            return 'stopped';
+        }
+        S.templateAutomationRunning = false;
+        updateAutomationStatus('Dừng theo yêu cầu');
+        return 'stopped';
+    }
+
+    window.__abx_hw_startTemplateLoop = startTemplateAutomation;
+    window.__abx_hw_stopTemplateLoop = stopTemplateAutomation;
+
+    function togglePersistOverlay() {
+        if (!S.captureLast || !S.captureLast.rect)
+            return;
+        const persist = ensureCaptureElement('persist');
+        if (S.captureLastHidden) {
+            updateCaptureBoxEl(persist, S.captureLast.rect);
+            S.captureLastHidden = false;
+            updateCaptureStatus('Đã hiển thị lại vùng capture.');
+        } else {
+            hidePersistOverlay();
+            S.captureLastHidden = true;
+            updateCaptureStatus('Vùng capture bị ẩn.');
+        }
+        updateCaptureHideButton();
+    }
+
+    function writeTextToClipboard(text) {
+        if (!text)
+            return Promise.reject(new Error('Empty text'));
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise((resolve, reject) => {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.setAttribute('readonly', 'readonly');
+                ta.style.position = 'absolute';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                const ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+                if (ok)
+                    resolve();
+                else
+                    reject(new Error('execCommand copy failed'));
+            } catch (err) {
+                reject(err);
+            }
+        });
     }
 
     function updateCaptureBoxEl(el, rect) {
@@ -2040,26 +2967,29 @@
         if (S.captureActive)
             return;
         S.captureActive = true;
-        document.addEventListener('pointermove', handleCaptureMove, true);
-        document.addEventListener('pointerdown', handleCapturePointerDown, true);
-        document.addEventListener('pointerup', handleCapturePointerUp, true);
+        attachCaptureLayerEvents();
+        showCaptureLayer();
         document.addEventListener('keyup', handleCaptureKey, true);
         updateCaptureButtonLabel();
         const hover = ensureCaptureElement('hover');
         if (hover)
             hover.style.display = 'none';
+        hidePersistOverlay();
         setCaptureSelectionRect(getDefaultCaptureRect());
         updateCaptureStatus('Kéo để điều chỉnh vùng, Enter hoặc bấm nút để lưu, Esc để hủy.');
         captureDragState = null;
+        S.captureLastHidden = true;
+        updateCaptureHideButton();
+        S.coordCaptureActive = false;
+        updateCaptureControlStates();
     }
 
     function stopCaptureMode(reason, message) {
         if (!S.captureActive)
             return;
         S.captureActive = false;
-        document.removeEventListener('pointermove', handleCaptureMove, true);
-        document.removeEventListener('pointerdown', handleCapturePointerDown, true);
-        document.removeEventListener('pointerup', handleCapturePointerUp, true);
+        detachCaptureLayerEvents();
+        hideCaptureLayer();
         document.removeEventListener('keyup', handleCaptureKey, true);
         const hover = ensureCaptureElement('hover');
         if (hover)
@@ -2070,6 +3000,7 @@
         updateCaptureButtonLabel();
         updateCaptureStatus(message);
         captureDragState = null;
+        updateCaptureControlStates();
     }
 
     function handleCaptureMove(e) {
@@ -2142,8 +3073,16 @@
     }
 
     function handleCapturePointerDown(e) {
+        if (S.coordCaptureActive) {
+            recordCoordinate(e.clientX, e.clientY);
+            return;
+        }
         if (e.button !== 0 || !S.captureActive)
             return;
+        if (S.coordCaptureActive) {
+            recordCoordinate(e.clientX, e.clientY);
+            return;
+        }
         const panel = document.getElementById(CFG.panelId);
         if (panel && panel.contains(e.target))
             return;
@@ -2172,18 +3111,101 @@
                 h: 0
             });
         }
+        if (captureLayerEl && typeof e.pointerId === 'number') {
+            captureActivePointerId = e.pointerId;
+            try {
+                captureLayerEl.setPointerCapture(e.pointerId);
+            } catch (_) {}
+        }
     }
 
     function handleCapturePointerUp(e) {
         if (e.button !== 0 || !S.captureActive)
             return;
+        if (captureLayerEl && captureActivePointerId != null) {
+            try {
+                captureLayerEl.releasePointerCapture(captureActivePointerId);
+            } catch (_) {}
+            captureActivePointerId = null;
+        }
         captureDragState = null;
         updateCaptureStatus();
     }
 
+    function ensureSelectionForKeyboard() {
+        if (!captureSelectionRect)
+            setCaptureSelectionRect(getDefaultCaptureRect());
+        return captureSelectionRect;
+    }
+
+    function nudgeCaptureRect(dx, dy) {
+        const rect = ensureSelectionForKeyboard();
+        if (!rect)
+            return;
+        const vw = document.documentElement.clientWidth;
+        const vh = document.documentElement.clientHeight;
+        const x = clamp(rect.x + dx, 0, Math.max(0, vw - rect.w));
+        const y = clamp(rect.y + dy, 0, Math.max(0, vh - rect.h));
+        setCaptureSelectionRect({
+            x,
+            y,
+            w: rect.w,
+            h: rect.h
+        });
+    }
+
+    function resizeCaptureRect(dw, dh) {
+        const rect = ensureSelectionForKeyboard();
+        if (!rect)
+            return;
+        const vw = document.documentElement.clientWidth;
+        const vh = document.documentElement.clientHeight;
+        const maxW = Math.max(CAPTURE_MIN_DRAG, vw - rect.x);
+        const maxH = Math.max(CAPTURE_MIN_DRAG, vh - rect.y);
+        const w = clamp(rect.w + dw, CAPTURE_MIN_DRAG, maxW);
+        const h = clamp(rect.h + dh, CAPTURE_MIN_DRAG, maxH);
+        setCaptureSelectionRect({
+            x: rect.x,
+            y: rect.y,
+            w,
+            h
+        });
+    }
+
     function handleCaptureKey(e) {
+        if (S.coordCaptureActive) {
+            if (e.key === 'Escape' || e.key === 'Esc') {
+                e.preventDefault();
+                toggleCoordMode();
+            }
+            return;
+        }
         if (!S.captureActive)
             return;
+        if (e.key.startsWith('Arrow')) {
+            e.preventDefault();
+            const step = (e.metaKey || e.ctrlKey) ? 5 : 1;
+            if (e.shiftKey) {
+                if (e.key === 'ArrowLeft')
+                    resizeCaptureRect(-step, 0);
+                else if (e.key === 'ArrowRight')
+                    resizeCaptureRect(step, 0);
+                else if (e.key === 'ArrowUp')
+                    resizeCaptureRect(0, -step);
+                else if (e.key === 'ArrowDown')
+                    resizeCaptureRect(0, step);
+            } else {
+                if (e.key === 'ArrowLeft')
+                    nudgeCaptureRect(-step, 0);
+                else if (e.key === 'ArrowRight')
+                    nudgeCaptureRect(step, 0);
+                else if (e.key === 'ArrowUp')
+                    nudgeCaptureRect(0, -step);
+                else if (e.key === 'ArrowDown')
+                    nudgeCaptureRect(0, step);
+            }
+            return;
+        }
         if (e.key === 'Enter') {
             e.preventDefault();
             confirmCaptureSelection();
@@ -2210,11 +3232,20 @@
             clientY: Math.round(centerY)
         });
         S.captureLast = payload;
+        S.captureLastHidden = false;
         const persist = ensureCaptureElement('persist');
         updateCaptureBoxEl(persist, rect);
         postCaptureSignal(payload);
         updateInfo('Đã ghi nhận vùng tín hiệu mới.');
+        const cpText = `${rect.x},${rect.y},${rect.w},${rect.h}`;
+        captureClipboardText = cpText;
+        updateCaptureHideButton();
         stopCaptureMode('captured', 'Vùng capture đã lưu. Nhấn Capture vùng để chọn lại.');
+        writeTextToClipboard(cpText).then(() => {
+            updateCaptureStatus('Đã copy tọa độ: ' + cpText);
+        }).catch(() => {
+            updateCaptureStatus('Lưu tọa độ: ' + cpText + ' (copy clipboard không được)');
+        });
     }
 
     function getCaptureTargetFromEvent(e) {
@@ -2335,12 +3366,20 @@
             captureStatusEl.style.borderColor = '#10b981';
             return;
         }
+        if (S.captureLast && S.captureLastHidden) {
+            captureStatusEl.textContent = 'Vùng capture đang bị ẩn. Bấm Hiện khung để xem lại.';
+            captureStatusEl.style.borderColor = '#f97316';
+            return;
+        }
         if (S.captureLast) {
             captureStatusEl.textContent = 'Last capture: ' + getCaptureSummary(S.captureLast);
             captureStatusEl.style.borderColor = '#0ea5e9';
             return;
         }
-        captureStatusEl.textContent = 'Nhấn Capture để chọn vùng hình ảnh, dữ liệu gửi về host.';
+        captureStatusEl.textContent = [
+            'Nhấn Capture để chọn vùng, Enter lưu, Esc hủy.',
+            'Lưu mẫu tạo ảnh template, Lấy tọa độ copy x,y, Ẩn/hiện khung khi cần.'
+        ].join('\n');
         captureStatusEl.style.borderColor = '#334155';
     }
 

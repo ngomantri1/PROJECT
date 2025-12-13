@@ -1131,14 +1131,14 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
 
-                                    <!--  Nút Tiêm JS  -->
+                                    <!--  Nút RUN  -->
                                     <Button
                                         x:Name="BtnInjectJs"
                                         Grid.Column="0"
                                         MinWidth="120"
                                         Padding="13"
                                         Click="InjectJs_Click"
-                                        Content="Tiêm JS"
+                                        Content="RUN"
                                         Style="{StaticResource PrimaryButton}"
                                         Visibility="Visible" />
 
@@ -2023,9 +2023,6 @@
         </Grid>
     </DockPanel>
 </Window>
-
-
-
 
 
 
