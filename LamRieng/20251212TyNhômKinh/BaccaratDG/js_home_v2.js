@@ -2863,12 +2863,48 @@
         return maxDiff > 0 ? Math.max(0, 1 - diff / maxDiff) : 0;
     }
 
+    let clickIndicatorEl = null;
+    let clickIndicatorTimeout = null;
+
+    function ensureClickIndicator() {
+        if (clickIndicatorEl)
+            return clickIndicatorEl;
+        const el = document.createElement('div');
+        el.id = 'abx-click-indicator';
+        el.style.position = 'fixed';
+        el.style.width = '20px';
+        el.style.height = '20px';
+        el.style.margin = '-10px 0 0 -10px';
+        el.style.border = '2px solid rgba(16, 185, 129, 0.95)';
+        el.style.borderRadius = '50%';
+        el.style.pointerEvents = 'none';
+        el.style.transition = 'opacity .2s ease';
+        el.style.opacity = '0';
+        el.style.zIndex = (ROOT_Z + 2).toString();
+        document.body.appendChild(el);
+        clickIndicatorEl = el;
+        return el;
+    }
+
+    function showClickIndicator(viewX, viewY) {
+        const el = ensureClickIndicator();
+        el.style.left = viewX + 'px';
+        el.style.top = viewY + 'px';
+        el.style.opacity = '1';
+        if (clickIndicatorTimeout)
+            clearTimeout(clickIndicatorTimeout);
+        clickIndicatorTimeout = setTimeout(() => {
+            el.style.opacity = '0';
+        }, 450);
+    }
+
     function simulateClickAt(pageX, pageY) {
         requestHostClick(pageX, pageY);
         const scrollX = window.scrollX || window.pageXOffset || 0;
         const scrollY = window.scrollY || window.pageYOffset || 0;
         const viewX = clamp(Math.round(pageX - scrollX), 0, window.innerWidth - 1);
         const viewY = clamp(Math.round(pageY - scrollY), 0, window.innerHeight - 1);
+        showClickIndicator(viewX, viewY);
         const target = document.elementFromPoint(viewX, viewY) || document.body;
         if (!target)
             return;
