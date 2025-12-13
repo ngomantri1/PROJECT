@@ -404,7 +404,6 @@
         lastCoordinates: null,
         coordCaptureActive: false,
         templateAutomationRunning: false,
-        templateAutomationLock: false,
         templateAutomationStatus: ''
     };
 
@@ -1995,6 +1994,99 @@
     const CAPTURE_RESIZE_MARGIN = 6;
 
     const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+    const clamp01 = v => Math.max(0, Math.min(1, v));
+
+    function getViewportSize() {
+        const vw = document.documentElement.clientWidth || window.innerWidth || 1;
+        const vh = document.documentElement.clientHeight || window.innerHeight || 1;
+        return { w: vw, h: vh };
+    }
+
+    function normalizeRect(rect, base) {
+        if (!rect || !base)
+            return { x: 0, y: 0, w: 0, h: 0 };
+        const bw = base.w || 1;
+        const bh = base.h || 1;
+        return {
+            x: clamp01(rect.x / bw),
+            y: clamp01(rect.y / bh),
+            w: clamp01(rect.w / bw),
+            h: clamp01(rect.h / bh)
+        };
+    }
+
+    function scaleNormalizedRect(normalized, vw, vh) {
+        if (!normalized)
+            return null;
+        return {
+            x: Math.round(normalized.x * vw),
+            y: Math.round(normalized.y * vh),
+            w: Math.max(1, Math.round(normalized.w * vw)),
+            h: Math.max(1, Math.round(normalized.h * vh))
+        };
+    }
+
+    function normalizePoint(point, base) {
+        if (!point || !base)
+            return null;
+        const bw = base.w || 1;
+        const bh = base.h || 1;
+        return {
+            x: clamp01(point.x / bw),
+            y: clamp01(point.y / bh)
+        };
+    }
+
+    function scaleNormalizedPoint(normalized, vw, vh) {
+        if (!normalized)
+            return null;
+        return {
+            x: normalized.x * vw,
+            y: normalized.y * vh
+        };
+    }
+
+    function getReferenceViewport() {
+        const ref = automationConfig.referenceViewport || {};
+        const fallback = getViewportSize();
+        return {
+            w: (ref.width && ref.width > 0) ? ref.width : fallback.w,
+            h: (ref.height && ref.height > 0) ? ref.height : fallback.h
+        };
+    }
+
+    function clampRect(rect) {
+        if (!rect)
+            return null;
+        const viewport = getViewportSize();
+        return {
+            x: clamp(rect.x, 0, Math.max(0, viewport.w - 1)),
+            y: clamp(rect.y, 0, Math.max(0, viewport.h - 1)),
+            w: Math.max(1, Math.min(rect.w, viewport.w)),
+            h: Math.max(1, Math.min(rect.h, viewport.h))
+        };
+    }
+
+    function getAutomationRect(stage) {
+        if (!stage || !stage.rect)
+            return null;
+        const normalized = normalizeRect(stage.rect, getReferenceViewport());
+        return clampRect(scaleNormalizedRect(normalized, getViewportSize().w, getViewportSize().h));
+    }
+
+    function getAutomationClickPoint(stage) {
+        if (!stage || !stage.click)
+            return null;
+        const normalized = normalizePoint(stage.click, getReferenceViewport());
+        const viewport = getViewportSize();
+        const scaled = scaleNormalizedPoint(normalized, viewport.w, viewport.h);
+        if (!scaled)
+            return null;
+        return {
+            x: clamp(Math.round(scaled.x), 0, viewport.w - 1),
+            y: clamp(Math.round(scaled.y), 0, viewport.h - 1)
+        };
+    }
 
     function ensureCaptureElement(kind) {
         if (kind === 'hover' && captureHoverEl)
@@ -2515,23 +2607,135 @@
     window.__abx_hw_captureTemplates = getCaptureTemplates;
 
     const automationConfig = {
-        start: {
-            name: 'batdau',
-            rect: { x: 685, y: 84, w: 23, h: 20 },
-            click: { x: 670, y: 186 },
-            threshold: 0.8
+        referenceViewport: {
+            width: 1920,
+            height: 1080
         },
-        end: {
-            name: 'ketthuc',
-            rect: { x: 374, y: 113, w: 45, h: 20 },
-            threshold: 0.8
-        },
-        interval: 700,
-        afterMatchDelay: 1500
+        templateBase: {
+            start: {
+                name: 'batdau',
+                rect: { x: 685, y: 84, w: 23, h: 20 },
+                click: { x: 670, y: 186 },
+                threshold: 0.6
+            },
+            end: {
+                name: 'ketthuc',
+                rect: { x: 374, y: 113, w: 45, h: 20 },
+                threshold: 0.6
+            },
+            interval: 100,
+            afterMatchDelay: 500
+        }
     };
 
+    const automationBoardDefinitions = [
+        {
+            id: 'board1',
+            startRect: { x: 477, y: 59, w: 19, h: 15 },
+            endRect: { x: 260, y: 78, w: 39, h: 17 },
+            startClick: { x: 466, y: 128 }
+        },
+        {
+            id: 'board2',
+            startRect: { x: 897, y: 58, w: 17, h: 16 },
+            endRect: { x: 679, y: 78, w: 39, h: 16 },
+            startClick: { x: 885, y: 127 }
+        },
+        {
+            id: 'board3',
+            startRect: { x: 478, y: 165, w: 19, h: 15 },
+            endRect: { x: 243, y: 185, w: 54, h: 14 },
+            startClick: { x: 465, y: 234 }
+        },
+        {
+            id: 'board4',
+            startRect: { x: 895, y: 165, w: 19, h: 15 },
+            endRect: { x: 661, y: 183, w: 52, h: 17 },
+            startClick: { x: 887, y: 235 }
+        },
+        {
+            id: 'board5',
+            startRect: { x: 478, y: 272, w: 17, h: 13 },
+            endRect: { x: 244, y: 291, w: 52, h: 16 },
+            startClick: { x: 467, y: 341 }
+        },
+        {
+            id: 'board6',
+            startRect: { x: 896, y: 272, w: 18, h: 13 },
+            endRect: { x: 663, y: 290, w: 53, h: 17 },
+            startClick: { x: 886, y: 340 }
+        },
+        {
+            id: 'board7',
+            startRect: { x: 478, y: 377, w: 19, h: 14 },
+            endRect: { x: 242, y: 394, w: 54, h: 20 },
+            startClick: { x: 470, y: 447 }
+        },
+        {
+            id: 'board8',
+            startRect: { x: 895, y: 377, w: 19, h: 16 },
+            endRect: { x: 665, y: 395, w: 49, h: 18 },
+            startClick: { x: 885, y: 445 }
+        }
+    ];
+    const automationConfig1 = createAutomationBoard(automationBoardDefinitions[0]);
+    const automationConfig2 = createAutomationBoard(automationBoardDefinitions[1]);
+    const automationConfig3 = createAutomationBoard(automationBoardDefinitions[2]);
+    const automationConfig4 = createAutomationBoard(automationBoardDefinitions[3]);
+    const automationConfig5 = createAutomationBoard(automationBoardDefinitions[4]);
+    const automationConfig6 = createAutomationBoard(automationBoardDefinitions[5]);
+    const automationConfig7 = createAutomationBoard(automationBoardDefinitions[6]);
+    const automationConfig8 = createAutomationBoard(automationBoardDefinitions[7]);
+    const automationBoards = [
+        automationConfig1,
+        automationConfig2,
+        automationConfig3,
+        automationConfig4,
+        automationConfig5,
+        automationConfig6,
+        automationConfig7,
+        automationConfig8
+    ];
     const templateBitmapCache = new Map();
     let templateAutomationPromise = null;
+
+    function cloneStage(stage) {
+        if (!stage)
+            return null;
+        return {
+            name: stage.name,
+            rect: stage.rect ? cloneRect(stage.rect) : null,
+            click: stage.click ? { x: stage.click.x, y: stage.click.y } : null,
+            threshold: stage.threshold
+        };
+    }
+
+    function createAutomationBoard(def) {
+        const base = automationConfig.templateBase;
+        const board = {
+            id: (def && def.id) || 'board',
+            start: cloneStage(base.start),
+            end: cloneStage(base.end),
+            interval: base.interval,
+            afterMatchDelay: base.afterMatchDelay,
+            state: {
+                lock: false
+            }
+        };
+        if (def) {
+            if (def.startRect && board.start)
+                board.start.rect = cloneRect(def.startRect);
+            if (def.startClick && board.start)
+                board.start.click = { x: def.startClick.x, y: def.startClick.y };
+            if (typeof def.startThreshold === 'number' && board.start)
+                board.start.threshold = def.startThreshold;
+            if (def.endRect && board.end)
+                board.end.rect = cloneRect(def.endRect);
+            if (typeof def.endThreshold === 'number' && board.end)
+                board.end.threshold = def.endThreshold;
+        }
+        return board;
+    }
 
     function normalizeAutomationRect(rect) {
         if (!rect || typeof rect !== 'object')
@@ -2540,12 +2744,15 @@
         const vh = document.documentElement.clientHeight || window.innerHeight || 1;
         const x = clamp(Math.round(rect.x || 0), 0, Math.max(0, vw - 1));
         const y = clamp(Math.round(rect.y || 0), 0, Math.max(0, vh - 1));
-        const w = Math.max(1, Math.min(Math.round(rect.w || 0) || automationConfig.start.rect.w, Math.max(1, vw - x)));
-        const h = Math.max(1, Math.min(Math.round(rect.h || 0) || automationConfig.start.rect.h, Math.max(1, vh - y)));
+        const baseRect = automationConfig.templateBase.start.rect || { w: 160, h: 120 };
+        const w = Math.max(1, Math.min(Math.round(rect.w || 0) || baseRect.w, Math.max(1, vw - x)));
+        const h = Math.max(1, Math.min(Math.round(rect.h || 0) || baseRect.h, Math.max(1, vh - y)));
         return { x, y, w, h };
     }
 
     async function captureRegion(rect) {
+        if (!rect)
+            return null;
         const normalized = normalizeAutomationRect(rect);
         try {
             return await requestCapturePreviewFromHost(normalized);
@@ -2627,7 +2834,7 @@
     async function compareTemplateToRect(sample, rect) {
         if (!sample)
             return 0;
-        const targetDataUrl = await captureRegion(rect || sample.rect || automationConfig.start.rect);
+        const targetDataUrl = await captureRegion(rect || sample.rect);
         if (!targetDataUrl)
             return 0;
         const [templateBitmap, targetBitmap] = await Promise.all([
@@ -2727,46 +2934,73 @@
         captureLogEl.scrollTop = captureLogEl.scrollHeight;
     }
 
-    async function runTemplateAutomationLoop() {
-        updateAutomationStatus('Khởi động tự động');
+    async function runAutomationForBoard(board) {
+        const interval = typeof board.interval === 'number' ? board.interval : (automationConfig.templateBase.interval || 700);
+        const afterMatchDelay = typeof board.afterMatchDelay === 'number' ? board.afterMatchDelay : (automationConfig.templateBase.afterMatchDelay || 1500);
         try {
             while (S.templateAutomationRunning) {
-                const config = S.templateAutomationLock ? automationConfig.end : automationConfig.start;
-                const sample = findTemplateByName(config.name);
+                const stage = board.state.lock ? board.end : board.start;
+                if (!stage) {
+                    updateAutomationStatus(`[${board.id}] Stage không hợp lệ`);
+                    await wait(interval);
+                    continue;
+                }
+                const sample = findTemplateByName(stage.name);
                 if (!sample) {
-                    updateAutomationStatus(`Chưa có mẫu ${config.name}`);
-                    await wait(automationConfig.interval);
+                    updateAutomationStatus(`[${board.id}] Chưa có mẫu ${stage.name}`);
+                    await wait(interval);
                     continue;
                 }
                 let similarity = 0;
                 try {
-                    similarity = await compareTemplateToRect(sample, config.rect);
+                    const targetRect = getAutomationRect(stage);
+                    if (!targetRect) {
+                        updateAutomationStatus(`[${board.id}] Rect ${stage.name} không hợp lệ`);
+                        await wait(interval);
+                        continue;
+                    }
+                    similarity = await compareTemplateToRect(sample, targetRect);
                 } catch (err) {
-                    updateAutomationStatus('Lỗi so sánh: ' + (err && err.message || err));
-                    await wait(automationConfig.interval);
+                    updateAutomationStatus(`[${board.id}] Lỗi so sánh: ` + (err && err.message || err));
+                    await wait(interval);
                     continue;
                 }
-                const threshold = typeof config.threshold === 'number' ? config.threshold : sample.threshold || 0.8;
+                const threshold = typeof stage.threshold === 'number' ? stage.threshold : (sample.threshold || 0.8);
                 const pct = Math.round(similarity * 100);
                 if (similarity >= threshold) {
-                    if (!S.templateAutomationLock) {
-                        simulateClickAt(config.click.x, config.click.y);
-                        S.templateAutomationLock = true;
-                        updateAutomationStatus(`${config.name} ${pct}% -> click`);
-                        await wait(automationConfig.afterMatchDelay);
+                    if (!board.state.lock) {
+                        const clickPoint = getAutomationClickPoint(stage);
+                        if (clickPoint) {
+                            simulateClickAt(clickPoint.x, clickPoint.y);
+                            board.state.lock = true;
+                            updateAutomationStatus(`[${board.id}] ${stage.name} ${pct}% -> click`);
+                        } else {
+                            updateAutomationStatus(`[${board.id}] Click point ${stage.name} không hợp lệ`);
+                        }
+                        await wait(afterMatchDelay);
                     } else {
-                        S.templateAutomationLock = false;
-                        updateAutomationStatus(`${config.name} ${pct}% -> unlock`);
-                        await wait(automationConfig.afterMatchDelay);
+                        board.state.lock = false;
+                        updateAutomationStatus(`[${board.id}] ${stage.name} ${pct}% -> unlock`);
+                        await wait(afterMatchDelay);
                     }
                 } else {
-                    updateAutomationStatus(`${config.name} ${pct}% chưa đúng`);
-                    await wait(automationConfig.interval);
+                    updateAutomationStatus(`[${board.id}] ${stage.name} ${pct}% chưa đúng`);
+                    await wait(interval);
                 }
             }
+        } catch (err) {
+            updateAutomationStatus(`[${board.id}] Lỗi tự động: ` + (err && err.message || err));
+        }
+    }
+
+    async function runTemplateAutomationLoop() {
+        updateAutomationStatus('Khởi động tự động');
+        try {
+            const boardTasks = automationBoards.map(board => runAutomationForBoard(board));
+            await Promise.all(boardTasks);
         } finally {
             S.templateAutomationRunning = false;
-            S.templateAutomationLock = false;
+            automationBoards.forEach(b => b.state.lock = false);
             updateAutomationStatus('Đã dừng tự động');
         }
     }
@@ -2777,7 +3011,7 @@
             return 'already-running';
         }
         S.templateAutomationRunning = true;
-        S.templateAutomationLock = false;
+        automationBoards.forEach(b => b.state.lock = false);
         templateAutomationPromise = runTemplateAutomationLoop()
             .catch(err => updateAutomationStatus('Lỗi auto: ' + (err && err.message || err)))
             .finally(() => {
