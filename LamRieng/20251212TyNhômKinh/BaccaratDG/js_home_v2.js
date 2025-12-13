@@ -1895,125 +1895,153 @@
         return arr;
     }
     function collectTexts() {
-        if (!document.body)
-            return [];
-        const arr = [];
-        let i = 0;
-        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-            acceptNode: n => (n.nodeValue || '').trim().length > 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
-        });
-        let node;
-        while (node = walker.nextNode()) {
-            const el = node.parentElement;
-            if (!el)
-                continue;
-            const r = rectOf(el);
-            if (r.w <= 0 || r.h <= 0)
-                continue;
-            arr.push({
-                idx: ++i,
-                el,
-                rect: r,
-                tag: el.tagName.toLowerCase(),
-                text: (node.nodeValue || '').trim()
-            });
-        }
-        // ===== DEEP SOURCES: thêm "text chìm" =====
-        // helper: push item text cho cùng element, có gắn nguồn (src)
-        function pushDeep(el, text, srcTag) {
-            const t = (text || '').toString().trim();
-            if (!t)
+        const state = { i: 0 };
+        const results = [];
+        const visit = (win, srcTag, depth = 0) => {
+            let doc;
+            try {
+                doc = win.document;
+            } catch (_) {
                 return;
-            const r = rectOf(el);
-            if (r.w <= 0 || r.h <= 0)
-                return; // vẫn ưu tiên phần tử có hình chữ nhật hiển thị
-            arr.push({
-                idx: ++i,
-                el,
-                rect: r,
-                tag: el.tagName.toLowerCase(),
-                text: t,
-                src: srcTag || 'deep'
-            });
-        }
-
-        // 1) IMG alt/title
-        document.querySelectorAll('img[alt], img[title]').forEach(img => {
-            if (img.hasAttribute('alt'))
-                pushDeep(img, img.getAttribute('alt'), 'img@alt');
-            if (img.hasAttribute('title'))
-                pushDeep(img, img.getAttribute('title'), 'img@title');
-        });
-
-        // 2) Bất kỳ phần tử có title
-        document.querySelectorAll('[title]').forEach(el => {
-            // tránh lặp lại với IMG (đã lấy bên trên)
-            if (el.tagName.toLowerCase() === 'img')
-                return;
-            pushDeep(el, el.getAttribute('title'), 'el@title');
-        });
-
-        // 3) ARIA: aria-label / aria-labelledby
-        document.querySelectorAll('[aria-label], [aria-labelledby]').forEach(el => {
-            const ariaLabel = el.getAttribute('aria-label') || '';
-            if (ariaLabel)
-                pushDeep(el, ariaLabel, 'aria-label');
-            const ref = el.getAttribute('aria-labelledby');
-            if (ref) {
-                const txt = ref.split(/\s+/).map(id => {
-                    const t = document.getElementById(id);
-                    return t ? (t.innerText || t.textContent || '') : '';
-                }).join(' ').replace(/\s+/g, ' ').trim();
-                if (txt)
-                    pushDeep(el, txt, 'aria-labelledby');
             }
-        });
-
-        // 4) INPUT/TEXTAREA/SELECT: placeholder, value, option selected
-        document.querySelectorAll('input, textarea, select').forEach(el => {
-            const tag = el.tagName.toLowerCase();
-            const ph = el.getAttribute('placeholder');
-            if (ph)
-                pushDeep(el, ph, tag + '@placeholder');
-
-            if (tag === 'input' || tag === 'textarea') {
-                const v = el.value != null ? String(el.value) : '';
-                if (v)
-                    pushDeep(el, v, tag + '@value');
-            } else if (tag === 'select') {
-                const opt = el.selectedIndex >= 0 ? el.options[el.selectedIndex] : null;
-                const optText = opt ? (opt.text || '').trim() : '';
-                if (optText)
-                    pushDeep(el, optText, 'select@selected');
-            }
-        });
-
-        // 5) DATA-* label thường gặp
-        document.querySelectorAll('[data-label],[data-title],[data-text],[data-name]').forEach(el => {
-            ['data-label', 'data-title', 'data-text', 'data-name'].forEach(k => {
-                if (el.hasAttribute(k))
-                    pushDeep(el, el.getAttribute(k), k);
-            });
-        });
-
-        // 6) Pseudo-element ::before / ::after (nếu có content)
-        function unquote(s) {
-            const m = /^['"](.*)['"]$/.exec(s || '');
-            return m ? m[1] : s;
-        }
-        document.querySelectorAll('body *').forEach(el => {
-            // bỏ qua các node quá lớn để tránh chậm (có thể giữ nguyên nếu cần)
-            if (!(el instanceof HTMLElement))
+            if (!doc || !doc.body)
                 return;
-            const cs = getComputedStyle(el, '::before').content;
-            if (cs && cs !== 'none')
-                pushDeep(el, unquote(cs), '::before');
-            const ca = getComputedStyle(el, '::after').content;
-            if (ca && ca !== 'none')
-                pushDeep(el, unquote(ca), '::after');
-        });
 
-        return arr;
+            const NF = win.NodeFilter || NodeFilter;
+            const walker = doc.createTreeWalker(doc.body, NF.SHOW_TEXT, {
+                acceptNode: n => (n.nodeValue || '').trim().length > 0 ? NF.FILTER_ACCEPT : NF.FILTER_SKIP
+            });
+            let node;
+            while (node = walker.nextNode()) {
+                const el = node.parentElement;
+                if (!el)
+                    continue;
+                const r = rectOf(el);
+                if (r.w <= 0 || r.h <= 0)
+                    continue;
+                results.push({
+                    idx: ++state.i,
+                    el,
+                    rect: r,
+                    tag: el.tagName.toLowerCase(),
+                    text: (node.nodeValue || '').trim(),
+                    src: srcTag || (depth ? 'frame' : 'visible')
+                });
+            }
+
+            // ===== DEEP SOURCES: thêm "text chìm" =====
+            const pushDeep = (el, text, srcTagDeep) => {
+                const t = (text || '').toString().trim();
+                if (!t)
+                    return;
+                const r = rectOf(el);
+                if (r.w <= 0 || r.h <= 0)
+                    return; // vẫn ưu tiên phần tử có hình chữ nhật hiển thị
+                results.push({
+                    idx: ++state.i,
+                    el,
+                    rect: r,
+                    tag: el.tagName.toLowerCase(),
+                    text: t,
+                    src: srcTagDeep || srcTag || (depth ? 'frame' : 'deep')
+                });
+            };
+
+            // 1) IMG alt/title
+            doc.querySelectorAll('img[alt], img[title]').forEach(img => {
+                if (img.hasAttribute('alt'))
+                    pushDeep(img, img.getAttribute('alt'), 'img@alt');
+                if (img.hasAttribute('title'))
+                    pushDeep(img, img.getAttribute('title'), 'img@title');
+            });
+
+            // 2) Bất kỳ phần tử có title
+            doc.querySelectorAll('[title]').forEach(el => {
+                // tránh lặp lại với IMG (đã lấy bên trên)
+                if (el.tagName.toLowerCase() === 'img')
+                    return;
+                pushDeep(el, el.getAttribute('title'), 'el@title');
+            });
+
+            // 3) ARIA: aria-label / aria-labelledby
+            doc.querySelectorAll('[aria-label], [aria-labelledby]').forEach(el => {
+                const ariaLabel = el.getAttribute('aria-label') || '';
+                if (ariaLabel)
+                    pushDeep(el, ariaLabel, 'aria-label');
+                const ref = el.getAttribute('aria-labelledby');
+                if (ref) {
+                    const txt = ref.split(/\s+/).map(id => {
+                        const t = doc.getElementById(id);
+                        return t ? (t.innerText || t.textContent || '') : '';
+                    }).join(' ').replace(/\s+/g, ' ').trim();
+                    if (txt)
+                        pushDeep(el, txt, 'aria-labelledby');
+                }
+            });
+
+            // 4) INPUT/TEXTAREA/SELECT: placeholder, value, option selected
+            doc.querySelectorAll('input, textarea, select').forEach(el => {
+                const tag = el.tagName.toLowerCase();
+                const ph = el.getAttribute('placeholder');
+                if (ph)
+                    pushDeep(el, ph, tag + '@placeholder');
+
+                if (tag === 'input' || tag === 'textarea') {
+                    const v = el.value != null ? String(el.value) : '';
+                    if (v)
+                        pushDeep(el, v, tag + '@value');
+                } else if (tag === 'select') {
+                    const opt = el.selectedIndex >= 0 ? el.options[el.selectedIndex] : null;
+                    const optText = opt ? (opt.text || '').trim() : '';
+                    if (optText)
+                        pushDeep(el, optText, 'select@selected');
+                }
+            });
+
+            // 5) DATA-* label thường gặp
+            doc.querySelectorAll('[data-label],[data-title],[data-text],[data-name]').forEach(el => {
+                ['data-label', 'data-title', 'data-text', 'data-name'].forEach(k => {
+                    if (el.hasAttribute(k))
+                        pushDeep(el, el.getAttribute(k), k);
+                });
+            });
+
+            // 6) Pseudo-element ::before / ::after (nếu có content)
+            const unquote = (s) => {
+                const m = /^['"](.*)['"]$/.exec(s || '');
+                return m ? m[1] : s;
+            };
+            doc.querySelectorAll('body *').forEach(el => {
+                if (!(el instanceof HTMLElement))
+                    return;
+                const cs = win.getComputedStyle(el, '::before').content;
+                if (cs && cs !== 'none')
+                    pushDeep(el, unquote(cs), '::before');
+                const ca = win.getComputedStyle(el, '::after').content;
+                if (ca && ca !== 'none')
+                    pushDeep(el, unquote(ca), '::after');
+            });
+
+            // Đệ quy sang các iframe con (nếu cùng origin truy cập được)
+            try {
+                const frames = win.frames;
+                for (let i = 0; i < frames.length; i++) {
+                    const f = frames[i];
+                    if (!f || f === win)
+                        continue;
+                    let label = srcTag || 'frame';
+                    try {
+                        const href = f.location && f.location.href;
+                        if (href)
+                            label = href;
+                    } catch (_) {}
+                    visit(f, label, depth + 1);
+                }
+            } catch (_) {}
+        };
+
+        visit(window, 'visible', 0);
+        return results;
     }
 
     // NEW: thu thập các popup/modal lớn đang che màn hình (quảng cáo, thông báo,...)
