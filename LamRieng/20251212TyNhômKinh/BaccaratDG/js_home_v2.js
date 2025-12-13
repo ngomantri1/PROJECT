@@ -2626,6 +2626,42 @@
         }, false);
     }
 
+    // Khi đang ở iframe game (ddnewpc/index.html/new-dd-…), log boot và thử scanTexts để xác nhận script sống
+    (function gameFrameBoot() {
+        try {
+            if (window.__abx_game_frame_boot)
+                return;
+            const href = String(location.href || '').toLowerCase();
+            const isGame = href.includes('ddnewpc/index.html') || href.includes('new-dd-') || href.includes('dggw') || href.includes('izogcnj.com');
+            if (!isGame)
+                return;
+            window.__abx_game_frame_boot = true;
+            const run = () => {
+                try {
+                    const hasBody = !!document.body;
+                    const bodyChildren = hasBody ? document.body.childElementCount : 0;
+                    let bodyTextLen = 0;
+                    try {
+                        bodyTextLen = (document.body && document.body.innerText || '').trim().length;
+                    } catch (_) { }
+                    postHomeWatchLog({
+                        abx: 'game_frame_boot',
+                        href: String(location.href || ''),
+                        readyState: document.readyState,
+                        hasBody,
+                        bodyChildren,
+                        bodyTextLen
+                    });
+                    try { scanTexts && scanTexts(500); } catch (_) { }
+                } catch (_) { }
+            };
+            if (document.readyState === 'complete' || document.readyState === 'interactive')
+                setTimeout(run, 50);
+            else
+                window.addEventListener('DOMContentLoaded', () => setTimeout(run, 50), { once: true });
+        } catch (_) {}
+    })();
+
 // ======= Username & Balance =======
     function findUserFromDOM() {
         try {

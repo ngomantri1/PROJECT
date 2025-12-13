@@ -5062,9 +5062,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 Web.CoreWebView2.AddWebResourceRequestedFilter("https://*/ddnewpc/index.html*", CoreWebView2WebResourceContext.Document);
+                // Bổ sung filter ALL để xem có context khác Document hay không
+                Web.CoreWebView2.AddWebResourceRequestedFilter("https://*/ddnewpc/index.html*", CoreWebView2WebResourceContext.All);
                 Web.CoreWebView2.WebResourceRequested -= WebResourceRequested_InjectGameHtml;
                 Web.CoreWebView2.WebResourceRequested += WebResourceRequested_InjectGameHtml;
-                Log("[Bridge] WebResourceRequested filter registered for ddnewpc iframe (any host).");
+                Log("[Bridge] WebResourceRequested filter registered for ddnewpc iframe (any host, ctx=Document+All).");
             }
             catch (Exception ex)
             {
@@ -5381,7 +5383,29 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     try
                     {
                         var raw = t.IsCompletedSuccessfully ? t.Result : "";
-                        var info = JsonSerializer.Deserialize<FrameInfoLog>(raw ?? "{}") ?? new FrameInfoLog();
+                        // ExecuteScriptAsync trả về chuỗi JSON (đôi khi được wrap thêm dấu quote), nên xử lý an toàn
+                        string payload = raw ?? "{}";
+                        try
+                        {
+                            if (!string.IsNullOrEmpty(payload) && payload.TrimStart().StartsWith("\""))
+                            {
+                                payload = JsonSerializer.Deserialize<string>(payload) ?? payload;
+                            }
+                        }
+                        catch
+                        {
+                            // nếu unescape lỗi thì giữ nguyên
+                        }
+
+                        FrameInfoLog info;
+                        try
+                        {
+                            info = JsonSerializer.Deserialize<FrameInfoLog>(payload) ?? new FrameInfoLog();
+                        }
+                        catch
+                        {
+                            info = new FrameInfoLog { err = "parse_error", src = "", href = "", name = "" };
+                        }
                         Log($"[FrameInfo][{tag}] name={info.name} href={info.href} src={info.src} err={info.err}");
                     }
                     catch (Exception ex2)
@@ -5438,9 +5462,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (string.IsNullOrEmpty(uri))
                     return;
                 var lower = uri.ToLowerInvariant();
-                if (!lower.Contains("new-dd-cn") || !lower.Contains("ddnewpc/index.html"))
+                // Chỉ chặn iframe chứa ddnewpc/index.html (không phụ thuộc host new-dd-cn hay cloudfront)
+                if (!lower.Contains("ddnewpc/index.html"))
+                {
+                    Log($"[Bridge] WebResourceRequested skip (not ddnewpc): ctx={e.ResourceContext} uri={uri}");
                     return;
+                }
 
+                Log($"[Bridge] WebResourceRequested_InjectGameHtml hit: ctx={e.ResourceContext} uri={uri}");
                 var deferral = e.GetDeferral();
                 try
                 {
