@@ -211,7 +211,10 @@
             if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
                 window.chrome.webview.postMessage(JSON.stringify(msg));
             } else if (window.parent && window.parent !== window && typeof window.parent.postMessage === 'function') {
-                window.parent.postMessage(msg, '*');
+                const clone = Object.assign({}, msg, {
+                        __abx_hw_frame_proxy: 1
+                    });
+                window.parent.postMessage(clone, '*');
             }
         } catch (_) {}
     }
@@ -426,6 +429,22 @@
         }
     }
 
+    if (IS_TOP && !window.__abx_hw_frame_log_bridge) {
+        window.__abx_hw_frame_log_bridge = true;
+        window.addEventListener('message', (evt) => {
+            try {
+                if (!evt || !evt.data || typeof evt.data !== 'object')
+                    return;
+                if (!evt.data.__abx_hw_frame_proxy)
+                    return;
+                const clone = Object.assign({}, evt.data);
+                delete clone.__abx_hw_frame_proxy;
+                if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function')
+                    window.chrome.webview.postMessage(JSON.stringify(clone));
+            } catch (_) {}
+        }, false);
+    }
+
     function tryParseJsonSample(text, limit = 1200) {
         try {
             const trimmed = String(text || '').trim();
@@ -504,6 +523,7 @@
                 return ws;
             };
             window.WebSocket.prototype = OrigWS.prototype;
+            logWs('hook_ready', { message: 'DG websocket tap installed' });
         } catch (err) {
             try {
                 postHomeWatchLog({
