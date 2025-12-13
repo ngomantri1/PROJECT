@@ -3938,68 +3938,10 @@
     }
 
     function startLoginAutoClick() {
-        // Nếu đã có timer auto-click rồi thì thôi, tránh tạo nhiều vòng lặp trùng
-        if (S.loginPopupTimer)
-            return;
-
-        // Nếu đã login thì khỏi auto click nữa
-        if (isLoggedInFromDOM()) {
-            stopLoginAutoClick('Đã đăng nhập - không auto click nút "Đăng nhập" nữa.');
-            return;
-        }
-        if (isLoginSubmitGuardActive()) {
-            try {
-                updateInfo && updateInfo('Đang chờ hoàn tất đăng nhập...');
-            } catch (_) {}
-            return;
-        }
-
-        // Nếu popup login đang mở sẵn thì không cần auto click
-        if (isLoginPopupVisible()) {
-            // chưa start timer nên chỉ bỏ qua
-            return;
-        }
-
-        // bóc bớt quảng cáo/cover che nút login
-        closeAdsAndCovers();
-
-        const started = Date.now();
-        const MAX_MS = 15000; // tối đa ~15s
-
-        const tick = () => {
-            // 1) Nếu trong lúc đang chạy mà đã login → dừng hẳn
-            if (isLoggedInFromDOM()) {
-                stopLoginAutoClick('Đã thấy trạng thái đăng nhập - dừng auto click nút "Đăng nhập".');
-                return;
-            }
-
-            if (isLoginSubmitGuardActive()) {
-                return;
-            }
-
-            // 2) Nếu popup login đang mở → chờ người dùng thao tác,
-            //    KHÔNG click thêm nhưng vẫn giữ timer để sau khi đóng popup sẽ click lại
-            if (isLoginPopupVisible()) {
-                return;
-            }
-
-            // 3) Hết thời gian mà vẫn chưa thấy popup -> dừng để tránh spam
-            if (Date.now() - started > MAX_MS) {
-                stopLoginAutoClick('⚠ Auto click nút "Đăng nhập" quá ' + Math.round(MAX_MS / 1000) + 's nhưng chưa thấy popup.');
-                return;
-            }
-
-            // 4) Thử click 1 lần
-            const ok = clickLoginButtonOnce();
-            if (ok)
-                startLoginPostProbe(); // bắt đầu vòng lấy Username/Balance sau khi login
-        };
-
-        // bắn ngay 1 phát đầu tiên
-        tick();
-        // sau đó 1.2s click lại 1 lần cho tới khi popup mở / timeout / đã login
-        S.loginPopupTimer = setInterval(tick, 1200);
-        updateInfo('Đang auto click nút "Đăng nhập" trong tối đa ' + Math.round(MAX_MS / 1000) + 's (1.2s/lần)...');
+        // Tắt hẳn auto-click nút Đăng nhập theo yêu cầu
+        stopLoginAutoClick();
+        try { updateInfo && updateInfo('Auto click nút \"Đăng nhập\" đã bị vô hiệu hóa.'); } catch (_) {}
+        return;
     }
 
     // ======= Actions =======
