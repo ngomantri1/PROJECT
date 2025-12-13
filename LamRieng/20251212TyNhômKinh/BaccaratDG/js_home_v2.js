@@ -404,7 +404,8 @@
         lastCoordinates: null,
         coordCaptureActive: false,
         templateAutomationRunning: false,
-        templateAutomationStatus: ''
+        templateAutomationStatus: '',
+        templateAutomationTargetIds: null
     };
 
     const ROOT_Z = 2147483647;
@@ -2720,6 +2721,27 @@
         automationConfig7,
         automationConfig8
     ];
+
+    function normalizeAutomationTargets(targets) {
+        if (!targets)
+            return null;
+        const arr = Array.isArray(targets) ? targets : [targets];
+        const set = new Set();
+        for (const item of arr) {
+            if (item == null)
+                continue;
+            const id = String(item).trim();
+            if (id)
+                set.add(id);
+        }
+        return set.size ? set : null;
+    }
+
+    function getFilteredAutomationBoards(targetIds) {
+        if (!targetIds || !targetIds.size)
+            return automationBoards;
+        return automationBoards.filter(board => targetIds.has(board.id));
+    }
     const templateBitmapCache = new Map();
     let templateAutomationPromise = null;
 
@@ -3039,26 +3061,39 @@
             updateAutomationStatus(`[${board.id}] L?i t? ??ng: ` + (err && err.message || err));
         }
     }
-    async function runTemplateAutomationLoop() {
+    async function runTemplateAutomationLoop(targetIds) {
+        const boardsToRun = getFilteredAutomationBoards(targetIds);
+        if (!boardsToRun.length) {
+            updateAutomationStatus('Không tìm thấy bàn để chạy');
+            return;
+        }
         updateAutomationStatus('Khởi động tự động');
         try {
-            const boardTasks = automationBoards.map(board => runAutomationForBoard(board));
+            const boardTasks = boardsToRun.map(board => runAutomationForBoard(board));
             await Promise.all(boardTasks);
         } finally {
             S.templateAutomationRunning = false;
+            S.templateAutomationTargetIds = null;
             automationBoards.forEach(b => b.state.lock = false);
             updateAutomationStatus('Đã dừng tự động');
         }
     }
 
-    function startTemplateAutomation() {
+    function startTemplateAutomation(targets) {
         if (S.templateAutomationRunning) {
             updateAutomationStatus('Đang chạy');
             return 'already-running';
         }
+        const targetIds = normalizeAutomationTargets(targets);
+        const boardsToRun = getFilteredAutomationBoards(targetIds);
+        if (!boardsToRun.length) {
+            updateAutomationStatus('Không có bàn nào để chạy');
+            return 'no-boards';
+        }
+        S.templateAutomationTargetIds = targetIds;
         S.templateAutomationRunning = true;
         automationBoards.forEach(b => b.state.lock = false);
-        templateAutomationPromise = runTemplateAutomationLoop()
+        templateAutomationPromise = runTemplateAutomationLoop(targetIds)
             .catch(err => updateAutomationStatus('Lỗi auto: ' + (err && err.message || err)))
             .finally(() => {
                 templateAutomationPromise = null;
@@ -3072,6 +3107,7 @@
             return 'stopped';
         }
         S.templateAutomationRunning = false;
+        S.templateAutomationTargetIds = null;
         updateAutomationStatus('Dừng theo yêu cầu');
         return 'stopped';
     }
