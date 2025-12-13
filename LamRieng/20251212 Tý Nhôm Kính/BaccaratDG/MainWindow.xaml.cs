@@ -578,6 +578,66 @@ Ví dụ không hợp lệ:
     var key = String((performance && performance.timeOrigin) || Date.now());
     if (window.__cw_autostart_key === key) return;
     window.__cw_autostart_key = key;
+    if (!window.__abx_ws_auto_hook){
+      window.__abx_ws_auto_hook = true;
+      try{
+        if (window.self !== window.top && window.WebSocket && !window.__abx_dg_ws_hooked){
+          window.__abx_dg_ws_hooked = true;
+          var OrigWS = window.WebSocket;
+          var logWs = function(phase, info){
+            try{
+              var payload = {abx:'dg_ws', phase:phase, href:String(location.href||'')};
+              if (info) {
+                for (var k in info) {
+                  payload[k] = info[k];
+                }
+              }
+              if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage){
+                window.chrome.webview.postMessage(JSON.stringify(payload));
+              } else if (window.parent && window.parent !== window){
+                var clone = {};
+                for (var kk in payload) clone[kk] = payload[kk];
+                clone.__abx_hw_frame_proxy = 1;
+                window.parent.postMessage(clone, '*');
+              }
+            }catch(_){}
+          };
+          window.WebSocket = function(){
+            var ws = new OrigWS(...arguments);
+            var url = arguments && arguments[0] ? String(arguments[0]) : '';
+            logWs('open', { url: url });
+            ws.addEventListener('message', function(evt){
+              var sample = '';
+              var data = evt.data;
+              if (typeof data === 'string'){
+                sample = data.slice(0, 600);
+              } else if (data && data.byteLength != null){
+                sample = '[binary len=' + data.byteLength + ']';
+              } else {
+                sample = '[' + (typeof data) + ']';
+              }
+              var jsonSample = '';
+              try{
+                if (typeof data === 'string' && (data[0] === '{' || data[0] === '[')){
+                  jsonSample = JSON.stringify(JSON.parse(data));
+                  if (jsonSample.length > 1200) jsonSample = jsonSample.slice(0, 1200) + '…';
+                }
+              }catch(_){}
+              logWs('message', { url: url, sample: sample, json: jsonSample });
+            });
+            ws.addEventListener('close', function(evt){
+              logWs('close', { url: url, code: evt.code, reason: evt.reason || '', clean: evt.wasClean });
+            });
+            ws.addEventListener('error', function(){
+              logWs('error', { url: url });
+            });
+            return ws;
+          };
+          window.WebSocket.prototype = OrigWS.prototype;
+          logWs('hook_ready', { message: 'autostart hook' });
+        }
+      }catch(_){}
+    }
     var delay=300, tries=0;
     (function tick(){
       try{
