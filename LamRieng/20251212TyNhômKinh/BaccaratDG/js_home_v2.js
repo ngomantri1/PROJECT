@@ -258,6 +258,9 @@
     let captureStatusEl = null;
     let captureHoverEl = null;
     let capturePersistEl = null;
+    let captureSelectionEl = null;
+    let captureSelectionRect = null;
+    let captureDragState = null; // { type:'move'|'select'|'resize', handle?, startX?, startY?, origRect? }
 
     // ABS selector cho Username (đường dẫn tuyệt đối bạn yêu cầu)
     const ABS_USERNAME_TAIL =
@@ -1205,7 +1208,7 @@
             '  <button id="bgo">Go</button>',
             '</div>',
             '<div id="' + CFG.infoId + '" style="white-space:pre;min-height:98px;padding:8px;background:#0b122e;border:1px dashed #334155;border-radius:8px"></div>',
-            '<div id="' + CFG.captureStatusId + '" style="margin-top:6px;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:8px;font-size:11px;line-height:1.35;min-height:34px"></div>'
+            '<div id="' + CFG.captureStatusId + '" style="margin-top:6px;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:8px;font-size:11px;line-height:1.35;min-height:34px;white-space:pre-line"></div>'
         ].join('');
         mount.appendChild(root);
         window.__abx_hw_installed = true;
@@ -1501,8 +1504,10 @@
             '• Has Xóc Đĩa: ' + String(live)
         ];
 
-        if (S.captureActive)
-            L.push('• Capture Mode: đang chờ click vào vùng tín hiệu (Esc để hủy)');
+        if (S.captureActive) {
+            const summary = getCaptureSummaryRect(captureSelectionRect);
+            L.push('• Capture: ' + summary + ' (Kéo/di chuyển → Enter hoặc bấm nút để lưu)');
+        }
         if (S.captureLast)
             L.push('• Capture Signal: ' + getCaptureSummary(S.captureLast));
 
@@ -1867,12 +1872,22 @@
     }
 
     const CAPTURE_ID_PREFIX = '__abx_capture_';
+    const CAPTURE_DEFAULT_SIZE = {
+        w: 160,
+        h: 120
+    };
+    const CAPTURE_MIN_DRAG = 6;
+    const CAPTURE_RESIZE_MARGIN = 6;
+
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
     function ensureCaptureElement(kind) {
         if (kind === 'hover' && captureHoverEl)
             return captureHoverEl;
         if (kind === 'persist' && capturePersistEl)
             return capturePersistEl;
+        if (kind === 'selection' && captureSelectionEl)
+            return captureSelectionEl;
         const mount = document.body || document.documentElement;
         if (!mount)
             return null;
@@ -1888,10 +1903,14 @@
             el.style.border = '2px dashed rgba(251, 191, 36, .9)';
             el.style.background = 'rgba(251, 191, 36, .2)';
             captureHoverEl = el;
-        } else {
+        } else if (kind === 'persist') {
             el.style.border = '2px solid rgba(16, 185, 129, .9)';
             el.style.background = 'rgba(16, 185, 129, .18)';
             capturePersistEl = el;
+        } else {
+            el.style.border = '2px dashed rgba(248, 113, 113, .9)';
+            el.style.background = 'rgba(248, 113, 113, .18)';
+            captureSelectionEl = el;
         }
         return el;
     }
@@ -1910,12 +1929,111 @@
         el.style.display = 'block';
     }
 
+    function cloneRect(rect) {
+        if (!rect)
+            return null;
+        return {
+            x: Math.round(rect.x || 0),
+            y: Math.round(rect.y || 0),
+            w: Math.round(rect.w || 0),
+            h: Math.round(rect.h || 0)
+        };
+    }
+
+    function getDefaultCaptureRect() {
+        if (captureSelectionRect)
+            return cloneRect(captureSelectionRect);
+        if (S.captureLast && S.captureLast.rect)
+            return cloneRect(S.captureLast.rect);
+        const vw = document.documentElement.clientWidth;
+        const vh = document.documentElement.clientHeight;
+        return buildDefaultPointRect(vw / 2, vh / 2);
+    }
+
+    function setCaptureSelectionRect(rect) {
+        captureSelectionRect = rect ? cloneRect(rect) : null;
+        const select = ensureCaptureElement('selection');
+        updateCaptureBoxEl(select, captureSelectionRect);
+        updateCaptureStatus();
+    }
+
+    function getCaptureSummaryRect(rect) {
+        if (!rect)
+            return '(chưa chọn vùng)';
+        return `(${rect.x},${rect.y}) ${rect.w}x${rect.h}`;
+    }
+
+    function getCaptureDragHandle(x, y) {
+        const rect = captureSelectionRect;
+        if (!rect)
+            return null;
+        const margin = CAPTURE_RESIZE_MARGIN;
+        const left = Math.abs(x - rect.x) <= margin && y >= rect.y - margin && y <= rect.y + rect.h + margin;
+        const right = Math.abs(x - (rect.x + rect.w)) <= margin && y >= rect.y - margin && y <= rect.y + rect.h + margin;
+        const top = Math.abs(y - rect.y) <= margin && x >= rect.x - margin && x <= rect.x + rect.w + margin;
+        const bottom = Math.abs(y - (rect.y + rect.h)) <= margin && x >= rect.x - margin && x <= rect.x + rect.w + margin;
+
+        if (top && left)
+            return { type: 'resize', handle: 'top-left' };
+        if (top && right)
+            return { type: 'resize', handle: 'top-right' };
+        if (bottom && left)
+            return { type: 'resize', handle: 'bottom-left' };
+        if (bottom && right)
+            return { type: 'resize', handle: 'bottom-right' };
+        if (left)
+            return { type: 'resize', handle: 'left' };
+        if (right)
+            return { type: 'resize', handle: 'right' };
+        if (top)
+            return { type: 'resize', handle: 'top' };
+        if (bottom)
+            return { type: 'resize', handle: 'bottom' };
+        if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h)
+            return { type: 'move' };
+        return null;
+    }
+
     function toggleCaptureMode() {
         if (S.captureActive) {
-            stopCaptureMode('cancel', 'Chế độ capture đã bị hủy.');
+            confirmCaptureSelection();
         } else {
             startCaptureMode();
         }
+    }
+
+    function normalizeRectFromPoints(x1, y1, x2, y2) {
+        const width = Math.abs(x2 - x1);
+        const height = Math.abs(y2 - y1);
+        let x = Math.min(x1, x2);
+        let y = Math.min(y1, y2);
+        const vw = document.documentElement.clientWidth;
+        const vh = document.documentElement.clientHeight;
+        x = clamp(x, 0, vw);
+        y = clamp(y, 0, vh);
+        const w = Math.max(0, Math.min(width, Math.max(0, vw - x)));
+        const h = Math.max(0, Math.min(height, Math.max(0, vh - y)));
+        return {
+            x: Math.round(x),
+            y: Math.round(y),
+            w: Math.round(w),
+            h: Math.round(h)
+        };
+    }
+
+    function buildDefaultPointRect(x, y) {
+        const vw = document.documentElement.clientWidth;
+        const vh = document.documentElement.clientHeight;
+        const w = Math.min(CAPTURE_DEFAULT_SIZE.w, vw);
+        const h = Math.min(CAPTURE_DEFAULT_SIZE.h, vh);
+        const left = clamp(x - w / 2, 0, Math.max(0, vw - w));
+        const top = clamp(y - h / 2, 0, Math.max(0, vh - h));
+        return {
+            x: Math.round(left),
+            y: Math.round(top),
+            w: Math.round(w),
+            h: Math.round(h)
+        };
     }
 
     function startCaptureMode() {
@@ -1923,13 +2041,16 @@
             return;
         S.captureActive = true;
         document.addEventListener('pointermove', handleCaptureMove, true);
-        document.addEventListener('pointerdown', handleCaptureClick, true);
+        document.addEventListener('pointerdown', handleCapturePointerDown, true);
+        document.addEventListener('pointerup', handleCapturePointerUp, true);
         document.addEventListener('keyup', handleCaptureKey, true);
         updateCaptureButtonLabel();
         const hover = ensureCaptureElement('hover');
         if (hover)
-            hover.style.display = 'block';
-        updateCaptureStatus('Nhấn vào vùng muốn lưu, Esc để hủy.');
+            hover.style.display = 'none';
+        setCaptureSelectionRect(getDefaultCaptureRect());
+        updateCaptureStatus('Kéo để điều chỉnh vùng, Enter hoặc bấm nút để lưu, Esc để hủy.');
+        captureDragState = null;
     }
 
     function stopCaptureMode(reason, message) {
@@ -1937,16 +2058,76 @@
             return;
         S.captureActive = false;
         document.removeEventListener('pointermove', handleCaptureMove, true);
-        document.removeEventListener('pointerdown', handleCaptureClick, true);
+        document.removeEventListener('pointerdown', handleCapturePointerDown, true);
+        document.removeEventListener('pointerup', handleCapturePointerUp, true);
         document.removeEventListener('keyup', handleCaptureKey, true);
         const hover = ensureCaptureElement('hover');
         if (hover)
             hover.style.display = 'none';
+        const select = ensureCaptureElement('selection');
+        if (select)
+            select.style.display = 'none';
         updateCaptureButtonLabel();
         updateCaptureStatus(message);
+        captureDragState = null;
     }
 
     function handleCaptureMove(e) {
+        if (!S.captureActive)
+            return;
+        const state = captureDragState;
+        if (state && state.type === 'move' && state.origRect) {
+            const vw = document.documentElement.clientWidth;
+            const vh = document.documentElement.clientHeight;
+            const dx = e.clientX - state.startX;
+            const dy = e.clientY - state.startY;
+            const x = clamp(state.origRect.x + dx, 0, Math.max(0, vw - state.origRect.w));
+            const y = clamp(state.origRect.y + dy, 0, Math.max(0, vh - state.origRect.h));
+            setCaptureSelectionRect({
+                x,
+                y,
+                w: state.origRect.w,
+                h: state.origRect.h
+            });
+            return;
+        }
+        if (state && state.type === 'resize' && state.origRect) {
+            const dx = e.clientX - state.startX;
+            const dy = e.clientY - state.startY;
+            const docW = document.documentElement.clientWidth;
+            const docH = document.documentElement.clientHeight;
+            let rect = cloneRect(state.origRect);
+            const handle = state.handle || '';
+            if (handle.includes('left')) {
+                const newX = clamp(rect.x + dx, 0, rect.x + rect.w - CAPTURE_MIN_DRAG);
+                const delta = newX - rect.x;
+                rect.x = newX;
+                rect.w = rect.w - delta;
+            }
+            if (handle.includes('right')) {
+                const newW = clamp(rect.w + dx, CAPTURE_MIN_DRAG, docW - rect.x);
+                rect.w = newW;
+            }
+            if (handle.includes('top')) {
+                const newY = clamp(rect.y + dy, 0, rect.y + rect.h - CAPTURE_MIN_DRAG);
+                const delta = newY - rect.y;
+                rect.y = newY;
+                rect.h = rect.h - delta;
+            }
+            if (handle.includes('bottom')) {
+                const newH = clamp(rect.h + dy, CAPTURE_MIN_DRAG, docH - rect.y);
+                rect.h = newH;
+            }
+            setCaptureSelectionRect(rect);
+            return;
+        }
+        if (state && state.type === 'select' && state.startX != null && state.startY != null) {
+            const rect = normalizeRectFromPoints(state.startX, state.startY, e.clientX, e.clientY);
+            setCaptureSelectionRect(rect);
+            return;
+        }
+        if (captureSelectionRect)
+            return;
         const hover = ensureCaptureElement('hover');
         if (!hover)
             return;
@@ -1960,34 +2141,80 @@
         updateCaptureBoxEl(hover, rect);
     }
 
-    function handleCaptureClick(e) {
-        if (e.button !== 0)
+    function handleCapturePointerDown(e) {
+        if (e.button !== 0 || !S.captureActive)
             return;
         const panel = document.getElementById(CFG.panelId);
         if (panel && panel.contains(e.target))
             return;
         e.preventDefault();
         e.stopPropagation();
-        const target = getCaptureTargetFromEvent(e);
-        const rect = target ? rectOf(target) : {
-            x: e.clientX,
-            y: e.clientY,
-            w: 1,
-            h: 1
-        };
-        const payload = buildCapturePayload(target, rect, e);
+        const rect = captureSelectionRect;
+        const handleInfo = getCaptureDragHandle(e.clientX, e.clientY);
+        if (handleInfo && rect) {
+            captureDragState = {
+                type: handleInfo.type,
+                handle: handleInfo.handle,
+                startX: e.clientX,
+                startY: e.clientY,
+                origRect: cloneRect(rect)
+            };
+        } else {
+            captureDragState = {
+                type: 'select',
+                startX: e.clientX,
+                startY: e.clientY
+            };
+            setCaptureSelectionRect({
+                x: e.clientX,
+                y: e.clientY,
+                w: 0,
+                h: 0
+            });
+        }
+    }
+
+    function handleCapturePointerUp(e) {
+        if (e.button !== 0 || !S.captureActive)
+            return;
+        captureDragState = null;
+        updateCaptureStatus();
+    }
+
+    function handleCaptureKey(e) {
+        if (!S.captureActive)
+            return;
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            confirmCaptureSelection();
+            return;
+        }
+        if (e.key === 'Escape' || e.key === 'Esc') {
+            e.preventDefault();
+            stopCaptureMode('cancel', 'Chế độ capture đã bị hủy.');
+        }
+    }
+
+    function confirmCaptureSelection() {
+        if (!S.captureActive)
+            return;
+        if (!captureSelectionRect)
+            setCaptureSelectionRect(getDefaultCaptureRect());
+        const rect = captureSelectionRect;
+        if (!rect)
+            return;
+        const centerX = rect.x + rect.w / 2;
+        const centerY = rect.y + rect.h / 2;
+        const payload = buildCapturePayload(null, rect, {
+            clientX: Math.round(centerX),
+            clientY: Math.round(centerY)
+        });
         S.captureLast = payload;
         const persist = ensureCaptureElement('persist');
         updateCaptureBoxEl(persist, rect);
         postCaptureSignal(payload);
         updateInfo('Đã ghi nhận vùng tín hiệu mới.');
-        stopCaptureMode('captured');
-    }
-
-    function handleCaptureKey(e) {
-        if (e.key === 'Escape' || e.key === 'Esc') {
-            stopCaptureMode('cancel', 'Chế độ capture đã bị hủy.');
-        }
+        stopCaptureMode('captured', 'Vùng capture đã lưu. Nhấn Capture vùng để chọn lại.');
     }
 
     function getCaptureTargetFromEvent(e) {
@@ -2040,11 +2267,13 @@
         const tag = el ? el.tagName.toLowerCase() : 'viewport';
         const textSnippet = el ? clip(textOf(el), 200) : '';
         const selector = el ? clip(buildCssPath(el), 260) : '';
+        const pointX = ev && typeof ev.clientX === 'number' ? ev.clientX : (rect ? rect.x : 0);
+        const pointY = ev && typeof ev.clientY === 'number' ? ev.clientY : (rect ? rect.y : 0);
         const payload = {
             rect,
             point: {
-                x: ev.clientX,
-                y: ev.clientY
+                x: pointX,
+                y: pointY
             },
             tagName: tag,
             label: textSnippet || tag,
@@ -2095,7 +2324,9 @@
         if (!captureStatusEl)
             return;
         if (S.captureActive) {
-            captureStatusEl.textContent = message || 'Nhấn vào vùng muốn lưu để ghi lại tín hiệu hình ảnh (Esc hủy).';
+            const summary = getCaptureSummaryRect(captureSelectionRect);
+            const prompt = message || 'Kéo để điều chỉnh vùng, Enter hoặc bấm nút để lưu, Esc để hủy.';
+            captureStatusEl.textContent = `Capture: ${summary}\n${prompt}`;
             captureStatusEl.style.borderColor = '#fbbf24';
             return;
         }
@@ -2116,7 +2347,7 @@
     function updateCaptureButtonLabel() {
         if (!captureButtonEl)
             return;
-        captureButtonEl.textContent = S.captureActive ? 'Hủy Capture' : 'Capture vùng';
+        captureButtonEl.textContent = S.captureActive ? 'Lưu vùng' : 'Capture vùng';
     }
 
     function postCaptureSignal(payload) {
