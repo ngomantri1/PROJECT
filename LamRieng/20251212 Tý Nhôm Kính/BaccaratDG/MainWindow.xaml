@@ -556,7 +556,7 @@
                         <Border
                             x:Name="GroupLoginNav"
                             Style="{StaticResource Card}"
-                            Visibility="Visible">
+                            Visibility="Collapsed">
                             <StackPanel>
                                 <StackPanel Style="{StaticResource SectionHeader}">
                                     <TextBlock Style="{StaticResource SectionTitle}" Text="Đăng nhập &amp; Điều hướng" />
@@ -864,20 +864,9 @@
                                 <Grid Margin="0,0,0,10" VerticalAlignment="Center">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
 
                                     <TextBlock Style="{StaticResource SectionTitle}" Text="Chiến lược &amp; Chuỗi tiền" />
-                                    <Button
-                                        x:Name="BtnGoHome"
-                                        Grid.Column="1"
-                                        MinWidth="150"
-                                        Margin="12,0,0,0"
-                                        Padding="12,8"
-                                        HorizontalAlignment="Right"
-                                        Click="BtnGoHome_Click"
-                                        Content="Quay về trang chủ"
-                                        Style="{StaticResource PrimaryButton}" />
                                 </Grid>
 
                                 <Grid>
@@ -1139,12 +1128,25 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
+
+                                    <!--  Nút Tiêm JS  -->
+                                    <Button
+                                        x:Name="BtnInjectJs"
+                                        Grid.Column="0"
+                                        MinWidth="120"
+                                        Padding="13"
+                                        Click="InjectJs_Click"
+                                        Content="Tiêm JS"
+                                        Style="{StaticResource PrimaryButton}"
+                                        Visibility="Visible" />
 
                                     <!--  Nút Bắt đầu cược  -->
                                     <Button
                                         x:Name="BtnPlay"
-                                        Grid.Column="0"
+                                        Grid.Column="1"
+                                        Margin="12,0,0,0"
                                         MinWidth="140"
                                         Padding="13"
                                         Click="PlayXocDia_Click"
@@ -1155,7 +1157,7 @@
                                     <!--  Checkbox Dùng thử  -->
                                     <CheckBox
                                         x:Name="ChkTrial"
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         Margin="12,0,0,0"
                                         VerticalAlignment="Center"
                                         Click="ChkTrial_Click"
@@ -1175,7 +1177,7 @@
                                     <!--  Checkbox Khóa chuột  -->
                                     <CheckBox
                                         x:Name="ChkLockMouse"
-                                        Grid.Column="2"
+                                        Grid.Column="3"
                                         Margin="12,0,0,0"
                                         VerticalAlignment="Center"
                                         Checked="ChkLockMouse_Checked"
@@ -2021,9 +2023,6 @@
         </Grid>
     </DockPanel>
 </Window>
-
-
-
 
 
 

@@ -215,9 +215,9 @@ namespace BaccaratPPRR88
         private bool _webMsgHooked; // �`��� g��_n WebMessageReceived �`A�ng 1 l��n
         private string? _lastForcedLobbyUrl; // luu URL lobby PP da force navigate
         private string? _topForwardId, _appJsRegId;           // id script TOP_FORWARD
-                                                              // ID riêng cho autostart của trang Home (đừng dùng chung với _homeJsRegId)
+                                                              // ID riêng cho autostart của trang Home
         private string? _homeAutoStartId;
-        private string? _homeJsRegId;
+        private string? _homeJsRegId;                         // đăng ký js_home_v2 chạy trên tài liệu mới
         private bool _frameHooked;               // đã gắn FrameCreated?
         private string? _lastDocKey;             // key document hiện tại (performance.timeOrigin)
                                                  // Bridge đăng ký toàn cục
@@ -984,20 +984,18 @@ Ví dụ không hợp lệ:
         {
             try
             {
+                if (GroupLoginNav != null)
+                    GroupLoginNav.Visibility = Visibility.Collapsed;
+
+                if (GroupStrategyMoney != null)
+                    GroupStrategyMoney.Visibility = Visibility.Visible;
+                if (GroupConsole != null)
+                    GroupConsole.Visibility = Visibility.Visible;
+                if (GroupStatus != null)
+                    GroupStatus.Visibility = Visibility.Visible;
+
                 if (isGame)
                 {
-                    if (GroupLoginNav != null)
-                        GroupLoginNav.Visibility = Visibility.Collapsed;
-
-                    if (GroupStrategyMoney != null)
-                        GroupStrategyMoney.Visibility = Visibility.Visible;
-                    if (GroupConsole != null)
-                        GroupConsole.Visibility = Visibility.Visible;
-                    if (GroupStatus != null)
-                        GroupStatus.Visibility = Visibility.Visible;
-                    if (GroupRoomList != null)
-                        GroupRoomList.Visibility = Visibility.Visible;
-
                     var now = DateTime.UtcNow;
                     if (_roomListLoading == 0 &&
                         (_roomList.Count == 0 || (now - _roomListLastLoaded) > TimeSpan.FromSeconds(10)))
@@ -1006,21 +1004,7 @@ Ví dụ không hợp lệ:
                         _ = RefreshRoomListAsync();
                     }
                 }
-                else
-                {
-                    if (GroupLoginNav != null)
-                        GroupLoginNav.Visibility = Visibility.Visible;
-
-                    if (GroupStrategyMoney != null)
-                        GroupStrategyMoney.Visibility = Visibility.Collapsed;   // <--- sửa về Collapsed
-                    if (GroupConsole != null)
-                        GroupConsole.Visibility = Visibility.Collapsed;
-                    if (GroupStatus != null)
-                        GroupStatus.Visibility = Visibility.Collapsed;
-                    if (GroupRoomList != null)
-                        GroupRoomList.Visibility = Visibility.Collapsed;
-                }
-                }
+            }
             catch (Exception ex)
             {
                 Log("[SetModeUi] " + ex);
@@ -2455,26 +2439,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
             await NavigateIfNeededAsync(T(TxtUrl).Trim());
         }
 
-        private async void BtnGoHome_Click(object sender, RoutedEventArgs e)
+        private async void InjectJs_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                // Reset force-lobby guard when returning to home
-                _lastForcedLobbyUrl = null;
-
-                var home = (_cfg?.Url ?? DEFAULT_URL)?.Trim();
-                if (string.IsNullOrWhiteSpace(home))
-                    home = DEFAULT_URL;
-                if (!Regex.IsMatch(home, @"^[a-zA-Z][a-zA-Z0-9+.-]*://", RegexOptions.IgnoreCase))
-                    home = "https://" + home;
-
-                await NavigateIfNeededAsync(home);
+                var ok = await InjectHomeJsNowAsync();
+                Log("[InjectHomeJs] " + (ok ? "ok" : "failed"));
             }
             catch (Exception ex)
             {
-                Log("[GoHome] " + ex.Message);
+                Log("[InjectHomeJs] " + ex.Message);
             }
         }
+
         private void Exit_Click(object sender, RoutedEventArgs e) => Close();
         private void StartLoop_Click(object sender, RoutedEventArgs e)
         {
@@ -4987,10 +4964,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (_appJsRegId == null && !string.IsNullOrEmpty(_appJs))
                 _appJsRegId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(_appJs);
 
-            // NEW: đăng ký Home JS
             if (_homeJsRegId == null && !string.IsNullOrEmpty(_homeJs))
                 _homeJsRegId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(_homeJs);
 
+            // NEW: đăng ký Home JS
             if (_autoStartId == null)
                 _autoStartId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(FRAME_AUTOSTART);
             if (_homeAutoStartId == null)
@@ -5047,11 +5024,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (!string.IsNullOrEmpty(_appJs))
                     await Web.CoreWebView2.ExecuteScriptAsync(_appJs);
 
-                // NEW: tiêm Home JS luôn (an toàn trên Game vì nó tự no-op)
                 if (!string.IsNullOrEmpty(_homeJs))
                     await Web.CoreWebView2.ExecuteScriptAsync(_homeJs);
 
-                // Kích autostart trên top (idempotent – nếu không có __cw_startPush thì không sao)
+                // Kích autostart trên top (idempotent - nếu không có __cw_startPush thì không sao)
                 await Web.CoreWebView2.ExecuteScriptAsync(FRAME_AUTOSTART);
                 // Nếu KHÔNG phải host games.* thì khởi động push của js_home_v2
                 await Web.CoreWebView2.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
@@ -5064,6 +5040,33 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         }
 
+        private async Task<bool> InjectHomeJsNowAsync()
+        {
+            if (!IsWebAlive)
+                return false;
+            await EnsureBridgeRegisteredAsync();
+            if (!IsWebAlive)
+                return false;
+
+            _homeJs ??= await LoadHomeJsAsync();
+            if (string.IsNullOrWhiteSpace(_homeJs))
+            {
+                Log("[InjectHomeJs] script empty");
+                return false;
+            }
+
+            try
+            {
+                await Web.CoreWebView2.ExecuteScriptAsync(_homeJs);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log("[InjectHomeJs] error: " + ex.Message);
+                return false;
+            }
+        }
+
 
         private void CoreWebView2_FrameCreated_Bridge(object? sender, CoreWebView2FrameCreatedEventArgs e)
         {
@@ -5073,9 +5076,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 // Tiêm ngay (idempotent)
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
+                try
+                {
+                    var mi = f.GetType().GetMethod("AddScriptToExecuteOnDocumentCreatedAsync");
+                    if (mi != null && !string.IsNullOrEmpty(_homeJs))
+                        _ = (Task)mi.Invoke(f, new object[] { _homeJs })!;
+                }
+                catch { }
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
-                // NEW: inject Home JS vào frame
                 if (!string.IsNullOrEmpty(_homeJs))
                     _ = f.ExecuteScriptAsync(_homeJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
@@ -5179,6 +5188,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
+                if (!string.IsNullOrEmpty(_homeJs))
+                    _ = f.ExecuteScriptAsync(_homeJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
 
                 Log("[Bridge] Frame DOMContentLoaded -> reinjected + autostart.");
@@ -5200,6 +5211,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
+                if (!string.IsNullOrEmpty(_homeJs))
+                    _ = f.ExecuteScriptAsync(_homeJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
 
                 Log("[Bridge] Frame NavigationCompleted -> reinjected + autostart.");
@@ -6436,7 +6449,3 @@ private async Task<CancellationTokenSource> DebounceAsync(
     }
 
 }
-
-
-
-

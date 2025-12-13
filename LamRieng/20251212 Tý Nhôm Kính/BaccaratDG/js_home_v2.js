@@ -205,6 +205,19 @@
         return;
     }
 
+    function postHomeWatchLog(payload) {
+        try {
+            const msg = typeof payload === 'object' ? payload : { text: String(payload) };
+            msg.abx = msg.abx || 'textmap_log';
+            msg.href = String(location.href || '');
+            if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
+                window.chrome.webview.postMessage(JSON.stringify(msg));
+            } else if (window.parent && window.parent !== window && typeof window.parent.postMessage === 'function') {
+                window.parent.postMessage(msg, '*');
+            }
+        } catch (_) {}
+    }
+
     // Chạy 1 lần duy nhất và chỉ ở top window (không chạy trong iframe)
     if (window.__abx_hw_installed)
         return; // chỉ kiểm tra, KHÔNG set ở đây
@@ -2021,6 +2034,14 @@
     function scanTexts(limit) {
         const all = getOrdered('text');
         const list = all.slice(0, Math.max(1, Math.min(limit || 200, all.length)));
+        postHomeWatchLog({
+            abx: 'textmap_scan',
+            kind: 'text',
+            count: list.length,
+            raw: all.length,
+            hasPanel: !!$panel(),
+            section: 'scanTexts'
+        });
         console.group('[text] Scan ' + list.length + '/' + all.length);
         list.forEach(it => {
             const r = rectOf(it.el);
