@@ -1895,7 +1895,7 @@
         return arr;
     }
     function collectTexts() {
-        const state = { i: 0 };
+        const state = { i: 0, frames: [] };
         const results = [];
         const visit = (win, srcTag, depth = 0) => {
             let doc;
@@ -1907,10 +1907,20 @@
             if (!doc || !doc.body)
                 return;
 
+            const label = (() => {
+                try {
+                    const href = win.location && win.location.href;
+                    if (href)
+                        return clip(href, 140);
+                } catch (_) {}
+                return srcTag || (depth === 0 ? 'top' : 'frame');
+            })();
+
             const NF = win.NodeFilter || NodeFilter;
             const walker = doc.createTreeWalker(doc.body, NF.SHOW_TEXT, {
                 acceptNode: n => (n.nodeValue || '').trim().length > 0 ? NF.FILTER_ACCEPT : NF.FILTER_SKIP
             });
+            const before = results.length;
             let node;
             while (node = walker.nextNode()) {
                 const el = node.parentElement;
@@ -1925,9 +1935,11 @@
                     rect: r,
                     tag: el.tagName.toLowerCase(),
                     text: (node.nodeValue || '').trim(),
-                    src: srcTag || (depth ? 'frame' : 'visible')
+                    src: label
                 });
             }
+            const added = results.length - before;
+            state.frames.push({ src: label, depth, count: added });
 
             // ===== DEEP SOURCES: thêm "text chìm" =====
             const pushDeep = (el, text, srcTagDeep) => {
@@ -1943,7 +1955,7 @@
                     rect: r,
                     tag: el.tagName.toLowerCase(),
                     text: t,
-                    src: srcTagDeep || srcTag || (depth ? 'frame' : 'deep')
+                    src: srcTagDeep || label
                 });
             };
 
@@ -2029,18 +2041,21 @@
                     const f = frames[i];
                     if (!f || f === win)
                         continue;
-                    let label = srcTag || 'frame';
-                    try {
-                        const href = f.location && f.location.href;
-                        if (href)
-                            label = href;
-                    } catch (_) {}
                     visit(f, label, depth + 1);
                 }
             } catch (_) {}
         };
 
-        visit(window, 'visible', 0);
+        visit(window, 'top', 0);
+        try {
+            postHomeWatchLog({
+                abx: 'textmap_frames',
+                count: results.length,
+                frames: state.frames.slice(0, 15),
+                framesCount: state.frames.length,
+                section: 'collectTexts'
+            });
+        } catch (_) {}
         return results;
     }
 
@@ -2372,6 +2387,34 @@
         });
     }
 
+    function forwardScanToChildFrames(kind, limit, reqId) {
+        try {
+            const frames = Array.from(document.querySelectorAll('iframe'));
+            if (!frames.length)
+                return;
+            logFrameScanDebug('child_request', {
+                kind,
+                limit,
+                reqId,
+                frames: frames.map((f, idx) => Object.assign({ idx }, describeFrame(f)))
+            });
+            frames.forEach((f, idx) => {
+                try {
+                    const w = f.contentWindow;
+                    if (w && w.postMessage) {
+                        w.postMessage({
+                            abx: 'hw_scan_req',
+                            kind: kind || 'text',
+                            limit: limit || 200,
+                            reqId,
+                            idx
+                        }, '*');
+                    }
+                } catch (_) {}
+            });
+        } catch (_) {}
+    }
+
     window.__abx_hw_scanLinks = scanLinks;
     window.__abx_hw_scanTexts = scanTexts;
         window.__abx_hw_scanClosePopups = scanClosePopups;
@@ -2394,6 +2437,7 @@
                 const limit = d.limit || 200;
                 const ready = document.readyState;
                 const hasBody = !!document.body;
+                forwardScanToChildFrames(kind, limit, d.reqId || '');
                 logFrameScanDebug('frame_collect_begin', {
                     kind,
                     limit,
