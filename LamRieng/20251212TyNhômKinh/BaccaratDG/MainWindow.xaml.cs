@@ -217,6 +217,8 @@ namespace BaccaratDG
         private string? _topForwardId, _appJsRegId;           // id script TOP_FORWARD
                                                               // ID riêng cho autostart của trang Home
         private string? _homeAutoStartId;
+        private DateTime _lastGameInterceptTs = DateTime.MinValue;
+        private DateTime _lastGameFrameNavTs = DateTime.MinValue;
         private string? _homeJsRegId;                         // đăng ký js_home_v2 chạy trên tài liệu mới
         private bool _frameHooked;               // đã gắn FrameCreated?
         private string? _lastDocKey;             // key document hiện tại (performance.timeOrigin)
@@ -5064,6 +5066,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 Web.CoreWebView2.AddWebResourceRequestedFilter("https://*/ddnewpc/index.html*", CoreWebView2WebResourceContext.Document);
                 // Bổ sung filter ALL để xem có context khác Document hay không
                 Web.CoreWebView2.AddWebResourceRequestedFilter("https://*/ddnewpc/index.html*", CoreWebView2WebResourceContext.All);
+                // Debug: filter bắt mọi request để ghi log (chỉ xử lý khi vào handler)
+                Web.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
                 Web.CoreWebView2.WebResourceRequested -= WebResourceRequested_InjectGameHtml;
                 Web.CoreWebView2.WebResourceRequested += WebResourceRequested_InjectGameHtml;
                 Log("[Bridge] WebResourceRequested filter registered for ddnewpc iframe (any host, ctx=Document+All).");
@@ -5443,10 +5447,21 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (!isGame)
                     return;
 
+                _lastGameFrameNavTs = DateTime.UtcNow;
                 Log($"[FrameGame] inject game frame name={f.Name} uriHint={hint}");
                 _ = InjectFrameScriptsAsync(f, $"GameFrame.{reason}");
                 // Thử gọi scanTexts để xác nhận script hoạt động
                 _ = f.ExecuteScriptAsync("try{scanTexts && scanTexts(500);}catch(_){ }");
+
+                // Nếu sau 3s không thấy interceptor hit, log cảnh báo (có thể bị chặn)
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(3000);
+                    if (_lastGameInterceptTs < _lastGameFrameNavTs)
+                    {
+                        Log("[FrameGame] warning: no WebResourceRequested hit for game iframe trong 3s, có thể bị chặn/không inject được HTML.");
+                    }
+                });
             }
             catch (Exception ex)
             {
@@ -5469,6 +5484,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     return;
                 }
 
+                _lastGameInterceptTs = DateTime.UtcNow;
                 Log($"[Bridge] WebResourceRequested_InjectGameHtml hit: ctx={e.ResourceContext} uri={uri}");
                 var deferral = e.GetDeferral();
                 try
