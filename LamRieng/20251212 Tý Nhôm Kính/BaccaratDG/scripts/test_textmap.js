@@ -6,6 +6,19 @@
             console.log('[HomeWatch] TextMapTest', ...args);
     };
 
+    const postTrace = (payload) => {
+        try {
+            const msg = typeof payload === 'object' ? { ...payload } : { message: String(payload) };
+            msg.abx = msg.abx || 'textmap_test';
+            msg.href = String(location.href || '');
+            if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
+                window.chrome.webview.postMessage(JSON.stringify(msg));
+            } else if (window.parent && window.parent !== window && typeof window.parent.postMessage === 'function') {
+                window.parent.postMessage(msg, '*');
+            }
+        } catch (_) {}
+    };
+
     const dumpTextMap = () => {
         const map = window.__cw_textMap || {};
         log('TextMap keys:', Object.keys(map).length);
@@ -68,7 +81,12 @@
         return texts;
     };
 
+    const texts = showTopTexts(50);
     log('Running TextMap test. TextMap hook ready?', !!window.__cw_textMap);
     dumpTextMap();
-    showTopTexts(50);
+    postTrace({
+        abx: 'textmap_test',
+        count: texts.length,
+        sample: texts.slice(0, 5).map(it => ({ idx: it.idx, text: it.text || '', tail: it.tail }))
+    });
 })();
