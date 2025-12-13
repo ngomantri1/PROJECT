@@ -5061,10 +5061,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
             // Intercept iframe game HTML để chèn home JS (ddnewpc/index.html trên new-dd-cn.*)
             try
             {
-                Web.CoreWebView2.AddWebResourceRequestedFilter("https://new-dd-cn.*ddnewpc/index.html*", CoreWebView2WebResourceContext.Document);
+                Web.CoreWebView2.AddWebResourceRequestedFilter("https://*/ddnewpc/index.html*", CoreWebView2WebResourceContext.Document);
                 Web.CoreWebView2.WebResourceRequested -= WebResourceRequested_InjectGameHtml;
                 Web.CoreWebView2.WebResourceRequested += WebResourceRequested_InjectGameHtml;
-                Log("[Bridge] WebResourceRequested filter registered for ddnewpc iframe.");
+                Log("[Bridge] WebResourceRequested filter registered for ddnewpc iframe (any host).");
             }
             catch (Exception ex)
             {
@@ -5375,7 +5375,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 var rawTask = f.ExecuteScriptAsync(
-                    "(function(){try{return JSON.stringify({href:location.href||'',name:window.name||'',src:(window.frameElement&&window.frameElement.getAttribute('src'))||''});}catch(e){return JSON.stringify({href:'',name:'',src:'',err:String(e)})}})();");
+                    "(function(){try{return JSON.stringify({href:String(location.href||''),name:String(window.name||''),src:(window.frameElement&&window.frameElement.getAttribute('src'))||''});}catch(e){return JSON.stringify({href:'',name:'',src:'',err:String(e)})}})();");
                 rawTask.ContinueWith(t =>
                 {
                     try
@@ -5444,10 +5444,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var deferral = e.GetDeferral();
                 try
                 {
-                    // Tự fetch HTML rồi chèn home JS
                     string html = "";
-                    using (var http = new HttpClient())
+                    if (e.Response != null && e.Response.Content != null)
                     {
+                        using var reader = new StreamReader(e.Response.Content, Encoding.UTF8, true, 8192, true);
+                        html = await reader.ReadToEndAsync();
+                    }
+                    if (string.IsNullOrEmpty(html))
+                    {
+                        using var http = new HttpClient();
                         html = await http.GetStringAsync(uri);
                     }
                     var injected = new StringBuilder();
