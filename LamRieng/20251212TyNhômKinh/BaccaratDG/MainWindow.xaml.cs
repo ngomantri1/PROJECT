@@ -4988,7 +4988,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var asm = Assembly.GetExecutingAssembly();
             using var s = asm.GetManifestResourceStream(resName)
                 ?? throw new FileNotFoundException($"Resource not found: {resName}");
-            using var r = new StreamReader(s);
+            using var r = new StreamReader(s, Encoding.UTF8, true);
             return r.ReadToEnd();
         }
 
@@ -5008,13 +5008,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var diskPath = Path.Combine(AppContext.BaseDirectory, "js_home_v2.js");
                 if (File.Exists(diskPath))
                 {
-                    var text = RemoveUtf8Bom(await File.ReadAllTextAsync(diskPath));
+                    var text = RemoveUtf8Bom(await File.ReadAllTextAsync(diskPath, Encoding.UTF8));
                     Log($"[Bridge] Loaded HOME JS from disk: {diskPath} (len={text.Length})");
                     if (!string.IsNullOrWhiteSpace(text))
                         return text;
                     Log("[Bridge] HOME JS on disk is empty: " + diskPath);
                 }
-                }
+            }
             catch (Exception ex)
             {
                 Log("[Bridge] Read HOME JS on disk failed: " + ex.Message);
@@ -5066,8 +5066,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 Web.CoreWebView2.AddWebResourceRequestedFilter("https://*/ddnewpc/index.html*", CoreWebView2WebResourceContext.Document);
                 // Bổ sung filter ALL để xem có context khác Document hay không
                 Web.CoreWebView2.AddWebResourceRequestedFilter("https://*/ddnewpc/index.html*", CoreWebView2WebResourceContext.All);
-                // Debug: filter bắt mọi request để ghi log (chỉ xử lý khi vào handler)
-                Web.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
                 Web.CoreWebView2.WebResourceRequested -= WebResourceRequested_InjectGameHtml;
                 Web.CoreWebView2.WebResourceRequested += WebResourceRequested_InjectGameHtml;
                 Log("[Bridge] WebResourceRequested filter registered for ddnewpc iframe (any host, ctx=Document+All).");
@@ -5334,7 +5332,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     {
                         LogFrameDetails(f, "nav_completed");
                         _ = InjectFrameScriptsAsync(f, "Frame.NavigationCompleted");
-                        TryInjectForGameFrame(f, e.NavigationId.ToString(), "NavCompleted");
+                        TryInjectForGameFrame(f, null, "NavCompleted");
                     }
                     catch (Exception ex)
                     {
@@ -5451,7 +5449,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 Log($"[FrameGame] inject game frame name={f.Name} uriHint={hint}");
                 _ = InjectFrameScriptsAsync(f, $"GameFrame.{reason}");
                 // Thử gọi scanTexts để xác nhận script hoạt động
-                _ = f.ExecuteScriptAsync("try{scanTexts && scanTexts(500);}catch(_){ }");
+                _ = f.ExecuteScriptAsync("try{window.__abx_hw_scanTexts && window.__abx_hw_scanTexts(500);}catch(_){ }");
 
                 // Nếu sau 3s không thấy interceptor hit, log cảnh báo (có thể bị chặn)
                 _ = Task.Run(async () =>
@@ -5479,10 +5477,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var lower = uri.ToLowerInvariant();
                 // Chỉ chặn iframe chứa ddnewpc/index.html (không phụ thuộc host new-dd-cn hay cloudfront)
                 if (!lower.Contains("ddnewpc/index.html"))
-                {
-                    Log($"[Bridge] WebResourceRequested skip (not ddnewpc): ctx={e.ResourceContext} uri={uri}");
                     return;
-                }
 
                 _lastGameInterceptTs = DateTime.UtcNow;
                 Log($"[Bridge] WebResourceRequested_InjectGameHtml hit: ctx={e.ResourceContext} uri={uri}");
@@ -6733,16 +6728,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 SetError(LblPatError, null);
             }
         }
-
-
-
-
-
-
-
-
-
-
 
 
 

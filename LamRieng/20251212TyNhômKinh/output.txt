@@ -1,0 +1,198 @@
+[15:20:07] Loaded config: C:\Users\Admin\AppData\Local\BaccaratDG\config.json
+[15:20:07] [StakeCsv] loaded: 1000-3000-7000-15000-33000-69000-142000-291000-595000-1215000 -> 10 mức
+[15:20:07] [StakeCsv.load] id=IncreaseWhenLose => 1000-3000-7000-15000-33000-69000-142000-291000-595000-1215000 -> 10
+[15:20:07] [StakeCsv.load] id=IncreaseWhenLose => 1000-3000-7000-15000-33000-69000-142000-291000-595000-1215000 -> 10
+[15:20:07] [WV2] EnsureFixedRuntimePresentAsync failed, fallback Evergreen: Missing embedded resource: BaccaratDG.ThirdParty.WebView2Fixed_win-x64.zip
+[15:20:08] [Bridge] Loaded HOME JS from embedded: BaccaratDG.js_home_v2.js (len=215013)
+[15:20:08] [CDP] Network tap enabled
+[15:20:08] [Bridge] WebResourceRequested filter registered for ddnewpc iframe (any host, ctx=Document+All).
+[15:20:08] [Bridge] Injected on current doc, key=1765614008116.9
+[15:20:08] [Bridge] CoreWebView2 bound.
+[15:20:08] [Bridge] Injected on current doc, key=1765614008116.9
+[15:20:08] [Web] Navigate: https://789bettg.net/
+[15:20:09] [Bridge] Frame injected + autostart armed.
+[15:20:09] [FrameInject] FrameCreated begin name=
+[15:20:09] [FrameInject] FrameCreated ok name=
+[15:20:09] [Frame NavStart] name= uri=https://www.googletagmanager.com/ns.html?id=GTM-T6KXM2DP
+[15:20:09] [FrameInfo][created] name= href= src= err=
+[15:20:09] [Bridge] Injected on current doc, key=1765614008273.4
+[15:20:09] [FrameInject] Frame.DOMContentLoaded begin name=
+[15:20:09] [FrameInject] Frame.DOMContentLoaded ok name=
+[15:20:09] [FrameGame] skip (no uri) name= reason=DOMLoaded
+[15:20:09] [FrameInject] Frame.NavigationCompleted begin name=
+[15:20:09] [FrameInject] Frame.NavigationCompleted ok name=
+[15:20:09] [Frame NavDone] name= uri=https://www.googletagmanager.com/ns.html?id=GTM-T6KXM2DP success=True status=Unknown
+[15:20:09] [FrameInfo][dom_loaded] name= href=https://www.googletagmanager.com/ns.html?id=GTM-T6KXM2DP src= err=
+[15:20:09] [FrameInfo][nav_completed] name= href=https://www.googletagmanager.com/ns.html?id=GTM-T6KXM2DP src= err=
+[15:20:09] [FrameInfo][nav_done] name= href=https://www.googletagmanager.com/ns.html?id=GTM-T6KXM2DP src= err=
+[15:20:09] [Bridge] Frame injected + autostart armed.
+[15:20:09] [FrameInject] FrameCreated begin name=
+[15:20:09] [FrameInject] FrameCreated ok name=
+[15:20:09] [Frame NavStart] name= uri=https://789bettg.net/account/user-profile
+[15:20:09] [FrameInfo][created] name= href= src= err=
+[15:20:10] [FrameInject] Frame.DOMContentLoaded begin name=
+[15:20:10] [FrameInject] Frame.DOMContentLoaded ok name=
+[15:20:10] [FrameGame] skip (no uri) name= reason=DOMLoaded
+[15:20:10] [FrameInject] Frame.NavigationCompleted begin name=
+[15:20:10] [FrameInject] Frame.NavigationCompleted ok name=
+[15:20:10] [Frame NavDone] name= uri=https://789bettg.net/account/user-profile success=True status=Unknown
+[15:20:10] [FrameInfo][dom_loaded] name= href=https://789bettg.net/account/user-profile src=/account/user-profile err=
+[15:20:10] [FrameInfo][nav_completed] name= href=https://789bettg.net/account/user-profile src=/account/user-profile err=
+[15:20:10] [FrameInfo][nav_done] name= href=https://789bettg.net/account/user-profile src=/account/user-profile err=
+[15:20:29] [Web] NavigationCompleted event: OK
+[15:20:29] [Bridge] WebResourceRequested filter registered for ddnewpc iframe (any host, ctx=Document+All).
+[15:20:29] [AutoFill] sent set_login to webview
+[15:20:29] [HasAnyWebTick] hasGame=False (0001-01-01T00:00:00.0000000), hasHome=False (0001-01-01T00:00:00.0000000)
+[15:20:29] [Web] NavigationCompleted: OK
+[15:20:29] [AutoFill] sent set_login to webview
+[15:20:29] [AutoFill] done (filled only, no click)
+[15:20:29] [AutoFill] done (filled only, no click)
+[15:20:29] [AutoFill] sent set_login to webview
+[15:20:29] [AutoFill] done (filled only, no click)
+[15:20:29] [Bridge] Injected on current doc, key=1765614029507.2
+[15:20:29] [Bridge] Frame injected + autostart armed.
+[15:20:29] [FrameInject] FrameCreated begin name=
+[15:20:29] [FrameInject] FrameCreated ok name=
+[15:20:29] [Frame NavStart] name= uri=https://www.googletagmanager.com/ns.html?id=GTM-T6KXM2DP
+[15:20:29] [FrameInfo][created] name= href= src= err=
+[15:20:30] [FrameInject] Frame.DOMContentLoaded begin name=
+[15:20:30] [FrameInject] Frame.DOMContentLoaded ok name=
+[15:20:30] [FrameGame] skip (no uri) name= reason=DOMLoaded
+[15:20:30] [FrameInject] Frame.NavigationCompleted begin name=
+[15:20:30] [FrameInject] Frame.NavigationCompleted ok name=
+[15:20:30] [Frame NavDone] name= uri=https://www.googletagmanager.com/ns.html?id=GTM-T6KXM2DP success=True status=Unknown
+[15:20:30] [FrameInfo][dom_loaded] name= href=https://www.googletagmanager.com/ns.html?id=GTM-T6KXM2DP src= err=
+[15:20:30] [FrameInfo][nav_completed] name= href=https://www.googletagmanager.com/ns.html?id=GTM-T6KXM2DP src= err=
+[15:20:30] [FrameInfo][nav_done] name= href=https://www.googletagmanager.com/ns.html?id=GTM-T6KXM2DP src= err=
+[15:20:30] [Web] NavigationCompleted event: OK
+[15:20:30] [Bridge] WebResourceRequested filter registered for ddnewpc iframe (any host, ctx=Document+All).
+[15:20:30] [AutoFill] sent set_login to webview
+[15:20:30] [HasAnyWebTick] hasGame=False (0001-01-01T00:00:00.0000000), hasHome=False (0001-01-01T00:00:00.0000000)
+[15:20:30] [AutoFill] done (filled only, no click)
+[15:20:30] [Bridge] Frame injected + autostart armed.
+[15:20:30] [FrameInject] FrameCreated begin name=
+[15:20:30] [FrameInject] FrameCreated ok name=
+[15:20:30] [Frame NavStart] name= uri=https://789bettg.net/account/user-profile
+[15:20:30] [FrameInfo][created] name= href= src= err=
+[15:20:30] [Bridge] Frame injected + autostart armed.
+[15:20:30] [FrameInject] FrameCreated begin name=
+[15:20:30] [FrameInject] FrameCreated ok name=
+[15:20:30] [Frame NavStart] name= uri=https://789bettg.net/account/user-profile
+[15:20:30] [FrameInfo][created] name= href= src= err=
+[PKT] 15:20:30 WS.created wss://789bettg.net/signalr/connect?transport=webSockets&clientProtocol=2.1&connectionToken=lNZYufAyU%2Ba8TGfwJFJTNEG09%2BuS8hcJX6P%2BRSQ1%2BgCc53QItYm4KxGwcSOBnB8PbZvedT4Nd7VPEK0%2BFHjWTBUHhOhuvAmf1jhf4au2C%2Flbnjo40dGazYWfyoliQuaB&connectionData=%5B%7B%22name%22%3A%22mainhub%22%7D%5D&access_token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3NjU2MjAwMjksIm5iZiI6MTc2NTYxNDAyOSwiSWQiOjE2MTcxMzIsIkFjY291bnQiOiJuZ29tYW50cmkiLCJJc1RyaWFsIjpmYWxzZSwiU3lzdGVtQ29kZSI6IlVLMjUxIiwiTG9naW5Ub2tlbiI6Ijk3Njg1OGVhOTdiYTQyNDg4YzVlMGU3NWE4NjE0MDc0IiwiQWRJbmZvIjpudWxsLCJEb21haW4iOiI3ODliZXR0Zy5uZXQifQ.x6wSpeQ55Vxti6_V6KLJTGiMxXM3HHuj22oSDeFD9A4&tid=2 
+[15:20:30] [FrameInject] Frame.DOMContentLoaded begin name=
+[15:20:30] [FrameInject] Frame.DOMContentLoaded ok name=
+[15:20:30] [FrameGame] skip (no uri) name= reason=DOMLoaded
+[15:20:30] [FrameInject] Frame.NavigationCompleted begin name=
+[15:20:30] [FrameInject] Frame.NavigationCompleted ok name=
+[15:20:30] [Frame NavDone] name= uri=https://789bettg.net/account/user-profile success=True status=Unknown
+[15:20:30] [FrameInfo][dom_loaded] name= href=https://789bettg.net/account/user-profile src=/account/user-profile err=
+[15:20:30] [FrameInfo][nav_completed] name= href=https://789bettg.net/account/user-profile src=/account/user-profile err=
+[15:20:30] [FrameInfo][nav_done] name= href=https://789bettg.net/account/user-profile src=/account/user-profile err=
+[15:20:30] [FrameInject] Frame.DOMContentLoaded begin name=
+[15:20:30] [FrameInject] Frame.DOMContentLoaded ok name=
+[15:20:30] [FrameGame] skip (no uri) name= reason=DOMLoaded
+[15:20:30] [FrameInject] Frame.NavigationCompleted begin name=
+[15:20:30] [FrameInject] Frame.NavigationCompleted ok name=
+[15:20:30] [Frame NavDone] name= uri=https://789bettg.net/account/user-profile success=True status=Unknown
+[15:20:30] [FrameInfo][dom_loaded] name= href=https://789bettg.net/account/user-profile src=/account/user-profile err=
+[15:20:30] [FrameInfo][nav_completed] name= href=https://789bettg.net/account/user-profile src=/account/user-profile err=
+[15:20:30] [FrameInfo][nav_done] name= href=https://789bettg.net/account/user-profile src=/account/user-profile err=
+[15:20:35] [Bridge] Frame injected + autostart armed.
+[15:20:35] [FrameInject] FrameCreated begin name=
+[15:20:35] [FrameInject] FrameCreated ok name=
+[15:20:35] [Frame NavStart] name= uri=https://www.googletagmanager.com/ns.html?id=GTM-T6KXM2DP
+[15:20:35] [FrameInfo][created] name= href= src= err=
+[15:20:35] [Bridge] Injected on current doc, key=1765614035110.6
+[15:20:35] [FrameInject] Frame.DOMContentLoaded begin name=
+[15:20:35] [FrameInject] Frame.DOMContentLoaded ok name=
+[15:20:35] [FrameGame] skip (no uri) name= reason=DOMLoaded
+[15:20:35] [FrameInject] Frame.NavigationCompleted begin name=
+[15:20:35] [FrameInject] Frame.NavigationCompleted ok name=
+[15:20:35] [Web] NavigationCompleted event: OK
+[15:20:35] [Bridge] WebResourceRequested filter registered for ddnewpc iframe (any host, ctx=Document+All).
+[15:20:35] [AutoFill] sent set_login to webview
+[15:20:35] [HasAnyWebTick] hasGame=False (0001-01-01T00:00:00.0000000), hasHome=False (0001-01-01T00:00:00.0000000)
+[15:20:35] [Frame NavDone] name= uri=https://www.googletagmanager.com/ns.html?id=GTM-T6KXM2DP success=True status=Unknown
+[15:20:35] [FrameInfo][dom_loaded] name= href=https://www.googletagmanager.com/ns.html?id=GTM-T6KXM2DP src= err=
+[15:20:35] [FrameInfo][nav_completed] name= href=https://www.googletagmanager.com/ns.html?id=GTM-T6KXM2DP src= err=
+[15:20:35] [AutoFill] done (filled only, no click)
+[15:20:35] [FrameInfo][nav_done] name= href=https://www.googletagmanager.com/ns.html?id=GTM-T6KXM2DP src= err=
+[15:20:35] [Bridge] Frame injected + autostart armed.
+[15:20:35] [FrameInject] FrameCreated begin name=
+[15:20:35] [FrameInject] FrameCreated ok name=
+[15:20:35] [Frame NavStart] name= uri=https://789bettg.net/account/user-profile
+[15:20:35] [FrameInfo][created] name= href= src= err=
+[PKT] 15:20:35 WS.created wss://789bettg.net/signalr/connect?transport=webSockets&clientProtocol=2.1&connectionToken=Gjpq5HgKrR5cInRv2fH%2Fj%2BTXXReMe0HibjRsQ%2BvYk%2FSYZPjwJpoQsyFMS3%2BCXD%2FYhlrpjkHjnx6J%2BTga0zNrnUtWDWe%2FPYxfX8A32mtdHkc%2FkTdclEdkeoPL71XD9J6%2B&connectionData=%5B%7B%22name%22%3A%22mainhub%22%7D%5D&access_token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3NjU2MjAwMjksIm5iZiI6MTc2NTYxNDAyOSwiSWQiOjE2MTcxMzIsIkFjY291bnQiOiJuZ29tYW50cmkiLCJJc1RyaWFsIjpmYWxzZSwiU3lzdGVtQ29kZSI6IlVLMjUxIiwiTG9naW5Ub2tlbiI6Ijk3Njg1OGVhOTdiYTQyNDg4YzVlMGU3NWE4NjE0MDc0IiwiQWRJbmZvIjpudWxsLCJEb21haW4iOiI3ODliZXR0Zy5uZXQifQ.x6wSpeQ55Vxti6_V6KLJTGiMxXM3HHuj22oSDeFD9A4&tid=1 
+[15:20:35] [Bridge] Frame injected + autostart armed.
+[15:20:35] [FrameInject] FrameCreated begin name=
+[15:20:35] [FrameInject] FrameCreated ok name=
+[15:20:35] [FrameInfo][created] name= href= src= err=
+[15:20:35] [Frame NavStart] name= uri=about:blank
+[15:20:35] [FrameInject] Frame.DOMContentLoaded begin name=
+[15:20:35] [FrameInject] Frame.DOMContentLoaded ok name=
+[15:20:35] [FrameGame] skip (no uri) name= reason=DOMLoaded
+[15:20:35] [FrameInject] Frame.NavigationCompleted begin name=
+[15:20:35] [FrameInject] Frame.NavigationCompleted ok name=
+[15:20:35] [Frame NavDone] name= uri=about:blank success=True status=Unknown
+[15:20:35] [FrameInfo][dom_loaded] name= href=about:blank src= err=
+[15:20:35] [FrameInfo][nav_completed] name= href=about:blank src= err=
+[15:20:35] [FrameInfo][nav_done] name= href=about:blank src= err=
+[15:20:36] [FrameInject] Frame.DOMContentLoaded begin name=
+[15:20:36] [FrameInject] Frame.DOMContentLoaded ok name=
+[15:20:36] [FrameGame] skip (no uri) name= reason=DOMLoaded
+[15:20:36] [FrameInject] Frame.NavigationCompleted begin name=
+[15:20:36] [FrameInject] Frame.NavigationCompleted ok name=
+[15:20:36] [Frame NavDone] name= uri=https://789bettg.net/account/user-profile success=True status=Unknown
+[15:20:36] [FrameInfo][dom_loaded] name= href=https://789bettg.net/account/user-profile src=/account/user-profile err=
+[15:20:36] [FrameInfo][nav_completed] name= href=https://789bettg.net/account/user-profile src=/account/user-profile err=
+[15:20:36] [FrameInfo][nav_done] name= href=https://789bettg.net/account/user-profile src=/account/user-profile err=
+[15:20:36] [Bridge] Frame injected + autostart armed.
+[15:20:36] [FrameInject] FrameCreated begin name=
+[15:20:36] [FrameInject] FrameCreated ok name=
+[15:20:36] [Frame NavStart] name= uri=https://789bettg.net/account/user-profile
+[15:20:36] [FrameInfo][created] name= href= src= err=
+[15:20:36] [Frame NavStart] name= uri=https://789bettg.net/Account/LoginToSupplier?SupplierType=DG
+[15:20:36] [FrameInject] Frame.DOMContentLoaded begin name=
+[15:20:36] [FrameInject] Frame.DOMContentLoaded ok name=
+[15:20:36] [FrameGame] skip (no uri) name= reason=DOMLoaded
+[15:20:36] [FrameInject] Frame.NavigationCompleted begin name=
+[15:20:36] [FrameInject] Frame.NavigationCompleted ok name=
+[15:20:36] [Frame NavDone] name= uri=https://789bettg.net/account/user-profile success=True status=Unknown
+[15:20:36] [FrameInfo][dom_loaded] name= href=https://789bettg.net/account/user-profile src=/account/user-profile err=
+[15:20:36] [FrameInfo][nav_completed] name= href=https://789bettg.net/account/user-profile src=/account/user-profile err=
+[15:20:36] [FrameInject] Frame.DOMContentLoaded begin name=
+[15:20:36] [FrameInject] Frame.DOMContentLoaded ok name=
+[15:20:36] [FrameGame] skip (no uri) name= reason=DOMLoaded
+[15:20:36] [FrameInject] Frame.NavigationCompleted begin name=
+[15:20:36] [FrameInject] Frame.NavigationCompleted ok name=
+[15:20:36] [Frame NavDone] name= uri=https://789bettg.net/Account/LoginToSupplier?SupplierType=DG success=True status=Unknown
+[15:20:36] [FrameInfo][nav_done] name= href=https://789bettg.net/account/user-profile src=/account/user-profile err=
+[15:20:36] [FrameInfo][dom_loaded] name= href=https://789bettg.net/Account/LoginToSupplier?SupplierType=DG src=/Account/LoginToSupplier?SupplierType=DG err=
+[15:20:36] [FrameInfo][nav_completed] name= href=https://789bettg.net/Account/LoginToSupplier?SupplierType=DG src=/Account/LoginToSupplier?SupplierType=DG err=
+[15:20:36] [FrameInfo][nav_done] name= href=https://789bettg.net/Account/LoginToSupplier?SupplierType=DG src=/Account/LoginToSupplier?SupplierType=DG err=
+[PKT] 15:20:36 WS.created wss://789bettg.net/signalr/connect?transport=webSockets&clientProtocol=2.1&connectionToken=jhNAtTG5N760HauJcZIxZAoFELU3Agrga3FTR2kCXxiwTbaba5TI7vZ%2FF4bLjJeazBM90cdnWIzbcWQA0x6xKNXvnFsK05yffLIzTNG4aVKVRFUOlEa1Xawake7K7UOZ&connectionData=%5B%7B%22name%22%3A%22mainhub%22%7D%5D&access_token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3NjU2MjAwMjksIm5iZiI6MTc2NTYxNDAyOSwiSWQiOjE2MTcxMzIsIkFjY291bnQiOiJuZ29tYW50cmkiLCJJc1RyaWFsIjpmYWxzZSwiU3lzdGVtQ29kZSI6IlVLMjUxIiwiTG9naW5Ub2tlbiI6Ijk3Njg1OGVhOTdiYTQyNDg4YzVlMGU3NWE4NjE0MDc0IiwiQWRJbmZvIjpudWxsLCJEb21haW4iOiI3ODliZXR0Zy5uZXQifQ.x6wSpeQ55Vxti6_V6KLJTGiMxXM3HHuj22oSDeFD9A4&tid=6 
+[15:20:37] [Frame NavStart] name= uri=https://new-dd-cn.izogcnj.com/ddnewpc/direct1.html?token=563381ebb37f4c519a7f7f763ea80443&language=vi&tableId=&backUrl=https://789bettg.net
+[15:20:37] [Frame NavStart] name= uri=https://new-dd-cn.izogcnj.com/ddnewpc/index.html?token=563381ebb37f4c519a7f7f763ea80443&language=vi&tableId=&backUrl=https://789bettg.net&type=4&return=dggw.vip
+[15:20:37] [FrameInject] Frame.NavigationCompleted begin name=
+[15:20:37] [FrameInject] Frame.NavigationCompleted ok name=
+[15:20:37] [Frame NavDone] name= uri=https://new-dd-cn.izogcnj.com/ddnewpc/index.html?token=563381ebb37f4c519a7f7f763ea80443&language=vi&tableId=&backUrl=https://789bettg.net&type=4&return=dggw.vip success=True status=Unknown
+[15:20:37] [FrameGame] inject game frame name= uriHint=https://new-dd-cn.izogcnj.com/ddnewpc/index.html?token=563381ebb37f4c519a7f7f763ea80443&language=vi&tableid=&backurl=https://789bettg.net&type=4&return=dggw.vip
+[15:20:37] [FrameInject] GameFrame.NavDone begin name=
+[15:20:37] [FrameInject] GameFrame.NavDone ok name=
+[15:20:37] [FrameInfo][nav_completed] name= href=https://new-dd-cn.izogcnj.com/ddnewpc/direct1.html?token=563381ebb37f4c519a7f7f763ea80443&language=vi&tableId=&backUrl=https://789bettg.net src= err=
+[15:20:37] [FrameInfo][nav_done] name= href=https://new-dd-cn.izogcnj.com/ddnewpc/direct1.html?token=563381ebb37f4c519a7f7f763ea80443&language=vi&tableId=&backUrl=https://789bettg.net src= err=
+[15:20:38] [FrameInject] Frame.DOMContentLoaded begin name=
+[15:20:38] [FrameInject] Frame.DOMContentLoaded ok name=
+[15:20:38] [FrameGame] skip (no uri) name= reason=DOMLoaded
+[15:20:38] [FrameInject] Frame.NavigationCompleted begin name=
+[15:20:38] [FrameInject] Frame.NavigationCompleted ok name=
+[15:20:38] [Frame NavDone] name= uri=https://new-dd-cn.izogcnj.com/ddnewpc/index.html?token=563381ebb37f4c519a7f7f763ea80443&language=vi&tableId=&backUrl=https://789bettg.net&type=4&return=dggw.vip success=True status=Unknown
+[15:20:38] [FrameGame] inject game frame name= uriHint=https://new-dd-cn.izogcnj.com/ddnewpc/index.html?token=563381ebb37f4c519a7f7f763ea80443&language=vi&tableid=&backurl=https://789bettg.net&type=4&return=dggw.vip
+[15:20:38] [FrameInject] GameFrame.NavDone begin name=
+[15:20:38] [FrameInject] GameFrame.NavDone ok name=
+[15:20:38] [FrameInfo][dom_loaded] name= href=https://new-dd-cn.izogcnj.com/ddnewpc/index.html?token=563381ebb37f4c519a7f7f763ea80443&language=vi&tableId=&backUrl=https://789bettg.net&type=4&return=dggw.vip src= err=
+[15:20:38] [FrameInfo][nav_completed] name= href=https://new-dd-cn.izogcnj.com/ddnewpc/index.html?token=563381ebb37f4c519a7f7f763ea80443&language=vi&tableId=&backUrl=https://789bettg.net&type=4&return=dggw.vip src= err=
+[15:20:38] [FrameInfo][nav_done] name= href=https://new-dd-cn.izogcnj.com/ddnewpc/index.html?token=563381ebb37f4c519a7f7f763ea80443&language=vi&tableId=&backUrl=https://789bettg.net&type=4&return=dggw.vip src= err=
+[15:20:55] [Bridge] WebResourceRequested filter registered for ddnewpc iframe (any host, ctx=Document+All).
+[15:20:55] [InjectHomeJs] ok

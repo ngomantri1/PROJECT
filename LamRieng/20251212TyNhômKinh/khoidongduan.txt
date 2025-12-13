@@ -1,0 +1,72 @@
+Dưới đây là tóm tắt bối cảnh từ một chat cũ.
+Hãy coi như bạn đã đọc toàn bộ lịch sử và code tương ứng, nhưng chỉ dùng thông tin trong tóm tắt này:
+
+
+
+• Mục tiêu chính của project / bug
+
+  - App WPF BaccaratDG/TaiXiuLiveHit tự động hóa đăng nhập WebView2 và mở “Đăng nhập & Baccarat nhiều bàn”, không bật lại popup.
+  - Giai đoạn debug hiện tại: làm TextMap/Scan200TextMap (Home Watch) đọc được dữ liệu đa bàn (iframe game DG), vì hiện chỉ scan được panel top, không thấy nội dung iframe.
+
+  Tech stack (ngôn ngữ, framework, DB…)
+
+  - C# .NET WPF, WebView2.
+  - JavaScript inject vào WebView2: js_home_v2.js.
+  - Bridge WebView2 WebView2LiveBridge.
+
+  Các file / module quan trọng đang liên quan
+
+  - MainWindow.xaml: giao diện, nút “Tiêm JS”, ẩn GroupLoginNav, bỏ RoomList.
+  - MainWindow.xaml.cs: logic WPF, auto login, inject JS, bridge event (FrameCreated/DOMContentLoaded/NavigationCompleted), intercept WebResourceRequested.
+  - js_home_v2.js: Home Watch panel, login helpers, TextMap/Scan200/ScanLinks/overlay, post logs.
+  - scripts/test_textmap.js: test TextMap (log abx:textmap_test).
+
+  Logic chính đã thiết kế (tên hàm, class, luồng xử lý)
+
+  - WPF:
+      - EnsureBridgeRegisteredAsync: đăng ký TOP_FORWARD/_appJs/_homeJs/FRAME_AUTOSTART; hook FrameCreated/DOMContentLoaded/NavigationCompleted; hiện có filter WebResourceRequested cho https://*/ddnewpc/index.html*.
+      - InjectOnNewDocAsync: tiêm TOP_FORWARD/_appJs/_homeJs/autostart khi doc mới.
+      - Auto login: AutoFillLoginAsync, ClickLoginButtonAsync(__cw_clickPopupLogin), WaitForLoginCompletedAsync poll DOM/URL.
+      - VaoXocDia_Click: stop watcher, autofill+login, HomeClickPlayAsync, start push, khóa UI.
+      - HomeClickPlayAsync: ưu tiên __abx_hw_clickPlayXDL, fallback home_click_xoc.
+      - Frame events: CoreWebView2_FrameCreated_Bridge -> inject scripts; TryInjectForGameFrame nếu URL chứa ddnewpc/new-dd-…; InjectFrameScriptsAsync (FRAME_SHIM/_appJs/_homeJs/FRAME_AUTOSTART) + log.
+      - Interceptor WebResourceRequested_InjectGameHtml: lấy HTML (từ response hoặc HttpClient), prepend <script>{_homeJs}</script>, trả response mới.
+  - JS (js_home_v2.js):
+      - Home Watch panel, nút LinksMap/TextMap/Scan200/ClosePopup.
+      - TextMap: collectTexts/links/popups, overlay; scanTexts post abx:'textmap_scan'; collectTexts đệ quy iframe (gắn src/label).
+      - Telemetry mute, login helpers (__cw_clickPopupLogin, __cw_isLoggedInFromDom, __cw_focusCaptcha), close popup.
+      - postHomeWatchLog, postTrace; Scan200Buttons.
+      - textmap_frames log (frames, blockedFrames, reasons: ok/no_visible_text/no_body/blocked_access/no_contentWindow).
+      - TryInjectForGameFrame C# gọi scanTexts(500) trong iframe game sau nav.
+
+  Những lỗi đã gặp & nguyên nhân chính
+
+  - Scan200TextMap chỉ thấy 37 dòng (panel), không thấy iframe game.
+  - textmap_frames luôn chỉ 3 frame (top + 2 blocked: /Account/LoginToSupplier, GTM); iframe game không xuất hiện → JS trong iframe game không post log.
+  - textmap_scan_frame cho iframe game (new-dd-cn/new-dd-cloudfront…) luôn count=0, reason=empty, bodyChildren≈27 → script không chạy/không truy cập được DOM.
+  - LogFrameDetails nhiều lần lỗi JSON parse; frame info không lấy được.
+  - WebResource intercept có thể chưa chèn JS đúng: không thấy log “Injected home JS…” và scan vẫn 0.
+
+  Các giải pháp đã thử, giải pháp hiện tại đang dùng
+
+  - Tiêm _homeJs vào top + frames qua AddScriptToExecuteOnDocumentCreatedAsync và ExecuteScriptAsync ở FrameCreated/DOMContentLoaded/NavigationCompleted.
+  - Cải tiến collectTexts: đệ quy iframe, gắn src label, log textmap_frames.
+  - Fix tọa độ rectOf cộng offset iframe.
+  - Thêm forwardScanToChildFrames để yêu cầu iframe con scan.
+  - C# thêm TryInjectForGameFrame (phát hiện URL ddnewpc/new-dd-) và gọi InjectFrameScriptsAsync + scanTexts(500).
+  - Thêm WebResourceRequested filter https://*/ddnewpc/index.html*; handler fetch HTML, prepend <script>{_homeJs}</script>, set e.Response.
+  - Log frame inject begin/ok; FrameInfo (nhưng vẫn lỗi parse).
+  - Vẫn chưa thu được text từ iframe game.
+
+  Việc còn dang dở / TODO
+
+  - Khắc phục interceptor: đảm bảo handler chạy và chèn JS vào HTML iframe game (log “Injected home JS…” chưa xuất hiện). Có thể dùng e.Response nếu có, fallback fetch; đảm bảo Content-Type đúng.
+  - Đơn giản hóa/disable LogFrameDetails (tránh lỗi JSON) hoặc trả JSON tối giản.
+  - Nếu intercept vẫn không chạy, thử WebResourceRequestedFilter với scheme/host cụ thể và kiểm tra e.ResourceContext; có thể cần SetDeferral + e.Response từ GetContentAsync (nếu runtime hỗ trợ).
+  - Nếu runtime không cho chèn, cân nhắc navigate top cùng URL game (cùng origin) rồi inject.
+  - Sau khi JS chạy trong iframe game, verify textmap_frames hiển thị iframe game và textmap_scan_frame >0.
+
+Lưy ý : Kiểm tra và sửa lại code cho chính xác, chỉ sửa phần thay đổi của file
+Đọc/ghi file bằng UTF-8, Encoding UTF8, viết code chuẩn UTF-8
+Giao tiếp bằng tiếng việt
+Làm cách nào mà js_home_v2 có thể scan được các phần tử trong scan200textmap ở trang baccarat đa bàn

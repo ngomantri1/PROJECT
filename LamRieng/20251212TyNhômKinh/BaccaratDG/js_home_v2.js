@@ -210,10 +210,12 @@
             msg.href = String(location.href || '');
             if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
                 window.chrome.webview.postMessage(JSON.stringify(msg));
+            } else if (window.top && window.top !== window && typeof window.top.postMessage === 'function') {
+                // ⚠️ Quan trọng: gửi thẳng lên TOP để tránh bị kẹt ở iframe trung gian (nested cross-origin)
+                const clone = Object.assign({}, msg, { __abx_hw_frame_proxy: 1 });
+                window.top.postMessage(clone, '*');
             } else if (window.parent && window.parent !== window && typeof window.parent.postMessage === 'function') {
-                const clone = Object.assign({}, msg, {
-                        __abx_hw_frame_proxy: 1
-                    });
+                const clone = Object.assign({}, msg, { __abx_hw_frame_proxy: 1 });
                 window.parent.postMessage(clone, '*');
             }
         } catch (_) {}
@@ -242,6 +244,8 @@
         loginBtnId: 'blogin',
         xocBtnId: 'bxoc',
         copyInfoBtnId: 'bcopyinfo', // ← THÊM DÒNG NÀY
+        captureBtnId: 'bcapture',
+        captureStatusId: 'hwcapture',
         autoRetryIntervalMs: 5000,
         maxRetries: 6,
         watchdogMs: 1000,
@@ -249,6 +253,11 @@
         showPanel: true,
         autoRetryOnBoot: false
     };
+
+    let captureButtonEl = null;
+    let captureStatusEl = null;
+    let captureHoverEl = null;
+    let capturePersistEl = null;
 
     // ABS selector cho Username (đường dẫn tuyệt đối bạn yêu cầu)
     const ABS_USERNAME_TAIL =
@@ -369,7 +378,9 @@
         authGateOpened: false,
         loginPopupTimer: null, // NEW: timer auto click login
         loginPostProbeStarted: false, // NEW: tránh start probe trùng
-        loginSubmitTs: 0
+        loginSubmitTs: 0,
+        captureActive: false,
+        captureLast: null
     };
 
     const ROOT_Z = 2147483647;
@@ -1186,13 +1197,15 @@
             '  <button id="' + CFG.retryBtnId + '">Thử lại (tự động)</button>',
             '  <button id="' + CFG.overlayToggleBtnId + '">Overlay</button>',
             '  <button id="' + CFG.copyInfoBtnId + '">Copy Info</button>',
+            '  <button id="' + CFG.captureBtnId + '">Capture vùng</button>',
             '</div>',
             '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">',
             '  <span style="opacity:.8">URL:</span><input id="' + CFG.urlId + '" value="" placeholder="https://..." ',
             '     style="flex:1;min-width:300px;background:#0b122e;border:1px solid #334155;color:#e5e7eb;padding:6px 8px;border-radius:6px">',
             '  <button id="bgo">Go</button>',
             '</div>',
-            '<div id="' + CFG.infoId + '" style="white-space:pre;min-height:98px;padding:8px;background:#0b122e;border:1px dashed #334155;border-radius:8px"></div>'
+            '<div id="' + CFG.infoId + '" style="white-space:pre;min-height:98px;padding:8px;background:#0b122e;border:1px dashed #334155;border-radius:8px"></div>',
+            '<div id="' + CFG.captureStatusId + '" style="margin-top:6px;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:8px;font-size:11px;line-height:1.35;min-height:34px"></div>'
         ].join('');
         mount.appendChild(root);
         window.__abx_hw_installed = true;
@@ -1403,6 +1416,11 @@
             e.stopPropagation();
             copyInfoBox(); // gọi hàm copy bên dưới
         };
+        root.querySelector('#' + CFG.captureBtnId).onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleCaptureMode();
+        };
         root.querySelector('#' + CFG.retryBtnId).onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -1429,6 +1447,10 @@
         const ubox = root.querySelector('#' + CFG.urlId);
         if (ubox)
             ubox.value = location.href;
+        captureButtonEl = root.querySelector('#' + CFG.captureBtnId);
+        captureStatusEl = document.getElementById(CFG.captureStatusId);
+        updateCaptureButtonLabel();
+        updateCaptureStatus();
     }
 
     (function hookHistory() {
@@ -1478,6 +1500,11 @@
             '• Title: ' + document.title,
             '• Has Xóc Đĩa: ' + String(live)
         ];
+
+        if (S.captureActive)
+            L.push('• Capture Mode: đang chờ click vào vùng tín hiệu (Esc để hủy)');
+        if (S.captureLast)
+            L.push('• Capture Signal: ' + getCaptureSummary(S.captureLast));
 
         if (extra)
             L.push('', extra);
@@ -1839,6 +1866,266 @@
         }
     }
 
+    const CAPTURE_ID_PREFIX = '__abx_capture_';
+
+    function ensureCaptureElement(kind) {
+        if (kind === 'hover' && captureHoverEl)
+            return captureHoverEl;
+        if (kind === 'persist' && capturePersistEl)
+            return capturePersistEl;
+        const mount = document.body || document.documentElement;
+        if (!mount)
+            return null;
+        const el = document.createElement('div');
+        el.id = CAPTURE_ID_PREFIX + kind;
+        el.style.position = 'fixed';
+        el.style.pointerEvents = 'none';
+        el.style.borderRadius = '8px';
+        el.style.display = 'none';
+        el.style.zIndex = (ROOT_Z - 2).toString();
+        mount.appendChild(el);
+        if (kind === 'hover') {
+            el.style.border = '2px dashed rgba(251, 191, 36, .9)';
+            el.style.background = 'rgba(251, 191, 36, .2)';
+            captureHoverEl = el;
+        } else {
+            el.style.border = '2px solid rgba(16, 185, 129, .9)';
+            el.style.background = 'rgba(16, 185, 129, .18)';
+            capturePersistEl = el;
+        }
+        return el;
+    }
+
+    function updateCaptureBoxEl(el, rect) {
+        if (!el)
+            return;
+        if (!rect || rect.w <= 0 || rect.h <= 0) {
+            el.style.display = 'none';
+            return;
+        }
+        el.style.left = rect.x + 'px';
+        el.style.top = rect.y + 'px';
+        el.style.width = Math.max(rect.w, 2) + 'px';
+        el.style.height = Math.max(rect.h, 2) + 'px';
+        el.style.display = 'block';
+    }
+
+    function toggleCaptureMode() {
+        if (S.captureActive) {
+            stopCaptureMode('cancel', 'Chế độ capture đã bị hủy.');
+        } else {
+            startCaptureMode();
+        }
+    }
+
+    function startCaptureMode() {
+        if (S.captureActive)
+            return;
+        S.captureActive = true;
+        document.addEventListener('pointermove', handleCaptureMove, true);
+        document.addEventListener('pointerdown', handleCaptureClick, true);
+        document.addEventListener('keyup', handleCaptureKey, true);
+        updateCaptureButtonLabel();
+        const hover = ensureCaptureElement('hover');
+        if (hover)
+            hover.style.display = 'block';
+        updateCaptureStatus('Nhấn vào vùng muốn lưu, Esc để hủy.');
+    }
+
+    function stopCaptureMode(reason, message) {
+        if (!S.captureActive)
+            return;
+        S.captureActive = false;
+        document.removeEventListener('pointermove', handleCaptureMove, true);
+        document.removeEventListener('pointerdown', handleCaptureClick, true);
+        document.removeEventListener('keyup', handleCaptureKey, true);
+        const hover = ensureCaptureElement('hover');
+        if (hover)
+            hover.style.display = 'none';
+        updateCaptureButtonLabel();
+        updateCaptureStatus(message);
+    }
+
+    function handleCaptureMove(e) {
+        const hover = ensureCaptureElement('hover');
+        if (!hover)
+            return;
+        const target = getCaptureTargetFromEvent(e);
+        const rect = target ? rectOf(target) : {
+            x: e.clientX,
+            y: e.clientY,
+            w: 1,
+            h: 1
+        };
+        updateCaptureBoxEl(hover, rect);
+    }
+
+    function handleCaptureClick(e) {
+        if (e.button !== 0)
+            return;
+        const panel = document.getElementById(CFG.panelId);
+        if (panel && panel.contains(e.target))
+            return;
+        e.preventDefault();
+        e.stopPropagation();
+        const target = getCaptureTargetFromEvent(e);
+        const rect = target ? rectOf(target) : {
+            x: e.clientX,
+            y: e.clientY,
+            w: 1,
+            h: 1
+        };
+        const payload = buildCapturePayload(target, rect, e);
+        S.captureLast = payload;
+        const persist = ensureCaptureElement('persist');
+        updateCaptureBoxEl(persist, rect);
+        postCaptureSignal(payload);
+        updateInfo('Đã ghi nhận vùng tín hiệu mới.');
+        stopCaptureMode('captured');
+    }
+
+    function handleCaptureKey(e) {
+        if (e.key === 'Escape' || e.key === 'Esc') {
+            stopCaptureMode('cancel', 'Chế độ capture đã bị hủy.');
+        }
+    }
+
+    function getCaptureTargetFromEvent(e) {
+        try {
+            let el = document.elementFromPoint(e.clientX, e.clientY);
+            if (!el && e.target)
+                el = e.target;
+            return el;
+        } catch (_) {
+            return e.target || null;
+        }
+    }
+
+    function buildCssPath(el) {
+        if (!el || el.nodeType !== 1)
+            return '';
+        const parts = [];
+        let node = el;
+        const maxDepth = 6;
+        while (node && node.nodeType === 1 && parts.length < maxDepth) {
+            let segment = node.tagName.toLowerCase();
+            if (node.id) {
+                segment += '#' + node.id.replace(/[^a-zA-Z0-9_-]/g, '');
+                parts.unshift(segment);
+                break;
+            }
+            const cls = (node.className || '').trim().split(/\s+/).filter(Boolean);
+            if (cls.length)
+                segment += '.' + cls.map(c => c.replace(/[^a-zA-Z0-9_-]/g, '')).join('.');
+            const parent = node.parentElement;
+            if (parent) {
+                const siblings = Array.from(parent.children).filter(ch => ch.tagName === node.tagName);
+                if (siblings.length > 1) {
+                    segment += `:nth-of-type(${siblings.indexOf(node) + 1})`;
+                }
+            }
+            parts.unshift(segment);
+            if (!parent || parent.tagName.toLowerCase() === 'html')
+                break;
+            node = parent;
+        }
+        if (parts.length === 0)
+            return '';
+        return parts.join(' > ');
+    }
+
+    function buildCapturePayload(target, rect, ev) {
+        const now = Date.now();
+        const el = target && target.isConnected ? target : null;
+        const tag = el ? el.tagName.toLowerCase() : 'viewport';
+        const textSnippet = el ? clip(textOf(el), 200) : '';
+        const selector = el ? clip(buildCssPath(el), 260) : '';
+        const payload = {
+            rect,
+            point: {
+                x: ev.clientX,
+                y: ev.clientY
+            },
+            tagName: tag,
+            label: textSnippet || tag,
+            text: textSnippet,
+            selector,
+            url: location.href,
+            title: document.title,
+            ts: now,
+            viewport: {
+                width: document.documentElement.clientWidth,
+                height: document.documentElement.clientHeight
+            },
+            scroll: {
+                x: window.scrollX || 0,
+                y: window.scrollY || 0
+            }
+        };
+        if (selector)
+            payload.selector = selector;
+        if (el) {
+            const html = clip(el.outerHTML, 800);
+            if (html)
+                payload.html = html;
+            const src = el.getAttribute('src') || el.getAttribute('data-src') || el.currentSrc || '';
+            if (src)
+                payload.imageSrc = src;
+            const dataAttrs = {};
+            for (const attr of el.attributes) {
+                if (attr && attr.name && attr.name.startsWith('data-')) {
+                    dataAttrs[attr.name] = attr.value;
+                }
+            }
+            if (Object.keys(dataAttrs).length)
+                payload.dataAttributes = dataAttrs;
+        }
+        return payload;
+    }
+
+    function getCaptureSummary(payload) {
+        if (!payload)
+            return 'unknown';
+        const rect = payload.rect || {};
+        const label = payload.label || payload.tagName || 'capture';
+        return label + ' @' + (rect.x || 0) + ',' + (rect.y || 0) + ' ' + (rect.w || 0) + 'x' + (rect.h || 0);
+    }
+
+    function updateCaptureStatus(message) {
+        if (!captureStatusEl)
+            return;
+        if (S.captureActive) {
+            captureStatusEl.textContent = message || 'Nhấn vào vùng muốn lưu để ghi lại tín hiệu hình ảnh (Esc hủy).';
+            captureStatusEl.style.borderColor = '#fbbf24';
+            return;
+        }
+        if (message) {
+            captureStatusEl.textContent = message;
+            captureStatusEl.style.borderColor = '#10b981';
+            return;
+        }
+        if (S.captureLast) {
+            captureStatusEl.textContent = 'Last capture: ' + getCaptureSummary(S.captureLast);
+            captureStatusEl.style.borderColor = '#0ea5e9';
+            return;
+        }
+        captureStatusEl.textContent = 'Nhấn Capture để chọn vùng hình ảnh, dữ liệu gửi về host.';
+        captureStatusEl.style.borderColor = '#334155';
+    }
+
+    function updateCaptureButtonLabel() {
+        if (!captureButtonEl)
+            return;
+        captureButtonEl.textContent = S.captureActive ? 'Hủy Capture' : 'Capture vùng';
+    }
+
+    function postCaptureSignal(payload) {
+        postHomeWatchLog({
+            abx: 'home_capture',
+            capture: payload
+        });
+    }
+
     function mkBadge(n) {
         const b = document.createElement('div');
         b.textContent = String(n);
@@ -2076,9 +2363,42 @@
                     pushDeep(el, unquote(ca), '::after');
             });
 
+
+            // 7) Fallback cho trang game dạng canvas / div-clickable:
+            // Nếu gần như không có text node hiển thị, vẫn cố lấy nhãn (aria/title/data-*/alt/textContent) của các phần tử click.
+            if (results.length === before) {
+                try {
+                    const CLICK_MAX = 800;
+                    let c = 0;
+                    const pickLabel = (el) => {
+                        try {
+                            const t = (el.innerText || el.textContent || '').trim();
+                            if (t) return t;
+                            const a = (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('alt'))) || '';
+                            if (a && a.trim()) return a.trim();
+                            const ds = (el.getAttribute && (el.getAttribute('data-label') || el.getAttribute('data-title') || el.getAttribute('data-name') || el.getAttribute('data-text'))) || '';
+                            return (ds || '').trim();
+                        } catch (_) { return ''; }
+                    };
+
+                    doc.querySelectorAll('button,a,[role="button"],[onclick],input[type="button"],input[type="submit"],div,span,img').forEach(el => {
+                        if (c >= CLICK_MAX) return;
+                        const label2 = pickLabel(el);
+                        if (!label2) return;
+                        try {
+                            const cs = win.getComputedStyle(el);
+                            if (cs && cs.pointerEvents === 'none') return;
+                        } catch (_) {}
+                        pushDeep(el, label2, 'clickable@label');
+                        c++;
+                    });
+                } catch (_) {}
+            }
+
+
             // Đệ quy sang các iframe con (nếu cùng origin truy cập được)
             try {
-                const frames = Array.from(doc.querySelectorAll('iframe'));
+                const frames = queryIframesDeep(doc);
                 frames.forEach((ifr, idx) => {
                     try {
                         const metaChild = describeFrameEl(ifr, idx);
@@ -2408,10 +2728,75 @@
         } catch (_) {}
     }
 
-    function requestFrameScan(kind, limit) {
+    
+    // Query iframe sâu (kể cả trong open shadowRoot)
+    function queryIframesDeep(root) {
+        const out = [];
+        const seen = new Set();
+        const push = (ifr) => {
+            try {
+                if (!ifr || seen.has(ifr)) return;
+                if (String(ifr.tagName || '').toLowerCase() !== 'iframe') return;
+                seen.add(ifr);
+                out.push(ifr);
+            } catch (_) {}
+        };
+
+        // Quét nhanh light DOM nếu root hỗ trợ querySelectorAll
+        try {
+            if (root && typeof root.querySelectorAll === 'function') {
+                root.querySelectorAll('iframe').forEach(push);
+            }
+        } catch (_) {}
+
+        // DFS qua element + shadowRoot (open)
+        const stack = [];
+        try {
+            if (root && root.nodeType === 9) stack.push(root.documentElement || root.body); // Document
+            else stack.push(root);
+        } catch (_) {}
+
+        let guard = 0;
+        const MAX = 25000; // tránh freeze nếu DOM quá lớn
+        while (stack.length && guard++ < MAX) {
+            const node = stack.pop();
+            if (!node) continue;
+
+            try {
+                // Element
+                if (node.nodeType === 1) {
+                    push(node);
+
+                    const sr = node.shadowRoot;
+                    if (sr) {
+                        try { sr.querySelectorAll && sr.querySelectorAll('iframe').forEach(push); } catch (_) {}
+                        try {
+                            const kids = sr.children ? Array.prototype.slice.call(sr.children) : [];
+                            for (const k of kids) stack.push(k);
+                        } catch (_) {}
+                    }
+
+                    try {
+                        const kids = node.children ? Array.prototype.slice.call(node.children) : [];
+                        for (const k of kids) stack.push(k);
+                    } catch (_) {}
+                }
+                // ShadowRoot / DocumentFragment
+                else if (node.nodeType === 11) {
+                    try {
+                        const kids = node.children ? Array.prototype.slice.call(node.children) : [];
+                        for (const k of kids) stack.push(k);
+                    } catch (_) {}
+                }
+            } catch (_) {}
+        }
+        return out;
+    }
+
+function requestFrameScan(kind, limit) {
         if (!IS_TOP)
             return;
-        const frames = Array.from(document.querySelectorAll('iframe'));
+        const frames = queryIframesDeep(document);
         if (!frames.length)
             return;
         const reqId = 'fscan_' + Date.now().toString(36) + '_' + Math.random().toString(16).slice(2, 8);
@@ -2472,7 +2857,7 @@
 
     function forwardScanToChildFrames(kind, limit, reqId) {
         try {
-            const frames = Array.from(document.querySelectorAll('iframe'));
+            const frames = queryIframesDeep(document);
             if (!frames.length)
                 return;
             logFrameScanDebug('child_request', {
@@ -2519,6 +2904,20 @@
     window.__abx_hw_scanLinks = scanLinks;
     window.__abx_hw_scanTexts = scanTexts;
         window.__abx_hw_scanClosePopups = scanClosePopups;
+
+
+    window.__abx_hw_scanAllTexts = (limit = 200) => {
+        try { scanTexts(limit); } catch (_) {}
+        try { requestFrameScan('text', limit); } catch (_) {}
+    };
+    window.__abx_hw_scanAllLinks = (limit = 200) => {
+        try { scanLinks(limit); } catch (_) {}
+        try { requestFrameScan('link', limit); } catch (_) {}
+    };
+    window.__abx_hw_scanAllPopups = (limit = 200) => {
+        try { scanClosePopups(limit); } catch (_) {}
+        try { requestFrameScan('popup', limit); } catch (_) {}
+    };
 
     window.addEventListener('message', (evt) => {
         try {
@@ -5319,7 +5718,7 @@
     })();
     if (IS_TOP) {
         window.__abx_request_ws_hook = function () {
-            const frames = Array.from(document.querySelectorAll('iframe'));
+            const frames = queryIframesDeep(document);
             frames.forEach(f => {
                 try {
                     const w = f.contentWindow;
