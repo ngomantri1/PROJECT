@@ -5221,6 +5221,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     {
                         Log($"[Frame NavDone] name={f.Name} uri={lastFrameNavUri} success={e2.IsSuccess} status={e2.WebErrorStatus}");
                         LogFrameDetails(f, "nav_done");
+                        TryInjectForGameFrame(f, lastFrameNavUri, "NavDone");
                     }
                     catch { }
                 };
@@ -5265,6 +5266,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 LogFrameDetails(f, "dom_loaded");
                 _ = InjectFrameScriptsAsync(f, "Frame.DOMContentLoaded");
+                TryInjectForGameFrame(f, null, "DOMLoaded");
             }
             catch (Exception ex)
             {
@@ -5282,6 +5284,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 LogFrameDetails(f, "nav_completed");
                 _ = InjectFrameScriptsAsync(f, "Frame.NavigationCompleted");
+                TryInjectForGameFrame(f, e.NavigationId.ToString(), "NavCompleted");
             }
             catch (Exception ex)
             {
@@ -5293,6 +5296,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             try
             {
+                Log($"[FrameInject] {reason} begin name={f.Name}");
                 // Tiêm (idempotent) + autostart
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 try
@@ -5340,6 +5344,30 @@ private async Task<CancellationTokenSource> DebounceAsync(
             public string? name { get; set; }
             public string? src { get; set; }
             public string? err { get; set; }
+        }
+
+        private void TryInjectForGameFrame(CoreWebView2Frame f, string? uriHint, string reason)
+        {
+            try
+            {
+                var hint = (uriHint ?? string.Empty).ToLowerInvariant();
+                // Nếu uriHint rỗng, bỏ qua (chỉ log)
+                if (string.IsNullOrEmpty(hint))
+                {
+                    Log($"[FrameGame] skip (no uri) name={f.Name} reason={reason}");
+                    return;
+                }
+                bool isGame = hint.Contains("ddnewpc/index.html") || hint.Contains("new-dd-") || hint.Contains("dggw") || hint.Contains("izogcnj.com");
+                if (!isGame)
+                    return;
+
+                Log($"[FrameGame] inject game frame name={f.Name} uriHint={hint}");
+                _ = InjectFrameScriptsAsync(f, $"GameFrame.{reason}");
+            }
+            catch (Exception ex)
+            {
+                Log($"[FrameGame] err {reason}: {ex.Message}");
+            }
         }
 
 
