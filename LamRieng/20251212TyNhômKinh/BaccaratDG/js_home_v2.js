@@ -257,7 +257,7 @@
         maxRetries: 6,
         watchdogMs: 1000,
         maxWatchdogMiss: 2,
-        showPanel: true,
+        showPanel: false,
         autoRetryOnBoot: false
     };
 
@@ -2113,6 +2113,21 @@
         };
     }
 
+    function getConfirmClickPoint(board) {
+        if (!board || !board.confirmClick)
+            return null;
+        const viewport = getViewportSize();
+        const baseRect = getAutomationBaseRect();
+        const point = {
+            x: baseRect.x + (board.confirmClick.x || 0),
+            y: baseRect.y + (board.confirmClick.y || 0)
+        };
+        return {
+            x: clamp(Math.round(point.x), 0, viewport.w - 1),
+            y: clamp(Math.round(point.y), 0, viewport.h - 1)
+        };
+    }
+
     function ensureCaptureElement(kind) {
         if (kind === 'hover' && captureHoverEl)
             return captureHoverEl;
@@ -2641,15 +2656,15 @@
                 name: 'batdau',
                 rect: { x: 685, y: 84, w: 23, h: 20 },
                 click: { x: 670, y: 186 },
-                threshold: 0.6
+                threshold: 0.8
             },
             end: {
                 name: 'ketthuc',
                 rect: { x: 374, y: 113, w: 45, h: 20 },
-                threshold: 0.6
+                threshold: 0.8
             },
-            interval: 100,
-            afterMatchDelay: 500
+            interval: 1000,
+            afterMatchDelay: 1000
         }
     };
 
@@ -2658,49 +2673,65 @@
             id: 'board1',
             startRect: { x: 477, y: 59, w: 19, h: 15 },
             endRect: { x: 260, y: 78, w: 39, h: 17 },
-            startClick: { x: 466, y: 128 }
+            click: { x: 466, y: 128 },
+            confirmRect: { x: 465, y: 138, w: 35, h: 28 },
+            confirmClick: { x: 481, y: 150 }
         },
         {
             id: 'board2',
             startRect: { x: 897, y: 58, w: 17, h: 16 },
             endRect: { x: 679, y: 78, w: 39, h: 16 },
-            startClick: { x: 885, y: 127 }
+            click: { x: 885, y: 127 },
+            confirmRect: { x: 877, y: 133, w: 39, h: 37 },
+            confirmClick: { x: 901, y: 152 }
         },
         {
             id: 'board3',
             startRect: { x: 478, y: 165, w: 19, h: 15 },
             endRect: { x: 243, y: 185, w: 54, h: 14 },
-            startClick: { x: 465, y: 234 }
+            click: { x: 465, y: 234 },
+            confirmRect: { x: 459, y: 243, w: 42, h: 32 },
+            confirmClick: { x: 482, y: 257 }
         },
         {
             id: 'board4',
             startRect: { x: 895, y: 165, w: 19, h: 15 },
             endRect: { x: 661, y: 183, w: 52, h: 17 },
-            startClick: { x: 887, y: 235 }
+            click: { x: 887, y: 235 },
+            confirmRect: { x: 882, y: 241, w: 36, h: 39 },
+            confirmClick: { x: 899, y: 255 }
         },
         {
             id: 'board5',
             startRect: { x: 478, y: 272, w: 17, h: 13 },
             endRect: { x: 244, y: 291, w: 52, h: 16 },
-            startClick: { x: 467, y: 341 }
+            click: { x: 467, y: 341 },
+            confirmRect: { x: 457, y: 346, w: 45, h: 33 },
+            confirmClick: { x: 479, y: 363 }
         },
         {
             id: 'board6',
             startRect: { x: 896, y: 272, w: 18, h: 13 },
             endRect: { x: 663, y: 290, w: 53, h: 17 },
-            startClick: { x: 886, y: 340 }
+            click: { x: 886, y: 340 },
+            confirmRect: { x: 875, y: 342, w: 45, h: 38 },
+            confirmClick: { x: 901, y: 363 }
         },
         {
             id: 'board7',
             startRect: { x: 478, y: 377, w: 19, h: 14 },
             endRect: { x: 242, y: 394, w: 54, h: 20 },
-            startClick: { x: 470, y: 447 }
+            click: { x: 470, y: 447 },
+            confirmRect: { x: 464, y: 447, w: 38, h: 35 },
+            confirmClick: { x: 482, y: 467 }
         },
         {
             id: 'board8',
             startRect: { x: 895, y: 377, w: 19, h: 16 },
             endRect: { x: 665, y: 395, w: 49, h: 18 },
-            startClick: { x: 885, y: 445 }
+            click: { x: 885, y: 445 },
+            confirmRect: { x: 877, y: 446, w: 43, h: 40 },
+            confirmClick: { x: 900, y: 468 }
         }
     ];
     const automationConfig1 = createAutomationBoard(automationBoardDefinitions[0]);
@@ -2762,6 +2793,7 @@
             id: (def && def.id) || 'board',
             start: cloneStage(base.start),
             end: cloneStage(base.end),
+            confirmClick: null,
             interval: base.interval,
             afterMatchDelay: base.afterMatchDelay,
             state: {
@@ -2771,14 +2803,18 @@
         if (def) {
             if (def.startRect && board.start)
                 board.start.rect = cloneRect(def.startRect);
-            if (def.startClick && board.start)
-                board.start.click = { x: def.startClick.x, y: def.startClick.y };
             if (typeof def.startThreshold === 'number' && board.start)
                 board.start.threshold = def.startThreshold;
             if (def.endRect && board.end)
                 board.end.rect = cloneRect(def.endRect);
             if (typeof def.endThreshold === 'number' && board.end)
                 board.end.threshold = def.endThreshold;
+            if (def.click && board.end)
+                board.end.click = { x: def.click.x, y: def.click.y };
+            if (def.confirmRect)
+                board.confirmRect = cloneRect(def.confirmRect);
+            if (def.confirmClick)
+                board.confirmClick = { x: def.confirmClick.x, y: def.confirmClick.y };
         }
         return board;
     }
@@ -3008,57 +3044,68 @@
         const afterMatchDelay = typeof board.afterMatchDelay === 'number' ? board.afterMatchDelay : (automationConfig.templateBase.afterMatchDelay || 1500);
         try {
             while (S.templateAutomationRunning) {
-                const stage = board.state.lock ? board.end : board.start;
+                const stage = board.end;
                 if (!stage) {
-                    updateAutomationStatus(`[${board.id}] Stage kh?ng h?p l?`);
+                    updateAutomationStatus(`[${board.id}] Stage khong hop le`);
                     await wait(interval);
                     continue;
                 }
                 const sample = findTemplateByName(stage.name);
                 if (!sample) {
-                    updateAutomationStatus(`[${board.id}] Ch?a c? m?u ${stage.name}`);
+                    updateAutomationStatus(`[${board.id}] Chua co mau ${stage.name}`);
                     await wait(interval);
                     continue;
                 }
                 const targetRect = resolveStageRect(stage);
+                if (!targetRect) {
+                    updateAutomationStatus(`[${board.id}] Rect ${stage.name} khong hop le`);
+                    await wait(interval);
+                    continue;
+                }
                 let similarity = 0;
                 try {
-                    if (!targetRect) {
-                        updateAutomationStatus(`[${board.id}] Rect ${stage.name} kh?ng h?p l?`);
-                        await wait(interval);
-                        continue;
-                    }
                     similarity = await compareTemplateToRect(sample, targetRect);
                 } catch (err) {
-                    updateAutomationStatus(`[${board.id}] L?i so s?nh: ` + (err && err.message || err));
+                    updateAutomationStatus(`[${board.id}] Loi so sanh: ` + (err && err.message || err));
                     await wait(interval);
                     continue;
                 }
                 const threshold = typeof stage.threshold === 'number' ? stage.threshold : (sample.threshold || 0.8);
                 const pct = Math.round(similarity * 100);
-                if (similarity >= threshold) {
-                    if (!board.state.lock) {
+                if (!board.state.lock) {
+                    if (similarity < threshold) {
                         const clickPoint = resolveStageClick(stage);
                         if (clickPoint) {
                             simulateClickAt(clickPoint.x, clickPoint.y);
                             board.state.lock = true;
                             updateAutomationStatus(`[${board.id}] ${stage.name} ${pct}% -> click`);
+                            await wait(2000);
+                            const confirmPoint = getConfirmClickPoint(board);
+                            if (confirmPoint) {
+                                simulateClickAt(confirmPoint.x, confirmPoint.y);
+                                updateAutomationStatus(`[${board.id}] confirm -> click`);
+                            }
                         } else {
-                            updateAutomationStatus(`[${board.id}] Click point ${stage.name} kh?ng h?p l?`);
+                            updateAutomationStatus(`[${board.id}] Click point ${stage.name} khong hop le`);
                         }
                         await wait(afterMatchDelay);
                     } else {
+                        updateAutomationStatus(`[${board.id}] ${stage.name} ${pct}% -> mau da hien`);
+                        await wait(interval);
+                    }
+                } else {
+                    if (similarity >= threshold) {
                         board.state.lock = false;
                         updateAutomationStatus(`[${board.id}] ${stage.name} ${pct}% -> unlock`);
                         await wait(afterMatchDelay);
+                    } else {
+                        updateAutomationStatus(`[${board.id}] ${stage.name} ${pct}% van chua thay mau`);
+                        await wait(interval);
                     }
-                } else {
-                    updateAutomationStatus(`[${board.id}] ${stage.name} ${pct}% ch?a ??ng`);
-                    await wait(interval);
                 }
             }
         } catch (err) {
-            updateAutomationStatus(`[${board.id}] L?i t? ??ng: ` + (err && err.message || err));
+            updateAutomationStatus(`[${board.id}] Loi tu dong: ` + (err && err.message || err));
         }
     }
     async function runTemplateAutomationLoop(targetIds) {

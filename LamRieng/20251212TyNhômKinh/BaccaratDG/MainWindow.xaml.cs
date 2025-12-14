@@ -1088,7 +1088,7 @@ Ví dụ không hợp lệ:
         private void Log(string msg)
         {
             var line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
-            EnqueueUi(line);
+            //EnqueueUi(line);
             EnqueueFile(line);
         }
 
@@ -1573,7 +1573,7 @@ Ví dụ không hợp lệ:
                             var msg = e.TryGetWebMessageAsString() ?? "";
                             if (string.IsNullOrWhiteSpace(msg)) return;
 
-                            EnqueueUi($"[JS] {msg}"); // chỉ hiển thị UI, không ghi ra file
+                            //EnqueueUi($"[JS] {msg}"); // chỉ hiển thị UI, không ghi ra file
 
                             try
                             {
