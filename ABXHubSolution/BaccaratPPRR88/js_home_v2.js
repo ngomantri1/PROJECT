@@ -3827,7 +3827,6 @@
     // ======= Multi-table Overlay =======
     (function installTableOverlay() {
         const OVERLAY_ID = '__abx_table_overlay_root';
-        const RESET_BTN_ID = '__abx_table_overlay_reset';
         const PANEL_CLASS = '__abx_table_panel';
         const LAYOUT_KEY = '__abx_table_layout_v1';
         const GAP = 8;
@@ -3838,11 +3837,11 @@
         let layouts = loadLayouts();
         const panelMap = new Map();
         let cfg = {
-            // callback: (roomId) => HTMLElement | null
             resolveDom: null,
             selectorTemplate: '',
             baseSelector: ''
         };
+        let highestZ = 2147480001;
 
         function loadLayouts() {
             try {
@@ -3861,6 +3860,11 @@
             } catch (_) {}
         }
 
+        function bringToFront(panel) {
+            if (!panel) return;
+            panel.style.zIndex = (++highestZ).toString();
+        }
+
         function ensureStyles() {
             if (document.getElementById('__abx_table_overlay_style'))
                 return;
@@ -3875,52 +3879,99 @@
             }
             #${OVERLAY_ID} .${PANEL_CLASS} {
                 position: absolute;
-                background: #0b1d4a;
-                color: #f4f5fb;
+                background: #040b1e;
+                color: #f8fafc;
                 border-radius: 12px;
-                box-shadow: 0 10px 26px rgba(0,0,0,0.35);
+                box-shadow: 0 14px 32px rgba(0,0,0,0.55);
                 overflow: hidden;
                 display: flex;
                 flex-direction: column;
                 pointer-events: auto;
-                border: 1px solid rgba(255,255,255,0.08);
+                border: 1px solid rgba(255,255,255,0.16);
+                min-width: ${MIN_W}px;
+                min-height: ${MIN_H}px;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS}.abx-closed {
+                opacity: 0.2;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .head {
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                padding: 6px 10px;
-                gap: 8px;
-                background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+                padding: calc(10px * var(--panel-scale, 1)) calc(32px * var(--panel-scale, 1)) calc(8px * var(--panel-scale, 1)) calc(12px * var(--panel-scale, 1));
+                gap: 12px;
+                background: #02040b;
                 user-select: none;
                 cursor: move;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .head .title {
                 font-weight: 700;
-                font-size: 14px;
+                font-size: calc(9px * var(--panel-scale, 1));
+                color: #fefefe;
+                line-height: 1.1;
+                padding: calc(2px * var(--panel-scale, 1)) 0;
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .head .actions {
                 display: flex;
-                gap: 6px;
+                gap: calc(10px * var(--panel-scale, 1));
+                margin-right: calc(12px * var(--panel-scale, 1));
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .head button {
                 border: none;
-                background: rgba(255,255,255,0.12);
+                background: rgba(255,255,255,0.08);
                 color: #fefefe;
-                padding: 4px 6px;
-                border-radius: 6px;
+                border-radius: calc(5px * var(--panel-scale, 1));
                 cursor: pointer;
                 font-weight: 600;
+                font-size: calc(9px * var(--panel-scale, 1));
+                line-height: 1;
+                padding: calc(1px * var(--panel-scale, 1)) calc(8px * var(--panel-scale, 1));
+                min-width: calc(32px * var(--panel-scale, 1));
+                height: calc(22px * var(--panel-scale, 1));
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                transition: filter 0.2s ease, transform 0.2s ease;
+                box-sizing: border-box;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head button.play-btn {
+                min-width: calc(34px * var(--panel-scale, 1));
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head button.play-btn {
+                background: linear-gradient(135deg, #1d4ed8, #2563eb);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-close {
+                position: absolute;
+                top: 2px;
+                right: 2px;
+                width: calc(18px * var(--panel-scale, 1));
+                height: calc(18px * var(--panel-scale, 1));
+                border-radius: 3px;
+                border: none;
+                background: #e11d48;
+                color: #fff;
+                font-size: calc(12px * var(--panel-scale, 1));
+                line-height: 1;
+                padding: 0;
+                opacity: 0.95;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                transition: opacity 0.2s ease;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-close:hover {
+                opacity: 1;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .head button:hover {
-                background: rgba(255,255,255,0.22);
+                filter: brightness(1.05);
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .body {
                 flex: 1;
-                background: #0f1733;
+                background: #0c142a;
                 overflow: hidden;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .body > .mirror {
@@ -3930,29 +3981,15 @@
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .resize {
                 position: absolute;
-                width: 14px;
-                height: 14px;
-                right: 2px;
-                bottom: 2px;
+                width: 16px;
+                height: 16px;
+                right: 4px;
+                bottom: 4px;
                 cursor: se-resize;
-                background: rgba(255,255,255,0.15);
+                background: rgba(255,255,255,0.18);
                 border-radius: 4px;
             }
-            #${RESET_BTN_ID} {
-                position: fixed;
-                top: 8px;
-                right: 12px;
-                z-index: 2147480001;
-                padding: 8px 10px;
-                border-radius: 8px;
-                border: none;
-                background: #2563eb;
-                color: white;
-                font-weight: 700;
-                cursor: pointer;
-                pointer-events: auto;
-                box-shadow: 0 6px 18px rgba(0,0,0,0.22);
-            }`;
+            `;
             document.head.appendChild(style);
         }
 
@@ -3964,14 +4001,6 @@
                 root.id = OVERLAY_ID;
                 document.body.appendChild(root);
             }
-            let resetBtn = document.getElementById(RESET_BTN_ID);
-            if (!resetBtn) {
-                resetBtn = document.createElement('button');
-                resetBtn.id = RESET_BTN_ID;
-                resetBtn.textContent = 'Reset layout';
-                resetBtn.addEventListener('click', () => resetLayout());
-                document.body.appendChild(resetBtn);
-            }
             return root;
         }
 
@@ -3979,9 +4008,19 @@
             return Math.max(min, Math.min(max, v));
         }
 
+        function updatePanelScale(panel) {
+            if (!panel) return;
+            const rc = panel.getBoundingClientRect();
+            const widthScale = clamp(rc.width / 240, 0.45, 1.9);
+            const heightScale = clamp(rc.height / 180, 0.45, 1.9);
+            const scale = Math.min(widthScale, heightScale);
+            panel.style.setProperty('--panel-scale', scale.toString());
+        }
+
         function computeGrid(n) {
-            const cols = Math.ceil(Math.sqrt(n));
-            const rows = Math.ceil(n / cols);
+            const count = Math.max(n, 1);
+            const cols = Math.max(2, Math.ceil(Math.sqrt(count)));
+            const rows = Math.max(2, Math.ceil(count / cols));
             return { cols, rows };
         }
 
@@ -4020,7 +4059,7 @@
 
         function syncPanel(id) {
             const st = getPanelState(id);
-            if (!st || !st.panel)
+            if (!st || !st.panel || st.closed)
                 return;
             const src = st.resolve(id);
             if (!src || !src.isConnected) {
@@ -4103,7 +4142,7 @@
 
         function createPanel(room, idx) {
             const root = ensureRoot();
-            let panel = document.createElement('div');
+            const panel = document.createElement('div');
             panel.className = PANEL_CLASS;
             panel.dataset.id = room.id;
 
@@ -4115,19 +4154,14 @@
             const actions = document.createElement('div');
             actions.className = 'actions';
             const btnPlay = document.createElement('button');
+            btnPlay.className = 'play-btn';
             btnPlay.textContent = 'Play';
             btnPlay.addEventListener('click', () => {
                 try {
-                    window.chrome?.webview?.postMessage?.({ type: 'table_play', id: room.id });
+                    window.chrome?.webview?.postMessage?.({ overlay: 'table', event: 'play', id: room.id });
                 } catch (_) {}
             });
-            const btnClose = document.createElement('button');
-            btnClose.textContent = '?';
-            btnClose.title = '??ng';
-            btnClose.addEventListener('click', () => {
-                panel.style.display = 'none';
-            });
-            actions.append(btnPlay, btnClose);
+            actions.append(btnPlay);
             head.append(title, actions);
 
             const body = document.createElement('div');
@@ -4140,6 +4174,13 @@
             resize.className = 'resize';
 
             panel.append(head, body, resize);
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'panel-close';
+            closeBtn.innerHTML = '&times;';
+            closeBtn.title = 'Đóng bàn';
+            closeBtn.addEventListener('click', () => closePanel(room.id));
+            panel.appendChild(closeBtn);
+            bringToFront(panel);
             root.appendChild(panel);
 
             const st = {
@@ -4150,6 +4191,7 @@
                 obs: null,
                 lastSig: '',
                 scheduled: false,
+                closed: false,
                 resolve: (id) => {
                     if (typeof cfg.resolveDom === 'function')
                         return cfg.resolveDom(id);
@@ -4194,6 +4236,7 @@
             panel.style.height = h + 'px';
             panel.style.left = x + 'px';
             panel.style.top = y + 'px';
+            updatePanelScale(panel);
         }
 
         function makeDraggable(panel, handle) {
@@ -4205,6 +4248,7 @@
             const root = ensureRoot();
             const onDown = (e) => {
                 e.preventDefault();
+                bringToFront(panel);
                 dragging = true;
                 startX = e.clientX;
                 startY = e.clientY;
@@ -4247,6 +4291,7 @@
             const onDown = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                bringToFront(panel);
                 resizing = true;
                 startX = e.clientX;
                 startY = e.clientY;
@@ -4268,6 +4313,7 @@
                 let nh = clamp(origH + dy, MIN_H, rootRect.height - top);
                 panel.style.width = nw + 'px';
                 panel.style.height = nh + 'px';
+                updatePanelScale(panel);
             };
             const onUp = () => {
                 if (!resizing)
@@ -4301,37 +4347,71 @@
             });
         }
 
-        function renderRooms(list, options = {}) {
-            cfg = Object.assign(cfg, options || {});
-            rooms = (list || []).map(r => {
-                if (typeof r === 'string')
-                    return { id: r, name: r };
-                if (r && r.id)
-                    return { id: r.id, name: r.name || r.id };
+        function normalizeRooms(list) {
+            const seen = new Set();
+            return (list || []).map(room => {
+                if (typeof room === 'string')
+                    return { id: room, name: room };
+                if (room && room.id)
+                    return { id: room.id, name: room.name || room.id };
                 return null;
-            }).filter(Boolean);
-
-            const root = ensureRoot();
-            // remove stale panels
-            Array.from(panelMap.keys()).forEach(id => {
-                if (!rooms.find(r => r.id === id)) {
-                    const st = getPanelState(id);
-                    if (st && st.panel && st.panel.parentElement === root)
-                        root.removeChild(st.panel);
-                    if (st && st.obs)
-                        st.obs.disconnect();
-                    panelMap.delete(id);
-                    delete layouts[id];
-                }
+            }).filter(Boolean).filter(room => {
+                if (seen.has(room.id))
+                    return false;
+                seen.add(room.id);
+                return true;
             });
+        }
 
+        function closePanel(id, options = {}) {
+            const { removeFromRooms = true, reflow = true, sendEvent = true } = options;
+            const st = getPanelState(id);
+            if (!st)
+                return;
+            panelMap.delete(id);
+            if (st.obs) {
+                st.obs.disconnect();
+                st.obs = null;
+            }
+            if (st.panel && st.panel.parentElement)
+                st.panel.parentElement.removeChild(st.panel);
+            if (layouts && Object.prototype.hasOwnProperty.call(layouts, id))
+                delete layouts[id];
+            saveLayouts();
+            if (removeFromRooms)
+                rooms = rooms.filter(r => r.id !== id);
+            if (reflow)
+                layoutAll(true);
+            if (sendEvent) {
+                try {
+                    window.chrome?.webview?.postMessage?.({ overlay: 'table', event: 'closed', id });
+                } catch (_) {}
+            }
+        }
+
+        function applyRooms(list, options = {}) {
+            cfg = Object.assign(cfg, options || {});
+            const normalized = normalizeRooms(list);
+            ensureRoot();
+            const activeIds = new Set(normalized.map(r => r.id));
+            const toRemove = [];
+            panelMap.forEach((_, id) => {
+                if (!activeIds.has(id))
+                    toRemove.push(id);
+            });
+            toRemove.forEach(id => closePanel(id, { removeFromRooms: false, reflow: false }));
+            rooms = normalized;
             rooms.forEach((room, idx) => {
                 if (!panelMap.has(room.id)) {
                     createPanel(room, idx);
+                } else {
+                    const st = getPanelState(room.id);
+                    if (st)
+                        placePanel(st.panel, idx);
                 }
             });
-
-            layoutAll(false);
+            layoutAll(true);
+            rooms.forEach(room => scheduleSync(room.id));
         }
 
         function resetLayout() {
@@ -4342,26 +4422,22 @@
 
         function hide() {
             const root = document.getElementById(OVERLAY_ID);
-            const btn = document.getElementById(RESET_BTN_ID);
             if (root)
                 root.style.display = 'none';
-            if (btn)
-                btn.style.display = 'none';
         }
 
         function show() {
             const root = ensureRoot();
-            root.style.display = '';
-            const btn = document.getElementById(RESET_BTN_ID);
-            if (btn)
-                btn.style.display = '';
+            if (root)
+                root.style.display = '';
         }
 
         window.__abxTableOverlay = {
-            render: renderRooms,
+            openRooms: applyRooms,
             reset: resetLayout,
             hide,
-            show
+            show,
+            close: closePanel
         };
     })();
 
@@ -4482,10 +4558,3 @@
 }
     boot();
     })();
-
-
-
-
-
-
-

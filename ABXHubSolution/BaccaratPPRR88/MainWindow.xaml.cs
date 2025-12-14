@@ -256,6 +256,7 @@ namespace BaccaratPPRR88
 
         private readonly ObservableCollection<string> _roomList = new();
         private readonly HashSet<string> _selectedRooms = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _overlayActiveRooms = new(StringComparer.OrdinalIgnoreCase);
 
         public ObservableCollection<string> RoomList => _roomList;
 
@@ -1473,6 +1474,18 @@ Ví dụ không hợp lệ:
                                 using var doc = JsonDocument.Parse(msg);
                                 var root = doc.RootElement;
 
+                                if (root.TryGetProperty("overlay", out var overlayEl) &&
+                                    string.Equals(overlayEl.GetString(), "table", StringComparison.OrdinalIgnoreCase) &&
+                                    root.TryGetProperty("event", out var eventEl))
+                                {
+                                    var ev = (eventEl.GetString() ?? "").ToLowerInvariant();
+                                    if (ev == "closed" && root.TryGetProperty("id", out var overlayIdEl))
+                                    {
+                                        OnTableClosed(overlayIdEl.GetString() ?? "");
+                                    }
+                                    return;
+                                }
+
                                 if (!root.TryGetProperty("abx", out var abxEl)) return;
                                 var abxStr = abxEl.GetString() ?? "";
                                 string ui = "";
@@ -2581,7 +2594,81 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 _ = RefreshRoomListAsync(true);
             }
             if (RoomPopup != null)
+            {
                 RoomPopup.IsOpen = !RoomPopup.IsOpen;
+                e.Handled = true;
+            }
+        }
+
+        private void BtnCreateOverlay_Click(object sender, RoutedEventArgs e)
+        {
+            _ = SpawnTableOverlayAsync();
+        }
+
+        private async void BtnResetOverlay_Click(object sender, RoutedEventArgs e)
+        {
+            if (Web?.CoreWebView2 == null)
+            {
+                Log("[TABLE] WebView chưa sẵn sàng.");
+                return;
+            }
+
+            try
+            {
+                await Web.ExecuteScriptAsync("window.__abxTableOverlay && window.__abxTableOverlay.reset();");
+                Log("[TABLE] Reset layout overlay.");
+            }
+            catch (Exception ex)
+            {
+                Log("[TABLE] Lỗi reset overlay: " + ex.Message);
+            }
+        }
+
+        private async Task SpawnTableOverlayAsync()
+        {
+            var selectedRooms = _roomOptions
+                .Where(it => it.IsSelected)
+                .Select(it => it.Name)
+                .ToList();
+
+            if (selectedRooms.Count == 0)
+            {
+                Log("[TABLE] Vui lòng chọn ít nhất một bàn trước khi tạo overlay.");
+                return;
+            }
+
+            if (Web?.CoreWebView2 == null)
+            {
+                Log("[TABLE] WebView chưa sẵn sàng.");
+                return;
+            }
+
+            var roomsJson = JsonSerializer.Serialize(selectedRooms);
+            var optionsJson = JsonSerializer.Serialize(new
+            {
+                baseSelector = ".rY_sn,[data-table-name],[data-tablename],[data-table-id],[data-tabletitle],[data-table-title],[data-title],[data-name]"
+            });
+            var script = $"window.__abxTableOverlay && window.__abxTableOverlay.openRooms({roomsJson}, {optionsJson});";
+            try
+            {
+                await Web.ExecuteScriptAsync(script);
+                _overlayActiveRooms.Clear();
+                foreach (var name in selectedRooms)
+                    _overlayActiveRooms.Add(name);
+                Log($"[TABLE] Tạo overlay cho {selectedRooms.Count} bàn.");
+            }
+            catch (Exception ex)
+            {
+                Log("[TABLE] Lỗi tạo overlay: " + ex.Message);
+            }
+        }
+
+        private void OnTableClosed(string tableId)
+        {
+            if (string.IsNullOrWhiteSpace(tableId))
+                return;
+            if (_overlayActiveRooms.Remove(tableId))
+                Log($"[TABLE] Bàn '{tableId}' đã đóng.");
         }
 
         private void MainWindow_StateChanged_CloseRoomPopup(object? sender, EventArgs e)
@@ -2704,8 +2791,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             var changed = SyncSelectedRoomsFromOptions();
 
-            int total = _roomOptions.Count;
-            int sel = _roomOptions.Count(i => i.IsSelected);
+            var hasLoadedRooms = _roomListLastLoaded != DateTime.MinValue;
+            int total = hasLoadedRooms ? _roomOptions.Count : 0;
+            int sel = hasLoadedRooms ? _roomOptions.Count(i => i.IsSelected) : 0;
 
             if (TxtRoomSummary != null)
             {
@@ -2729,8 +2817,17 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 try { ChkRoomAll.Click += ChkRoomAll_Click; } catch { }
             }
 
+            UpdateCreateOverlayButtonState();
+
             if (_uiReady && changed)
                 _ = TriggerRoomSaveDebouncedAsync();
+        }
+
+        private void UpdateCreateOverlayButtonState()
+        {
+            if (BtnCreateOverlay == null)
+                return;
+            BtnCreateOverlay.IsEnabled = _selectedRooms.Count > 0;
         }
 
         private async Task TriggerRoomSaveDebouncedAsync()
@@ -6384,14 +6481,3 @@ private async Task<CancellationTokenSource> DebounceAsync(
     }
 
 }
-
-
-
-
-
-
-
-
-
-
-
