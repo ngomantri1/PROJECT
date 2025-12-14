@@ -3898,7 +3898,7 @@
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                padding: calc(10px * var(--panel-scale, 1)) calc(32px * var(--panel-scale, 1)) calc(8px * var(--panel-scale, 1)) calc(12px * var(--panel-scale, 1));
+                padding: calc(4px * var(--panel-scale, 1)) calc(28px * var(--panel-scale, 1));
                 gap: 12px;
                 background: #02040b;
                 user-select: none;
@@ -3945,8 +3945,8 @@
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-close {
                 position: absolute;
-                top: 2px;
-                right: 2px;
+                top: 0;
+                right: 0;
                 width: calc(18px * var(--panel-scale, 1));
                 height: calc(18px * var(--panel-scale, 1));
                 border-radius: 3px;
