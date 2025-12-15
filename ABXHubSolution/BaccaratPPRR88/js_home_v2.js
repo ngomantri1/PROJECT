@@ -4081,7 +4081,7 @@
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                padding: calc(4px * var(--panel-scale, 1)) calc(32px * var(--panel-scale, 1)) calc(4px * var(--panel-scale, 1)) calc(12px * var(--panel-scale, 1));
+                padding: calc(2px * var(--panel-scale, 1)) calc(32px * var(--panel-scale, 1)) calc(2px * var(--panel-scale, 1)) calc(12px * var(--panel-scale, 1));
                 gap: 12px;
                 background: #02040b;
                 user-select: none;
