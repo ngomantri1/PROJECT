@@ -31,6 +31,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Data;
 using static BaccaratPPRR88.MainWindow;
 using System.Windows.Input;
+using System.Runtime.InteropServices;
 
 
 
@@ -158,6 +159,26 @@ namespace BaccaratPPRR88
         private readonly string _appDataDir;
         private readonly string _cfgPath;
         private readonly string _logDir;
+        private readonly string _tablesSettingsPath;
+        private readonly TableAutomationManager _tableAutomationManager;
+        private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+        private const uint MOUSEEVENTF_LEFTUP = 0x0004;
+
+        [DllImport("user32.dll")]
+        private static extern bool SetCursorPos(int X, int Y);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out POINT lpPoint);
+
+        [DllImport("user32.dll")]
+        private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT
+        {
+            public int X;
+            public int Y;
+        }
 
         // ====== State ======
         // ---- Auto-login state ----
@@ -775,6 +796,8 @@ Ví dụ không hợp lệ:
             _logDir = Path.Combine(_appDataDir, "logs");
             Directory.CreateDirectory(_logDir);
             CleanupOldLogs();
+            _tablesSettingsPath = Path.Combine(_appDataDir, "tablesettings.json");
+            _tableAutomationManager = new TableAutomationManager(Log, ExecJsAsyncStr, PerformPhysicalClick, _tablesSettingsPath);
 
             // 2) Sau đó mới dựng UI
             InitializeComponent();
@@ -1488,6 +1511,11 @@ Ví dụ không hợp lệ:
 
                                 if (!root.TryGetProperty("abx", out var abxEl)) return;
                                 var abxStr = abxEl.GetString() ?? "";
+                                if (abxStr == "table_update")
+                                {
+                                    _tableAutomationManager?.HandleUpdate(root);
+                                    return;
+                                }
                                 string ui = "";
                                 if (root.TryGetProperty("ui", out var uiEl))
                                     ui = uiEl.GetString() ?? "";
@@ -3150,6 +3178,33 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return raw;
         }
 
+
+        private bool PerformPhysicalClick(int x, int y)
+        {
+            if (x < 0 || y < 0)
+                return false;
+
+            if (!GetCursorPos(out var backup))
+                backup = new POINT { X = x, Y = y };
+
+            try
+            {
+                if (!SetCursorPos(x, y))
+                    return false;
+                mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log("[auto_click] click error: " + ex.Message);
+                return false;
+            }
+            finally
+            {
+                SetCursorPos(backup.X, backup.Y);
+            }
+        }
 
         // ====== CDP tap ======
         private async Task EnableCdpNetworkTapAsync()
