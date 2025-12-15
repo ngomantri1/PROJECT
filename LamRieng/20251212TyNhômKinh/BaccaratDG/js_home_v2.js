@@ -405,7 +405,9 @@
         coordCaptureActive: false,
         templateAutomationRunning: false,
         templateAutomationStatus: '',
-        templateAutomationTargetIds: null
+        templateAutomationTargetIds: null,
+        tableScanIntervalMs: 1500,
+        tableScanRunning: false
     };
 
     const ROOT_Z = 2147483647;
@@ -4692,6 +4694,172 @@ function requestFrameScan(kind, limit) {
             else
                 window.addEventListener('DOMContentLoaded', () => setTimeout(run, 50), { once: true });
         } catch (_) {}
+    })();
+
+    (function tableScanLoop() {
+        let scanTimer = null;
+        let bootTimer = null;
+
+        const parseRect = (rectStr) => {
+            const def = { x: 0, y: 0, w: 0, h: 0 };
+            if (typeof rectStr !== 'string' || !rectStr.trim())
+                return def;
+            const parts = rectStr.trim().split(/\s+/);
+            if (!parts.length)
+                return def;
+            const [xy, wh] = parts;
+            const coords = (xy || '').split(',').map(v => Number(v) || 0);
+            const dims = (wh || '').split('x').map(v => Number(v) || 0);
+            return {
+                x: Math.round(coords[0] || 0),
+                y: Math.round(coords[1] || 0),
+                w: Math.max(0, Math.round(dims[0] || 0)),
+                h: Math.max(0, Math.round(dims[1] || 0))
+            };
+        };
+
+        const createSpot = (rect, ratio) => {
+            if (!rect || rect.w <= 0 || rect.h <= 0)
+                return { x: 0, y: 0, w: 0, h: 0 };
+            const w = Math.max(2, Math.round(rect.w * 0.22));
+            const h = Math.max(2, Math.round(rect.h * 0.18));
+            const x = Math.round(rect.x + Math.max(0, Math.min(rect.w - w, rect.w * ratio)));
+            const y = Math.round(rect.y + Math.max(0, rect.h - h - 4));
+            return { x, y, w, h };
+        };
+
+        const convertHit = (hit, idx) => {
+            const rect = parseRect(hit && hit.rect || '');
+            const key = (hit && (hit.tail || hit.text || hit.attrs) || '').trim();
+            const id = key || `table-${hit && hit.scope || 'top'}-${idx}`;
+            const name = (hit && hit.text) ? (hit.text || '').trim() : `table-${idx}`;
+            return {
+                id,
+                name,
+                scope: (hit && hit.scope) || 'top',
+                score: (hit && hit.score) || 0,
+                rect,
+                playerSpot: createSpot(rect, 0.2),
+                bankerSpot: createSpot(rect, 0.78),
+                tail: (hit && hit.tail) || '',
+                attrs: (hit && hit.attrs) || '',
+                text: (hit && hit.text) || '',
+                countdown: null,
+                resultChain: null,
+                counts: null,
+                bets: null,
+                status: 'unknown'
+            };
+        };
+
+        const gatherHits = () => {
+            const hits = [];
+            try {
+                if (typeof scanBaccCards === 'function') {
+                    hits.push(...scanBaccCards(document, 'top'));
+                }
+            } catch (_) {}
+            try {
+                if (Array.isArray(window.__abx_scan_bacc_hits))
+                    hits.push(...window.__abx_scan_bacc_hits);
+            } catch (_) {}
+            if (typeof window.__abx_scanBaccFrames === 'function') {
+                try {
+                    window.__abx_scanBaccFrames();
+                } catch (_) {}
+            }
+            return hits;
+        };
+
+        const buildTablePayload = () => {
+            const hits = gatherHits();
+            const seen = new Set();
+            const tables = [];
+            hits.forEach((hit, idx) => {
+                if (!hit)
+                    return;
+                const key = (hit.tail || hit.text || hit.attrs || `idx-${idx}`).toString().trim();
+                if (!key || seen.has(key))
+                    return;
+                seen.add(key);
+                tables.push(convertHit(hit, idx));
+            });
+            return {
+                abx: 'table_update',
+                ts: Date.now(),
+                total: tables.length,
+                tables,
+                scope: 'top'
+            };
+        };
+
+        const postTablePayload = (payload) => {
+            if (!payload)
+                return;
+            try {
+                if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function') {
+                    chrome.webview.postMessage(JSON.stringify(payload));
+                } else {
+                    parent.postMessage(payload, '*');
+                }
+            } catch (_) {}
+        };
+
+        const runCycle = () => {
+            const payload = buildTablePayload();
+            postTablePayload(payload);
+            try {
+                const names = payload.tables.slice(0, 4).map(t => t.name || t.id).filter(Boolean);
+                postHomeWatchLog({
+                    abx: 'table_update',
+                    total: payload.tables.length,
+                    scope: payload.scope,
+                    names: names.length ? names.join(', ') : undefined,
+                    ts: payload.ts
+                });
+            } catch (_) {}
+        };
+
+        const startLoop = () => {
+            if (scanTimer)
+                return;
+            if (typeof scanBaccCards !== 'function' && !Array.isArray(window.__abx_scan_bacc_hits)) {
+                scheduleBoot();
+                return;
+            }
+            runCycle();
+            const interval = Math.max(500, Math.floor(S.tableScanIntervalMs || 1200));
+            scanTimer = setInterval(runCycle, interval);
+            S.tableScanRunning = true;
+        };
+
+        const stopLoop = () => {
+            if (!scanTimer)
+                return;
+            clearInterval(scanTimer);
+            scanTimer = null;
+            S.tableScanRunning = false;
+        };
+
+        const scheduleBoot = () => {
+            if (bootTimer)
+                return;
+            bootTimer = setTimeout(() => {
+                bootTimer = null;
+                startLoop();
+            }, 1200);
+        };
+
+        window.__abx_hw_startTableScan = startLoop;
+        window.__abx_hw_stopTableScan = () => {
+            stopLoop();
+            if (bootTimer) {
+                clearTimeout(bootTimer);
+                bootTimer = null;
+            }
+        };
+
+        startLoop();
     })();
 
 // ======= Username & Balance =======

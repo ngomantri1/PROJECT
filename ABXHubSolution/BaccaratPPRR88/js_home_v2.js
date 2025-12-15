@@ -844,6 +844,15 @@
             btnCopy.style.borderRadius = '8px';
             btnCopy.style.cursor = 'pointer';
 
+            const autoScanBtn = document.createElement('button');
+            autoScanBtn.textContent = 'Auto Scan';
+            autoScanBtn.style.background = '#0b122e';
+            autoScanBtn.style.border = '1px solid #334155';
+            autoScanBtn.style.color = '#e5e7eb';
+            autoScanBtn.style.padding = '6px 10px';
+            autoScanBtn.style.borderRadius = '8px';
+            autoScanBtn.style.cursor = 'pointer';
+
             const out = document.createElement('pre');
             out.id = 'hw_dev_output';
             out.style.maxHeight = '140px';
@@ -901,9 +910,183 @@
             wrap.appendChild(ta);
             btnRow.appendChild(btn);
             btnRow.appendChild(btnCopy);
+            btnRow.appendChild(autoScanBtn);
             wrap.appendChild(btnRow);
             wrap.appendChild(out);
+            const tableStatus = document.createElement('div');
+            tableStatus.style.fontSize = '11px';
+            tableStatus.style.color = '#cbd5f5';
+            tableStatus.style.marginTop = '6px';
+            tableStatus.textContent = 'Table scan: chưa chạy';
+            wrap.appendChild(tableStatus);
             root.appendChild(wrap);
+
+            const selectors = ['[data-table-id]', '.tile-container', '.ep_bn'];
+            const formatRect = (rect) => rect ? ({
+                x: Math.round(rect.left),
+                y: Math.round(rect.top),
+                width: Math.round(rect.width),
+                height: Math.round(rect.height)
+            }) : null;
+
+            const normalizeText = (value) => (value || '').replace(/\s+/g, ' ').trim();
+
+            const parseCounts = (text) => {
+                const result = { player: null, banker: null, tie: null };
+                const patterns = {
+                    player: [/player(?:\s*\d*)?\s*(\d+)/i, /người chơi\s*(\d+)/i],
+                    banker: [/banker(?:\s*\d*)?\s*(\d+)/i, /nhà cái\s*(\d+)/i],
+                    tie: [/tie(?:\s*\d*)?\s*(\d+)/i, /hòa\s*(\d+)/i]
+                };
+                for (const [key, regs] of Object.entries(patterns)) {
+                    for (const re of regs) {
+                        const match = (text || '').match(re);
+                        if (match) {
+                            result[key] = Number.parseInt(match[1], 10);
+                            break;
+                        }
+                    }
+                }
+                return result;
+            };
+
+            const toNumber = (str) => {
+                if (!str) return null;
+                const cleaned = str.replace(/[.,]+(?=\d)/g, '');
+                const asNum = Number(cleaned);
+                return Number.isFinite(asNum) ? asNum : null;
+            };
+
+            const parseBets = (text) => {
+                const result = { player: null, banker: null, tie: null };
+                const patterns = {
+                    player: [/người chơi[^\d]*(\d[\d.,]*)/i],
+                    banker: [/nhà cái[^\d]*(\d[\d.,]*)/i],
+                    tie: [/hòa[^\d]*(\d[\d.,]*)/i]
+                };
+                for (const [key, regs] of Object.entries(patterns)) {
+                    for (const re of regs) {
+                        const match = (text || '').match(re);
+                        if (match) {
+                            result[key] = toNumber(match[1]);
+                            break;
+                        }
+                    }
+                }
+                return result;
+            };
+
+            const findSpot = (card, keywords) => {
+                const nodes = Array.from(card.querySelectorAll('button,div,span'));
+                for (const key of keywords) {
+                    const lowerKey = (key || '').toLowerCase();
+                    const hit = nodes.find(node => (node.textContent || '').toLowerCase().includes(lowerKey));
+                    if (hit) {
+                        return formatRect(hit.getBoundingClientRect());
+                    }
+                }
+                return null;
+            };
+
+            const collectCards = () => {
+                const seen = new WeakSet();
+                const list = [];
+                selectors.forEach(sel => {
+                    document.querySelectorAll(sel).forEach(el => {
+                        if (el && !seen.has(el)) {
+                            seen.add(el);
+                            list.push(el);
+                        }
+                    });
+                });
+                return list;
+            };
+
+            const createPayload = () => {
+                const cards = collectCards();
+                if (!cards.length)
+                    return null;
+                const tables = cards.map(card => {
+                    const textSnapshot = normalizeText(card.textContent || '');
+                    const resultChain = Array.from(card.querySelectorAll('.np_nu, .yw_yz, .dw_result'))
+                        .map(el => normalizeText(el.textContent))
+                        .filter(Boolean)
+                        .join('');
+                    return {
+                        id: card.getAttribute('data-table-id') || card.dataset.tableId || '',
+                        name: normalizeText(card.querySelector('.rY_sn, .tile-name, .title, .game-title')?.textContent),
+                        countdown: (card.querySelector('[data-countdown], [class*=count]')?.textContent || '').replace(/[^\d]/g, '') || null,
+                        resultChain,
+                        counts: parseCounts(textSnapshot),
+                        bets: parseBets(textSnapshot),
+                        status: textSnapshot.toLowerCase().includes('betting') ? 'betting' : textSnapshot.toLowerCase().includes('result') ? 'result' : 'waiting',
+                        playerSpot: findSpot(card, ['player', 'người chơi']),
+                        bankerSpot: findSpot(card, ['banker', 'nhà cái']),
+                        rect: formatRect(rectOf(card))
+                    };
+                }).filter(entry => entry.id || entry.name);
+                if (!tables.length)
+                    return null;
+                return { abx: 'table_update', tables };
+            };
+
+            const sendPayload = (payload) => {
+                if (!payload)
+                    return;
+                const text = JSON.stringify(payload);
+                if (!text)
+                    return;
+                try {
+                    if (window.chrome?.webview?.postMessage) {
+                        chrome.webview.postMessage(text);
+                        return;
+                    }
+                    if (window.top && window.top !== window && typeof window.top.postMessage === 'function') {
+                        window.top.postMessage(text, '*');
+                        return;
+                    }
+                } catch (err) {
+                    console.warn('[HomeWatch] table_update send failed', err);
+                }
+            };
+
+            const updateTableStatus = (msg) => {
+                tableStatus.textContent = msg;
+                console.log('[HomeWatch table_update]', msg);
+            };
+
+            let tableScanTimer = null;
+            let lastPayload = '';
+
+            const scanAndPost = () => {
+                const payload = createPayload();
+                if (!payload) {
+                    updateTableStatus('Không tìm thấy bàn chơi nào.');
+                    return;
+                }
+                const text = JSON.stringify(payload);
+                if (text === lastPayload) {
+                    updateTableStatus('Payload chưa thay đổi.');
+                    return;
+                }
+                sendPayload(payload);
+                lastPayload = text;
+                updateTableStatus(`Đã gửi ${payload.tables.length} bảng (${new Date().toLocaleTimeString()})`);
+            };
+
+            autoScanBtn.onclick = () => {
+                if (tableScanTimer) {
+                    clearInterval(tableScanTimer);
+                    tableScanTimer = null;
+                    autoScanBtn.textContent = 'Auto Scan';
+                    updateTableStatus('Auto scan dừng.');
+                    return;
+                }
+                scanAndPost();
+                tableScanTimer = setInterval(scanAndPost, 2500);
+                autoScanBtn.textContent = 'Dừng Auto';
+                updateTableStatus('Auto scan đang chạy...');
+            };
         })();
 
         // drag bằng title

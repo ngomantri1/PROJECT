@@ -191,6 +191,10 @@ namespace BaccaratDG
         private IBetTask _activeTask;
         private const int NiSeqMax = 50;
         private readonly System.Text.StringBuilder _niSeq = new(NiSeqMax);
+        private readonly object _tableSnapshotLock = new();
+        private TableSnapshot[] _tableSnapshot = Array.Empty<TableSnapshot>();
+        private DateTime _lastTableUpdateLog = DateTime.MinValue;
+        private static readonly TimeSpan TableUpdateLogThrottle = TimeSpan.FromSeconds(5);
 
         // Tổng C/L của ván đang diễn ra (để dùng khi ván vừa khép lại)
         private long _roundTotalsC = 0;
@@ -1930,6 +1934,12 @@ Ví dụ không hợp lệ:
                                     return;
                                 }
 
+                                if (abxStr == "table_update")
+                                {
+                                    ProcessTableUpdate(root);
+                                    return;
+                                }
+
                                 // 5) home_tick: username/balance/url từ Home
                                 //if (abxStr == "home_tick")
                                 //{
@@ -2051,6 +2061,131 @@ Ví dụ không hợp lệ:
                 _ensuringWeb = false;
             }
         }
+
+        private void ProcessTableUpdate(JsonElement root)
+        {
+            if (!root.TryGetProperty("tables", out var tablesEl) || tablesEl.ValueKind != JsonValueKind.Array)
+                return;
+            try
+            {
+                Log("[JS] " + root.GetRawText());
+            }
+            catch { }
+            var list = new List<TableSnapshot>();
+            foreach (var tableEl in tablesEl.EnumerateArray())
+            {
+                try
+                {
+                    list.Add(ParseTableSnapshot(tableEl));
+                }
+                catch (Exception ex)
+                {
+                    Log("[table_update] parse error: " + ex.Message);
+                }
+            }
+            lock (_tableSnapshotLock)
+            {
+                _tableSnapshot = list.ToArray();
+            }
+            var now = DateTime.UtcNow;
+            if ((now - _lastTableUpdateLog) >= TableUpdateLogThrottle)
+            {
+                _lastTableUpdateLog = now;
+                var preview = string.Join(", ", _tableSnapshot.Take(3).Select(t => t.Name).Where(n => !string.IsNullOrWhiteSpace(n)));
+                if (string.IsNullOrWhiteSpace(preview) && _tableSnapshot.Length > 0)
+                    preview = _tableSnapshot[0].Id;
+                Log($"[table_update] tables={_tableSnapshot.Length}" + (string.IsNullOrEmpty(preview) ? "" : $" names={preview}"));
+            }
+        }
+
+        private TableSnapshot ParseTableSnapshot(JsonElement element)
+        {
+            var rectEl = element.TryGetProperty("rect", out var re) ? re : default;
+            var playerEl = element.TryGetProperty("playerSpot", out var ps) ? ps : default;
+            var bankerEl = element.TryGetProperty("bankerSpot", out var bs) ? bs : default;
+            var counts = element.TryGetProperty("counts", out var countsEl) && countsEl.ValueKind == JsonValueKind.Object
+                ? new TableCounts
+                {
+                    Player = GetInt(countsEl, "player"),
+                    Banker = GetInt(countsEl, "banker"),
+                    Tie = GetInt(countsEl, "tie")
+                }
+                : null;
+            var bets = element.TryGetProperty("bets", out var betsEl) && betsEl.ValueKind == JsonValueKind.Object
+                ? new TableBets
+                {
+                    Player = GetLong(betsEl, "player"),
+                    Banker = GetLong(betsEl, "banker"),
+                    Tie = GetLong(betsEl, "tie")
+                }
+                : null;
+            var score = element.TryGetProperty("score", out var scoreEl) && scoreEl.TryGetDouble(out var scoreVal)
+                ? (long)Math.Round(scoreVal)
+                : 0;
+            var ts = element.TryGetProperty("ts", out var tsEl) && tsEl.TryGetInt64(out var tsVal)
+                ? DateTimeOffset.FromUnixTimeMilliseconds(tsVal).UtcDateTime
+                : DateTime.UtcNow;
+            return new TableSnapshot
+            {
+                Id = element.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "" : "",
+                Name = element.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? "" : "",
+                Scope = element.TryGetProperty("scope", out var scopeEl) ? scopeEl.GetString() ?? "" : "",
+                Text = element.TryGetProperty("text", out var textEl) ? textEl.GetString() ?? "" : "",
+                Attrs = element.TryGetProperty("attrs", out var attrsEl) ? attrsEl.GetString() ?? "" : "",
+                Tail = element.TryGetProperty("tail", out var tailEl) ? tailEl.GetString() ?? "" : "",
+                Rect = ParseRect(rectEl),
+                PlayerSpot = ParseRect(playerEl),
+                BankerSpot = ParseRect(bankerEl),
+                Counts = counts,
+                Bets = bets,
+                Status = element.TryGetProperty("status", out var stEl) ? stEl.GetString() ?? "" : "",
+                ResultChain = element.TryGetProperty("resultChain", out var rcEl) ? rcEl.GetString() ?? "" : "",
+                Score = score,
+                Timestamp = ts
+            };
+        }
+
+        private static TableRect ParseRect(JsonElement element)
+        {
+            if (element.ValueKind != JsonValueKind.Object)
+                return new TableRect();
+            return new TableRect
+            {
+                X = GetInt(element, "x"),
+                Y = GetInt(element, "y"),
+                W = GetInt(element, "w"),
+                H = GetInt(element, "h")
+            };
+        }
+
+        private static int GetInt(JsonElement parent, string property, int fallback = 0)
+        {
+            if (parent.TryGetProperty(property, out var el))
+            {
+                if (el.TryGetInt32(out var iv))
+                    return iv;
+                if (el.TryGetDouble(out var dv))
+                    return Convert.ToInt32(Math.Round(dv));
+                if (el.ValueKind == JsonValueKind.String && int.TryParse(el.GetString(), out var iv2))
+                    return iv2;
+            }
+            return fallback;
+        }
+
+        private static long? GetLong(JsonElement parent, string property)
+        {
+            if (parent.TryGetProperty(property, out var el))
+            {
+                if (el.TryGetInt64(out var lv))
+                    return lv;
+                if (el.TryGetDouble(out var dv))
+                    return Convert.ToInt64(Math.Round(dv));
+                if (el.ValueKind == JsonValueKind.String && long.TryParse(el.GetString(), out var lv2))
+                    return lv2;
+            }
+            return null;
+        }
+
 
 
 
@@ -7092,6 +7227,47 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 SetError(LblPatError, null);
             }
+        }
+
+        private sealed class TableRect
+        {
+            public int X { get; init; }
+            public int Y { get; init; }
+            public int W { get; init; }
+            public int H { get; init; }
+        }
+
+        private sealed class TableCounts
+        {
+            public int Player { get; init; }
+            public int Banker { get; init; }
+            public int Tie { get; init; }
+        }
+
+        private sealed class TableBets
+        {
+            public long? Player { get; init; }
+            public long? Banker { get; init; }
+            public long? Tie { get; init; }
+        }
+
+        private sealed class TableSnapshot
+        {
+            public string Id { get; init; } = "";
+            public string Name { get; init; } = "";
+            public string Scope { get; init; } = "";
+            public string Tail { get; init; } = "";
+            public string Text { get; init; } = "";
+            public string Attrs { get; init; } = "";
+            public TableRect Rect { get; init; } = new();
+            public TableRect PlayerSpot { get; init; } = new();
+            public TableRect BankerSpot { get; init; } = new();
+            public TableCounts? Counts { get; init; }
+            public TableBets? Bets { get; init; }
+            public string Status { get; init; } = "";
+            public string ResultChain { get; init; } = "";
+            public long Score { get; init; }
+            public DateTime Timestamp { get; init; }
         }
 
 
