@@ -4623,30 +4623,6 @@
             return Number.isFinite(num) ? num : null;
         }
 
-        const roomCountdownMap = new Map([
-            ['Baccarat 3', ['span.yw_yz.yw_yA', 'span.yw_yz.yw_yC']]
-        ]);
-
-        function findCountdownNode(roomId, src) {
-            if (!src)
-                return null;
-            const prioritized = roomCountdownMap.get(roomId) || [];
-            for (const sel of prioritized) {
-                const node = src.querySelector(sel);
-                if (node)
-                    return node;
-            }
-            const countdownSelectors = [
-                'span.yw_yz.yw_yC'
-            ];
-            for (const sel of countdownSelectors) {
-                const node = src.querySelector(sel);
-                if (node)
-                    return node;
-            }
-            return null;
-        }
-
         function captureTableState(room) {
             try {
                 const st = getPanelState(room.id);
@@ -4656,7 +4632,21 @@
                 const src = candidate && candidate.isConnected ? candidate : findCardRootByName(room.name || room.id);
                 if (!src || !src.isConnected)
                     return null;
-                const countdownNode = findCountdownNode(room.id, src);
+                const countdownSelectors = [
+                    'span.yw_yz.yw_yC',
+                    'div.kM_kN.kM_kR span.qL_qM.qL_qN',
+                    'span.qL_qM.qL_qN',
+                    'div.kM_lc span.qL_qM.qL_qN',
+                    'div.kM_lc span'
+                ];
+                let countdownNode = null;
+                for (const sel of countdownSelectors) {
+                    const node = src.querySelector(sel);
+                    if (node) {
+                        countdownNode = node;
+                        break;
+                    }
+                }
                 const rawText = countdownNode ? (countdownNode.textContent || '').trim() : '';
                 const parsedCountdown = parseCountdownValue(rawText);
                 const sameNode = countdownNode && st.lastCountdownNode === countdownNode;
