@@ -4124,7 +4124,7 @@
         const GAP = 8;
         const MIN_W = 180;
         const MIN_H = 140;
-        const STATE_INTERVAL = 600;
+        const STATE_INTERVAL = 300;
         const MAX_COUNTDOWN = 13;
 
         let rooms = [];
@@ -4501,23 +4501,18 @@
             return Number.isFinite(num) ? num : null;
         }
 
-        const roomCountdownMap = new Map([
-            ['Baccarat 3', ['span.yw_yz.yw_yA', 'span.yw_yz.yw_yC']]
-        ]);
+        const defaultCountdownSelectors = ['span.yw_yz.yw_yA'];
 
         function findCountdownNode(roomId, src) {
             if (!src)
                 return null;
-            const prioritized = roomCountdownMap.get(roomId) || [];
+            const prioritized = defaultCountdownSelectors;
             for (const sel of prioritized) {
                 const node = src.querySelector(sel);
                 if (node)
                     return node;
             }
-            const countdownSelectors = [
-                'span.yw_yz.yw_yC'
-            ];
-            for (const sel of countdownSelectors) {
+            for (const sel of defaultCountdownSelectors) {
                 const node = src.querySelector(sel);
                 if (node)
                     return node;
@@ -4984,6 +4979,21 @@
                 seen.add(room.id);
                 return true;
             });
+        }
+
+        function collectRoomsFromDom() {
+            const seen = new Set();
+            const rooms = [];
+            const panels = Array.from(document.querySelectorAll('div.__abx_table_panel, div.ep_bn'));
+            panels.forEach(panel => {
+                const title = panel.querySelector('span.rY_sn, div.head .title, div.title');
+                const name = title && (title.textContent || title.innerText || '').trim();
+                if (!name || seen.has(name))
+                    return;
+                seen.add(name);
+                rooms.push({ id: name, name });
+            });
+            return rooms;
         }
 
         function closePanel(id, options = {}) {
