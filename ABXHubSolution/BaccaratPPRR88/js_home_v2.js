@@ -922,12 +922,46 @@
             wrap.appendChild(tableStatus);
             root.appendChild(wrap);
 
-            const selectors = ['[data-table-id]', '.tile-container', '.ep_bn'];
+            const CARD_SELECTORS = [
+                '[data-table-id]',
+                '[data-id]',
+                '[data-game-id]',
+                '[data-tableid]',
+                '[data-tableId]',
+                '.tile-container',
+                '.ep_bn',
+                '.qW_rl',
+                '.hC_hE',
+                '.hu_hw'
+            ];
+            const NAME_SELECTORS = '.rY_sn, .qL_qM.qL_qN, .tile-name, .title, .game-title, .qW_rl span, .qW_rl .title';
+            const ATTR_CANDIDATES = [
+                'data-table-id',
+                'data-id',
+                'data-game-id',
+                'data-tableid',
+                'data-tableId',
+                'data-gametable-id',
+                'data-lobbytable-id',
+                'data-table',
+                'data-key',
+                'data-code',
+                'data-guid',
+                'data-room',
+                'data-ref',
+                'data-name',
+                'aria-controls',
+                'aria-labelledby',
+                'aria-label',
+                'title',
+                'id'
+            ];
+
             const formatRect = (rect) => rect ? ({
-                x: Math.round(rect.left),
-                y: Math.round(rect.top),
-                width: Math.round(rect.width),
-                height: Math.round(rect.height)
+                x: Math.round((rect.left != null ? rect.left : rect.x) || 0),
+                y: Math.round((rect.top != null ? rect.top : rect.y) || 0),
+                width: Math.round((rect.width != null ? rect.width : rect.w) || 0),
+                height: Math.round((rect.height != null ? rect.height : rect.h) || 0)
             }) : null;
 
             const normalizeText = (value) => (value || '').replace(/\s+/g, ' ').trim();
@@ -989,46 +1023,122 @@
                 return null;
             };
 
-            const collectCards = () => {
-                const seen = new WeakSet();
-                const list = [];
-                selectors.forEach(sel => {
-                    document.querySelectorAll(sel).forEach(el => {
-                        if (el && !seen.has(el)) {
-                            seen.add(el);
-                            list.push(el);
+            const listDocuments = () => {
+                const docs = [{ doc: document, label: 'top' }];
+                document.querySelectorAll('iframe').forEach((frame, idx) => {
+                    try {
+                        const doc = frame.contentDocument;
+                        if (doc) {
+                            const label = frame.id || frame.name || frame.src || `iframe#${idx}`;
+                            docs.push({ doc, label });
                         }
-                    });
+                    } catch (_) {}
                 });
-                return list;
+                return docs;
             };
 
+            const collectCards = () => {
+                const entries = [];
+                const report = [];
+                listDocuments().forEach(({ doc, label }) => {
+                    const seen = new Set();
+                    CARD_SELECTORS.forEach(sel => {
+                        doc.querySelectorAll(sel).forEach(el => {
+                            if (!el || seen.has(el))
+                                return;
+                            seen.add(el);
+                            entries.push({ el, label });
+                        });
+                    });
+                    report.push(`${label}: ${seen.size} phần tử`);
+                });
+                return { entries, report };
+            };
+
+            const NAME_IGNORE_PATTERN = /(đặt cược|cược|bet|đang|road|result|người chơi|nhà cái|hòa)/i;
+
+            const extractId = (card) => {
+                for (const attr of ATTR_CANDIDATES) {
+                    const val = card.getAttribute && card.getAttribute(attr);
+                    if (val)
+                        return normalizeText(val);
+                }
+                const dataset = card.dataset || {};
+                for (const key of Object.keys(dataset)) {
+                    const val = dataset[key];
+                    if (val)
+                        return normalizeText(val);
+                }
+                return '';
+            };
+
+            const extractName = (card) => {
+                const direct = card.querySelector(NAME_SELECTORS);
+                if (direct) {
+                    const txt = normalizeText(direct.textContent);
+                    if (txt)
+                        return txt;
+                }
+                const aria = normalizeText(card.getAttribute?.('aria-label') || card.getAttribute?.('title') || '');
+                if (aria)
+                    return aria;
+                const candidates = Array.from(card.querySelectorAll('span,div,strong,p,h2,h3'))
+                    .map(el => normalizeText(el.textContent))
+                    .filter(txt => txt && /[a-z0-9]/i.test(txt))
+                    .filter(txt => !NAME_IGNORE_PATTERN.test(txt));
+                if (candidates.length)
+                    return candidates[0];
+                const fallback = normalizeText(card.textContent || '');
+                return fallback ? fallback.slice(0, 80) : '';
+            };
+
+            const reportSuffix = (report) => report && report.length ? ' | ' + report.join(' | ') : '';
+
             const createPayload = () => {
-                const cards = collectCards();
-                if (!cards.length)
-                    return null;
-                const tables = cards.map(card => {
-                    const textSnapshot = normalizeText(card.textContent || '');
-                    const resultChain = Array.from(card.querySelectorAll('.np_nu, .yw_yz, .dw_result'))
-                        .map(el => normalizeText(el.textContent))
+                const { entries, report } = collectCards();
+                if (!entries.length) {
+                    return {
+                        payload: null,
+                        note: 'Không tìm thấy bàn chơi nào.' + reportSuffix(report)
+                    };
+                }
+                const tables = entries.map(({ el }) => {
+                    const textSnapshot = normalizeText(el.textContent || '');
+                    const resultChain = Array.from(el.querySelectorAll('.np_nu, .yw_yz, .dw_result'))
+                        .map(node => normalizeText(node.textContent))
                         .filter(Boolean)
                         .join('');
+                    let id = extractId(el);
+                    let name = extractName(el);
+                    if (!id && name)
+                        id = 'name:' + name.toLowerCase().replace(/\s+/g, '_');
+                    if (!name && id)
+                        name = id;
                     return {
-                        id: card.getAttribute('data-table-id') || card.dataset.tableId || '',
-                        name: normalizeText(card.querySelector('.rY_sn, .tile-name, .title, .game-title')?.textContent),
-                        countdown: (card.querySelector('[data-countdown], [class*=count]')?.textContent || '').replace(/[^\d]/g, '') || null,
+                        id,
+                        name,
+                        countdown: (el.querySelector('[data-countdown], [class*=count]')?.textContent || '').replace(/[^\d]/g, '') || null,
                         resultChain,
                         counts: parseCounts(textSnapshot),
                         bets: parseBets(textSnapshot),
                         status: textSnapshot.toLowerCase().includes('betting') ? 'betting' : textSnapshot.toLowerCase().includes('result') ? 'result' : 'waiting',
-                        playerSpot: findSpot(card, ['player', 'người chơi']),
-                        bankerSpot: findSpot(card, ['banker', 'nhà cái']),
-                        rect: formatRect(rectOf(card))
+                        playerSpot: findSpot(el, ['player', 'người chơi']),
+                        bankerSpot: findSpot(el, ['banker', 'nhà cái']),
+                        rect: formatRect(el.getBoundingClientRect())
                     };
-                }).filter(entry => entry.id || entry.name);
-                if (!tables.length)
-                    return null;
-                return { abx: 'table_update', tables };
+                }).filter(entry => entry.id && entry.name);
+
+                if (!tables.length) {
+                    return {
+                        payload: null,
+                        note: `Đã thấy ${entries.length} phần tử nhưng thiếu id/name.` + reportSuffix(report)
+                    };
+                }
+
+                return {
+                    payload: { abx: 'table_update', tables },
+                    note: `Đã thu được ${tables.length} bàn.` + reportSuffix(report)
+                };
             };
 
             const sendPayload = (payload) => {
@@ -1060,9 +1170,9 @@
             let lastPayload = '';
 
             const scanAndPost = () => {
-                const payload = createPayload();
+                const { payload, note } = createPayload();
                 if (!payload) {
-                    updateTableStatus('Không tìm thấy bàn chơi nào.');
+                    updateTableStatus(note || 'Không tìm thấy bàn chơi nào.');
                     return;
                 }
                 const text = JSON.stringify(payload);
@@ -1072,7 +1182,8 @@
                 }
                 sendPayload(payload);
                 lastPayload = text;
-                updateTableStatus(`Đã gửi ${payload.tables.length} bảng (${new Date().toLocaleTimeString()})`);
+                const stamp = new Date().toLocaleTimeString();
+                updateTableStatus(`${note || 'Đã gửi payload'} (${stamp})`);
             };
 
             autoScanBtn.onclick = () => {
@@ -4130,6 +4241,8 @@
         let layouts = loadLayouts();
         const panelMap = new Map();
         const lastStateSig = new Map();
+        const roomDomRegistry = new Map();
+        const pinSyncState = new Map();
         let stateTimer = null;
         let cfg = {
             resolveDom: null,
@@ -4380,21 +4493,141 @@
             return { cols, rows };
         }
 
+        function rememberRoomDom(name, node) {
+            if (!name || !node)
+                return;
+            roomDomRegistry.set(name, node);
+        }
+
         function findCardRootByName(id) {
             if (!id)
                 return null;
             const needle = (id || '').trim();
             if (!needle)
                 return null;
-            const selectors = ['span.rY_sn', 'span.qL_qM.qL_qN', 'div.abx-table-title'];
+            const cached = roomDomRegistry.get(needle);
+            if (cached && cached.isConnected)
+                return cached;
+            if (cached && !cached.isConnected)
+                roomDomRegistry.delete(needle);
+            const selectors = ['span.rY_sn', 'span.qL_qM.qL_qN', 'div.abx-table-title', 'span.qW_rl', '.qW_rl'];
             for (const sel of selectors) {
                 const list = Array.from(document.querySelectorAll(sel));
                 const match = list.find(el => (el.textContent || '').trim() === needle);
                 if (match) {
-                    return match.closest('div.hC_hE') || match.closest('div.ep_bn') || match.closest('div.hu_hw') || match;
+                    const root = match.closest('.qW_rl') || match.closest('div.hC_hE') || match.closest('div.ep_bn') || match.closest('div.hu_hw') || match;
+                    if (root)
+                        rememberRoomDom(needle, root);
+                    return root;
                 }
             }
             return null;
+        }
+
+        const PIN_SELECTORS = [
+            'div.qC_qE button',
+            'div.qC_qE .gK_gB',
+            'div.qC_qQ button',
+            'div.qC_qQ .gK_gB',
+            'button[aria-label*=\"ghim\" i]',
+            'div[aria-label*=\"ghim\" i]',
+            'button[title*=\"ghim\" i]',
+            'div[title*=\"ghim\" i]',
+            '[data-role*=\"favorite\"]',
+            'button[aria-pressed]',
+            'div.qC_qE',
+            'div.qC_qQ'
+        ];
+
+        function resolvePinButton(root) {
+            if (!root)
+                return null;
+            for (const sel of PIN_SELECTORS) {
+                const el = root.querySelector(sel);
+                if (!el)
+                    continue;
+                if (el.tagName === 'BUTTON')
+                    return el;
+                const btn = el.closest('button');
+                if (btn)
+                    return btn;
+                if (typeof el.click === 'function')
+                    return el;
+            }
+            return null;
+        }
+
+        function isPinActive(btn) {
+            if (!btn)
+                return false;
+            const aria = btn.getAttribute && btn.getAttribute('aria-pressed');
+            if (aria != null)
+                return aria === 'true';
+            const clsSources = [
+                btn.className || '',
+                btn.parentElement && btn.parentElement.className || '',
+                btn.closest && (btn.closest('.qC_qE, .qC_qF, .qC_qH, .qC_qQ')?.className || '')
+            ].filter(Boolean).join(' ');
+            if (!clsSources)
+                return false;
+            return /\b(active|selected|on|checked|qC_qH)\b/i.test(clsSources);
+        }
+
+        function fireClick(el) {
+            if (!el)
+                return false;
+            try {
+                const evt = new MouseEvent('click', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                el.dispatchEvent(evt);
+                return true;
+            } catch (_) {
+                try {
+                    el.click();
+                    return true;
+                } catch (_) {
+                    return false;
+                }
+            }
+        }
+
+        function ensurePinState(roomId, shouldPin) {
+            if (!roomId)
+                return;
+            const root = findCardRootByName(roomId);
+            if (!root)
+                return;
+            const btn = resolvePinButton(root);
+            if (!btn)
+                return;
+            const desired = !!shouldPin;
+            const current = isPinActive(btn);
+            if (current === desired) {
+                if (desired)
+                    pinSyncState.set(roomId, true);
+                else
+                    pinSyncState.delete(roomId);
+                return;
+            }
+            if (fireClick(btn)) {
+                if (desired)
+                    pinSyncState.set(roomId, true);
+                else
+                    pinSyncState.delete(roomId);
+            }
+        }
+
+        function syncPinStates(activeList) {
+            const ids = Array.isArray(activeList) ? activeList : [];
+            const activeSet = new Set(ids);
+            activeSet.forEach(id => ensurePinState(id, true));
+            Array.from(pinSyncState.keys()).forEach(id => {
+                if (!activeSet.has(id))
+                    ensurePinState(id, false);
+            });
         }
 
         function defaultResolveDom(id) {
@@ -4936,6 +5169,8 @@
                 } catch (_) {}
             }
             lastStateSig.delete(id);
+            ensurePinState(id, false);
+            pinSyncState.delete(id);
             stopStateTimerIfIdle();
         }
 
@@ -4961,6 +5196,7 @@
                 }
             });
             layoutAll(true);
+            syncPinStates(rooms.map(r => r.id));
             ensureStateTimer();
         }
 
