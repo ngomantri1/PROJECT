@@ -328,7 +328,8 @@
         missStreak: 0,
         authGateOpened: false,
         loginPopupTimer: null, // NEW: timer auto click login
-        loginPostProbeStarted: false // NEW: tránh start probe trùng
+        loginPostProbeStarted: false, // NEW: tránh start probe trùng
+        overlayLog: ''
     };
 
     const ROOT_Z = 2147483647;
@@ -1256,6 +1257,9 @@
             '• Has Xóc Đĩa: ' + String(live)
         ];
 
+        if (S.overlayLog)
+            L.push('', 'Log: ' + S.overlayLog);
+
         if (extra)
             L.push('', extra);
 
@@ -1298,6 +1302,111 @@
                 document.body.removeChild(ta);
             }
         } catch (_) {}
+    }
+
+    function appendDevLog(line) {
+        try {
+            const out = document.getElementById('hw_dev_output');
+            if (out) {
+                const prev = out.textContent || '';
+                out.textContent = (line || '') + '\n---\n' + prev;
+                return;
+            }
+        } catch (_) {}
+        try {
+            console.log('[HW]', line);
+        } catch (_) {}
+    }
+
+    const ALERT_ID = '__abx_alert_log_popup';
+
+    function ensureAlertContainer() {
+        let el = document.getElementById(ALERT_ID);
+        if (el)
+            return el;
+        el = document.createElement('div');
+        el.id = ALERT_ID;
+        el.style.cssText = [
+            'position:fixed', 'inset:12px 12px auto auto', 'z-index:2147481000',
+            'width:320px', 'max-width:calc(100vw - 24px)', 'background:#081028',
+            'color:#fefefe', 'padding:12px', 'border-radius:12px', 'box-shadow:0 12px 32px rgba(0,0,0,.65)',
+            'border:1px solid rgba(255,255,255,0.12)', 'font:13px/1.4 Roboto,system-ui,sans-serif'
+        ].join(';');
+        el.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <strong style="font-size:14px">Alert dữ liệu</strong>
+                <button id="${ALERT_ID}-close" style="border:none;background:none;color:#fff;font-size:18px;cursor:pointer">×</button>
+            </div>
+            <textarea id="${ALERT_ID}-ta" style="width:100%;height:140px;background:#0b1525;border:1px solid rgba(255,255,255,0.15);color:#fefefe;padding:6px;border-radius:6px;resize:none;font:13px/1.4 Consolas,monospace"></textarea>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+                <button id="${ALERT_ID}-copy" style="border:none;padding:6px 12px;border-radius:6px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer">Copy</button>
+                <span style="font-size:11px;opacity:.7">Copy nhanh để gửi</span>
+            </div>`;
+        document.body.appendChild(el);
+        const closeBtn = document.getElementById(`${ALERT_ID}-close`);
+        closeBtn?.addEventListener('click', () => el.remove());
+        const copyBtn = document.getElementById(`${ALERT_ID}-copy`);
+        copyBtn?.addEventListener('click', async () => {
+            try {
+                const ta = document.getElementById(`${ALERT_ID}-ta`);
+                if (ta && ta.value) {
+                    await navigator.clipboard.writeText(ta.value);
+                }
+            } catch (_) { /* ignore */ }
+        });
+        return el;
+    }
+
+    function showTestAlert(content) {
+        try {
+            const el = ensureAlertContainer();
+            const ta = document.getElementById(`${ALERT_ID}-ta`);
+            if (ta) {
+                ta.value = content;
+                ta.focus();
+                ta.select();
+            }
+        } catch (_) {}
+    }
+
+    window.__abx_hw_showDataAlert = showTestAlert;
+
+    function setOverlayLog(msg) {
+        try {
+            S.overlayLog = clip(String(msg || ''), 180);
+            updateInfo();
+        } catch (_) {}
+    }
+
+    function installPostMessageLogger() {
+        if (window.__abx_pm_hooked)
+            return;
+        const wv = window.chrome && window.chrome.webview;
+        if (!wv || typeof wv.postMessage !== 'function')
+            return;
+        window.__abx_pm_hooked = true;
+        const orig = wv.postMessage.bind(wv);
+        wv.postMessage = function (data) {
+            try {
+                let obj = data;
+                if (typeof data === 'string') {
+                    try { obj = JSON.parse(data); } catch (_) {}
+                }
+                if (obj && obj.overlay === 'table') {
+                    appendDevLog('[postMessage overlay] ' + JSON.stringify(obj));
+                    const summary = [
+                        '[overlay]',
+                        obj.event ? ('event=' + obj.event) : '',
+                        obj.id ? ('id=' + obj.id) : '',
+                        Array.isArray(obj.tables) ? ('tables=' + obj.tables.length) : ''
+                    ].filter(Boolean).join(' ');
+                    setOverlayLog(summary || '[overlay]');
+                }
+            } catch (_) {}
+            return orig.apply(this, arguments);
+        };
+        appendDevLog('Đã bật log postMessage (overlay).');
+        setOverlayLog('Đã bật log overlay.');
     }
 
     // === Automino Home <-> C# bridge (non-intrusive) ===
@@ -4015,10 +4124,13 @@
         const GAP = 8;
         const MIN_W = 180;
         const MIN_H = 140;
+        const STATE_INTERVAL = 900;
 
         let rooms = [];
         let layouts = loadLayouts();
         const panelMap = new Map();
+        const lastStateSig = new Map();
+        let stateTimer = null;
         let cfg = {
             resolveDom: null,
             selectorTemplate: '',
@@ -4154,13 +4266,74 @@
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .body {
                 flex: 1;
-                background: #0c142a;
+                background: #020b1f;
+                display: flex;
+                flex-direction: column;
+                gap: calc(10px * var(--panel-scale, 1));
+                padding: calc(12px * var(--panel-scale, 1));
                 overflow: hidden;
             }
-            #${OVERLAY_ID} .${PANEL_CLASS} .body > .mirror {
-                width: 100%;
-                height: 100%;
-                overflow: hidden;
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-info {
+                display: flex;
+                gap: calc(16px * var(--panel-scale, 1));
+                align-items: center;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown {
+                width: calc(74px * var(--panel-scale, 1));
+                height: calc(74px * var(--panel-scale, 1));
+                border-radius: 50%;
+                border: 2px solid rgba(255,255,255,0.25);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-direction: column;
+                gap: 3px;
+                font-weight: 600;
+                color: #fefefe;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown .countdown-value {
+                font-size: calc(18px * var(--panel-scale, 1));
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown .countdown-label {
+                font-size: calc(10px * var(--panel-scale, 1));
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                opacity: .7;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta {
+                flex: 1;
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+                gap: calc(10px * var(--panel-scale, 1));
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta .meta-item {
+                background: rgba(255,255,255,0.05);
+                padding: calc(8px * var(--panel-scale, 1));
+                border-radius: calc(6px * var(--panel-scale, 1));
+                border: 1px solid rgba(255,255,255,0.07);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta .meta-label {
+                font-size: calc(9px * var(--panel-scale, 1));
+                text-transform: uppercase;
+                opacity: 0.7;
+                margin-bottom: 2px;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta .meta-value {
+                font-size: calc(13px * var(--panel-scale, 1));
+                font-weight: 600;
+                color: #fefefe;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-text {
+                flex: 1;
+                background: rgba(5,11,28,0.8);
+                border-radius: calc(8px * var(--panel-scale, 1));
+                border: 1px solid rgba(255,255,255,0.08);
+                padding: calc(10px * var(--panel-scale, 1));
+                font-size: calc(11px * var(--panel-scale, 1));
+                line-height: 1.4;
+                color: #dbeafe;
+                overflow: auto;
+                white-space: pre-wrap;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .resize {
                 position: absolute;
@@ -4207,6 +4380,23 @@
             return { cols, rows };
         }
 
+        function findCardRootByName(id) {
+            if (!id)
+                return null;
+            const needle = (id || '').trim();
+            if (!needle)
+                return null;
+            const selectors = ['span.rY_sn', 'span.qL_qM.qL_qN', 'div.abx-table-title'];
+            for (const sel of selectors) {
+                const list = Array.from(document.querySelectorAll(sel));
+                const match = list.find(el => (el.textContent || '').trim() === needle);
+                if (match) {
+                    return match.closest('div.hC_hE') || match.closest('div.ep_bn') || match.closest('div.hu_hw') || match;
+                }
+            }
+            return null;
+        }
+
         function defaultResolveDom(id) {
             try {
                 const sel = [
@@ -4236,91 +4426,231 @@
             return null;
         }
 
+        if (!cfg.resolveDom)
+            cfg.resolveDom = findCardRootByName;
+
+        function parseStats(node) {
+            if (!node)
+                return null;
+            const children = Array.from(node.children);
+            const parseValue = item => {
+                if (!item)
+                    return null;
+                const target = item.querySelector('div.np_nu') || item;
+                const raw = (target.textContent || item.textContent || '').trim();
+                const match = raw.match(/#?(\d+)/);
+                return {
+                    display: raw || '',
+                    value: match ? Number(match[1]) : null
+                };
+            };
+            return {
+                total: parseValue(children[0]),
+                player: parseValue(children[1]),
+                banker: parseValue(children[2]),
+                tie: parseValue(children[3])
+            };
+        }
+
+        function parseHistory(root) {
+            if (!root)
+                return [];
+            const nodes = Array.from(root.querySelectorAll('div.qR_lh, div.qR_qS span, div.qR_q1, div.qR_ra'));
+            const text = nodes
+                .map(el => (el.textContent || '').trim())
+                .filter(Boolean);
+            return text;
+        }
+
         function getPanelState(id) {
             return panelMap.get(id);
         }
 
-        function syncPanel(id) {
-            const st = getPanelState(id);
-            if (!st || !st.panel || st.closed)
-                return;
-            const src = st.resolve(id);
-            if (!src || !src.isConnected) {
-                st.body.textContent = 'Kh?ng t?m th?y b?n ' + id;
-                st.lastSig = '';
-                return;
+        function parseCountdownValue(raw) {
+            const str = (raw || '').toString().trim();
+            if (!str)
+                return null;
+            const mmss = str.match(/(\d{1,2})[:：](\d{2})/);
+            if (mmss) {
+                const mm = Number.parseInt(mmss[1], 10);
+                const ss = Number.parseInt(mmss[2], 10);
+                if (Number.isFinite(mm) && Number.isFinite(ss))
+                    return mm * 60 + ss;
             }
-            const cs = getComputedStyle(src);
-            const rect = src.getBoundingClientRect();
-            if (cs.display === 'none' || cs.visibility === 'hidden' || rect.width < 1 || rect.height < 1)
-                return;
-
-            const sig = [
-                src.outerHTML.length,
-                cs.width, cs.height,
-                cs.background, cs.color,
-                src.className,
-                src.getAttribute('data-state') || '',
-                src.textContent.length
-            ].join('|');
-            if (sig === st.lastSig)
-                return;
-            st.lastSig = sig;
-
-            const clone = cloneWithStyles(src);
-            const host = st.mirror;
-            if (host.firstChild)
-                host.replaceChild(clone, host.firstChild);
-            else
-                host.appendChild(clone);
+            const num = Number.parseInt(str.replace(/[^\d]/g, ''), 10);
+            return Number.isFinite(num) ? num : null;
         }
 
-        function scheduleSync(id) {
-            const st = getPanelState(id);
-            if (!st)
+        function captureTableState(room) {
+            try {
+                const st = getPanelState(room.id);
+                if (!st)
+                    return null;
+                const candidate = st.resolve(room.id);
+                const src = candidate && candidate.isConnected ? candidate : findCardRootByName(room.name || room.id);
+                if (!src || !src.isConnected)
+                    return null;
+                const countdownNode = src.querySelector('div.kM_lc span, span.qL_qM.qL_qN, div.yu_yv span, div.kM_lc span.qL_qM');
+                const countdown = parseCountdownValue((countdownNode && countdownNode.textContent) || '');
+                const statsNode = src.querySelector('div.np_nq:nth-of-type(2) div.np_nr');
+                const stats = parseStats(statsNode);
+                const history = parseHistory(src);
+                const text = (src.innerText || src.textContent || '').replace(/\s+/g, ' ').trim();
+                const sig = [
+                    room.id,
+                    countdown ?? '',
+                    stats?.total?.display || '',
+                    history.join('|'),
+                    text.slice(0, 300)
+                ].join('|');
+                return {
+                    id: room.id,
+                    name: room.name || room.id,
+                    countdown,
+                    text,
+                    history,
+                    stats,
+                    sig
+                };
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function formatCountdownDisplay(value) {
+            if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+                const mm = Math.floor(value / 60);
+                const ss = Math.floor(value % 60);
+                return mm + ':' + ss.toString().padStart(2, '0');
+            }
+            return '--';
+        }
+
+        function deriveStatusFromText(text) {
+            if (!text)
+                return 'Chưa có dữ liệu';
+            const lowered = norm(text);
+            if (lowered.includes('khong tim thay') || lowered.includes('khong t?m th?y'))
+                return 'Không tìm thấy bàn';
+            if (lowered.includes('dang doi') || lowered.includes('dang cho'))
+                return 'Đang chờ';
+            if (lowered.includes('ket qua') || lowered.includes('ketqua'))
+                return 'Đang cập nhật';
+            return 'Đang đồng bộ';
+        }
+
+        function deriveMetricInfo(text) {
+            if (!text)
+                return 'Chưa có dữ liệu';
+            const lowered = norm(text);
+            const match = lowered.match(/van\\s*#?(\\d+)/);
+            if (match)
+                return 'Ván #' + match[1];
+            if (lowered.includes('ban nhieu'))
+                return 'Đa bàn';
+            return 'Đang đồng bộ';
+        }
+
+        function deriveBetInfo(text) {
+            if (!text)
+                return 'Chưa đặt';
+            const lowered = norm(text);
+            if (lowered.includes('chuong') || lowered.includes('banker'))
+                return 'Nhà cái';
+            if (lowered.includes('nguoi') || lowered.includes('player'))
+                return 'Người chơi';
+            if (lowered.includes('hoa') || lowered.includes('tie'))
+                return 'Cửa hòa';
+            return 'Chưa đặt';
+        }
+
+        function renderPanelState(data) {
+            const st = getPanelState(data.id);
+            if (!st || !st.view)
                 return;
-            if (st.scheduled)
-                return;
-            st.scheduled = true;
-            requestAnimationFrame(() => {
-                st.scheduled = false;
-                syncPanel(id);
+            st.lastState = data;
+            const view = st.view;
+            if (view.countdown)
+                view.countdown.textContent = formatCountdownDisplay(data.countdown);
+            if (view.updated)
+                view.updated.textContent = new Date().toLocaleTimeString();
+            const historyText = data.history && data.history.length ? data.history.join(' · ') : data.text || '';
+            if (view.status)
+                view.status.textContent = deriveStatusFromText(historyText);
+            if (view.text)
+                view.text.textContent = historyText || 'Khong co du lieu';
+            const stats = data.stats;
+            if (view.metrics)
+                view.metrics.textContent = stats?.total?.display || deriveMetricInfo(data.text);
+            if (view.bets) {
+                const statParts = [];
+                if (stats?.player?.display)
+                    statParts.push('P ' + stats.player.display);
+                if (stats?.banker?.display)
+                    statParts.push('B ' + stats.banker.display);
+                if (stats?.tie?.display)
+                    statParts.push('T ' + stats.tie.display);
+                view.bets.textContent = statParts.join('  ') || deriveBetInfo(data.text);
+            }
+        }
+
+        function pushStateIfChanged(states) {
+            const changed = [];
+            states.forEach(st => {
+                if (!st)
+                    return;
+                const prev = lastStateSig.get(st.id);
+                if (prev === st.sig)
+                    return;
+                lastStateSig.set(st.id, st.sig);
+                changed.push({
+                    id: st.id,
+                    name: st.name,
+                    countdown: st.countdown,
+                    text: st.text
+                });
             });
-        }
-
-        function attachObserver(id, src) {
-            const st = getPanelState(id);
-            if (!st)
+            if (!changed.length)
                 return;
-            if (st.obs)
-                st.obs.disconnect();
-            if (!src)
+            try {
+                window.chrome?.webview?.postMessage?.({
+                    overlay: 'table',
+                    event: 'state',
+                    tables: changed
+                });
+            } catch (_) {}
+        }
+
+        function tickState() {
+            if (!rooms.length)
                 return;
-            st.obs = new MutationObserver(() => scheduleSync(id));
-            st.obs.observe(src, {
-                childList: true,
-                characterData: true,
-                attributes: true,
-                subtree: true
-            });
+            const states = rooms.map(r => captureTableState(r)).filter(Boolean);
+            states.forEach(renderPanelState);
+            pushStateIfChanged(states);
         }
 
-        function cloneWithStyles(src) {
-            const clone = src.cloneNode(false);
-            copyStylesAll(src, clone);
-            for (const child of src.childNodes) {
-                clone.appendChild(child.nodeType === 1 ? cloneWithStyles(child) : child.cloneNode(true));
+        function stopStateTimer() {
+            if (stateTimer) {
+                clearInterval(stateTimer);
+                stateTimer = null;
             }
-            return clone;
         }
 
-        function copyStylesAll(src, dst) {
-            const cs = getComputedStyle(src);
-            for (const prop of cs) {
-                dst.style.setProperty(prop, cs.getPropertyValue(prop), cs.getPropertyPriority(prop));
+        function stopStateTimerIfIdle() {
+            if (!rooms.length) {
+                stopStateTimer();
+                lastStateSig.clear();
             }
-            dst.style.width = cs.width;
-            dst.style.height = cs.height;
+        }
+
+        function ensureStateTimer() {
+            if (!rooms.length) {
+                stopStateTimerIfIdle();
+                return;
+            }
+            if (!stateTimer)
+                stateTimer = setInterval(tickState, STATE_INTERVAL);
+            tickState();
         }
 
         function createPanel(room, idx) {
@@ -4349,9 +4679,45 @@
 
             const body = document.createElement('div');
             body.className = 'body';
-            const mirror = document.createElement('div');
-            mirror.className = 'mirror';
-            body.appendChild(mirror);
+            const info = document.createElement('div');
+            info.className = 'panel-info';
+            const countdownWrap = document.createElement('div');
+            countdownWrap.className = 'panel-countdown';
+            const countdownValue = document.createElement('div');
+            countdownValue.className = 'countdown-value';
+            countdownValue.textContent = '--';
+            const countdownLabel = document.createElement('div');
+            countdownLabel.className = 'countdown-label';
+            countdownLabel.textContent = 'Giây';
+            countdownWrap.append(countdownValue, countdownLabel);
+
+            const meta = document.createElement('div');
+            meta.className = 'panel-meta';
+            const createMetaItem = (label, placeholder = '--') => {
+                const wrap = document.createElement('div');
+                wrap.className = 'meta-item';
+                const lab = document.createElement('div');
+                lab.className = 'meta-label';
+                lab.textContent = label;
+                const val = document.createElement('div');
+                val.className = 'meta-value';
+                val.textContent = placeholder;
+                wrap.append(lab, val);
+                return { wrap, value: val };
+            };
+            const updatedMeta = createMetaItem('Cập nhật', '--:--');
+            const statusMeta = createMetaItem('Trạng thái', 'Chưa có dữ liệu');
+            meta.append(updatedMeta.wrap, statusMeta.wrap);
+            const metricsMeta = createMetaItem('Thông số', 'Chưa có');
+            const betsMeta = createMetaItem('Đặt cược', 'N/A');
+            meta.append(metricsMeta.wrap, betsMeta.wrap);
+            info.append(countdownWrap, meta);
+
+            const textBox = document.createElement('div');
+            textBox.className = 'panel-text';
+            textBox.textContent = 'Đang tải dữ liệu...';
+
+            body.append(info, textBox);
 
             const resize = document.createElement('div');
             resize.className = 'resize';
@@ -4370,10 +4736,16 @@
                 id: room.id,
                 panel,
                 body,
-                mirror,
-                obs: null,
+                view: {
+                    countdown: countdownValue,
+                    updated: updatedMeta.value,
+                    status: statusMeta.value,
+                    text: textBox,
+                    metrics: metricsMeta.value,
+                    bets: betsMeta.value
+                },
                 lastSig: '',
-                scheduled: false,
+                lastState: null,
                 closed: false,
                 resolve: (id) => {
                     if (typeof cfg.resolveDom === 'function')
@@ -4385,9 +4757,6 @@
             makeDraggable(panel, head);
             makeResizable(panel, resize);
             placePanel(panel, idx);
-            const src = st.resolve(room.id);
-            attachObserver(room.id, src);
-            scheduleSync(room.id);
         }
 
         function placePanel(panel, idx, forceGrid = false) {
@@ -4552,10 +4921,6 @@
             if (!st)
                 return;
             panelMap.delete(id);
-            if (st.obs) {
-                st.obs.disconnect();
-                st.obs = null;
-            }
             if (st.panel && st.panel.parentElement)
                 st.panel.parentElement.removeChild(st.panel);
             if (layouts && Object.prototype.hasOwnProperty.call(layouts, id))
@@ -4570,6 +4935,8 @@
                     window.chrome?.webview?.postMessage?.({ overlay: 'table', event: 'closed', id });
                 } catch (_) {}
             }
+            lastStateSig.delete(id);
+            stopStateTimerIfIdle();
         }
 
         function applyRooms(list, options = {}) {
@@ -4594,7 +4961,7 @@
                 }
             });
             layoutAll(true);
-            rooms.forEach(room => scheduleSync(room.id));
+            ensureStateTimer();
         }
 
         function resetLayout() {
@@ -4644,6 +5011,7 @@
     try {
         onDomReady(() => {
             ensureRoot();
+            installPostMessageLogger();
             ensureOverlayHost();
             ensureAutoClosePopups(); // NEW: auto đóng popup/thông báo
             // Nếu đã nhận diện đang đăng nhập -> mở cổng ngay

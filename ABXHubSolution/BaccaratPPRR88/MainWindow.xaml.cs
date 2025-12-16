@@ -1405,6 +1405,57 @@ Ví dụ không hợp lệ:
             finally { _cfgWriteGate.Release(); }
         }
 
+        private bool TryPrepareWebMessage(CoreWebView2WebMessageReceivedEventArgs e, out string display, out JsonDocument? doc)
+        {
+            display = "";
+            doc = null;
+            try
+            {
+                var json = e.WebMessageAsJson;
+                if (!string.IsNullOrWhiteSpace(json))
+                {
+                    display = json;
+                    var parsed = JsonDocument.Parse(json);
+                    if (parsed.RootElement.ValueKind == JsonValueKind.String)
+                    {
+                        var inner = parsed.RootElement.GetString() ?? "";
+                        parsed.Dispose();
+                        display = inner;
+                        if (!LooksLikeJson(inner))
+                            return false;
+                        doc = JsonDocument.Parse(inner);
+                        return true;
+                    }
+                    doc = parsed;
+                    return true;
+                }
+
+                var text = e.TryGetWebMessageAsString();
+                if (string.IsNullOrWhiteSpace(text))
+                    return false;
+                display = text;
+                if (!LooksLikeJson(text))
+                    return false;
+                doc = JsonDocument.Parse(text);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log("[WebMessageReceived] parse error: " + ex.Message);
+                doc?.Dispose();
+                doc = null;
+                return false;
+            }
+        }
+
+        private static bool LooksLikeJson(string? payload)
+        {
+            if (string.IsNullOrWhiteSpace(payload))
+                return false;
+            var trimmed = payload.TrimStart();
+            return trimmed.Length > 0 && (trimmed[0] == '{' || trimmed[0] == '[');
+        }
+
         // ====== WebView2 ======
         private async Task EnsureWebReadyAsync()
         {
@@ -1462,17 +1513,18 @@ Ví dụ không hợp lệ:
                     _webMsgHooked = true;
                     Web.CoreWebView2.WebMessageReceived += async (s, e) =>
                     {
+                        JsonDocument? parsedDoc = null;
                         try
                         {
-                            var msg = e.TryGetWebMessageAsString() ?? "";
-                            if (string.IsNullOrWhiteSpace(msg)) return;
-
-                            EnqueueUi($"[JS] {msg}"); // chỉ hiển thị UI, không ghi ra file
-
-                            try
+                            if (!TryPrepareWebMessage(e, out var display, out parsedDoc))
                             {
-                                using var doc = JsonDocument.Parse(msg);
-                                var root = doc.RootElement;
+                                if (!string.IsNullOrWhiteSpace(display))
+                                    EnqueueUi($"[JS] {display}");
+                                return;
+                            }
+
+                            EnqueueUi($"[JS] {display}"); // chỉ hiển thị UI, không ghi ra file
+                            var root = parsedDoc.RootElement.Clone();
 
                                 if (root.TryGetProperty("overlay", out var overlayEl) &&
                                     string.Equals(overlayEl.GetString(), "table", StringComparison.OrdinalIgnoreCase) &&
@@ -1523,129 +1575,132 @@ Ví dụ không hợp lệ:
                                 // 2) tick: cập nhật snapshot + UI + (NI & finalize khi đuôi đổi)
                                 if (abxStr == "tick")
                                 {
-
-                                    // Đổi tên biến JSON để không đụng 'doc'/'root' bên ngoài
-                                    using var jdocTick = System.Text.Json.JsonDocument.Parse(msg);
-                                    var jrootTick = jdocTick.RootElement;
-
-                                    var snap = System.Text.Json.JsonSerializer.Deserialize<CwSnapshot>(msg);
-                                    if (snap != null)
+                                    try
                                     {
-                                        // === NI-SEQUENCE & finalize đúng thời điểm (đuôi seq đổi) ===
-                                        try
+                                        var payloadJson = display ?? root.GetRawText();
+                                        using var jdocTick = System.Text.Json.JsonDocument.Parse(payloadJson);
+                                        var jrootTick = jdocTick.RootElement;
+
+                                        var snap = System.Text.Json.JsonSerializer.Deserialize<CwSnapshot>(payloadJson);
+                                        if (snap != null)
                                         {
-                                            double progNow = snap.prog ?? 0;
-                                            var sessionStr = snap.session ?? "";
-                                            var seqStr = snap.seq ?? "";
-
-                                            // Nếu đang khóa theo dõi và phiên đã thay đổi so với _baseSession => ván cũ khép
-                                            if (_lockMajorMinorUpdates == true &&
-                                                !string.Equals(sessionStr, _baseSession, StringComparison.Ordinal))
+                                            // === NI-SEQUENCE & finalize đúng thời điểm (đuôi seq đổi) ===
+                                            try
                                             {
-                                                char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
-                                                bool winIsChan = (tail == '0' || tail == '2' || tail == '4');
+                                                double progNow = snap.prog ?? 0;
+                                                var sessionStr = snap.session ?? "";
+                                                var seqStr = snap.seq ?? "";
 
-                                                // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
-                                                var kqStr = winIsChan ? "CHAN" : "LE";
-                                                long? accNow2 = snap?.totals?.A;
-                                                if (_pendingRow != null && accNow2.HasValue)
+                                                // Nếu đang khóa theo dõi và phiên đã thay đổi so với _baseSession => ván cũ khép
+                                                if (_lockMajorMinorUpdates == true &&
+                                                    !string.Equals(sessionStr, _baseSession, StringComparison.Ordinal))
                                                 {
-                                                    FinalizeLastBet(kqStr, accNow2.Value);
+                                                    char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
+                                                    bool winIsChan = (tail == '0' || tail == '2' || tail == '4');
+
+                                                    // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
+                                                    var kqStr = winIsChan ? "CHAN" : "LE";
+                                                    long? accNow2 = snap?.totals?.A;
+                                                    if (_pendingRow != null && accNow2.HasValue)
+                                                    {
+                                                        FinalizeLastBet(kqStr, accNow2.Value);
+                                                    }
+
+                                                    _lockMajorMinorUpdates = false; // xong chu kỳ này
                                                 }
 
-                                                _lockMajorMinorUpdates = false; // xong chu kỳ này
-                                            }
-
-                                            // Khi vào ván mới (prog == 0) → lấy mốc base & totals để so sánh cho ván sắp khép
-                                            if (_lockMajorMinorUpdates == false)
-                                            {
-                                                if (progNow == 0)
+                                                // Khi vào ván mới (prog == 0) → lấy mốc base & totals để so sánh cho ván sắp khép
+                                                if (_lockMajorMinorUpdates == false && progNow == 0)
                                                 {
                                                     _baseSession = sessionStr;
                                                     _lockMajorMinorUpdates = true;
                                                 }
                                             }
-                }
-            catch { /* an toàn */ }
+                                            catch { /* an toàn */ }
 
-                                        // Ghi lại niSeq vào snapshot cho UI
-                                        snap.niSeq = _niSeq.ToString();
-                                        lock (_snapLock) _lastSnap = snap;
+                                            // Ghi lại niSeq vào snapshot cho UI
+                                            snap.niSeq = _niSeq.ToString();
+                                            lock (_snapLock) _lastSnap = snap;
 
-                                        // --- NEW: lấy status từ JSON (JS đã bơm vào tick) ---
-                                        string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
-                                        string statusUiT = statusUi switch
-                                        {
-                                            "open" => "Cho phép đặt cược",
-                                            "locked" => "Đợi kết quả",
-                                            _ => ""          // các trạng thái khác (nếu có) thì để trống
-                                        };
-                                        // --- Cập nhật UI ---
-                                        _ = Dispatcher.BeginInvoke(new Action(() =>
-                                        {
-                                            try
+                                            // --- NEW: lấy status từ JSON (JS đã bơm vào tick) ---
+                                            string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
+                                            string statusUiT = statusUi switch
                                             {
-                                                // Progress / % thời gian
-                                                if (snap.prog.HasValue)
+                                                "open" => "Cho phép đặt cược",
+                                                "locked" => "Đợi kết quả",
+                                                _ => ""          // các trạng thái khác (nếu có) thì để trống
+                                            };
+                                            // --- Cập nhật UI ---
+                                            _ = Dispatcher.BeginInvoke(new Action(() =>
+                                            {
+                                                try
                                                 {
-                                                    var p = Math.Max(0, Math.Min(1, snap.prog.Value));
-                                                    if (PrgBet != null) PrgBet.Value = p;
-                                                    if (LblProg != null) LblProg.Text = $"{(int)Math.Round(p * 100)}%";
-                                                }
-                                                else
-                                                {
-                                                    if (PrgBet != null) PrgBet.Value = 0;
-                                                    if (LblProg != null) LblProg.Text = "-";
-                                                }
-                                                //Cập nhật Tên nhân vật
-                                                if (LblUserName != null) LblUserName.Text = uname;
-                                                // Kết quả gần nhất từ chuỗi seq
-                                                var seqStrLocal = snap.seq ?? "";
-                                                char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
-                                                var kq = (last == '0' || last == '2' || last == '4') ? "CHAN"
-                                                         : (last == '1' || last == '3') ? "LE" : "";
-                                                SetLastResultUI(kq);
-
-                                                // Tổng tiền
-                                                var amt = snap?.totals?.A;
-                                                if (LblAmount != null)
-                                                    LblAmount.Text = amt.HasValue
-                                                        ? amt.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) : "-";
-
-                                                // Chuỗi kết quả
-                                                UpdateSeqUI(snap.seq ?? "");
-
-                                                // 🔸 Trạng thái: "Phiên mới" / "Ngừng đặt cược" / "Đang chờ kết quả"
-                                                if (LblStatusText != null)
-                                                {
-                                                    if (!string.IsNullOrWhiteSpace(statusUiT))
+                                                    // Progress / % thời gian
+                                                    if (snap.prog.HasValue)
                                                     {
-                                                        LblStatusText.Text = statusUiT;
-                                                        LblStatusText.Visibility = Visibility.Visible;
+                                                        var p = Math.Max(0, Math.Min(1, snap.prog.Value));
+                                                        if (PrgBet != null) PrgBet.Value = p;
+                                                        if (LblProg != null) LblProg.Text = $"{(int)Math.Round(p * 100)}%";
                                                     }
                                                     else
                                                     {
-                                                        LblStatusText.Text = "";
-                                                        LblStatusText.Visibility = Visibility.Collapsed;
+                                                        if (PrgBet != null) PrgBet.Value = 0;
+                                                        if (LblProg != null) LblProg.Text = "-";
+                                                    }
+                                                    //Cập nhật Tên nhân vật
+                                                    if (LblUserName != null) LblUserName.Text = uname;
+                                                    // Kết quả gần nhất từ chuỗi seq
+                                                    var seqStrLocal = snap.seq ?? "";
+                                                    char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
+                                                    var kq = (last == '0' || last == '2' || last == '4') ? "CHAN"
+                                                             : (last == '1' || last == '3') ? "LE" : "";
+                                                    SetLastResultUI(kq);
+
+                                                    // Tổng tiền
+                                                    var amt = snap?.totals?.A;
+                                                    if (LblAmount != null)
+                                                        LblAmount.Text = amt.HasValue
+                                                            ? amt.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) : "-";
+
+                                                    // Chuỗi kết quả
+                                                    UpdateSeqUI(snap.seq ?? "");
+
+                                                    // 🔸 Trạng thái: "Phiên mới" / "Ngừng đặt cược" / "Đang chờ kết quả"
+                                                    if (LblStatusText != null)
+                                                    {
+                                                        if (!string.IsNullOrWhiteSpace(statusUiT))
+                                                        {
+                                                            LblStatusText.Text = statusUiT;
+                                                            LblStatusText.Visibility = Visibility.Visible;
+                                                        }
+                                                        else
+                                                        {
+                                                            LblStatusText.Text = "";
+                                                            LblStatusText.Visibility = Visibility.Collapsed;
+                                                        }
                                                     }
                                                 }
-                }
-            catch { }
-                                        }));
-                                    }
-                                    if (ui == "game")
-                                    {
-                                        _lastGameTickUtc = DateTime.UtcNow;
-                                    }
-                                    else
-                                    {
-                                        _lastHomeTickUtc = DateTime.UtcNow;
-                                        _lastGameTickUtc = DateTime.MinValue; // cho chắc
-                                        _lockGameUi = false;                  // cho quay lại home
-                                        Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(false)));
-                                    }
-                                    return;
+                                                catch { }
+                                            }));
+                                        }
 
+                                        if (ui == "game")
+                                        {
+                                            _lastGameTickUtc = DateTime.UtcNow;
+                                        }
+                                        else
+                                        {
+                                            _lastHomeTickUtc = DateTime.UtcNow;
+                                            _lastGameTickUtc = DateTime.MinValue; // cho chắc
+                                            _lockGameUi = false;                  // cho quay lại home
+                                            Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(false)));
+                                        }
+                                        return;
+                                    }
+                                    catch
+                                    {
+                                        // ignore non-JSON
+                                    }
                                 }
 
                                 // 2.b) game_hint: Home báo đã có game/iframe → chuyển UI tức thì
@@ -1788,11 +1843,6 @@ Ví dụ không hợp lệ:
                                 //    _lastHomeTickUtc = DateTime.UtcNow;
                                 //    return;
                                 //}
-                }
-            catch
-                            {
-                                // ignore non-JSON
-                            }
                 }
             catch (Exception ex2)
                         {
