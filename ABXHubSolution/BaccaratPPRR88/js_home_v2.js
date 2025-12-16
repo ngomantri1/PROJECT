@@ -4632,40 +4632,8 @@
                 const src = candidate && candidate.isConnected ? candidate : findCardRootByName(room.name || room.id);
                 if (!src || !src.isConnected)
                     return null;
-                const countdownSelectors = [
-                    'span.yw_yz.yw_yC',
-                    'div.kM_kN.kM_kR span.qL_qM.qL_qN',
-                    'span.qL_qM.qL_qN',
-                    'div.kM_lc span.qL_qM.qL_qN',
-                    'div.kM_lc span'
-                ];
-                let countdownNode = null;
-                for (const sel of countdownSelectors) {
-                    const node = src.querySelector(sel);
-                    if (node) {
-                        countdownNode = node;
-                        break;
-                    }
-                }
-                const rawText = countdownNode ? (countdownNode.textContent || '').trim() : '';
-                const parsedCountdown = parseCountdownValue(rawText);
-                const sameNode = countdownNode && st.lastCountdownNode === countdownNode;
-                let countdown;
-                if (parsedCountdown != null) {
-                    countdown = parsedCountdown;
-                    st.lastCountdownValue = countdown;
-                    st.lastCountdownText = rawText;
-                    st.lastCountdownNode = countdownNode;
-                } else if (sameNode && typeof st.lastCountdownValue === 'number') {
-                    countdown = st.lastCountdownValue;
-                } else if (rawText && st.lastCountdownText === rawText && typeof st.lastCountdownValue === 'number' && st.lastCountdownValue > 0) {
-                    countdown = st.lastCountdownValue;
-                } else {
-                    countdown = 0;
-                    st.lastCountdownText = rawText;
-                    st.lastCountdownNode = countdownNode;
-                    st.lastCountdownValue = countdown;
-                }
+                const countdownNode = src.querySelector('span.yw_yz.yw_yC, div.kM_lc span, span.qL_qM.qL_qN, div.yu_yv span, div.kM_lc span.qL_qM');
+                const countdown = parseCountdownValue((countdownNode && countdownNode.textContent) || '');
                 const statsNode = src.querySelector('div.np_nq:nth-of-type(2) div.np_nr');
                 const stats = parseStats(statsNode);
                 const history = parseHistory(src);
@@ -4924,9 +4892,6 @@
                     metrics: metricsMeta.value,
                     bets: betsMeta.value
                 },
-                lastCountdownValue: null,
-                lastCountdownText: '',
-                lastCountdownNode: null,
                 lastSig: '',
                 lastState: null,
                 closed: false,
