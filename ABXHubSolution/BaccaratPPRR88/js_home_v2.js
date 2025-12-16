@@ -4517,7 +4517,16 @@
                 const list = Array.from(document.querySelectorAll(sel));
                 const match = list.find(el => (el.textContent || '').trim() === needle);
                 if (match) {
-                    const root = match.closest('.qW_rl') || match.closest('div.hC_hE') || match.closest('div.ep_bn') || match.closest('div.hu_hw') || match;
+                    const root = match.closest('div.hq_hr') ||
+                        match.closest('div.jF_jJ') ||
+                        match.closest('div.cU_cV') ||
+                        match.closest('div.kx_ca') ||
+                        match.closest('div.kx_ky') ||
+                        match.closest('div.hC_hE') ||
+                        match.closest('div.ep_bn') ||
+                        match.closest('div.hu_hw') ||
+                        match.closest('.qW_rl') ||
+                        match;
                     if (root)
                         rememberRoomDom(needle, root);
                     return root;
