@@ -4195,11 +4195,7 @@
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-<<<<<<< HEAD
                 padding: calc(2px * var(--panel-scale, 1)) calc(32px * var(--panel-scale, 1)) calc(2px * var(--panel-scale, 1)) calc(12px * var(--panel-scale, 1));
-=======
-                padding: calc(10px * var(--panel-scale, 1)) calc(32px * var(--panel-scale, 1)) calc(8px * var(--panel-scale, 1)) calc(12px * var(--panel-scale, 1));
->>>>>>> parent of cf14c7e (v52 hoàn thành giao diện đơn giản đa bàn pp)
                 gap: 12px;
                 background: #02040b;
                 user-select: none;
