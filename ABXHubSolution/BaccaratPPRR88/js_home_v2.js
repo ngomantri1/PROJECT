@@ -4124,8 +4124,7 @@
         const GAP = 8;
         const MIN_W = 180;
         const MIN_H = 140;
-        const STATE_INTERVAL = 600;
-        const MAX_COUNTDOWN = 13;
+        const STATE_INTERVAL = 900;
 
         let rooms = [];
         let layouts = loadLayouts();
@@ -4204,7 +4203,7 @@
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .head .title {
                 font-weight: 700;
-                font-size: calc(8px * var(--panel-scale, 1));
+                font-size: calc(9px * var(--panel-scale, 1));
                 color: #fefefe;
                 line-height: 1.1;
                 padding: calc(2px * var(--panel-scale, 1)) 0;
@@ -4224,7 +4223,7 @@
                 border-radius: calc(5px * var(--panel-scale, 1));
                 cursor: pointer;
                 font-weight: 600;
-                font-size: calc(8px * var(--panel-scale, 1));
+                font-size: calc(9px * var(--panel-scale, 1));
                 line-height: 1;
                 padding: calc(1px * var(--panel-scale, 1)) calc(8px * var(--panel-scale, 1));
                 min-width: calc(32px * var(--panel-scale, 1));
@@ -4282,10 +4281,10 @@
                 align-items: center;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown {
-                width: calc(54px * var(--panel-scale, 1));
-                height: calc(54px * var(--panel-scale, 1));
+                width: calc(74px * var(--panel-scale, 1));
+                height: calc(74px * var(--panel-scale, 1));
                 border-radius: 50%;
-                border: none;
+                border: 2px solid rgba(255,255,255,0.25);
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -4293,55 +4292,36 @@
                 gap: 3px;
                 font-weight: 600;
                 color: #fefefe;
-                background: conic-gradient(
-                    var(--countdown-progress-color, #34d399) calc(var(--countdown-progress, 0) * 360deg),
-                    rgba(255,255,255,0.08) 0
-                );
-                position: relative;
-            }
-            #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown::after {
-                content: '';
-                position: absolute;
-                inset: calc(6px * var(--panel-scale, 1));
-                border-radius: 50%;
-                background: #020b1f;
-                border: 1px solid rgba(255,255,255,0.06);
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown .countdown-value {
-                font-size: calc(12px * var(--panel-scale, 1));
-                text-transform: uppercase;
-                letter-spacing: 0.4px;
-                position: relative;
-                z-index: 2;
+                font-size: calc(18px * var(--panel-scale, 1));
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown .countdown-label {
-                font-size: calc(8px * var(--panel-scale, 1));
+                font-size: calc(10px * var(--panel-scale, 1));
                 text-transform: uppercase;
-                letter-spacing: 0.4px;
+                letter-spacing: 0.5px;
                 opacity: .7;
-                position: relative;
-                z-index: 2;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta {
                 flex: 1;
                 display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-                gap: calc(8px * var(--panel-scale, 1));
+                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+                gap: calc(10px * var(--panel-scale, 1));
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta .meta-item {
                 background: rgba(255,255,255,0.05);
-                padding: calc(6px * var(--panel-scale, 1));
+                padding: calc(8px * var(--panel-scale, 1));
                 border-radius: calc(6px * var(--panel-scale, 1));
                 border: 1px solid rgba(255,255,255,0.07);
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta .meta-label {
-                font-size: calc(8px * var(--panel-scale, 1));
+                font-size: calc(9px * var(--panel-scale, 1));
                 text-transform: uppercase;
                 opacity: 0.7;
                 margin-bottom: 2px;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta .meta-value {
-                font-size: calc(11px * var(--panel-scale, 1));
+                font-size: calc(13px * var(--panel-scale, 1));
                 font-weight: 600;
                 color: #fefefe;
             }
@@ -4350,9 +4330,9 @@
                 background: rgba(5,11,28,0.8);
                 border-radius: calc(8px * var(--panel-scale, 1));
                 border: 1px solid rgba(255,255,255,0.08);
-                padding: calc(8px * var(--panel-scale, 1));
-                font-size: calc(10px * var(--panel-scale, 1));
-                line-height: 1.3;
+                padding: calc(10px * var(--panel-scale, 1));
+                font-size: calc(11px * var(--panel-scale, 1));
+                line-height: 1.4;
                 color: #dbeafe;
                 overflow: auto;
                 white-space: pre-wrap;
@@ -4632,7 +4612,7 @@
                 const src = candidate && candidate.isConnected ? candidate : findCardRootByName(room.name || room.id);
                 if (!src || !src.isConnected)
                     return null;
-                const countdownNode = src.querySelector('span.yw_yz.yw_yC, div.kM_lc span, span.qL_qM.qL_qN, div.yu_yv span, div.kM_lc span.qL_qM');
+                const countdownNode = src.querySelector('div.kM_lc span, span.qL_qM.qL_qN, div.yu_yv span, div.kM_lc span.qL_qM');
                 const countdown = parseCountdownValue((countdownNode && countdownNode.textContent) || '');
                 const statsNode = src.querySelector('div.np_nq:nth-of-type(2) div.np_nr');
                 const stats = parseStats(statsNode);
@@ -4722,12 +4702,6 @@
             if (view.text)
                 view.text.textContent = historyText || 'Khong co du lieu';
             const stats = data.stats;
-            const progress = (typeof data.countdown === 'number' && Number.isFinite(data.countdown))
-                ? Math.max(0, Math.min(1, data.countdown / MAX_COUNTDOWN))
-                : 0;
-            const panel = st.panel;
-            if (panel)
-                panel.style.setProperty('--countdown-progress', progress.toString());
             if (view.metrics)
                 view.metrics.textContent = stats?.total?.display || deriveMetricInfo(data.text);
             if (view.bets) {
