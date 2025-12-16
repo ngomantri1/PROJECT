@@ -802,19 +802,37 @@
                                                                 </ItemsControl.ItemsPanel>
                                                                 <ItemsControl.ItemTemplate>
                                                                     <DataTemplate>
-                                                                        <CheckBox
-                                                                            Margin="4,2"
-                                                                            Padding="6,2"
-                                                                            VerticalAlignment="Center"
-                                                                            VerticalContentAlignment="Center"
-                                                                            HorizontalContentAlignment="Left"
-                                                                            FontSize="13"
-                                                                            FontWeight="SemiBold"
-                                                                            Foreground="#111827"
-                                                                            Content="{Binding Name}"
-                                                                            IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                                            Checked="RoomItemCheck_Click"
-                                                                            Unchecked="RoomItemCheck_Click" />
+                                                                        <Border
+                                                                            x:Name="RoomBorder"
+                                                                            Background="#f8fafc"
+                                                                            CornerRadius="8"
+                                                                            Margin="0,4"
+                                                                            Padding="2">
+                                                                            <CheckBox
+                                                                                x:Name="RoomCheck"
+                                                                                Padding="8,4"
+                                                                                Background="#d1fae5"
+                                                                                BorderBrush="#34d399"
+                                                                                BorderThickness="1"
+                                                                                VerticalAlignment="Center"
+                                                                                VerticalContentAlignment="Center"
+                                                                                HorizontalContentAlignment="Left"
+                                                                                FontSize="13"
+                                                                                FontWeight="SemiBold"
+                                                                                Foreground="#065f46"
+                                                                                Content="{Binding Name}"
+                                                                                IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                                                Checked="RoomItemCheck_Click"
+                                                                                Unchecked="RoomItemCheck_Click" />
+                                                                        </Border>
+                                                                        <DataTemplate.Triggers>
+                                                                            <Trigger SourceName="RoomCheck" Property="IsChecked" Value="True">
+                                                                                <Setter TargetName="RoomBorder" Property="Background" Value="#fee2e2" />
+                                                                                <Setter TargetName="RoomCheck" Property="Foreground" Value="#b91c1c" />
+                                                                                <Setter TargetName="RoomCheck" Property="Background" Value="#bbf7d0" />
+                                                                                <Setter TargetName="RoomCheck" Property="FontWeight" Value="Bold" />
+                                                                            </Trigger>
+                                                                        </DataTemplate.Triggers>
                                                                     </DataTemplate>
                                                                 </ItemsControl.ItemTemplate>
                                                             </ItemsControl>
@@ -830,19 +848,37 @@
                                                                 </ItemsControl.ItemsPanel>
                                                                 <ItemsControl.ItemTemplate>
                                                                     <DataTemplate>
-                                                                        <CheckBox
-                                                                            Margin="4,2"
-                                                                            Padding="6,2"
-                                                                            VerticalAlignment="Center"
-                                                                            VerticalContentAlignment="Center"
-                                                                            HorizontalContentAlignment="Left"
-                                                                            FontSize="13"
-                                                                            FontWeight="SemiBold"
-                                                                            Foreground="#111827"
-                                                                            Content="{Binding Name}"
-                                                                            IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                                            Checked="RoomItemCheck_Click"
-                                                                            Unchecked="RoomItemCheck_Click" />
+                                                                        <Border
+                                                                            x:Name="RoomBorder"
+                                                                            Background="#f8fafc"
+                                                                            CornerRadius="8"
+                                                                            Margin="0,4"
+                                                                            Padding="2">
+                                                                            <CheckBox
+                                                                                x:Name="RoomCheck"
+                                                                                Padding="8,4"
+                                                                                Background="#d1fae5"
+                                                                                BorderBrush="#34d399"
+                                                                                BorderThickness="1"
+                                                                                VerticalAlignment="Center"
+                                                                                VerticalContentAlignment="Center"
+                                                                                HorizontalContentAlignment="Left"
+                                                                                FontSize="13"
+                                                                                FontWeight="SemiBold"
+                                                                                Foreground="#065f46"
+                                                                                Content="{Binding Name}"
+                                                                                IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                                                Checked="RoomItemCheck_Click"
+                                                                                Unchecked="RoomItemCheck_Click" />
+                                                                        </Border>
+                                                                        <DataTemplate.Triggers>
+                                                                            <Trigger SourceName="RoomCheck" Property="IsChecked" Value="True">
+                                                                                <Setter TargetName="RoomBorder" Property="Background" Value="#fee2e2" />
+                                                                                <Setter TargetName="RoomCheck" Property="Foreground" Value="#b91c1c" />
+                                                                                <Setter TargetName="RoomCheck" Property="Background" Value="#bbf7d0" />
+                                                                                <Setter TargetName="RoomCheck" Property="FontWeight" Value="Bold" />
+                                                                            </Trigger>
+                                                                        </DataTemplate.Triggers>
                                                                     </DataTemplate>
                                                                 </ItemsControl.ItemTemplate>
                                                             </ItemsControl>
@@ -2042,8 +2078,6 @@
         </Grid>
     </DockPanel>
 </Window>
-
-
 
 
 

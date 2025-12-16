@@ -4233,8 +4233,8 @@
         const PANEL_CLASS = '__abx_table_panel';
         const LAYOUT_KEY = '__abx_table_layout_v1';
         const GAP = 8;
-        const MIN_W = 180;
-        const MIN_H = 140;
+        const MIN_W = 150;
+        const MIN_H = 120;
         const STATE_INTERVAL = 900;
 
         let rooms = [];
@@ -4382,33 +4382,35 @@
                 background: #020b1f;
                 display: flex;
                 flex-direction: column;
-                gap: calc(10px * var(--panel-scale, 1));
-                padding: calc(12px * var(--panel-scale, 1));
+                gap: calc(8px * var(--panel-scale, 1));
+                padding: calc(10px * var(--panel-scale, 1));
                 overflow: hidden;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-info {
                 display: flex;
-                gap: calc(16px * var(--panel-scale, 1));
+                gap: calc(12px * var(--panel-scale, 1));
                 align-items: center;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown {
-                width: calc(74px * var(--panel-scale, 1));
-                height: calc(74px * var(--panel-scale, 1));
+                width: calc(60px * var(--panel-scale, 1));
+                height: calc(60px * var(--panel-scale, 1));
                 border-radius: 50%;
                 border: 2px solid rgba(255,255,255,0.25);
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 flex-direction: column;
+                margin-top: calc(-4px * var(--panel-scale, 1));
                 gap: 3px;
                 font-weight: 600;
                 color: #fefefe;
+                align-self: flex-start;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown .countdown-value {
-                font-size: calc(18px * var(--panel-scale, 1));
+                font-size: calc(15px * var(--panel-scale, 1));
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown .countdown-label {
-                font-size: calc(10px * var(--panel-scale, 1));
+                font-size: calc(9px * var(--panel-scale, 1));
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
                 opacity: .7;
@@ -4416,12 +4418,12 @@
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta {
                 flex: 1;
                 display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-                gap: calc(10px * var(--panel-scale, 1));
+                grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+                gap: calc(8px * var(--panel-scale, 1));
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta .meta-item {
                 background: rgba(255,255,255,0.05);
-                padding: calc(8px * var(--panel-scale, 1));
+                padding: calc(6px * var(--panel-scale, 1));
                 border-radius: calc(6px * var(--panel-scale, 1));
                 border: 1px solid rgba(255,255,255,0.07);
             }
@@ -4432,7 +4434,7 @@
                 margin-bottom: 2px;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta .meta-value {
-                font-size: calc(13px * var(--panel-scale, 1));
+                font-size: calc(11px * var(--panel-scale, 1));
                 font-weight: 600;
                 color: #fefefe;
             }
@@ -4441,8 +4443,8 @@
                 background: rgba(5,11,28,0.8);
                 border-radius: calc(8px * var(--panel-scale, 1));
                 border: 1px solid rgba(255,255,255,0.08);
-                padding: calc(10px * var(--panel-scale, 1));
-                font-size: calc(11px * var(--panel-scale, 1));
+                padding: calc(8px * var(--panel-scale, 1));
+                font-size: calc(10px * var(--panel-scale, 1));
                 line-height: 1.4;
                 color: #dbeafe;
                 overflow: auto;
@@ -4714,6 +4716,54 @@
             return Number.isFinite(num) ? num : null;
         }
 
+        function getClassString(el) {
+            if (!el)
+                return '';
+            if (typeof el.className === 'string')
+                return el.className;
+            if (el.className && typeof el.className.baseVal === 'string')
+                return el.className.baseVal;
+            const cls = el.getAttribute && el.getAttribute('class');
+            return cls || '';
+        }
+
+        function findCountdownNode(root) {
+            if (!root)
+                return null;
+            const selectors = [
+                'div.kM_lc span',
+                'span.qL_qM.qL_qN',
+                'div.yu_yv span',
+                'div.kM_lc span.qL_qM',
+                '.yI_yJ span.yI_yL',
+                '.yI_yJ span.yI_yO',
+                '.yI_yK span.yI_yL',
+                '.yI_yK span.yI_yO',
+                '.tT_on span.yI_yL',
+                '.tT_on span.yI_yO'
+            ];
+            for (const sel of selectors) {
+                try {
+                    const node = root.querySelector(sel);
+                    if (node && parseCountdownValue(node.textContent) != null)
+                        return node;
+                } catch (_) {}
+            }
+            const spans = Array.from(root.querySelectorAll('span'));
+            for (const el of spans) {
+                const txt = (el.textContent || '').trim();
+                if (!/^\d{1,3}$/.test(txt))
+                    continue;
+                const cls = getClassString(el);
+                if (/yI_y[LMO]/.test(cls))
+                    return el;
+                const pCls = getClassString(el.parentElement);
+                if (/yI_y[JKO]|kM_lc|count/i.test(pCls))
+                    return el;
+            }
+            return null;
+        }
+
         function captureTableState(room) {
             try {
                 const st = getPanelState(room.id);
@@ -4723,7 +4773,7 @@
                 const src = candidate && candidate.isConnected ? candidate : findCardRootByName(room.name || room.id);
                 if (!src || !src.isConnected)
                     return null;
-                const countdownNode = src.querySelector('div.kM_lc span, span.qL_qM.qL_qN, div.yu_yv span, div.kM_lc span.qL_qM');
+                const countdownNode = findCountdownNode(src);
                 const countdown = parseCountdownValue((countdownNode && countdownNode.textContent) || '');
                 const statsNode = src.querySelector('div.np_nq:nth-of-type(2) div.np_nr');
                 const stats = parseStats(statsNode);

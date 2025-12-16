@@ -2828,10 +2828,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             if (sender is CheckBox cb && cb.DataContext is RoomOption opt)
             {
-                if (opt.IsSelected)
-                    _selectedRooms.Add(opt.Name);
-                else
-                    _selectedRooms.Remove(opt.Name);
+                // Binding updates opt.IsSelected; SyncSelectedRoomsFromOptions() will persist selection.
             }
             UpdateRoomSummary();
         }
