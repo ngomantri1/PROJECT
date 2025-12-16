@@ -4242,8 +4242,8 @@
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-close {
                 position: absolute;
-                top: 0;
-                right: 0;
+                top: 2px;
+                right: 2px;
                 width: calc(18px * var(--panel-scale, 1));
                 height: calc(18px * var(--panel-scale, 1));
                 border-radius: 3px;
