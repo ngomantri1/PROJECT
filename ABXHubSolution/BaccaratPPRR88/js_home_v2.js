@@ -1108,6 +1108,15 @@
                         .map(node => normalizeText(node.textContent))
                         .filter(Boolean)
                         .join('');
+                    const currencyMatch = textSnapshot.match(/[\u20AB$\u00A3\u20AC]\s*[\d.,Kk]+/);
+                    const idMatch = textSnapshot.match(/ID[:：]?\s*([0-9]+)/i);
+                    const metaParts = [];
+                    if (currencyMatch)
+                        metaParts.push(currencyMatch[0].trim());
+                    if (idMatch)
+                        metaParts.push('ID: ' + idMatch[1]);
+                    const metaLine = metaParts.join('  ');
+                    const displayText = metaLine ? textSnapshot.replace(metaLine, '').trim() : textSnapshot;
                     let id = extractId(el);
                     let name = extractName(el);
                     if (!id && name)
@@ -1117,7 +1126,9 @@
                     return {
                         id,
                         name,
+                        metaLine,
                         countdown: (el.querySelector('[data-countdown], [class*=count]')?.textContent || '').replace(/[^\d]/g, '') || null,
+                        text: displayText,
                         resultChain,
                         counts: parseCounts(textSnapshot),
                         bets: parseBets(textSnapshot),
@@ -4250,6 +4261,7 @@
             baseSelector: ''
         };
         let highestZ = 2147480001;
+        let lastRootSize = null;
 
         function loadLayouts() {
             try {
@@ -4312,12 +4324,29 @@
                 user-select: none;
                 cursor: move;
             }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head .title-wrap {
+                display: flex;
+                flex-direction: column;
+                gap: calc(1px * var(--panel-scale, 1));
+                flex: 1;
+                min-width: 0;
+            }
             #${OVERLAY_ID} .${PANEL_CLASS} .head .title {
                 font-weight: 700;
                 font-size: calc(9px * var(--panel-scale, 1));
                 color: #fefefe;
                 line-height: 1.1;
                 padding: calc(2px * var(--panel-scale, 1)) 0;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head .subtitle {
+                font-weight: 500;
+                font-size: calc(7px * var(--panel-scale, 1));
+                color: rgba(255,255,255,0.7);
+                text-transform: none;
+                letter-spacing: 0.4px;
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
@@ -4485,6 +4514,9 @@
                 root = document.createElement('div');
                 root.id = OVERLAY_ID;
                 document.body.appendChild(root);
+                lastRootSize = root.getBoundingClientRect();
+            } else if (!lastRootSize) {
+                lastRootSize = root.getBoundingClientRect();
             }
             return root;
         }
@@ -4501,6 +4533,58 @@
             const scale = Math.min(widthScale, heightScale);
             panel.style.setProperty('--panel-scale', scale.toString());
         }
+
+        function handleWindowResize() {
+            const root = document.getElementById(OVERLAY_ID);
+            if (!root)
+                return;
+            const rc = root.getBoundingClientRect();
+            if (!lastRootSize) {
+                lastRootSize = { width: rc.width, height: rc.height };
+                return;
+            }
+            const prevW = lastRootSize.width || rc.width;
+            const prevH = lastRootSize.height || rc.height;
+            const scaleX = prevW ? rc.width / prevW : 1;
+            const scaleY = prevH ? rc.height / prevH : 1;
+            panelMap.forEach(st => {
+                const panel = st && st.panel;
+                if (!panel)
+                    return;
+                const box = panel.getBoundingClientRect();
+                const styleWidth = parseFloat(panel.style.width) || box.width;
+                const styleHeight = parseFloat(panel.style.height) || box.height;
+                let left = parseFloat(panel.style.left);
+                let top = parseFloat(panel.style.top);
+                if (!Number.isFinite(left))
+                    left = box.left;
+                if (!Number.isFinite(top))
+                    top = box.top;
+                const newW = clamp(styleWidth * scaleX, MIN_W, rc.width);
+                const newH = clamp(styleHeight * scaleY, MIN_H, rc.height);
+                const maxX = Math.max(0, rc.width - newW);
+                const maxY = Math.max(0, rc.height - newH);
+                const newLeft = clamp(left * scaleX, 0, maxX);
+                const newTop = clamp(top * scaleY, 0, maxY);
+                panel.style.width = newW + 'px';
+                panel.style.height = newH + 'px';
+                panel.style.left = newLeft + 'px';
+                panel.style.top = newTop + 'px';
+                updatePanelScale(panel);
+                persistLayout(panel);
+            });
+            lastRootSize = { width: rc.width, height: rc.height };
+        }
+
+        let resizeSync = null;
+        window.addEventListener('resize', () => {
+            if (resizeSync)
+                cancelAnimationFrame(resizeSync);
+            resizeSync = requestAnimationFrame(() => {
+                resizeSync = null;
+                handleWindowResize();
+            });
+        });
 
         function computeGrid(n) {
             const count = Math.max(n, 1);
@@ -4802,12 +4886,23 @@
                 const stats = parseStats(statsNode);
                 const history = parseHistory(src);
                 const text = (src.innerText || src.textContent || '').replace(/\s+/g, ' ').trim();
+                const idMatch = text.match(/ID[:：]?\s*([0-9]+)/i);
+                const currencyMatch = text.match(/[\u20AB$\u00A3\u20AC]\s*[\d.,Kk]+/);
+                const metaParts = [];
+                if (currencyMatch)
+                    metaParts.push(currencyMatch[0].trim());
+                if (idMatch)
+                    metaParts.push('ID: ' + idMatch[1]);
+                else if (room.id)
+                    metaParts.push('ID: ' + room.id);
+                const metaLine = metaParts.join('  ');
                 const sig = [
                     room.id,
                     countdown ?? '',
                     stats?.total?.display || '',
                     history.join('|'),
-                    text.slice(0, 300)
+                    text.slice(0, 300),
+                    metaLine
                 ].join('|');
                 return {
                     id: room.id,
@@ -4816,6 +4911,7 @@
                     text,
                     history,
                     stats,
+                    metaLine,
                     sig
                 };
             } catch (_) {
@@ -4876,6 +4972,10 @@
                 return;
             st.lastState = data;
             const view = st.view;
+            if (view.title)
+                view.title.textContent = data.name || data.id || view.title.textContent;
+            if (view.subtitle)
+                view.subtitle.textContent = data.metaLine || (data.id ? 'ID: ' + data.id : '');
             if (view.countdown)
                 view.countdown.textContent = formatCountdownDisplay(data.countdown);
             if (view.countdownWrap) {
@@ -4892,10 +4992,12 @@
             if (view.updated)
                 view.updated.textContent = new Date().toLocaleTimeString();
             const historyText = data.history && data.history.length ? data.history.join(' · ') : data.text || '';
+            const baseText = historyText || data.text || '';
+            const cleanedText = data.metaLine ? baseText.replace(data.metaLine, '').trim() : baseText;
             if (view.status)
                 view.status.textContent = deriveStatusFromText(historyText);
             if (view.text)
-                view.text.textContent = historyText || 'Khong co du lieu';
+                view.text.textContent = cleanedText || 'Khong co du lieu';
             const stats = data.stats;
             if (view.metrics)
                 view.metrics.textContent = stats?.total?.display || deriveMetricInfo(data.text);
@@ -4978,9 +5080,15 @@
 
             const head = document.createElement('div');
             head.className = 'head';
+            const titleWrap = document.createElement('div');
+            titleWrap.className = 'title-wrap';
             const title = document.createElement('div');
             title.className = 'title';
             title.textContent = room.name || room.id;
+            const subtitle = document.createElement('div');
+            subtitle.className = 'subtitle';
+            subtitle.textContent = room.id ? 'ID: ' + room.id : '';
+            titleWrap.append(title, subtitle);
             const actions = document.createElement('div');
             actions.className = 'actions';
             const btnPlay = document.createElement('button');
@@ -4992,7 +5100,7 @@
                 } catch (_) {}
             });
             actions.append(btnPlay);
-            head.append(title, actions);
+            head.append(titleWrap, actions);
 
             const body = document.createElement('div');
             body.className = 'body';
@@ -5054,6 +5162,8 @@
                 panel,
                 body,
                 view: {
+                    title: title,
+                    subtitle: subtitle,
                     countdownWrap: countdownWrap,
                     countdown: countdownValue,
                     updated: updatedMeta.value,
