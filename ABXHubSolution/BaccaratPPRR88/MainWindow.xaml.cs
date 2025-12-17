@@ -2898,11 +2898,38 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     else _roomOptionsCol2.Add(_roomOptions[i]);
                 }
             }
+            try
+            {
+                var roomSample = Sample(_roomList);
+                var selectedSample = Sample(_selectedRooms);
+                var roomSet = new HashSet<string>(_roomList, StringComparer.OrdinalIgnoreCase);
+                var missing = _selectedRooms.Where(n => !roomSet.Contains(n)).ToArray();
+                var selectedInOptions = _roomOptions.Count(it => it.IsSelected);
+                Log("[ROOMDBG][RebuildRoomOptions] roomList=" + _roomList.Count +
+                    " selectedRooms=" + _selectedRooms.Count +
+                    " selectedOptions=" + selectedInOptions +
+                    " roomSample=" + roomSample +
+                    " selectedSample=" + selectedSample +
+                    " missing=" + Sample(missing));
+            }
+            catch { }
+        }
+
+        private static string Sample(IEnumerable<string> items, int take = 4)
+        {
+            var arr = items?
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s.Trim())
+                .Take(take)
+                .ToArray() ?? Array.Empty<string>();
+            return arr.Length == 0 ? "(rỗng)" : string.Join(" | ", arr);
         }
 
         private bool SyncSelectedRoomsFromOptions()
         {
             var before = BuildRoomsSignature(_selectedRooms);
+            if (_roomOptions.Count == 0)
+                return false;
             _selectedRooms.Clear();
             foreach (var it in _roomOptions)
                 if (it.IsSelected) _selectedRooms.Add(it.Name);
