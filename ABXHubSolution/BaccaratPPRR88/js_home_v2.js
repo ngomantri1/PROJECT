@@ -4130,6 +4130,8 @@
         let layouts = loadLayouts();
         const panelMap = new Map();
         const lastStateSig = new Map();
+        const roomDomRegistry = new Map();
+        const pinSyncState = new Map();
         let stateTimer = null;
         let cfg = {
             resolveDom: null,
@@ -4382,12 +4384,23 @@
             return { cols, rows };
         }
 
+        function rememberRoomDom(name, node) {
+            if (!name || !node)
+                return;
+            roomDomRegistry.set(name, node);
+        }
+
         function findCardRootByName(id) {
             if (!id)
                 return null;
             const needle = (id || '').trim();
             if (!needle)
                 return null;
+            const cached = roomDomRegistry.get(needle);
+            if (cached && cached.isConnected)
+                return cached;
+            if (cached && !cached.isConnected)
+                roomDomRegistry.delete(needle);
             const selectors = ['span.rY_sn', 'span.qL_qM.qL_qN', 'div.abx-table-title'];
             for (const sel of selectors) {
                 const list = Array.from(document.querySelectorAll(sel));
@@ -4409,6 +4422,112 @@
                 }
             }
             return null;
+        }
+
+        const PIN_SELECTORS = [
+            'div.qC_qE button',
+            'div.qC_qE .gK_gB',
+            'div.qC_qQ button',
+            'div.qC_qQ .gK_gB',
+            'button[aria-label*="ghim" i]',
+            'div[aria-label*="ghim" i]',
+            'button[title*="ghim" i]',
+            'div[title*="ghim" i]',
+            '[data-role*="favorite"]',
+            'button[aria-pressed]',
+            'div.qC_qE',
+            'div.qC_qQ'
+        ];
+
+        function resolvePinButton(root) {
+            if (!root)
+                return null;
+            for (const sel of PIN_SELECTORS) {
+                const el = root.querySelector(sel);
+                if (!el)
+                    continue;
+                if (el.tagName === 'BUTTON')
+                    return el;
+                const btn = el.closest('button');
+                if (btn)
+                    return btn;
+                if (typeof el.click === 'function')
+                    return el;
+            }
+            return null;
+        }
+
+        function isPinActive(btn) {
+            if (!btn)
+                return false;
+            const aria = btn.getAttribute && btn.getAttribute('aria-pressed');
+            if (aria != null)
+                return aria === 'true';
+            const clsSources = [
+                btn.className || '',
+                btn.parentElement && btn.parentElement.className || '',
+                btn.closest && (btn.closest('.qC_qE, .qC_qF, .qC_qH, .qC_qQ')?.className || '')
+            ].filter(Boolean).join(' ');
+            if (!clsSources)
+                return false;
+            return /\b(active|selected|on|checked|qC_qH)\b/i.test(clsSources);
+        }
+
+        function fireClick(el) {
+            if (!el)
+                return false;
+            try {
+                const evt = new MouseEvent('click', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                el.dispatchEvent(evt);
+                return true;
+            } catch (_) {
+                try {
+                    el.click();
+                    return true;
+                } catch (_) {
+                    return false;
+                }
+            }
+        }
+
+        function ensurePinState(roomId, shouldPin) {
+            if (!roomId)
+                return;
+            const root = findCardRootByName(roomId);
+            if (!root)
+                return;
+            const btn = resolvePinButton(root);
+            if (!btn)
+                return;
+            const desired = !!shouldPin;
+            const current = isPinActive(btn);
+            if (current === desired) {
+                if (desired)
+                    pinSyncState.set(roomId, true);
+                else
+                    pinSyncState.delete(roomId);
+                return;
+            }
+            if (fireClick(btn)) {
+                if (desired)
+                    pinSyncState.set(roomId, true);
+                else
+                    pinSyncState.delete(roomId);
+            }
+        }
+
+        function syncPinStates(activeList) {
+            const ids = Array.isArray(activeList) ? activeList : [];
+            const activeSet = new Set(ids);
+            activeSet.forEach(id => ensurePinState(id, true));
+            Array.from(pinSyncState.keys()).forEach(id => {
+                if (!activeSet.has(id))
+                    ensurePinState(id, false);
+            });
         }
 
         function defaultResolveDom(id) {
@@ -4998,6 +5117,8 @@
                 } catch (_) {}
             }
             lastStateSig.delete(id);
+            ensurePinState(id, false);
+            pinSyncState.delete(id);
             stopStateTimerIfIdle();
         }
 
@@ -5023,6 +5144,7 @@
                 }
             });
             layoutAll(true);
+            syncPinStates(rooms.map(r => r.id));
             ensureStateTimer();
         }
 
