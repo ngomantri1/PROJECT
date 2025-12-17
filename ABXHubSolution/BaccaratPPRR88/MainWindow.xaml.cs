@@ -1119,114 +1119,69 @@ Ví dụ không hợp lệ:
 
                 var js = @"(function(){
   try{
-    const CARD_SELECTORS = [
-      '.rY_sn',
-      '.tile-container',
-      '.ep_bn',
-      '.qW_rl',
-      '.hC_hE',
-      '.hu_hw',
-      '[data-table-id]',
-      '[data-tableid]',
-      '[data-table-name]',
-      '[data-tablename]',
-      '[data-name]',
-      '[data-table]'
-    ];
-    const NAME_SELECTORS = [
-      '.rY_sn',
-      '.qL_qM.qL_qN',
-      '.tile-name',
-      '.title',
-      '.game-title',
-      '.qW_rl span',
-      '.qW_rl .title',
-      'span.qW_rl',
-      '[data-table-name]',
-      '[data-name]'
-    ];
-    const NAME_SELECTOR = NAME_SELECTORS.join(',');
-    const ATTR_CANDIDATES = [
-      'data-table-name',
-      'data-tablename',
-      'data-tableid',
-      'data-table-id',
-      'data-tabletitle',
-      'data-table-title',
-      'data-title',
-      'data-name',
-      'data-display-name',
-      'data-displayname',
-      'data-label',
-      'aria-label',
-      'title',
-      'alt',
-      'id'
-    ];
-    const normalize = (s)=> (s||'').replace(/\s+/g,' ').trim();
+    const primarySelector = '.rY_sn';
+    const keyAttrs = ['data-table-name','data-tablename','data-tableid','data-table-id','data-tabletitle','data-table-title','data-title','data-name','data-display-name','data-displayname','data-label','aria-label','title','alt'];
     const seen = new Set();
     const names = [];
-    const addName = (val)=>{
-      const v = normalize(val);
+    const clean = (s)=> (s||'').trim();
+    const extract = (el)=>{
+      if(!el) return '';
+      for(const a of keyAttrs){
+        try{
+          const v = clean(el.getAttribute && el.getAttribute(a));
+          if(v) return v;
+        }catch(_){}
+      }
+      const text = clean(el.innerText || el.textContent || '');
+      return text;
+    };
+    const addName = (t)=>{
+      const v = clean(t);
       if(!v) return;
       const key = v.toLowerCase();
       if(seen.has(key)) return;
       seen.add(key);
       names.push(v);
     };
-    const listDocuments = ()=>{
-      const docs = [document];
-      document.querySelectorAll('iframe').forEach(fr=>{
+    const collectRoots = (root)=>{
+      const list=[];
+      const stack=[root];
+      const visited=new Set();
+      while(stack.length){
+        const r=stack.pop();
+        if(!r || visited.has(r)) continue;
+        visited.add(r);
+        list.push(r);
         try{
-          const doc = fr.contentDocument || fr.contentWindow?.document;
-          if(doc) docs.push(doc);
-        }catch(_){}
-      });
-      return docs;
-    };
-    const extractName = (card)=>{
-      if(!card) return '';
-      for(const attr of ATTR_CANDIDATES){
-        try{
-          const val = card.getAttribute && card.getAttribute(attr);
-          const norm = normalize(val);
-          if(norm) return norm;
+          if(r.querySelectorAll){
+            r.querySelectorAll('*').forEach(el=>{
+              if(el && el.shadowRoot) stack.push(el.shadowRoot);
+            });
+          }
         }catch(_){}
       }
-      try{
-        if(card.matches && card.matches(NAME_SELECTOR)){
-          const txt = normalize(card.textContent || card.innerText || '');
-          if(txt) return txt;
-        }
-      }catch(_){}
-      try{
-        const node = card.querySelector && card.querySelector(NAME_SELECTOR);
-        if(node){
-          const txt = normalize(node.textContent || node.innerText || '');
-          if(txt) return txt;
-        }
-      }catch(_){}
-      const fallback = normalize(card.textContent || card.innerText || '');
-      if(fallback) return fallback.split('\n')[0].trim();
-      return '';
+      return list;
     };
-    const collectCards = (doc)=>{
-      const set = new Set();
-      CARD_SELECTORS.forEach(sel=>{
+    const scanPrimary = (root)=>{
+      if(!root) return;
+      const roots = collectRoots(root);
+      roots.forEach(rt=>{
         try{
-          doc.querySelectorAll(sel).forEach(el=>{
-            if(el) set.add(el);
+          rt.querySelectorAll(primarySelector).forEach(el=>{
+            const t = extract(el);
+            if(t) addName(t);
           });
         }catch(_){}
       });
-      return Array.from(set);
     };
-    listDocuments().forEach(doc=>{
-      collectCards(doc).forEach(card=>{
-        const name = extractName(card);
-        if(name) addName(name);
-      });
-    });
+    scanPrimary(document);
+    const iframes = Array.from(document.querySelectorAll('iframe'));
+    for(const fr of iframes){
+      try{
+        const doc = fr.contentDocument || fr.contentWindow?.document;
+        scanPrimary(doc);
+      }catch(_){}
+    }
     return names;
   }catch(e){ return []; }
 })();";
