@@ -1119,7 +1119,7 @@ Ví dụ không hợp lệ:
 
                 var js = @"(function(){
   try{
-    const primarySelector = '.rY_sn';
+    const cardSelectors = ['.rC_rT'];
     const keyAttrs = ['data-table-name','data-tablename','data-tableid','data-table-id','data-tabletitle','data-table-title','data-title','data-name','data-display-name','data-displayname','data-label','aria-label','title','alt'];
     const seen = new Set();
     const names = [];
@@ -1162,24 +1162,30 @@ Ví dụ không hợp lệ:
       }
       return list;
     };
-    const scanPrimary = (root)=>{
+    const collectFromElement = (el)=>{
+      if(!el) return;
+      const value = extract(el);
+      if(value) addName(value);
+    };
+    const scanDocument = (root)=>{
       if(!root) return;
       const roots = collectRoots(root);
       roots.forEach(rt=>{
-        try{
-          rt.querySelectorAll(primarySelector).forEach(el=>{
-            const t = extract(el);
-            if(t) addName(t);
-          });
-        }catch(_){}
+        cardSelectors.forEach(sel=>{
+          try{
+            rt.querySelectorAll(sel).forEach(card=>{
+              collectFromElement(card);
+            });
+          }catch(_){}
+        });
       });
     };
-    scanPrimary(document);
+    scanDocument(document);
     const iframes = Array.from(document.querySelectorAll('iframe'));
     for(const fr of iframes){
       try{
         const doc = fr.contentDocument || fr.contentWindow?.document;
-        scanPrimary(doc);
+        scanDocument(doc);
       }catch(_){}
     }
     return names;
@@ -1207,26 +1213,93 @@ Ví dụ không hợp lệ:
                     .OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase)
                     .ToList();
 
-                if (clean.Count == 0)
+                var filtered = clean.Where(name => !IsLobbyNoiseName(name)).ToList();
+                if (clean.Count != filtered.Count)
+                    Log($"[ROOMDBG][RefreshRoomList] filtered out {clean.Count - filtered.Count} noise names");
+                string Sample(IEnumerable<string> xs, int take = 6)
+                {
+                    var arr = xs?.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).Take(take).ToArray() ?? Array.Empty<string>();
+                    return arr.Length == 0 ? "(rỗng)" : string.Join(" | ", arr);
+                }
+                Log($"[ROOMDBG][RefreshRoomList] clean={filtered.Count} sample={Sample(filtered)}");
+
+                if (filtered.Count == 0)
                 {
                     Log("[ROOM] Không tìm thấy bàn (DOM lobby chưa sẵn). Hãy thử bấm 'Lấy danh sách bàn' sau khi lobby load xong.");
                 }
                 else
                 {
+                    bool accepted = false;
+                    bool changed = false;
+                    var src = Web?.Source?.ToString() ?? "";
+                    var srcLower = src.ToLowerInvariant();
+                    bool pathLooksLikeLobby =
+                        srcLower.Contains("/lobby") ||
+                        srcLower.Contains("/lobby2") ||
+                        (srcLower.Contains("/desktop/") && srcLower.Contains("multibaccarat"));
+                    var inLobby = srcLower.Contains("pragmaticplaylive") && pathLooksLikeLobby;
+                    var looksLikeBaccarat = filtered.Any(n => TextNorm.U(n).Contains("BACCARAT"));
+                    var beforeSig = BuildRoomsSignature(_selectedRooms);
+
                     await Dispatcher.InvokeAsync(() =>
                     {
+                        if (!inLobby || !looksLikeBaccarat)
+                        {
+                            accepted = false;
+                            var reason = !inLobby ? "không phải lobby Pragmatic" : "không thấy Baccarat";
+                            Log($"[ROOMDBG][RefreshRoomList] skip clean={filtered.Count} reason={reason} src={src}");
+                            return;
+                        }
+
+                        accepted = true;
+
                         _roomList.Clear();
-                        foreach (var name in clean) _roomList.Add(name);
-                        var cleanSet = new HashSet<string>(_roomList, StringComparer.OrdinalIgnoreCase);
-                        _selectedRooms.RemoveWhere(n => !cleanSet.Contains(n));
+                        foreach (var name in filtered) _roomList.Add(name);
+
+                        var normToName = _roomList
+                            .Where(x => !string.IsNullOrWhiteSpace(x))
+                            .Select(x => x.Trim())
+                            .GroupBy(x => TextNorm.U(x), StringComparer.Ordinal)
+                            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+
+                        var oldSel = _selectedRooms.ToList();
+                        var nextSel = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                        foreach (var s in oldSel)
+                        {
+                            if (string.IsNullOrWhiteSpace(s)) continue;
+                            var norm = TextNorm.U(s);
+                            if (normToName.TryGetValue(norm, out var canonical))
+                                nextSel.Add(canonical);
+                        }
+
+                        _selectedRooms.Clear();
+                        foreach (var s in nextSel) _selectedRooms.Add(s);
+
                         RebuildRoomOptions();
                         UpdateRoomSummary();
+
+                        var afterSig = BuildRoomsSignature(_selectedRooms);
+                        changed = !string.Equals(beforeSig, afterSig, StringComparison.Ordinal);
                     });
 
-                    _cfg.SelectedRooms = _selectedRooms.ToList();
-                    _ = TriggerRoomSaveDebouncedAsync();
-                    Log($"[ROOM] Đã lấy {clean.Count} bàn.");
+                    if (!accepted)
+                    {
+                        if (userTriggered)
+                        {
+                            var sample = string.Join(" | ", filtered.Take(6));
+                            Log("[ROOM] Bỏ qua danh sách (không phải lobby Baccarat): " + sample);
+                        }
+                        return;
+                    }
 
+                    if (changed)
+                    {
+                        _cfg.SelectedRooms = _selectedRooms.ToList();
+                        _ = TriggerRoomSaveDebouncedAsync();
+                    }
+
+                    Log($"[ROOM] Đã lấy {filtered.Count} bàn.");
                     _roomListLastLoaded = DateTime.UtcNow;
                 }
                 }
@@ -1238,6 +1311,18 @@ Ví dụ không hợp lệ:
             {
                 Interlocked.Exchange(ref _roomListLoading, 0);
             }
+        }
+
+        private static bool IsLobbyNoiseName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return true;
+            var lower = name.Trim().ToLowerInvariant();
+            if (lower.StartsWith("tileheight-")) return true;
+            if (lower.Contains("tileheight-")) return true;
+            if (lower.StartsWith("group ")) return true;
+            if (lower.StartsWith("group-")) return true;
+            if (lower.StartsWith("ellipse")) return true;
+            return false;
         }
 
         // ====== Helpers ======
@@ -1337,13 +1422,6 @@ Ví dụ không hợp lệ:
                         if (!string.IsNullOrWhiteSpace(name))
                             _selectedRooms.Add(name);
                     }
-                }
-
-                // Prefill danh sách phòng từ cấu hình để lần mở sau vẫn thấy lựa chọn cũ
-                if (_roomList.Count == 0 && _selectedRooms.Count > 0)
-                {
-                    _roomList.Clear();
-                    foreach (var name in _selectedRooms) _roomList.Add(name);
                 }
 
                 RebuildRoomOptions();
