@@ -4392,42 +4392,28 @@
                 align-items: center;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown {
-                position: relative;
-                width: calc(48px * var(--panel-scale, 1));
-                height: calc(48px * var(--panel-scale, 1));
+                width: calc(60px * var(--panel-scale, 1));
+                height: calc(60px * var(--panel-scale, 1));
                 border-radius: 50%;
+                border: 2px solid rgba(255,255,255,0.25);
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 flex-direction: column;
-                margin-top: calc(-6px * var(--panel-scale, 1));
+                margin-top: calc(-4px * var(--panel-scale, 1));
+                gap: 3px;
                 font-weight: 600;
                 color: #fefefe;
                 align-self: flex-start;
-                --countdown-progress: 0deg;
-            }
-            #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown::before {
-                content: '';
-                position: absolute;
-                inset: 0;
-                border-radius: 50%;
-                background: conic-gradient(#22c55e var(--countdown-progress), rgba(34,197,94,0.18) var(--countdown-progress));
-                opacity: 0.85;
-            }
-            #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown::after {
-                content: '';
-                position: absolute;
-                inset: calc(6px * var(--panel-scale, 1));
-                border-radius: 50%;
-                background: #020b1f;
-                box-shadow: inset 0 0 6px rgba(0,0,0,0.5);
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown .countdown-value {
-                font-size: calc(13px * var(--panel-scale, 1));
-                z-index: 1;
+                font-size: calc(15px * var(--panel-scale, 1));
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown .countdown-label {
-                display: none;
+                font-size: calc(9px * var(--panel-scale, 1));
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                opacity: .7;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta {
                 flex: 1;
@@ -4878,17 +4864,6 @@
             const view = st.view;
             if (view.countdown)
                 view.countdown.textContent = formatCountdownDisplay(data.countdown);
-            if (view.countdownWrap) {
-                const value = (typeof data.countdown === 'number' && Number.isFinite(data.countdown) && data.countdown >= 0)
-                    ? Math.min(13, data.countdown)
-                    : null;
-                if (value == null) {
-                    view.countdownWrap.style.removeProperty('--countdown-progress');
-                } else {
-                    const deg = (value / 13) * 360;
-                    view.countdownWrap.style.setProperty('--countdown-progress', deg + 'deg');
-                }
-            }
             if (view.updated)
                 view.updated.textContent = new Date().toLocaleTimeString();
             const historyText = data.history && data.history.length ? data.history.join(' · ') : data.text || '';
@@ -5005,7 +4980,7 @@
             countdownValue.textContent = '--';
             const countdownLabel = document.createElement('div');
             countdownLabel.className = 'countdown-label';
-            countdownLabel.textContent = '';
+            countdownLabel.textContent = 'Giây';
             countdownWrap.append(countdownValue, countdownLabel);
 
             const meta = document.createElement('div');
@@ -5054,7 +5029,6 @@
                 panel,
                 body,
                 view: {
-                    countdownWrap: countdownWrap,
                     countdown: countdownValue,
                     updated: updatedMeta.value,
                     status: statusMeta.value,
