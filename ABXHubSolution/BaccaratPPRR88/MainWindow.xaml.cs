@@ -1258,72 +1258,30 @@ Ví dụ không hợp lệ:
                 }
                 else
                 {
-                    bool changed = false;
-
                     await Dispatcher.InvokeAsync(() =>
                     {
                         _roomList.Clear();
                         foreach (var name in clean) _roomList.Add(name);
-
-                        // Map normalized -> tên canonical trong lobby hiện tại
-                        // (giúp giữ selection dù lobby đổi hoa/thường, dấu, hoặc thêm hậu tố ID/tiền)
-                        var normToName = _roomList
-                            .Select(x => (x ?? "").Trim())
-                            .Where(x => !string.IsNullOrWhiteSpace(x))
-                            .GroupBy(x => TextNorm.U(x), StringComparer.Ordinal)
-                            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
-
-                        // Remap lại _selectedRooms theo danh sách mới
-                        var oldSelected = _selectedRooms.ToList();
-                        var nextSelected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                        foreach (var s in oldSelected)
+                        var cleanSet = new HashSet<string>(_roomList, StringComparer.OrdinalIgnoreCase);
+                        var cleanNormalized = new HashSet<string>(_roomList.Select(TextNorm.U), StringComparer.OrdinalIgnoreCase);
+                        _selectedRooms.RemoveWhere(n =>
                         {
-                            if (string.IsNullOrWhiteSpace(s)) continue;
-
-                            var raw = s.Trim();
-                            var norm = TextNorm.U(raw);
-
-                            // 1) Match chuẩn theo normalized
-                            if (normToName.TryGetValue(norm, out var canonical))
-                            {
-                                nextSelected.Add(canonical);
-                                continue;
-                            }
-
-                            // 2) Fuzzy match kiểu contains (để chống lobby thêm hậu tố ID/tiền)
-                            // Chỉ làm khi chuỗi đủ dài để tránh match bừa
-                            if (norm.Length >= 6)
-                            {
-                                var hit = normToName.FirstOrDefault(kvp =>
-                                    kvp.Key.IndexOf(norm, StringComparison.Ordinal) >= 0 ||
-                                    norm.IndexOf(kvp.Key, StringComparison.Ordinal) >= 0);
-
-                                if (!string.IsNullOrWhiteSpace(hit.Value))
-                                {
-                                    nextSelected.Add(hit.Value);
-                                    continue;
-                                }
-                            }
-
-                            // Không match -> bỏ
-                        }
-
-                        _selectedRooms.Clear();
-                        foreach (var x in nextSelected) _selectedRooms.Add(x);
-
+                            if (cleanSet.Contains(n))
+                                return false;
+                            var norm = TextNorm.U(n);
+                            return !cleanNormalized.Contains(norm);
+                        });
                         RebuildRoomOptions();
                         UpdateRoomSummary();
                     });
 
                     _cfg.SelectedRooms = _selectedRooms.ToList();
                     _ = TriggerRoomSaveDebouncedAsync();
-
                     Log($"[ROOM] Đã lấy {clean.Count} bàn.");
+
                     _roomListLastLoaded = DateTime.UtcNow;
                 }
-
-            }
+                }
             catch (Exception ex)
             {
                 Log("[ROOM] Lỗi khi lấy danh sách bàn: " + ex.Message);
@@ -2893,32 +2851,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (changed) _ = TriggerRoomSaveDebouncedAsync();
         }
 
-        private void RebuildRoomOptions()
-        {
-            _roomOptions.Clear();
-            _roomOptionsCol1.Clear();
-            _roomOptionsCol2.Clear();
-
-            // Cho phép match theo normalized để không bị lệch dấu/hoa thường
-            var selectedNorm = new HashSet<string>(_selectedRooms.Select(TextNorm.U), StringComparer.Ordinal);
-
-            foreach (var name0 in _roomList)
-            {
-                var name = (name0 ?? "").Trim();
-                if (string.IsNullOrWhiteSpace(name)) continue;
-
-                bool isSel = _selectedRooms.Contains(name);
-                if (!isSel)
-                {
-                    var norm = TextNorm.U(name);
-                    if (selectedNorm.Contains(norm))
-                        isSel = true;
-                }
-
-                var item = new RoomOption { Name = name, IsSelected = isSel };
-                item.PropertyChanged += RoomItem_PropertyChanged;
-                _roomOptions.Add(item);
-            }
+          private void RebuildRoomOptions()
+          {
+              _roomOptions.Clear();
+              _roomOptionsCol1.Clear();
+              _roomOptionsCol2.Clear();
+              var selectedNormalized = new HashSet<string>(_selectedRooms.Select(TextNorm.U), StringComparer.OrdinalIgnoreCase);
+              foreach (var name in _roomList)
+              {
+                  var isSelected = selectedNormalized.Contains(TextNorm.U(name));
+                  var item = new RoomOption { Name = name, IsSelected = isSelected };
+                  item.PropertyChanged += RoomItem_PropertyChanged;
+                  _roomOptions.Add(item);
+              }
 
             if (_roomOptions.Count > 0)
             {
@@ -2931,49 +2876,30 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
         }
 
-
-
-
         private bool SyncSelectedRoomsFromOptions()
         {
-            // Nếu chưa có option (lobby chưa load), KHÔNG được clear _selectedRooms
-            if (_roomOptions.Count == 0)
-                return false;
-
             var before = BuildRoomsSignature(_selectedRooms);
-
             _selectedRooms.Clear();
             foreach (var it in _roomOptions)
-            {
-                if (!it.IsSelected) continue;
-                var name = (it.Name ?? "").Trim();
-                if (!string.IsNullOrWhiteSpace(name))
-                    _selectedRooms.Add(name);
-            }
+                if (it.IsSelected) _selectedRooms.Add(it.Name);
 
             _cfg.SelectedRooms = _selectedRooms.ToList();
-
             var after = BuildRoomsSignature(_selectedRooms);
             return !string.Equals(before, after, StringComparison.Ordinal);
         }
 
-
-
-
-
         private void UpdateRoomSummary()
         {
-            // Chỉ sync khi đã có option (tránh wipe lựa chọn đã load từ config)
-            var changed = (_roomOptions.Count > 0) ? SyncSelectedRoomsFromOptions() : false;
+            var canSyncRooms = _roomOptions.Count > 0;
+            var changed = canSyncRooms ? SyncSelectedRoomsFromOptions() : false;
 
-            int total = _roomOptions.Count;
-            int sel = _roomOptions.Count(i => i.IsSelected);
+            var hasLoadedRooms = _roomListLastLoaded != DateTime.MinValue;
+            int total = hasLoadedRooms ? _roomOptions.Count : 0;
+            int sel = hasLoadedRooms ? _roomOptions.Count(i => i.IsSelected) : 0;
 
             if (TxtRoomSummary != null)
             {
-                if (total == 0 && _selectedRooms.Count > 0)
-                    TxtRoomSummary.Text = $"Đã chọn {_selectedRooms.Count} (từ cấu hình)";
-                else if (sel <= 0)
+                if (sel <= 0)
                     TxtRoomSummary.Text = "Không có mục nào";
                 else if (sel >= total && total > 0)
                     TxtRoomSummary.Text = "Đã chọn tất cả";
@@ -2988,23 +2914,16 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 try { ChkRoomAll.Click -= ChkRoomAll_Click; } catch { }
                 if (sel == 0) ChkRoomAll.IsChecked = false;
-                else if (sel == total && total > 0) ChkRoomAll.IsChecked = true;
+                else if (sel == total) ChkRoomAll.IsChecked = true;
                 else ChkRoomAll.IsChecked = null;
                 try { ChkRoomAll.Click += ChkRoomAll_Click; } catch { }
             }
 
-            // ===== FIX nút "Tạo bàn chơi" =====
-            // Mặc định mình dùng BtnVaoXocDia (trong XAML của bạn có nút này).
-            // Nếu nút “Tạo bàn chơi” của bạn là tên khác, đổi đúng x:Name tại đây.
-            //if (BtnVaoXocDia != null)
-            //    BtnVaoXocDia.Visibility = (_selectedRooms.Count > 0) ? Visibility.Visible : Visibility.Collapsed;
+            UpdateCreateOverlayButtonState();
 
             if (_uiReady && changed)
                 _ = TriggerRoomSaveDebouncedAsync();
         }
-
-
-
 
         private void UpdateCreateOverlayButtonState()
         {

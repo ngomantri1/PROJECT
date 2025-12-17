@@ -475,32 +475,22 @@
                     '.tcg_modal_wrap.loginPopupModal', '.tcg_modal_wrap.publicModal', '.tcg_modal_wrap'
                 ];
                 const nodes = Array.from(document.querySelectorAll(sels.join(',')));
-                nodes.forEach(n => {
-                    try {
-                        n.style.display = 'none';
-                        n.remove();
-                    } catch (_) {}
-                });
-                try {
-                    document.body.classList.remove('modal-open', 'overflow-hidden');
-                    document.body.style.overflow = '';
-                } catch (_) {}
-                try {
-                    console && console.warn && console.warn('[HomeWatch] removed overlays:', nodes.length);
-                } catch (_) {}
+                nodes.forEach(n => { try { n.style.display = 'none'; n.remove(); } catch (_) {} });
+                try { document.body.classList.remove('modal-open', 'overflow-hidden'); document.body.style.overflow = ''; } catch (_) {}
+                try { console && console.warn && console.warn('[HomeWatch] removed overlays:', nodes.length); } catch (_) {}
             };
 
             const roots = [];
             try {
                 if (typeof TAIL_LOGIN_POPUP_ROOT === 'string' && TAIL_LOGIN_POPUP_ROOT) {
                     const r = findByTail(TAIL_LOGIN_POPUP_ROOT);
-                    if (r)
-                        roots.push(r);
+                    if (r) roots.push(r);
                 }
             } catch (_) {}
             roots.push(
                 ...Array.from(document.querySelectorAll(
-                        '.tcg_modal_wrap.loginPopupModal, .tcg_modal_wrap.publicModal, .tcg_modal_wrap, .loginPopupModal, .popup-login, .login-popup, .modal-login, .login__popup, .v--modal-box, .v--modal-overlay')));
+                    '.tcg_modal_wrap.loginPopupModal, .tcg_modal_wrap.publicModal, .tcg_modal_wrap, .loginPopupModal, .popup-login, .login-popup, .modal-login, .login__popup, .v--modal-box, .v--modal-overlay'))
+            );
             // thêm: tìm modal chứa input password để ẩn cha gần nhất
             const pwdParents = Array.from(document.querySelectorAll('input[type="password"]'))
                 .map(i => i.closest('.v--modal-box, .v--modal-overlay, .tcg_modal_wrap, .modal, .popup, .loginPopupModal, .login-popup, .modal-login'))
@@ -511,9 +501,7 @@
             const closeBtn = Array.from(document.querySelectorAll('.v--modal__close, .tcg_modal_wrap .close, .tcg_modal_wrap .icon-close, .loginPopupModal .icon-close, .loginPopupModal .close'))
                 .find(isVisibleAndClickable);
             if (closeBtn) {
-                try {
-                    closeBtn.click();
-                } catch (_) {}
+                try { closeBtn.click(); } catch (_) {}
                 hideOverlays();
             } else {
                 roots.forEach(r => {
@@ -545,7 +533,7 @@
             if (cfgHost && currHost && cfgHost !== currHost) {
                 alert('Host khác với cấu hình:\nĐã đăng nhập ở: ' + cfgHost + '\nNhưng hiện tại: ' + currHost + '\nCookie sẽ không dùng chung, có thể bật lại popup đăng nhập.');
             }
-        } catch (_) {}
+        } catch (_) { }
     }
 
     function isClearlyLoggedOut() {
@@ -979,11 +967,7 @@
             const normalizeText = (value) => (value || '').replace(/\s+/g, ' ').trim();
 
             const parseCounts = (text) => {
-                const result = {
-                    player: null,
-                    banker: null,
-                    tie: null
-                };
+                const result = { player: null, banker: null, tie: null };
                 const patterns = {
                     player: [/player(?:\s*\d*)?\s*(\d+)/i, /người chơi\s*(\d+)/i],
                     banker: [/banker(?:\s*\d*)?\s*(\d+)/i, /nhà cái\s*(\d+)/i],
@@ -1002,19 +986,14 @@
             };
 
             const toNumber = (str) => {
-                if (!str)
-                    return null;
+                if (!str) return null;
                 const cleaned = str.replace(/[.,]+(?=\d)/g, '');
                 const asNum = Number(cleaned);
                 return Number.isFinite(asNum) ? asNum : null;
             };
 
             const parseBets = (text) => {
-                const result = {
-                    player: null,
-                    banker: null,
-                    tie: null
-                };
+                const result = { player: null, banker: null, tie: null };
                 const patterns = {
                     player: [/người chơi[^\d]*(\d[\d.,]*)/i],
                     banker: [/nhà cái[^\d]*(\d[\d.,]*)/i],
@@ -1045,20 +1024,13 @@
             };
 
             const listDocuments = () => {
-                const docs = [{
-                        doc: document,
-                        label: 'top'
-                    }
-                ];
+                const docs = [{ doc: document, label: 'top' }];
                 document.querySelectorAll('iframe').forEach((frame, idx) => {
                     try {
                         const doc = frame.contentDocument;
                         if (doc) {
                             const label = frame.id || frame.name || frame.src || `iframe#${idx}`;
-                            docs.push({
-                                doc,
-                                label
-                            });
+                            docs.push({ doc, label });
                         }
                     } catch (_) {}
                 });
@@ -1068,28 +1040,19 @@
             const collectCards = () => {
                 const entries = [];
                 const report = [];
-                listDocuments().forEach(({
-                        doc,
-                        label
-                    }) => {
+                listDocuments().forEach(({ doc, label }) => {
                     const seen = new Set();
                     CARD_SELECTORS.forEach(sel => {
                         doc.querySelectorAll(sel).forEach(el => {
                             if (!el || seen.has(el))
                                 return;
                             seen.add(el);
-                            entries.push({
-                                el,
-                                label
-                            });
+                            entries.push({ el, label });
                         });
                     });
                     report.push(`${label}: ${seen.size} phần tử`);
                 });
-                return {
-                    entries,
-                    report
-                };
+                return { entries, report };
             };
 
             const NAME_IGNORE_PATTERN = /(đặt cược|cược|bet|đang|road|result|người chơi|nhà cái|hòa)/i;
@@ -1132,54 +1095,49 @@
             const reportSuffix = (report) => report && report.length ? ' | ' + report.join(' | ') : '';
 
             const createPayload = () => {
-                const {
-                    entries,
-                    report
-                } = collectCards();
+                const { entries, report } = collectCards();
                 if (!entries.length) {
                     return {
                         payload: null,
                         note: 'Không tìm thấy bàn chơi nào.' + reportSuffix(report)
                     };
                 }
-                const tables = entries.map(({
-                            el
-                        }) => {
-                        const textSnapshot = normalizeText(el.textContent || '');
-                        const resultChain = Array.from(el.querySelectorAll('.np_nu, .yw_yz, .dw_result'))
-                            .map(node => normalizeText(node.textContent))
-                            .filter(Boolean)
-                            .join('');
-                        const currencyMatch = textSnapshot.match(/[\u20AB$\u00A3\u20AC]\s*[\d.,Kk]+/);
-                        const idMatch = textSnapshot.match(/ID[:：]?\s*([0-9]+)/i);
-                        const metaParts = [];
-                        if (currencyMatch)
-                            metaParts.push(currencyMatch[0].trim());
-                        if (idMatch)
-                            metaParts.push('ID: ' + idMatch[1]);
-                        const metaLine = metaParts.join('  ');
-                        const displayText = metaLine ? textSnapshot.replace(metaLine, '').trim() : textSnapshot;
-                        let id = extractId(el);
-                        let name = extractName(el);
-                        if (!id && name)
-                            id = 'name:' + name.toLowerCase().replace(/\s+/g, '_');
-                        if (!name && id)
-                            name = id;
-                        return {
-                            id,
-                            name,
-                            metaLine,
-                            countdown: (el.querySelector('[data-countdown], [class*=count]')?.textContent || '').replace(/[^\d]/g, '') || null,
-                            text: displayText,
-                            resultChain,
-                            counts: parseCounts(textSnapshot),
-                            bets: parseBets(textSnapshot),
-                            status: textSnapshot.toLowerCase().includes('betting') ? 'betting' : textSnapshot.toLowerCase().includes('result') ? 'result' : 'waiting',
-                            playerSpot: findSpot(el, ['player', 'người chơi']),
-                            bankerSpot: findSpot(el, ['banker', 'nhà cái']),
-                            rect: formatRect(el.getBoundingClientRect())
-                        };
-                    }).filter(entry => entry.id && entry.name);
+                const tables = entries.map(({ el }) => {
+                    const textSnapshot = normalizeText(el.textContent || '');
+                    const resultChain = Array.from(el.querySelectorAll('.np_nu, .yw_yz, .dw_result'))
+                        .map(node => normalizeText(node.textContent))
+                        .filter(Boolean)
+                        .join('');
+                    const currencyMatch = textSnapshot.match(/[\u20AB$\u00A3\u20AC]\s*[\d.,Kk]+/);
+                    const idMatch = textSnapshot.match(/ID[:：]?\s*([0-9]+)/i);
+                    const metaParts = [];
+                    if (currencyMatch)
+                        metaParts.push(currencyMatch[0].trim());
+                    if (idMatch)
+                        metaParts.push('ID: ' + idMatch[1]);
+                    const metaLine = metaParts.join('  ');
+                    const displayText = metaLine ? textSnapshot.replace(metaLine, '').trim() : textSnapshot;
+                    let id = extractId(el);
+                    let name = extractName(el);
+                    if (!id && name)
+                        id = 'name:' + name.toLowerCase().replace(/\s+/g, '_');
+                    if (!name && id)
+                        name = id;
+                    return {
+                        id,
+                        name,
+                        metaLine,
+                        countdown: (el.querySelector('[data-countdown], [class*=count]')?.textContent || '').replace(/[^\d]/g, '') || null,
+                        text: displayText,
+                        resultChain,
+                        counts: parseCounts(textSnapshot),
+                        bets: parseBets(textSnapshot),
+                        status: textSnapshot.toLowerCase().includes('betting') ? 'betting' : textSnapshot.toLowerCase().includes('result') ? 'result' : 'waiting',
+                        playerSpot: findSpot(el, ['player', 'người chơi']),
+                        bankerSpot: findSpot(el, ['banker', 'nhà cái']),
+                        rect: formatRect(el.getBoundingClientRect())
+                    };
+                }).filter(entry => entry.id && entry.name);
 
                 if (!tables.length) {
                     return {
@@ -1189,10 +1147,7 @@
                 }
 
                 return {
-                    payload: {
-                        abx: 'table_update',
-                        tables
-                    },
+                    payload: { abx: 'table_update', tables },
                     note: `Đã thu được ${tables.length} bàn.` + reportSuffix(report)
                 };
             };
@@ -1226,10 +1181,7 @@
             let lastPayload = '';
 
             const scanAndPost = () => {
-                const {
-                    payload,
-                    note
-                } = createPayload();
+                const { payload, note } = createPayload();
                 if (!payload) {
                     updateTableStatus(note || 'Không tìm thấy bàn chơi nào.');
                     return;
@@ -1516,14 +1468,13 @@
         const closeBtn = document.getElementById(`${ALERT_ID}-close`);
         closeBtn?.addEventListener('click', () => el.remove());
         const copyBtn = document.getElementById(`${ALERT_ID}-copy`);
-        copyBtn?.addEventListener('click', async() => {
+        copyBtn?.addEventListener('click', async () => {
             try {
                 const ta = document.getElementById(`${ALERT_ID}-ta`);
                 if (ta && ta.value) {
                     await navigator.clipboard.writeText(ta.value);
                 }
-            } catch (_) { /* ignore */
-            }
+            } catch (_) { /* ignore */ }
         });
         return el;
     }
@@ -1561,9 +1512,7 @@
             try {
                 let obj = data;
                 if (typeof data === 'string') {
-                    try {
-                        obj = JSON.parse(data);
-                    } catch (_) {}
+                    try { obj = JSON.parse(data); } catch (_) {}
                 }
                 if (obj && obj.overlay === 'table') {
                     appendDevLog('[postMessage overlay] ' + JSON.stringify(obj));
@@ -3262,22 +3211,15 @@
         // Không giữ ẩn quá lâu tại trang Home, chỉ peel khi click
     }
 
+
     // ====== Scan/Click "Baccarat nhieu ban" qua bridge frame/top ======
     (function setupBaccFrameBridge() {
         if (window.__abx_bacc_bridge_installed)
             return;
         window.__abx_bacc_bridge_installed = true;
 
-        const logInfo = (msg) => {
-            try {
-                updateInfo && updateInfo(msg);
-            } catch (_) {
-                console.log(msg);
-            }
-        };
-        try {
-            logInfo('[baccBridge] installed at ' + (location && location.href ? location.href : ''));
-        } catch (_) {}
+        const logInfo = (msg) => { try { updateInfo && updateInfo(msg); } catch (_) { console.log(msg); } };
+        try { logInfo('[baccBridge] installed at ' + (location && location.href ? location.href : '')); } catch (_) {}
         const norm = (s) => (s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
         const buildTail = (el, doc) => {
             if (!el || !el.tagName)
@@ -3302,38 +3244,35 @@
         const scanBaccCards = (doc, scope) => {
             const hits = [];
             const nodes = Array.from(doc.querySelectorAll(
-                        '.game-card, [class*="game-card"], ' +
-                        '.game-item, [class*="game-item"], ' +
-                        '.casino_detail .game-list .game-item, .casino_detail .game-list li, ' +
-                        '.casino_list .game-card, li, [aria-label], [title], [data-name], [data-game-name], img[alt], img[title]'));
+                '.game-card, [class*="game-card"], ' +
+                '.game-item, [class*="game-item"], ' +
+                '.casino_detail .game-list .game-item, .casino_detail .game-list li, ' +
+                '.casino_list .game-card, li, [aria-label], [title], [data-name], [data-game-name], img[alt], img[title]'
+            ));
             nodes.forEach((card, idx) => {
                 const txt = norm([
-                            card.innerText || '',
-                            card.getAttribute('aria-label') || '',
-                            card.getAttribute('title') || '',
-                            card.getAttribute('data-name') || '',
-                            card.getAttribute('data-game-name') || ''
-                        ].join(' '));
+                    card.innerText || '',
+                    card.getAttribute('aria-label') || '',
+                    card.getAttribute('title') || '',
+                    card.getAttribute('data-name') || '',
+                    card.getAttribute('data-game-name') || ''
+                ].join(' '));
                 const imgTxt = norm(
-                        Array.from(card.querySelectorAll('img[alt],img[title]'))
+                    Array.from(card.querySelectorAll('img[alt],img[title]'))
                         .map(img => img.alt || img.title || '')
-                        .join(' '));
+                        .join(' ')
+                );
                 const t = txt + ' ' + imgTxt;
                 const hasBacc = /\bbaccarat\b/.test(t);
                 const hasMulti = /(nhieu\s*ban|multi[\s_-]*table|multi[\s_-]*baccarat)/i.test(t);
                 if (!hasBacc && !hasMulti)
                     return;
                 let score = 0;
-                if (hasBacc)
-                    score += 6;
-                if (hasMulti)
-                    score += 6;
-                if (/nhieu\s*ban/i.test(t))
-                    score += 2;
-                if (/multi/.test(t))
-                    score += 1;
-                if (idx <= 2)
-                    score += 1;
+                if (hasBacc) score += 6;
+                if (hasMulti) score += 6;
+                if (/nhieu\s*ban/i.test(t)) score += 2;
+                if (/multi/.test(t)) score += 1;
+                if (idx <= 2) score += 1;
                 const r = card.getBoundingClientRect();
                 hits.push({
                     scope,
@@ -3354,17 +3293,11 @@
                 const cmd = data.cmd || '';
                 if (cmd === 'abx_scan_bacc') {
                     const hits = scanBaccCards(document, 'frame');
-                    evt.source && evt.source.postMessage({
-                        cmd: 'abx_scan_bacc_result',
-                        hits,
-                        idx: data.idx
-                    }, '*');
+                    evt.source && evt.source.postMessage({ cmd: 'abx_scan_bacc_result', hits, idx: data.idx }, '*');
                 } else if (cmd === 'abx_click_bacc_tail') {
                     const tail = data.tail || '';
                     let el = null;
-                    try {
-                        el = findByTail ? findByTail(tail) : null;
-                    } catch (_) {}
+                    try { el = findByTail ? findByTail(tail) : null; } catch (_) {}
                     if (!el) {
                         const parts = tail.split('/').filter(Boolean);
                         const last = parts[parts.length - 1] || '';
@@ -3377,26 +3310,12 @@
                     let res = 'not-found';
                     if (el) {
                         const btn = el.querySelector('a,button') || el;
-                        try {
-                            peelAndClick ? peelAndClick(btn, {
-                                holdMs: 400
-                            }) : btn.click();
-                            res = 'ok';
-                        } catch (e) {
-                            try {
-                                btn.click();
-                                res = 'ok';
-                            } catch (e2) {
-                                res = 'err:' + (e2 && e2.message || e2);
-                            }
+                        try { peelAndClick ? peelAndClick(btn, { holdMs: 400 }) : btn.click(); res = 'ok'; }
+                        catch (e) {
+                            try { btn.click(); res = 'ok'; } catch (e2) { res = 'err:' + (e2 && e2.message || e2); }
                         }
                     }
-                    evt.source && evt.source.postMessage({
-                        cmd: 'abx_click_bacc_tail_result',
-                        tail,
-                        result: res,
-                        idx: data.idx
-                    }, '*');
+                    evt.source && evt.source.postMessage({ cmd: 'abx_click_bacc_tail_result', tail, result: res, idx: data.idx }, '*');
                 }
             } catch (_) {}
         };
@@ -3407,31 +3326,18 @@
             window.__abx_scanBaccFrames = () => {
                 const iframes = Array.from(document.querySelectorAll('iframe'));
                 iframes.forEach((ifr, idx) => {
-                    try {
-                        ifr.contentWindow && ifr.contentWindow.postMessage({
-                            cmd: 'abx_scan_bacc',
-                            idx
-                        }, '*');
-                    } catch (_) {}
+                    try { ifr.contentWindow && ifr.contentWindow.postMessage({ cmd: 'abx_scan_bacc', idx }, '*'); } catch (_) {}
                 });
                 const hitsTop = scanBaccCards(document, 'top');
                 window.__abx_scan_bacc_hits = hitsTop;
                 logInfo('[scanBacc] top hits=' + hitsTop.length + ', iframes=' + iframes.length);
-                try {
-                    console.table(hitsTop.slice(0, 10));
-                } catch (_) {}
+                try { console.table(hitsTop.slice(0, 10)); } catch (_) {}
                 return hitsTop;
             };
             window.__abx_clickBaccTailInFrames = (tail) => {
                 const iframes = Array.from(document.querySelectorAll('iframe'));
                 iframes.forEach((ifr, idx) => {
-                    try {
-                        ifr.contentWindow && ifr.contentWindow.postMessage({
-                            cmd: 'abx_click_bacc_tail',
-                            tail,
-                            idx
-                        }, '*');
-                    } catch (_) {}
+                    try { ifr.contentWindow && ifr.contentWindow.postMessage({ cmd: 'abx_click_bacc_tail', tail, idx }, '*'); } catch (_) {}
                 });
             };
             window.addEventListener('message', (evt) => {
@@ -3439,17 +3345,11 @@
                 if (data.cmd === 'abx_scan_bacc_result' && data.hits) {
                     window.__abx_scan_bacc_hits = (window.__abx_scan_bacc_hits || []).concat(data.hits);
                     logInfo('[scanBacc frame] +' + data.hits.length + ' (total=' + window.__abx_scan_bacc_hits.length + ')');
-                    try {
-                        console.table(data.hits.slice(0, 10));
-                    } catch (_) {}
-                    try {
-                        updateInfo && updateInfo('[scanBacc frames] +' + data.hits.length);
-                    } catch (_) {}
+                    try { console.table(data.hits.slice(0, 10)); } catch (_) {}
+                    try { updateInfo && updateInfo('[scanBacc frames] +' + data.hits.length); } catch (_) {}
                 }
                 if (data.cmd === 'abx_click_bacc_tail_result') {
-                    try {
-                        updateInfo && updateInfo('clickBacc tail ' + data.tail + ': ' + data.result);
-                    } catch (_) {}
+                    try { updateInfo && updateInfo('clickBacc tail ' + data.tail + ': ' + data.result); } catch (_) {}
                 }
             }, false);
         }
@@ -3757,7 +3657,7 @@
     function isOnPPLobby() {
         try {
             return /client\.pragmaticplaylive\.net/i.test(location.hostname) &&
-            /\/desktop\/lobby(2)?/i.test(location.pathname);
+                /\/desktop\/lobby(2)?/i.test(location.pathname);
         } catch (_) {
             return false;
         }
@@ -3765,11 +3665,7 @@
 
     // Click "Baccarat nhieu ban" truc tiep trong trang lobby PP (same-origin)
     async function clickBaccNhieuBanInPPLobby(maxWaitMs = 10000) {
-        const log = (m) => {
-            try {
-                updateInfo && updateInfo(m);
-            } catch (_) {}
-        };
+        const log = (m) => { try { updateInfo && updateInfo(m); } catch (_) {} };
         const tailFor = (el) => {
             try {
                 const segs = [];
@@ -3789,11 +3685,11 @@
         };
         const matchCard = (el) => {
             const t = norm([
-                        el.textContent || '',
-                        el.getAttribute('aria-label') || '',
-                        el.getAttribute('title') || '',
-                        el.getAttribute('alt') || ''
-                    ].join(' '));
+                el.textContent || '',
+                el.getAttribute('aria-label') || '',
+                el.getAttribute('title') || '',
+                el.getAttribute('alt') || ''
+            ].join(' '));
             return t.includes('baccarat') && (t.includes('nhieu ban') || t.includes('multi') || t.includes('many table'));
         };
         const collectNodes = () => {
@@ -3801,16 +3697,13 @@
             const stack = [document.documentElement];
             while (stack.length) {
                 const node = stack.pop();
-                if (!node || node.nodeType !== 1)
-                    continue;
+                if (!node || node.nodeType !== 1) continue;
                 const el = node;
                 if (['A', 'BUTTON', 'DIV', 'SPAN', 'IMG'].includes(el.tagName))
                     out.push(el);
-                for (const k of Array.from(el.children || []))
-                    stack.push(k);
+                for (const k of Array.from(el.children || [])) stack.push(k);
                 if (el.shadowRoot) {
-                    for (const k of Array.from(el.shadowRoot.children || []))
-                        stack.push(k);
+                    for (const k of Array.from(el.shadowRoot.children || [])) stack.push(k);
                 }
             }
             return out;
@@ -3827,7 +3720,7 @@
                         if (isVisibleAndClickable(clickable))
                             return clickable;
                     }
-                } catch (_) {}
+                } catch (_) { }
             }
 
             // Bám text nhưng chấm điểm để tránh trúng container lớn
@@ -3843,18 +3736,11 @@
                 const area = r.width * r.height;
                 const textLen = norm((clickable.textContent || '') + ' ' + (clickable.getAttribute('aria-label') || '')).length;
                 let score = 0;
-                if (['A', 'BUTTON'].includes(clickable.tagName))
-                    score += 10;
-                if ((clickable.getAttribute('role') || '').toLowerCase() === 'button')
-                    score += 6;
+                if (['A', 'BUTTON'].includes(clickable.tagName)) score += 10;
+                if ((clickable.getAttribute('role') || '').toLowerCase() === 'button') score += 6;
                 score += Math.max(0, 2000 - Math.min(area, 2000)) / 200; // ưu tiên diện tích nhỏ
                 score += Math.max(0, 120 - Math.min(textLen, 120)) / 20; // ưu tiên text ngắn
-                cands.push({
-                    el: clickable,
-                    score,
-                    area,
-                    textLen
-                });
+                cands.push({ el: clickable, score, area, textLen });
             }
             if (!cands.length)
                 return null;
@@ -3872,51 +3758,29 @@
             const card = resolveCard();
             if (card) {
                 log('Thay card, tail=' + tailFor(card));
-                try {
-                    console && console.warn && console.warn('[BaccMulti] click card');
-                } catch (_) {}
-                try {
-                    card.scrollIntoView({
-                        block: 'center',
-                        behavior: 'instant'
-                    });
-                } catch (_) {}
+                try { console && console.warn && console.warn('[BaccMulti] click card'); } catch (_) {}
+                try { card.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch (_) {}
                 const forceClick = (el) => {
                     try {
                         const r = el.getBoundingClientRect();
                         const cx = r.left + r.width / 2;
                         const cy = r.top + r.height / 2;
                         const tgt = document.elementFromPoint(cx, cy) || el;
-                        tgt.dispatchEvent(new MouseEvent('click', {
-                                bubbles: true,
-                                cancelable: true,
-                                clientX: cx,
-                                clientY: cy
-                            }));
+                        tgt.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: cx, clientY: cy }));
                         return true;
-                    } catch (_) {
-                        return false;
-                    }
+                    } catch (_) { return false; }
                 };
-                try {
-                    peelAndClick(card, {
-                        holdMs: 400
-                    });
-                } catch (_) {
-                    try {
-                        card.click();
-                    } catch (_) {
-                        forceClick(card);
-                    }
+                try { peelAndClick(card, { holdMs: 400 }); }
+                catch (_) {
+                    try { card.click(); }
+                    catch (_) { forceClick(card); }
                 }
                 return 'ok';
             }
             await wait(400);
         }
         log('Khong tim thay "Baccarat nhieu ban" trong lobby PP (het wait).');
-        try {
-            console && console.warn && console.warn('[BaccMulti] no card after wait');
-        } catch (_) {}
+        try { console && console.warn && console.warn('[BaccMulti] no card after wait'); } catch (_) {}
         return 'no-card';
     }
     async function clickBaccNhieuBanFromHome() {
@@ -3924,19 +3788,13 @@
         const now = Date.now();
         const guardMs = 3000; // 3s hạn chế lặp
         const logStep = (m) => {
-            try {
-                updateInfo && updateInfo('[bacc] ' + m);
-            } catch (_) {}
-            try {
-                console && console.warn && console.warn('[BaccMulti]', m);
-            } catch (_) {}
+            try { updateInfo && updateInfo('[bacc] ' + m); } catch (_) {}
+            try { console && console.warn && console.warn('[BaccMulti]', m); } catch (_) {}
         };
         logStep('start, url=' + (location.href || '') + ', guard_until=' + (window.__abx_bacc_loading_until || 0));
         if (window.__abx_bacc_loading_until && now < window.__abx_bacc_loading_until) {
             logStep('Dang trong chu ky vao game, bo qua. guard_until=' + window.__abx_bacc_loading_until + ', now=' + now);
-            try {
-                updateInfo && updateInfo('⚠ Đang trong chu kỳ vào game (guard), bỏ qua.');
-            } catch (_) {}
+            try { updateInfo && updateInfo('⚠ Đang trong chu kỳ vào game (guard), bỏ qua.'); } catch (_) {}
             return 'skip-guard';
         }
         window.__abx_bacc_loading_until = now + guardMs;
@@ -3956,8 +3814,8 @@
             closeAdsAndCovers();
 
             // Thoi gian tre chu dong de trang Home/Dropdown Casino load day du
-            const DELAY_BEFORE_FLOW = 1200; // ms sau khi bat flow tu login
-            const DELAY_AFTER_CASINO = 600; // ms sau khi tab Casino active truoc khi click PP
+            const DELAY_BEFORE_FLOW = 1200;   // ms sau khi bat flow tu login
+            const DELAY_AFTER_CASINO = 600;   // ms sau khi tab Casino active truoc khi click PP
             await wait(DELAY_BEFORE_FLOW);
 
             // tam dung auto close popup 5s de dropdown khong bi dong ngay
@@ -3967,48 +3825,24 @@
                 window.__abx_auto_close_popup = null;
                 setTimeout(() => {
                     if (!window.__abx_auto_close_popup)
-                        window.__abx_auto_close_popup = setInterval(() => {
-                            try {
-                                closeAdsAndCovers();
-                            } catch (_) {}
-                        }, 2000);
+                        window.__abx_auto_close_popup = setInterval(() => { try { closeAdsAndCovers(); } catch (_) {} }, 2000);
                 }, 5000);
             }
 
-            try {
-                window.scrollTo({
-                    top: 0,
-                    behavior: 'smooth'
-                });
-            } catch (_) {}
+            try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) {}
 
-            const log = (m) => {
-                try {
-                    updateInfo && updateInfo(m);
-                } catch (_) {}
-            };
+            const log = (m) => { try { updateInfo && updateInfo(m); } catch (_) {} };
             const safeClick = (el, holdMs = 400) => {
-                if (!el)
-                    return false;
-                try {
-                    peelAndClick(el, {
-                        holdMs
-                    });
-                    return true;
-                } catch (_) {}
-                try {
-                    el.click();
-                    return true;
-                } catch (_) {}
+                if (!el) return false;
+                try { peelAndClick(el, { holdMs }); return true; } catch (_) {}
+                try { el.click(); return true; } catch (_) {}
                 return false;
             };
             const openCasinoDropdown = () => {
                 try {
                     const nav = document.querySelector('.nav_item_btn.LIVE, .nav_item.LIVE, .nav_item_btn');
                     if (nav)
-                        nav.dispatchEvent(new MouseEvent('mouseover', {
-                                bubbles: true
-                            }));
+                        nav.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
                 } catch (_) {}
             };
 
@@ -4038,9 +3872,7 @@
                     // click/hover nav LIVE thêm lần nữa để dropdown chắc chắn mở
                     const nav = document.querySelector('.nav_item_btn.LIVE, .nav_item.LIVE, .nav_item_btn');
                     if (nav) {
-                        nav.dispatchEvent(new MouseEvent('mouseover', {
-                                bubbles: true
-                            }));
+                        nav.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
                         nav.click?.();
                     }
                 } catch (_) {}
@@ -4049,8 +3881,7 @@
             const resolvePP_TailAndText = () => {
                 const tails = [TAIL_PP_TRUC_TUYEN, TAIL_PP_TRUC_TUYEN_ALT];
                 for (const t of tails) {
-                    if (!t)
-                        continue;
+                    if (!t) continue;
                     try {
                         const el = findByTail(t);
                         if (el && el.isConnected)
@@ -4058,17 +3889,16 @@
                     } catch (_) {}
                 }
                 return Array.from(document.querySelectorAll('span.desc, li, a, button, div'))
-                .find(el => /pp\s*truc\s*tuyen/i.test(norm(el.textContent)));
+                    .find(el => /pp\s*truc\s*tuyen/i.test(norm(el.textContent)));
             };
             const resolvePP_ByBroadText = () => {
                 const match = (el) => /pp\s*(live|truc\s*tuyen)|pragmatic\s*play|pragmatic/.test(norm(el.textContent));
                 return Array.from(document.querySelectorAll('li, a, button, span, div'))
-                .find(el => match(el));
+                    .find(el => match(el));
             };
             const resolvePP_ClickParent = () => {
                 const el = resolvePP_TailAndText() || resolvePP_ByBroadText();
-                if (!el)
-                    return null;
+                if (!el) return null;
                 return el.closest('li, .dropdown_menu, .nav_item, .nav_item_btn') || el;
             };
 
@@ -4089,16 +3919,10 @@
                 await wait(DELAY_AFTER_CASINO);
 
             // pha 2: click PP truc tuyen voi nhieu phuong an
-            const strategies = [{
-                    name: 'tail+text',
-                    resolver: resolvePP_TailAndText
-                }, {
-                    name: 'broad-text',
-                    resolver: resolvePP_ByBroadText
-                }, {
-                    name: 'parent-fallback',
-                    resolver: resolvePP_ClickParent
-                }
+            const strategies = [
+                { name: 'tail+text', resolver: resolvePP_TailAndText },
+                { name: 'broad-text', resolver: resolvePP_ByBroadText },
+                { name: 'parent-fallback', resolver: resolvePP_ClickParent }
             ];
             let gotPP = false;
             let usedStrat = '';
@@ -4128,13 +3952,11 @@
 
             await wait(800); // cho danh sach game PP load
             // đợi listing render + đóng overlay để tránh click sớm khi còn /seamless
-            const ensurePpListingReady = async() => {
+            const ensurePpListingReady = async () => {
                 const DEADLINE = 6000;
                 const start = Date.now();
                 while (Date.now() - start < DEADLINE) {
-                    try {
-                        closeAdsAndCovers();
-                    } catch (_) {}
+                    try { closeAdsAndCovers(); } catch (_) {}
                     const hasList = document.querySelector('.casino_detail .game-list, .casino_list .game-card, .game-item');
                     if (hasList && hasList.offsetParent !== null)
                         return true;
@@ -4158,10 +3980,10 @@
                 const nodes = Array.from(document.querySelectorAll('a,button,div,span'));
                 for (const el of nodes) {
                     const t = norm([
-                                el.textContent || '',
-                                el.getAttribute('aria-label') || '',
-                                el.getAttribute('title') || ''
-                            ].join(' '));
+                        el.textContent || '',
+                        el.getAttribute('aria-label') || '',
+                        el.getAttribute('title') || ''
+                    ].join(' '));
                     if (t.includes('baccarat') && t.includes('nhieu ban') && isVisibleAndClickable(el)) {
                         const clickable = el.closest('a,button') || el;
                         if (isVisibleAndClickable(clickable))
@@ -4173,9 +3995,9 @@
 
             const resolveGameCard = () => {
                 const cards = Array.from(document.querySelectorAll(
-                            '.casino_detail .game-list .game-item,' +
-                            '.casino_detail .game-list li,' +
-                            '.casino_list .game-card'));
+                    '.casino_detail .game-list .game-item,' +
+                    '.casino_detail .game-list li,' +
+                    '.casino_list .game-card'));
 
                 if (!cards.length)
                     return null;
@@ -4185,29 +4007,21 @@
                 cards.forEach((card, idx) => {
                     const txt = norm(card.innerText || '');
                     const imgTxt = norm(
-                            Array.from(card.querySelectorAll('img[alt],img[title]'))
+                        Array.from(card.querySelectorAll('img[alt],img[title]'))
                             .map(img => img.alt || img.title || '')
                             .join(' '));
 
                     const t = txt + ' ' + imgTxt;
                     let score = 0;
 
-                    if (RE_BACC.test(t))
-                        score += 6;
-                    if (RE_MULTI.test(t))
-                        score += 6;
-                    if (RE_PP.test(t))
-                        score += 4;
-                    if (/nhieu\s*ban/i.test(t))
-                        score += 2;
-                    if (idx <= 2)
-                        score += 1;
+                    if (RE_BACC.test(t)) score += 6;
+                    if (RE_MULTI.test(t)) score += 6;
+                    if (RE_PP.test(t)) score += 4;
+                    if (/nhieu\s*ban/i.test(t)) score += 2;
+                    if (idx <= 2) score += 1;
 
                     if (score > 0 && isVisibleAndClickable(card)) {
-                        cand.push({
-                            el: card,
-                            score
-                        });
+                        cand.push({ el: card, score });
                     }
                 });
 
@@ -4250,14 +4064,10 @@
             // thử điều hướng thẳng nếu card có href/data-url (để tránh bị kẹt ở seamless)
             const directHref =
                 (card && (card.getAttribute('href') || (card.dataset && (card.dataset.href || card.dataset.url)))) ||
-            (card && card.closest('a') ? card.closest('a').href : '');
+                (card && card.closest('a') ? card.closest('a').href : '');
             if (directHref) {
                 logStep('found card href, navigate direct: ' + directHref);
-                try {
-                    location.href = directHref;
-                    window.__abx_bacc_loading_until = Date.now() + guardMs;
-                    return 'nav-href';
-                } catch (_) {}
+                try { location.href = directHref; window.__abx_bacc_loading_until = Date.now() + guardMs; return 'nav-href'; } catch (_) {}
             }
 
             const ok = await multiTryClick(resolverForClick, 50, () => false, 200, 700);
@@ -4274,20 +4084,12 @@
                 // fallback: nếu card có href/data-url thì điều hướng thẳng
                 const href =
                     (card && (card.getAttribute('href') || (card.dataset && (card.dataset.href || card.dataset.url)))) ||
-                (card && card.closest('a') ? card.closest('a').href : '');
+                    (card && card.closest('a') ? card.closest('a').href : '');
                 if (href) {
                     logStep('click fail -> navigate direct ' + href);
-                    try {
-                        location.href = href;
-                        return 'nav-href';
-                    } catch (_) {}
+                    try { location.href = href; return 'nav-href'; } catch (_) {}
                 }
-                try {
-                    console && console.warn && console.warn('[BaccMulti] no-click', {
-                        href: location.href,
-                        title: document.title
-                    });
-                } catch (_) {}
+                try { console && console.warn && console.warn('[BaccMulti] no-click', { href: location.href, title: document.title }); } catch (_) {}
                 return 'no-click';
             }
 
@@ -4296,9 +4098,7 @@
 
             return 'ok';
         } catch (e) {
-            try {
-                console && console.warn && console.warn('[HomeWatch] clickBaccNhieuBanFromHome error:', e);
-            } catch (_) {}
+            try { console && console.warn && console.warn('[HomeWatch] clickBaccNhieuBanFromHome error:', e); } catch (_) {}
             return 'err:' + (e && e.message ? e.message : String(e));
         }
     }
@@ -4312,145 +4112,131 @@
                 const isHomeHost = /rr\d+\.com/i.test(host) || host.includes('rr5309.com') || host.includes('www.rr');
                 if (isHomeHost && window.__abx_bacc_loading_until) {
                     window.__abx_bacc_loading_until = 0;
-                    try {
-                        updateInfo && updateInfo('[bacc] reset guard on home host');
-                    } catch (_) {}
-                    try {
-                        console && console.warn && console.warn('[BaccMulti] reset guard on home host');
-                    } catch (_) {}
+                    try { updateInfo && updateInfo('[bacc] reset guard on home host'); } catch (_) {}
+                    try { console && console.warn && console.warn('[BaccMulti] reset guard on home host'); } catch (_) {}
                 }
             } catch (_) {}
         }, 1000);
-    } // Auto retry trong lobby PP: cu thay lobby thi thu click "Baccarat nhieu ban"
-    if (!window.__abx_bacc_lobby_retry) {
-        let __abx_bacc_auto_state = '';
-        window.__abx_bacc_lobby_retry = setInterval(async() => {
-            try {
-                if (!isOnPPLobby()) {
-                    if (__abx_bacc_auto_state !== 'not-lobby') {
-                        try {
-                            updateInfo && updateInfo('[bacc-auto] Skip: chua o lobby PP');
-                        } catch (_) {}
-                        __abx_bacc_auto_state = 'not-lobby';
-                    }
-                    return;
-                }
-                // tránh spam khi vừa click/đang load game
-                if (window.__abx_bacc_loading_until && Date.now() < window.__abx_bacc_loading_until) {
-                    if (__abx_bacc_auto_state !== 'guard') {
-                        try {
-                            updateInfo && updateInfo('[bacc-auto] Guard active, doi het thoi gian...');
-                        } catch (_) {}
-                        __abx_bacc_auto_state = 'guard';
-                    }
-                    return;
-                }
-                try {
-                    updateInfo && updateInfo('[bacc-auto] Dang thu click "Baccarat nhieu ban" trong lobby...');
-                } catch (_) {}
-                const res = await clickBaccNhieuBanInPPLobby(6000);
-                try {
-                    console && console.warn && console.warn('[BaccMulti][auto] result:', res);
-                } catch (_) {}
-                try {
-                    updateInfo && updateInfo('[bacc-auto] Ket qua: ' + res);
-                } catch (_) {}
-                __abx_bacc_auto_state = 'res:' + res;
-                if (res === 'ok') {
-                    window.__abx_bacc_loading_until = Date.now() + 5000;
-                }
-            } catch (_) {}
-        }, 200);
-    }
+    }    // Auto retry trong lobby PP: cu thay lobby thi thu click "Baccarat nhieu ban"
+      if (!window.__abx_bacc_lobby_retry) {
+          let __abx_bacc_auto_state = '';
+          window.__abx_bacc_lobby_retry = setInterval(async () => {
+              try {
+                  if (!isOnPPLobby()) {
+                      if (__abx_bacc_auto_state !== 'not-lobby') {
+                          try { updateInfo && updateInfo('[bacc-auto] Skip: chua o lobby PP'); } catch (_) {}
+                          __abx_bacc_auto_state = 'not-lobby';
+                      }
+                      return;
+                  }
+                  // tránh spam khi vừa click/đang load game
+                  if (window.__abx_bacc_loading_until && Date.now() < window.__abx_bacc_loading_until) {
+                      if (__abx_bacc_auto_state !== 'guard') {
+                          try { updateInfo && updateInfo('[bacc-auto] Guard active, doi het thoi gian...'); } catch (_) {}
+                          __abx_bacc_auto_state = 'guard';
+                      }
+                      return;
+                  }
+                  try { updateInfo && updateInfo('[bacc-auto] Dang thu click "Baccarat nhieu ban" trong lobby...'); } catch (_) {}
+                  const res = await clickBaccNhieuBanInPPLobby(6000);
+                  try { console && console.warn && console.warn('[BaccMulti][auto] result:', res); } catch (_) {}
+                  try { updateInfo && updateInfo('[bacc-auto] Ket qua: ' + res); } catch (_) {}
+                  __abx_bacc_auto_state = 'res:' + res;
+                  if (res === 'ok') {
+                      window.__abx_bacc_loading_until = Date.now() + 5000;
+                  }
+              } catch (_) { }
+          }, 200);
+      }
 
     async function clickXocDiaLive() {
-        // 1) Đảm bảo đang ở Home
-        await ensureOnHome();
+    // 1) Đảm bảo đang ở Home
+    await ensureOnHome();
 
-        // 2) Tìm nút đúng (ưu tiên tail cố định)
-        const resolveBtnFallback = () => {
-            // 1) Thử tail cố định trước
-            const items = Array.from(document.querySelectorAll('.livestream-section__live .item-live'));
-            const cand = [];
+    // 2) Tìm nút đúng (ưu tiên tail cố định)
+    const resolveBtnFallback = () => {
+        // 1) Thử tail cố định trước
+        const items = Array.from(document.querySelectorAll('.livestream-section__live .item-live'));
+        const cand = [];
 
-            items.forEach((it, idx) => {
-                // văn bản toàn item + alt/title ảnh
-                const scopeTxt = norm([
-                            it.innerText,
-                            ...Array.from(it.querySelectorAll('img[alt],img[title]'))
-                            .map(img => img.alt || img.title || '')
-                        ].join(' '));
+        items.forEach((it, idx) => {
+            // văn bản toàn item + alt/title ảnh
+            const scopeTxt = norm([
+                        it.innerText,
+                        ...Array.from(it.querySelectorAll('img[alt],img[title]'))
+                        .map(img => img.alt || img.title || '')
+                    ].join(' '));
 
-                // Tài Xỉu / Sicbo / Dice => điểm dương, Xóc Đĩa => điểm âm
-                const wCtxPos = RE_XOCDIA_POS.test(scopeTxt) ? 6 : 0;
-                const wCtxNeg = RE_XOCDIA_NEG.test(scopeTxt) ? -10 : 0;
+            // Tài Xỉu / Sicbo / Dice => điểm dương, Xóc Đĩa => điểm âm
+            const wCtxPos = RE_XOCDIA_POS.test(scopeTxt) ? 6 : 0;
+            const wCtxNeg = RE_XOCDIA_NEG.test(scopeTxt) ? -10 : 0;
 
-                const btns = Array.from(
-                        it.querySelectorAll('.play-overlay button.base-button.btn, button.base-button.btn, a.base-button.btn'));
+            const btns = Array.from(
+                    it.querySelectorAll('.play-overlay button.base-button.btn, button.base-button.btn, a.base-button.btn'));
 
-                btns.forEach(b => {
-                    const lbl = norm(textOf(b));
-                    const wBtnPos = RE_XOCDIA_POS.test(lbl) ? 4 : 0;
-                    const wBtnNeg = RE_XOCDIA_NEG.test(lbl) ? -10 : 0;
+            btns.forEach(b => {
+                const lbl = norm(textOf(b));
+                const wBtnPos = RE_XOCDIA_POS.test(lbl) ? 4 : 0;
+                const wBtnNeg = RE_XOCDIA_NEG.test(lbl) ? -10 : 0;
 
-                    // 🔥 ƯU TIÊN THỨ TỰ ITEM:
-                    // - idx === 0: Tài Xỉu Live (item đầu tiên) -> +3
-                    // - idx 1, 2: vẫn được cộng nhẹ +1
-                    const idxBoost = (idx === 0 ? 3 : (idx <= 2 ? 1 : 0));
+                // 🔥 ƯU TIÊN THỨ TỰ ITEM:
+                // - idx === 0: Tài Xỉu Live (item đầu tiên) -> +3
+                // - idx 1, 2: vẫn được cộng nhẹ +1
+                const idxBoost = (idx === 0 ? 3 : (idx <= 2 ? 1 : 0));
 
-                    const score = wCtxPos + wCtxNeg + wBtnPos + wBtnNeg + idxBoost;
-                    cand.push({
-                        el: b,
-                        score,
-                        idx
-                    });
+                const score = wCtxPos + wCtxNeg + wBtnPos + wBtnNeg + idxBoost;
+                cand.push({
+                    el: b,
+                    score,
+                    idx
                 });
             });
+        });
 
-            // Sắp xếp theo score, lấy cái tốt nhất và còn click được
-            cand.sort((a, b) => b.score - a.score);
-            const top = cand.find(c => c.score > 0 && isVisibleAndClickable(c.el));
-            return top ? top.el : null; // ❗ KHÔNG fallback “nút thứ 2” nữa
-        };
+        // Sắp xếp theo score, lấy cái tốt nhất và còn click được
+        cand.sort((a, b) => b.score - a.score);
+        const top = cand.find(c => c.score > 0 && isVisibleAndClickable(c.el));
+        return top ? top.el : null; // ❗ KHÔNG fallback “nút thứ 2” nữa
+    };
 
-        // 3) Đóng quảng cáo/cover phổ biến trước
-        closeAdsAndCovers();
+    // 3) Đóng quảng cáo/cover phổ biến trước
+    closeAdsAndCovers();
 
-        // 4) Chờ nút theo 2 pha: 5s chỉ tail, rồi phần còn lại cho fallback (tổng ≤12s)
-        const WAIT_MS = 12000;
-        const TAIL_ONLY_MS = 5000;
+    // 4) Chờ nút theo 2 pha: 5s chỉ tail, rồi phần còn lại cho fallback (tổng ≤12s)
+    const WAIT_MS = 12000;
+    const TAIL_ONLY_MS = 5000;
 
-        // Pha 1: chỉ đợi tail cố định
-        const tailBtn = await waitButtonUpTo(() => {
-            const b = findByTail(TAIL_XOCDIA_BTN);
-            return (b && isVisibleAndClickable(b)) ? b : null;
-        }, TAIL_ONLY_MS, 200);
+    // Pha 1: chỉ đợi tail cố định
+    const tailBtn = await waitButtonUpTo(() => {
+        const b = findByTail(TAIL_XOCDIA_BTN);
+        return (b && isVisibleAndClickable(b)) ? b : null;
+    }, TAIL_ONLY_MS, 200);
 
-        let btn = tailBtn;
+    let btn = tailBtn;
 
-        // Pha 2: nếu chưa có tail, đợi phần còn lại cho các điều kiện fallback
-        if (!btn) {
-            const restMs = Math.max(0, WAIT_MS - TAIL_ONLY_MS);
-            btn = await waitButtonUpTo(resolveBtnFallback, restMs, 200);
-        }
-
-        if (!btn) {
-            updateInfo('⚠ Không tìm thấy nút "Chơi Xóc Đĩa Live" trong ≤' + Math.round(WAIT_MS / 1000) + 's sau khi về trang Home.');
-            return;
-        }
-
-        // Resolver click: ưu tiên nút đã tìm thấy (tail hoặc fallback); nếu không còn khả dụng, fallback tiếp
-        const resolveBtnFallbackSafe = () => resolveBtnFallback();
-        const resolverForClick = () => (btn && isVisibleAndClickable(btn)) ? btn : resolveBtnFallbackSafe();
-
-        // 5) Click 1–3 lần (auto) + xuyên overlay
-        const ok = await multiTryClick(resolverForClick, 3, isXocDiaLaunched);
-        if (ok) {
-            updateInfo('→ Đã tự động click (đợi nút trong ≤' + Math.round(WAIT_MS / 1000) + 's, sau đó click 1–3 lần) để vào "Chơi Xóc Đĩa Live".');
-        } else {
-            updateInfo('⚠ Không thể vào "Chơi Xóc Đĩa Live". Nút có thể bị khoá hoặc trang chặn điều hướng.');
-        }
+    // Pha 2: nếu chưa có tail, đợi phần còn lại cho các điều kiện fallback
+    if (!btn) {
+        const restMs = Math.max(0, WAIT_MS - TAIL_ONLY_MS);
+        btn = await waitButtonUpTo(resolveBtnFallback, restMs, 200);
     }
+
+    if (!btn) {
+        updateInfo('⚠ Không tìm thấy nút "Chơi Xóc Đĩa Live" trong ≤' + Math.round(WAIT_MS / 1000) + 's sau khi về trang Home.');
+        return;
+    }
+
+    // Resolver click: ưu tiên nút đã tìm thấy (tail hoặc fallback); nếu không còn khả dụng, fallback tiếp
+    const resolveBtnFallbackSafe = () => resolveBtnFallback();
+    const resolverForClick = () => (btn && isVisibleAndClickable(btn)) ? btn : resolveBtnFallbackSafe();
+
+    // 5) Click 1–3 lần (auto) + xuyên overlay
+    const ok = await multiTryClick(resolverForClick, 3, isXocDiaLaunched);
+    if (ok) {
+        updateInfo('→ Đã tự động click (đợi nút trong ≤' + Math.round(WAIT_MS / 1000) + 's, sau đó click 1–3 lần) để vào "Chơi Xóc Đĩa Live".');
+    } else {
+        updateInfo('⚠ Không thể vào "Chơi Xóc Đĩa Live". Nút có thể bị khoá hoặc trang chặn điều hướng.');
+    }
+}
 
     // ======= Multi-table Overlay =======
     (function installTableOverlay() {
@@ -4495,166 +4281,231 @@
         }
 
         function bringToFront(panel) {
-            if (!panel)
-                return;
+            if (!panel) return;
             panel.style.zIndex = (++highestZ).toString();
         }
 
         function ensureStyles() {
             if (document.getElementById('__abx_table_overlay_style'))
                 return;
-
             const style = document.createElement('style');
             style.id = '__abx_table_overlay_style';
             style.textContent = `
-#${OVERLAY_ID}{
-    position:fixed; inset:0;
-    z-index:2147480000;
-    pointer-events:none;
-}
-
-/* panel */
-#${OVERLAY_ID} .${PANEL_CLASS}{
-    position:absolute;
-    background:#040b1e;
-    color:#f8fafc;
-    border-radius:12px;
-    box-shadow:0 14px 32px rgba(0,0,0,0.55);
-    overflow:hidden;
-    display:flex;
-    flex-direction:column;
-    pointer-events:auto;
-    border:1px solid rgba(255,255,255,0.16);
-    min-width:${MIN_W}px;
-    min-height:${MIN_H}px;
-
-    /* NEW: scale cho UI/icon */
-    --panel-scale: 1;
-    --mirror-scale: 1;
-}
-#${OVERLAY_ID} .${PANEL_CLASS}.abx-closed{opacity:.2;}
-
-/* header */
-#${OVERLAY_ID} .${PANEL_CLASS} .head{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    padding:calc(2px * var(--panel-scale,1)) calc(28px * var(--panel-scale,1)) calc(2px * var(--panel-scale,1)) calc(10px * var(--panel-scale,1));
-    gap:calc(8px * var(--panel-scale,1));
-    background:#02040b;
-    user-select:none;
-    cursor:move;
-}
-#${OVERLAY_ID} .${PANEL_CLASS} .head .title-wrap{
-    display:flex;
-    flex-direction:column;
-    gap:calc(1px * var(--panel-scale,1));
-    flex:1;
-    min-width:0;
-}
-#${OVERLAY_ID} .${PANEL_CLASS} .head .title{
-    font-weight:700;
-    font-size:calc(9px * var(--panel-scale,1));
-    color:#fefefe;
-    line-height:1.1;
-    padding:calc(2px * var(--panel-scale,1)) 0;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-}
-#${OVERLAY_ID} .${PANEL_CLASS} .head .subtitle{
-    font-weight:500;
-    font-size:calc(7px * var(--panel-scale,1));
-    color:rgba(255,255,255,0.7);
-    letter-spacing:.4px;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-}
-#${OVERLAY_ID} .${PANEL_CLASS} .head .actions{
-    display:flex;
-    gap:calc(8px * var(--panel-scale,1));
-    margin-right:calc(8px * var(--panel-scale,1));
-}
-#${OVERLAY_ID} .${PANEL_CLASS} .head button{
-    border:none;
-    background:rgba(255,255,255,0.08);
-    color:#fefefe;
-    border-radius:calc(5px * var(--panel-scale,1));
-    cursor:pointer;
-    font-weight:700;
-    font-size:calc(9px * var(--panel-scale,1));
-    line-height:1;
-    padding:calc(1px * var(--panel-scale,1)) calc(8px * var(--panel-scale,1));
-    min-width:calc(28px * var(--panel-scale,1));
-    height:calc(20px * var(--panel-scale,1));
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    box-sizing:border-box;
-}
-#${OVERLAY_ID} .${PANEL_CLASS} .head button.play-btn{
-    background:linear-gradient(135deg,#1d4ed8,#2563eb);
-}
-#${OVERLAY_ID} .${PANEL_CLASS} .head button:hover{filter:brightness(1.05);}
-
-/* close (icon nhỏ theo panel) */
-#${OVERLAY_ID} .${PANEL_CLASS} .panel-close{
-    position:absolute;
-    top:2px; right:2px;
-    width:calc(18px * var(--panel-scale,1));
-    height:calc(18px * var(--panel-scale,1));
-    border-radius:3px;
-    border:none;
-    background:#e11d48;
-    color:#fff;
-    font-size:calc(12px * var(--panel-scale,1));
-    line-height:1;
-    padding:0;
-    opacity:.95;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    cursor:pointer;
-}
-
-/* body */
-#${OVERLAY_ID} .${PANEL_CLASS} .body{
-    flex:1;
-    background:#020b1f;
-    display:flex;
-    flex-direction:column;
-    gap:calc(8px * var(--panel-scale,1));
-    padding:calc(8px * var(--panel-scale,1));
-    overflow:hidden;
-}
-
-/* mirror scale để “thu nhỏ bàn” theo panel */
-#${OVERLAY_ID} .${PANEL_CLASS} .body > .mirror{
-    width:100%;
-    height:100%;
-    overflow:hidden;
-    position:relative;
-}
-#${OVERLAY_ID} .${PANEL_CLASS} .body > .mirror > .mirror-inner{
-    transform-origin:top left;
-    transform:scale(var(--mirror-scale,1));
-}
-
-/* resize handle cũng scale */
-#${OVERLAY_ID} .${PANEL_CLASS} .resize{
-    position:absolute;
-    width:calc(14px * var(--panel-scale,1));
-    height:calc(14px * var(--panel-scale,1));
-    right:4px;
-    bottom:4px;
-    cursor:se-resize;
-    background:rgba(255,255,255,0.18);
-    border-radius:4px;
-}`;
+            #${OVERLAY_ID} {
+                position: fixed;
+                inset: 0;
+                z-index: 2147480000;
+                pointer-events: none;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} {
+                position: absolute;
+                background: #040b1e;
+                color: #f8fafc;
+                border-radius: 12px;
+                box-shadow: 0 14px 32px rgba(0,0,0,0.55);
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+                pointer-events: auto;
+                border: 1px solid rgba(255,255,255,0.16);
+                min-width: ${MIN_W}px;
+                min-height: ${MIN_H}px;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS}.abx-closed {
+                opacity: 0.2;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: calc(2px * var(--panel-scale, 1)) calc(32px * var(--panel-scale, 1)) calc(2px * var(--panel-scale, 1)) calc(12px * var(--panel-scale, 1));
+                gap: 12px;
+                background: #02040b;
+                user-select: none;
+                cursor: move;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head .title-wrap {
+                display: flex;
+                flex-direction: column;
+                gap: calc(1px * var(--panel-scale, 1));
+                flex: 1;
+                min-width: 0;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head .title {
+                font-weight: 700;
+                font-size: calc(9px * var(--panel-scale, 1));
+                color: #fefefe;
+                line-height: 1.1;
+                padding: calc(2px * var(--panel-scale, 1)) 0;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head .subtitle {
+                font-weight: 500;
+                font-size: calc(7px * var(--panel-scale, 1));
+                color: rgba(255,255,255,0.7);
+                text-transform: none;
+                letter-spacing: 0.4px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head .actions {
+                display: flex;
+                gap: calc(10px * var(--panel-scale, 1));
+                margin-right: calc(12px * var(--panel-scale, 1));
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head button {
+                border: none;
+                background: rgba(255,255,255,0.08);
+                color: #fefefe;
+                border-radius: calc(5px * var(--panel-scale, 1));
+                cursor: pointer;
+                font-weight: 600;
+                font-size: calc(9px * var(--panel-scale, 1));
+                line-height: 1;
+                padding: calc(1px * var(--panel-scale, 1)) calc(8px * var(--panel-scale, 1));
+                min-width: calc(32px * var(--panel-scale, 1));
+                height: calc(22px * var(--panel-scale, 1));
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                transition: filter 0.2s ease, transform 0.2s ease;
+                box-sizing: border-box;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head button.play-btn {
+                min-width: calc(34px * var(--panel-scale, 1));
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head button.play-btn {
+                background: linear-gradient(135deg, #1d4ed8, #2563eb);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-close {
+                position: absolute;
+                top: 2px;
+                right: 2px;
+                width: calc(18px * var(--panel-scale, 1));
+                height: calc(18px * var(--panel-scale, 1));
+                border-radius: 3px;
+                border: none;
+                background: #e11d48;
+                color: #fff;
+                font-size: calc(12px * var(--panel-scale, 1));
+                line-height: 1;
+                padding: 0;
+                opacity: 0.95;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                transition: opacity 0.2s ease;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-close:hover {
+                opacity: 1;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head button:hover {
+                filter: brightness(1.05);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .body {
+                flex: 1;
+                background: #020b1f;
+                display: flex;
+                flex-direction: column;
+                gap: calc(8px * var(--panel-scale, 1));
+                padding: calc(10px * var(--panel-scale, 1));
+                overflow: hidden;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-info {
+                display: flex;
+                gap: calc(12px * var(--panel-scale, 1));
+                align-items: center;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown {
+                position: relative;
+                width: calc(48px * var(--panel-scale, 1));
+                height: calc(48px * var(--panel-scale, 1));
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-direction: column;
+                margin-top: calc(-6px * var(--panel-scale, 1));
+                font-weight: 600;
+                color: #fefefe;
+                align-self: flex-start;
+                --countdown-progress: 0deg;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown::before {
+                content: '';
+                position: absolute;
+                inset: 0;
+                border-radius: 50%;
+                background: conic-gradient(#22c55e var(--countdown-progress), rgba(34,197,94,0.18) var(--countdown-progress));
+                opacity: 0.85;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown::after {
+                content: '';
+                position: absolute;
+                inset: calc(6px * var(--panel-scale, 1));
+                border-radius: 50%;
+                background: #020b1f;
+                box-shadow: inset 0 0 6px rgba(0,0,0,0.5);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown .countdown-value {
+                font-size: calc(13px * var(--panel-scale, 1));
+                z-index: 1;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown .countdown-label {
+                display: none;
+            }
+              #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta {
+                  flex: 1;
+                  display: grid;
+                  grid-template-columns: repeat(auto-fit, minmax(calc(64px * var(--panel-scale, 1)), 1fr));
+                  gap: calc(8px * var(--panel-scale, 1));
+              }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta .meta-item {
+                background: rgba(255,255,255,0.05);
+                padding: calc(6px * var(--panel-scale, 1));
+                border-radius: calc(6px * var(--panel-scale, 1));
+                border: 1px solid rgba(255,255,255,0.07);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta .meta-label {
+                font-size: calc(9px * var(--panel-scale, 1));
+                text-transform: uppercase;
+                opacity: 0.7;
+                margin-bottom: 2px;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta .meta-value {
+                font-size: calc(11px * var(--panel-scale, 1));
+                font-weight: 600;
+                color: #fefefe;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-text {
+                flex: 1;
+                background: rgba(5,11,28,0.8);
+                border-radius: calc(8px * var(--panel-scale, 1));
+                border: 1px solid rgba(255,255,255,0.08);
+                padding: calc(8px * var(--panel-scale, 1));
+                font-size: calc(10px * var(--panel-scale, 1));
+                line-height: 1.4;
+                color: #dbeafe;
+                overflow: auto;
+                white-space: pre-wrap;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .resize {
+                position: absolute;
+                width: 16px;
+                height: 16px;
+                right: 4px;
+                bottom: 4px;
+                cursor: se-resize;
+                background: rgba(255,255,255,0.18);
+                border-radius: 4px;
+            }
+            `;
             document.head.appendChild(style);
         }
-
 
         function ensureRoot() {
             ensureStyles();
@@ -4674,39 +4525,8 @@
             return Math.max(min, Math.min(max, v));
         }
 
-        const UI_BASE_W = 320;
-        const UI_BASE_H = 220;
-
-        function applyPanelScale(st) {
-            if (!st || !st.panel) return;
-
-            const pr = st.panel.getBoundingClientRect();
-            const uiScale = clamp(Math.min(pr.width / UI_BASE_W, pr.height / UI_BASE_H), 0.45, 1);
-            st.panel.style.setProperty('--panel-scale', uiScale.toFixed(4));
-
-            // scale nội dung bàn (mirror) theo kích thước body
-            if (st.srcW > 0 && st.srcH > 0) {
-                const headH = st.head ? st.head.getBoundingClientRect().height : 0;
-                const bodyW = pr.width;
-                const bodyH = Math.max(1, pr.height - headH);
-                const ms = clamp(Math.min(bodyW / st.srcW, bodyH / st.srcH), 0.05, 1);
-                st.panel.style.setProperty('--mirror-scale', ms.toFixed(4));
-
-                if (st.mirrorInner) {
-                    st.mirrorInner.style.width = st.srcW + 'px';
-                    st.mirrorInner.style.height = st.srcH + 'px';
-                }
-            }
-        }
-
-        function applyAllPanelScales() {
-            panelMap.forEach(st => applyPanelScale(st));
-        }
-
-
         function updatePanelScale(panel) {
-            if (!panel)
-                return;
+            if (!panel) return;
             const rc = panel.getBoundingClientRect();
             const widthScale = clamp(rc.width / 240, 0.45, 1.9);
             const heightScale = clamp(rc.height / 180, 0.45, 1.9);
@@ -4720,10 +4540,7 @@
                 return;
             const rc = root.getBoundingClientRect();
             if (!lastRootSize) {
-                lastRootSize = {
-                    width: rc.width,
-                    height: rc.height
-                };
+                lastRootSize = { width: rc.width, height: rc.height };
                 return;
             }
             const prevW = lastRootSize.width || rc.width;
@@ -4756,10 +4573,7 @@
                 updatePanelScale(panel);
                 persistLayout(panel);
             });
-            lastRootSize = {
-                width: rc.width,
-                height: rc.height
-            };
+            lastRootSize = { width: rc.width, height: rc.height };
         }
 
         let resizeSync = null;
@@ -4776,10 +4590,7 @@
             const count = Math.max(n, 1);
             const cols = Math.max(2, Math.ceil(Math.sqrt(count)));
             const rows = Math.max(2, Math.ceil(count / cols));
-            return {
-                cols,
-                rows
-            };
+            return { cols, rows };
         }
 
         function rememberRoomDom(name, node) {
@@ -4876,10 +4687,10 @@
                 return false;
             try {
                 const evt = new MouseEvent('click', {
-                    view: window,
-                    bubbles: true,
-                    cancelable: true
-                });
+                        view: window,
+                        bubbles: true,
+                        cancelable: true
+                    });
                 el.dispatchEvent(evt);
                 return true;
             } catch (_) {
@@ -4931,11 +4742,11 @@
         function defaultResolveDom(id) {
             try {
                 const sel = [
-                    `[data-table-id="${id}"]`, 
-                    `[data-id="${id}"]`, 
-                    `[data-game-id="${id}"]`, 
-                    `[data-tableid="${id}"]`, 
-                    `.table-${id}`, 
+                    `[data-table-id="${id}"]`,
+                    `[data-id="${id}"]`,
+                    `[data-game-id="${id}"]`,
+                    `[data-tableid="${id}"]`,
+                    `.table-${id}`,
                     `.table_${id}`
                 ].join(',');
                 const el = document.querySelector(sel);
@@ -4995,81 +4806,6 @@
 
         function getPanelState(id) {
             return panelMap.get(id);
-        }
-
-        function syncPanel(id) {
-            const st = getPanelState(id);
-            if (!st || !st.panel) return;
-
-            const src = st.resolve(id);
-            if (!src || !src.isConnected) {
-                if (st.mirrorInner) st.mirrorInner.textContent = 'Không tìm thấy bàn: ' + id;
-                st.lastSig = '';
-                return;
-            }
-
-            const cs = getComputedStyle(src);
-            const rect = src.getBoundingClientRect();
-            if (cs.display === 'none' || cs.visibility === 'hidden' || rect.width < 1 || rect.height < 1)
-                return;
-
-            // lưu kích thước gốc để scale mirror
-            st.srcW = rect.width;
-            st.srcH = rect.height;
-
-            const sig = [
-                rect.width | 0,
-                rect.height | 0,
-                src.className,
-                src.getAttribute('data-state') || '',
-                src.textContent.length
-            ].join('|');
-
-            if (sig === st.lastSig) {
-                applyPanelScale(st);
-                return;
-            }
-            st.lastSig = sig;
-
-            const clone = cloneWithStyles(src);
-
-            const host = st.mirrorInner || st.mirror;
-            if (host.firstChild) host.replaceChild(clone, host.firstChild);
-            else host.appendChild(clone);
-
-            applyPanelScale(st);
-        }
-
-
-        function applyScaleForState(st) {
-            try {
-                if (!st || !st.body || !st.mirror)
-                    return;
-
-                const bw = st.body.clientWidth;
-                const bh = st.body.clientHeight;
-                const sw = st.lastSrcW || 0;
-                const sh = st.lastSrcH || 0;
-
-                const content = st.mirror.firstElementChild;
-                if (!content)
-                    return;
-
-                if (bw < 2 || bh < 2 || sw < 2 || sh < 2)
-                    return;
-
-                const s = Math.min(bw / sw, bh / sh, 1);
-
-                content.style.transformOrigin = '0 0';
-                content.style.transform = (s < 0.999) ? `scale(${s})` : '';
-            } catch (_) {}
-        }
-
-        function updateScaleOnly(id) {
-            const st = getPanelState(id);
-            if (!st)
-                return;
-            applyScaleForState(st);
         }
 
         function parseCountdownValue(raw) {
@@ -5230,38 +4966,38 @@
             return 'Chưa đặt';
         }
 
-        function escapeForRegExp(value) {
-            return (value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        }
+          function escapeForRegExp(value) {
+              return (value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          }
 
-        function stripMetaLineFromText(text, metaLine) {
-            if (!metaLine || !text)
-                return text || '';
-            const pattern = new RegExp(escapeForRegExp(metaLine), 'gi');
-            const cleaned = text
-                .replace(pattern, ' ')
-                .replace(/\s{2,}/g, ' ')
-                .trim();
-            return cleaned || '';
-        }
+          function stripMetaLineFromText(text, metaLine) {
+              if (!metaLine || !text)
+                  return text || '';
+              const pattern = new RegExp(escapeForRegExp(metaLine), 'gi');
+              const cleaned = text
+                  .replace(pattern, ' ')
+                  .replace(/\s{2,}/g, ' ')
+                  .trim();
+              return cleaned || '';
+          }
 
-        function renderPanelState(data) {
+          function renderPanelState(data) {
             const st = getPanelState(data.id);
             if (!st || !st.view)
                 return;
-            st.lastState = data;
-            const view = st.view;
-            const metaLine = (data.metaLine || '').trim();
-            if (view.title)
-                view.title.textContent = data.name || data.id || view.title.textContent;
-            if (view.subtitle)
-                view.subtitle.textContent = metaLine || (data.id ? 'ID: ' + data.id : '');
+              st.lastState = data;
+              const view = st.view;
+              const metaLine = (data.metaLine || '').trim();
+              if (view.title)
+                  view.title.textContent = data.name || data.id || view.title.textContent;
+              if (view.subtitle)
+                  view.subtitle.textContent = metaLine || (data.id ? 'ID: ' + data.id : '');
             if (view.countdown)
                 view.countdown.textContent = formatCountdownDisplay(data.countdown);
             if (view.countdownWrap) {
                 const value = (typeof data.countdown === 'number' && Number.isFinite(data.countdown) && data.countdown >= 0)
-                 ? Math.min(13, data.countdown)
-                 : null;
+                    ? Math.min(13, data.countdown)
+                    : null;
                 if (value == null) {
                     view.countdownWrap.style.removeProperty('--countdown-progress');
                 } else {
@@ -5273,7 +5009,7 @@
                 view.updated.textContent = new Date().toLocaleTimeString();
             const historyText = data.history && data.history.length ? data.history.join(' · ') : data.text || '';
             const baseText = historyText || data.text || '';
-            const cleanedText = metaLine ? stripMetaLineFromText(baseText, metaLine) : baseText;
+              const cleanedText = metaLine ? stripMetaLineFromText(baseText, metaLine) : baseText;
             if (view.status)
                 view.status.textContent = deriveStatusFromText(historyText);
             if (view.text)
@@ -5354,84 +5090,107 @@
 
         function createPanel(room, idx) {
             const root = ensureRoot();
-
             const panel = document.createElement('div');
             panel.className = PANEL_CLASS;
             panel.dataset.id = room.id;
 
             const head = document.createElement('div');
             head.className = 'head';
-
-            // title-wrap + subtitle (ID). Nếu tên == ID thì không hiện dòng phụ (tránh lặp).
             const titleWrap = document.createElement('div');
             titleWrap.className = 'title-wrap';
-
             const title = document.createElement('div');
             title.className = 'title';
             title.textContent = room.name || room.id;
-
             const subtitle = document.createElement('div');
             subtitle.className = 'subtitle';
-            subtitle.textContent = (room.name && room.name !== room.id) ? room.id : '';
-
+            subtitle.textContent = room.id ? 'ID: ' + room.id : '';
             titleWrap.append(title, subtitle);
-
             const actions = document.createElement('div');
             actions.className = 'actions';
-
             const btnPlay = document.createElement('button');
             btnPlay.className = 'play-btn';
             btnPlay.textContent = 'Play';
-            btnPlay.addEventListener('click', (ev) => {
-                ev.stopPropagation();
+            btnPlay.addEventListener('click', () => {
                 try {
-                    const src = defaultResolveDom(room.id);
-                    if (src) src.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                } catch (_) { }
+                    window.chrome?.webview?.postMessage?.({ overlay: 'table', event: 'play', id: room.id });
+                } catch (_) {}
             });
-
             actions.append(btnPlay);
             head.append(titleWrap, actions);
 
-            const btnClose = document.createElement('button');
-            btnClose.className = 'panel-close';
-            btnClose.textContent = '×';
-            btnClose.title = 'Đóng';
-            btnClose.addEventListener('click', (ev) => {
-                ev.stopPropagation();
-                panel.style.display = 'none';
-                persistLayout(panel);
-            });
-
             const body = document.createElement('div');
             body.className = 'body';
+            const info = document.createElement('div');
+            info.className = 'panel-info';
+            const countdownWrap = document.createElement('div');
+            countdownWrap.className = 'panel-countdown';
+            const countdownValue = document.createElement('div');
+            countdownValue.className = 'countdown-value';
+            countdownValue.textContent = '--';
+            const countdownLabel = document.createElement('div');
+            countdownLabel.className = 'countdown-label';
+            countdownLabel.textContent = '';
+            countdownWrap.append(countdownValue, countdownLabel);
 
-            const mirror = document.createElement('div');
-            mirror.className = 'mirror';
-            const mirrorInner = document.createElement('div');
-            mirrorInner.className = 'mirror-inner';
-            mirror.appendChild(mirrorInner);
+            const meta = document.createElement('div');
+            meta.className = 'panel-meta';
+            const createMetaItem = (label, placeholder = '--') => {
+                const wrap = document.createElement('div');
+                wrap.className = 'meta-item';
+                const lab = document.createElement('div');
+                lab.className = 'meta-label';
+                lab.textContent = label;
+                const val = document.createElement('div');
+                val.className = 'meta-value';
+                val.textContent = placeholder;
+                wrap.append(lab, val);
+                return { wrap, value: val };
+            };
+            const updatedMeta = createMetaItem('Cập nhật', '--:--');
+            const statusMeta = createMetaItem('Trạng thái', 'Chưa có dữ liệu');
+            meta.append(updatedMeta.wrap, statusMeta.wrap);
+            const metricsMeta = createMetaItem('Thông số', 'Chưa có');
+            const betsMeta = createMetaItem('Đặt cược', 'N/A');
+            meta.append(metricsMeta.wrap, betsMeta.wrap);
+            info.append(countdownWrap, meta);
 
-            body.appendChild(mirror);
+            const textBox = document.createElement('div');
+            textBox.className = 'panel-text';
+            textBox.textContent = 'Đang tải dữ liệu...';
+
+            body.append(info, textBox);
 
             const resize = document.createElement('div');
             resize.className = 'resize';
 
-            panel.append(head, btnClose, body, resize);
+            panel.append(head, body, resize);
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'panel-close';
+            closeBtn.innerHTML = '&times;';
+            closeBtn.title = 'Đóng bàn';
+            closeBtn.addEventListener('click', () => closePanel(room.id));
+            panel.appendChild(closeBtn);
+            bringToFront(panel);
             root.appendChild(panel);
 
             const st = {
                 id: room.id,
                 panel,
-                head,
                 body,
-                mirror,
-                mirrorInner,
-                obs: null,
+                view: {
+                    title: title,
+                    subtitle: subtitle,
+                    countdownWrap: countdownWrap,
+                    countdown: countdownValue,
+                    updated: updatedMeta.value,
+                    status: statusMeta.value,
+                    text: textBox,
+                    metrics: metricsMeta.value,
+                    bets: betsMeta.value
+                },
                 lastSig: '',
-                scheduled: false,
-                srcW: 0,
-                srcH: 0,
+                lastState: null,
+                closed: false,
                 resolve: (id) => {
                     if (typeof cfg.resolveDom === 'function')
                         return cfg.resolveDom(id);
@@ -5439,43 +5198,24 @@
                 }
             };
             panelMap.set(room.id, st);
-
             makeDraggable(panel, head);
             makeResizable(panel, resize);
             placePanel(panel, idx);
-
-            const src = st.resolve(room.id);
-            attachObserver(room.id, src);
-            scheduleSync(room.id);
-
-            applyPanelScale(st);
         }
-
 
         function placePanel(panel, idx, forceGrid = false) {
             const root = ensureRoot();
             const rc = root.getBoundingClientRect();
             const n = rooms.length || 1;
-            const {
-                cols,
-                rows
-            } = computeGrid(n);
+            const { cols, rows } = computeGrid(n);
             const gap = GAP;
             const baseW = Math.max(MIN_W, (rc.width - gap * (cols + 1)) / cols);
             const baseH = Math.max(MIN_H, (rc.height - gap * (rows + 1)) / rows);
             const id = panel.dataset.id;
             const saved = !forceGrid && layouts && layouts[id];
-            let x,
-            y,
-            w,
-            h;
+            let x, y, w, h;
             if (saved) {
-                ({
-                    x,
-                    y,
-                    w,
-                    h
-                } = layouts[id]);
+                ({ x, y, w, h } = layouts[id]);
                 x = clamp(x, 0, rc.width - MIN_W);
                 y = clamp(y, 0, rc.height - MIN_H);
                 w = clamp(w, MIN_W, rc.width);
@@ -5492,8 +5232,6 @@
             panel.style.height = h + 'px';
             panel.style.left = x + 'px';
             panel.style.top = y + 'px';
-            updateScaleOnly(id);
-            syncPanel(id);
             updatePanelScale(panel);
         }
 
@@ -5546,10 +5284,10 @@
             let origW = 0;
             let origH = 0;
             const root = ensureRoot();
-
             const onDown = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                bringToFront(panel);
                 resizing = true;
                 startX = e.clientX;
                 startY = e.clientY;
@@ -5559,40 +5297,30 @@
                 document.addEventListener('mousemove', onMove);
                 document.addEventListener('mouseup', onUp);
             };
-
             const onMove = (e) => {
-                if (!resizing) return;
-
+                if (!resizing)
+                    return;
                 const dx = e.clientX - startX;
                 const dy = e.clientY - startY;
                 const rootRect = root.getBoundingClientRect();
                 const left = parseFloat(panel.style.left) || 0;
                 const top = parseFloat(panel.style.top) || 0;
-
-                const nw = clamp(origW + dx, MIN_W, rootRect.width - left);
-                const nh = clamp(origH + dy, MIN_H, rootRect.height - top);
-
+                let nw = clamp(origW + dx, MIN_W, rootRect.width - left);
+                let nh = clamp(origH + dy, MIN_H, rootRect.height - top);
                 panel.style.width = nw + 'px';
                 panel.style.height = nh + 'px';
-
-                const st = getPanelState(panel.dataset.id);
-                applyPanelScale(st);
+                updatePanelScale(panel);
             };
-
             const onUp = () => {
-                if (!resizing) return;
+                if (!resizing)
+                    return;
                 resizing = false;
                 document.removeEventListener('mousemove', onMove);
                 document.removeEventListener('mouseup', onUp);
                 persistLayout(panel);
-
-                const st = getPanelState(panel.dataset.id);
-                applyPanelScale(st);
             };
-
             handle.addEventListener('mousedown', onDown);
         }
-
 
         function persistLayout(panel) {
             const id = panel.dataset.id;
@@ -5619,15 +5347,9 @@
             const seen = new Set();
             return (list || []).map(room => {
                 if (typeof room === 'string')
-                    return {
-                        id: room,
-                        name: room
-                    };
+                    return { id: room, name: room };
                 if (room && room.id)
-                    return {
-                        id: room.id,
-                        name: room.name || room.id
-                    };
+                    return { id: room.id, name: room.name || room.id };
                 return null;
             }).filter(Boolean).filter(room => {
                 if (seen.has(room.id))
@@ -5638,11 +5360,7 @@
         }
 
         function closePanel(id, options = {}) {
-            const {
-                removeFromRooms = true,
-                reflow = true,
-                sendEvent = true
-            } = options;
+            const { removeFromRooms = true, reflow = true, sendEvent = true } = options;
             const st = getPanelState(id);
             if (!st)
                 return;
@@ -5658,11 +5376,7 @@
                 layoutAll(true);
             if (sendEvent) {
                 try {
-                    window.chrome?.webview?.postMessage?.({
-                        overlay: 'table',
-                        event: 'closed',
-                        id
-                    });
+                    window.chrome?.webview?.postMessage?.({ overlay: 'table', event: 'closed', id });
                 } catch (_) {}
             }
             lastStateSig.delete(id);
@@ -5681,10 +5395,7 @@
                 if (!activeIds.has(id))
                     toRemove.push(id);
             });
-            toRemove.forEach(id => closePanel(id, {
-                    removeFromRooms: false,
-                    reflow: false
-                }));
+            toRemove.forEach(id => closePanel(id, { removeFromRooms: false, reflow: false }));
             rooms = normalized;
             rooms.forEach((room, idx) => {
                 if (!panelMap.has(room.id)) {
@@ -5729,119 +5440,119 @@
 
     // ======= Boot =======
     function ensureOverlayHost() {
-        // đảm bảo overlay tồn tại và listeners đã gắn
-        return ensureOverlay();
-    }
+    // đảm bảo overlay tồn tại và listeners đã gắn
+    return ensureOverlay();
+}
     // NEW: loop định kỳ để tự động đóng popup/thông báo
     function ensureAutoClosePopups() {
-        if (window.__abx_auto_close_popup)
-            return;
-        window.__abx_auto_close_popup = setInterval(() => {
-            try {
-                closeAdsAndCovers();
-            } catch (_) {}
-        }, 2000); // 2s/lần, đủ để tắt popup mà không spam
-    }
+    if (window.__abx_auto_close_popup)
+        return;
+    window.__abx_auto_close_popup = setInterval(() => {
+        try {
+            closeAdsAndCovers();
+        } catch (_) {}
+    }, 2000); // 2s/lần, đủ để tắt popup mà không spam
+}
 
     function boot() {
-        try {
-            onDomReady(() => {
-                ensureRoot();
-                installPostMessageLogger();
-                ensureOverlayHost();
-                ensureAutoClosePopups(); // NEW: auto đóng popup/thông báo
-                // Nếu đã nhận diện đang đăng nhập -> mở cổng ngay
-                try {
-                    if (isLoggedInFromDOM()) {
-                        S.authGateOpened = true;
-                    }
-                } catch (_) {}
-
-                // Sau boot – kiểm tra lại khi tab trở lại foreground (login popup/redirect)
-                if (!window.__abx_vis_listener) {
-                    window.__abx_vis_listener = true;
-                    document.addEventListener('visibilitychange', () => {
-                        if (!document.hidden) {
-                            onAuthStateMaybeChanged('vis'); // cập nhật username -> fetch/iframe nếu cần
-                            const bv = findBalance();
-                            if (bv)
-                                updateBalance(bv);
-                        }
-                    });
-
+    try {
+        onDomReady(() => {
+            ensureRoot();
+            installPostMessageLogger();
+            ensureOverlayHost();
+            ensureAutoClosePopups(); // NEW: auto đóng popup/thông báo
+            // Nếu đã nhận diện đang đăng nhập -> mở cổng ngay
+            try {
+                if (isLoggedInFromDOM()) {
+                    S.authGateOpened = true;
                 }
+            } catch (_) {}
 
-                // Chỉ khi nhìn thấy nút "Đăng nhập" mới bắt đầu các tiến trình Username/Balance
-                waitFor(() => !!findLoginButton(), 30000, 150).then(ok => {
-                    if (ok) {
-                        S.authGateOpened = true;
-                        // có thể bơm nhẹ một vòng để điền nhanh
-                        pumpAuthProbe(4000, 300);
-
-                        // NEW: nếu CHƯA login và popup đăng nhập CHƯA hiển thị
-                        // thì tự động bật vòng auto click nút "Đăng nhập"
-                        try {
-                            if (!isLoginPopupVisible() && !isLoggedInFromDOM()) {
-                                startLoginAutoClick();
-                            }
-                        } catch (_) {}
+            // Sau boot – kiểm tra lại khi tab trở lại foreground (login popup/redirect)
+            if (!window.__abx_vis_listener) {
+                window.__abx_vis_listener = true;
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden) {
+                        onAuthStateMaybeChanged('vis'); // cập nhật username -> fetch/iframe nếu cần
+                        const bv = findBalance();
+                        if (bv)
+                            updateBalance(bv);
                     }
                 });
 
-                // Cài mute telemetry trong các iframe cùng origin
-                Array.from(document.querySelectorAll('iframe')).forEach(f => {
-                    try {
-                        const w = f.contentWindow;
-                        if (w && w.location && w.location.origin === location.origin) {
-                            installTelemetryMutesInFrame(w);
-                            f.setAttribute('data-abx-tmuted', '1'); // đánh dấu đã mute
-                            f.addEventListener('load', () => installTelemetryMutesInFrame(f.contentWindow));
+            }
 
+            // Chỉ khi nhìn thấy nút "Đăng nhập" mới bắt đầu các tiến trình Username/Balance
+            waitFor(() => !!findLoginButton(), 30000, 150).then(ok => {
+                if (ok) {
+                    S.authGateOpened = true;
+                    // có thể bơm nhẹ một vòng để điền nhanh
+                    pumpAuthProbe(4000, 300);
+
+                    // NEW: nếu CHƯA login và popup đăng nhập CHƯA hiển thị
+                    // thì tự động bật vòng auto click nút "Đăng nhập"
+                    try {
+                        if (!isLoginPopupVisible() && !isLoggedInFromDOM()) {
+                            startLoginAutoClick();
                         }
                     } catch (_) {}
-                });
-
-                // cập nhật ngay lần đầu theo DOM hiện có (chỉ set khi có giá trị)
-                const u0 = canRunAuthLoop() ? findUserFromDOM() : '';
-                if (u0)
-                    updateUsername(u0);
-                ensureObserver();
-                const b0 = canRunAuthLoop() ? findBalance() : '';
-                if (b0)
-                    updateBalance(b0);
-
-                updateInfo(); // <— render panel
-                startUsernameWatchdog();
-
-                // one-shot: sau 500ms nếu vẫn chưa có username thì fetch profile / iframe
-                setTimeout(async() => {
-                    if (!S.username) {
-                        const ok = await tryFetchUserProfile();
-                        if (!ok)
-                            probeIframeOnce();
-                    }
-                }, 500);
-
-                // one-shot: khi trang “pageshow” (SPA quay lại / điều hướng xong) thử lại 1 lần
-                window.addEventListener('pageshow', async() => {
-                    if (!S.username) {
-                        const ok = await tryFetchUserProfile();
-                        if (!ok)
-                            probeIframeOnce();
-                    }
-                    const bp = findBalance();
-                    if (bp)
-                        updateBalance(bp);
-                    pumpAuthProbe(8000, 200);
-                }, {
-                    once: true
-                });
-
+                }
             });
 
-        } catch (e) {
-            console.error('[HomeWatch] boot error', e);
-        }
+            // Cài mute telemetry trong các iframe cùng origin
+            Array.from(document.querySelectorAll('iframe')).forEach(f => {
+                try {
+                    const w = f.contentWindow;
+                    if (w && w.location && w.location.origin === location.origin) {
+                        installTelemetryMutesInFrame(w);
+                        f.setAttribute('data-abx-tmuted', '1'); // đánh dấu đã mute
+                        f.addEventListener('load', () => installTelemetryMutesInFrame(f.contentWindow));
+
+                    }
+                } catch (_) {}
+            });
+
+            // cập nhật ngay lần đầu theo DOM hiện có (chỉ set khi có giá trị)
+            const u0 = canRunAuthLoop() ? findUserFromDOM() : '';
+            if (u0)
+                updateUsername(u0);
+            ensureObserver();
+            const b0 = canRunAuthLoop() ? findBalance() : '';
+            if (b0)
+                updateBalance(b0);
+
+            updateInfo(); // <— render panel
+            startUsernameWatchdog();
+
+            // one-shot: sau 500ms nếu vẫn chưa có username thì fetch profile / iframe
+            setTimeout(async() => {
+                if (!S.username) {
+                    const ok = await tryFetchUserProfile();
+                    if (!ok)
+                        probeIframeOnce();
+                }
+            }, 500);
+
+            // one-shot: khi trang “pageshow” (SPA quay lại / điều hướng xong) thử lại 1 lần
+            window.addEventListener('pageshow', async() => {
+                if (!S.username) {
+                    const ok = await tryFetchUserProfile();
+                    if (!ok)
+                        probeIframeOnce();
+                }
+                const bp = findBalance();
+                if (bp)
+                    updateBalance(bp);
+                pumpAuthProbe(8000, 200);
+            }, {
+                once: true
+            });
+
+        });
+
+    } catch (e) {
+        console.error('[HomeWatch] boot error', e);
     }
+}
     boot();
-})();
+    })();
