@@ -1263,14 +1263,7 @@ Ví dụ không hợp lệ:
                         _roomList.Clear();
                         foreach (var name in clean) _roomList.Add(name);
                         var cleanSet = new HashSet<string>(_roomList, StringComparer.OrdinalIgnoreCase);
-                        var cleanNormalized = new HashSet<string>(_roomList.Select(TextNorm.U), StringComparer.OrdinalIgnoreCase);
-                        _selectedRooms.RemoveWhere(n =>
-                        {
-                            if (cleanSet.Contains(n))
-                                return false;
-                            var norm = TextNorm.U(n);
-                            return !cleanNormalized.Contains(norm);
-                        });
+                        _selectedRooms.RemoveWhere(n => !cleanSet.Contains(n));
                         RebuildRoomOptions();
                         UpdateRoomSummary();
                     });
@@ -2888,8 +2881,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private void UpdateRoomSummary()
         {
-            var canSyncRooms = _roomOptions.Count > 0;
-            var changed = canSyncRooms ? SyncSelectedRoomsFromOptions() : false;
+            var changed = SyncSelectedRoomsFromOptions();
 
             var hasLoadedRooms = _roomListLastLoaded != DateTime.MinValue;
             int total = hasLoadedRooms ? _roomOptions.Count : 0;
