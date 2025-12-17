@@ -2851,19 +2851,17 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (changed) _ = TriggerRoomSaveDebouncedAsync();
         }
 
-          private void RebuildRoomOptions()
-          {
-              _roomOptions.Clear();
-              _roomOptionsCol1.Clear();
-              _roomOptionsCol2.Clear();
-              var selectedNormalized = new HashSet<string>(_selectedRooms.Select(TextNorm.U), StringComparer.OrdinalIgnoreCase);
-              foreach (var name in _roomList)
-              {
-                  var isSelected = selectedNormalized.Contains(TextNorm.U(name));
-                  var item = new RoomOption { Name = name, IsSelected = isSelected };
-                  item.PropertyChanged += RoomItem_PropertyChanged;
-                  _roomOptions.Add(item);
-              }
+        private void RebuildRoomOptions()
+        {
+            _roomOptions.Clear();
+            _roomOptionsCol1.Clear();
+            _roomOptionsCol2.Clear();
+            foreach (var name in _roomList)
+            {
+                var item = new RoomOption { Name = name, IsSelected = _selectedRooms.Contains(name) };
+                item.PropertyChanged += RoomItem_PropertyChanged;
+                _roomOptions.Add(item);
+            }
 
             if (_roomOptions.Count > 0)
             {

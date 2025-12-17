@@ -4246,7 +4246,7 @@
         const GAP = 8;
         const MIN_W = 150;
         const MIN_H = 120;
-        const STATE_INTERVAL = 300;
+        const STATE_INTERVAL = 900;
 
         let rooms = [];
         let layouts = loadLayouts();
@@ -4458,12 +4458,12 @@
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown .countdown-label {
                 display: none;
             }
-              #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta {
-                  flex: 1;
-                  display: grid;
-                  grid-template-columns: repeat(auto-fit, minmax(calc(64px * var(--panel-scale, 1)), 1fr));
-                  gap: calc(8px * var(--panel-scale, 1));
-              }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta {
+                flex: 1;
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+                gap: calc(8px * var(--panel-scale, 1));
+            }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta .meta-item {
                 background: rgba(255,255,255,0.05);
                 padding: calc(6px * var(--panel-scale, 1));
@@ -4966,32 +4966,16 @@
             return 'Chưa đặt';
         }
 
-          function escapeForRegExp(value) {
-              return (value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          }
-
-          function stripMetaLineFromText(text, metaLine) {
-              if (!metaLine || !text)
-                  return text || '';
-              const pattern = new RegExp(escapeForRegExp(metaLine), 'gi');
-              const cleaned = text
-                  .replace(pattern, ' ')
-                  .replace(/\s{2,}/g, ' ')
-                  .trim();
-              return cleaned || '';
-          }
-
-          function renderPanelState(data) {
+        function renderPanelState(data) {
             const st = getPanelState(data.id);
             if (!st || !st.view)
                 return;
-              st.lastState = data;
-              const view = st.view;
-              const metaLine = (data.metaLine || '').trim();
-              if (view.title)
-                  view.title.textContent = data.name || data.id || view.title.textContent;
-              if (view.subtitle)
-                  view.subtitle.textContent = metaLine || (data.id ? 'ID: ' + data.id : '');
+            st.lastState = data;
+            const view = st.view;
+            if (view.title)
+                view.title.textContent = data.name || data.id || view.title.textContent;
+            if (view.subtitle)
+                view.subtitle.textContent = data.metaLine || (data.id ? 'ID: ' + data.id : '');
             if (view.countdown)
                 view.countdown.textContent = formatCountdownDisplay(data.countdown);
             if (view.countdownWrap) {
@@ -5009,7 +4993,7 @@
                 view.updated.textContent = new Date().toLocaleTimeString();
             const historyText = data.history && data.history.length ? data.history.join(' · ') : data.text || '';
             const baseText = historyText || data.text || '';
-              const cleanedText = metaLine ? stripMetaLineFromText(baseText, metaLine) : baseText;
+            const cleanedText = data.metaLine ? baseText.replace(data.metaLine, '').trim() : baseText;
             if (view.status)
                 view.status.textContent = deriveStatusFromText(historyText);
             if (view.text)
