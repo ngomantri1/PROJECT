@@ -922,7 +922,7 @@
             wrap.appendChild(tableStatus);
             root.appendChild(wrap);
 
-            const selectors = ['[data-table-id]', '.tile-container', '.ep_bn'];
+            const selectors = ['div.hC_hE.hC_hH', 'div.rC_rE', 'div.rC_rS'];
             const formatRect = (rect) => rect ? ({
                 x: Math.round(rect.left),
                 y: Math.round(rect.top),
@@ -1007,15 +1007,15 @@
                 const cards = collectCards();
                 if (!cards.length)
                     return null;
-                const tables = cards.map(card => {
-                    const textSnapshot = normalizeText(card.textContent || '');
-                    const resultChain = Array.from(card.querySelectorAll('.np_nu, .yw_yz, .dw_result'))
-                        .map(el => normalizeText(el.textContent))
-                        .filter(Boolean)
-                        .join('');
-                    return {
-                        id: card.getAttribute('data-table-id') || card.dataset.tableId || '',
-                        name: normalizeText(card.querySelector('.rY_sn, .tile-name, .title, .game-title')?.textContent),
+                    const tables = cards.map(card => {
+                        const textSnapshot = normalizeText(card.textContent || '');
+                        const resultChain = Array.from(card.querySelectorAll('.np_nu, .yw_yz, .dw_result'))
+                            .map(el => normalizeText(el.textContent))
+                            .filter(Boolean)
+                            .join('');
+                        return {
+                            id: card.getAttribute('data-table-id') || card.dataset.tableId || '',
+                            name: normalizeText(card.querySelector('.rC_rT, .rC_rE span, .rY_sn, .tile-name, .title, .game-title')?.textContent),
                         countdown: (card.querySelector('[data-countdown], [class*=count]')?.textContent || '').replace(/[^\d]/g, '') || null,
                         resultChain,
                         counts: parseCounts(textSnapshot),
@@ -1371,12 +1371,21 @@
 
     window.__abx_hw_showDataAlert = showTestAlert;
 
-    function setOverlayLog(msg) {
-        try {
-            S.overlayLog = clip(String(msg || ''), 180);
-            updateInfo();
-        } catch (_) {}
-    }
+        function setOverlayLog(msg) {
+            try {
+                S.overlayLog = clip(String(msg || ''), 180);
+                updateInfo();
+            } catch (_) {}
+        }
+
+        function logToOverlayConsole(msg, level = 'debug') {
+            try {
+                if (window.chrome?.webview?.postMessage) {
+                    chrome.webview.postMessage(JSON.stringify({ abx: 'console', level, message: msg }));
+                }
+            } catch (_) {}
+            console.log(msg);
+        }
 
     function installPostMessageLogger() {
         if (window.__abx_pm_hooked)
@@ -4268,7 +4277,7 @@
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .body {
                 flex: 1;
-                background: #020b1f;
+                background: rgba(13, 24, 58, 0.92);
                 display: flex;
                 flex-direction: column;
                 gap: calc(8px * var(--panel-scale, 1));
@@ -4281,28 +4290,36 @@
                 align-items: center;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown {
-                width: calc(60px * var(--panel-scale, 1));
-                height: calc(60px * var(--panel-scale, 1));
+                --countdown-progress: 0;
+                --countdown-progress-color: #22c55e;
+                width: calc(50px * var(--panel-scale, 1));
+                height: calc(50px * var(--panel-scale, 1));
                 border-radius: 50%;
-                border: 2px solid rgba(255,255,255,0.25);
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                flex-direction: column;
                 margin-top: calc(-4px * var(--panel-scale, 1));
-                gap: 3px;
                 font-weight: 600;
                 color: #fefefe;
                 align-self: flex-start;
+                background: conic-gradient(
+                    var(--countdown-progress-color) calc(var(--countdown-progress, 0) * 1turn),
+                    rgba(255,255,255,0.12) 0
+                );
+                position: relative;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown::after {
+                content: '';
+                position: absolute;
+                inset: calc(6px * var(--panel-scale, 1));
+                border-radius: 50%;
+                background: rgba(5,11,28,0.9);
+                z-index: 0;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown .countdown-value {
-                font-size: calc(15px * var(--panel-scale, 1));
-            }
-            #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown .countdown-label {
-                font-size: calc(9px * var(--panel-scale, 1));
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                opacity: .7;
+                font-size: calc(17px * var(--panel-scale, 1));
+                position: relative;
+                z-index: 1;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta {
                 flex: 1;
@@ -4401,7 +4418,7 @@
                 return cached;
             if (cached && !cached.isConnected)
                 roomDomRegistry.delete(needle);
-            const selectors = ['span.rY_sn', 'span.qL_qM.qL_qN', 'div.abx-table-title'];
+            const selectors = ['span.rY_sn', 'span.qL_qM.qL_qN', 'div.abx-table-title', 'span.rC_rT'];
             for (const sel of selectors) {
                 const list = Array.from(document.querySelectorAll(sel));
                 const match = list.find(el => (el.textContent || '').trim() === needle);
@@ -4629,16 +4646,7 @@
             if (!root)
                 return null;
             const selectors = [
-                'div.kM_lc span',
-                'span.qL_qM.qL_qN',
-                'div.yu_yv span',
-                'div.kM_lc span.qL_qM',
-                '.yI_yJ span.yI_yL',
-                '.yI_yJ span.yI_yO',
-                '.yI_yK span.yI_yL',
-                '.yI_yK span.yI_yO',
-                '.tT_on span.yI_yL',
-                '.tT_on span.yI_yO'
+                'span.yI_yL.yI_yM'
             ];
             for (const sel of selectors) {
                 try {
@@ -4646,18 +4654,6 @@
                     if (node && parseCountdownValue(node.textContent) != null)
                         return node;
                 } catch (_) {}
-            }
-            const spans = Array.from(root.querySelectorAll('span'));
-            for (const el of spans) {
-                const txt = (el.textContent || '').trim();
-                if (!/^\d{1,3}$/.test(txt))
-                    continue;
-                const cls = getClassString(el);
-                if (/yI_y[LMO]/.test(cls))
-                    return el;
-                const pCls = getClassString(el.parentElement);
-                if (/yI_y[JKO]|kM_lc|count/i.test(pCls))
-                    return el;
             }
             return null;
         }
@@ -4673,6 +4669,12 @@
                     return null;
                 const countdownNode = findCountdownNode(src);
                 const countdown = parseCountdownValue((countdownNode && countdownNode.textContent) || '');
+                const info = '[HomeWatch countdown] ' + (room.name || room.id) + ' ' + (countdownNode ? (countdownNode.className || countdownNode.getAttribute('class')) : '(missing)') + ' ' + countdown;
+                logToOverlayConsole(info, 'info');
+                setOverlayLog(info);
+                if (typeof countdown === 'number' && Number.isFinite(countdown) && countdown >= 0) {
+                    st.countdownMax = Math.max(st.countdownMax || countdown, countdown);
+                }
                 const statsNode = src.querySelector('div.np_nq:nth-of-type(2) div.np_nr');
                 const stats = parseStats(statsNode);
                 const history = parseHistory(src);
@@ -4700,11 +4702,64 @@
 
         function formatCountdownDisplay(value) {
             if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
-                const mm = Math.floor(value / 60);
-                const ss = Math.floor(value % 60);
-                return mm + ':' + ss.toString().padStart(2, '0');
+                const normalized = Math.max(0, Math.floor(value));
+                return normalized.toString();
             }
             return '--';
+        }
+
+        function updateCountdownView(st, value) {
+            if (!st)
+                return;
+            const view = st.view;
+            if (!view || !view.countdown)
+                return;
+            const normalized = (typeof value === 'number' && Number.isFinite(value) && value >= 0)
+                ? Math.max(0, value)
+                : null;
+            const displayValue = normalized !== null ? Math.floor(normalized) : null;
+            view.countdown.textContent = displayValue !== null ? displayValue.toString() : '--';
+            if (view.countdownWrap) {
+                const maxCandidate = (typeof st.countdownMax === 'number' && st.countdownMax > 0)
+                    ? st.countdownMax
+                    : Math.max(normalized ?? 1, 1);
+                const ratio = (normalized !== null && maxCandidate > 0)
+                    ? Math.max(0, Math.min(1, normalized / maxCandidate))
+                    : 0;
+                view.countdownWrap.style.setProperty('--countdown-progress', ratio);
+                let color = '#22c55e';
+                if (displayValue !== null) {
+                    if (displayValue <= 4)
+                        color = '#b91c1c';
+                    else if (displayValue === 5)
+                        color = '#facc15';
+                }
+                view.countdownWrap.style.setProperty('--countdown-progress-color', color);
+            }
+        }
+
+        function startCountdownLoop(st) {
+            if (!st || st.countdownLoopId || st.lastCountdownValue === null)
+                return;
+            const step = () => {
+                const base = typeof st.lastCountdownValue === 'number' ? st.lastCountdownValue : null;
+                if (base !== null) {
+                    const elapsed = (Date.now() - (st.lastCountdownTimestamp || Date.now())) / 1000;
+                    const current = Math.max(0, base - elapsed);
+                    updateCountdownView(st, current);
+                }
+                st.countdownLoopId = requestAnimationFrame(step);
+            };
+            st.countdownLoopId = requestAnimationFrame(step);
+        }
+
+        function stopCountdownLoop(st) {
+            if (!st)
+                return;
+            if (st.countdownLoopId) {
+                cancelAnimationFrame(st.countdownLoopId);
+                st.countdownLoopId = null;
+            }
         }
 
         function deriveStatusFromText(text) {
@@ -4751,8 +4806,10 @@
                 return;
             st.lastState = data;
             const view = st.view;
-            if (view.countdown)
-                view.countdown.textContent = formatCountdownDisplay(data.countdown);
+            st.lastCountdownValue = (typeof data.countdown === 'number' && Number.isFinite(data.countdown) && data.countdown >= 0) ? data.countdown : null;
+            st.lastCountdownTimestamp = Date.now();
+            updateCountdownView(st, data.countdown);
+            startCountdownLoop(st);
             if (view.updated)
                 view.updated.textContent = new Date().toLocaleTimeString();
             const historyText = data.history && data.history.length ? data.history.join(' · ') : data.text || '';
@@ -4867,10 +4924,7 @@
             const countdownValue = document.createElement('div');
             countdownValue.className = 'countdown-value';
             countdownValue.textContent = '--';
-            const countdownLabel = document.createElement('div');
-            countdownLabel.className = 'countdown-label';
-            countdownLabel.textContent = 'Giây';
-            countdownWrap.append(countdownValue, countdownLabel);
+            countdownWrap.append(countdownValue);
 
             const meta = document.createElement('div');
             meta.className = 'panel-meta';
@@ -4917,7 +4971,12 @@
                 id: room.id,
                 panel,
                 body,
+                countdownMax: null,
+                countdownLoopId: null,
+                lastCountdownValue: null,
+                lastCountdownTimestamp: null,
                 view: {
+                    countdownWrap,
                     countdown: countdownValue,
                     updated: updatedMeta.value,
                     status: statusMeta.value,
@@ -5101,6 +5160,7 @@
             const st = getPanelState(id);
             if (!st)
                 return;
+            stopCountdownLoop(st);
             panelMap.delete(id);
             if (st.panel && st.panel.parentElement)
                 st.panel.parentElement.removeChild(st.panel);

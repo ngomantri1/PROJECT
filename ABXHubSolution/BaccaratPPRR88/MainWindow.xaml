@@ -806,11 +806,11 @@
                                                                             x:Name="RoomBorder"
                                                                             Background="#f8fafc"
                                                                             CornerRadius="8"
-                                                                            Margin="0,4"
-                                                                            Padding="2">
+                                                                            Margin="0,2"
+                                                                            Padding="0">
                                                                             <CheckBox
                                                                                 x:Name="RoomCheck"
-                                                                                Padding="8,4"
+                                                                                Padding="6,2"
                                                                                 Background="#d1fae5"
                                                                                 BorderBrush="#34d399"
                                                                                 BorderThickness="1"
@@ -819,7 +819,7 @@
                                                                                 HorizontalContentAlignment="Left"
                                                                                 FontSize="13"
                                                                                 FontWeight="SemiBold"
-                                                                                Foreground="#065f46"
+                                                                                Foreground="#0f172a"
                                                                                 Content="{Binding Name}"
                                                                                 IsChecked="{Binding IsSelected, Mode=TwoWay}"
                                                                                 Checked="RoomItemCheck_Click"
@@ -852,11 +852,11 @@
                                                                             x:Name="RoomBorder"
                                                                             Background="#f8fafc"
                                                                             CornerRadius="8"
-                                                                            Margin="0,4"
-                                                                            Padding="2">
+                                                                            Margin="0,2"
+                                                                            Padding="0">
                                                                             <CheckBox
                                                                                 x:Name="RoomCheck"
-                                                                                Padding="8,4"
+                                                                                Padding="6,2"
                                                                                 Background="#d1fae5"
                                                                                 BorderBrush="#34d399"
                                                                                 BorderThickness="1"
@@ -865,7 +865,7 @@
                                                                                 HorizontalContentAlignment="Left"
                                                                                 FontSize="13"
                                                                                 FontWeight="SemiBold"
-                                                                                Foreground="#065f46"
+                                                                                Foreground="#0f172a"
                                                                                 Content="{Binding Name}"
                                                                                 IsChecked="{Binding IsSelected, Mode=TwoWay}"
                                                                                 Checked="RoomItemCheck_Click"
@@ -2078,7 +2078,6 @@
         </Grid>
     </DockPanel>
 </Window>
-
 
 
 
