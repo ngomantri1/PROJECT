@@ -4,6 +4,8 @@ namespace TaiXiuLiveHit.Tasks
 {
     internal static class MoneyHelper
     {
+        // Đếm chuỗi thua liên tiếp để kích hoạt chế độ chờ thắng (thua 4 ván liên tiếp -> chờ đến khi có 1 ván thắng)
+        private static int _loseStreakWait4 = 0;
         // ====== HÀM CHUNG CŨ (giữ nguyên) ======
         public static long CalcAmount(string strategyId, long[] seq, int step, bool v2DoublePhase)
         {
@@ -109,11 +111,13 @@ namespace TaiXiuLiveHit.Tasks
             if (win == null)
                 return;
 
+            // Nếu đang ở chế độ chờ thắng (tạm ngưng cược) thì chỉ thoát khi gặp 1 ván thắng
             if (waitingForWin)
             {
                 if (win == true)
                 {
                     waitingForWin = false;
+                    _loseStreakWait4 = 0;
                     levelIndex = 0;
                     profitOnCurrentChain = 0;
                 }
@@ -122,6 +126,8 @@ namespace TaiXiuLiveHit.Tasks
 
             if (win == true)
             {
+                _loseStreakWait4 = 0;
+
                 // thắng: cần tính LỢI NHUẬN THỰC của chuỗi hiện tại
                 // = mức vừa thắng - (tổng các mức đã đốt trong chính chuỗi này trước đó)
                 int wonLevel = levelIndex;              // vd đang thắng ở mức 1 của chuỗi 2
@@ -178,6 +184,8 @@ namespace TaiXiuLiveHit.Tasks
             else
             {
                 // thua
+                _loseStreakWait4++;
+
                 if (levelIndex + 1 < curChain.Length)
                 {
                     // thua nhưng chưa hết mức trong chuỗi -> lên mức trong cùng chuỗi
@@ -198,8 +206,11 @@ namespace TaiXiuLiveHit.Tasks
                     }
                     levelIndex = 0;
                     profitOnCurrentChain = 0;
-                    waitingForWin = true;
                 }
+            
+                // Rule mới: thua 4 ván liên tiếp -> tạm ngưng cược cho đến khi có 1 ván thắng
+                if (_loseStreakWait4 >= 4)
+                    waitingForWin = true;
             }
         }
 

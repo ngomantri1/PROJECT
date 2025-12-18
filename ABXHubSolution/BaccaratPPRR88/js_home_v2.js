@@ -224,6 +224,8 @@
         scanLinksBtnId: 'bscanl200',
         scanTextsBtnId: 'bscant200',
         scanClosePopupBtnId: 'bscanclose200', // NEW: nút Scan200ClosePopup
+        resultMapBtnId: 'bresultmap',
+        scanResultMapBtnId: 'bscanresult200',
         overlayToggleBtnId: 'boverlay',
         loginBtnId: 'blogin',
         xocBtnId: 'bxoc',
@@ -429,6 +431,86 @@
         }
         return parts.reverse().join('/');
     }
+
+    const BACC_CARD_SELECTORS = ['div.hC_hE.hC_hH', 'div.rC_rE', 'div.rC_rS'];
+
+    function collectBaccarat3Cards() {
+        const seen = new WeakSet();
+        const cards = [];
+        BACC_CARD_SELECTORS.forEach(sel => {
+            document.querySelectorAll(sel).forEach(card => {
+                if (!card || seen.has(card))
+                    return;
+                seen.add(card);
+                cards.push(card);
+            });
+        });
+        cards.sort((a, b) => {
+            const ra = rectOf(a);
+            const rb = rectOf(b);
+            if (ra.y !== rb.y)
+                return ra.y - rb.y;
+            return ra.x - rb.x;
+        });
+        return cards;
+    }
+
+    function describeBaccarat3Node(node, idx) {
+        const tag = (node.tagName || '').toLowerCase();
+        const cls = node.getAttribute ? (node.getAttribute('class') || '') : '';
+        const text = clip((node.textContent || '').replace(/\s+/g, ' '), 60);
+        const fill = node.getAttribute ? (node.getAttribute('fill') || node.getAttribute('stroke') || '') : '';
+        const rect = rectOf(node);
+        const tail = cssTail(node);
+        return `${idx}. <${tag}>${cls ? ' ' + cls : ''}${fill ? ' fill=' + clip(fill, 40) : ''} tail=${tail} rect=${rect.x},${rect.y},${rect.w},${rect.h}${text ? ' text="' + text + '"' : ''}`;
+    }
+
+    function dumpBaccarat3Characters(limitPerCard = 150) {
+        const cards = collectBaccarat3Cards();
+        if (!cards.length)
+            return 'Không tìm thấy thẻ Baccarat 3.';
+        const segments = cards.map((card, index) => {
+            const identifier = card.getAttribute('data-table-id') || card.dataset.tableId || '';
+            const name = (card.querySelector('.tile-name, .rY_sn, .game-title')?.textContent || '').trim();
+            const headingParts = ['Card #' + (index + 1)];
+            if (identifier)
+                headingParts.push('[id:' + identifier + ']');
+            if (name)
+                headingParts.push('"' + clip(name, 48) + '"');
+            const heading = headingParts.join(' ');
+            const cardRect = rectOf(card);
+            const filteredNodes = Array.from(card.querySelectorAll('*')).filter(node => {
+                if (!(node instanceof Element))
+                    return false;
+                const tag = node.tagName;
+                if (tag === 'SCRIPT' || tag === 'STYLE')
+                    return false;
+                const text = (node.textContent || '').trim();
+                const color = node.getAttribute && ((node.getAttribute('fill') || node.getAttribute('stroke') || '').trim());
+                return !!text || !!color || tag === 'SVG' || tag === 'TEXT';
+            });
+            const displayed = filteredNodes.slice(0, limitPerCard);
+            const nodeLines = displayed.map((node, idx) => describeBaccarat3Node(node, idx + 1));
+            if (!nodeLines.length)
+                nodeLines.push('  (Không tìm thấy node phù hợp)');
+            const info = [
+                heading,
+                `rect: ${cardRect.x},${cardRect.y},${cardRect.w},${cardRect.h}`,
+                'nodes:',
+                ...nodeLines
+            ];
+            if (filteredNodes.length > displayed.length)
+                info.push(`  ...hiển thị ${displayed.length}/${filteredNodes.length} node`);
+            return info.join('\n');
+        });
+        return segments.join('\n\n---\n\n');
+    }
+
+    window.__abxDumpBaccarat3Characters = () => {
+        const text = dumpBaccarat3Characters();
+        try { showTestAlert(text); } catch (_) {}
+        return text;
+    };
 
     const $panel = () => document.getElementById(CFG.panelId);
     const $overlay = () => document.getElementById(CFG.overlayId);
@@ -779,6 +861,8 @@
             '  <button id="' + CFG.scanLinksBtnId + '">Scan200LinksMap</button>',
             '  <button id="' + CFG.scanTextsBtnId + '">Scan200TextMap</button>',
             '  <button id="' + CFG.scanClosePopupBtnId + '">Scan200ClosePopup</button>',
+            '  <button id="' + CFG.resultMapBtnId + '">ResultMap</button>',
+            '  <button id="' + CFG.scanResultMapBtnId + '">Scan200ResultMap</button>',
             '  <button id="' + CFG.loginBtnId + '">Click Đăng Nhập</button>',
             '  <button id="' + CFG.xocBtnId + '">Chơi Xóc Đĩa Live</button>',
             '  <button id="' + CFG.retryBtnId + '">Thử lại (tự động)</button>',
@@ -821,6 +905,7 @@
             ta.style.borderRadius = '8px';
             ta.style.padding = '6px 8px';
             ta.style.font = '12px/1.35 Consolas,ui-monospace,monospace';
+            ta.value = 'window.__abxDumpBaccarat3Characters();';
 
             const btnRow = document.createElement('div');
             btnRow.style.display = 'flex';
@@ -853,6 +938,15 @@
             autoScanBtn.style.padding = '6px 10px';
             autoScanBtn.style.borderRadius = '8px';
             autoScanBtn.style.cursor = 'pointer';
+
+            const dumpBaccaratBtn = document.createElement('button');
+            dumpBaccaratBtn.textContent = 'Dump Bacc3';
+            dumpBaccaratBtn.style.background = '#0b122e';
+            dumpBaccaratBtn.style.border = '1px solid #334155';
+            dumpBaccaratBtn.style.color = '#e5e7eb';
+            dumpBaccaratBtn.style.padding = '6px 10px';
+            dumpBaccaratBtn.style.borderRadius = '8px';
+            dumpBaccaratBtn.style.cursor = 'pointer';
 
             const out = document.createElement('pre');
             out.id = 'hw_dev_output';
@@ -912,17 +1006,17 @@
             btnRow.appendChild(btn);
             btnRow.appendChild(btnCopy);
             btnRow.appendChild(autoScanBtn);
+            btnRow.appendChild(dumpBaccaratBtn);
             wrap.appendChild(btnRow);
             wrap.appendChild(out);
             const tableStatus = document.createElement('div');
             tableStatus.style.fontSize = '11px';
             tableStatus.style.color = '#cbd5f5';
             tableStatus.style.marginTop = '6px';
-            tableStatus.textContent = 'Table scan: chưa chạy';
+            tableStatus.textContent = 'Table scan: ch??a ch???y';
             wrap.appendChild(tableStatus);
             root.appendChild(wrap);
 
-            const selectors = ['div.hC_hE.hC_hH', 'div.rC_rE', 'div.rC_rS'];
             const formatRect = (rect) => rect ? ({
                 x: Math.round(rect.left),
                 y: Math.round(rect.top),
@@ -989,22 +1083,8 @@
                 return null;
             };
 
-            const collectCards = () => {
-                const seen = new WeakSet();
-                const list = [];
-                selectors.forEach(sel => {
-                    document.querySelectorAll(sel).forEach(el => {
-                        if (el && !seen.has(el)) {
-                            seen.add(el);
-                            list.push(el);
-                        }
-                    });
-                });
-                return list;
-            };
-
             const createPayload = () => {
-                const cards = collectCards();
+                const cards = collectBaccarat3Cards();
                 if (!cards.length)
                     return null;
                     const tables = cards.map(card => {
@@ -1088,6 +1168,12 @@
                 autoScanBtn.textContent = 'Dừng Auto';
                 updateTableStatus('Auto scan đang chạy...');
             };
+            dumpBaccaratBtn.onclick = () => {
+                const text = dumpBaccarat3Characters();
+                out.textContent = text;
+                tableStatus.textContent = 'Da thu thap ky tu Baccarat 3';
+                try { showTestAlert(text); } catch (_) {}
+            };
         })();
 
         // drag bằng title
@@ -1167,6 +1253,16 @@
             e.preventDefault();
             e.stopPropagation();
             scanClosePopups(500);
+        };
+        root.querySelector('#' + CFG.resultMapBtnId).onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            showResultMap();
+        };
+        root.querySelector('#' + CFG.scanResultMapBtnId).onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            scanResultMap(200);
         };
         root.querySelector('#' + CFG.overlayToggleBtnId).onclick = (e) => {
             e.preventDefault();
@@ -2152,6 +2248,64 @@
                 }));
         } catch (_) {}
         console.groupEnd();
+    }
+
+    function findHistoryTitle(root) {
+        if (!root)
+            return '';
+        const selectors = [
+            '.mg_mh',
+            '.mg_bw',
+            '.tile-name',
+            '.rY_sn',
+            '.game-title',
+            '.abx-table-title',
+            '[data-table-name]',
+            '[data-title]'
+        ];
+        for (const sel of selectors) {
+            try {
+                const el = root.querySelector(sel);
+                const txt = el ? (el.innerText || el.textContent || '').trim() : '';
+                if (txt)
+                    return txt;
+            } catch (_) {}
+        }
+        const basic = (root.getAttribute && root.getAttribute('data-table-id')) || '';
+        if (basic)
+            return basic;
+        return textOf(root).split('\n')[0] || '';
+    }
+
+
+    function formatHistoryLine(entry, idx, historyCap = 40) {
+        const total = entry.history ? entry.history.length : 0;
+        const head = entry.name || entry.tail || ('table ' + (idx || 0));
+        const trimmed = (entry.history || []).slice(0, historyCap);
+        let historyText = trimmed.join(' ');
+        if (!historyText)
+            historyText = '(empty)';
+        if (total > historyCap)
+            historyText += ` ...(+${total - historyCap})`;
+        return `${idx}. ${head} (${total})\nHistory: ${historyText}\nTail: ${entry.tail || cssTail(entry.root)}`;
+    }
+
+    function showResultMap() {
+        const snapshot = buildResultMapSnapshot(1);
+        const summary = snapshot.tables ? `[ResultMap] ${snapshot.tables} bàn` : '[ResultMap] không tìm thấy bàn';
+        appendDevLog(summary);
+        setOverlayLog(summary);
+        logToOverlayConsole(summary, 'info');
+        showTestAlert(snapshot.text);
+    }
+
+    function scanResultMap(limit = 200) {
+        const snapshot = buildResultMapSnapshot(limit);
+        const summary = snapshot.tables ? `[Scan200ResultMap] ${snapshot.tables} bàn` : '[Scan200ResultMap] không tìm thấy bàn';
+        appendDevLog(summary);
+        setOverlayLog(summary);
+        logToOverlayConsole(summary, 'info');
+        showTestAlert(snapshot.text);
     }
 
     // ======= Username & Balance =======
@@ -4602,15 +4756,692 @@
             };
         }
 
+        const HISTORY_SELECTORS = [
+            'div.qR_lh',
+            'div.qR_qS span',
+            'div.qR_q1',
+            'div.qR_ra',
+            'svg foreignobject div[class*="vv_"]',
+            'svg foreignObject div[class*="vv_"]',
+            'span[class*="r1_"]',
+            'div[class*="vv_"]'
+        ];
+
+        function stripDiacritics(value) {
+            if (value == null)
+                return '';
+            const str = String(value);
+            if (!str)
+                return '';
+            const lower = str.toLowerCase();
+            if (typeof lower.normalize === 'function') {
+                try {
+                    return lower.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                } catch (_) {}
+            }
+            return lower;
+        }
+
+        function parseRgbColor(color) {
+            if (!color)
+                return null;
+            const trimmed = color.trim();
+            if (trimmed.startsWith('#')) {
+                let hex = trimmed.slice(1);
+                if (hex.length === 3)
+                    hex = hex.split('').map(ch => ch + ch).join('');
+                if (hex.length === 6 || hex.length === 8) {
+                    const r = parseInt(hex.slice(0, 2), 16);
+                    const g = parseInt(hex.slice(2, 4), 16);
+                    const b = parseInt(hex.slice(4, 6), 16);
+                    const a = hex.length === 8 ? parseInt(hex.slice(6, 8), 16) / 255 : 1;
+                    if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b))
+                        return { r, g, b, a };
+                }
+            }
+            const match = /rgba?\\(([^)]+)\\)/i.exec(trimmed);
+            if (match) {
+                const parts = match[1].split(',').map(p => parseFloat(p.trim()));
+                if (parts.length >= 3 && parts.every(num => Number.isFinite(num))) {
+                    return {
+                        r: parts[0],
+                        g: parts[1],
+                        b: parts[2],
+                        a: parts[3] != null ? parts[3] : 1
+                    };
+                }
+            }
+            return null;
+        }
+
+        function detectResultColor(el) {
+            if (!el)
+                return null;
+            const queue = [];
+            const push = (node) => {
+                if (node && queue.indexOf(node) === -1)
+                    queue.push(node);
+            };
+            push(el);
+            push(el.parentElement);
+            if (typeof el.closest === 'function') {
+                ['foreignobject', 'svg', 'span[class^="r1_"]', 'div[class^="fe_"]', 'div[class*="nM_"]'].forEach(sel => {
+                    try {
+                        push(el.closest(sel));
+                    } catch (_) {}
+                });
+            }
+            for (const node of queue) {
+                if (!node)
+                    continue;
+                if (node.getAttribute) {
+                    const attr = node.getAttribute('fill')
+                        || node.getAttribute('stroke')
+                        || node.getAttribute('data-color')
+                        || node.getAttribute('color');
+                    if (attr && attr.trim())
+                        return attr;
+                }
+                if (typeof window !== 'undefined' && window.SVGElement && node instanceof window.SVGElement) {
+                    const circle = node.querySelector && node.querySelector('circle, rect, path');
+                    if (circle) {
+                        const attr = circle.getAttribute && (circle.getAttribute('fill') || circle.getAttribute('stroke'));
+                        if (attr && attr.trim())
+                            return attr;
+                    }
+                }
+                const style = node.style;
+                if (style) {
+                    for (const prop of ['backgroundColor', 'color', 'fill', 'stroke', 'borderColor']) {
+                        const value = style[prop];
+                        if (value && value !== 'transparent')
+                            return value;
+                    }
+                }
+                try {
+                    const computed = typeof window !== 'undefined' && window.getComputedStyle && window.getComputedStyle(node);
+                    if (computed) {
+                        for (const prop of ['backgroundColor', 'color', 'fill', 'stroke', 'borderColor']) {
+                            const value = computed[prop];
+                            if (value && value !== 'transparent' && value !== 'initial' && value !== 'rgba(0, 0, 0, 0)')
+                                return value;
+                        }
+                    }
+                } catch (_) {}
+            }
+            return null;
+        }
+
+        function guessResultTypeFromAttributes(el, text) {
+            const normalized = stripDiacritics(text || textOf(el) || '');
+            if (normalized) {
+                if (/(^|\\s)(banker|nha cai|nhan cai)(\\s|$)/.test(normalized))
+                    return 'banker';
+                if (/(^|\\s)(player|nguoi choi)(\\s|$)/.test(normalized))
+                    return 'player';
+                if (/(tie|hoa|ho)/.test(normalized))
+                    return 'tie';
+            }
+            const color = detectResultColor(el);
+            if (color) {
+                const rgb = parseRgbColor(color);
+                if (rgb) {
+                    const max = Math.max(rgb.r, rgb.g, rgb.b);
+                    const min = Math.min(rgb.r, rgb.g, rgb.b);
+                    if (max - min > 10) {
+                        if (max === rgb.r)
+                            return 'banker';
+                        if (max === rgb.b)
+                            return 'player';
+                        if (max === rgb.g)
+                            return 'tie';
+                    }
+                }
+            }
+            return null;
+        }
+
+        function mapResultTypeToCode(value) {
+            if (!value)
+                return null;
+            const normalized = stripDiacritics(value);
+            if (!normalized)
+                return null;
+            if (/^b(anker)?$/.test(normalized) || normalized === 'b' || normalized.includes('banker'))
+                return 'B';
+            if (/^p(layer)?$/.test(normalized) || normalized === 'p' || normalized.includes('player'))
+                return 'P';
+            if (/^t(ie)?$/.test(normalized) || normalized === 't' || normalized.includes('tie') || normalized.includes('hoa') || normalized.includes('ho'))
+                return 'T';
+            return null;
+        }
+
+        function resolveHistoryCode(el) {
+            if (!el)
+                return null;
+            const data = el.dataset || {};
+            const candidates = [
+                data.result,
+                data.type,
+                data.value,
+                data.outcome,
+                data.bet,
+                data.action,
+                el.getAttribute && el.getAttribute('aria-label')
+            ];
+            for (const candidate of candidates) {
+                const mapped = mapResultTypeToCode(candidate);
+                if (mapped)
+                    return mapped;
+            }
+            const text = (el.textContent || '').trim();
+            const guessed = guessResultTypeFromAttributes(el, text);
+            if (guessed) {
+                const mapped = mapResultTypeToCode(guessed);
+                if (mapped)
+                    return mapped;
+            }
+            return null;
+        }
+
+        function collectHistoryNodes(root) {
+            if (!root)
+                return [];
+            const seen = new Set();
+            const nodes = [];
+            const add = (el) => {
+                if (!(el instanceof Element))
+                    return;
+                if (seen.has(el))
+                    return;
+                seen.add(el);
+                nodes.push(el);
+            };
+            HISTORY_SELECTORS.forEach(sel => {
+                try {
+                    root.querySelectorAll(sel).forEach(add);
+                } catch (_) {}
+            });
+            try {
+                root.querySelectorAll('svg foreignObject, svg foreignobject').forEach(foreign => {
+                    const childSel = 'div[class*="vv_"], span[class*="r1_"]';
+                    foreign.querySelectorAll(childSel).forEach(add);
+                });
+            } catch (_) {}
+            return nodes;
+        }
+
+        function collectCombinedHistory(root) {
+            const base = (typeof window.__abxParseHistory === 'function') ? window.__abxParseHistory(root) : [];
+            const vv = collectVvHistoryCodes(root);
+            if (!vv.length)
+                return base;
+            return base.concat(vv);
+        }
+
         function parseHistory(root) {
             if (!root)
                 return [];
-            const nodes = Array.from(root.querySelectorAll('div.qR_lh, div.qR_qS span, div.qR_q1, div.qR_ra'));
-            const text = nodes
-                .map(el => (el.textContent || '').trim())
-                .filter(Boolean);
-            return text;
+            const nodes = collectHistoryNodes(root);
+            const history = [];
+            nodes.forEach(el => {
+                const code = resolveHistoryCode(el);
+                if (code)
+                    history.push(code);
+            });
+            const vvCodes = collectVvHistoryCodes(root);
+            vvCodes.forEach(code => history.push(code));
+            return history;
         }
+
+        function colorToCode(color) {
+            if (!color)
+                return null;
+            const rgb = parseRgbColor(color);
+            if (!rgb)
+                return null;
+            const max = Math.max(rgb.r, rgb.g, rgb.b);
+            const min = Math.min(rgb.r, rgb.g, rgb.b);
+            if (max - min <= 10)
+                return null;
+            if (max === rgb.r)
+                return 'B';
+            if (max === rgb.b)
+                return 'P';
+            if (max === rgb.g)
+                return 'T';
+            return null;
+        }
+
+        const HISTORY_MARKER_SELECTORS = [
+            'svg circle',
+            'svg rect',
+            'svg path',
+            'span.ck_cm',
+            'span.ck_cv',
+            'span.ck_cw',
+            'span.ck_cd',
+            'span.r1_sb',
+            'span.r1_sa',
+            'span.r1_sc',
+            'div.vv_vx'
+        ];
+        const HISTORY_ZONE_HINTS = [
+            'gw_gx',
+            'ru_rv',
+            'mv_my',
+            'mv_mx',
+            'mv_mw',
+            'lu_lx',
+            'lu_lw',
+            'lu_m',
+            'fe_ff',
+            'bF_bG',
+            'ik_io',
+            'ik_ip',
+            'mg_bw',
+            'mg_mh'
+        ];
+
+        function isWithinHistoryZone(node, root) {
+            if (!node || !node.closest || !root)
+                return false;
+            if (!root.contains(node))
+                return false;
+            if (node.closest('div.hC_hE') !== root)
+                return false;
+            for (const hint of HISTORY_ZONE_HINTS) {
+                try {
+                    if (node.closest(`[class*="${hint}"]`))
+                        return true;
+                } catch (_) {}
+            }
+            return false;
+        }
+
+        function findHistoryShape(node) {
+            if (!node || !(node instanceof Element))
+                return null;
+            const tag = (node.tagName || '').toLowerCase();
+            if (tag === 'circle' || tag === 'rect' || tag === 'path')
+                return node;
+            try {
+                const inner = node.querySelector && node.querySelector('circle, rect, path');
+                if (inner)
+                    return inner;
+            } catch (_) {}
+            return node;
+        }
+
+        function collectHistoryMarkerCells(root) {
+            if (!root)
+                return [];
+            const candidates = Array.from(root.querySelectorAll(HISTORY_MARKER_SELECTORS.join(',')));
+            if (!candidates.length)
+                return [];
+            const seen = new WeakSet();
+            const nodes = [];
+            candidates.forEach(node => {
+                if (!node || !(node instanceof Element))
+                    return;
+                if (!isWithinHistoryZone(node, root))
+                    return;
+                if (seen.has(node))
+                    return;
+                const shape = findHistoryShape(node);
+                if (!shape)
+                    return;
+                const rect = rectOf(shape);
+                if (!rect || rect.w <= 0 || rect.h <= 0)
+                    return;
+                if (rect.w > 80 || rect.h > 80)
+                    return;
+                if (rect.w < 4 && rect.h < 4)
+                    return;
+                seen.add(node);
+                nodes.push({ el: shape, rect });
+            });
+            if (!nodes.length)
+                return [];
+            nodes.sort((a, b) => {
+                const dy = a.rect.y - b.rect.y;
+                if (Math.abs(dy) > 8)
+                    return dy;
+                const dx = a.rect.x - b.rect.x;
+                if (Math.abs(dx) > 8)
+                    return dx;
+                return a.rect.y - b.rect.y;
+            });
+            const grouped = [];
+            const rowGap = 16;
+            let currentRow = null;
+            let currentTop = null;
+            nodes.forEach(item => {
+                if (!currentRow || Math.abs(item.rect.y - currentTop) > rowGap) {
+                    currentTop = item.rect.y;
+                    currentRow = [];
+                    grouped.push(currentRow);
+                }
+                currentRow.push(item);
+            });
+            const markerCells = [];
+            grouped.forEach((rowNodes, rowIndex) => {
+                rowNodes.sort((a, b) => a.rect.x - b.rect.x);
+                rowNodes.forEach((entry, colIndex) => {
+                    markerCells.push({
+                        el: entry.el,
+                        row: rowIndex,
+                        col: colIndex
+                    });
+                });
+            });
+            return markerCells;
+        }
+
+        function collectHistoryCells(root) {
+            if (!root)
+                return [];
+            const markerCells = collectHistoryMarkerCells(root);
+            if (markerCells.length)
+                return markerCells;
+            const rowNodes = Array.from(root.querySelectorAll('div.ru_rv, div.mv_my, span.lP_lS, div.lP_lR')).filter(row => row && row.closest && row.closest('div.hC_hE') === root);
+            const cells = [];
+            const seenCols = new WeakSet();
+            rowNodes.forEach((row, rowIndex) => {
+                try {
+                    const cols = Array.from(row.querySelectorAll('div.gw_gx, div.ru_rv > div, span.r1_sb'));
+                    cols.forEach((col, colIndex) => {
+                        if (!col)
+                            return;
+                        const circle = col.querySelector('circle') || col.querySelector('rect') || col.querySelector('path');
+                        if (!circle)
+                            return;
+                        if (seenCols.has(circle))
+                            return;
+                        seenCols.add(circle);
+                        cells.push({
+                            el: circle,
+                            row: rowIndex,
+                            col: colIndex
+                        });
+                    });
+                } catch (_) {}
+            });
+            if (cells.length)
+                return cells;
+            const general = [];
+            const seen = new WeakSet();
+            const rowSelectors = ['div.lP_lR', 'span.lP_lS', 'div.mv_my', 'div.Ab_Ac'];
+            const rows = [];
+            rowSelectors.forEach(sel => {
+                try {
+                    root.querySelectorAll(sel).forEach(row => {
+                        if (row && !seen.has(row)) {
+                            seen.add(row);
+                            rows.push(row);
+                        }
+                    });
+                } catch (_) {}
+            });
+            rows.forEach((row, rowIndex) => {
+                const cols = Array.from(row.querySelectorAll('div.gw_gx, div.vv_vx, span.r1_sa, span.r1_sb'));
+                cols.forEach((col, colIndex) => {
+                    if (!col)
+                        return;
+                    const circle = col.querySelector('circle') || col.querySelector('rect') || col.querySelector('path') || col;
+                    if (!circle)
+                        return;
+                    if (general.some(c => c.el === circle))
+                        return;
+                    general.push({ el: circle, row: rowIndex, col: colIndex });
+                });
+            });
+            return general;
+        }
+
+        function collectVvHistoryCodes(root) {
+            const cells = collectHistoryCells(root);
+            const entries = [];
+            cells.forEach(cell => {
+                const node = cell.el;
+                if (!node)
+                    return;
+                let color = detectResultColor(node);
+                if (!color) {
+                    const circle = node.querySelector && node.querySelector('circle, rect, path');
+                    color = detectResultColor(circle);
+                }
+                if (!color && node.tagName && node.tagName.toLowerCase() === 'circle') {
+                    color = node.getAttribute('fill') || node.getAttribute('stroke') || '';
+                }
+                const code = colorToCode(color);
+                if (code)
+                    entries.push({ row: cell.row, col: cell.col, code });
+            });
+            entries.sort((a, b) => (a.row - b.row) || (a.col - b.col));
+            return entries.map(it => it.code);
+        }
+
+        function collectRawHistoryNodes(root) {
+            if (!root)
+                return [];
+            const cells = collectHistoryCells(root);
+            return cells.map(cell => {
+                const node = cell.el;
+                const circle = node.querySelector && (node.querySelector('circle, rect, path') || node);
+                const color = circle ? (circle.getAttribute('fill') || circle.getAttribute('stroke') || '') : '';
+                const comp = circle ? getComputedStyle(circle) : getComputedStyle(node);
+                const computed = comp ? (comp.fill || comp.stroke || comp.backgroundColor || '') : '';
+                return {
+                    row: cell.row,
+                    col: cell.col,
+                    tail: cssTail(node),
+                    tag: (node.tagName || '').toLowerCase(),
+                    color,
+                    computed,
+                    text: (node.textContent || '').trim()
+                };
+            });
+        }
+
+        window.__abxRunResultMapRawHistory = (limit = 1) => {
+            const entries = collectBaccaratHistoryEntries();
+            if (!entries.length) {
+                const text = 'Không tìm thấy bàn để xuất raw history.';
+                showTestAlert(text);
+                return [];
+            }
+            const target = entries.slice(0, Math.max(1, limit || 1));
+            const docs = target.map((entry, idx) => {
+                const raw = collectRawHistoryNodes(entry.root);
+                const lines = raw.map((node, j) =>
+                    `${j + 1}. [row=${node.row},col=${node.col}] tail=${node.tail} tag=${node.tag} color=${node.color || '(attr)'} computed=${node.computed || '(comp)'} text=${node.text || '(empty)'}`);
+                const summary = `${idx + 1}. ${entry.name} (${raw.length} ô lịch sử)`;
+                return `${summary}\n${lines.join('\n')}`;
+            });
+            const payload = ['Raw ResultMap history (row/col)', '', ...docs].join('\n\n');
+            showTestAlert(payload);
+            highlightHistoryCells(target[0], {
+                duration: 6000,
+                borderColor: 'rgba(14, 165, 233, 0.9)',
+                fillColor: 'rgba(14, 165, 233, 0.2)'
+            });
+            return target;
+        };
+
+        window.__abxProbeSvgHistory = () => {
+            const selector = 'div.hC_hE.hC_hH';
+            const matches = Array.from(document.querySelectorAll(selector));
+            const tableNode = matches[0] || null;
+            if (!tableNode) {
+                showTestAlert('Không tìm thấy Baccarat 3 trên trang.');
+                return [];
+            }
+            const list = Array.from(tableNode.querySelectorAll('svg circle, svg rect, svg path'));
+            if (!list.length) {
+                const msg = 'Không tìm thấy node SVG nào.';
+                showTestAlert(msg);
+                return [];
+            }
+            const focusZones = ['div.bF_bG', 'span.lP_lS', 'div.gw_gx', 'div.ru_rv', 'div.lP_lR'];
+            const filtered = list.filter(node => {
+                if (!node)
+                    return false;
+                return focusZones.some(sel => {
+                    try {
+                        return !!node.closest(sel);
+                    } catch (_) {
+                        return false;
+                    }
+                });
+            });
+            highlightProbeNodes(filtered);
+            const info = filtered.map((node, idx) => {
+                const tail = cssTail(node);
+                const parent = node.closest && node.closest('div, span');
+                const zoneTail = parent ? cssTail(parent) : '';
+                const fill = node.getAttribute('fill') || node.getAttribute('stroke') || '';
+                const computed = window.getComputedStyle ? window.getComputedStyle(node) : null;
+                const compColor = computed ? (computed.fill || computed.stroke || '') : '';
+                return `${idx + 1}. tail=${tail} zone=${zoneTail} fill=${fill||'(attr)'} computed=${compColor||'(comp)'} text=${(node.textContent||'').trim()}`;
+            });
+            const batch = ['SVG history probe (filtered ' + filtered.length + ' nodes)', '', ...info].join('\n\n');
+            showTestAlert(batch);
+            return filtered;
+        };
+
+        function highlightProbeNodes(items, options = {}) {
+            const normalized = Array.isArray(items) ? items : [];
+            const existing = document.getElementById('__abx_svg_probe_overlay');
+            if (existing)
+                existing.remove();
+            const nodes = normalized
+                .map((item, index) => {
+                    const el = item && item.el ? item.el : item;
+                    if (!el || !(el instanceof Element))
+                        return null;
+                    return {
+                        el,
+                        label: item && item.label ? item.label : (index + 1).toString()
+                    };
+                })
+                .filter(Boolean);
+            if (!nodes.length)
+                return;
+            const { duration = 8000, borderColor = 'rgba(248, 113, 113, 0.9)', fillColor = 'rgba(248, 113, 113, 0.15)', labelColor = '#fff', labelBackground = 'rgba(15, 23, 42, 0.8)' } = options;
+            const overlay = document.createElement('div');
+            overlay.id = '__abx_svg_probe_overlay';
+            overlay.style.position = 'fixed';
+            overlay.style.top = '0';
+            overlay.style.left = '0';
+            overlay.style.width = '100%';
+            overlay.style.height = '100%';
+            overlay.style.pointerEvents = 'none';
+            overlay.style.zIndex = '2147483647';
+            nodes.forEach(item => {
+                try {
+                    const rect = item.el.getBoundingClientRect();
+                    if (!rect.width && !rect.height)
+                        return;
+                    const box = document.createElement('div');
+                    box.style.position = 'absolute';
+                    box.style.border = `2px solid ${borderColor}`;
+                    box.style.background = fillColor;
+                    box.style.left = rect.left + 'px';
+                    box.style.top = rect.top + 'px';
+                    box.style.width = rect.width + 'px';
+                    box.style.height = rect.height + 'px';
+                    box.style.transform = 'translate(0,0)';
+                    box.style.boxShadow = '0 0 12px rgba(249, 115, 22, 0.8)';
+                    const label = document.createElement('div');
+                    label.textContent = item.label;
+                    label.style.position = 'absolute';
+                    label.style.top = '-12px';
+                    label.style.right = '2px';
+                    label.style.fontSize = '10px';
+                    label.style.background = labelBackground;
+                    label.style.color = labelColor;
+                    label.style.padding = '1px 4px';
+                    label.style.borderRadius = '999px';
+                    box.appendChild(label);
+                    overlay.appendChild(box);
+                } catch (_) {}
+            });
+            document.body.appendChild(overlay);
+            setTimeout(() => {
+                overlay.remove();
+            }, duration);
+        }
+
+        function highlightHistoryCells(entry, options = {}) {
+            if (!entry || !entry.root)
+                return;
+            const cells = collectHistoryCells(entry.root);
+            if (!cells.length)
+                return;
+            const nodes = cells.map(cell => ({
+                el: cell.el,
+                label: `R${cell.row + 1}C${cell.col + 1}`
+            }));
+            highlightProbeNodes(nodes, options);
+        }
+
+        try {
+            if (window && typeof window !== 'undefined') {
+                window.__abxParseHistory = parseHistory;
+            }
+        } catch (_) {}
+
+        function collectBaccaratHistoryEntries() {
+            const cards = collectBaccarat3Cards();
+            const seen = new Set();
+            const entries = [];
+            cards.forEach(card => {
+                const root = card.closest && card.closest('div.hC_hE');
+                const container = root || card;
+                if (!container || seen.has(container))
+                    return;
+                seen.add(container);
+                const history = collectCombinedHistory(container);
+                entries.push({
+                    root: container,
+                    name: findHistoryTitle(card) || findHistoryTitle(container),
+                    history,
+                    tail: cssTail(card)
+                });
+            });
+            return entries;
+        }
+
+        function buildResultMapSnapshot(limit = 1) {
+            const entries = collectBaccaratHistoryEntries();
+            if (!entries.length) {
+                const text = 'Không tìm thấy bàn Baccarat để hiển thị lịch sử.';
+                return { tables: 0, text, entries: [] };
+            }
+            const list = entries.slice(0, Math.max(1, limit || entries.length));
+            const lines = list.map((entry, idx) => formatHistoryLine(entry, idx + 1, 60));
+            const header = `ResultMap snapshot (${list.length} bàn)`;
+            const payload = [header, '', ...lines].join('\n\n');
+            return { tables: list.length, text: payload, entries: list };
+        }
+
+        window.__abxRunResultMapTest = (limit = 1) => {
+            const snapshot = buildResultMapSnapshot(limit);
+            const summary = snapshot.tables ? `[ResultMap] ${snapshot.tables} bàn` : '[ResultMap] không tìm thấy bàn';
+            appendDevLog(summary + ' (test run)');
+            setOverlayLog(summary + ' (test run)');
+            logToOverlayConsole(summary, 'info');
+            try {
+                showTestAlert(snapshot.text);
+            } catch (_) {}
+            highlightHistoryCells(snapshot.entries[0], {
+                duration: 6000,
+                borderColor: 'rgba(236, 72, 153, 0.9)',
+                fillColor: 'rgba(236, 72, 153, 0.15)'
+            });
+            return snapshot;
+        };
 
         function getPanelState(id) {
             return panelMap.get(id);

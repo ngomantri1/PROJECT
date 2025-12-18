@@ -1,0 +1,6 @@
+Array.from(document.querySelectorAll('div.vv_vx, div[class*="vv_"]'))
+  .map(el => ({
+    tail: el ? el.getAttribute('class') + ' ' + cssTail(el) : '',
+    color: (el.getAttribute('fill') || el.getAttribute('stroke') || el.style.backgroundColor || ''),
+    text: el.textContent?.trim()
+  }));

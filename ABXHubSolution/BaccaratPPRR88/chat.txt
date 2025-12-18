@@ -1,0 +1,37 @@
+SVG history probe (filtered 17 nodes)
+
+
+
+1. tail=div.hC_hE.hC_hH[1]/div.mg_mh[1]/div.mg_bw[1]/div.ru_rv[2]/div.gw_gx[1]/div[1]/svg.[object.SVGAnimatedString][1]/path.[object.SVGAnimatedString][1] zone=div.ik_io.ik_ip[1]/div.eJ_bv[1]/div.hC_hE.hC_hH[1]/div.mg_mh[1]/div.mg_bw[1]/div.ru_rv[2]/div.gw_gx[1]/div[1] fill=(attr) computed=rgba(0, 0, 0, 0) text=
+
+2. tail=div.hC_hE.hC_hH[1]/div.mg_mh[1]/div.mg_bw[1]/div.ru_rv[2]/div.gw_gx[1]/div[1]/svg.[object.SVGAnimatedString][1]/path.[object.SVGAnimatedString][2] zone=div.ik_io.ik_ip[1]/div.eJ_bv[1]/div.hC_hE.hC_hH[1]/div.mg_mh[1]/div.mg_bw[1]/div.ru_rv[2]/div.gw_gx[1]/div[1] fill=(attr) computed=none text=
+
+3. tail=div.kz_ca[1]/div.kx_hJ[1]/div.nM_nN[1]/div.ux_lI[2]/div.yI_yJ[1]/svg.[object.SVGAnimatedString][1]/g.[object.SVGAnimatedString][1]/circle.[object.SVGAnimatedString][1] zone=div.hC_hE.hC_hH[1]/div.hC_hJ[2]/div.kz_kA[1]/div.kz_ca[1]/div.kx_hJ[1]/div.nM_nN[1]/div.ux_lI[2]/div.yI_yJ[1] fill=black computed=rgb(0, 0, 0) text=
+
+4. tail=div.kz_ca[1]/div.kx_hJ[1]/div.nM_nN[1]/div.ux_lI[2]/div.yI_yJ[1]/svg.[object.SVGAnimatedString][1]/g.[object.SVGAnimatedString][1]/circle.[object.SVGAnimatedString][2] zone=div.hC_hE.hC_hH[1]/div.hC_hJ[2]/div.kz_kA[1]/div.kz_ca[1]/div.kx_hJ[1]/div.nM_nN[1]/div.ux_lI[2]/div.yI_yJ[1] fill=white computed=none text=
+
+5. tail=div.kz_ca[1]/div.kx_hJ[1]/div.nM_nN[1]/div.ux_lI[2]/div.yI_yJ[1]/svg.[object.SVGAnimatedString][1]/g.[object.SVGAnimatedString][1]/circle.[object.SVGAnimatedString][3] zone=div.hC_hE.hC_hH[1]/div.hC_hJ[2]/div.kz_kA[1]/div.kz_ca[1]/div.kx_hJ[1]/div.nM_nN[1]/div.ux_lI[2]/div.yI_yJ[1] fill=white computed=rgb(255, 255, 255) text=
+
+6. tail=div.kz_ca[1]/div.kx_hJ[1]/div.nM_nN[1]/div.ux_lI[2]/div.yI_yJ[1]/svg.[object.SVGAnimatedString][1]/g.[object.SVGAnimatedString][1]/circle.[object.SVGAnimatedString][4] zone=div.hC_hE.hC_hH[1]/div.hC_hJ[2]/div.kz_kA[1]/div.kz_ca[1]/div.kx_hJ[1]/div.nM_nN[1]/div.ux_lI[2]/div.yI_yJ[1] fill=white computed=none text=
+
+7. tail=div.kz_ca[1]/div.kx_hJ[1]/div.nM_nN[1]/div.ux_lI[2]/div.yI_yJ[1]/svg.[object.SVGAnimatedString][1]/g.[object.SVGAnimatedString][1]/circle.[object.SVGAnimatedString][5] zone=div.hC_hE.hC_hH[1]/div.hC_hJ[2]/div.kz_kA[1]/div.kz_ca[1]/div.kx_hJ[1]/div.nM_nN[1]/div.ux_lI[2]/div.yI_yJ[1] fill=transparent computed=rgba(0, 0, 0, 0) text=
+
+8. tail=div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[1]/div[1]/button.nV_oa[1]/svg.[object.SVGAnimatedString][1]/rect.[object.SVGAnimatedString][1] zone=div.hC_hJ[2]/div.kz_kA[1]/div.kz_ca[1]/div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[1]/div[1] fill=#2D8BE8 computed=rgb(45, 139, 232) text=
+
+9. tail=div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[1]/div[1]/button.nV_oa[1]/svg.[object.SVGAnimatedString][1]/path.[object.SVGAnimatedString][1] zone=div.hC_hJ[2]/div.kz_kA[1]/div.kz_ca[1]/div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[1]/div[1] fill=white computed=rgb(255, 255, 255) text=
+
+10. tail=div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[1]/div[1]/button.nV_oa[1]/svg.[object.SVGAnimatedString][1]/rect.[object.SVGAnimatedString][2] zone=div.hC_hJ[2]/div.kz_kA[1]/div.kz_ca[1]/div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[1]/div[1] fill=black computed=rgb(0, 0, 0) text=
+
+11. tail=div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[1]/div[1]/button.nV_oa[1]/svg.[object.SVGAnimatedString][1]/path.[object.SVGAnimatedString][2] zone=div.hC_hJ[2]/div.kz_kA[1]/div.kz_ca[1]/div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[1]/div[1] fill=#2D8BE8 computed=none text=
+
+12. tail=div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[1]/div[1]/button.nV_oa[1]/svg.[object.SVGAnimatedString][1]/rect.[object.SVGAnimatedString][3] zone=div.hC_hJ[2]/div.kz_kA[1]/div.kz_ca[1]/div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[1]/div[1] fill=#2D8BE8 computed=rgb(45, 139, 232) text=
+
+13. tail=div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[2]/div[1]/button.nV_oa[1]/svg.[object.SVGAnimatedString][1]/rect.[object.SVGAnimatedString][1] zone=div.hC_hJ[2]/div.kz_kA[1]/div.kz_ca[1]/div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[2]/div[1] fill=#EA4242 computed=rgb(234, 66, 66) text=
+
+14. tail=div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[2]/div[1]/button.nV_oa[1]/svg.[object.SVGAnimatedString][1]/path.[object.SVGAnimatedString][1] zone=div.hC_hJ[2]/div.kz_kA[1]/div.kz_ca[1]/div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[2]/div[1] fill=white computed=rgb(255, 255, 255) text=
+
+15. tail=div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[2]/div[1]/button.nV_oa[1]/svg.[object.SVGAnimatedString][1]/rect.[object.SVGAnimatedString][2] zone=div.hC_hJ[2]/div.kz_kA[1]/div.kz_ca[1]/div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[2]/div[1] fill=black computed=rgb(0, 0, 0) text=
+
+16. tail=div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[2]/div[1]/button.nV_oa[1]/svg.[object.SVGAnimatedString][1]/path.[object.SVGAnimatedString][2] zone=div.hC_hJ[2]/div.kz_kA[1]/div.kz_ca[1]/div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[2]/div[1] fill=#EA4242 computed=none text=
+
+17. tail=div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[2]/div[1]/button.nV_oa[1]/svg.[object.SVGAnimatedString][1]/rect.[object.SVGAnimatedString][3] zone=div.hC_hJ[2]/div.kz_kA[1]/div.kz_ca[1]/div.kx_hJ[1]/div.nV_nW[2]/div.nV_n1[2]/div.gw_gx[2]/div[1] fill=#EA4242 computed=rgb(234, 66, 66) text=
