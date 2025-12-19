@@ -4,6 +4,53 @@ namespace XocDiaLiveHit.Tasks
 {
     internal static class MoneyHelper
     {
+
+        // ====== NEW: 7. Thắng đánh lên, thua giữ nguyên mức ======
+        // Tiền thắng tạm (netDelta) được cộng dồn giống tiền thắng hiện tại (đã qua cùng cơ chế net/rounding ở UI).
+        // Khi _s7TempProfit > 0 => reset về mức 1 (step=0) và set _s7TempProfit = 0 để bắt đầu tính lại.
+        private static readonly object _s7Lock = new();
+        private static double _s7TempProfit = 0;
+        private static bool _s7NeedResetToLevel1 = false;
+
+        public static void ResetTempProfitForWinUpLoseKeep()
+        {   
+            lock (_s7Lock)
+            {
+                _s7TempProfit = 0;
+                _s7NeedResetToLevel1 = false;
+            }
+        }
+
+        /// <summary>
+        /// Gọi từ UI (UiAddWin) để cộng dồn tiền thắng tạm theo đúng "net" đang hiển thị.
+        /// Chỉ áp dụng cho strategyId == "WinUpLoseKeep".
+        /// </summary>
+        public static void NotifyTempProfit(string strategyId, double netDelta)
+        {
+            if (!string.Equals(strategyId, "WinUpLoseKeep", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            lock (_s7Lock)
+            {
+                _s7TempProfit += netDelta;
+                if (_s7TempProfit > 0)
+                    _s7NeedResetToLevel1 = true;
+            }
+        }
+
+        private static bool ConsumeS7ResetFlag()
+        {
+            lock (_s7Lock)
+            {
+                if (!_s7NeedResetToLevel1)
+                    return false;
+
+                _s7NeedResetToLevel1 = false;
+                _s7TempProfit = 0; // theo yêu cầu: reset tiền thắng tạm = 0
+                return true;
+            }
+        }
+
         // ====== HÀM CHUNG CŨ (giữ nguyên) ======
         public static long CalcAmount(string strategyId, long[] seq, int step, bool v2DoublePhase)
         {
@@ -60,6 +107,24 @@ namespace XocDiaLiveHit.Tasks
                     step = (step + 1) % n;
                     v2DoublePhase = false;
                     break;
+                case "WinUpLoseKeep":
+                    // Ưu tiên reset nếu tiền thắng tạm đã > 0 (flag set từ UI).
+                    if (ConsumeS7ResetFlag())
+                    {
+                        step = 0;
+                        v2DoublePhase = false;
+                        break;
+                    }
+
+                    if (win == true)
+                    {
+                        step = (step + 1) % n; // thắng => lên mức (vòng lại mức 1 khi tới cuối)
+                    }
+                    // thua (false) hoặc null => giữ nguyên step
+
+                    v2DoublePhase = false;
+                    break;
+
                 default:
                     if (win == true || win == null) step = 0;
                     else step = (step + 1) % n;

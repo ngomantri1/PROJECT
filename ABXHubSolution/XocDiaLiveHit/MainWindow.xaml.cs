@@ -2268,6 +2268,7 @@ Ví dụ không hợp lệ:
         {
             if (!_uiReady) return;
             _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
+            XocDiaLiveHit.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             // NEW: mỗi “Quản lý vốn” có chuỗi tiền riêng → nạp lại ô StakeCsv
             LoadStakeCsvForCurrentMoneyStrategy();
             await SaveConfigAsync();
@@ -3662,6 +3663,11 @@ Ví dụ không hợp lệ:
                 {
                     var net = (applyWinTax && delta > 0) ? Math.Round(delta * 0.98) : delta;
                     _winTotal += net;
+                    try
+                    {
+                        XocDiaLiveHit.Tasks.MoneyHelper.NotifyTempProfit(_cfg.MoneyStrategy ?? "", net);
+                    }
+                    catch { /* ignore */ }
                     if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
                     CheckCutAndStopIfNeeded();
                 }),
@@ -3679,6 +3685,7 @@ Ví dụ không hợp lệ:
         {
             _activeTask = task;
             _dec = new DecisionState(); // reset trạng thái cho task mới
+            XocDiaLiveHit.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             var ctx = BuildContext(useRawWinAmount);
             // === Preflight: chờ __cw_bet sẵn sàng trước khi chạy chiến lược ===
             for (int i = 0; i < 25; i++) // 25 * 200ms ~= 5s

@@ -702,6 +702,7 @@
                                             <ComboBoxItem Content="4. Quản lý vốn Fibonaci ngược" Tag="ReverseFibo" />
                                             <ComboBoxItem Content="5. Quản lý vốn đa tầng" Tag="MultiChain" />
                                             <ComboBoxItem Content="6. Thua thắng đều lên mức" Tag="IncreaseEveryRound" />
+                                            <ComboBoxItem Content="7. Thắng đánh lên, thua giữ nguyên mức" Tag="WinUpLoseKeep" />
                                         </ComboBox>
                                     </Grid>
                                     <!--  CHUỖI TIỀN (CSV)  -->
