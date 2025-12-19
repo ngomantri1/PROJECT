@@ -32,8 +32,13 @@ namespace XocDiaLiveHit.Tasks
             {
                 case "CHAN":
                 case "LE":
-                case "SAP_DOI":
                     return stake * 0.98;
+                case "SAP_DOI":
+                case "SAPDOI":
+                case "2DO2TRANG":
+                    // SAP_DOI: nếu đặt mức A thì tiền thắng nhận được = A * 1.617
+                    // Dùng decimal để ra đúng hệ số 1.617, rồi trả về double cho delta
+                    return (double)((decimal)stake * 1617m / 1000m);
                 case "TRANG3_DO1":
                 case "DO3_TRANG1":
                     return stake * 3 * 0.97;
