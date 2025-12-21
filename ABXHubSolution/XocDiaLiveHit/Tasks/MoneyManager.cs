@@ -84,6 +84,37 @@ namespace XocDiaLiveHit.Tasks
                     _needDoubleNext = false;
                     _i = (_i + 1 < _seq.Length ? _i + 1 : 0);
                     break;
+
+                // MoneyManager.cs - trong OnRoundResult(bool win)
+
+                case "WinUpLoseKeep":
+                    {
+                        _needDoubleNext = false; // không dùng Victor2 ở strategy này
+
+                        if (win)
+                        {
+                            var before = _i;
+
+                            // thắng => tăng mức
+                            _i = (_i + 1 < _seq.Length ? _i + 1 : 0);
+                            MoneyHelper.Logger?.Invoke($"[S7] MoneyManager: WIN => step {before} -> {_i}");
+
+                            // sau khi thắng: nếu total tạm đã dương => reset level 1 và reset tổng tạm
+                            if (MoneyHelper.ConsumeS7ResetFlag())
+                            {
+                                _i = 0;
+                                MoneyHelper.Logger?.Invoke($"[S7] MoneyManager: _s7TempNetDelta>0 => reset step -> 0");
+                            }
+                        }
+                        else
+                        {
+                            // thua => giữ nguyên mức
+                            MoneyHelper.Logger?.Invoke($"[S7] MoneyManager: LOSS => keep step={_i}");
+                        }
+
+                        break;
+                    }
+
             }
         }
     }

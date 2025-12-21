@@ -4,22 +4,38 @@ namespace XocDiaLiveHit.Tasks
 {
     internal static class MoneyHelper
     {
+        // ====== NEW: Logger để bắn log ra file (gắn từ MainWindow) ======
+        public static Action<string>? Logger { get; set; }
+
+        private static void S7Log(string msg)
+        {
+            try { Logger?.Invoke(msg); } catch { /* không để crash */ }
+        }
 
         // ====== NEW: 7. Thắng đánh lên, thua giữ nguyên mức ======
         // Tiền thắng tạm (netDelta) được cộng dồn giống tiền thắng hiện tại (đã qua cùng cơ chế net/rounding ở UI).
         // Khi _s7TempProfit > 0 => reset về mức 1 (step=0) và set _s7TempProfit = 0 để bắt đầu tính lại.
         private static readonly object _s7Lock = new();
-        private static double _s7TempProfit = 0;
+        private static double _s7TempNetDelta = 0;            // NEW: biến dùng cho logic S7
         private static bool _s7NeedResetToLevel1 = false;
 
         public static void ResetTempProfitForWinUpLoseKeep()
-        {   
+        {
+            double curTempNet;
+            bool flag;
+
             lock (_s7Lock)
             {
-                _s7TempProfit = 0;
+                _s7TempNetDelta = 0;
                 _s7NeedResetToLevel1 = false;
+
+                curTempNet = _s7TempNetDelta;
+                flag = _s7NeedResetToLevel1;
             }
+
+            S7Log($"[S7] ResetTempProfit: _s7TempNetDelta={curTempNet:N0}, needReset={flag}");
         }
+
 
         /// <summary>
         /// Gọi từ UI (UiAddWin) để cộng dồn tiền thắng tạm theo đúng "net" đang hiển thị.
@@ -30,26 +46,63 @@ namespace XocDiaLiveHit.Tasks
             if (!string.Equals(strategyId, "WinUpLoseKeep", StringComparison.OrdinalIgnoreCase))
                 return;
 
+            double curTempNet;
+            bool flag;
+
             lock (_s7Lock)
             {
-                _s7TempProfit += netDelta;
-                if (_s7TempProfit > 0)
-                    _s7NeedResetToLevel1 = true;
+                _s7TempNetDelta += netDelta;
+
+                // ✅ CHỐT NGHIỆP VỤ:
+                // Chỉ bật reset khi vừa THẮNG (netDelta>0) và sau khi cộng xong tổng tạm đã DƯƠNG.
+                // Nếu thua hoặc thắng nhưng tổng tạm vẫn <=0 thì không reset.
+                _s7NeedResetToLevel1 = (netDelta > 0 && _s7TempNetDelta > 0);
+
+                curTempNet = _s7TempNetDelta;
+                flag = _s7NeedResetToLevel1;
             }
+
+            S7Log($"[S7] NotifyTempProfit: netDelta={netDelta:N0}, _s7TempNetDelta={curTempNet:N0}, needReset={flag}");
         }
 
-        private static bool ConsumeS7ResetFlag()
+
+
+         internal static bool ConsumeS7ResetFlag()
         {
+            bool consumed;
+            double curTempNet;
+            bool flag;
+
             lock (_s7Lock)
             {
+                // ✅ Chỉ consume khi flag đang bật (tức là: ván vừa rồi thắng và tổng tạm > 0)
                 if (!_s7NeedResetToLevel1)
-                    return false;
+                {
+                    consumed = false;
+                    curTempNet = _s7TempNetDelta;
+                    flag = _s7NeedResetToLevel1;
+                }
+                else
+                {
+                    _s7NeedResetToLevel1 = false;
 
-                _s7NeedResetToLevel1 = false;
-                _s7TempProfit = 0; // theo yêu cầu: reset tiền thắng tạm = 0
-                return true;
+                    // theo nghiệp vụ: reset tổng tiền thắng tạm về 0
+                    _s7TempNetDelta = 0;
+
+                    consumed = true;
+                    curTempNet = _s7TempNetDelta;
+                    flag = _s7NeedResetToLevel1;
+                }
             }
+
+            if (consumed)
+                S7Log($"[S7] ConsumeResetFlag: RESET _s7TempNetDelta=0 | _s7TempNetDelta={curTempNet:N0}, needReset={flag}");
+
+            return consumed;
         }
+
+
+
 
         // ====== HÀM CHUNG CŨ (giữ nguyên) ======
         public static long CalcAmount(string strategyId, long[] seq, int step, bool v2DoublePhase)
@@ -108,22 +161,33 @@ namespace XocDiaLiveHit.Tasks
                     v2DoublePhase = false;
                     break;
                 case "WinUpLoseKeep":
-                    // Ưu tiên reset nếu tiền thắng tạm đã > 0 (flag set từ UI).
-                    if (ConsumeS7ResetFlag())
                     {
-                        step = 0;
+                        var beforeStep = step;
+
+                        if (win == true)
+                        {
+                            // thắng => lên mức trước
+                            step = (step + 1) % n;
+                            S7Log($"[S7] UpdateAfterRound: WIN => step {beforeStep} -> {step}");
+
+                            // nếu tổng tạm sau thắng đã dương => reset về mức 1 và reset tổng tạm
+                            if (ConsumeS7ResetFlag())
+                            {
+                                step = 0;
+                                v2DoublePhase = false;
+                                S7Log($"[S7] UpdateAfterRound: _s7TempNetDelta>0 => reset step -> level 1");
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            // thua hoặc null => giữ nguyên mức
+                            S7Log($"[S7] UpdateAfterRound: win={win} => keep step={step}");
+                        }
+
                         v2DoublePhase = false;
                         break;
                     }
-
-                    if (win == true)
-                    {
-                        step = (step + 1) % n; // thắng => lên mức (vòng lại mức 1 khi tới cuối)
-                    }
-                    // thua (false) hoặc null => giữ nguyên step
-
-                    v2DoublePhase = false;
-                    break;
 
                 default:
                     if (win == true || win == null) step = 0;

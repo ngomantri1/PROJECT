@@ -2039,6 +2039,8 @@ Ví dụ không hợp lệ:
             try
             {
                 StartLogPump();
+                // NEW: gắn logger để MoneyHelper ghi ra file log hiện tại
+                MoneyHelper.Logger = Log;
                 LoadConfig();
                 InitSeqIcons();
 
@@ -3596,6 +3598,10 @@ Ví dụ không hợp lệ:
         private GameContext BuildContext(bool useRawWinAmount = false)
         {
             var applyWinTax = !useRawWinAmount;
+
+            // NEW: đóng băng strategyId tại thời điểm tạo context để tránh bị đổi giữa chừng
+            var moneyStrategyId = _cfg.MoneyStrategy ?? "IncreaseWhenLose";
+
             return new GameContext
             {
                 GetSnap = () => { lock (_snapLock) return _lastSnap; },
@@ -3611,7 +3617,10 @@ Ví dụ không hợp lệ:
                 UiDispatcher = Dispatcher,
                 GetCooldown = () => _cooldown,
                 SetCooldown = (v) => _cooldown = v,
-                MoneyStrategyId = _cfg.MoneyStrategy ?? "IncreaseWhenLose",
+
+                // NEW: dùng biến moneyStrategyId đã đóng băng
+                MoneyStrategyId = moneyStrategyId,
+
                 SideRateText = _cfg.SideRateText ?? XocDiaLiveHit.Tasks.SideRateParser.DefaultText,
                 UseRawWinAmount = useRawWinAmount,
                 BetSeq = _cfg.BetSeq ?? "",
@@ -3625,7 +3634,6 @@ Ví dụ không hợp lệ:
                     try { SetLevelForMultiChain(chain, level); } catch { }
                 }),
 
-
                 // ==== 3 callback UI ====
                 UiSetSide = s => Dispatcher.Invoke(() =>
                 {
@@ -3638,7 +3646,7 @@ Ví dụ không hợp lệ:
                         LblStake.Text = v.ToString("N0");
 
                     // Với MultiChain, mức tiền sẽ được set qua UiSetChainLevel
-                    if ((_cfg.MoneyStrategy ?? "") == "MultiChain") return;
+                    if (moneyStrategyId == "MultiChain") return;
 
                     if (LblLevel != null)
                     {
@@ -3657,28 +3665,37 @@ Ví dụ không hợp lệ:
                             LblLevel.Text = "";
                         }
                     }
+                }),
 
-                }),
-                UiAddWin = delta => Dispatcher.InvokeAsync(() =>
+                UiAddWin = delta =>
                 {
-                    var net = (applyWinTax && delta > 0) ? Math.Round(delta * 0.98) : delta;
-                    _winTotal += net;
-                    try
+                    void Apply()
                     {
-                        XocDiaLiveHit.Tasks.MoneyHelper.NotifyTempProfit(_cfg.MoneyStrategy ?? "", net);
+                        var net = (applyWinTax && delta > 0) ? Math.Round(delta * 0.98) : delta;
+                        _winTotal += net;
+
+                        // NEW: dùng moneyStrategyId đã đóng băng (không đọc _cfg.MoneyStrategy ở đây nữa)
+                        try
+                        {
+                            XocDiaLiveHit.Tasks.MoneyHelper.NotifyTempProfit(moneyStrategyId, net);
+                        }
+                        catch { /* ignore */ }
+
+                        if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
+                        CheckCutAndStopIfNeeded();
                     }
-                    catch { /* ignore */ }
-                    if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
-                    CheckCutAndStopIfNeeded();
-                }),
+
+                    // QUAN TRỌNG: chạy đồng bộ để SmartPrevTask await xong là net/cờ reset đã cập nhật xong
+                    if (Dispatcher.CheckAccess()) Apply();
+                    else Dispatcher.Invoke(Apply);
+                },
+
                 UiWinLoss = s => Dispatcher.Invoke(() =>
                 {
                     SetWinLossUI(s);
                 }),
             };
         }
-
-
 
 
         private async Task StartTaskAsync(IBetTask task, CancellationToken ct, bool useRawWinAmount = false)

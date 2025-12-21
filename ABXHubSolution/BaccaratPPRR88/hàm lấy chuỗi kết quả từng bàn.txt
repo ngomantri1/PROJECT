@@ -1,0 +1,572 @@
+(() => {
+  const OV_ID = "__abx_rm_overlay_v16";
+  const ST = (window.__abxRM16 = window.__abxRM16 || { last: null });
+
+  // ================= Overlay =================
+  function ensureOv() {
+    let ov = document.getElementById(OV_ID);
+    if (!ov) {
+      ov = document.createElement("div");
+      ov.id = OV_ID;
+      ov.style.cssText =
+        "position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483646;pointer-events:none;font-family:Arial;";
+      (document.body || document.documentElement).appendChild(ov);
+    }
+    return ov;
+  }
+  function clearOv() { const ov = document.getElementById(OV_ID); if (ov) ov.innerHTML = ""; }
+  function drawBox(r, css) {
+    const ov = ensureOv();
+    const d = document.createElement("div");
+    d.style.cssText = `position:fixed;left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;${css}`;
+    ov.appendChild(d);
+  }
+  function drawLabel(x, y, text, css) {
+    const ov = ensureOv();
+    const d = document.createElement("div");
+    d.textContent = text;
+    d.style.cssText = `position:fixed;left:${x}px;top:${y}px;${css}`;
+    ov.appendChild(d);
+  }
+  function rectOf(el) {
+    const r = el.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, h: r.height };
+  }
+  function containsPoint(r, x, y, pad = 0) {
+    return x >= r.x - pad && x <= r.x + r.w + pad && y >= r.y - pad && y <= r.y + r.h + pad;
+  }
+
+  // ================= Clipboard =================
+  async function tryCopy(text) {
+    try { if (navigator?.clipboard?.writeText) { await navigator.clipboard.writeText(text); return true; } } catch (_) {}
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      return true;
+    } catch (_) {}
+    return false;
+  }
+
+  // ================= Color utils =================
+  function parseRGB(s) {
+    const t = String(s || "").trim().toLowerCase();
+    if (!t || t === "none" || t === "transparent") return null;
+
+    // rgb()/rgba() / rgb(1 2 3 / a)
+    let m = t.match(/rgba?\(\s*([\d.]+)(?:\s*,\s*|\s+)([\d.]+)(?:\s*,\s*|\s+)([\d.]+)(?:\s*(?:,\s*|\/\s*)([\d.]+))?\s*\)/i);
+    if (m) return { r: +m[1], g: +m[2], b: +m[3], a: (m[4] == null ? 1 : +m[4]) };
+
+    // hex
+    m = t.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (m) {
+      let hex = m[1];
+      if (hex.length === 3) hex = hex.split("").map(ch => ch + ch).join("");
+      const n = parseInt(hex, 16);
+      return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, a: 1 };
+    }
+    return null;
+  }
+
+  function dist2(a, b) {
+    if (!a || !b) return 1e18;
+    const dr = a.r - b.r, dg = a.g - b.g, db = a.b - b.b;
+    return dr*dr + dg*dg + db*db;
+  }
+
+  function extractUrlId(s) {
+    const t = String(s || "").trim();
+    const m = t.match(/url\(\s*['"]?([^'")]+)['"]?\s*\)/i);
+    if (!m) return null;
+    const u = m[1];
+    const hash = u.indexOf("#");
+    if (hash >= 0) return u.slice(hash + 1);
+    return u.startsWith("#") ? u.slice(1) : null;
+  }
+
+  function resolveVar(str, el) {
+    const t = String(str || "").trim();
+    const m = t.match(/var\(\s*(--[\w-]+)\s*(?:,\s*([^)]+))?\)/i);
+    if (!m) return null;
+    const name = m[1];
+    const fallback = m[2] ? m[2].trim() : "";
+    try {
+      const v = getComputedStyle(el).getPropertyValue(name).trim();
+      return v || fallback || null;
+    } catch (_) {
+      return fallback || null;
+    }
+  }
+
+  function resolvePaintToRGB(paintStr, el, svgRoot, depth = 0) {
+    if (depth > 4) return null;
+    const s0 = String(paintStr || "").trim();
+    if (!s0 || s0 === "none" || s0 === "transparent") return null;
+
+    // currentColor
+    if (s0.toLowerCase() === "currentcolor") {
+      try { return parseRGB(getComputedStyle(el).color); } catch (_) {}
+      return null;
+    }
+
+    // var(...)
+    if (s0.toLowerCase().startsWith("var(")) {
+      const v = resolveVar(s0, el);
+      if (!v) return null;
+      return resolvePaintToRGB(v, el, svgRoot, depth + 1);
+    }
+
+    // url(#id) -> gradient/pattern
+    if (s0.toLowerCase().startsWith("url(")) {
+      const id = extractUrlId(s0);
+      if (!id) return null;
+
+      let def = null;
+      try { def = svgRoot?.querySelector?.(`#${CSS.escape(id)}`) || null; } catch (_) {}
+      if (!def) { try { def = document.getElementById(id); } catch (_) {} }
+
+      if (!def) return null;
+
+      const tag = (def.tagName || "").toLowerCase();
+      if (tag === "lineargradient" || tag === "radialgradient") {
+        const stops = Array.from(def.querySelectorAll("stop"));
+        if (!stops.length) return null;
+
+        // lấy trung bình stop-color (đủ dùng để xác định đỏ/xanh)
+        let sum = { r:0, g:0, b:0, a:0 }, n = 0;
+        for (const st of stops) {
+          const cAttr = st.getAttribute("stop-color") || "";
+          let c = parseRGB(cAttr);
+          if (!c) {
+            try {
+              const cs = getComputedStyle(st);
+              c = parseRGB(cs.stopColor || cs.color || "");
+            } catch (_) {}
+          }
+          if (!c) continue;
+
+          let op = 1;
+          const opAttr = st.getAttribute("stop-opacity");
+          if (opAttr != null && opAttr !== "") op = Math.max(0, Math.min(1, parseFloat(opAttr)));
+          sum.r += c.r * op; sum.g += c.g * op; sum.b += c.b * op; sum.a += op;
+          n++;
+        }
+        if (!n || sum.a <= 0.01) return null;
+        return { r: sum.r / sum.a, g: sum.g / sum.a, b: sum.b / sum.a, a: 1 };
+      }
+
+      // pattern: cố lấy màu từ shape đầu
+      if (tag === "pattern") {
+        const sh = def.querySelector("rect,circle,ellipse,path,polygon,polyline");
+        if (!sh) return null;
+        const cs = getComputedStyle(sh);
+        return parseRGB(cs.fill || cs.stroke || "");
+      }
+
+      return null;
+    }
+
+    // rgb/hex trực tiếp
+    const c = parseRGB(s0);
+    if (c) return c;
+
+    // nếu là tên màu mà chưa parse được, thử computedStyle.color
+    try {
+      const tmp = document.createElement("span");
+      tmp.style.color = s0;
+      document.body.appendChild(tmp);
+      const cc = parseRGB(getComputedStyle(tmp).color);
+      document.body.removeChild(tmp);
+      return cc;
+    } catch (_) {}
+    return null;
+  }
+
+  function getMainShapeColorRGB(td) {
+    const svg = td.querySelector("svg");
+    if (!svg) return null;
+
+    const shapes = Array.from(svg.querySelectorAll("circle,ellipse,path,rect,polygon,polyline,use,image"));
+    if (!shapes.length) return null;
+
+    // chọn shape "lớn nhất" để tránh chấm phụ
+    let best = null;
+    for (const sh of shapes) {
+      let area = 1;
+      try {
+        const r = sh.getBoundingClientRect?.();
+        if (r && r.width > 0.1 && r.height > 0.1) area = r.width * r.height;
+      } catch (_) {}
+      if (!best || area > best.area) best = { sh, area };
+    }
+    if (!best) return null;
+
+    const sh = best.sh;
+    const cs = getComputedStyle(sh);
+    const stroke = cs.stroke || sh.getAttribute("stroke") || "";
+    const fill = cs.fill || sh.getAttribute("fill") || "";
+
+    const cStroke = resolvePaintToRGB(stroke, sh, svg);
+    const cFill = resolvePaintToRGB(fill, sh, svg);
+
+    // ưu tiên stroke (vòng tròn rỗng), nếu không có thì fill
+    const pick = cStroke || cFill;
+    return { rgb: pick, stroke, fill, area: best.area, tag: (sh.tagName||"").toLowerCase() };
+  }
+
+  // ================= Find ref colors from UI =================
+  function findRefColorByText(textNeedle) {
+    const needle = String(textNeedle).toUpperCase();
+    const els = Array.from(document.querySelectorAll("button,div,span,a"));
+    let best = null;
+
+    for (let i = 0; i < Math.min(3500, els.length); i++) {
+      const el = els[i];
+      const t = (el.innerText || "").trim().toUpperCase();
+      if (!t) continue;
+      if (!t.includes(needle)) continue;
+
+      const cs = getComputedStyle(el);
+      const bg = cs.backgroundColor || "";
+      const c = parseRGB(bg);
+      if (!c || c.a <= 0.05) continue;
+
+      // score: alpha + độ “đậm”
+      const score = (c.a * 1000) + (Math.abs(c.r - c.g) + Math.abs(c.r - c.b) + Math.abs(c.g - c.b));
+      if (!best || score > best.score) best = { rgb: c, bg, el, score };
+    }
+    return best;
+  }
+
+  function getRefs() {
+    const banker = findRefColorByText("NHÀ CÁI") || findRefColorByText("NHA CAI");
+    const player = findRefColorByText("NGƯỜI CHƠI") || findRefColorByText("NGUOI CHOI");
+
+    // fallback nếu không tìm được
+    const bRef = banker?.rgb || { r: 220, g: 40, b: 40, a: 1 };
+    const pRef = player?.rgb || { r: 40, g: 130, b: 220, a: 1 };
+
+    return { bRef, pRef, bankerEl: banker?.el || null, playerEl: player?.el || null };
+  }
+
+  // ================= Tail path (để debug) =================
+  function tailPath(el, maxDepth = 12) {
+    try {
+      const parts = [];
+      let cur = el, depth = 0;
+      while (cur && cur.nodeType === 1 && depth < maxDepth) {
+        const tag = cur.tagName.toLowerCase();
+        const cls0 = (cur.className && String(cur.className).trim().split(/\s+/)[0]) || "";
+        const cls = cls0 ? ("." + cls0) : "";
+        parts.push(`${tag}${cls}`);
+        if (tag === "body" || tag === "html") break;
+        cur = cur.parentElement; depth++;
+      }
+      return parts.reverse().join(" > ");
+    } catch (_) { return "(tail-error)"; }
+  }
+
+  // ================= Table detect =================
+  function findBestTableAtPoint(x, y) {
+    const tables = Array.from(document.querySelectorAll("table.nM_nR, table"));
+    let best = null;
+
+    for (const t of tables) {
+      const r = rectOf(t);
+      if (r.w < 120 || r.h < 40) continue;
+      if (!containsPoint(r, x, y, 8)) continue;
+
+      let tdCount = 0, svgTd = 0;
+      try {
+        const tds = Array.from(t.querySelectorAll("td"));
+        tdCount = tds.length;
+        const lim = Math.min(900, tds.length);
+        for (let i = 0; i < lim; i++) if (tds[i].querySelector("svg")) svgTd++;
+      } catch (_) {}
+
+      const isNM = t.classList && t.classList.contains("nM_nR");
+      const score = (isNM ? 1_000_000 : 0) + svgTd * 1200 + tdCount * 2 + Math.min(900, (r.w * r.h) / 400);
+      if (!best || score > best.score) best = { table: t, rect: r, tdCount, svgTd, score };
+    }
+    return best;
+  }
+
+  // ================= Grid occupancy + tie =================
+  function readCell(td) {
+    const svg = td.querySelector("svg");
+    if (!svg) return { has: false, tie: 0, td };
+
+    const has = !!svg.querySelector("circle,ellipse,path,rect,polygon,polyline,use,image");
+    let tie = 0;
+    const txt = (svg.querySelector("text")?.textContent || "").trim();
+    if (/^\d+$/.test(txt)) tie = parseInt(txt, 10);
+
+    return { has, tie, td };
+  }
+
+  function buildGrid(table) {
+    const tbody = table.querySelector("tbody");
+    const trs = Array.from((tbody || table).querySelectorAll("tr"));
+    const rows = trs.length;
+    let cols = 0;
+    const cells = [];
+
+    for (let r = 0; r < trs.length; r++) {
+      const tds = Array.from(trs[r].querySelectorAll("td"));
+      cols = Math.max(cols, tds.length);
+      cells[r] = [];
+      for (let c = 0; c < tds.length; c++) {
+        const info = readCell(tds[c]);
+        cells[r][c] = { r, c, ...info };
+      }
+    }
+    return { rows, cols, cells };
+  }
+
+  function colHasAny(grid, c) {
+    for (let r = 0; r < grid.rows; r++) if (grid.cells[r]?.[c]?.has) return true;
+    return false;
+  }
+
+  // ================= Logical groups =================
+  function splitGroups(grid) {
+    const groups = [];
+    for (let c = 0; c < grid.cols; c++) {
+      if (!colHasAny(grid, c)) continue;
+      const topHas = !!grid.cells[0]?.[c]?.has;
+
+      if (topHas) {
+        // start new group
+        groups.push({ startCol: c, cols: [c] });
+      } else if (groups.length > 0) {
+        // overflow column of previous group
+        groups[groups.length - 1].cols.push(c);
+      } else {
+        // hiếm: dữ liệu nhưng không có top, vẫn tạo group
+        groups.push({ startCol: c, cols: [c], weird: true });
+      }
+    }
+
+    // build ordered list per group (down else right) using occupancy within group's columns only
+    for (const g of groups) {
+      const colSet = new Set(g.cols);
+      const inGroup = (r, c) => colSet.has(c) && !!grid.cells[r]?.[c]?.has;
+
+      const list = [];
+      let r = 0, c = g.startCol;
+      if (!inGroup(0, c)) {
+        // fallback: tìm cell đầu tiên trong startCol
+        for (let rr = 0; rr < grid.rows; rr++) if (inGroup(rr, c)) { r = rr; break; }
+      }
+
+      while (true) {
+        if (!inGroup(r, c)) break;
+        const cell = grid.cells[r][c];
+        list.push(cell);
+
+        const downOk = (r + 1 < grid.rows) && inGroup(r + 1, c);
+        if (downOk) { r++; continue; }
+
+        const rightOk = (c + 1 < grid.cols) && inGroup(r, c + 1);
+        if (rightOk) { c++; continue; }
+
+        break;
+      }
+
+      g.list = list;
+      g.len = list.length;
+    }
+
+    return groups;
+  }
+
+  // ================= Auto detect FIRST group color =================
+  function detectFirstBP(groups) {
+    const refs = getRefs();
+    const g1 = groups[0];
+    if (!g1 || !g1.list?.length) return { ok: false, reason: "G1 empty", refs };
+
+    const td0 = g1.list[0].td;
+    const paint = getMainShapeColorRGB(td0);
+    if (!paint || !paint.rgb) {
+      return { ok: false, reason: "cannot resolve svg color", refs, td0 };
+    }
+
+    const dB = dist2(paint.rgb, refs.bRef);
+    const dP = dist2(paint.rgb, refs.pRef);
+    const first = (dB <= dP) ? "B" : "P";
+
+    // confidence đơn giản: chênh lệch khoảng cách
+    const conf = Math.max(0, Math.min(1, (Math.abs(dB - dP) / Math.max(dB, dP, 1))));
+
+    return { ok: true, first, conf, paint, refs, td0 };
+  }
+
+  function opposite(bp) { return bp === "B" ? "P" : "B"; }
+
+  function buildSequence(groups, firstBP) {
+    const seq = [];
+    for (let gi = 0; gi < groups.length; gi++) {
+      const bp = (gi % 2 === 0) ? firstBP : opposite(firstBP);
+      for (const cell of groups[gi].list) {
+        seq.push(bp);
+        const t = cell.tie || 0;
+        if (t > 0) seq.push(`T(${t})`);
+      }
+    }
+    return seq;
+  }
+
+  // ================= Run =================
+  async function runAtPoint(x, y, opts) {
+    opts = opts || {};
+    const labelN = Math.max(0, Math.min(220, opts.labelN ?? 80));
+
+    const best = findBestTableAtPoint(x, y);
+    if (!best) {
+      alert("❌ RM16: không tìm thấy TABLE roadmap tại điểm click. Click đúng vào lưới Big Road.");
+      return null;
+    }
+
+    const grid = buildGrid(best.table);
+    const groups = splitGroups(grid);
+
+    // count markers & tie
+    let markers = 0, tieSum = 0;
+    for (let r = 0; r < grid.rows; r++) {
+      for (let c = 0; c < grid.cols; c++) {
+        const cell = grid.cells[r]?.[c];
+        if (!cell) continue;
+        if (cell.has) markers++;
+        if (cell.tie) tieSum += cell.tie;
+      }
+    }
+
+    const det = detectFirstBP(groups);
+
+    // highlight
+    clearOv();
+    drawBox(best.rect, "border:2px solid rgba(255,255,0,0.95);background:rgba(255,255,0,0.04);border-radius:6px;");
+    drawBox({ x: x - 4, y: y - 4, w: 8, h: 8 },
+      "background:rgba(255,255,0,0.9);border-radius:999px;box-shadow:0 0 12px rgba(255,255,0,0.9);");
+
+    // highlight group cells + label G#
+    for (let gi = 0; gi < groups.length; gi++) {
+      const g = groups[gi];
+      const outline = (gi % 2 === 0) ? "rgba(0,255,255,0.95)" : "rgba(255,0,255,0.95)";
+      if (g.list.length) {
+        const rrTop = rectOf(g.list[0].td);
+        drawLabel(rrTop.x + 1, rrTop.y + 1, `G${gi + 1}`,
+          "font-size:10px;line-height:10px;padding:1px 3px;border-radius:4px;background:rgba(0,0,0,0.65);color:#fff;");
+      }
+      for (const cell of g.list) {
+        const rr = rectOf(cell.td);
+        drawBox({ x: rr.x - 1, y: rr.y - 1, w: rr.w + 2, h: rr.h + 2 },
+          `outline:2px solid ${outline};background:rgba(255,255,255,0.02);border-radius:3px;`);
+      }
+    }
+
+    // label thứ tự sequence nếu detect ok
+    let seq = null;
+    if (det.ok) {
+      seq = buildSequence(groups, det.first);
+      let idx = 0;
+      for (let gi = 0; gi < groups.length && idx < labelN; gi++) {
+        for (const cell of groups[gi].list) {
+          if (idx >= labelN) break;
+          const rr = rectOf(cell.td);
+          drawLabel(rr.x + 1, rr.y + 12, String(idx + 1),
+            "font-size:10px;line-height:10px;padding:1px 3px;border-radius:4px;background:rgba(0,0,0,0.65);color:#fff;");
+          idx++;
+        }
+      }
+
+      // khoanh ô dùng để detect
+      if (det.td0) {
+        const rr = rectOf(det.td0);
+        drawBox({ x: rr.x - 2, y: rr.y - 2, w: rr.w + 4, h: rr.h + 4 },
+          "outline:3px solid rgba(255,255,0,0.95);background:rgba(255,255,0,0.06);border-radius:4px;");
+      }
+    }
+
+    // preview occupancy
+    const prev = [];
+    const maxR = Math.min(6, grid.rows);
+    const maxC = Math.min(60, grid.cols);
+    for (let r = 0; r < maxR; r++) {
+      const row = [];
+      for (let c = 0; c < maxC; c++) row.push(grid.cells[r]?.[c]?.has ? "X" : ".");
+      prev.push(`r${r + 1}: ` + row.join(" "));
+    }
+
+    const seqStr = seq ? seq.join(" ") : "(FAIL: chưa đọc được màu G1)";
+    const detStr = det.ok
+      ? `AUTO-FIRST=${det.first}  (B=Banker đỏ / P=Player xanh)  conf≈${det.conf.toFixed(2)}`
+      : `AUTO-FIRST FAIL: ${det.reason}`;
+
+    const debugDet = det.ok
+      ? `DetectCell: tag=${det.paint.tag} area≈${Math.round(det.paint.area)}\n` +
+        `stroke="${det.paint.stroke}"\nfill="${det.paint.fill}"\n` +
+        `resolvedRGB=${det.paint.rgb ? `rgb(${Math.round(det.paint.rgb.r)},${Math.round(det.paint.rgb.g)},${Math.round(det.paint.rgb.b)})` : "null"}\n` +
+        `refBanker=${Math.round(det.refs.bRef.r)},${Math.round(det.refs.bRef.g)},${Math.round(det.refs.bRef.b)}\n` +
+        `refPlayer=${Math.round(det.refs.pRef.r)},${Math.round(det.refs.pRef.g)},${Math.round(det.refs.pRef.b)}`
+      : "";
+
+    const msg =
+      `✅ RM16 AUTO Baccarat 3\n` +
+      `rows=${grid.rows}, cols≈${grid.cols} tableRect=${Math.round(best.rect.w)}x${Math.round(best.rect.h)}\n` +
+      `markers(B/P cells)=${markers}  tieSum=${tieSum}  totalHands≈${markers + tieSum}\n` +
+      `logicalGroups=${groups.length}\n` +
+      `${detStr}\n\n` +
+      `Occupancy preview (X=có marker):\n${prev.join("\n")}\n\n` +
+      (det.ok ? `Seq preview (200 ký tự đầu):\n${seqStr.slice(0, 200)}${seqStr.length > 200 ? " ..." : ""}\n\n` : "") +
+      (det.ok ? `Detect debug:\n${debugDet}\n\n` : "") +
+      `Copy: đã copy FULL sequence + debug vào clipboard.\n` +
+      `Clear: __abxRM16_clear()`;
+
+    const fullOut =
+      `RM16\n${msg}\n\nFULL_SEQUENCE:\n${seqStr}\n`;
+
+    await tryCopy(fullOut);
+    alert(msg);
+
+    ST.last = { best, grid, groups, det, seq };
+    window.__abxRM16_last = ST.last;
+    return ST.last;
+  }
+
+  // ================= Public =================
+  window.__abxRM16_clear = function () { clearOv(); return "cleared"; };
+
+  window.__abxRM16_clickPickAuto = function (opts) {
+    function handler(ev) {
+      (async () => {
+        try {
+          ev.preventDefault?.();
+          ev.stopPropagation?.();
+          await runAtPoint(ev.clientX, ev.clientY, opts || {});
+        } finally {
+          document.removeEventListener("click", handler, true);
+        }
+      })();
+    }
+    document.addEventListener("click", handler, true);
+    alert("🟡 RM16 AutoFirst đã bật.\nCLICK vào Big Road (lưới vòng tròn) của Baccarat 3.\nNó sẽ tự nhận Banker/Player của G1 và dựng chuỗi tự động.");
+  };
+
+  window.__abxRM16_help = function () {
+    alert(
+      "RM16:\n" +
+      "1) __abxRM16_clickPickAuto({labelN:80}) -> click vào roadmap để auto nhận Banker/Player\n" +
+      "2) __abxRM16_clear() -> xoá highlight\n\n" +
+      "Nếu AUTO-FIRST FAIL: gửi ảnh alert + phần Detect debug (nếu có) để mình refine resolver."
+    );
+  };
+
+  alert("✅ Đã nạp RM16.\nChạy: __abxRM16_clickPickAuto({labelN:80}) rồi click vào Big Road.\nHoặc: __abxRM16_help()");
+})();
