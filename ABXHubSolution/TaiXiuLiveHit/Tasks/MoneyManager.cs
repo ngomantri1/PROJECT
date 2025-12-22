@@ -79,6 +79,34 @@ namespace TaiXiuLiveHit.Tasks
                     _needDoubleNext = false;
                     _i = win ? 0 : Math.Min(_i + 1, _seq.Length - 1);
                     break;
+
+                case "WinUpLoseKeep":
+                    {
+                        _needDoubleNext = false; // kh“ng d—ng Victor2 ? strategy n…y
+
+                        if (win)
+                        {
+                            var before = _i;
+
+                            // th?ng => tang m?c
+                            _i = (_i + 1 < _seq.Length ? _i + 1 : 0);
+                            MoneyHelper.Logger?.Invoke($"[S7] MoneyManager: WIN => step {before} -> {_i}");
+
+                            // sau khi th?ng: n?u total t?m da duong => reset level 1 v… reset t?ng t?m
+                            if (MoneyHelper.ConsumeS7ResetFlag())
+                            {
+                                _i = 0;
+                                MoneyHelper.Logger?.Invoke($"[S7] MoneyManager: _s7TempNetDelta>0 => reset step -> 0");
+                            }
+                        }
+                        else
+                        {
+                            // thua => gi? nguyˆn m?c
+                            MoneyHelper.Logger?.Invoke($"[S7] MoneyManager: LOSS => keep step={_i}");
+                        }
+
+                        break;
+                    }
             }
         }
     }
