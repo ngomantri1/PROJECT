@@ -895,7 +895,6 @@
                     function quickPickUsername() {
                         try {
                             ensureUserInfoExpanded();
-                            // 1) ƯU TIÊN: đọc theo ABS_USERNAME_TAIL (tên nhân vật trên trang profile)
                             if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
                                 try {
                                     const elAbs = findByTail(ABS_USERNAME_TAIL);
@@ -907,37 +906,6 @@
                                             return val.replace(/\s+/g, ' ');
                                     }
                                 } catch (_) {}
-                            }
-
-                            // 2) Fallback: lấy theo header như trước (khi không có form profile)
-                            const header = document.querySelector('header.menu, header') || document;
-
-                            const pri = header.querySelector(
-                                    '.user-logged__info .base-dropdown-header__user__name, p.base-dropdown-header__user__name');
-                            if (pri) {
-                                const t = (pri.textContent || '').trim();
-                                if (t)
-                                    return t;
-                            }
-
-                            const roots = [
-                                '.username',
-                                '.menu-account__info--user',
-                                '.user-logged',
-                                '.display-name',
-                                '.full-name'
-                            ];
-                            for (const sel of roots) {
-                                const el = header.querySelector(
-                                        sel + ' .full-name, ' +
-                                        sel + ' .display-name, ' +
-                                        sel + ' span.full-name, ' +
-                                        sel);
-                                if (el) {
-                                    const txt = (el.textContent || '').trim();
-                                    if (txt && !/^(vip|email|đăng|login)/i.test(txt))
-                                        return txt;
-                                }
                             }
                         } catch (_) {}
                         return '';
@@ -1514,28 +1482,13 @@
     function findUserFromDOM() {
         try {
             ensureUserInfoExpanded();
-            // Ưu tiên tail tuyệt đối nếu có
             if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
                 const abs = findByTail(ABS_USERNAME_TAIL);
                 const v = abs && (abs.value || abs.textContent || '').trim();
                 if (isLikelyUsername(v))
                     return v;
             }
-
-            // Quét các vị trí có thể chứa username thật sự (không quét label)
-            const cand = document.querySelectorAll([
-                        'header .user-logged .base-dropdown-header__user__name',
-                        '.menu-account__info--user .display-name .full-name span',
-                        '.menu-account__info--user .username .full-name span',
-                        '.user-logged__info .user__name'
-                    ].join(','));
-
-            for (const el of cand) {
-                const txt = textOf(el);
-                if (isLikelyUsername(txt))
-                    return txt;
-            }
-
+    
             return '';
         } catch (_) {
             return '';
@@ -1567,17 +1520,6 @@
                              : (abs.getAttribute && abs.getAttribute('value')) || abs.textContent || '').trim();
                     }
                 } catch (_) {}
-
-                if (!name) {
-                    const namePick = doc.querySelector('.base-dropdown-header__user__name, .full-name span, .display-name span, .username .full-name, [class*="display-name"] span, .user-profile__left .full-name input');
-                    if (namePick) {
-                        name = (namePick.value != null ? String(namePick.value)
-                             : (namePick.getAttribute && namePick.getAttribute('value')) || namePick.textContent || '').trim();
-                    }
-                }
-                if (!name) {
-                    name = extractUsernameFromHtml(html);
-                }
                 if (name)
                     updateUsername(name);
 
@@ -1794,7 +1736,7 @@
             try {
                 const doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
                 try {
-                    // Username (ƯU TIÊN ABS PATH trong tài liệu iframe)
+                    // Username (UU TIEN ABS PATH trong tai lieu iframe)
                     let valU = '';
                     try {
                         const abs = findByTailIn(ABS_USERNAME_TAIL, doc);
@@ -1803,17 +1745,6 @@
                                  : (abs.getAttribute && abs.getAttribute('value')) || abs.textContent || '').trim();
                         }
                     } catch (_) {}
-
-                    if (!valU) {
-                        const pickU = doc && doc.querySelector('.base-dropdown-header__user__name, .full-name span, .display-name span, .username .full-name, [class*="display-name"] span, .user-profile__left .full-name input');
-                        if (pickU) {
-                            valU = (pickU.value != null ? String(pickU.value)
-                                 : (pickU.getAttribute && pickU.getAttribute('value')) || pickU.textContent || '').trim();
-                        }
-                    }
-                    if (!valU && doc && doc.documentElement) {
-                        valU = extractUsernameFromHtml(doc.documentElement.outerHTML || '');
-                    }
                     if (valU)
                         updateUsername(valU);
 
