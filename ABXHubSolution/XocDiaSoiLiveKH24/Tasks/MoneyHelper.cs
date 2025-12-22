@@ -4,6 +4,104 @@ namespace XocDiaSoiLiveKH24.Tasks
 {
     internal static class MoneyHelper
     {
+        // ====== NEW: Logger d? b?n log ra file (g?n t? MainWindow) ======
+        public static Action<string>? Logger { get; set; }
+
+        private static void S7Log(string msg)
+        {
+            try { Logger?.Invoke(msg); } catch { /* kh“ng d? crash */ }
+        }
+
+        // ====== NEW: 7. Th?ng d nh lˆn, thua gi? nguyˆn m?c ======
+        // Ti?n th?ng t?m (netDelta) du?c c?ng d?n gi?ng ti?n th?ng hi?n t?i (da qua c—ng co ch? net/rounding ? UI).
+        // Khi _s7TempProfit > 0 => reset v? m?c 1 (step=0) v… set _s7TempProfit = 0 d? b?t d?u t¡nh l?i.
+        private static readonly object _s7Lock = new();
+        private static double _s7TempNetDelta = 0;            // NEW: bi?n d—ng cho logic S7
+        private static bool _s7NeedResetToLevel1 = false;
+
+        public static void ResetTempProfitForWinUpLoseKeep()
+        {
+            double curTempNet;
+            bool flag;
+
+            lock (_s7Lock)
+            {
+                _s7TempNetDelta = 0;
+                _s7NeedResetToLevel1 = false;
+
+                curTempNet = _s7TempNetDelta;
+                flag = _s7NeedResetToLevel1;
+            }
+
+            S7Log($"[S7] ResetTempProfit: _s7TempNetDelta={curTempNet:N0}, needReset={flag}");
+        }
+
+
+        /// <summary>
+        /// G?i t? UI (UiAddWin) d? c?ng d?n ti?n th?ng t?m theo d£ng "net" dang hi?n th?.
+        /// Ch?  p d?ng cho strategyId == "WinUpLoseKeep".
+        /// </summary>
+        public static void NotifyTempProfit(string strategyId, double netDelta)
+        {
+            if (!string.Equals(strategyId, "WinUpLoseKeep", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            double curTempNet;
+            bool flag;
+
+            lock (_s7Lock)
+            {
+                _s7TempNetDelta += netDelta;
+
+                // ? CH?T NGHI?P V?:
+                // Ch? b?t reset khi v?a TH?NG (netDelta>0) v… sau khi c?ng xong t?ng t?m da DUONG.
+                // N?u thua ho?c th?ng nhung t?ng t?m v?n <=0 th kh“ng reset.
+                _s7NeedResetToLevel1 = (netDelta > 0 && _s7TempNetDelta > 0);
+
+                curTempNet = _s7TempNetDelta;
+                flag = _s7NeedResetToLevel1;
+            }
+
+            S7Log($"[S7] NotifyTempProfit: netDelta={netDelta:N0}, _s7TempNetDelta={curTempNet:N0}, needReset={flag}");
+        }
+
+
+
+         internal static bool ConsumeS7ResetFlag()
+        {
+            bool consumed;
+            double curTempNet;
+            bool flag;
+
+            lock (_s7Lock)
+            {
+                // ? Ch? consume khi flag dang b?t (t?c l…: v n v?a r?i th?ng v… t?ng t?m > 0)
+                if (!_s7NeedResetToLevel1)
+                {
+                    consumed = false;
+                    curTempNet = _s7TempNetDelta;
+                    flag = _s7NeedResetToLevel1;
+                }
+                else
+                {
+                    _s7NeedResetToLevel1 = false;
+
+                    // theo nghi?p v?: reset t?ng ti?n th?ng t?m v? 0
+                    _s7TempNetDelta = 0;
+
+                    consumed = true;
+                    curTempNet = _s7TempNetDelta;
+                    flag = _s7NeedResetToLevel1;
+                }
+            }
+
+            if (consumed)
+                S7Log($"[S7] ConsumeResetFlag: RESET _s7TempNetDelta=0 | _s7TempNetDelta={curTempNet:N0}, needReset={flag}");
+
+            return consumed;
+        }
+
+
         public static long CalcAmount(string strategyId, long[] seq, int step, bool v2DoublePhase)
         {
             if (seq == null || seq.Length == 0) return 1000L;
@@ -53,6 +151,35 @@ namespace XocDiaSoiLiveKH24.Tasks
                     else step = Math.Min(step + 1, n - 1); // dồn lên mức cao nhất rồi giữ nguyên
                     v2DoublePhase = false;
                     break;
+
+                case "WinUpLoseKeep":
+                    {
+                        var beforeStep = step;
+
+                        if (win == true)
+                        {
+                            // th?ng => lˆn m?c tru?c
+                            step = (step + 1) % n;
+                            S7Log($"[S7] UpdateAfterRound: WIN => step {beforeStep} -> {step}");
+
+                            // n?u t?ng t?m sau th?ng da duong => reset v? m?c 1 v… reset t?ng t?m
+                            if (ConsumeS7ResetFlag())
+                            {
+                                step = 0;
+                                v2DoublePhase = false;
+                                S7Log($"[S7] UpdateAfterRound: _s7TempNetDelta>0 => reset step -> level 1");
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            // thua ho?c null => gi? nguyˆn m?c
+                            S7Log($"[S7] UpdateAfterRound: win={win} => keep step={step}");
+                        }
+
+                        v2DoublePhase = false;
+                        break;
+                    }
 
                 default:
                     if (win == true || win == null) step = 0;

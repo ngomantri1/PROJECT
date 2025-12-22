@@ -1884,6 +1884,7 @@ Ví dụ không hợp lệ:
             try
             {
                 StartLogPump();
+                MoneyHelper.Logger = Log;
                 LoadConfig();
                 InitSeqIcons();
 
@@ -2139,6 +2140,7 @@ Ví dụ không hợp lệ:
         {
             if (!_uiReady) return;
             _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
+            MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             // NEW: mỗi “Quản lý vốn” có chuỗi tiền riêng → nạp lại ô StakeCsv
             LoadStakeCsvForCurrentMoneyStrategy();
             await SaveConfigAsync();
@@ -3201,6 +3203,7 @@ Ví dụ không hợp lệ:
 
         private GameContext BuildContext()
         {
+            var moneyStrategyId = _cfg.MoneyStrategy ?? "IncreaseWhenLose";
             return new GameContext
             {
                 GetSnap = () => { lock (_snapLock) return _lastSnap; },
@@ -3216,7 +3219,7 @@ Ví dụ không hợp lệ:
                 UiDispatcher = Dispatcher,
                 GetCooldown = () => _cooldown,
                 SetCooldown = (v) => _cooldown = v,
-                MoneyStrategyId = _cfg.MoneyStrategy ?? "IncreaseWhenLose",
+                MoneyStrategyId = moneyStrategyId,
                 BetSeq = _cfg.BetSeq ?? "",
                 BetPatterns = _cfg.BetPatterns ?? "",
 
@@ -3294,13 +3297,20 @@ Ví dụ không hợp lệ:
                     }
                 }),
 
-                UiAddWin = delta => Dispatcher.InvokeAsync(() =>
+                UiAddWin = delta =>
                 {
-                    var net = (delta > 0) ? Math.Round(delta * 0.98) : delta;
-                    _winTotal += net;
-                    if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
-                    CheckCutAndStopIfNeeded();
-                }),
+                    void Apply()
+                    {
+                        var net = (delta > 0) ? Math.Round(delta * 0.98) : delta;
+                        _winTotal += net;
+                        try { MoneyHelper.NotifyTempProfit(moneyStrategyId, net); } catch { }
+                        if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
+                        CheckCutAndStopIfNeeded();
+                    }
+
+                    if (Dispatcher.CheckAccess()) Apply();
+                    else Dispatcher.Invoke(Apply);
+                },
                 UiWinLoss = s => Dispatcher.Invoke(() =>
                 {
                     SetWinLossUI(s);
@@ -3316,6 +3326,7 @@ Ví dụ không hợp lệ:
             _activeTask = task;
             _dec = new DecisionState(); // reset trạng thái cho task mới
             _stakeLevelIndexForUi = -1; // reset vị trí hiển thị mức tiền
+            MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             var ctx = BuildContext();
             // === Preflight: chờ __cw_bet sẵn sàng trước khi chạy chiến lược ===
             for (int i = 0; i < 25; i++) // 25 * 200ms ~= 5s

@@ -1,15 +1,15 @@
-﻿using System;
+using System;
 
 namespace XocDiaSoiLiveKH24.Tasks
 {
-    /// <summary>Điều phối mức tiền theo 4 kiểu quản lý vốn.</summary>
+    /// <summary>�i?u ph?i m?c ti?n theo 4 ki?u qu?n l� v?n.</summary>
     internal sealed class MoneyManager
     {
         private readonly long[] _seq;
         private readonly string _id;
-        private int _i;                       // index hiện tại (0-based)
-        private bool _needDoubleNext;         // Victor2: vừa thắng xong → ván tới gấp đôi
-        private bool _usedDoubleThisRound;    // Victor2: ván vừa cược có gấp đôi hay không
+        private int _i;                       // index hi?n t?i (0-based)
+        private bool _needDoubleNext;         // Victor2: v?a th?ng xong ? v�n t?i g?p d�i
+        private bool _usedDoubleThisRound;    // Victor2: v�n v?a cu?c c� g?p d�i hay kh�ng
 
         public MoneyManager(long[] seq, string id)
         {
@@ -20,7 +20,7 @@ namespace XocDiaSoiLiveKH24.Tasks
 
         public long CurrentUnit => _seq[Math.Clamp(_i, 0, _seq.Length - 1)];
 
-        /// <summary>Tiền sẽ đặt ở VÁN SẮP CƯỢC (có xét gấp đôi với Victor2).</summary>
+        /// <summary>Ti?n s? d?t ? V�N S?P CU?C (c� x�t g?p d�i v?i Victor2).</summary>
         public long GetStakeForThisBet()
         {
             if (_id == "Victor2" && _needDoubleNext)
@@ -32,17 +32,17 @@ namespace XocDiaSoiLiveKH24.Tasks
             return CurrentUnit;
         }
 
-        /// <summary>Gọi sau khi có kết quả WIN/LOSS (true/false).</summary>
+        /// <summary>G?i sau khi c� k?t qu? WIN/LOSS (true/false).</summary>
         public void OnRoundResult(bool win)
         {
             switch (_id)
             {
-                case "IncreaseWhenLose":   // thua ↑1 mức, thắng → về mức 1
+                case "IncreaseWhenLose":   // thua ?1 m?c, th?ng ? v? m?c 1
                     _needDoubleNext = false;
                     _i = win ? 0 : (_i + 1 < _seq.Length ? _i + 1 : 0);
                     break;
 
-                case "IncreaseWhenWin":    // thắng ↑1 mức, thua → về mức 1
+                case "IncreaseWhenWin":    // th?ng ?1 m?c, thua ? v? m?c 1
                     _needDoubleNext = false;
                     _i = win ? (_i + 1 < _seq.Length ? _i + 1 : 0) : 0;
                     break;
@@ -52,13 +52,13 @@ namespace XocDiaSoiLiveKH24.Tasks
                     {
                         if (_usedDoubleThisRound)
                         {
-                            // Thắng với mức gấp đôi → quay về mức 1
+                            // Th?ng v?i m?c g?p d�i ? quay v? m?c 1
                             _i = 0;
                             _needDoubleNext = false;
                         }
                         else
                         {
-                            // Thắng lần đầu nếu đang mức 1 thì quay về mức 1 không gấp đôi, còn từ mức 2 trở đi → ván tới gấp đôi cùng “bậc”
+                            // Th?ng l?n d?u n?u dang m?c 1 th� quay v? m?c 1 kh�ng g?p d�i, c�n t? m?c 2 tr? di ? v�n t?i g?p d�i c�ng �b?c�
                             if (_i == 0)
                             {
                                 _i = 0;
@@ -69,16 +69,43 @@ namespace XocDiaSoiLiveKH24.Tasks
                     }
                     else
                     {
-                        // Thua → lên bậc tiếp theo, hết bậc thì về 1
+                        // Thua ? l�n b?c ti?p theo, h?t b?c th� v? 1
                         _needDoubleNext = false;
                         _i = (_i + 1 < _seq.Length ? _i + 1 : 0);
                     }
                     break;
 
-                case "ReverseFibo":        // thua ↑1 mức (đến mức cao nhất thì giữ nguyên), thắng → về mức 1
+                case "ReverseFibo":        // thua ?1 m?c (d?n m?c cao nh?t th� gi? nguy�n), th?ng ? v? m?c 1
                     _needDoubleNext = false;
                     _i = win ? 0 : Math.Min(_i + 1, _seq.Length - 1);
                     break;
+                case "WinUpLoseKeep":
+                    {
+                        _needDoubleNext = false; // kh�ng d�ng Victor2 ? strategy n�y
+
+                        if (win)
+                        {
+                            var before = _i;
+
+                            // th?ng => tang m?c
+                            _i = (_i + 1 < _seq.Length ? _i + 1 : 0);
+                            MoneyHelper.Logger?.Invoke($"[S7] MoneyManager: WIN => step {before} -> {_i}");
+
+                            // sau khi th?ng: n?u total t?m da duong => reset level 1 v� reset t?ng t?m
+                            if (MoneyHelper.ConsumeS7ResetFlag())
+                            {
+                                _i = 0;
+                                MoneyHelper.Logger?.Invoke($"[S7] MoneyManager: _s7TempNetDelta>0 => reset step -> 0");
+                            }
+                        }
+                        else
+                        {
+                            // thua => gi? nguy�n m?c
+                            MoneyHelper.Logger?.Invoke($"[S7] MoneyManager: LOSS => keep step={_i}");
+                        }
+
+                        break;
+                    }
             }
         }
     }
