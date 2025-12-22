@@ -268,7 +268,7 @@
 
     // Nút "PP trực tuyến" trên header (Casino LIVE)
     const TAIL_PP_TRUC_TUYEN =
-        'div.header_nav[1]/div.header_nav_list[1]/div.nav_item.active[2]/div.dropdown_menu.LIVE[2]/div.drop_bg[1]/ul.drop_ul.noCenter[2]/li[1]/span.desc[2]';
+        'div.header_nav[1]/div.header_nav_list[1]/div.nav_item.active[2]/div.dropdown_menu.LIVE[2]/div.drop_bg[1]/ul.drop_ul.noCenter[2]/li[2]/span.desc[2]';
 
     // Bản dự phòng nếu lúc đó tab Casino chưa có class "active"
     const TAIL_PP_TRUC_TUYEN_ALT =
@@ -432,18 +432,34 @@
         return parts.reverse().join('/');
     }
 
-    const BACC_CARD_SELECTORS = ['div.hC_hE.hC_hH', 'div.rC_rE', 'div.rC_rS'];
+    const BACC_CARD_SELECTORS = [
+        'div.hC_hE.hC_hH',
+        'div.rC_rE',
+        'div.rC_rS',
+        'div.ec_F div.he_hf.he_hi'
+    ];
 
     function collectBaccarat3Cards() {
         const seen = new WeakSet();
         const cards = [];
+        const addCard = (card) => {
+            if (!card || seen.has(card))
+                return;
+            seen.add(card);
+            cards.push(card);
+        };
         BACC_CARD_SELECTORS.forEach(sel => {
             document.querySelectorAll(sel).forEach(card => {
-                if (!card || seen.has(card))
-                    return;
-                seen.add(card);
-                cards.push(card);
+                addCard(card);
             });
+        });
+        // Fallback for updated DOM: collect from title nodes.
+        document.querySelectorAll('span.rW_sl').forEach(node => {
+            const root = node.closest('div.he_hf.he_hi') ||
+                node.closest('div.rW_rX') ||
+                node.closest('div.mx_G') ||
+                node.closest('div.jF_jJ');
+            addCard(root);
         });
         cards.sort((a, b) => {
             const ra = rectOf(a);
@@ -471,7 +487,7 @@
             return 'Không tìm thấy thẻ Baccarat 3.';
         const segments = cards.map((card, index) => {
             const identifier = card.getAttribute('data-table-id') || card.dataset.tableId || '';
-            const name = (card.querySelector('.tile-name, .rY_sn, .game-title')?.textContent || '').trim();
+            const name = (card.querySelector('.tile-name, .rY_sn, .game-title, .rW_sl')?.textContent || '').trim();
             const headingParts = ['Card #' + (index + 1)];
             if (identifier)
                 headingParts.push('[id:' + identifier + ']');
@@ -1095,8 +1111,8 @@
                             .join('');
                         return {
                             id: card.getAttribute('data-table-id') || card.dataset.tableId || '',
-                            name: normalizeText(card.querySelector('.rC_rT, .rC_rE span, .rY_sn, .tile-name, .title, .game-title')?.textContent),
-                        countdown: (card.querySelector('[data-countdown], [class*=count]')?.textContent || '').replace(/[^\d]/g, '') || null,
+                            name: normalizeText(card.querySelector('.rC_rT, .rC_rE span, .rY_sn, .rW_sl, .tile-name, .title, .game-title')?.textContent),
+                        countdown: (card.querySelector('span.yv_yy.yv_yz, span.yv_yy.yv_yB, [data-countdown], [class*=count]')?.textContent || '').replace(/[^\d]/g, '') || null,
                         resultChain,
                         counts: parseCounts(textSnapshot),
                         bets: parseBets(textSnapshot),
@@ -4572,24 +4588,27 @@
                 return cached;
             if (cached && !cached.isConnected)
                 roomDomRegistry.delete(needle);
-            const selectors = ['span.rY_sn', 'span.qL_qM.qL_qN', 'div.abx-table-title', 'span.rC_rT'];
+            const selectors = ['span.rY_sn', 'span.qL_qM.qL_qN', 'div.abx-table-title', 'span.rC_rT', 'span.rW_sl'];
             for (const sel of selectors) {
                 const list = Array.from(document.querySelectorAll(sel));
                 const match = list.find(el => (el.textContent || '').trim() === needle);
                 if (match) {
-                    const root = match.closest('div.hq_hr') ||
-                        match.closest('div.jF_jJ') ||
-                        match.closest('div.cU_cV') ||
-                        match.closest('div.kx_ca') ||
-                        match.closest('div.kx_ky') ||
+                    const root = match.closest('div.he_hf.he_hi') ||
                         match.closest('div.hC_hE') ||
                         match.closest('div.ep_bn') ||
                         match.closest('div.hu_hw') ||
+                        match.closest('div.rW_rX') ||
+                        match.closest('div.mx_G') ||
+                        match.closest('div.hq_hr') ||
+                        match.closest('div.cU_cV') ||
+                        match.closest('div.kx_ca') ||
+                        match.closest('div.kx_ky') ||
+                        match.closest('div.jF_jJ') ||
                         match.closest('.qW_rl') ||
                         match;
                     if (root)
                         rememberRoomDom(needle, root);
-                    return match.closest('div.hC_hE') || match.closest('div.ep_bn') || match.closest('div.hu_hw') || match;
+                    return root;
                 }
             }
             return null;
@@ -5477,7 +5496,9 @@
             if (!root)
                 return null;
             const selectors = [
-                'span.yI_yL.yI_yM'
+                'span.yI_yL.yI_yM',
+                'span.yv_yy.yv_yz',
+                'span.yv_yy.yv_yB'
             ];
             for (const sel of selectors) {
                 try {

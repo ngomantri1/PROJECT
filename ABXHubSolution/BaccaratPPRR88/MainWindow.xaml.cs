@@ -1120,7 +1120,7 @@ Ví dụ không hợp lệ:
 
                 var js = @"(function(){
   try{
-    const cardSelectors = ['.rC_rT'];
+    const cardSelectors = ['.rW_sl', '.rY_sn', '.rC_rT', '.tile-name', '.game-title'];
     const keyAttrs = ['data-table-name','data-tablename','data-tableid','data-table-id','data-tabletitle','data-table-title','data-title','data-name','data-display-name','data-displayname','data-label','aria-label','title','alt'];
     const seen = new Set();
     const names = [];
@@ -2779,7 +2779,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var roomsJson = JsonSerializer.Serialize(selectedRooms);
             var optionsJson = JsonSerializer.Serialize(new
             {
-                baseSelector = ".rY_sn,[data-table-name],[data-tablename],[data-table-id],[data-tabletitle],[data-table-title],[data-title],[data-name]"
+                baseSelector = ".rW_sl,.rY_sn,[data-table-name],[data-tablename],[data-table-id],[data-tabletitle],[data-table-title],[data-title],[data-name]"
             });
             var script = $"window.__abxTableOverlay && window.__abxTableOverlay.openRooms({roomsJson}, {optionsJson});";
             try
