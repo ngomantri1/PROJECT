@@ -1039,8 +1039,6 @@ Ví dụ không hợp lệ:
 
                 if (string.IsNullOrWhiteSpace(_cfg.Url))
                     _cfg.Url = DEFAULT_URL;
-                // Luon dung URL mac dinh bat ke file config co gi
-                _cfg.Url = DEFAULT_URL;
                 if (TxtUrl != null) TxtUrl.Text = _cfg.Url;
                 if (TxtStakeCsv != null)
                 {
@@ -1102,7 +1100,7 @@ Ví dụ không hợp lệ:
             await _cfgWriteGate.WaitAsync();
             try
             {
-                //_cfg.Url = T(TxtUrl);
+                _cfg.Url = T(TxtUrl);
                 _cfg.StakeCsv = T(TxtStakeCsv, "1000,2000,4000,8000,16000");
                 _cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
                 _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? _cfg.BetStrategyIndex;

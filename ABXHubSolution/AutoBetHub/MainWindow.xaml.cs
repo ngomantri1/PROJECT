@@ -115,7 +115,7 @@ namespace AutoBetHub
                     bool allowCopyFromExe = installedVersion == null || exeVersion > installedVersion;
                     if (!allowCopyFromExe)
                     {
-                        _log.Info($"[Hub] Skip copying plugins from exe because installed version {installedVersion} >= exe {exeVersion}.");
+                        _log.Info($"[Hub] Skip copying plugins/web from exe because installed version {installedVersion} >= exe {exeVersion}.");
                     }
 
                     if (allowCopyFromExe)
@@ -147,6 +147,30 @@ namespace AutoBetHub
                             {
                                 _log.Warn("[Hub] No Plugins folder found (neither runtime nor dev).");
                             }
+                        }
+
+                        // 2) web: copy hub.html + assets từ runtime hoặc source về LocalAppData\web
+                        var baseWeb = Path.Combine(_baseDir, "web");
+                        var devWeb = Path.GetFullPath(Path.Combine(_baseDir, "..", "..", "..", "web"));
+                        string? srcWeb = null;
+
+                        if (File.Exists(Path.Combine(baseWeb, "hub.html")))
+                            srcWeb = baseWeb;
+                        else if (!string.IsNullOrWhiteSpace(_webDir) && File.Exists(Path.Combine(_webDir, "hub.html")))
+                            srcWeb = _webDir;
+                        else if (File.Exists(Path.Combine(devWeb, "hub.html")))
+                            srcWeb = devWeb;
+
+                        if (!string.IsNullOrWhiteSpace(srcWeb))
+                        {
+                            var dstWeb = Path.Combine(_localRoot, "web");
+                            Directory.CreateDirectory(dstWeb);
+                            CopyDirectoryOverwrite(srcWeb, dstWeb);
+                            _log.Info("[Hub] Copied web to LocalAppData: " + dstWeb);
+                        }
+                        else
+                        {
+                            _log.Warn("[Hub] No web folder found (hub.html missing).");
                         }
                     }
 
