@@ -493,6 +493,8 @@
                                         <RowDefinition Height="Auto" />
                                         <!--  CHUỖI TIỀN  -->
                                         <RowDefinition Height="Auto" />
+                                        <!--  CÓ LÃI QUAY VỀ MỨC ĐẦU  -->
+                                        <RowDefinition Height="Auto" />
                                         <!--  ĐẶT KHI CÒN (GIÂY)  -->
                                     </Grid.RowDefinitions>
 
@@ -656,6 +658,7 @@
                                             <ComboBoxItem Content="3. Quản lý vốn Victor 2" Tag="Victor2" />
                                             <ComboBoxItem Content="4. Quản lý vốn Fibonaci ngược" Tag="ReverseFibo" />
                                             <ComboBoxItem Content="5. Quản lý vốn đa tầng" Tag="MultiChain" />
+                                            <ComboBoxItem Content="7. Thắng đánh lên, thua giữ nguyên mức" Tag="WinUpLoseKeep" />
                                         </ComboBox>
                                     </Grid>
                                     <!--  CHUỖI TIỀN (CSV)  -->
@@ -678,15 +681,27 @@
                                         Text="1000,2000,4000,8000,16000"
                                         TextWrapping="Wrap" />
 
+                                    <CheckBox
+                                        x:Name="ChkS7ResetOnProfit"
+                                        Grid.Row="4"
+                                        Grid.Column="1"
+                                        Margin="{StaticResource ValueFieldMargin}"
+                                        VerticalAlignment="Center"
+                                        Content="Có lãi quay về mức đầu"
+                                        Foreground="#222"
+                                        Visibility="Collapsed"
+                                        Checked="ChkS7ResetOnProfit_Changed"
+                                        Unchecked="ChkS7ResetOnProfit_Changed" />
+
                                     <!--  ĐẶT KHI CÒN (GIÂY)  -->
                                     <TextBlock
-                                        Grid.Row="4"
+                                        Grid.Row="5"
                                         Grid.Column="0"
                                         Style="{StaticResource CapsLabel}"
                                         Text="ĐẶT KHI CÒN (GIÂY)" />
                                     <TextBox
                                         x:Name="TxtDecisionSecond"
-                                        Grid.Row="4"
+                                        Grid.Row="5"
                                         Grid.Column="1"
                                         MinHeight="36"
                                         MaxHeight="120"

@@ -401,6 +401,7 @@ Ví dụ không hợp lệ:
             public string BetSeq { get; set; } = "";       // giá trị ô "CHUỖI CẦU"
             public string BetPatterns { get; set; } = "";  // giá trị ô "CÁC THẾ CẦU"
             public string MoneyStrategy { get; set; } = "IncreaseWhenLose";//IncreaseWhenLose
+            public bool S7ResetOnProfit { get; set; } = true;
             public double CutProfit { get; set; } = 0; // 0 = tắt cắt lãi
             public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
             public string BetSeqCL { get; set; } = "";        // cho Chiến lược 1
@@ -960,6 +961,9 @@ Ví dụ không hợp lệ:
                 if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString();
                 if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
                 LoadStakeCsvForCurrentMoneyStrategy();// NEW: nạp chuỗi tiền theo “Quản lý vốn” hiện tại
+                if (ChkS7ResetOnProfit != null) ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
+                MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
+                UpdateS7ResetOptionUI();
 
 
                 if (ChkRemember != null) ChkRemember.IsChecked = _cfg.RememberCreds;
@@ -1017,6 +1021,8 @@ Ví dụ không hợp lệ:
                 _cfg.UseTrial = (ChkTrial?.IsChecked == true);
                 _cfg.LeaseClientId = _leaseClientId;
                 _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
+                if (ChkS7ResetOnProfit != null)
+                    _cfg.S7ResetOnProfit = (ChkS7ResetOnProfit.IsChecked == true);
 
 
                 var dir = Path.GetDirectoryName(_cfgPath);
@@ -2134,6 +2140,31 @@ Ví dụ không hợp lệ:
                    ?? "IncreaseWhenLose";
         }
 
+        private void UpdateS7ResetOptionUI()
+        {
+            try
+            {
+                var isS7 = string.Equals(GetMoneyStrategyFromUI(), "WinUpLoseKeep", StringComparison.OrdinalIgnoreCase);
+                if (ChkS7ResetOnProfit != null)
+                {
+                    ChkS7ResetOnProfit.Visibility = isS7 ? Visibility.Visible : Visibility.Collapsed;
+                    if (isS7)
+                        ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
+                }
+                MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
+            }
+            catch { }
+        }
+
+        private async void ChkS7ResetOnProfit_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!_uiReady) return;
+            _cfg.S7ResetOnProfit = (ChkS7ResetOnProfit?.IsChecked == true);
+            MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
+            MoneyHelper.ResetTempProfitForWinUpLoseKeep();
+            await SaveConfigAsync();
+        }
+
         async void CmbMoneyStrategy_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!_uiReady) return;
@@ -2141,6 +2172,7 @@ Ví dụ không hợp lệ:
             MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             // NEW: mỗi “Quản lý vốn” có chuỗi tiền riêng → nạp lại ô StakeCsv
             LoadStakeCsvForCurrentMoneyStrategy();
+            UpdateS7ResetOptionUI();
             await SaveConfigAsync();
             Log($"[MoneyStrategy] updated: {_cfg.MoneyStrategy}");
         }

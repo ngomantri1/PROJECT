@@ -4,6 +4,91 @@ namespace BaccaratPPRR88.Tasks
 {
     internal static class MoneyHelper
     {
+        public static Action<string>? Logger { get; set; }
+        public static bool S7ResetOnProfit { get; set; } = true;
+
+        private static void S7Log(string msg)
+        {
+            try { Logger?.Invoke(msg); } catch { }
+        }
+
+        private static readonly object _s7Lock = new();
+        private static double _s7TempNetDelta = 0;
+        private static bool _s7NeedResetToLevel1 = false;
+
+        public static void ResetTempProfitForWinUpLoseKeep()
+        {
+            double curTempNet;
+            bool flag;
+
+            lock (_s7Lock)
+            {
+                _s7TempNetDelta = 0;
+                _s7NeedResetToLevel1 = false;
+
+                curTempNet = _s7TempNetDelta;
+                flag = _s7NeedResetToLevel1;
+            }
+
+            S7Log($"[S7] ResetTempProfit: _s7TempNetDelta={curTempNet:N0}, needReset={flag}");
+        }
+
+        public static void NotifyTempProfit(string strategyId, double netDelta)
+        {
+            if (!string.Equals(strategyId, "WinUpLoseKeep", StringComparison.OrdinalIgnoreCase))
+                return;
+            if (!S7ResetOnProfit)
+                return;
+
+            double curTempNet;
+            bool flag;
+
+            lock (_s7Lock)
+            {
+                _s7TempNetDelta += netDelta;
+
+                _s7NeedResetToLevel1 = (netDelta > 0 && _s7TempNetDelta > 0);
+
+                curTempNet = _s7TempNetDelta;
+                flag = _s7NeedResetToLevel1;
+            }
+
+            S7Log($"[S7] NotifyTempProfit: netDelta={netDelta:N0}, _s7TempNetDelta={curTempNet:N0}, needReset={flag}");
+        }
+
+        internal static bool ConsumeS7ResetFlag()
+        {
+            if (!S7ResetOnProfit)
+                return false;
+
+            bool consumed;
+            double curTempNet;
+            bool flag;
+
+            lock (_s7Lock)
+            {
+                if (!_s7NeedResetToLevel1)
+                {
+                    consumed = false;
+                    curTempNet = _s7TempNetDelta;
+                    flag = _s7NeedResetToLevel1;
+                }
+                else
+                {
+                    _s7NeedResetToLevel1 = false;
+                    _s7TempNetDelta = 0;
+
+                    consumed = true;
+                    curTempNet = _s7TempNetDelta;
+                    flag = _s7NeedResetToLevel1;
+                }
+            }
+
+            if (consumed)
+                S7Log($"[S7] ConsumeResetFlag: RESET _s7TempNetDelta=0 | _s7TempNetDelta={curTempNet:N0}, needReset={flag}");
+
+            return consumed;
+        }
         public static long CalcAmount(string strategyId, long[] seq, int step, bool v2DoublePhase)
         {
             if (seq == null || seq.Length == 0) return 1000L;
@@ -53,6 +138,32 @@ namespace BaccaratPPRR88.Tasks
                     else step = Math.Min(step + 1, n - 1); // dồn lên mức cao nhất rồi giữ nguyên
                     v2DoublePhase = false;
                     break;
+
+                case "WinUpLoseKeep":
+                    {
+                        var beforeStep = step;
+
+                        if (win == true)
+                        {
+                            step = (step + 1) % n;
+                            S7Log($"[S7] UpdateAfterRound: WIN => step {beforeStep} -> {step}");
+
+                            if (ConsumeS7ResetFlag())
+                            {
+                                step = 0;
+                                v2DoublePhase = false;
+                                S7Log($"[S7] UpdateAfterRound: _s7TempNetDelta>0 => reset step -> level 1");
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            S7Log($"[S7] UpdateAfterRound: win={win} => keep step={step}");
+                        }
+
+                        v2DoublePhase = false;
+                        break;
+                    }
 
                 default:
                     if (win == true || win == null) step = 0;

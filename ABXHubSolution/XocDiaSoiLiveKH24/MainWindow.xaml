@@ -494,6 +494,8 @@
                                         <RowDefinition Height="Auto" />
                                         <!--  CHUỖI TIỀN  -->
                                         <RowDefinition Height="Auto" />
+                                        <!--  CÓ LÃI QUAY VỀ MỨC ĐẦU  -->
+                                        <RowDefinition Height="Auto" />
                                         <!--  ĐẶT KHI CÒN (GIÂY)  -->
                                     </Grid.RowDefinitions>
 
@@ -678,15 +680,27 @@
                                         Text="1000,2000,4000,8000,16000"
                                         TextWrapping="Wrap" />
 
+                                    <CheckBox
+                                        x:Name="ChkS7ResetOnProfit"
+                                        Grid.Row="4"
+                                        Grid.Column="1"
+                                        Margin="{StaticResource ValueFieldMargin}"
+                                        VerticalAlignment="Center"
+                                        Content="Có lãi quay về mức đầu"
+                                        Foreground="#222"
+                                        Visibility="Collapsed"
+                                        Checked="ChkS7ResetOnProfit_Changed"
+                                        Unchecked="ChkS7ResetOnProfit_Changed" />
+
                                     <!--  ĐẶT KHI CÒN (GIÂY)  -->
                                     <TextBlock
-                                        Grid.Row="4"
+                                        Grid.Row="5"
                                         Grid.Column="0"
                                         Style="{StaticResource CapsLabel}"
                                         Text="ĐẶT KHI CÒN (GIÂY)" />
                                     <TextBox
                                         x:Name="TxtDecisionSecond"
-                                        Grid.Row="4"
+                                        Grid.Row="5"
                                         Grid.Column="1"
                                         MinHeight="36"
                                         MaxHeight="120"

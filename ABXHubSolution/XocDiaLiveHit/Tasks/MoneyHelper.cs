@@ -6,6 +6,7 @@ namespace XocDiaLiveHit.Tasks
     {
         // ====== NEW: Logger để bắn log ra file (gắn từ MainWindow) ======
         public static Action<string>? Logger { get; set; }
+        public static bool S7ResetOnProfit { get; set; } = true;
 
         private static void S7Log(string msg)
         {
@@ -45,6 +46,8 @@ namespace XocDiaLiveHit.Tasks
         {
             if (!string.Equals(strategyId, "WinUpLoseKeep", StringComparison.OrdinalIgnoreCase))
                 return;
+            if (!S7ResetOnProfit)
+                return;
 
             double curTempNet;
             bool flag;
@@ -69,6 +72,9 @@ namespace XocDiaLiveHit.Tasks
 
          internal static bool ConsumeS7ResetFlag()
         {
+            if (!S7ResetOnProfit)
+                return false;
+
             bool consumed;
             double curTempNet;
             bool flag;

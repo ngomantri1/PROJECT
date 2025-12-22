@@ -6,6 +6,7 @@ namespace TaiXiuLiveHit.Tasks
     {
         // ====== NEW: Logger d? b?n log ra file (g?n t? MainWindow) ======
         public static Action<string>? Logger { get; set; }
+        public static bool S7ResetOnProfit { get; set; } = true;
 
         private static void S7Log(string msg)
         {
@@ -45,6 +46,8 @@ namespace TaiXiuLiveHit.Tasks
         {
             if (!string.Equals(strategyId, "WinUpLoseKeep", StringComparison.OrdinalIgnoreCase))
                 return;
+            if (!S7ResetOnProfit)
+                return;
 
             double curTempNet;
             bool flag;
@@ -69,6 +72,9 @@ namespace TaiXiuLiveHit.Tasks
 
          internal static bool ConsumeS7ResetFlag()
         {
+            if (!S7ResetOnProfit)
+                return false;
+
             bool consumed;
             double curTempNet;
             bool flag;
