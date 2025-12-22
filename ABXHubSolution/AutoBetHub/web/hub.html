@@ -219,21 +219,33 @@ const TileArtwork = ({ title, gradient, img }) => {
 
 
                     /* ===== Thẻ game ===== */
-                    function GameCard({ game, isPinned, onPin, onEnter, t }) {
+                    function GameCard({ game, isPinned, onPin, onEnter, onShortcut, t }) {
                       return (
                         <div className={`group rounded-2xl border ${t.card} ${t.cardHover} transition-all backdrop-blur-md shadow-md hover:shadow-xl ring-1 ring-black/5 p-3 flex flex-col gap-3`}>
                           <div className="relative">
                             <TileArtwork title={game.title} gradient={game.gradient} img={game.img} />
-                            <button
-                              title={isPinned ? "Bỏ GHIM" : "GHIM làm mặc định"}
-                              onClick={() => onPin(game.slug)}
-                              className={`absolute top-2 right-2 inline-flex items-center gap-1 rounded-full text-xs px-2 py-1 backdrop-blur border ${isPinned ? "bg-amber-400/90 border-amber-300 text-black" : "bg-white/50 border-white/70 text-slate-800 hover:bg-white"}`}
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" className="-mt-[1px]">
-                                <path d="M6 3l12 12M14 3l7 7-4 4-7-7-3 3-4-4 3-3" />
-                              </svg>
-                              {isPinned ? "Đã ghim" : "Ghim"}
-                            </button>
+                            <div className="absolute top-2 right-2 inline-flex items-center gap-1">
+                              <button
+                                title="Tao shortcut"
+                                onClick={() => onShortcut?.(game)}
+                                className="inline-flex items-center gap-1 rounded-full text-xs px-2 py-1 backdrop-blur border bg-white/50 border-white/70 text-slate-800 hover:bg-white"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="-mt-[1px]">
+                                  <path d="M14 3h7v7M21 3L10 14M5 7H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-1" />
+                                </svg>
+                                Shortcut
+                              </button>
+                              <button
+                                title={isPinned ? "Bo GHIM" : "GHIM lam muc mac dinh"}
+                                onClick={() => onPin(game.slug)}
+                                className={`inline-flex items-center gap-1 rounded-full text-xs px-2 py-1 backdrop-blur border ${isPinned ? "bg-amber-400/90 border-amber-300 text-black" : "bg-white/50 border-white/70 text-slate-800 hover:bg-white"}`}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" className="-mt-[1px]">
+                                  <path d="M6 3l12 12M14 3l7 7-4 4-7-7-3 3-4-4 3-3" />
+                                </svg>
+                                {isPinned ? "Da ghim" : "Ghim"}
+                              </button>
+                            </div>
                           </div>
 
                           <div className="flex-1 flex flex-col gap-1">
@@ -537,6 +549,11 @@ const TileArtwork = ({ title, gradient, img }) => {
                         localStorage.setItem(LS_KEYS.last, slug);
                       }
 
+                      function createShortcut(game) {
+                        if (!game || !game.slug) return;
+                        try { sendHost({ cmd: "createShortcut", slug: game.slug, title: game.title }); } catch {}
+                      }
+
                       // Về trang chủ: đặt suppress cho phiên hiện tại để không auto-jump lại
                       const goHome = () => {
                         try {
@@ -647,6 +664,7 @@ const TileArtwork = ({ title, gradient, img }) => {
                                     isPinned={pinnedList.includes(g.slug)}
                                     onPin={togglePin}
                                     onEnter={enterGame}
+                                    onShortcut={createShortcut}
                                     t={t}
                                   />
                                 </div>

@@ -17,6 +17,11 @@ using ABX.Core;
 using AutoBetHub.Hosting;
 using AutoBetHub.Services;
 using System.IO.Compression;
+using System.Globalization;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.IO.Pipes;
+using System.Threading;
 
 
 namespace AutoBetHub
@@ -45,15 +50,31 @@ namespace AutoBetHub
         private bool _navEventsHooked;
         private bool _activating;
         private string? _activatingSlug;
+        private readonly string? _startupSlug;
+        private readonly bool _shortcutMode;
+        private bool _suppressAttachForNextPlugin;
+        private CancellationTokenSource? _slugPipeCts;
 
         // cờ mới: user đã bấm đóng trong khi vẫn còn plugin
         private bool _pendingClose;
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "version";  // <- đổi theo repo của bạn
         const string LicenseBranch = "main";          // <- nhánh
-        public MainWindow()
+        public MainWindow() : this(null) { }
+
+        public MainWindow(string? startupSlug)
         {
+            _startupSlug = string.IsNullOrWhiteSpace(startupSlug) ? null : startupSlug;
+            _shortcutMode = !string.IsNullOrWhiteSpace(_startupSlug);
             InitializeComponent();
+            if (_shortcutMode)
+            {
+                ShowInTaskbar = false;
+                ShowActivated = false;
+                WindowStyle = WindowStyle.None;
+                WindowState = WindowState.Minimized;
+                Opacity = 0;
+            }
 
             // =========================
             // 1) luôn có thư mục runtime local
@@ -79,6 +100,7 @@ namespace AutoBetHub
             // =========================
             _cfg = new ConfigService(Path.Combine(_localRoot, "AppConfig.json"));
             _log = new LogService(localLogs);
+            StartSlugPipeServer();
 
             Loaded += async (_, __) =>
             {
@@ -202,61 +224,63 @@ namespace AutoBetHub
 
 
                     // đảm bảo runtime fixed được bung ra local (nếu có nhúng trong exe)
-                    EnsureFixedWebView2Runtime();
+                    var shortcutMode = _shortcutMode;
 
-
-                    // chuẩn bị WebView2 ở home
-                    var webview2Data = Path.Combine(_localRoot, "WebView2");
-                    Directory.CreateDirectory(webview2Data);
-
-                    // Ưu tiên dùng runtime fixed ở localRoot; nếu không có thì fallback sang cạnh exe;
-                    // nếu vẫn không có thì dùng Evergreen (nếu máy đã cài).
-                    string? browserFolder = null;
-
-                    var fixedRuntimeLocal = Path.Combine(_thirdPartyDir, "WebView2Fixed_win-x64");
-                    var fixedRuntimeBase = Path.Combine(_baseDir, "ThirdParty", "WebView2Fixed_win-x64");
-
-                    if (Directory.Exists(fixedRuntimeLocal))
+                    if (!shortcutMode)
                     {
-                        browserFolder = fixedRuntimeLocal;
-                        _log.Info("[Home] Using fixed WebView2 runtime at (localRoot) " + fixedRuntimeLocal);
-                    }
-                    else if (Directory.Exists(fixedRuntimeBase))
-                    {
-                        browserFolder = fixedRuntimeBase;
-                        _log.Info("[Home] Using fixed WebView2 runtime at (BaseDir) " + fixedRuntimeBase);
+                        EnsureFixedWebView2Runtime();
+
+                        var webview2Data = Path.Combine(_localRoot, "WebView2");
+                        Directory.CreateDirectory(webview2Data);
+
+                        string? browserFolder = null;
+
+                        var fixedRuntimeLocal = Path.Combine(_thirdPartyDir, "WebView2Fixed_win-x64");
+                        var fixedRuntimeBase = Path.Combine(_baseDir, "ThirdParty", "WebView2Fixed_win-x64");
+
+                        if (Directory.Exists(fixedRuntimeLocal))
+                        {
+                            browserFolder = fixedRuntimeLocal;
+                            _log.Info("[Home] Using fixed WebView2 runtime at (localRoot) " + fixedRuntimeLocal);
+                        }
+                        else if (Directory.Exists(fixedRuntimeBase))
+                        {
+                            browserFolder = fixedRuntimeBase;
+                            _log.Info("[Home] Using fixed WebView2 runtime at (BaseDir) " + fixedRuntimeBase);
+                        }
+                        else
+                        {
+                            _log.Info("[Home] Using Evergreen WebView2 runtime (no fixed runtime folder found).");
+                        }
+
+                        var env = await CoreWebView2Environment.CreateAsync(
+                            browserExecutableFolder: browserFolder,
+                            userDataFolder: webview2Data,
+                            options: null);
+
+                        await web.EnsureCoreWebView2Async(env);
+
+                        try
+                        {
+                            var ver = CoreWebView2Environment.GetAvailableBrowserVersionString(browserFolder);
+                            _log.Info($"[Home] WebView2 ready. Version={ver ?? "-"}");
+                        }
+                        catch (Exception ex)
+                        {
+                            _log.Warn("[Home] Probe WebView2 version failed: " + ex.Message);
+                        }
+
+                        HookWebMessages();
+                        HookHomeNavEvents();
+
+                        var webAdapter = new WebViewAdapter(web, _log);
+                        _hostcx = new HostContext(_cfg, _log, webAdapter, OnPluginWindowClosed);
                     }
                     else
                     {
-                        _log.Info("[Home] Using Evergreen WebView2 runtime (no fixed runtime folder found).");
+                        _hostcx = new HostContext(_cfg, _log, new NullWebViewService(), OnPluginWindowClosed);
                     }
 
-                    // tạo environment để nó KHÔNG tạo thư mục cạnh exe nữa
-                    var env = await CoreWebView2Environment.CreateAsync(
-                        browserExecutableFolder: browserFolder,
-                        userDataFolder: webview2Data,
-                        options: null);
-
-                    await web.EnsureCoreWebView2Async(env);
-
-                    try
-                    {
-                        var ver = CoreWebView2Environment.GetAvailableBrowserVersionString(browserFolder);
-                        _log.Info($"[Home] WebView2 ready. Version={ver ?? "-"}");
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Warn("[Home] Probe WebView2 version failed: " + ex.Message);
-                    }
-
-                    HookWebMessages();
-                    HookHomeNavEvents();
-
-                    // tạo host context cho plugin
-                    var webAdapter = new WebViewAdapter(web, _log);
-                    _hostcx = new HostContext(_cfg, _log, webAdapter, OnPluginWindowClosed);
-
-                    // load plugin từ thư mục LOCAL
                     if (Directory.Exists(_pluginsDir))
                         _plugins = PluginLoader.LoadAll(_pluginsDir, _log);
                     else
@@ -268,9 +292,17 @@ namespace AutoBetHub
                         foreach (var p in _plugins)
                             _log.Info($"[Hub] Plugin registered: {p.Name} / {p.Slug}");
 
+                    if (shortcutMode)
+                    {
+                        _log.Info($"[Hub] Startup slug detected: '{_startupSlug}'");
+                        await ActivatePluginAsync(_startupSlug);
+                        if (_active != null)
+                            PrepareForShortcutLaunch();
+                        return;
+                    }
+
                     ShowHub();
                     NavigateFile("hub.html");
-                    // kiểm tra bản mới 1 lần khi khởi động (auto = true)
                     _ = CheckForUpdateAsync(true);
                 }
                 catch (Exception ex)
@@ -300,8 +332,8 @@ namespace AutoBetHub
 
         // ========== WebView2 <-> hub.html ==========
 
-        // message gửi từ hub.html: { cmd, slug?, file? }
-        private sealed record WebMsg(string cmd, string? slug, string? file);
+        // message gửi từ hub.html: { cmd, slug?, file?, title? }
+        private sealed record WebMsg(string cmd, string? slug, string? file, string? title);
 
         private sealed record UpdateManifest(string appVersion, string? downloadUrl, string? notes);
 
@@ -370,6 +402,11 @@ namespace AutoBetHub
                             if (!string.IsNullOrWhiteSpace(msg.file))
                                 NavigateFile(msg.file!);
                             break;
+
+                        case "createShortcut":
+                            _log.Info($"[Hub] createShortcut slug={msg.slug} title={msg.title}");
+                            CreateDesktopShortcut(msg.slug, msg.title);
+                            break;
                     }
 
                 }
@@ -378,6 +415,361 @@ namespace AutoBetHub
                     _log.Error("WebMessageReceived error", ex);
                 }
             };
+        }
+
+        private void StartSlugPipeServer()
+        {
+            if (_slugPipeCts != null) return;
+            _slugPipeCts = new CancellationTokenSource();
+            _ = Task.Run(() => SlugPipeLoopAsync(_slugPipeCts.Token));
+        }
+
+        private void StopSlugPipeServer()
+        {
+            if (_slugPipeCts == null) return;
+            try { _slugPipeCts.Cancel(); } catch { }
+            _slugPipeCts = null;
+        }
+
+        private async Task SlugPipeLoopAsync(CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    using var server = new NamedPipeServerStream(
+                        App.SlugPipeName,
+                        PipeDirection.In,
+                        1,
+                        PipeTransmissionMode.Message,
+                        PipeOptions.Asynchronous);
+
+                    await server.WaitForConnectionAsync(token);
+
+                    using var reader = new StreamReader(server, Encoding.UTF8);
+                    var line = await reader.ReadLineAsync();
+                    if (!string.IsNullOrWhiteSpace(line))
+                    {
+                        var slug = line.Trim();
+                        await Dispatcher.InvokeAsync(async () =>
+                        {
+                            _log.Info($"[Hub] External slug received: '{slug}'");
+                            _suppressAttachForNextPlugin = true;
+                            await ActivatePluginAsync(slug);
+                            if (_active != null)
+                                PrepareForShortcutLaunch();
+                        });
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    // ignore on shutdown
+                }
+                catch (Exception ex)
+                {
+                    _log.Warn("[Hub] Slug pipe error: " + ex.Message);
+                    try { await Task.Delay(200, token); } catch (OperationCanceledException) { }
+                }
+            }
+        }
+
+        private void PrepareForShortcutLaunch()
+        {
+            _pendingClose = true;
+            try
+            {
+                ShowInTaskbar = false;
+                Hide();
+            }
+            catch { }
+        }
+
+        private void CreateDesktopShortcut(string? slug, string? title)
+        {
+            if (string.IsNullOrWhiteSpace(slug))
+            {
+                MessageBox.Show(this, "Thieu slug de tao shortcut.", "Shortcut");
+                return;
+            }
+
+            var exists = _plugins.Any(p => string.Equals(p.Slug, slug, System.StringComparison.OrdinalIgnoreCase));
+            if (!exists)
+            {
+                MessageBox.Show(this, $"Khong tim thay plugin cho '{slug}'.", "Shortcut");
+                return;
+            }
+
+            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            if (string.IsNullOrWhiteSpace(desktop) || !Directory.Exists(desktop))
+            {
+                MessageBox.Show(this, "Khong tim thay Desktop de tao shortcut.", "Shortcut");
+                return;
+            }
+
+            var primaryName = SanitizeFileName(string.IsNullOrWhiteSpace(title) ? slug : title);
+            if (string.IsNullOrWhiteSpace(primaryName))
+                primaryName = SanitizeFileName(slug);
+
+            var exePath = ResolveExePath();
+            var workDir = Path.GetDirectoryName(exePath);
+            var args = $"--slug \"{slug}\"";
+
+            if (TryCreateShortcutWithName(desktop, primaryName, exePath, args, workDir, title, out var err))
+                return;
+
+            var asciiName = SanitizeFileName(RemoveDiacritics(primaryName));
+            if (!string.IsNullOrWhiteSpace(asciiName) &&
+                !string.Equals(asciiName, primaryName, System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (TryCreateShortcutWithName(desktop, asciiName, exePath, args, workDir, title, out err))
+                {
+                    MessageBox.Show(this, $"Khong tao duoc shortcut theo ten co dau. Da tao: {asciiName}.lnk", "Shortcut");
+                    return;
+                }
+            }
+
+            var slugName = SanitizeFileName(slug);
+            if (!string.IsNullOrWhiteSpace(slugName) &&
+                !string.Equals(slugName, primaryName, System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (TryCreateShortcutWithName(desktop, slugName, exePath, args, workDir, title, out err))
+                {
+                    MessageBox.Show(this, $"Khong tao duoc shortcut theo title. Da tao: {slugName}.lnk", "Shortcut");
+                    return;
+                }
+            }
+
+            MessageBox.Show(this, "Khong tao duoc shortcut. " + err, "Shortcut");
+        }
+
+        private static bool TryCreateShortcutWithName(
+            string desktop,
+            string name,
+            string targetPath,
+            string arguments,
+            string? workingDir,
+            string? description,
+            out string? error)
+        {
+            error = null;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                error = "Ten shortcut khong hop le.";
+                return false;
+            }
+            var lnkPath = Path.Combine(desktop, name + ".lnk");
+            try
+            {
+                if (File.Exists(lnkPath))
+                    File.Delete(lnkPath);
+            }
+            catch { }
+
+            return TryCreateShortcut(lnkPath, targetPath, arguments, workingDir, description, out error);
+        }
+
+        private static string ResolveExePath()
+        {
+            try
+            {
+                var exe = Process.GetCurrentProcess().MainModule?.FileName;
+                if (!string.IsNullOrWhiteSpace(exe) && File.Exists(exe))
+                    return exe;
+            }
+            catch { }
+
+            var fallback = Path.Combine(AppContext.BaseDirectory, "AutoBetHub.exe");
+            return fallback;
+        }
+
+
+        private static string SanitizeFileName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "";
+            foreach (var c in Path.GetInvalidFileNameChars())
+            {
+                name = name.Replace(c, '_');
+            }
+            name = name.Trim();
+            name = name.TrimEnd('.', ' ');
+            if (string.IsNullOrWhiteSpace(name)) return "";
+            if (IsReservedDeviceName(name)) name += "_";
+            const int maxLen = 120;
+            if (name.Length > maxLen)
+                name = name.Substring(0, maxLen).Trim();
+            name = name.TrimEnd('.', ' ');
+            return name;
+        }
+
+        private static bool IsReservedDeviceName(string name)
+        {
+            var upper = name.Trim().TrimEnd('.').ToUpperInvariant();
+            if (upper == "CON" || upper == "PRN" || upper == "AUX" || upper == "NUL")
+                return true;
+            if (upper.Length == 4)
+            {
+                var prefix = upper.Substring(0, 3);
+                var tail = upper[3];
+                if ((prefix == "COM" || prefix == "LPT") && tail >= '1' && tail <= '9')
+                    return true;
+            }
+            return false;
+        }
+
+        private static string RemoveDiacritics(string text)
+        {
+            var normalized = text.Normalize(NormalizationForm.FormD);
+            var sb = new StringBuilder(normalized.Length);
+            foreach (var c in normalized)
+            {
+                if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+                    sb.Append(c);
+            }
+            return sb.ToString().Normalize(NormalizationForm.FormC);
+        }
+
+        private static bool TryCreateShortcut(
+            string lnkPath,
+            string targetPath,
+            string arguments,
+            string? workingDir,
+            string? description,
+            out string? error)
+        {
+            error = null;
+            if (TryCreateShortcutShellLink(lnkPath, targetPath, arguments, workingDir, description, out var err1))
+                return true;
+
+            if (TryCreateShortcutWScript(lnkPath, targetPath, arguments, workingDir, description, out var err2))
+                return true;
+
+            error = err2 ?? err1 ?? "Unknown error";
+            return false;
+        }
+
+        private static bool TryCreateShortcutShellLink(
+            string lnkPath,
+            string targetPath,
+            string arguments,
+            string? workingDir,
+            string? description,
+            out string? error)
+        {
+            error = null;
+            try
+            {
+                var link = (IShellLinkW)new ShellLink();
+                link.SetPath(targetPath);
+                link.SetArguments(arguments ?? "");
+                if (!string.IsNullOrWhiteSpace(workingDir))
+                    link.SetWorkingDirectory(workingDir);
+                if (!string.IsNullOrWhiteSpace(description))
+                    link.SetDescription(description);
+                link.SetIconLocation(targetPath, 0);
+                ((IPersistFile)link).Save(lnkPath, true);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private static bool TryCreateShortcutWScript(
+            string lnkPath,
+            string targetPath,
+            string arguments,
+            string? workingDir,
+            string? description,
+            out string? error)
+        {
+            error = null;
+            try
+            {
+                var shellType = Type.GetTypeFromProgID("WScript.Shell");
+                if (shellType == null)
+                {
+                    error = "WScript.Shell khong kha dung.";
+                    return false;
+                }
+
+                dynamic shell = Activator.CreateInstance(shellType)!;
+                dynamic shortcut = shell.CreateShortcut(lnkPath);
+                shortcut.TargetPath = targetPath;
+                shortcut.Arguments = arguments ?? "";
+                if (!string.IsNullOrWhiteSpace(workingDir))
+                    shortcut.WorkingDirectory = workingDir;
+                if (!string.IsNullOrWhiteSpace(description))
+                    shortcut.Description = description;
+                shortcut.IconLocation = targetPath + ",0";
+                shortcut.Save();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        [ComImport]
+        [Guid("00021401-0000-0000-C000-000000000046")]
+        private class ShellLink { }
+
+        [ComImport]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        [Guid("000214F9-0000-0000-C000-000000000046")]
+        private interface IShellLinkW
+        {
+            void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszFile, int cch, out WIN32_FIND_DATAW pfd, int fFlags);
+            void GetIDList(out IntPtr ppidl);
+            void SetIDList(IntPtr pidl);
+            void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszName, int cch);
+            void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+            void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszDir, int cch);
+            void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
+            void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszArgs, int cch);
+            void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
+            void GetHotkey(out short pwHotkey);
+            void SetHotkey(short wHotkey);
+            void GetShowCmd(out int piShowCmd);
+            void SetShowCmd(int iShowCmd);
+            void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszIconPath, int cch, out int piIcon);
+            void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
+            void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, int dwReserved);
+            void Resolve(IntPtr hwnd, int fFlags);
+            void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
+        }
+
+        [ComImport]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        [Guid("0000010b-0000-0000-C000-000000000046")]
+        private interface IPersistFile
+        {
+            void GetClassID(out Guid pClassID);
+            [PreserveSig] int IsDirty();
+            void Load([MarshalAs(UnmanagedType.LPWStr)] string pszFileName, uint dwMode);
+            void Save([MarshalAs(UnmanagedType.LPWStr)] string pszFileName, bool fRemember);
+            void SaveCompleted([MarshalAs(UnmanagedType.LPWStr)] string pszFileName);
+            void GetCurFile([MarshalAs(UnmanagedType.LPWStr)] out string ppszFileName);
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct WIN32_FIND_DATAW
+        {
+            public uint dwFileAttributes;
+            public System.Runtime.InteropServices.ComTypes.FILETIME ftCreationTime;
+            public System.Runtime.InteropServices.ComTypes.FILETIME ftLastAccessTime;
+            public System.Runtime.InteropServices.ComTypes.FILETIME ftLastWriteTime;
+            public uint nFileSizeHigh;
+            public uint nFileSizeLow;
+            public uint dwReserved0;
+            public uint dwReserved1;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+            public string cFileName;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)]
+            public string cAlternateFileName;
         }
 
         private static Version GetCurrentVersion()
@@ -857,24 +1249,28 @@ namespace AutoBetHub
                     return;
                 }
 
-                // vẫn thử attach WebView nếu plugin có host
-                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Loaded);
-                try
+                if (!_shortcutMode && !_suppressAttachForNextPlugin)
                 {
-                    var attached = WebViewAdapter.TryAttachToAnyNamedHost(
-                        _hostcx.Web, view, _log,
-                        "AutoWebViewHost_Full", "AutoWebViewHost", "WebHost", "WebViewHost");
-
-                    _log.Info(attached
-                        ? "[Hub] Shared WebView2 attached to plugin view."
-                        : "[Hub] Plugin view has no WebView host; skip attach.");
-                }
-                catch (Exception ex)
-                {
-                    _log.Warn("[Hub] Attach WebView2 failed: " + ex.Message);
+                    // van thu attach WebView neu plugin co host
+                    await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Loaded);
+                    try
+                    {
+                        var attached = WebViewAdapter.TryAttachToAnyNamedHost(
+                            _hostcx.Web, view, _log,
+                            "AutoWebViewHost_Full", "AutoWebViewHost", "WebHost", "WebViewHost");
+                
+                        _log.Info(attached
+                            ? "[Hub] Shared WebView2 attached to plugin view."
+                            : "[Hub] Plugin view has no WebView host; skip attach.");
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Warn("[Hub] Attach WebView2 failed: " + ex.Message);
+                    }
                 }
 
                 _active = p;
+                _suppressAttachForNextPlugin = false;
             }
             catch (Exception ex)
             {
@@ -1258,9 +1654,20 @@ namespace AutoBetHub
                 return;
             }
 
+            StopSlugPipeServer();
             _log.Info("[Hub] Main window closing, no active plugin -> shutdown app.");
             base.OnClosing(e);
             Application.Current.Shutdown();
+        }
+
+        private sealed class NullWebViewService : IWebViewService
+        {
+            public object? Core => null;
+            public bool CoreReady => false;
+            public void Navigate(string url) { }
+            public void NavigateToString(string html, string? baseUrl = null) { }
+            public void MapFolder(string hostName, string folderFullPath) { }
+            public void AttachTo(FrameworkElement root) { }
         }
 
     }
