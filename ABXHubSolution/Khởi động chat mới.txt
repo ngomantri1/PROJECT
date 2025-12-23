@@ -1,90 +1,81 @@
+Project : BaccaratPPRR88
 Dưới đây là tóm tắt bối cảnh từ một chat cũ.
 Hãy coi như bạn đã đọc toàn bộ lịch sử và code tương ứng, nhưng chỉ dùng thông tin trong tóm tắt này:
 
-
 Mục tiêu chính của project / bug
-
-Plugin/game Xóc Đĩa Live Hit cần hiển thị đúng icon (cửa cược, kết quả BALL0..4, cửa đặc biệt TU_TRANG/TU_DO/SAP_DOI/TRANG3_DO1/DO3_TRANG1) khi chạy độc lập hoặc qua Hub. UI lịch sử cược phải hiển thị icon chữ PNG (SẤP ĐÔI, TỨ ĐỎ, 1 TRẮNG 3 ĐỎ, 1 ĐỎ 3 TRẮNG, TỨ TRẮNG, CHẴN/LẺ) to, không rơi về TextBlock, không lỗi tiếng Việt. Vấn đề đặt cược: tránh bắn lặp, nhận dạng kết quả từ JS chính xác, đặc biệt với Task 17 (Đánh các cửa ăn nổ hũ).
+Bảo vệ và mở rộng HomeWatch overlay theo dõi lobby Baccarat/PP RR88: chặn telemetry, giữ TextMap dịch, auto đóng popup, cập nhật username/balance, quét/render overlay multi-table với countdown/multi-card.
+Fix nghiệp vụ “Danh sách bàn”: JS gửi list lobby (~45 bàn), UI phải hiện đủ list + đánh dấu bàn đã lưu config; tránh wipe selection khi refresh list rác.
+Ghim bàn: đồng bộ 1 chiều từ danh sách bàn được chọn → trạng thái ghim bàn; không sync ngược.
+Dùng ID ổn định (id TileHeight-...) để định danh bàn; bỏ dùng name làm key.
+Nút “Dump Bacc3” log ra ID ổn định để kiểm tra.
 Tech stack (ngôn ngữ, framework, DB…)
-
-.NET 8, WPF (C#), WebView2 (Microsoft.Web.WebView2).
-JS bridge v4_js_xoc_dia_live.js (Cocos DOM automation).
-Ảnh Resource WPF (pack URI, Assets).
+JavaScript thuần injected trong WebView2 (C# WPF host).
+C# WPF (MainWindow.xaml/.cs), WebView2 bridge JS/C#.
+Config lưu config.json UTF-8.
 Các file / module quan trọng đang liên quan
-
-XocDiaLiveHit/MainWindow.xaml, MainWindow.xaml.cs: UI, history grid, converters, inject logic.
-XocDiaLiveHit/Tasks/TaskUtil.cs: PlaceBet, cooldown, JS call wrapper.
-XocDiaLiveHit/Tasks/JackpotMultiSideTask.cs: Chiến lược 17 đa cửa.
-XocDiaLiveHit/v4_js_xoc_dia_live.js: JS bridge __cw_bet, cwBet, chip scan, findSide.
-XocDiaLiveHit/Tasks/SideRateParser.cs: Parse cửa & tỉ lệ, NormalizeSide.
-XocDiaLiveHit/Tasks/MoneyManager.cs: Quản lý vốn (Victor2, v.v.).
-XocDiaLiveHit/Tasks/GameContext.cs: EvalJsAsync, GetSnap, UI callbacks.
+js_home_v2.js: overlay, lobby scan, sync pin, scroll, Dump Bacc3.
+MainWindow.xaml.cs: load/save config, room list, selection, pin sync JS.
+MainWindow.xaml: UI RoomList/Checkbox.
 Logic chính đã thiết kế (tên hàm, class, luồng xử lý)
-
-WPF DataGrid “Lịch sử cược”: style LogGrid_BlueTint (RowHeight=60), cột “Cửa đặt” Image height 60, stretch Uniform; converters SideToIconConverter, KetQuaToIconConverter, WinLossToIconConverter.
-JS bridge: __cw_bet(side, amount) gọi cwBet; cwBet tìm nút cửa (normalizeSide, regex), tách chip theo DENOMS, click; báo abx:'bet' hoặc bet_error.
-C# nhận abx message: bet → add row history; bet_error → log error.
-TaskUtil.PlaceBet: gọi EvalJsAsync(js) để invoke __cw_bet, log [BET-JS] result=..., quyết định thành công/thất bại, cập nhật cooldown.
-JackpotMultiSideTask.RunAsync: parse plan (SideRateParser), tính stake (MoneyManager), PlaceWithRetry cho từng cửa, chờ kết quả, cập nhật win/loss.
+JS (js_home_v2.js)
+ID/Card root:
+CARD_ID_ATTRS, resolveCardRoot(node), getCardId(root).
+findCardRootByName(id) ưu tiên document.getElementById(id) rồi fallback theo title.
+Overlay/pin:
+pinRooms(list) → setDesiredPinList(list).
+setDesiredPinList() lưu desiredPinIds, gọi syncPinStates() và bật timer.
+ensurePinState(roomId, shouldPin) tìm card→pin button → click nếu cần, có retry.
+pinSyncTick() đọc danh sách pin thực tế và ép theo danh sách chọn.
+enforceDesiredPins(desiredList, actualList) đảm bảo 1 chiều (không gửi pinList ngược).
+Scroll:
+scrollCardIntoView(roomId); scrollLobbyTop() dùng nhiều container scrollable.
+Dump:
+collectBaccarat3Cards(), extractBaccCardId(card), dumpBaccarat3Characters(), window.__abxDumpBaccarat3Characters.
+Overlay/rooms:
+normalizeRooms(list) nhận {id,name} hoặc string → chuẩn hóa.
+applyRooms() tạo panel, gọi setDesiredPinList(rooms).
+C# (MainWindow.xaml.cs)
+Model:
+RoomEntry { Id, Name } với [JsonPropertyName].
+RoomOption { Id, Name, IsSelected }.
+Room list:
+_roomList: ObservableCollection<RoomEntry>
+_selectedRooms: HashSet<string> lưu ID.
+RefreshRoomListAsync():
+JS scan trả {id,name} (id lấy từ id/data-*).
+Clean/dedupe theo ID; filter tên rác; map selection cũ (name→id).
+RebuildRoomOptions():
+RoomOption.IsSelected dựa trên ID.
+SyncSelectedRoomsFromOptions():
+Lưu _selectedRooms bằng ID → _cfg.SelectedRooms.
+SpawnTableOverlayAsync():
+Gửi list {id,name} sang JS.
+ScrollRoomIntoViewAsync(id):
+JS scroll theo ID.
+Pin sync:
+SyncSelectedRoomsPinsAsync() → JS pinRooms([id]).
+ApplyPinnedRoomsFromWebAsync() vẫn còn nhưng JS đã ngừng gửi pinList (1 chiều).
 Những lỗi đã gặp & nguyên nhân chính
-
-Icon không hiển thị/fallback: thiếu pack URI, thiếu BALL0..4 → đã thêm fallback SharedIcons/LoadPackImage (đã xử lý).
-Text/icon nhỏ: cột “Cửa đặt” height/width nhỏ → đã tăng RowHeight=60, Img height 60, stretch.
-Đặt cược lặp/nhân đôi: C# hiểu sai kết quả JS (nhận {}/Promise) và retry/bắn lặp; trước đây __cw_bet luôn trả “ok” kể cả cwBet fail.
-Không đặt đủ cửa (1Đ3T/1T3Đ): cwBet fail (findSide/plan chip) nhưng C# vẫn đếm đủ vì kết quả mập mờ.
-Phiên bản gần nhất: vẫn thấy [BET-JS] result={} và bị đặt lặp nhiều lần.
+Danh sách bàn sai/ít: _roomList từng prefill từ _selectedRooms khi list rỗng, refresh rác ghi đè config.
+Ghim bàn khó xác định: tail thay đổi, click sai phần tử; cần nhận diện đúng icon ghim (góc phải trên).
+Countdown/overlay mượt chưa ổn định, cần sync theo card root chính xác.
+Một số bàn không ghim được khi bị khuất: do click DOM ngoài viewport.
 Các giải pháp đã thử, giải pháp hiện tại đang dùng
-
-WPF: RowHeight=60, cột “Cửa đặt” width 220 min 200, ImgSide height 60, stretch Uniform, HighQuality scaling.
-JS __cw_bet: đã sửa để return 'ok' hoặc 'fail' theo cwBet (có chờ waitForTotalsChange khi ok).
-JackpotMultiSideTask.PlaceWithRetry: giảm retry xuống 3, delay 180ms + 350..650ms, bỏ cưỡng bức mở lock JS.
-TaskUtil.PlaceBet: gọi __cw_bet qua IIFE async; logic hiện tại coi thất bại chỉ khi rỗng hoặc bắt đầu bằng fail/no/err; {} được coi là ok để tránh lặp (nhưng vẫn gây click lặp nếu cwBet đang chạy?).
-Kết quả hiện tại: Task 17 vẫn bắn lặp (tứ đỏ/tứ trắng x3, 1Đ3T/1T3Đ x2) do result={}.
+Tách _roomList và _selectedRooms, chặn list rác (check lobby + URL), giữ selection khi list trống.
+JS pin: tìm pin icon theo div.rO_rP top-right, click bằng event dispatch + retry.
+Đồng bộ pin theo danh sách chọn 1 chiều (không sync ngược).
+Dùng ID ổn định (TileHeight-...) làm key; fallback name chỉ hiển thị.
 Việc còn dang dở / TODO
-
-Sửa triệt để PlaceBet/__cw_bet handshake: phân biệt rõ trạng thái “đang xử lý”/“fail” để tránh retry lặp; không coi {} là ok, mà cần await promise và nhận ok/fail.
-Rà soát cwBet và findSide cho 1TRANG3DO/1DO3TRANG; kiểm tra tách chip và timeout khi close betting (có thể fail trả false).
-Đảm bảo EvalJsAsync thực sự lấy kết quả của promise __cw_bet (String(await ...)) và C# coi non-ok là fail (để không gửi nhiều lần).
-Kiểm tra log [BET-JS] sau sửa: phải là “ok”/“fail/err/no”, không còn {}; chỉ gửi lại khi fail.
+(Nếu cần) loại bỏ hẳn ApplyPinnedRoomsFromWebAsync hoặc để yên (JS không gửi pinList nữa).
+Theo dõi nếu DOM thay đổi:
+resolveCardRoot/CARD_ID_ATTRS/PIN_SELECTORS cần update.
+Kiểm tra Dump Bacc3/scan lobby nếu ID đổi format mới.
 
 
 Lưy ý : Kiểm tra và sửa lại code cho chính xác, chỉ sửa phần thay đổi của file
-Đừng chuyển đổi text sang ASCII hay dạng không Unicode.
-Giữ nguyên toàn bộ ký tự UTF-8 (tiếng Việt có dấu) khi chèn vào file.
-Không được dùng bất kỳ bước ‘ASCII-compliant’ nào. cho cả file .xaml, .cs, .js
-Không được encoding issues in XAML
+Đọc/ghi file bằng UTF-8, Encoding UTF8, viết code chuẩn UTF-8
 Giao tiếp bằng tiếng việt
-Dựa trên bối cảnh đó, nhiệm vụ mới của bạn là:
-Xem trong project XocDiaLiveHit 
-Hiện tại đặt thiếu cửa hãy xem lại tôi gửi log : 
-Theo đúng thì phải đặt tứ đỏ : 1000, tứ trắng : 1000, 1 trắng 3 đỏ : 4000, 1 đỏ 3 trắng : 4000
-Nhưng hiện thực tế thì chỉ đặt 3 cửa  tứ đỏ : 1000, tứ trắng : 1000, 1 trắng 3 đỏ : 4000
-Thiếu : 1 đỏ 3 trắng : 4000
 
-[10:10:11] [Lease] acquire -> 200 OK | {"ok":true,"leased":true}
-[10:10:11] [License] valid until: 2026-11-04 16:59:59Z
-[10:10:11] [Loop] started task: 17) Đánh các cửa ăn nổ hũ
-[10:10:16] [BET-JS] result={}
-[10:10:16] [BET] TU_DO 1,000
-[10:10:16] [BET-JS] result={}
-[10:10:17] [BET-JS] result={}
-[10:10:17] [BET] TU_TRANG 1,000
-[10:10:17] [BET][ERR] TRANG3_DO1 4000 :: cwBet returned false
-[10:10:17] [BET-JS] result={}
-[10:10:17] [Task17] Đã đặt 4/4 cửa; còn lại: 0
-[10:10:17] [BET] DO3_TRANG1 4,000
-[10:10:58] [NI] add=N | seq=INNIN | tail=3 | C=116750000 | L=200320000
-[10:10:58] [Task17][LOSS] TU_DO -1,000
-[10:10:58] [Task17][LOSS] TU_TRANG -1,000
-[10:10:58] [Task17][LOSS] DO3_TRANG1 -4,000
-[10:10:58] [Task17][WIN] TRANG3_DO1 +11,640
-[10:10:59] [BET-JS] result={}
-[10:10:59] [BET] TU_DO 1,000
-[10:10:59] [BET-JS] result={}
-[10:11:00] [BET] TU_TRANG 1,000
-[10:11:00] [BET-JS] result={}
-[10:11:00] [BET][ERR] TRANG3_DO1 4000 :: cwBet returned false
-[10:11:00] [BET-JS] result={}
-[10:11:00] [Task17] Đã đặt 4/4 cửa; còn lại: 0
-[10:11:00] [BET] DO3_TRANG1 4,000
-
+Giờ tôi cần bạn nghiên cứu cho tôi giải pháp để có thể lấy được chuỗi kết quả từ bảng kết quả
+Hiện tại bảng kết quả được vẽ trên table.nM_nR vẽ dạng  SVG. Các phần tử tôi không lấy được mà chỉ lấy được được thông tin bảng gồm bao nhiêu cột, bao nhiêu hàng rồi ô nào chưa dữ liệu thôi còn không biết được bên trong nó là banker hay player
+Code thì trong file jstest.js bạn đọc rà soát và kiểm tra xem nguyên nhân đến từ đâu. 

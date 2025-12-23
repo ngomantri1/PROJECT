@@ -3594,6 +3594,7 @@ Ví dụ không hợp lệ:
                             return;
                         }
                         // 2) Acquire lease 1 lần (KHÔNG renew trong lúc chạy, theo yêu cầu)
+                        try { await ReleaseLeaseAsync(username); } catch { }
                         var okLease = await AcquireLeaseOnceAsync(username);
                         if (!okLease) return;
 
@@ -4578,6 +4579,13 @@ Ví dụ không hợp lệ:
                 var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/acquire/{uname}", new { clientId = _leaseClientId });
                 var body = await resp.Content.ReadAsStringAsync();
                 Log($"[Lease] acquire -> {(int)resp.StatusCode} {resp.ReasonPhrase} | {body}");
+                if ((int)resp.StatusCode == 409)
+                {
+                    // tài khoản đang chạy nơi khác
+                    Log("[Lease] 409 in-use: " + body);
+                    MessageBox.Show("Tài khoản đang chạy nơi khác. Vui lòng thử lại sau.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return false;
+                }
                 if (!resp.IsSuccessStatusCode)
                 {
                     MessageBox.Show($"Lease bị từ chối [{(int)resp.StatusCode}] — {body}", "Automino",
@@ -4585,14 +4593,6 @@ Ví dụ không hợp lệ:
                     return false;
                 }
                 if (resp.IsSuccessStatusCode) return true;
-                if ((int)resp.StatusCode == 409)
-                {
-                    // tài khoản đang chạy nơi khác
-                    body = await resp.Content.ReadAsStringAsync();
-                    Log("[Lease] 409 in-use: " + body);
-                    MessageBox.Show("Tài khoản đang chạy nơi khác. Vui lòng thử lại sau.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return false;
-                }
                 MessageBox.Show("Không lấy được quyền chạy (lease).", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             catch (Exception ex)
