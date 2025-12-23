@@ -272,6 +272,9 @@ namespace BaccaratPPRR88
 
         private CancellationTokenSource? _roomSaveCts;
         private string _lastSavedRoomsSignature = "";
+        private CancellationTokenSource? _pinSyncCts;
+        private string _lastPinSyncSignature = "";
+        private bool _suppressRoomOptionEvents = false;
 
         private static readonly TimeSpan GameTickFresh = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan HomeTickFresh = TimeSpan.FromSeconds(1.5);
@@ -1620,6 +1623,25 @@ Ví dụ không hợp lệ:
                                     return;
                                 }
 
+                                if (root.TryGetProperty("overlay", out var pinOverlayEl) &&
+                                    string.Equals(pinOverlayEl.GetString(), "pin", StringComparison.OrdinalIgnoreCase) &&
+                                    root.TryGetProperty("event", out var pinEventEl))
+                                {
+                                    var ev = (pinEventEl.GetString() ?? "").ToLowerInvariant();
+                                    if (ev == "pinlist" && root.TryGetProperty("ids", out var idsEl) &&
+                                        idsEl.ValueKind == JsonValueKind.Array)
+                                    {
+                                        var list = new List<string>();
+                                        foreach (var it in idsEl.EnumerateArray())
+                                        {
+                                            if (it.ValueKind == JsonValueKind.String)
+                                                list.Add(it.GetString() ?? "");
+                                        }
+                                        await ApplyPinnedRoomsFromWebAsync(list);
+                                    }
+                                    return;
+                                }
+
                                 if (!root.TryGetProperty("abx", out var abxEl)) return;
                                 var abxStr = abxEl.GetString() ?? "";
                                 string ui = "";
@@ -2558,6 +2580,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             finally
             {
                 _uiReady = true;
+                _ = TriggerPinSyncDebouncedAsync(true);
             }
         }
 
@@ -2642,6 +2665,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 // HÀNH VI CŨ
                 _ = AutoFillLoginAsync();
+                _ = TriggerPinSyncDebouncedAsync(true);
                 //StartAutoLoginWatcher();
                 Dispatcher.BeginInvoke(new Action(ApplyMouseShieldFromCheck));
             }
@@ -2729,6 +2753,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (RoomPopup != null)
             {
                 RoomPopup.IsOpen = !RoomPopup.IsOpen;
+                if (!RoomPopup.IsOpen && _uiReady)
+                    _ = ScrollLobbyTopAsync("toggle-close");
                 e.Handled = true;
             }
         }
@@ -2824,7 +2850,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private void CloseRoomPopup()
         {
             if (RoomPopup != null && RoomPopup.IsOpen)
+            {
                 RoomPopup.IsOpen = false;
+                if (_uiReady)
+                    _ = ScrollLobbyTopAsync("close");
+            }
         }
 
         private void MainWindow_PreviewMouseDown_CloseRoomPopup(object sender, MouseButtonEventArgs e)
@@ -2839,6 +2869,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
 
             RoomPopup.IsOpen = false;
+            if (_uiReady)
+                _ = ScrollLobbyTopAsync("outside-click");
         }
 
         private static bool IsDescendantOf(DependencyObject? source, DependencyObject? target)
@@ -2859,13 +2891,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private void RoomItem_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName == nameof(RoomOption.IsSelected))
+            {
+                if (_suppressRoomOptionEvents)
+                    return;
                 UpdateRoomSummary();
+            }
         }
 
         private void RoomItemCheck_Click(object sender, RoutedEventArgs e)
         {
             if (sender is CheckBox cb && cb.DataContext is RoomOption opt)
             {
+                if (cb.IsChecked == true && _uiReady)
+                    _ = ScrollRoomIntoViewAsync(opt.Name);
                 // Binding updates opt.IsSelected; SyncSelectedRoomsFromOptions() will persist selection.
             }
             UpdateRoomSummary();
@@ -2978,6 +3016,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             if (_uiReady && changed)
                 _ = TriggerRoomSaveDebouncedAsync();
+
+            if (_uiReady)
+                _ = TriggerPinSyncDebouncedAsync();
         }
 
         private void UpdateCreateOverlayButtonState()
@@ -3002,6 +3043,133 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     }
                 }
             catch { }
+            });
+        }
+
+        private async Task TriggerPinSyncDebouncedAsync(bool force = false)
+        {
+            if (!_uiReady) return;
+            _pinSyncCts = await DebounceAsync(_pinSyncCts, 350, async () =>
+            {
+                try
+                {
+                    await SyncSelectedRoomsPinsAsync(force);
+                }
+                catch (Exception ex)
+                {
+                    Log("[PIN] " + ex.Message);
+                }
+            });
+        }
+
+        private async Task SyncSelectedRoomsPinsAsync(bool force = false)
+        {
+            if (!_uiReady) return;
+            if (Web?.CoreWebView2 == null) return;
+
+            var sig = BuildRoomsSignature(_selectedRooms);
+            if (!force && string.Equals(sig, _lastPinSyncSignature, StringComparison.Ordinal))
+                return;
+
+            _lastPinSyncSignature = sig;
+            var roomsJson = JsonSerializer.Serialize(_selectedRooms.ToList());
+            var script = $"window.__abxTableOverlay && window.__abxTableOverlay.pinRooms({roomsJson});";
+            await Web.ExecuteScriptAsync(script);
+        }
+
+        private async Task ScrollRoomIntoViewAsync(string? roomName)
+        {
+            if (!_uiReady) return;
+            if (Web?.CoreWebView2 == null) return;
+            var name = (roomName ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(name))
+                return;
+
+            var nameJson = JsonSerializer.Serialize(name);
+            var script = $"window.__abxTableOverlay && window.__abxTableOverlay.scrollToRoom({nameJson});";
+            try
+            {
+                await Web.ExecuteScriptAsync(script);
+            }
+            catch (Exception ex)
+            {
+                Log("[PIN][SCROLL] " + ex.Message);
+            }
+        }
+
+        private async Task ScrollLobbyTopAsync(string reason)
+        {
+            if (!_uiReady) return;
+            if (Web?.CoreWebView2 == null) return;
+            var script = "window.__abxTableOverlay && window.__abxTableOverlay.scrollToTop && window.__abxTableOverlay.scrollToTop({behavior:'auto'});";
+            try
+            {
+                await Web.ExecuteScriptAsync(script);
+            }
+            catch (Exception ex)
+            {
+                Log("[PIN][SCROLLTOP] " + reason + " " + ex.Message);
+            }
+        }
+
+        private async Task ApplyPinnedRoomsFromWebAsync(IEnumerable<string> pinned)
+        {
+            var incoming = (pinned ?? Array.Empty<string>())
+                .Select(s => (s ?? "").Trim())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToList();
+
+            await Dispatcher.InvokeAsync(() =>
+            {
+                var currentSig = BuildRoomsSignature(_selectedRooms);
+                var incomingSig = BuildRoomsSignature(incoming);
+                if (string.Equals(currentSig, incomingSig, StringComparison.Ordinal))
+                    return;
+
+                if (_roomOptions.Count > 0)
+                {
+                    var normToName = _roomList
+                        .Where(x => !string.IsNullOrWhiteSpace(x))
+                        .Select(x => x.Trim())
+                        .GroupBy(x => TextNorm.U(x), StringComparer.Ordinal)
+                        .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+
+                    var nextSel = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var s in incoming)
+                    {
+                        var norm = TextNorm.U(s);
+                        if (normToName.TryGetValue(norm, out var canonical))
+                            nextSel.Add(canonical);
+                    }
+
+                    _suppressRoomOptionEvents = true;
+                    try
+                    {
+                        foreach (var it in _roomOptions)
+                        {
+                            var should = nextSel.Contains(it.Name);
+                            if (it.IsSelected != should)
+                                it.IsSelected = should;
+                        }
+                    }
+                    finally
+                    {
+                        _suppressRoomOptionEvents = false;
+                    }
+
+                    _lastPinSyncSignature = BuildRoomsSignature(nextSel);
+                    UpdateRoomSummary();
+                }
+                else
+                {
+                    _selectedRooms.Clear();
+                    foreach (var s in incoming)
+                        _selectedRooms.Add(s);
+                    _cfg.SelectedRooms = _selectedRooms.ToList();
+                    _lastPinSyncSignature = BuildRoomsSignature(_selectedRooms);
+                    UpdateRoomSummary();
+                    _ = TriggerRoomSaveDebouncedAsync();
+                }
             });
         }
 

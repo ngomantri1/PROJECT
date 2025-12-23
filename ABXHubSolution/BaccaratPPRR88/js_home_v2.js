@@ -4304,6 +4304,14 @@
         const MIN_W = 150;
         const MIN_H = 120;
         const STATE_INTERVAL = 900;
+        const PIN_SYNC_INTERVAL = 1000;
+        const TITLE_SELECTORS = [
+            'span.rC_rT',
+            'span.rW_sl',
+            'span.rY_sn',
+            'span.qL_qM.qL_qN',
+            'div.abx-table-title'
+        ];
 
         let rooms = [];
         let layouts = loadLayouts();
@@ -4311,6 +4319,14 @@
         const lastStateSig = new Map();
         const roomDomRegistry = new Map();
         const pinSyncState = new Map();
+        const pinRetryState = new Map();
+        const PIN_RETRY_MAX = 12;
+        const PIN_RETRY_DELAY = 450;
+        let pinTimer = null;
+        let desiredPinIds = new Set();
+        let lastReportedPinSig = '';
+        let pendingDesiredSig = '';
+        let pendingScrollTop = false;
         let stateTimer = null;
         let cfg = {
             resolveDom: null,
@@ -4614,7 +4630,81 @@
             return null;
         }
 
+        function highlightOnce(el, ms = 1200) {
+            if (!el) return;
+            const prevOutline = el.style.outline;
+            const prevShadow = el.style.boxShadow;
+            el.style.outline = '2px solid #facc15';
+            el.style.boxShadow = '0 0 0 2px rgba(250,204,21,0.35)';
+            setTimeout(() => {
+                el.style.outline = prevOutline;
+                el.style.boxShadow = prevShadow;
+            }, ms);
+        }
+
+        function scrollCardIntoView(roomId, options = {}) {
+            const { behavior = 'smooth', block = 'center', highlight = true } = options || {};
+            const card = findCardRootByName(roomId);
+            if (!card)
+                return false;
+            try {
+                card.scrollIntoView({ block, behavior });
+            } catch (_) {}
+            if (highlight)
+                highlightOnce(card);
+            return true;
+        }
+
+        function scrollLobbyTop(options = {}) {
+            const { behavior = 'auto' } = options || {};
+            const candidates = [];
+            const pushIfScrollable = (el) => {
+                if (!el || !el.scrollHeight || !el.clientHeight)
+                    return;
+                if (el.scrollHeight <= el.clientHeight + 4)
+                    return;
+                candidates.push(el);
+            };
+            try {
+                pushIfScrollable(document.scrollingElement);
+                pushIfScrollable(document.documentElement);
+                pushIfScrollable(document.body);
+                const hints = document.querySelectorAll(
+                    'div.X_Y, div.X_bb, div.bk_bl, div.kI_kO, div.kI_is, div.kI_m, div.ec_ee, ' +
+                    'div.tile-container-wrapper, div.he_hf, div.he_hi'
+                );
+                hints.forEach(pushIfScrollable);
+                const card = document.querySelector('div.he_hf.he_hi');
+                let p = card;
+                for (let i = 0; i < 6 && p; i++) {
+                    pushIfScrollable(p);
+                    p = p.parentElement;
+                }
+            } catch (_) {}
+
+            let target = null;
+            let bestScore = 0;
+            for (const el of candidates) {
+                const score = (el.scrollHeight || 0) - (el.clientHeight || 0);
+                if (score > bestScore) {
+                    bestScore = score;
+                    target = el;
+                }
+            }
+            if (!target)
+                target = document.scrollingElement || document.documentElement || document.body;
+
+            try {
+                if (target)
+                    target.scrollTo({ top: 0, behavior });
+            } catch (_) {
+                try { if (target) target.scrollTop = 0; } catch (_) {}
+            }
+            try { window.scrollTo({ top: 0, behavior }); } catch (_) {}
+        }
+
         const PIN_SELECTORS = [
+            'div.rO_rP',
             'div.qC_qE button',
             'div.qC_qE .gK_gB',
             'div.qC_qQ button',
@@ -4629,9 +4719,33 @@
             'div.qC_qQ'
         ];
 
+        function pickTopRight(els) {
+            let best = null;
+            for (const el of els || []) {
+                if (!el || !el.getBoundingClientRect)
+                    continue;
+                const r = el.getBoundingClientRect();
+                if (!r.width || !r.height)
+                    continue;
+                if (!best) {
+                    best = el;
+                    continue;
+                }
+                const b = best.getBoundingClientRect();
+                const score = (r.right * 1000) - (r.top * 10);
+                const bestScore = (b.right * 1000) - (b.top * 10);
+                if (score > bestScore)
+                    best = el;
+            }
+            return best;
+        }
+
         function resolvePinButton(root) {
             if (!root)
                 return null;
+            const pins = Array.from(root.querySelectorAll('div.rO_rP'));
+            if (pins.length)
+                return pickTopRight(pins) || pins[0];
             for (const sel of PIN_SELECTORS) {
                 const el = root.querySelector(sel);
                 if (!el)
@@ -4650,6 +4764,13 @@
         function isPinActive(btn) {
             if (!btn)
                 return false;
+            try {
+                if (btn.classList && btn.classList.contains('rO_rT'))
+                    return true;
+                const wrap = btn.closest && btn.closest('div.rO_rP');
+                if (wrap && wrap.classList.contains('rO_rT'))
+                    return true;
+            } catch (_) {}
             const aria = btn.getAttribute && btn.getAttribute('aria-pressed');
             if (aria != null)
                 return aria === 'true';
@@ -4663,51 +4784,125 @@
             return /\b(active|selected|on|checked|qC_qH)\b/i.test(clsSources);
         }
 
+        function dispatchClickEvents(target, x, y) {
+            try {
+                if (typeof PointerEvent === 'function') {
+                    const evDown = new PointerEvent('pointerdown', {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window,
+                            clientX: x,
+                            clientY: y,
+                            pointerId: 1,
+                            pointerType: 'mouse',
+                            isPrimary: true,
+                            button: 0,
+                            buttons: 1
+                        });
+                    const evUp = new PointerEvent('pointerup', {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window,
+                            clientX: x,
+                            clientY: y,
+                            pointerId: 1,
+                            pointerType: 'mouse',
+                            isPrimary: true,
+                            button: 0,
+                            buttons: 0
+                        });
+                    target.dispatchEvent(evDown);
+                    target.dispatchEvent(evUp);
+                }
+            } catch (_) {}
+            try {
+                const md = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 1 });
+                const mu = new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 0 });
+                const mc = new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 0 });
+                target.dispatchEvent(md);
+                target.dispatchEvent(mu);
+                target.dispatchEvent(mc);
+            } catch (_) {}
+        }
+
         function fireClick(el) {
             if (!el)
                 return false;
             try {
-                const evt = new MouseEvent('click', {
-                        view: window,
-                        bubbles: true,
-                        cancelable: true
-                    });
+                if (el.getBoundingClientRect) {
+                    const r = el.getBoundingClientRect();
+                    if (r.width > 0 && r.height > 0) {
+                        const x = r.left + r.width / 2;
+                        const y = r.top + r.height / 2;
+                        const topEl = document.elementFromPoint(x, y);
+                        const target = (topEl && (topEl.closest('button,[role=button],a,div.rO_rP') || topEl)) || el;
+                        dispatchClickEvents(target, x, y);
+                        if (typeof target.click === 'function')
+                            target.click();
+                        return true;
+                    }
+                }
+                const evt = new MouseEvent('click', { view: window, bubbles: true, cancelable: true });
                 el.dispatchEvent(evt);
+                if (typeof el.click === 'function')
+                    el.click();
                 return true;
             } catch (_) {
-                try {
-                    el.click();
-                    return true;
-                } catch (_) {
-                    return false;
-                }
+                return false;
             }
+        }
+
+        function clearPinRetry(roomId) {
+            const st = pinRetryState.get(roomId);
+            if (st && st.timer)
+                clearTimeout(st.timer);
+            pinRetryState.delete(roomId);
+        }
+
+        function schedulePinRetry(roomId, shouldPin) {
+            if (!roomId)
+                return;
+            const st = pinRetryState.get(roomId) || { tries: 0, timer: null };
+            if (st.tries >= PIN_RETRY_MAX)
+                return;
+            st.tries++;
+            if (st.timer)
+                clearTimeout(st.timer);
+            st.timer = setTimeout(() => {
+                ensurePinState(roomId, shouldPin);
+            }, PIN_RETRY_DELAY);
+            pinRetryState.set(roomId, st);
+        }
+
+        function setPinSync(roomId, desired) {
+            if (desired)
+                pinSyncState.set(roomId, true);
+            else
+                pinSyncState.delete(roomId);
         }
 
         function ensurePinState(roomId, shouldPin) {
             if (!roomId)
                 return;
             const root = findCardRootByName(roomId);
-            if (!root)
+            if (!root) {
+                schedulePinRetry(roomId, shouldPin);
                 return;
+            }
             const btn = resolvePinButton(root);
-            if (!btn)
+            if (!btn) {
+                schedulePinRetry(roomId, shouldPin);
                 return;
+            }
             const desired = !!shouldPin;
             const current = isPinActive(btn);
             if (current === desired) {
-                if (desired)
-                    pinSyncState.set(roomId, true);
-                else
-                    pinSyncState.delete(roomId);
+                clearPinRetry(roomId);
+                setPinSync(roomId, desired);
                 return;
             }
-            if (fireClick(btn)) {
-                if (desired)
-                    pinSyncState.set(roomId, true);
-                else
-                    pinSyncState.delete(roomId);
-            }
+            if (fireClick(btn))
+                schedulePinRetry(roomId, desired);
         }
 
         function syncPinStates(activeList) {
@@ -4718,6 +4913,124 @@
                 if (!activeSet.has(id))
                     ensurePinState(id, false);
             });
+        }
+
+        function normalizeSig(list) {
+            return (list || [])
+                .map(s => (s || '').trim())
+                .filter(Boolean)
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+                .join('|');
+        }
+
+        function getCardTitle(root) {
+            if (!root) return '';
+            for (const sel of TITLE_SELECTORS) {
+                const el = root.querySelector(sel);
+                const t = el && (el.textContent || '').trim();
+                if (t) return t;
+            }
+            return '';
+        }
+
+        function getPinElementFromCard(card) {
+            if (!card) return null;
+            const pins = Array.from(card.querySelectorAll('div.rO_rP'));
+            if (pins.length)
+                return pickTopRight(pins) || pins[0];
+            return null;
+        }
+
+        function collectPinnedInfo() {
+            const list = [];
+            const seen = new Set();
+            const cards = Array.from(document.querySelectorAll('div.he_hf.he_hi'));
+            let pinCount = 0;
+            for (const card of cards) {
+                const pin = getPinElementFromCard(card);
+                if (!pin) continue;
+                pinCount++;
+                const title = getCardTitle(card);
+                if (!title) continue;
+                if (pin.classList && pin.classList.contains('rO_rT')) {
+                    const key = title.toLowerCase();
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        list.push(title);
+                    }
+                }
+            }
+            return { list, count: pinCount };
+        }
+
+        function reportPinnedList(list) {
+            try {
+                window.chrome?.webview?.postMessage?.({
+                    overlay: 'pin',
+                    event: 'pinList',
+                    ids: list || []
+                });
+            } catch (_) {}
+        }
+
+        function pinSyncTick() {
+            const info = collectPinnedInfo();
+            if (info.count === 0)
+                return;
+
+            const actualList = info.list;
+            const actualSig = normalizeSig(actualList);
+            const desiredList = Array.from(desiredPinIds);
+            const desiredSig = normalizeSig(desiredList);
+
+            if (pendingDesiredSig && pendingDesiredSig === desiredSig) {
+                if (actualSig !== desiredSig) {
+                    if (desiredList.length)
+                        syncPinStates(desiredList);
+                    return;
+                }
+                pendingDesiredSig = '';
+                lastReportedPinSig = desiredSig;
+                if (pendingScrollTop) {
+                    pendingScrollTop = false;
+                    scrollLobbyTop({ behavior: 'auto' });
+                }
+                return;
+            }
+
+            if (actualSig !== desiredSig) {
+                desiredPinIds = new Set(actualList);
+                if (actualSig !== lastReportedPinSig) {
+                    reportPinnedList(actualList);
+                    lastReportedPinSig = actualSig;
+                }
+            }
+        }
+
+        function ensurePinTimer() {
+            if (pinTimer)
+                return;
+            pinTimer = setInterval(() => {
+                try {
+                    pinSyncTick();
+                } catch (_) {}
+            }, PIN_SYNC_INTERVAL);
+        }
+
+        function stopPinTimer() {
+            if (pinTimer) {
+                clearInterval(pinTimer);
+                pinTimer = null;
+            }
+        }
+
+        function setDesiredPinList(list) {
+            const normalized = normalizeRooms(list);
+            desiredPinIds = new Set(normalized.map(r => r.id));
+            pendingDesiredSig = normalizeSig(Array.from(desiredPinIds));
+            pendingScrollTop = true;
+            syncPinStates(Array.from(desiredPinIds));
+            ensurePinTimer();
         }
 
         function defaultResolveDom(id) {
@@ -6029,8 +6342,10 @@
                 } catch (_) {}
             }
             lastStateSig.delete(id);
-            ensurePinState(id, false);
-            pinSyncState.delete(id);
+            if (!desiredPinIds.has(id)) {
+                ensurePinState(id, false);
+                pinSyncState.delete(id);
+            }
             stopStateTimerIfIdle();
         }
 
@@ -6056,7 +6371,7 @@
                 }
             });
             layoutAll(true);
-            syncPinStates(rooms.map(r => r.id));
+            setDesiredPinList(rooms);
             ensureStateTimer();
         }
 
@@ -6078,8 +6393,15 @@
                 root.style.display = '';
         }
 
+        function pinRooms(list) {
+            setDesiredPinList(list);
+        }
+
         window.__abxTableOverlay = {
             openRooms: applyRooms,
+            pinRooms,
+            scrollToRoom: scrollCardIntoView,
+            scrollToTop: scrollLobbyTop,
             reset: resetLayout,
             hide,
             show,
