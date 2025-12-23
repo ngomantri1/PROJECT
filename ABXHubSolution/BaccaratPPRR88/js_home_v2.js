@@ -6394,12 +6394,13 @@
                 const stats = parseStats(statsNode);
                 const history = parseHistory(src);
                 const historyText = history && history.length ? history.join(' ') : '';
+                const historySig = history.join('|');
                 const text = (src.innerText || src.textContent || '').replace(/\s+/g, ' ').trim();
                 const sig = [
                     room.id,
                     countdown ?? '',
                     stats?.total?.display || '',
-                    history.join('|'),
+                    historySig,
                     text.slice(0, 300)
                 ].join('|');
                 return {
@@ -6409,6 +6410,7 @@
                     text,
                     history,
                     historyText,
+                    historySig,
                     stats,
                     sig
                 };
@@ -6527,25 +6529,29 @@
             st.lastCountdownTimestamp = Date.now();
             updateCountdownView(st, data.countdown);
             startCountdownLoop(st);
-            if (view.updated)
-                view.updated.textContent = new Date().toLocaleTimeString();
-            const historyText = data.historyText || (data.history && data.history.length ? data.history.join(' ') : data.text || '');
-            if (view.status)
-                view.status.textContent = deriveStatusFromText(historyText);
-            if (view.text)
-                view.text.textContent = historyText || 'Khong co du lieu';
-            const stats = data.stats;
-            if (view.metrics)
-                view.metrics.textContent = stats?.total?.display || deriveMetricInfo(data.text);
-            if (view.bets) {
-                const statParts = [];
-                if (stats?.player?.display)
-                    statParts.push('P ' + stats.player.display);
-                if (stats?.banker?.display)
-                    statParts.push('B ' + stats.banker.display);
-                if (stats?.tie?.display)
-                    statParts.push('T ' + stats.tie.display);
-                view.bets.textContent = statParts.join('  ') || deriveBetInfo(data.text);
+            const historySig = data.historySig || '';
+            if (st.lastHistorySig !== historySig) {
+                st.lastHistorySig = historySig;
+                if (view.updated)
+                    view.updated.textContent = new Date().toLocaleTimeString();
+                const historyText = data.historyText || (data.history && data.history.length ? data.history.join(' ') : data.text || '');
+                if (view.status)
+                    view.status.textContent = deriveStatusFromText(historyText);
+                if (view.text)
+                    view.text.textContent = historyText || 'Khong co du lieu';
+                const stats = data.stats;
+                if (view.metrics)
+                    view.metrics.textContent = stats?.total?.display || deriveMetricInfo(data.text);
+                if (view.bets) {
+                    const statParts = [];
+                    if (stats?.player?.display)
+                        statParts.push('P ' + stats.player.display);
+                    if (stats?.banker?.display)
+                        statParts.push('B ' + stats.banker.display);
+                    if (stats?.tie?.display)
+                        statParts.push('T ' + stats.tie.display);
+                    view.bets.textContent = statParts.join('  ') || deriveBetInfo(data.text);
+                }
             }
         }
 
@@ -6555,9 +6561,10 @@
                 if (!st)
                     return;
                 const prev = lastStateSig.get(st.id);
-                if (prev === st.sig)
+                const historySig = st.historySig || '';
+                if (prev === historySig)
                     return;
-                lastStateSig.set(st.id, st.sig);
+                lastStateSig.set(st.id, historySig);
                 changed.push({
                     id: st.id,
                     name: st.name,
