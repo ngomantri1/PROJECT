@@ -133,6 +133,48 @@
     return u.startsWith("#") ? u.slice(1) : null;
   }
 
+  function normalizeToken(s) {
+    return String(s || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "");
+  }
+
+  function extractHexColor(s) {
+    const m = String(s || "").match(/#([0-9a-f]{3}|[0-9a-f]{6})/i);
+    if (!m) return null;
+    return parseRGB("#" + m[1]);
+  }
+
+  function inferBPFromToken(s) {
+    const raw = String(s || "");
+    const m = raw.match(/bigroad[-_]?([bp])/i);
+    if (m) return m[1].toUpperCase();
+    const t = normalizeToken(raw);
+    if (!t) return null;
+    if (t.includes("banker") || t.includes("bank") || t.includes("nhacai")) return "B";
+    if (t.includes("player") || t.includes("play") || t.includes("nguoichoi")) return "P";
+    if (t.includes("bigroadb")) return "B";
+    if (t.includes("bigroadp")) return "P";
+    if (t.includes("red")) return (ST.colorMap?.red || "B");
+    if (t.includes("blue")) return (ST.colorMap?.blue || "P");
+    return null;
+  }
+
+  function inferColorFromToken(s) {
+    const raw = String(s || "");
+    const unescaped = raw.includes("%23") ? raw.replace(/%23/gi, "#") : raw;
+    const hex = extractHexColor(unescaped);
+    if (hex) return hex;
+
+    const t = normalizeToken(raw);
+    if (!t) return null;
+    if (t.includes("red")) return { r: 220, g: 40, b: 40, a: 1 };
+    if (t.includes("blue")) return { r: 40, g: 130, b: 220, a: 1 };
+    return null;
+  }
+
   function getInlineStyleProp(styleStr, prop) {
     const s = String(styleStr || "");
     const m = s.match(new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, "i"));
@@ -161,7 +203,6 @@
         if (v2 && v2 !== "none" && v2 !== "transparent") return v2;
       } catch (_) {}
 
-      if (cur === svgRoot) break;
       cur = cur.parentElement || cur.parentNode;
       up++;
     }
@@ -181,7 +222,6 @@
         const v = getComputedStyle(cur).getPropertyValue(name).trim();
         if (v) return v;
       } catch (_) {}
-      if (cur === svgRoot) break;
       cur = cur.parentElement || cur.parentNode;
       up++;
     }
@@ -196,7 +236,6 @@
         const rgb = parseRGB(c);
         if (rgb && rgb.a > 0.05) return rgb;
       } catch (_) {}
-      if (cur === svgRoot) break;
       cur = cur.parentElement || cur.parentNode;
       up++;
     }
@@ -249,8 +288,13 @@
       }
 
       if (tag === "pattern") {
-        const sh = def.querySelector("rect,circle,ellipse,path,polygon,polyline,use");
+        const sh = def.querySelector("rect,circle,ellipse,path,polygon,polyline,use,image");
         if (!sh) return null;
+        if ((sh.tagName || "").toLowerCase() === "image") {
+          const href = sh.getAttribute("href") || sh.getAttribute("xlink:href") || "";
+          const cImg = inferColorFromToken(href);
+          if (cImg) return cImg;
+        }
         const fill = getPaintPropDeep(sh, "fill", svgRoot);
         const stroke = getPaintPropDeep(sh, "stroke", svgRoot);
         return resolvePaintToRGB(stroke || fill, sh, svgRoot, depth + 1);
@@ -289,12 +333,51 @@
     try {
       const svg = td.querySelector("svg");
       if (!svg) return null;
-      const nodes = Array.from(svg.querySelectorAll("*"));
-      for (const n of nodes) {
-        const cls = (n.getAttribute?.("class") || "").toLowerCase();
-        if (!cls) continue;
-        if (cls.includes("bank") || cls.includes("nhacai") || cls.includes("banker")) return "B";
-        if (cls.includes("play") || cls.includes("nguoichoi") || cls.includes("player")) return "P";
+      const nodes = [td, svg, ...Array.from(svg.querySelectorAll("*"))];
+      const lim = Math.min(260, nodes.length);
+      for (let i = 0; i < lim; i++) {
+        const n = nodes[i];
+        const dataBp = (n.getAttribute?.("data-bp") || "").trim().toUpperCase();
+        if (dataBp === "B" || dataBp === "P") return dataBp;
+
+        const attrs = [
+          n.getAttribute?.("class"),
+          n.getAttribute?.("id"),
+          n.getAttribute?.("data-name"),
+          n.getAttribute?.("data-label"),
+          n.getAttribute?.("data-result"),
+          n.getAttribute?.("data-outcome"),
+          n.getAttribute?.("data-type"),
+          n.getAttribute?.("data-color"),
+          n.getAttribute?.("aria-label"),
+          n.getAttribute?.("title")
+        ];
+
+        const tag = (n.tagName || "").toLowerCase();
+        if (tag === "title" || tag === "desc") attrs.push(n.textContent || "");
+        if (tag === "use" || tag === "image") {
+          const href = n.getAttribute?.("href") || n.getAttribute?.("xlink:href");
+          if (href) attrs.push(href);
+        }
+
+        for (const v of attrs) {
+          const bp = inferBPFromToken(v);
+          if (bp) return bp;
+        }
+
+        if (tag === "use") {
+          const ref = resolveUseRef(n, svg);
+          if (ref) {
+            const bp =
+              inferBPFromToken(ref.getAttribute?.("class")) ||
+              inferBPFromToken(ref.getAttribute?.("id")) ||
+              inferBPFromToken(ref.getAttribute?.("data-name")) ||
+              inferBPFromToken(ref.getAttribute?.("data-type")) ||
+              inferBPFromToken(ref.getAttribute?.("data-result")) ||
+              inferBPFromToken(ref.getAttribute?.("data-outcome"));
+            if (bp) return bp;
+          }
+        }
       }
     } catch (_) {}
     return null;
@@ -338,7 +421,14 @@
       const cStroke = resolvePaintToRGB(strokeStr, node0, svg);
       const cFill   = resolvePaintToRGB(fillStr, node0, svg);
 
-      const pick = (cStroke && cStroke.a > 0.05) ? cStroke : (cFill && cFill.a > 0.05 ? cFill : null);
+      let pick = (cStroke && cStroke.a > 0.05) ? cStroke : (cFill && cFill.a > 0.05 ? cFill : null);
+      if (!pick && (tag0 === "image" || tag === "image")) {
+        const href =
+          node0.getAttribute?.("href") || node0.getAttribute?.("xlink:href") ||
+          node.getAttribute?.("href") || node.getAttribute?.("xlink:href") || "";
+        const cImg = inferColorFromToken(href);
+        if (cImg) pick = cImg;
+      }
       if (!pick) continue;
 
       const sat = rgbSat(pick);

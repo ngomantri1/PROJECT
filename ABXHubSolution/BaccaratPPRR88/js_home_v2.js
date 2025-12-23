@@ -5356,6 +5356,149 @@
             return null;
         }
 
+        function compactToken(value) {
+            const normalized = stripDiacritics(value);
+            if (!normalized)
+                return '';
+            return normalized.replace(/[^a-z0-9]+/g, '');
+        }
+
+        function mapSymbolIdToCode(value) {
+            if (!value)
+                return null;
+            const raw = String(value);
+            const direct = /bigroad[^a-z0-9]*([bpt])/i.exec(raw);
+            if (direct)
+                return direct[1].toUpperCase();
+            const compact = compactToken(raw);
+            if (!compact)
+                return null;
+            if (compact.includes('banker') || compact.includes('nhacai') || compact.includes('nhancai'))
+                return 'B';
+            if (compact.includes('player') || compact.includes('nguoichoi'))
+                return 'P';
+            if (compact.includes('tie') || compact.includes('hoa') || compact.includes('ho'))
+                return 'T';
+            if (compact.includes('bigroadb'))
+                return 'B';
+            if (compact.includes('bigroadp'))
+                return 'P';
+            if (compact.includes('bigroadt'))
+                return 'T';
+            return null;
+        }
+
+        function extractTieCountFromSymbol(value) {
+            if (!value)
+                return 0;
+            const raw = String(value);
+            if (!/bigroad/i.test(raw))
+                return 0;
+            const m = raw.match(/bigroad[^a-z0-9]*[a-z]{1,3}([0-9]+|n)$/i);
+            if (!m)
+                return 0;
+            if (String(m[1]).toLowerCase() === 'n')
+                return 1;
+            const n = Number.parseInt(m[1], 10);
+            return Number.isFinite(n) ? Math.max(0, n) : 0;
+        }
+
+        function extractTieCountFromText(el) {
+            if (!el)
+                return 0;
+            let svg = null;
+            try {
+                svg = el.closest && el.closest('svg');
+            } catch (_) {}
+            if (!svg && el.querySelector) {
+                try {
+                    svg = el.querySelector('svg');
+                } catch (_) {}
+            }
+            let text = '';
+            if (svg) {
+                try {
+                    const nodes = Array.from(svg.querySelectorAll('text, tspan'));
+                    if (nodes.length) {
+                        text = nodes.map(n => (n.textContent || '').trim()).join(' ');
+                    } else {
+                        text = (svg.textContent || '').trim();
+                    }
+                } catch (_) {}
+            }
+            if (!text) {
+                const host = el.closest && el.closest('td');
+                if (host && host.getAttribute) {
+                    text = host.getAttribute('data-tie')
+                        || host.getAttribute('aria-label')
+                        || host.getAttribute('title')
+                        || '';
+                }
+            }
+            const m = text.match(/(^|[^0-9])(\d{1,2})(?!\d)/);
+            if (!m)
+                return 0;
+            const n = Number.parseInt(m[2], 10);
+            return Number.isFinite(n) ? Math.max(0, n) : 0;
+        }
+
+        function resolveHistoryFromUse(el) {
+            if (!el)
+                return { code: null, tieCount: 0 };
+            const nodes = [];
+            const push = (node) => {
+                if (node && nodes.indexOf(node) === -1)
+                    nodes.push(node);
+            };
+            push(el);
+            try {
+                if (el.querySelector)
+                    el.querySelectorAll('use, image').forEach(push);
+            } catch (_) {}
+            let code = null;
+            let tieCount = extractTieCountFromText(el);
+            for (const node of nodes) {
+                if (!node || !node.getAttribute)
+                    continue;
+                const href = node.getAttribute('href') || node.getAttribute('xlink:href') || '';
+                const id = node.getAttribute('id') || '';
+                const mapped = mapSymbolIdToCode(href) || mapSymbolIdToCode(id);
+                if (mapped === 'T')
+                    tieCount = Math.max(tieCount, 1);
+                else if (mapped)
+                    code = mapped;
+                tieCount = Math.max(tieCount, extractTieCountFromSymbol(href), extractTieCountFromSymbol(id), extractTieCountFromText(node));
+                if (href && href.startsWith('#')) {
+                    const refId = href.slice(1);
+                    const ref = document.getElementById(refId);
+                    if (ref) {
+                        const refCode = mapSymbolIdToCode(ref.getAttribute('id'))
+                            || mapSymbolIdToCode(ref.getAttribute('class'))
+                            || mapSymbolIdToCode(ref.getAttribute('data-name'))
+                            || mapSymbolIdToCode(ref.getAttribute('data-type'))
+                            || mapSymbolIdToCode(ref.textContent);
+                        if (refCode === 'T')
+                            tieCount = Math.max(tieCount, 1);
+                        else if (refCode)
+                            code = refCode;
+                        tieCount = Math.max(
+                            tieCount,
+                            extractTieCountFromSymbol(ref.getAttribute('id')),
+                            extractTieCountFromSymbol(ref.getAttribute('class')),
+                            extractTieCountFromSymbol(ref.textContent),
+                            extractTieCountFromText(ref)
+                        );
+                    }
+                }
+            }
+            return { code, tieCount };
+        }
+
+        function resolveHistoryCodeFromUse(el) {
+            const resolved = resolveHistoryFromUse(el);
+            return resolved.code || null;
+        }
+
         function resolveHistoryCode(el) {
             if (!el)
                 return null;
@@ -5374,6 +5517,9 @@
                 if (mapped)
                     return mapped;
             }
+            const byUse = resolveHistoryCodeFromUse(el);
+            if (byUse)
+                return byUse;
             const text = (el.textContent || '').trim();
             const guessed = guessResultTypeFromAttributes(el, text);
             if (guessed) {
@@ -5414,9 +5560,9 @@
         function collectCombinedHistory(root) {
             const base = (typeof window.__abxParseHistory === 'function') ? window.__abxParseHistory(root) : [];
             const vv = collectVvHistoryCodes(root);
-            if (!vv.length)
-                return base;
-            return base.concat(vv);
+            if (vv.length)
+                return vv;
+            return base;
         }
 
         function parseHistory(root) {
@@ -5430,7 +5576,8 @@
                     history.push(code);
             });
             const vvCodes = collectVvHistoryCodes(root);
-            vvCodes.forEach(code => history.push(code));
+            if (vvCodes.length)
+                return vvCodes;
             return history;
         }
 
@@ -5457,6 +5604,8 @@
             'svg circle',
             'svg rect',
             'svg path',
+            'svg use',
+            'svg image',
             'span.ck_cm',
             'span.ck_cv',
             'span.ck_cw',
@@ -5511,6 +5660,122 @@
                     return inner;
             } catch (_) {}
             return node;
+        }
+
+        function collectBigRoadTableCells(root) {
+            if (!root)
+                return [];
+            const hasBigRoad = (table) => {
+                try {
+                    return !!table.querySelector('use[href*="bigroad"], use[xlink\\:href*="bigroad"]');
+                } catch (_) {
+                    return false;
+                }
+            };
+            const tables = Array.from(root.querySelectorAll('table.nM_nR'));
+            const candidates = tables.length ? tables : Array.from(root.querySelectorAll('table'));
+            const cells = [];
+            const seen = new WeakSet();
+            candidates.forEach(table => {
+                if (!table || !hasBigRoad(table))
+                    return;
+                const rows = Array.from(table.querySelectorAll('tr'));
+                rows.forEach((row, rowIndex) => {
+                    const tds = Array.from(row.querySelectorAll('td'));
+                    tds.forEach((td, colIndex) => {
+                        if (!td)
+                            return;
+                        const use = td.querySelector('use[href], use[xlink\\:href]');
+                        if (!use)
+                            return;
+                        const href = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
+                        if (!/bigroad/i.test(href))
+                            return;
+                        if (seen.has(use))
+                            return;
+                        seen.add(use);
+                        cells.push({ el: use, row: rowIndex, col: colIndex });
+                    });
+                });
+            });
+            return cells;
+        }
+
+        function collectBigRoadUseCells(root) {
+            if (!root)
+                return [];
+            const uses = Array.from(root.querySelectorAll('use[href*="bigroad"], use[xlink\\:href*="bigroad"]'));
+            const items = [];
+            uses.forEach(use => {
+                if (!use || !(use instanceof Element))
+                    return;
+                let rect = null;
+                try {
+                    rect = use.getBoundingClientRect();
+                } catch (_) {}
+                if (!rect || !rect.width || !rect.height)
+                    return;
+                if (rect.width < 2 || rect.height < 2)
+                    return;
+                const x = rect.left + rect.width / 2;
+                const y = rect.top + rect.height / 2;
+                items.push({ el: use, rect, x, y });
+            });
+            if (!items.length)
+                return [];
+            const median = (arr) => {
+                if (!arr.length)
+                    return 0;
+                const sorted = arr.slice().sort((a, b) => a - b);
+                return sorted[Math.floor(sorted.length / 2)] || 0;
+            };
+            const widths = items.map(it => it.rect.width);
+            const heights = items.map(it => it.rect.height);
+            const mw = median(widths) || 10;
+            const mh = median(heights) || 10;
+            const tolX = Math.max(2, mw * 0.7);
+            const tolY = Math.max(2, mh * 0.7);
+
+            const buildCenters = (values, tol) => {
+                const sorted = values.slice().sort((a, b) => a - b);
+                const clusters = [];
+                sorted.forEach(v => {
+                    const last = clusters[clusters.length - 1];
+                    if (!last || Math.abs(v - last.center) > tol) {
+                        clusters.push({ center: v, count: 1 });
+                    } else {
+                        last.center = (last.center * last.count + v) / (last.count + 1);
+                        last.count += 1;
+                    }
+                });
+                return clusters.map(c => c.center);
+            };
+
+            const xCenters = buildCenters(items.map(it => it.x), tolX);
+            const yCenters = buildCenters(items.map(it => it.y), tolY);
+
+            const nearestIndex = (centers, value) => {
+                let best = 0;
+                let bestD = Number.POSITIVE_INFINITY;
+                for (let i = 0; i < centers.length; i++) {
+                    const d = Math.abs(centers[i] - value);
+                    if (d < bestD) {
+                        bestD = d;
+                        best = i;
+                    }
+                }
+                return best;
+            };
+
+            const cellMap = new Map();
+            items.forEach(item => {
+                const row = nearestIndex(yCenters, item.y);
+                const col = nearestIndex(xCenters, item.x);
+                const key = `${row},${col}`;
+                if (!cellMap.has(key))
+                    cellMap.set(key, { el: item.el, row, col });
+            });
+            return Array.from(cellMap.values());
         }
 
         function collectHistoryMarkerCells(root) {
@@ -5582,8 +5847,20 @@
             if (!root)
                 return [];
             const markerCells = collectHistoryMarkerCells(root);
-            if (markerCells.length)
-                return markerCells;
+            const bigRoadTableCells = collectBigRoadTableCells(root);
+            const bigRoadUseCells = collectBigRoadUseCells(root);
+            const candidates = [
+                { cells: bigRoadUseCells },
+                { cells: bigRoadTableCells },
+                { cells: markerCells }
+            ];
+            let best = candidates[0];
+            for (let i = 1; i < candidates.length; i++) {
+                if (candidates[i].cells.length > best.cells.length)
+                    best = candidates[i];
+            }
+            if (best.cells.length)
+                return best.cells;
             const rowNodes = Array.from(root.querySelectorAll('div.ru_rv, div.mv_my, span.lP_lS, div.lP_lR')).filter(row => row && row.closest && row.closest('div.hC_hE') === root);
             const cells = [];
             const seenCols = new WeakSet();
@@ -5640,26 +5917,8 @@
         }
 
         function collectVvHistoryCodes(root) {
-            const cells = collectHistoryCells(root);
-            const entries = [];
-            cells.forEach(cell => {
-                const node = cell.el;
-                if (!node)
-                    return;
-                let color = detectResultColor(node);
-                if (!color) {
-                    const circle = node.querySelector && node.querySelector('circle, rect, path');
-                    color = detectResultColor(circle);
-                }
-                if (!color && node.tagName && node.tagName.toLowerCase() === 'circle') {
-                    color = node.getAttribute('fill') || node.getAttribute('stroke') || '';
-                }
-                const code = colorToCode(color);
-                if (code)
-                    entries.push({ row: cell.row, col: cell.col, code });
-            });
-            entries.sort((a, b) => (a.row - b.row) || (a.col - b.col));
-            return entries.map(it => it.code);
+            const raw = collectRawHistoryNodes(root);
+            return buildHistoryFromRawNodes(raw);
         }
 
         function collectRawHistoryNodes(root) {
@@ -5672,6 +5931,10 @@
                 const color = circle ? (circle.getAttribute('fill') || circle.getAttribute('stroke') || '') : '';
                 const comp = circle ? getComputedStyle(circle) : getComputedStyle(node);
                 const computed = comp ? (comp.fill || comp.stroke || comp.backgroundColor || '') : '';
+                const href = node && node.getAttribute ? (node.getAttribute('href') || node.getAttribute('xlink:href') || '') : '';
+                const resolved = resolveHistoryFromUse(node);
+                const symbolCode = resolved.code || '';
+                const tieCount = resolved.tieCount || 0;
                 return {
                     row: cell.row,
                     col: cell.col,
@@ -5679,9 +5942,140 @@
                     tag: (node.tagName || '').toLowerCase(),
                     color,
                     computed,
+                    href,
+                    symbolCode,
+                    tieCount,
                     text: (node.textContent || '').trim()
                 };
             });
+        }
+
+        function buildHistoryFromRawNodes(raw) {
+            if (!Array.isArray(raw) || !raw.length)
+                return [];
+            const grid = new Map();
+            let maxRow = -1;
+            let maxCol = -1;
+            raw.forEach(node => {
+                if (!node)
+                    return;
+                const row = Number.isFinite(node.row) ? Math.round(node.row) : 0;
+                const col = Number.isFinite(node.col) ? Math.round(node.col) : 0;
+                const code = node.symbolCode || mapSymbolIdToCode(node.href) || null;
+                const tieCount = node.tieCount || 0;
+                if (!code && !tieCount)
+                    return;
+                const key = `${row},${col}`;
+                const prev = grid.get(key);
+                if (!prev) {
+                    grid.set(key, { code, tieCount });
+                } else {
+                    if (!prev.code && code)
+                        prev.code = code;
+                    prev.tieCount = Math.max(prev.tieCount || 0, tieCount || 0);
+                }
+                maxRow = Math.max(maxRow, row);
+                maxCol = Math.max(maxCol, col);
+            });
+            if (maxRow < 0 || maxCol < 0)
+                return [];
+            const colHasAny = (c) => {
+                for (let r = 0; r <= maxRow; r++) {
+                    if (grid.has(`${r},${c}`))
+                        return true;
+                }
+                return false;
+            };
+            const groups = [];
+            let current = null;
+            for (let c = 0; c <= maxCol; c++) {
+                if (!colHasAny(c))
+                    continue;
+                const topHas = grid.has(`0,${c}`);
+                if (topHas || !current) {
+                    current = { startCol: c, cols: [c] };
+                    groups.push(current);
+                } else {
+                    current.cols.push(c);
+                }
+            }
+            const tokens = [];
+            groups.forEach(group => {
+                const colSet = new Set(group.cols);
+                const occ = new Set();
+                const occList = [];
+                let len = 0;
+                group.cols.forEach(c => {
+                    for (let r = 0; r <= maxRow; r++) {
+                        const key = `${r},${c}`;
+                        if (grid.has(key)) {
+                            occ.add(key);
+                            occList.push({ row: r, col: c, key });
+                            len++;
+                        }
+                    }
+                });
+                if (!len)
+                    return;
+                occList.sort((a, b) => (a.row - b.row) || (a.col - b.col));
+                let r = 0;
+                let c = group.startCol;
+                if (!occ.has(`0,${c}`)) {
+                    let found = false;
+                    for (let rr = 0; rr <= maxRow; rr++) {
+                        if (occ.has(`${rr},${c}`)) {
+                            r = rr;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found)
+                        return;
+                }
+                const used = new Set();
+                for (let i = 0; i < len; i++) {
+                    let key = `${r},${c}`;
+                    if (!occ.has(key) || used.has(key)) {
+                        const pick = occList.find(item => !used.has(item.key));
+                        if (!pick)
+                            break;
+                        r = pick.row;
+                        c = pick.col;
+                        key = pick.key;
+                    }
+                    used.add(key);
+                    const cell = grid.get(key);
+                    if (cell) {
+                        if (cell.code)
+                            tokens.push(cell.code);
+                        if (cell.tieCount > 0) {
+                            const safe = Math.min(25, cell.tieCount);
+                            for (let t = 0; t < safe; t++)
+                                tokens.push('T');
+                        }
+                    }
+                    const downKey = `${r + 1},${c}`;
+                    if (r + 1 <= maxRow && occ.has(downKey) && !used.has(downKey)) {
+                        r = r + 1;
+                        continue;
+                    }
+                    let moved = false;
+                    for (let cc = c + 1; cc <= maxCol; cc++) {
+                        if (!colSet.has(cc))
+                            continue;
+                        const rk = `${r},${cc}`;
+                        if (occ.has(rk) && !used.has(rk)) {
+                            c = cc;
+                            moved = true;
+                            break;
+                        }
+                    }
+                    if (moved)
+                        continue;
+                    break;
+                }
+            });
+            return tokens;
         }
 
         window.__abxRunResultMapRawHistory = (limit = 1) => {
@@ -5695,7 +6089,7 @@
             const docs = target.map((entry, idx) => {
                 const raw = collectRawHistoryNodes(entry.root);
                 const lines = raw.map((node, j) =>
-                    `${j + 1}. [row=${node.row},col=${node.col}] tail=${node.tail} tag=${node.tag} color=${node.color || '(attr)'} computed=${node.computed || '(comp)'} text=${node.text || '(empty)'}`);
+                    `${j + 1}. [row=${node.row},col=${node.col}] tail=${node.tail} tag=${node.tag} color=${node.color || '(attr)'} computed=${node.computed || '(comp)'} href=${node.href || '(none)'} symbol=${node.symbolCode || '(none)'} tie=${node.tieCount || 0} text=${node.text || '(empty)'}`);
                 const summary = `${idx + 1}. ${entry.name} (${raw.length} ô lịch sử)`;
                 return `${summary}\n${lines.join('\n')}`;
             });
@@ -5748,6 +6142,53 @@
             const batch = ['SVG history probe (filtered ' + filtered.length + ' nodes)', '', ...info].join('\n\n');
             showTestAlert(batch);
             return filtered;
+        };
+
+        window.__abxDumpBigRoadSymbols = () => {
+            const symbols = Array.from(document.querySelectorAll('symbol[id]'))
+                .filter(sym => /bigroad/i.test(sym.id || ''));
+            const uses = Array.from(document.querySelectorAll('svg use[href], svg use[xlink\\:href]'));
+            const useMap = new Map();
+            uses.forEach(use => {
+                const href = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
+                if (!href)
+                    return;
+                if (!/bigroad/i.test(href))
+                    return;
+                useMap.set(href, (useMap.get(href) || 0) + 1);
+            });
+            if (!symbols.length && !useMap.size) {
+                showTestAlert('Khong tim thay symbol/use bigroad.');
+                return [];
+            }
+            const lines = [];
+            if (symbols.length) {
+                lines.push('Symbols:');
+                symbols.forEach((sym, idx) => {
+                    const id = sym.id || '';
+                    const cls = sym.getAttribute('class') || '';
+                    const titleNode = sym.querySelector && sym.querySelector('title');
+                    const title = titleNode ? (titleNode.textContent || '').trim() : '';
+                    const code = mapSymbolIdToCode(id) || mapSymbolIdToCode(cls) || mapSymbolIdToCode(title) || '';
+                    lines.push(`${idx + 1}. id=${id || '(none)'} code=${code || '?'} class=${cls || '(none)'} title=${title || '(none)'}`);
+                });
+                lines.push('');
+            }
+            if (useMap.size) {
+                lines.push('Use hrefs:');
+                let idx = 0;
+                useMap.forEach((count, href) => {
+                    idx += 1;
+                    const code = mapSymbolIdToCode(href) || '';
+                    lines.push(`${idx}. href=${href} code=${code || '?'} count=${count}`);
+                });
+            }
+            const payload = ['BigRoad symbols', '', ...lines].join('\n');
+            showTestAlert(payload);
+            return {
+                symbols: symbols.map(sym => sym.id || ''),
+                uses: Array.from(useMap.keys())
+            };
         };
 
         function highlightProbeNodes(items, options = {}) {
@@ -5842,7 +6283,8 @@
                 if (!container || seen.has(container))
                     return;
                 seen.add(container);
-                const history = collectCombinedHistory(container);
+                const raw = collectRawHistoryNodes(container);
+                const history = raw.length ? buildHistoryFromRawNodes(raw) : collectCombinedHistory(container);
                 entries.push({
                     root: container,
                     name: findHistoryTitle(card) || findHistoryTitle(container),
@@ -5951,6 +6393,7 @@
                 const statsNode = src.querySelector('div.np_nq:nth-of-type(2) div.np_nr');
                 const stats = parseStats(statsNode);
                 const history = parseHistory(src);
+                const historyText = history && history.length ? history.join(' ') : '';
                 const text = (src.innerText || src.textContent || '').replace(/\s+/g, ' ').trim();
                 const sig = [
                     room.id,
@@ -5965,6 +6408,7 @@
                     countdown,
                     text,
                     history,
+                    historyText,
                     stats,
                     sig
                 };
@@ -6085,7 +6529,7 @@
             startCountdownLoop(st);
             if (view.updated)
                 view.updated.textContent = new Date().toLocaleTimeString();
-            const historyText = data.history && data.history.length ? data.history.join(' · ') : data.text || '';
+            const historyText = data.historyText || (data.history && data.history.length ? data.history.join(' ') : data.text || '');
             if (view.status)
                 view.status.textContent = deriveStatusFromText(historyText);
             if (view.text)
@@ -6118,7 +6562,9 @@
                     id: st.id,
                     name: st.name,
                     countdown: st.countdown,
-                    text: st.text
+                    text: st.text,
+                    history: st.history,
+                    historyText: st.historyText
                 });
             });
             if (!changed.length)
