@@ -481,16 +481,67 @@
         return `${idx}. <${tag}>${cls ? ' ' + cls : ''}${fill ? ' fill=' + clip(fill, 40) : ''} tail=${tail} rect=${rect.x},${rect.y},${rect.w},${rect.h}${text ? ' text="' + text + '"' : ''}`;
     }
 
+    function extractBaccCardId(card) {
+        if (!card)
+            return { id: '', source: '' };
+        const attrKeys = [
+            'data-table-id',
+            'data-tableid',
+            'data-table_id',
+            'data-id',
+            'data-game-id',
+            'data-gameid',
+            'data-room-id',
+            'data-roomid',
+            'data-table'
+        ];
+        const readAttr = (el, name) => {
+            if (!el || !el.getAttribute)
+                return '';
+            const v = (el.getAttribute(name) || '').trim();
+            return v;
+        };
+        const tryAttrs = (el) => {
+            for (const key of attrKeys) {
+                const v = readAttr(el, key);
+                if (v)
+                    return { id: v, source: 'attr:' + key };
+            }
+            const id = readAttr(el, 'id');
+            if (id)
+                return { id, source: 'attr:id' };
+            return null;
+        };
+        let found = tryAttrs(card);
+        if (found)
+            return found;
+        const selector = attrKeys.map(k => `[${k}]`).join(',') + ',[id]';
+        const elWithAttr = card.querySelector(selector);
+        if (elWithAttr) {
+            found = tryAttrs(elWithAttr);
+            if (found)
+                return found;
+        }
+        const text = card.textContent || '';
+        const idMatch = text.match(/\bID\s*:\s*([0-9]{4,})\b/i);
+        if (idMatch)
+            return { id: idMatch[1], source: 'text:ID' };
+        return { id: '', source: '' };
+    }
+
     function dumpBaccarat3Characters(limitPerCard = 150) {
         const cards = collectBaccarat3Cards();
         if (!cards.length)
             return 'Không tìm thấy thẻ Baccarat 3.';
         const segments = cards.map((card, index) => {
-            const identifier = card.getAttribute('data-table-id') || card.dataset.tableId || '';
+            const cardIdInfo = extractBaccCardId(card);
+            const identifier = cardIdInfo.id || card.getAttribute('data-table-id') || card.dataset.tableId || '';
             const name = (card.querySelector('.tile-name, .rY_sn, .game-title, .rW_sl')?.textContent || '').trim();
             const headingParts = ['Card #' + (index + 1)];
             if (identifier)
                 headingParts.push('[id:' + identifier + ']');
+            if (cardIdInfo.id && cardIdInfo.source)
+                headingParts.push('[idSrc:' + cardIdInfo.source + ']');
             if (name)
                 headingParts.push('"' + clip(name, 48) + '"');
             const heading = headingParts.join(' ');
@@ -511,6 +562,8 @@
                 nodeLines.push('  (Không tìm thấy node phù hợp)');
             const info = [
                 heading,
+                `stable_id: ${identifier || '(none)'}${cardIdInfo.source ? ' (' + cardIdInfo.source + ')' : ''}`,
+                `stable_name: ${name || '(none)'}`,
                 `rect: ${cardRect.x},${cardRect.y},${cardRect.w},${cardRect.h}`,
                 'nodes:',
                 ...nodeLines
@@ -4593,6 +4646,50 @@
             roomDomRegistry.set(name, node);
         }
 
+        const CARD_ID_ATTRS = [
+            'data-table-id',
+            'data-id',
+            'data-game-id',
+            'data-tableid',
+            'data-tableid',
+            'data-table'
+        ];
+
+        function resolveCardRoot(node) {
+            if (!node)
+                return null;
+            return node.closest('div.he_hf.he_hi') ||
+                node.closest('div.hC_hE') ||
+                node.closest('div.ep_bn') ||
+                node.closest('div.hu_hw') ||
+                node.closest('div.rW_rX') ||
+                node.closest('div.mx_G') ||
+                node.closest('div.hq_hr') ||
+                node.closest('div.cU_cV') ||
+                node.closest('div.kx_ca') ||
+                node.closest('div.kx_ky') ||
+                node.closest('div.jF_jJ') ||
+                node.closest('.qW_rl') ||
+                node;
+        }
+
+        function getCardId(root) {
+            if (!root)
+                return '';
+            try {
+                const id = (root.id || '').trim();
+                if (id)
+                    return id;
+                for (const attr of CARD_ID_ATTRS) {
+                    const v = (root.getAttribute && root.getAttribute(attr)) || '';
+                    const t = (v || '').trim();
+                    if (t)
+                        return t;
+                }
+            } catch (_) {}
+            return '';
+        }
+
         function findCardRootByName(id) {
             if (!id)
                 return null;
@@ -4604,26 +4701,28 @@
                 return cached;
             if (cached && !cached.isConnected)
                 roomDomRegistry.delete(needle);
+            const byId = document.getElementById(needle);
+            if (byId) {
+                const root = resolveCardRoot(byId);
+                if (root) {
+                    rememberRoomDom(needle, root);
+                    const rootId = getCardId(root);
+                    if (rootId && rootId !== needle)
+                        rememberRoomDom(rootId, root);
+                    return root;
+                }
+            }
             const selectors = ['span.rY_sn', 'span.qL_qM.qL_qN', 'div.abx-table-title', 'span.rC_rT', 'span.rW_sl'];
             for (const sel of selectors) {
                 const list = Array.from(document.querySelectorAll(sel));
                 const match = list.find(el => (el.textContent || '').trim() === needle);
                 if (match) {
-                    const root = match.closest('div.he_hf.he_hi') ||
-                        match.closest('div.hC_hE') ||
-                        match.closest('div.ep_bn') ||
-                        match.closest('div.hu_hw') ||
-                        match.closest('div.rW_rX') ||
-                        match.closest('div.mx_G') ||
-                        match.closest('div.hq_hr') ||
-                        match.closest('div.cU_cV') ||
-                        match.closest('div.kx_ca') ||
-                        match.closest('div.kx_ky') ||
-                        match.closest('div.jF_jJ') ||
-                        match.closest('.qW_rl') ||
-                        match;
+                    const root = resolveCardRoot(match);
                     if (root)
                         rememberRoomDom(needle, root);
+                    const rootId = getCardId(root);
+                    if (rootId && rootId !== needle)
+                        rememberRoomDom(rootId, root);
                     return root;
                 }
             }
@@ -4951,12 +5050,14 @@
                 if (!pin) continue;
                 pinCount++;
                 const title = getCardTitle(card);
-                if (!title) continue;
+                const id = getCardId(card) || title;
+                if (!id)
+                    continue;
                 if (pin.classList && pin.classList.contains('rO_rT')) {
-                    const key = title.toLowerCase();
+                    const key = id.toLowerCase();
                     if (!seen.has(key)) {
                         seen.add(key);
-                        list.push(title);
+                        list.push(id);
                     }
                 }
             }
@@ -4973,6 +5074,15 @@
             } catch (_) {}
         }
 
+        function enforceDesiredPins(desiredList, actualList) {
+            syncPinStates(desiredList);
+            const desiredSet = new Set(desiredList || []);
+            (actualList || []).forEach(id => {
+                if (!desiredSet.has(id))
+                    ensurePinState(id, false);
+            });
+        }
+
         function pinSyncTick() {
             const info = collectPinnedInfo();
             if (info.count === 0)
@@ -4985,8 +5095,7 @@
 
             if (pendingDesiredSig && pendingDesiredSig === desiredSig) {
                 if (actualSig !== desiredSig) {
-                    if (desiredList.length)
-                        syncPinStates(desiredList);
+                    enforceDesiredPins(desiredList, actualList);
                     return;
                 }
                 pendingDesiredSig = '';
@@ -4999,11 +5108,7 @@
             }
 
             if (actualSig !== desiredSig) {
-                desiredPinIds = new Set(actualList);
-                if (actualSig !== lastReportedPinSig) {
-                    reportPinnedList(actualList);
-                    lastReportedPinSig = actualSig;
-                }
+                enforceDesiredPins(desiredList, actualList);
             }
         }
 
@@ -5035,6 +5140,9 @@
 
         function defaultResolveDom(id) {
             try {
+                const byId = document.getElementById(id);
+                if (byId)
+                    return resolveCardRoot(byId);
                 const sel = [
                     `[data-table-id="${id}"]`,
                     `[data-id="${id}"]`,
@@ -5829,7 +5937,7 @@
                 if (!st)
                     return null;
                 const candidate = st.resolve(room.id);
-                const src = candidate && candidate.isConnected ? candidate : findCardRootByName(room.name || room.id);
+                const src = candidate && candidate.isConnected ? candidate : findCardRootByName(room.id || room.name);
                 if (!src || !src.isConnected)
                     return null;
                 const countdownNode = findCountdownNode(src);
@@ -6309,8 +6417,13 @@
             return (list || []).map(room => {
                 if (typeof room === 'string')
                     return { id: room, name: room };
-                if (room && room.id)
-                    return { id: room.id, name: room.name || room.id };
+                if (room && (room.id || room.name)) {
+                    const id = (room.id || room.name || '').trim();
+                    const name = (room.name || room.id || '').trim();
+                    if (!id)
+                        return null;
+                    return { id, name: name || id };
+                }
                 return null;
             }).filter(Boolean).filter(room => {
                 if (seen.has(room.id))

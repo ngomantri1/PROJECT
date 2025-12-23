@@ -2,6 +2,7 @@
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -132,8 +133,19 @@ namespace BaccaratPPRR88
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
     }
 
+    public sealed class RoomEntry
+    {
+        [JsonPropertyName("id")]
+        public string Id { get; set; } = "";
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = "";
+
+        public override string ToString() => Name;
+    }
+
     public sealed class RoomOption : INotifyPropertyChanged
     {
+        public string Id { get; set; } = "";
         public string Name { get; set; } = "";
 
         private bool _isSelected;
@@ -254,11 +266,11 @@ namespace BaccaratPPRR88
 
 
 
-        private readonly ObservableCollection<string> _roomList = new();
+        private readonly ObservableCollection<RoomEntry> _roomList = new();
         private readonly HashSet<string> _selectedRooms = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _overlayActiveRooms = new(StringComparer.OrdinalIgnoreCase);
 
-        public ObservableCollection<string> RoomList => _roomList;
+        public ObservableCollection<RoomEntry> RoomList => _roomList;
 
         private int _roomListLoading = 0;
         private DateTime _roomListLastLoaded = DateTime.MinValue;
@@ -1123,14 +1135,39 @@ Ví dụ không hợp lệ:
 
                 var js = @"(function(){
   try{
-    const cardSelectors = ['.rW_sl', '.rY_sn', '.rC_rT', '.tile-name', '.game-title'];
-    const keyAttrs = ['data-table-name','data-tablename','data-tableid','data-table-id','data-tabletitle','data-table-title','data-title','data-name','data-display-name','data-displayname','data-label','aria-label','title','alt'];
+    const titleSelectors = ['span.rC_rT','span.rW_sl','span.rY_sn','span.qL_qM.qL_qN','.tile-name','.game-title'];
+    const idAttrs = ['id','data-table-id','data-id','data-game-id','data-tableid','data-table','data-table-name','data-tablename'];
+    const nameAttrs = ['data-table-name','data-tablename','data-tabletitle','data-table-title','data-title','data-name','data-display-name','data-displayname','data-label','aria-label','title','alt'];
     const seen = new Set();
-    const names = [];
+    const rooms = [];
     const clean = (s)=> (s||'').trim();
-    const extract = (el)=>{
+    const resolveRoot = (el)=>{
+      if(!el) return null;
+      return el.closest('div.he_hf.he_hi') ||
+             el.closest('div.hC_hE') ||
+             el.closest('div.jF_jJ') ||
+             el.closest('div.ec_F') ||
+             el.closest('div.rW_rX') ||
+             el.closest('div.mx_G') ||
+             el.closest('div.kx_ky') ||
+             el.closest('div.kx_ca') ||
+             el;
+    };
+    const extractId = (root)=>{
+      if(!root) return '';
+      const directId = clean(root.id);
+      if(directId) return directId;
+      for(const a of idAttrs){
+        try{
+          const v = clean(root.getAttribute && root.getAttribute(a));
+          if(v) return v;
+        }catch(_){}
+      }
+      return '';
+    };
+    const extractName = (el)=>{
       if(!el) return '';
-      for(const a of keyAttrs){
+      for(const a of nameAttrs){
         try{
           const v = clean(el.getAttribute && el.getAttribute(a));
           if(v) return v;
@@ -1139,13 +1176,14 @@ Ví dụ không hợp lệ:
       const text = clean(el.innerText || el.textContent || '');
       return text;
     };
-    const addName = (t)=>{
-      const v = clean(t);
-      if(!v) return;
-      const key = v.toLowerCase();
+    const addRoom = (id, name)=>{
+      const rid = clean(id) || clean(name);
+      const rname = clean(name);
+      if(!rid || !rname) return;
+      const key = rid.toLowerCase();
       if(seen.has(key)) return;
       seen.add(key);
-      names.push(v);
+      rooms.push({ id: rid, name: rname });
     };
     const collectRoots = (root)=>{
       const list=[];
@@ -1166,19 +1204,18 @@ Ví dụ không hợp lệ:
       }
       return list;
     };
-    const collectFromElement = (el)=>{
-      if(!el) return;
-      const value = extract(el);
-      if(value) addName(value);
-    };
     const scanDocument = (root)=>{
       if(!root) return;
       const roots = collectRoots(root);
       roots.forEach(rt=>{
-        cardSelectors.forEach(sel=>{
+        titleSelectors.forEach(sel=>{
           try{
-            rt.querySelectorAll(sel).forEach(card=>{
-              collectFromElement(card);
+            rt.querySelectorAll(sel).forEach(el=>{
+              const name = extractName(el);
+              if(!name) return;
+              const card = resolveRoot(el);
+              const id = extractId(card) || extractId(el);
+              addRoom(id, name);
             });
           }catch(_){}
         });
@@ -1192,32 +1229,39 @@ Ví dụ không hợp lệ:
         scanDocument(doc);
       }catch(_){}
     }
-    return names;
+    return rooms;
   }catch(e){ return []; }
 })();";
 
-                List<string> list = new();
+                List<RoomEntry> list = new();
                 const int maxAttempts = 15;
                 for (int attempt = 0; attempt < maxAttempts; attempt++)
                 {
                     var raw = await Web.ExecuteScriptAsync(js);
                     list = string.IsNullOrWhiteSpace(raw)
-                        ? new List<string>()
-                        : (JsonSerializer.Deserialize<List<string>>(raw) ?? new List<string>());
+                        ? new List<RoomEntry>()
+                        : (JsonSerializer.Deserialize<List<RoomEntry>>(raw) ?? new List<RoomEntry>());
 
                     if (list.Count > 0) break;
                     await Task.Delay(600); // chờ DOM lobby load
                 }
 
                 var clean = list
-                    .Select(x => x?.Trim() ?? "")
-                    .Where(x => !string.IsNullOrWhiteSpace(x))
-                    .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+                    .Select(r =>
+                    {
+                        var name = (r?.Name ?? "").Trim();
+                        var id = (r?.Id ?? "").Trim();
+                        if (string.IsNullOrWhiteSpace(id))
+                            id = name;
+                        return new RoomEntry { Id = id, Name = name };
+                    })
+                    .Where(x => !string.IsNullOrWhiteSpace(x.Name))
+                    .GroupBy(x => string.IsNullOrWhiteSpace(x.Id) ? x.Name : x.Id, StringComparer.OrdinalIgnoreCase)
                     .Select(g => g.First())
-                    .OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase)
+                    .OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase)
                     .ToList();
 
-                var filtered = clean.Where(name => !IsLobbyNoiseName(name)).ToList();
+                var filtered = clean.Where(room => !IsLobbyNoiseName(room.Name)).ToList();
                 if (clean.Count != filtered.Count)
                     Log($"[ROOMDBG][RefreshRoomList] filtered out {clean.Count - filtered.Count} noise names");
                 string Sample(IEnumerable<string> xs, int take = 6)
@@ -1225,7 +1269,7 @@ Ví dụ không hợp lệ:
                     var arr = xs?.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).Take(take).ToArray() ?? Array.Empty<string>();
                     return arr.Length == 0 ? "(rỗng)" : string.Join(" | ", arr);
                 }
-                Log($"[ROOMDBG][RefreshRoomList] clean={filtered.Count} sample={Sample(filtered)}");
+                Log($"[ROOMDBG][RefreshRoomList] clean={filtered.Count} sample={Sample(filtered.Select(r => r.Name))}");
 
                 if (filtered.Count == 0)
                 {
@@ -1242,7 +1286,7 @@ Ví dụ không hợp lệ:
                         srcLower.Contains("/lobby2") ||
                         (srcLower.Contains("/desktop/") && srcLower.Contains("multibaccarat"));
                     var inLobby = srcLower.Contains("pragmaticplaylive") && pathLooksLikeLobby;
-                    var looksLikeBaccarat = filtered.Any(n => TextNorm.U(n).Contains("BACCARAT"));
+                    var looksLikeBaccarat = filtered.Any(n => TextNorm.U(n.Name).Contains("BACCARAT"));
                     var beforeSig = BuildRoomsSignature(_selectedRooms);
 
                     await Dispatcher.InvokeAsync(() =>
@@ -1258,13 +1302,17 @@ Ví dụ không hợp lệ:
                         accepted = true;
 
                         _roomList.Clear();
-                        foreach (var name in filtered) _roomList.Add(name);
+                        foreach (var room in filtered) _roomList.Add(room);
 
-                        var normToName = _roomList
-                            .Where(x => !string.IsNullOrWhiteSpace(x))
-                            .Select(x => x.Trim())
-                            .GroupBy(x => TextNorm.U(x), StringComparer.Ordinal)
-                            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+                        var idSet = new HashSet<string>(_roomList
+                            .Select(x => x.Id)
+                            .Where(x => !string.IsNullOrWhiteSpace(x)),
+                            StringComparer.OrdinalIgnoreCase);
+
+                        var normToId = _roomList
+                            .Where(x => !string.IsNullOrWhiteSpace(x.Name))
+                            .GroupBy(x => TextNorm.U(x.Name), StringComparer.Ordinal)
+                            .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.Ordinal);
 
                         var oldSel = _selectedRooms.ToList();
                         var nextSel = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1272,9 +1320,14 @@ Ví dụ không hợp lệ:
                         foreach (var s in oldSel)
                         {
                             if (string.IsNullOrWhiteSpace(s)) continue;
+                            if (idSet.Contains(s))
+                            {
+                                nextSel.Add(s);
+                                continue;
+                            }
                             var norm = TextNorm.U(s);
-                            if (normToName.TryGetValue(norm, out var canonical))
-                                nextSel.Add(canonical);
+                            if (normToId.TryGetValue(norm, out var canonicalId))
+                                nextSel.Add(canonicalId);
                         }
 
                         _selectedRooms.Clear();
@@ -1291,7 +1344,7 @@ Ví dụ không hợp lệ:
                     {
                         if (userTriggered)
                         {
-                            var sample = string.Join(" | ", filtered.Take(6));
+                            var sample = string.Join(" | ", filtered.Select(r => r.Name).Take(6));
                             Log("[ROOM] Bỏ qua danh sách (không phải lobby Baccarat): " + sample);
                         }
                         return;
@@ -2787,7 +2840,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             var selectedRooms = _roomOptions
                 .Where(it => it.IsSelected)
-                .Select(it => it.Name)
+                .Select(it => new
+                {
+                    id = string.IsNullOrWhiteSpace(it.Id) ? it.Name : it.Id,
+                    name = it.Name
+                })
                 .ToList();
 
             if (selectedRooms.Count == 0)
@@ -2812,8 +2869,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 await Web.ExecuteScriptAsync(script);
                 _overlayActiveRooms.Clear();
-                foreach (var name in selectedRooms)
-                    _overlayActiveRooms.Add(name);
+                foreach (var room in selectedRooms)
+                    _overlayActiveRooms.Add(room.id);
                 Log($"[TABLE] Tạo overlay cho {selectedRooms.Count} bàn.");
             }
             catch (Exception ex)
@@ -2902,8 +2959,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             if (sender is CheckBox cb && cb.DataContext is RoomOption opt)
             {
+                var targetId = !string.IsNullOrWhiteSpace(opt.Id) ? opt.Id : opt.Name;
                 if (cb.IsChecked == true && _uiReady)
-                    _ = ScrollRoomIntoViewAsync(opt.Name);
+                    _ = ScrollRoomIntoViewAsync(targetId);
                 // Binding updates opt.IsSelected; SyncSelectedRoomsFromOptions() will persist selection.
             }
             UpdateRoomSummary();
@@ -2925,9 +2983,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
             _roomOptions.Clear();
             _roomOptionsCol1.Clear();
             _roomOptionsCol2.Clear();
-            foreach (var name in _roomList)
+            foreach (var room in _roomList)
             {
-                var item = new RoomOption { Name = name, IsSelected = _selectedRooms.Contains(name) };
+                var item = new RoomOption { Id = room.Id, Name = room.Name, IsSelected = _selectedRooms.Contains(room.Id) };
                 item.PropertyChanged += RoomItem_PropertyChanged;
                 _roomOptions.Add(item);
             }
@@ -2943,9 +3001,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
             try
             {
-                var roomSample = Sample(_roomList);
+                var roomSample = Sample(_roomList.Select(r => r.Name));
                 var selectedSample = Sample(_selectedRooms);
-                var roomSet = new HashSet<string>(_roomList, StringComparer.OrdinalIgnoreCase);
+                var roomSet = new HashSet<string>(_roomList.Select(r => r.Id), StringComparer.OrdinalIgnoreCase);
                 var missing = _selectedRooms.Where(n => !roomSet.Contains(n)).ToArray();
                 var selectedInOptions = _roomOptions.Count(it => it.IsSelected);
                 Log("[ROOMDBG][RebuildRoomOptions] roomList=" + _roomList.Count +
@@ -2975,7 +3033,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 return false;
             _selectedRooms.Clear();
             foreach (var it in _roomOptions)
-                if (it.IsSelected) _selectedRooms.Add(it.Name);
+                if (it.IsSelected) _selectedRooms.Add(it.Id);
 
             _cfg.SelectedRooms = _selectedRooms.ToList();
             var after = BuildRoomsSignature(_selectedRooms);
@@ -3128,18 +3186,27 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 if (_roomOptions.Count > 0)
                 {
-                    var normToName = _roomList
-                        .Where(x => !string.IsNullOrWhiteSpace(x))
-                        .Select(x => x.Trim())
-                        .GroupBy(x => TextNorm.U(x), StringComparer.Ordinal)
-                        .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+                    var idSet = new HashSet<string>(_roomList
+                        .Select(x => x.Id)
+                        .Where(x => !string.IsNullOrWhiteSpace(x)),
+                        StringComparer.OrdinalIgnoreCase);
+
+                    var normToId = _roomList
+                        .Where(x => !string.IsNullOrWhiteSpace(x.Name))
+                        .GroupBy(x => TextNorm.U(x.Name), StringComparer.Ordinal)
+                        .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.Ordinal);
 
                     var nextSel = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var s in incoming)
                     {
+                        if (idSet.Contains(s))
+                        {
+                            nextSel.Add(s);
+                            continue;
+                        }
                         var norm = TextNorm.U(s);
-                        if (normToName.TryGetValue(norm, out var canonical))
-                            nextSel.Add(canonical);
+                        if (normToId.TryGetValue(norm, out var canonicalId))
+                            nextSel.Add(canonicalId);
                     }
 
                     _suppressRoomOptionEvents = true;
@@ -3147,7 +3214,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     {
                         foreach (var it in _roomOptions)
                         {
-                            var should = nextSel.Contains(it.Name);
+                            var should = nextSel.Contains(it.Id);
                             if (it.IsSelected != should)
                                 it.IsSelected = should;
                         }
