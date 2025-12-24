@@ -4471,11 +4471,11 @@
                 border-radius: calc(5px * var(--panel-scale, 1));
                 cursor: pointer;
                 font-weight: 600;
-                font-size: calc(9px * var(--panel-scale, 1));
+                font-size: calc(8px * var(--panel-scale, 1));
                 line-height: 1;
-                padding: calc(1px * var(--panel-scale, 1)) calc(8px * var(--panel-scale, 1));
-                min-width: calc(32px * var(--panel-scale, 1));
-                height: calc(22px * var(--panel-scale, 1));
+                padding: calc(1px * var(--panel-scale, 1)) calc(6px * var(--panel-scale, 1));
+                min-width: calc(28px * var(--panel-scale, 1));
+                height: calc(18px * var(--panel-scale, 1));
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
@@ -4483,22 +4483,22 @@
                 box-sizing: border-box;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .head button.play-btn {
-                min-width: calc(34px * var(--panel-scale, 1));
+                min-width: calc(30px * var(--panel-scale, 1));
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .head button.play-btn {
                 background: linear-gradient(135deg, #1d4ed8, #2563eb);
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-close {
                 position: absolute;
-                top: 2px;
-                right: 2px;
-                width: calc(18px * var(--panel-scale, 1));
-                height: calc(18px * var(--panel-scale, 1));
+                top: 0;
+                right: 0;
+                width: calc(16px * var(--panel-scale, 1));
+                height: calc(16px * var(--panel-scale, 1));
                 border-radius: 3px;
                 border: none;
                 background: #e11d48;
                 color: #fff;
-                font-size: calc(12px * var(--panel-scale, 1));
+                font-size: calc(10px * var(--panel-scale, 1));
                 line-height: 1;
                 padding: 0;
                 opacity: 0.95;
@@ -4517,11 +4517,18 @@
             #${OVERLAY_ID} .${PANEL_CLASS} .body {
                 flex: 1;
                 background: rgba(13, 24, 58, 0.92);
-                display: flex;
-                flex-direction: column;
-                gap: calc(8px * var(--panel-scale, 1));
-                padding: calc(10px * var(--panel-scale, 1));
+                display: grid;
+                grid-template-rows:
+                    auto
+                    minmax(calc(14px * var(--panel-scale, 1)), 0.35fr)
+                    minmax(calc(14px * var(--panel-scale, 1)), 0.35fr)
+                    minmax(calc(14px * var(--panel-scale, 1)), 0.35fr)
+                    minmax(calc(14px * var(--panel-scale, 1)), 0.35fr)
+                    minmax(calc(24px * var(--panel-scale, 1)), 1fr);
+                gap: calc(2px * var(--panel-scale, 1));
+                padding: 0 calc(4px * var(--panel-scale, 1)) calc(6px * var(--panel-scale, 1)) calc(4px * var(--panel-scale, 1));
                 overflow: hidden;
+                align-content: start;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-info {
                 display: flex;
@@ -4595,6 +4602,186 @@
                 overflow: auto;
                 white-space: pre-wrap;
             }
+            #${OVERLAY_ID} .${PANEL_CLASS} .result-map-wrap {
+                position: relative;
+                background: #ffffff;
+                border: 1px solid #e5e7eb;
+                border-radius: calc(8px * var(--panel-scale, 1));
+                padding: calc(1px * var(--panel-scale, 1)) calc(4px * var(--panel-scale, 1));
+                display: flex;
+                align-items: flex-start;
+                justify-content: flex-start;
+                overflow: hidden;
+                width: 100%;
+                margin-right: 0;
+                box-sizing: border-box;
+                align-self: start;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .result-map-grid {
+                display: grid;
+                grid-template-columns: repeat(38, var(--rm-cell, 8px));
+                grid-template-rows: repeat(6, var(--rm-cell, 8px));
+                gap: 0;
+                width: auto;
+                background-color: #ffffff;
+                background-image:
+                    linear-gradient(to right, #e5e7eb 1px, transparent 1px),
+                    linear-gradient(to bottom, #e5e7eb 1px, transparent 1px);
+                background-size: var(--rm-cell, 8px) var(--rm-cell, 8px);
+                background-repeat: repeat;
+                margin-left: auto;
+                margin-right: auto;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .rm-cell {
+                position: relative;
+                background: transparent;
+                border: none;
+                border-radius: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-sizing: border-box;
+                width: 100%;
+                height: 100%;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .rm-dot {
+                width: 78%;
+                height: 78%;
+                max-width: 78%;
+                max-height: 78%;
+                border-radius: 50%;
+                border: calc(1.1px * var(--panel-scale, 1)) solid transparent;
+                box-sizing: border-box;
+                opacity: 0;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .rm-cell[data-code="P"] .rm-dot {
+                border-color: #38bdf8;
+                opacity: 1;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .rm-cell[data-code="B"] .rm-dot {
+                border-color: #ef4444;
+                opacity: 1;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .rm-tie {
+                position: absolute;
+                inset: 0;
+                display: none;
+                align-items: center;
+                justify-content: center;
+                pointer-events: none;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .rm-cell[data-tie]:not([data-tie="0"]) .rm-tie {
+                display: flex;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .rm-tie-line {
+                position: absolute;
+                width: 70%;
+                height: calc(0.8px * var(--panel-scale, 1));
+                background: #22c55e;
+                transform: rotate(-45deg);
+                border-radius: 999px;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .rm-tie-count {
+                font-size: calc(4px * var(--panel-scale, 1));
+                font-weight: 500;
+                color: #111827;
+                text-shadow: none;
+                display: none;
+                line-height: 1;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .rm-cell[data-tie]:not([data-tie="0"]):not([data-tie="1"]) .rm-tie-count {
+                display: block;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .map-countdown {
+                position: absolute;
+                top: calc(4px * var(--panel-scale, 1));
+                right: calc(4px * var(--panel-scale, 1));
+                background: rgba(15,23,42,0.9);
+                color: #f8fafc;
+                border: 1px solid rgba(255,255,255,0.25);
+                border-radius: 999px;
+                padding: calc(2px * var(--panel-scale, 1)) calc(6px * var(--panel-scale, 1));
+                font-weight: 700;
+                font-size: calc(10px * var(--panel-scale, 1));
+                display: none;
+                z-index: 2;
+                pointer-events: none;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .status-grid {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: calc(2px * var(--panel-scale, 1));
+                width: 100%;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .status-cell {
+                background: rgba(255,255,255,0.05);
+                border-radius: calc(6px * var(--panel-scale, 1));
+                border: 1px solid rgba(255,255,255,0.08);
+                padding: calc(1px * var(--panel-scale, 1)) calc(3px * var(--panel-scale, 1));
+                min-height: calc(14px * var(--panel-scale, 1));
+                box-sizing: border-box;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                text-align: center;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .status-label {
+                font-size: calc(6.5px * var(--panel-scale, 1));
+                font-weight: 600;
+                text-transform: uppercase;
+                color: rgba(248,250,252,0.75);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .status-value {
+                font-size: calc(8px * var(--panel-scale, 1));
+                font-weight: 700;
+                color: #f8fafc;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .status-line {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                align-items: center;
+                background: rgba(255,255,255,0.05);
+                border-radius: calc(6px * var(--panel-scale, 1));
+                border: 1px solid rgba(255,255,255,0.08);
+                padding: calc(1px * var(--panel-scale, 1)) calc(3px * var(--panel-scale, 1));
+                width: 100%;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .status-line .label {
+                font-size: calc(7px * var(--panel-scale, 1));
+                font-weight: 700;
+                color: rgba(248,250,252,0.75);
+                text-align: center;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .status-line .value {
+                font-size: calc(8px * var(--panel-scale, 1));
+                font-weight: 700;
+                color: #fbbf24;
+                text-align: center;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-row {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: calc(2px * var(--panel-scale, 1));
+                width: 100%;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-item {
+                background: rgba(255,255,255,0.05);
+                border: none;
+                border-radius: calc(8px * var(--panel-scale, 1));
+                padding: calc(4px * var(--panel-scale, 1)) calc(6px * var(--panel-scale, 1));
+                font-size: calc(9px * var(--panel-scale, 1));
+                font-weight: 600;
+                text-align: center;
+                color: #e2e8f0;
+                height: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.active {
+                color: #86efac;
+                box-shadow: inset 0 0 0 1px rgba(34,197,94,0.25);
+            }
             #${OVERLAY_ID} .${PANEL_CLASS} .resize {
                 position: absolute;
                 width: 16px;
@@ -4631,6 +4818,158 @@
             const heightScale = clamp(rc.height / 180, 0.45, 1.9);
             const scale = Math.min(widthScale, heightScale);
             panel.style.setProperty('--panel-scale', scale.toString());
+            const id = panel.dataset && panel.dataset.id;
+            if (id) {
+                const st = getPanelState(id);
+                if (st) {
+                    syncPanelLayout(st);
+                    syncPanelMapGrid(st);
+                }
+            }
+        }
+
+        function syncPanelLayout(st) {
+            if (!st || !st.panel || !st.body || !st.head)
+                return;
+            const rc = st.panel.getBoundingClientRect();
+            if (!rc || !rc.height)
+                return;
+            const headH = Math.max(20, Math.floor(rc.height * 0.1));
+            const bodyH = Math.max(0, rc.height - headH);
+            st.head.style.height = headH + 'px';
+            st.body.style.height = bodyH + 'px';
+        }
+
+        function getGridLayout(root, n) {
+            if (!root)
+                return null;
+            const rc = root.getBoundingClientRect();
+            if (!rc || !rc.width || !rc.height)
+                return null;
+            const { cols, rows } = computeGrid(n || 1);
+            const gap = GAP;
+            const availW = rc.width - gap * (cols + 1);
+            const availH = rc.height - gap * (rows + 1);
+            const baseW = Math.max(MIN_W, Math.floor(availW / cols));
+            const baseH = Math.max(MIN_H, Math.floor(availH / rows));
+            let extraX = rc.width - (baseW * cols + gap * (cols + 1));
+            let extraY = rc.height - (baseH * rows + gap * (rows + 1));
+            if (!isFinite(extraX))
+                extraX = 0;
+            if (!isFinite(extraY))
+                extraY = 0;
+            const offsetX = gap + Math.max(0, Math.floor(extraX / 2));
+            const offsetY = gap + Math.max(0, Math.floor(extraY / 2));
+            return { rc, cols, rows, baseW, baseH, gap, offsetX, offsetY };
+        }
+
+        function getPanelGridInfo(panel) {
+            const root = ensureRoot();
+            if (!root || !panel)
+                return null;
+            const layout = getGridLayout(root, rooms.length || 1);
+            if (!layout)
+                return null;
+            const { rc, cols, rows, baseW, baseH, gap, offsetX, offsetY } = layout;
+            const prc = panel.getBoundingClientRect();
+            const relX = prc.left - rc.left;
+            const relY = prc.top - rc.top;
+            const col = Math.round((relX - offsetX) / (baseW + gap));
+            const row = Math.round((relY - offsetY) / (baseH + gap));
+            return {
+                cols,
+                rows,
+                col,
+                row,
+                baseW,
+                baseH,
+                panelW: prc.width,
+                panelH: prc.height
+            };
+        }
+
+        function getRowStandardCell(st, availableWidth) {
+            const cols = st.view?.mapCols || 38;
+            const panel = st.panel;
+            const selfCell = Math.max(2, Math.floor(availableWidth / cols));
+            const info = getPanelGridInfo(panel);
+            if (!info || info.rows <= 1 || info.row == null)
+                return selfCell;
+            const rowKey = clamp(info.row, 0, info.rows - 1);
+            const sizeOk =
+                info.baseW > 0 &&
+                info.baseH > 0 &&
+                Math.abs(info.panelW - info.baseW) / info.baseW <= 0.25 &&
+                Math.abs(info.panelH - info.baseH) / info.baseH <= 0.25;
+            if (!sizeOk)
+                return selfCell;
+            let minCell = Infinity;
+            panelMap.forEach((entry) => {
+                if (!entry || !entry.panel)
+                    return;
+                const eInfo = getPanelGridInfo(entry.panel);
+                if (!eInfo || eInfo.row == null)
+                    return;
+                const eRow = clamp(eInfo.row, 0, eInfo.rows - 1);
+                if (eRow !== rowKey)
+                    return;
+                const eSizeOk =
+                    eInfo.baseW > 0 &&
+                    eInfo.baseH > 0 &&
+                    Math.abs(eInfo.panelW - eInfo.baseW) / eInfo.baseW <= 0.25 &&
+                    Math.abs(eInfo.panelH - eInfo.baseH) / eInfo.baseH <= 0.25;
+                if (!eSizeOk)
+                    return;
+                const wrap = entry.view?.mapWrap || entry.view?.mapGrid?.parentElement;
+                if (!wrap)
+                    return;
+                const style = getComputedStyle(wrap);
+                const padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+                const aw = Math.max(0, wrap.clientWidth - padX);
+                if (!aw)
+                    return;
+                const cell = Math.floor(aw / cols);
+                if (cell > 0)
+                    minCell = Math.min(minCell, cell);
+            });
+            if (!isFinite(minCell) || minCell <= 0) {
+                return selfCell;
+            }
+            return Math.max(2, minCell);
+        }
+
+        function syncPanelMapGrid(st) {
+            if (!st || !st.view || !st.view.mapGrid)
+                return;
+            const grid = st.view.mapGrid;
+            const wrap = st.view.mapWrap || grid.parentElement;
+            const cols = st.view.mapCols || 38;
+            const rows = st.view.mapRows || 6;
+            if (!wrap || !cols || !rows)
+                return;
+            const style = getComputedStyle(wrap);
+            const padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+            const padY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+            const container = wrap.parentElement || wrap;
+            const availableWidth = Math.max(0, wrap.clientWidth - padX);
+            if (!availableWidth)
+                return;
+            const cell = getRowStandardCell(st, availableWidth);
+            const width = cell * cols;
+            const height = cell * rows;
+            const leftover = Math.max(0, Math.floor(availableWidth - width));
+            const left = Math.floor(leftover / 2);
+            const right = Math.max(0, leftover - left);
+            grid.style.width = width + 'px';
+            grid.style.height = height + 'px';
+            grid.style.gridTemplateColumns = 'repeat(' + cols + ', ' + cell + 'px)';
+            grid.style.gridTemplateRows = 'repeat(' + rows + ', ' + cell + 'px)';
+            grid.style.marginLeft = left + 'px';
+            grid.style.marginRight = right + 'px';
+            grid.style.setProperty('--rm-cell', cell + 'px');
+            wrap.style.setProperty('--rm-cell', cell + 'px');
+            wrap.style.width = '100%';
+            wrap.style.height = (height + padY) + 'px';
         }
 
         function computeGrid(n) {
@@ -6373,6 +6712,41 @@
             return null;
         }
 
+        function collectBetAreas(root) {
+            if (!root)
+                return null;
+            const readArea = (selector, fallbackLabel) => {
+                let el = null;
+                try {
+                    el = root.querySelector(selector);
+                } catch (_) {}
+                if (!el) {
+                    return {
+                        label: fallbackLabel,
+                        active: false,
+                        visible: false
+                    };
+                }
+                const cls = getClassString(el);
+                let visible = true;
+                try {
+                    const rc = el.getBoundingClientRect();
+                    visible = !!(rc && rc.width > 2 && rc.height > 2);
+                } catch (_) {}
+                const label = (el.textContent || fallbackLabel || '').trim() || fallbackLabel;
+                return {
+                    label,
+                    active: cls.includes('qE_qF'),
+                    visible
+                };
+            };
+            return {
+                player: readArea('.qE_lp.qE_q1', 'Người Chơi'),
+                tie: readArea('.qE_lp.qE_qO', 'Hòa'),
+                banker: readArea('.qE_lp.qE_ra', 'Nhà Cái')
+            };
+        }
+
         function captureTableState(room) {
             try {
                 const st = getPanelState(room.id);
@@ -6396,6 +6770,7 @@
                 const historyText = history && history.length ? history.join(' ') : '';
                 const historySig = history.join('|');
                 const text = (src.innerText || src.textContent || '').replace(/\s+/g, ' ').trim();
+                const betAreas = collectBetAreas(src);
                 const sig = [
                     room.id,
                     countdown ?? '',
@@ -6412,6 +6787,7 @@
                     historyText,
                     historySig,
                     stats,
+                    betAreas,
                     sig
                 };
             } catch (_) {
@@ -6431,29 +6807,18 @@
             if (!st)
                 return;
             const view = st.view;
-            if (!view || !view.countdown)
+            if (!view || !view.countdownBadge)
                 return;
             const normalized = (typeof value === 'number' && Number.isFinite(value) && value >= 0)
                 ? Math.max(0, value)
                 : null;
             const displayValue = normalized !== null ? Math.floor(normalized) : null;
-            view.countdown.textContent = displayValue !== null ? displayValue.toString() : '--';
-            if (view.countdownWrap) {
-                const maxCandidate = (typeof st.countdownMax === 'number' && st.countdownMax > 0)
-                    ? st.countdownMax
-                    : Math.max(normalized ?? 1, 1);
-                const ratio = (normalized !== null && maxCandidate > 0)
-                    ? Math.max(0, Math.min(1, normalized / maxCandidate))
-                    : 0;
-                view.countdownWrap.style.setProperty('--countdown-progress', ratio);
-                let color = '#22c55e';
-                if (displayValue !== null) {
-                    if (displayValue <= 4)
-                        color = '#b91c1c';
-                    else if (displayValue === 5)
-                        color = '#facc15';
-                }
-                view.countdownWrap.style.setProperty('--countdown-progress-color', color);
+            if (displayValue !== null && displayValue > 0) {
+                view.countdownBadge.textContent = displayValue.toString();
+                view.countdownBadge.style.display = '';
+            } else {
+                view.countdownBadge.textContent = '';
+                view.countdownBadge.style.display = 'none';
             }
         }
 
@@ -6485,13 +6850,15 @@
             if (!text)
                 return 'Chưa có dữ liệu';
             const lowered = norm(text);
-            if (lowered.includes('khong tim thay') || lowered.includes('khong t?m th?y'))
+            if (lowered.includes('khong tim thay'))
                 return 'Không tìm thấy bàn';
-            if (lowered.includes('dang doi') || lowered.includes('dang cho'))
-                return 'Đang chờ';
-            if (lowered.includes('ket qua') || lowered.includes('ketqua'))
-                return 'Đang cập nhật';
-            return 'Đang đồng bộ';
+            if (lowered.includes('bat dau dat cuoc') || lowered.includes('dat cuoc'))
+                return 'Bắt đầu đặt cược';
+            if (lowered.includes('chia bai'))
+                return 'Chia bài';
+            if (lowered.includes('cho ket qua') || lowered.includes('ket qua') || lowered.includes('dang doi') || lowered.includes('dang cho'))
+                return 'Chờ kết quả';
+            return 'Bắt đầu đặt cược';
         }
 
         function deriveMetricInfo(text) {
@@ -6519,6 +6886,149 @@
             return 'Chưa đặt';
         }
 
+        function deriveWinLoseValue(text) {
+            if (!text)
+                return '--';
+            const lowered = norm(text);
+            if (lowered.includes('thang'))
+                return 'THẮNG';
+            if (lowered.includes('thua'))
+                return 'THUA';
+            return '--';
+        }
+
+        function deriveBetDoorValue(text, betAreas) {
+            if (betAreas) {
+                if (betAreas.player && betAreas.player.active)
+                    return 'PLAYER';
+                if (betAreas.banker && betAreas.banker.active)
+                    return 'BANKER';
+                if (betAreas.tie && betAreas.tie.active)
+                    return 'HÒA';
+            }
+            if (!text)
+                return '--';
+            const lowered = norm(text);
+            if (lowered.includes('player') || lowered.includes('nguoi choi'))
+                return 'PLAYER';
+            if (lowered.includes('banker') || lowered.includes('nha cai'))
+                return 'BANKER';
+            if (lowered.includes('hoa') || lowered.includes('tie'))
+                return 'HÒA';
+            return '--';
+        }
+
+        function extractNumberByLabel(text, labels) {
+            if (!text)
+                return '';
+            const lowered = norm(text);
+            for (const label of labels || []) {
+                const re = new RegExp(label + '\\s*[:\\-]?\\s*([0-9][0-9.,]*)', 'i');
+                const match = lowered.match(re);
+                if (match && match[1])
+                    return match[1];
+            }
+            return '';
+        }
+
+        function deriveMoneyValue(text, labels, fallback = '--') {
+            const value = extractNumberByLabel(text, labels);
+            return value || fallback;
+        }
+
+        function buildResultMapGrid(tokens, rows = 6, cols = 38) {
+            const grid = Array.from({ length: rows }, () => []);
+            if (!Array.isArray(tokens) || !tokens.length)
+                return grid.map(() => Array(cols).fill(null));
+            let col = 0;
+            let row = 0;
+            let lastCode = null;
+            let lastCell = null;
+            let maxCol = -1;
+            for (const token of tokens) {
+                if (token === 'T') {
+                    if (lastCell)
+                        lastCell.tieCount = (lastCell.tieCount || 0) + 1;
+                    continue;
+                }
+                if (token !== 'P' && token !== 'B')
+                    continue;
+                let nextCol = col;
+                let nextRow = row;
+                if (!lastCode) {
+                    nextCol = 0;
+                    nextRow = 0;
+                } else if (token === lastCode) {
+                    if (nextRow + 1 < rows && !grid[nextRow + 1][nextCol]) {
+                        nextRow += 1;
+                    } else {
+                        nextCol += 1;
+                    }
+                } else {
+                    nextCol += 1;
+                    nextRow = 0;
+                }
+                while (grid[nextRow] && grid[nextRow][nextCol]) {
+                    nextCol += 1;
+                }
+                col = nextCol;
+                row = nextRow;
+                if (!grid[row])
+                    grid[row] = [];
+                grid[row][col] = { code: token, tieCount: 0 };
+                lastCell = grid[row][col];
+                lastCode = token;
+                maxCol = Math.max(maxCol, col);
+            }
+            const startCol = Math.max(0, maxCol - (cols - 1));
+            const trimmed = Array.from({ length: rows }, () => Array(cols).fill(null));
+            for (let r = 0; r < rows; r++) {
+                const rowList = grid[r] || [];
+                for (let c = startCol; c <= maxCol; c++) {
+                    const cell = rowList[c];
+                    if (cell)
+                        trimmed[r][c - startCol] = cell;
+                }
+            }
+            return trimmed;
+        }
+
+        function renderResultMap(view, tokens) {
+            if (!view || !view.mapCells || !view.mapCells.length)
+                return;
+            const rows = view.mapRows || 6;
+            const cols = view.mapCols || 38;
+            const grid = buildResultMapGrid(tokens || [], rows, cols);
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const cell = view.mapCells[r * cols + c];
+                    if (!cell)
+                        continue;
+                    const data = (grid[r] && grid[r][c]) ? grid[r][c] : null;
+                    if (!data) {
+                        cell.removeAttribute('data-code');
+                        cell.dataset.tie = '0';
+                        if (cell._tieCount)
+                            cell._tieCount.textContent = '';
+                        continue;
+                    }
+                    const tieCount = Math.max(0, data.tieCount || 0);
+                    cell.dataset.code = data.code;
+                    cell.dataset.tie = tieCount.toString();
+                    if (cell._tieCount)
+                        cell._tieCount.textContent = tieCount > 1 ? tieCount.toString() : '';
+                }
+            }
+        }
+
+        function updateBetItem(el, info, fallback) {
+            if (!el)
+                return;
+            const label = (info && info.label) ? info.label : (fallback || '--');
+            el.textContent = label || fallback || '--';
+            el.classList.toggle('active', !!(info && info.active));
+        }
+
         function renderPanelState(data) {
             const st = getPanelState(data.id);
             if (!st || !st.view)
@@ -6532,26 +7042,26 @@
             const historySig = data.historySig || '';
             if (st.lastHistorySig !== historySig) {
                 st.lastHistorySig = historySig;
-                if (view.updated)
-                    view.updated.textContent = new Date().toLocaleTimeString();
-                const historyText = data.historyText || (data.history && data.history.length ? data.history.join(' ') : data.text || '');
-                if (view.status)
-                    view.status.textContent = deriveStatusFromText(historyText);
-                if (view.text)
-                    view.text.textContent = historyText || 'Khong co du lieu';
-                const stats = data.stats;
-                if (view.metrics)
-                    view.metrics.textContent = stats?.total?.display || deriveMetricInfo(data.text);
-                if (view.bets) {
-                    const statParts = [];
-                    if (stats?.player?.display)
-                        statParts.push('P ' + stats.player.display);
-                    if (stats?.banker?.display)
-                        statParts.push('B ' + stats.banker.display);
-                    if (stats?.tie?.display)
-                        statParts.push('T ' + stats.tie.display);
-                    view.bets.textContent = statParts.join('  ') || deriveBetInfo(data.text);
-                }
+                renderResultMap(view, data.history || []);
+                const text = data.text || '';
+                const betAreas = data.betAreas || null;
+                if (view.statusLineValue)
+                    view.statusLineValue.textContent = deriveStatusFromText(text);
+                if (view.winLoseValue)
+                    view.winLoseValue.textContent = deriveWinLoseValue(text);
+                if (view.betDoorValue)
+                    view.betDoorValue.textContent = deriveBetDoorValue(text, betAreas);
+                if (view.betAmountValue)
+                    view.betAmountValue.textContent = deriveMoneyValue(text, ['tien\\s*cuoc', 'cuoc\\s*tien']);
+                if (view.moneyLevelValue)
+                    view.moneyLevelValue.textContent = deriveMoneyValue(text, ['muc\\s*tien', 'muc\\s*cuoc', 'limit']);
+                if (view.winAmountValue)
+                    view.winAmountValue.textContent = deriveMoneyValue(text, ['tien\\s*thang', 'thang\\s*tien', 'tien\\s*thuong']);
+                if (view.totalWinLoseValue)
+                    view.totalWinLoseValue.textContent = deriveMoneyValue(text, ['tong\\s*thang', 'tong\\s*thua', 'tong\\s*thang\\s*thua', 'tong\\s*thang\\/thua', 'thang\\s*thua', 'thang\\/thua'], data.stats?.total?.display || '--');
+                updateBetItem(view.betPlayer, betAreas && betAreas.player, 'Người Chơi');
+                updateBetItem(view.betTie, betAreas && betAreas.tie, 'Hòa');
+                updateBetItem(view.betBanker, betAreas && betAreas.banker, 'Nhà Cái');
             }
         }
 
@@ -6643,42 +7153,103 @@
 
             const body = document.createElement('div');
             body.className = 'body';
-            const info = document.createElement('div');
-            info.className = 'panel-info';
-            const countdownWrap = document.createElement('div');
-            countdownWrap.className = 'panel-countdown';
-            const countdownValue = document.createElement('div');
-            countdownValue.className = 'countdown-value';
-            countdownValue.textContent = '--';
-            countdownWrap.append(countdownValue);
 
-            const meta = document.createElement('div');
-            meta.className = 'panel-meta';
-            const createMetaItem = (label, placeholder = '--') => {
-                const wrap = document.createElement('div');
-                wrap.className = 'meta-item';
-                const lab = document.createElement('div');
-                lab.className = 'meta-label';
-                lab.textContent = label;
-                const val = document.createElement('div');
-                val.className = 'meta-value';
-                val.textContent = placeholder;
-                wrap.append(lab, val);
-                return { wrap, value: val };
+            const mapWrap = document.createElement('div');
+            mapWrap.className = 'result-map-wrap';
+            const mapGrid = document.createElement('div');
+            mapGrid.className = 'result-map-grid';
+            const countdownBadge = document.createElement('div');
+            countdownBadge.className = 'map-countdown';
+            mapWrap.append(mapGrid, countdownBadge);
+
+            const mapRows = 6;
+            const mapCols = 38;
+            const mapCells = [];
+            for (let r = 0; r < mapRows; r++) {
+                for (let c = 0; c < mapCols; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'rm-cell';
+                    const dot = document.createElement('div');
+                    dot.className = 'rm-dot';
+                    const tie = document.createElement('div');
+                    tie.className = 'rm-tie';
+                    const line1 = document.createElement('span');
+                    line1.className = 'rm-tie-line';
+                    const tieCount = document.createElement('span');
+                    tieCount.className = 'rm-tie-count';
+                    tie.append(line1, tieCount);
+                    cell.append(dot, tie);
+                    cell._tieCount = tieCount;
+                    mapCells.push(cell);
+                    mapGrid.appendChild(cell);
+                }
+            }
+
+            const statusGrid = document.createElement('div');
+            statusGrid.className = 'status-grid';
+            const createStatusCell = (text, isLabel = false) => {
+                const cell = document.createElement('div');
+                cell.className = 'status-cell';
+                const content = document.createElement('div');
+                content.className = isLabel ? 'status-label' : 'status-value';
+                content.textContent = text;
+                cell.append(content);
+                return { cell, value: content };
             };
-            const updatedMeta = createMetaItem('Cập nhật', '--:--');
-            const statusMeta = createMetaItem('Trạng thái', 'Chưa có dữ liệu');
-            meta.append(updatedMeta.wrap, statusMeta.wrap);
-            const metricsMeta = createMetaItem('Thông số', 'Chưa có');
-            const betsMeta = createMetaItem('Đặt cược', 'N/A');
-            meta.append(metricsMeta.wrap, betsMeta.wrap);
-            info.append(countdownWrap, meta);
+            const winLoseLabel = createStatusCell('THẮNG/THUA', true);
+            const winLoseValue = createStatusCell('--');
+            const betDoorLabel = createStatusCell('CỬA ĐẶT', true);
+            const betDoorValue = createStatusCell('--');
+            const betAmountLabel = createStatusCell('TIỀN CƯỢC', true);
+            const betAmountValue = createStatusCell('--');
+            const moneyLevelLabel = createStatusCell('MỨC TIỀN', true);
+            const moneyLevelValue = createStatusCell('--');
+            const winAmountLabel = createStatusCell('TIỀN THẮNG', true);
+            const winAmountValue = createStatusCell('--');
+            const totalWinLoseLabel = createStatusCell('TỔNG THẮNG/THUA', true);
+            const totalWinLoseValue = createStatusCell('--');
+            statusGrid.append(
+                winLoseLabel.cell,
+                winLoseValue.cell,
+                betDoorLabel.cell,
+                betDoorValue.cell,
+                betAmountLabel.cell,
+                betAmountValue.cell,
+                moneyLevelLabel.cell,
+                moneyLevelValue.cell,
+                winAmountLabel.cell,
+                winAmountValue.cell,
+                totalWinLoseLabel.cell,
+                totalWinLoseValue.cell
+            );
+            statusGrid.style.gridRow = '2 / span 3';
 
-            const textBox = document.createElement('div');
-            textBox.className = 'panel-text';
-            textBox.textContent = 'Đang tải dữ liệu...';
+            const statusLine = document.createElement('div');
+            statusLine.className = 'status-line';
+            statusLine.style.gridRow = '5 / span 1';
+            const statusLineLabel = document.createElement('div');
+            statusLineLabel.className = 'label';
+            statusLineLabel.textContent = 'TRẠNG THÁI';
+            const statusLineValue = document.createElement('div');
+            statusLineValue.className = 'value';
+            statusLineValue.textContent = '--';
+            statusLine.append(statusLineLabel, statusLineValue);
 
-            body.append(info, textBox);
+            const betRow = document.createElement('div');
+            betRow.className = 'bet-row';
+            betRow.style.gridRow = '6 / span 1';
+            const betPlayer = document.createElement('div');
+            betPlayer.className = 'bet-item';
+            betPlayer.textContent = 'Người Chơi';
+            const betTie = document.createElement('div');
+            betTie.className = 'bet-item';
+            betTie.textContent = 'Hòa';
+            const betBanker = document.createElement('div');
+            betBanker.className = 'bet-item';
+            betBanker.textContent = 'Nhà Cái';
+            betRow.append(betPlayer, betTie, betBanker);
+
+            body.append(mapWrap, statusGrid, statusLine, betRow);
 
             const resize = document.createElement('div');
             resize.className = 'resize';
@@ -6697,18 +7268,31 @@
                 id: room.id,
                 panel,
                 body,
+                head,
                 countdownMax: null,
                 countdownLoopId: null,
                 lastCountdownValue: null,
                 lastCountdownTimestamp: null,
                 view: {
-                    countdownWrap,
-                    countdown: countdownValue,
-                    updated: updatedMeta.value,
-                    status: statusMeta.value,
-                    text: textBox,
-                    metrics: metricsMeta.value,
-                    bets: betsMeta.value
+                    countdownBadge,
+                    mapWrap,
+                    mapGrid,
+                    mapCells,
+                    mapRows,
+                    mapCols,
+                    statusGrid,
+                    statusLine,
+                    betRow,
+                    statusLineValue,
+                    winLoseValue: winLoseValue.value,
+                    betDoorValue: betDoorValue.value,
+                    betAmountValue: betAmountValue.value,
+                    moneyLevelValue: moneyLevelValue.value,
+                    winAmountValue: winAmountValue.value,
+                    totalWinLoseValue: totalWinLoseValue.value,
+                    betPlayer,
+                    betTie,
+                    betBanker
                 },
                 lastSig: '',
                 lastState: null,
@@ -6723,16 +7307,16 @@
             makeDraggable(panel, head);
             makeResizable(panel, resize);
             placePanel(panel, idx);
+            syncPanelMapGrid(st);
         }
 
         function placePanel(panel, idx, forceGrid = false) {
             const root = ensureRoot();
-            const rc = root.getBoundingClientRect();
             const n = rooms.length || 1;
-            const { cols, rows } = computeGrid(n);
-            const gap = GAP;
-            const baseW = Math.max(MIN_W, (rc.width - gap * (cols + 1)) / cols);
-            const baseH = Math.max(MIN_H, (rc.height - gap * (rows + 1)) / rows);
+            const layout = getGridLayout(root, n);
+            if (!layout)
+                return;
+            const { rc, cols, rows, baseW, baseH, gap, offsetX, offsetY } = layout;
             const id = panel.dataset.id;
             const saved = !forceGrid && layouts && layouts[id];
             let x, y, w, h;
@@ -6747,8 +7331,31 @@
                 const row = Math.floor(idx / cols);
                 w = baseW;
                 h = baseH;
-                x = gap + col * (baseW + gap);
-                y = gap + row * (baseH + gap);
+                x = offsetX + col * (baseW + gap);
+                y = offsetY + row * (baseH + gap);
+            }
+            const approxCol = Math.round((x - offsetX) / (baseW + gap));
+            const approxRow = Math.round((y - offsetY) / (baseH + gap));
+            const snapX = offsetX + approxCol * (baseW + gap);
+            const snapY = offsetY + approxRow * (baseH + gap);
+            const tol = 4;
+            const isGridish =
+                approxCol >= 0 &&
+                approxCol < cols &&
+                approxRow >= 0 &&
+                approxRow < rows &&
+                Math.abs(w - baseW) <= tol &&
+                Math.abs(h - baseH) <= tol &&
+                Math.abs(x - snapX) <= tol &&
+                Math.abs(y - snapY) <= tol;
+            if (isGridish) {
+                panel.dataset.gridMode = '1';
+                panel.dataset.gridRow = String(approxRow);
+                panel.dataset.gridCol = String(approxCol);
+            } else {
+                panel.dataset.gridMode = '0';
+                delete panel.dataset.gridRow;
+                delete panel.dataset.gridCol;
             }
             panel.style.width = w + 'px';
             panel.style.height = h + 'px';
