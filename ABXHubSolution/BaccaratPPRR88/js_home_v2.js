@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
     'use strict';
     // Muốn hiện và ẩn bảng điều khiển home watch thì tìm dòng sau : showPanel: false // ⬅️ false = ẩn panel; true = hiện panel
     if (window.self !== window.top) {
@@ -4520,11 +4520,12 @@
                 display: grid;
                 grid-template-rows:
                     auto
+                    minmax(calc(10px * var(--panel-scale, 1)), 0.2fr)
                     minmax(calc(14px * var(--panel-scale, 1)), 0.35fr)
                     minmax(calc(14px * var(--panel-scale, 1)), 0.35fr)
                     minmax(calc(14px * var(--panel-scale, 1)), 0.35fr)
                     minmax(calc(14px * var(--panel-scale, 1)), 0.35fr)
-                    minmax(calc(24px * var(--panel-scale, 1)), 1fr);
+                    minmax(calc(18px * var(--panel-scale, 1)), 0.6fr);
                 gap: calc(2px * var(--panel-scale, 1));
                 padding: 0 calc(4px * var(--panel-scale, 1)) calc(6px * var(--panel-scale, 1)) calc(4px * var(--panel-scale, 1));
                 overflow: hidden;
@@ -4656,7 +4657,7 @@
                 opacity: 0;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .rm-cell[data-code="P"] .rm-dot {
-                border-color: #38bdf8;
+                border-color: #2563eb;
                 opacity: 1;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .rm-cell[data-code="B"] .rm-dot {
@@ -4692,6 +4693,56 @@
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .rm-cell[data-tie]:not([data-tie="0"]):not([data-tie="1"]) .rm-tie-count {
                 display: block;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .result-stats {
+                display: flex;
+                align-items: center;
+                gap: calc(6px * var(--panel-scale, 1));
+                width: 100%;
+                color: #e2e8f0;
+                font-size: calc(8px * var(--panel-scale, 1));
+                font-weight: 600;
+                padding: 0 calc(2px * var(--panel-scale, 1));
+                box-sizing: border-box;
+                line-height: 1;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .result-stats .stats-group {
+                display: inline-flex;
+                align-items: center;
+                gap: calc(2px * var(--panel-scale, 1));
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .result-stats .stats-total {
+                color: #f8fafc;
+                font-weight: 700;
+                display: inline-flex;
+                align-items: center;
+                line-height: 1;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .result-stats .stats-dot {
+                width: calc(10px * var(--panel-scale, 1));
+                height: calc(10px * var(--panel-scale, 1));
+                border-radius: 50%;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                font-size: calc(6.8px * var(--panel-scale, 1));
+                font-weight: 500;
+                line-height: 1;
+                color: #ffffff;
+                flex: 0 0 auto;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .result-stats .stats-dot.p {
+                background: #2563eb;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .result-stats .stats-dot.b {
+                background: #ef4444;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .result-stats .stats-dot.t {
+                background: #22c55e;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .result-stats .stats-value {
+                color: #f8fafc;
+                font-weight: 500;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .map-countdown {
                 --countdown-progress: 0;
@@ -4736,6 +4787,20 @@
             #${OVERLAY_ID} .${PANEL_CLASS} .map-countdown .map-countdown-value {
                 position: relative;
                 z-index: 2;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+                height: 100%;
+                line-height: 1;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .map-countdown .map-countdown-value.is-anim {
+                animation: map-countdown-pop 280ms ease-out;
+            }
+            @keyframes map-countdown-pop {
+                0% { transform: translateY(2px) scale(0.78); opacity: 0.55; }
+                60% { transform: translateY(-3px) scale(1.24); opacity: 1; }
+                100% { transform: translateY(0) scale(1); opacity: 1; }
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .status-grid {
                 display: grid;
@@ -6798,7 +6863,11 @@
                 const stats = parseStats(statsNode);
                 const history = parseHistory(src);
                 const historyText = history && history.length ? history.join(' ') : '';
-                const historySig = history.join('|');
+                const rawNodes = collectRawHistoryNodes(src);
+                const historyRaw = normalizeHistoryRawNodes(rawNodes);
+                const historySig = historyRaw.length
+                    ? historyRaw.map(item => `${item.row},${item.col},${item.code || ''},${item.tieCount || 0}`).join('|')
+                    : history.join('|');
                 const text = (src.innerText || src.textContent || '').replace(/\s+/g, ' ').trim();
                 const betAreas = collectBetAreas(src);
                 const sig = [
@@ -6816,6 +6885,7 @@
                     history,
                     historyText,
                     historySig,
+                    historyRaw,
                     stats,
                     betAreas,
                     sig
@@ -6854,10 +6924,17 @@
                 view.countdownBadge.style.setProperty('--countdown-progress', progress.toString());
                 view.countdownBadge.style.setProperty('--countdown-color', color);
                 view.countdownBadge.style.display = 'flex';
+                if (st.lastCountdownDisplay !== displayValue && textNode.classList) {
+                    textNode.classList.remove('is-anim');
+                    void textNode.offsetWidth;
+                    textNode.classList.add('is-anim');
+                }
+                st.lastCountdownDisplay = displayValue;
             } else {
                 textNode.textContent = '';
                 view.countdownBadge.style.setProperty('--countdown-progress', '0');
                 view.countdownBadge.style.display = 'none';
+                st.lastCountdownDisplay = null;
             }
         }
 
@@ -6984,6 +7061,8 @@
             let lastCode = null;
             let lastCell = null;
             let maxCol = -1;
+            let runStartCol = 0;
+            let lockRow = null;
             for (const token of tokens) {
                 if (token === 'T') {
                     if (lastCell)
@@ -6992,26 +7071,37 @@
                 }
                 if (token !== 'P' && token !== 'B')
                     continue;
+                const isNewRun = token !== lastCode;
                 let nextCol = col;
                 let nextRow = row;
                 if (!lastCode) {
                     nextCol = 0;
                     nextRow = 0;
+                    runStartCol = 0;
+                    lockRow = null;
                 } else if (token === lastCode) {
-                    if (nextRow + 1 < rows && !grid[nextRow + 1][nextCol]) {
+                    if (lockRow !== null) {
+                        nextCol += 1;
+                        nextRow = lockRow;
+                    } else if (nextRow + 1 < rows && !grid[nextRow + 1][nextCol]) {
                         nextRow += 1;
                     } else {
                         nextCol += 1;
+                        lockRow = nextRow;
                     }
                 } else {
-                    nextCol += 1;
+                    runStartCol += 1;
+                    nextCol = runStartCol;
                     nextRow = 0;
+                    lockRow = null;
                 }
                 while (grid[nextRow] && grid[nextRow][nextCol]) {
                     nextCol += 1;
                 }
                 col = nextCol;
                 row = nextRow;
+                if (isNewRun)
+                    runStartCol = col;
                 if (!grid[row])
                     grid[row] = [];
                 grid[row][col] = { code: token, tieCount: 0 };
@@ -7032,12 +7122,74 @@
             return trimmed;
         }
 
-        function renderResultMap(view, tokens) {
+        function normalizeHistoryRawNodes(raw) {
+            if (!Array.isArray(raw) || !raw.length)
+                return [];
+            const list = [];
+            raw.forEach(node => {
+                if (!node)
+                    return;
+                const row = Number.isFinite(node.row) ? Math.round(node.row) : null;
+                const col = Number.isFinite(node.col) ? Math.round(node.col) : null;
+                if (row == null || col == null)
+                    return;
+                const code = node.symbolCode || mapSymbolIdToCode(node.href) || null;
+                const tieCount = Number.isFinite(node.tieCount) ? Math.max(0, node.tieCount) : 0;
+                if (!code && !tieCount)
+                    return;
+                list.push({ row, col, code, tieCount });
+            });
+            list.sort((a, b) => {
+                if (a.col !== b.col)
+                    return a.col - b.col;
+                if (a.row !== b.row)
+                    return a.row - b.row;
+                return String(a.code || '').localeCompare(String(b.code || ''));
+            });
+            return list;
+        }
+
+        function buildResultMapGridFromRaw(rawNodes, rows = 6, cols = 38) {
+            const grid = Array.from({ length: rows }, () => Array(cols).fill(null));
+            if (!Array.isArray(rawNodes) || !rawNodes.length)
+                return grid;
+            let maxCol = -1;
+            rawNodes.forEach(node => {
+                if (node && Number.isFinite(node.col))
+                    maxCol = Math.max(maxCol, node.col);
+            });
+            if (maxCol < 0)
+                return grid;
+            const startCol = Math.max(0, maxCol - (cols - 1));
+            rawNodes.forEach(node => {
+                if (!node)
+                    return;
+                const row = Number.isFinite(node.row) ? node.row : -1;
+                const col = Number.isFinite(node.col) ? node.col : -1;
+                if (row < 0 || row >= rows)
+                    return;
+                if (col < startCol || col > maxCol)
+                    return;
+                const colIndex = col - startCol;
+                const existing = grid[row][colIndex];
+                const code = node.code || null;
+                const tieCount = Number.isFinite(node.tieCount) ? Math.max(0, node.tieCount) : 0;
+                if (!existing) {
+                    grid[row][colIndex] = { code, tieCount };
+                } else {
+                    if (!existing.code && code)
+                        existing.code = code;
+                    existing.tieCount = Math.max(existing.tieCount || 0, tieCount);
+                }
+            });
+            return grid;
+        }
+
+        function applyResultMapGrid(view, grid) {
             if (!view || !view.mapCells || !view.mapCells.length)
                 return;
             const rows = view.mapRows || 6;
             const cols = view.mapCols || 38;
-            const grid = buildResultMapGrid(tokens || [], rows, cols);
             for (let r = 0; r < rows; r++) {
                 for (let c = 0; c < cols; c++) {
                     const cell = view.mapCells[r * cols + c];
@@ -7052,12 +7204,54 @@
                         continue;
                     }
                     const tieCount = Math.max(0, data.tieCount || 0);
-                    cell.dataset.code = data.code;
+                    if (data.code)
+                        cell.dataset.code = data.code;
+                    else
+                        cell.removeAttribute('data-code');
                     cell.dataset.tie = tieCount.toString();
                     if (cell._tieCount)
                         cell._tieCount.textContent = tieCount > 1 ? tieCount.toString() : '';
                 }
             }
+        }
+
+        function renderResultMap(view, tokens) {
+            const rows = view.mapRows || 6;
+            const cols = view.mapCols || 38;
+            const grid = buildResultMapGrid(tokens || [], rows, cols);
+            applyResultMapGrid(view, grid);
+        }
+
+        function renderResultMapFromRaw(view, rawNodes) {
+            const rows = view.mapRows || 6;
+            const cols = view.mapCols || 38;
+            const grid = buildResultMapGridFromRaw(rawNodes || [], rows, cols);
+            applyResultMapGrid(view, grid);
+        }
+
+        function summarizeHistoryStats(history, stats) {
+            const counts = { total: 0, player: 0, banker: 0, tie: 0 };
+            const list = Array.isArray(history) ? history : [];
+            list.forEach((token) => {
+                if (token === 'P')
+                    counts.player += 1;
+                else if (token === 'B')
+                    counts.banker += 1;
+                else if (token === 'T')
+                    counts.tie += 1;
+            });
+            counts.total = list.length;
+            if (stats) {
+                if (stats.total && Number.isFinite(stats.total.value))
+                    counts.total = stats.total.value;
+                if (stats.player && Number.isFinite(stats.player.value))
+                    counts.player = stats.player.value;
+                if (stats.banker && Number.isFinite(stats.banker.value))
+                    counts.banker = stats.banker.value;
+                if (stats.tie && Number.isFinite(stats.tie.value))
+                    counts.tie = stats.tie.value;
+            }
+            return counts;
         }
 
         function updateBetItem(el, info, fallback) {
@@ -7081,7 +7275,11 @@
             const historySig = data.historySig || '';
             if (st.lastHistorySig !== historySig) {
                 st.lastHistorySig = historySig;
-                renderResultMap(view, data.history || []);
+                if (data.historyRaw && data.historyRaw.length) {
+                    renderResultMapFromRaw(view, data.historyRaw);
+                } else {
+                    renderResultMap(view, data.history || []);
+                }
                 const text = data.text || '';
                 const betAreas = data.betAreas || null;
                 if (view.statusLineValue)
@@ -7098,6 +7296,15 @@
                     view.winAmountValue.textContent = deriveMoneyValue(text, ['tien\\s*thang', 'thang\\s*tien', 'tien\\s*thuong']);
                 if (view.totalWinLoseValue)
                     view.totalWinLoseValue.textContent = deriveMoneyValue(text, ['tong\\s*thang', 'tong\\s*thua', 'tong\\s*thang\\s*thua', 'tong\\s*thang\\/thua', 'thang\\s*thua', 'thang\\/thua'], data.stats?.total?.display || '--');
+                const statCounts = summarizeHistoryStats(data.history || [], data.stats || null);
+                if (view.statsTotal)
+                    view.statsTotal.textContent = '#' + String(statCounts.total || 0);
+                if (view.statsP)
+                    view.statsP.textContent = String(statCounts.player || 0);
+                if (view.statsB)
+                    view.statsB.textContent = String(statCounts.banker || 0);
+                if (view.statsT)
+                    view.statsT.textContent = String(statCounts.tie || 0);
                 updateBetItem(view.betPlayer, betAreas && betAreas.player, 'Người Chơi');
                 updateBetItem(view.betTie, betAreas && betAreas.tie, 'Hòa');
                 updateBetItem(view.betBanker, betAreas && betAreas.banker, 'Nhà Cái');
@@ -7204,6 +7411,41 @@
             countdownBadge.appendChild(countdownValue);
             mapWrap.append(mapGrid, countdownBadge);
 
+            const statsRow = document.createElement('div');
+            statsRow.className = 'result-stats';
+            statsRow.style.gridRow = '2 / span 1';
+            const statsTotal = document.createElement('span');
+            statsTotal.className = 'stats-total';
+            statsTotal.textContent = '#0';
+            const statsGroupP = document.createElement('span');
+            statsGroupP.className = 'stats-group';
+            const statsPdot = document.createElement('span');
+            statsPdot.className = 'stats-dot p';
+            statsPdot.textContent = 'P';
+            const statsP = document.createElement('span');
+            statsP.className = 'stats-value stats-p';
+            statsP.textContent = '0';
+            statsGroupP.append(statsPdot, statsP);
+            const statsGroupB = document.createElement('span');
+            statsGroupB.className = 'stats-group';
+            const statsBdot = document.createElement('span');
+            statsBdot.className = 'stats-dot b';
+            statsBdot.textContent = 'B';
+            const statsB = document.createElement('span');
+            statsB.className = 'stats-value stats-b';
+            statsB.textContent = '0';
+            statsGroupB.append(statsBdot, statsB);
+            const statsGroupT = document.createElement('span');
+            statsGroupT.className = 'stats-group';
+            const statsTdot = document.createElement('span');
+            statsTdot.className = 'stats-dot t';
+            statsTdot.textContent = 'T';
+            const statsT = document.createElement('span');
+            statsT.className = 'stats-value stats-t';
+            statsT.textContent = '0';
+            statsGroupT.append(statsTdot, statsT);
+            statsRow.append(statsTotal, statsGroupP, statsGroupB, statsGroupT);
+
             const mapRows = 6;
             const mapCols = 38;
             const mapCells = [];
@@ -7264,11 +7506,11 @@
                 totalWinLoseLabel.cell,
                 totalWinLoseValue.cell
             );
-            statusGrid.style.gridRow = '2 / span 3';
+            statusGrid.style.gridRow = '3 / span 3';
 
             const statusLine = document.createElement('div');
             statusLine.className = 'status-line';
-            statusLine.style.gridRow = '5 / span 1';
+            statusLine.style.gridRow = '6 / span 1';
             const statusLineLabel = document.createElement('div');
             statusLineLabel.className = 'label';
             statusLineLabel.textContent = 'TRẠNG THÁI';
@@ -7279,7 +7521,7 @@
 
             const betRow = document.createElement('div');
             betRow.className = 'bet-row';
-            betRow.style.gridRow = '6 / span 1';
+            betRow.style.gridRow = '7 / span 1';
             const betPlayer = document.createElement('div');
             betPlayer.className = 'bet-item';
             betPlayer.textContent = 'Người Chơi';
@@ -7291,7 +7533,7 @@
             betBanker.textContent = 'Nhà Cái';
             betRow.append(betPlayer, betTie, betBanker);
 
-            body.append(mapWrap, statusGrid, statusLine, betRow);
+            body.append(mapWrap, statsRow, statusGrid, statusLine, betRow);
 
             const resize = document.createElement('div');
             resize.className = 'resize';
@@ -7318,6 +7560,11 @@
                 view: {
                     countdownBadge,
                     countdownValue,
+                    statsRow,
+                    statsTotal,
+                    statsP,
+                    statsB,
+                    statsT,
                     mapWrap,
                     mapGrid,
                     mapCells,
