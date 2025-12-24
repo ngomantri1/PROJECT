@@ -4629,6 +4629,7 @@
                     linear-gradient(to bottom, #e5e7eb 1px, transparent 1px);
                 background-size: var(--rm-cell, 8px) var(--rm-cell, 8px);
                 background-repeat: repeat;
+                box-shadow: inset -1px 0 #e5e7eb, inset 0 -1px #e5e7eb;
                 margin-left: auto;
                 margin-right: auto;
             }
@@ -4645,12 +4646,12 @@
                 height: 100%;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .rm-dot {
-                width: 78%;
-                height: 78%;
-                max-width: 78%;
-                max-height: 78%;
+                width: 86%;
+                height: 86%;
+                max-width: 86%;
+                max-height: 86%;
                 border-radius: 50%;
-                border: calc(1.1px * var(--panel-scale, 1)) solid transparent;
+                border: calc(1.3px * var(--panel-scale, 1)) solid transparent;
                 box-sizing: border-box;
                 opacity: 0;
             }
@@ -4693,19 +4694,48 @@
                 display: block;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .map-countdown {
+                --countdown-progress: 0;
+                --countdown-color: #22c55e;
                 position: absolute;
                 top: calc(4px * var(--panel-scale, 1));
                 right: calc(4px * var(--panel-scale, 1));
-                background: rgba(15,23,42,0.9);
                 color: #f8fafc;
-                border: 1px solid rgba(255,255,255,0.25);
+                width: calc(26px * var(--panel-scale, 1));
+                height: calc(26px * var(--panel-scale, 1));
                 border-radius: 999px;
-                padding: calc(2px * var(--panel-scale, 1)) calc(6px * var(--panel-scale, 1));
                 font-weight: 700;
-                font-size: calc(10px * var(--panel-scale, 1));
+                font-size: calc(9px * var(--panel-scale, 1));
+                align-items: center;
+                justify-content: center;
                 display: none;
+                background: conic-gradient(
+                    var(--countdown-color) calc(var(--countdown-progress, 0) * 1turn),
+                    rgba(15,23,42,0.25) 0
+                );
+                border: 1px solid rgba(255,255,255,0.25);
                 z-index: 2;
                 pointer-events: none;
+                text-shadow: 0 0 1px rgba(0,0,0,0.35);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .map-countdown::after {
+                content: '';
+                position: absolute;
+                inset: calc(3px * var(--panel-scale, 1));
+                border-radius: 50%;
+                background: rgba(15,23,42,0.9);
+                z-index: 0;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .map-countdown::before {
+                content: '';
+                position: absolute;
+                inset: 0;
+                border-radius: 50%;
+                box-shadow: inset 0 0 0 calc(0.6px * var(--panel-scale, 1)) rgba(255,255,255,0.15);
+                z-index: 1;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .map-countdown .map-countdown-value {
+                position: relative;
+                z-index: 2;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .status-grid {
                 display: grid;
@@ -6813,11 +6843,20 @@
                 ? Math.max(0, value)
                 : null;
             const displayValue = normalized !== null ? Math.floor(normalized) : null;
+            const textNode = view.countdownValue || view.countdownBadge;
             if (displayValue !== null && displayValue > 0) {
-                view.countdownBadge.textContent = displayValue.toString();
-                view.countdownBadge.style.display = '';
+                textNode.textContent = displayValue.toString();
+                const maxVal = (typeof st.countdownMax === 'number' && Number.isFinite(st.countdownMax) && st.countdownMax > 0)
+                    ? st.countdownMax
+                    : displayValue;
+                const progress = maxVal > 0 ? Math.min(1, Math.max(0, displayValue / maxVal)) : 0;
+                const color = displayValue > 5 ? '#22c55e' : (displayValue === 5 ? '#f59e0b' : '#ef4444');
+                view.countdownBadge.style.setProperty('--countdown-progress', progress.toString());
+                view.countdownBadge.style.setProperty('--countdown-color', color);
+                view.countdownBadge.style.display = 'flex';
             } else {
-                view.countdownBadge.textContent = '';
+                textNode.textContent = '';
+                view.countdownBadge.style.setProperty('--countdown-progress', '0');
                 view.countdownBadge.style.display = 'none';
             }
         }
@@ -7160,6 +7199,9 @@
             mapGrid.className = 'result-map-grid';
             const countdownBadge = document.createElement('div');
             countdownBadge.className = 'map-countdown';
+            const countdownValue = document.createElement('span');
+            countdownValue.className = 'map-countdown-value';
+            countdownBadge.appendChild(countdownValue);
             mapWrap.append(mapGrid, countdownBadge);
 
             const mapRows = 6;
@@ -7275,6 +7317,7 @@
                 lastCountdownTimestamp: null,
                 view: {
                     countdownBadge,
+                    countdownValue,
                     mapWrap,
                     mapGrid,
                     mapCells,
