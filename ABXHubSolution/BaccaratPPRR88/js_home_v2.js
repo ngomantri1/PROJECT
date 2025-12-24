@@ -4424,15 +4424,15 @@
             }
             #${OVERLAY_ID} .${PANEL_CLASS} {
                 position: absolute;
-                background: #040b1e;
-                color: #f8fafc;
+                background: #ffffff;
+                color: #1c1e21;
                 border-radius: 12px;
-                box-shadow: 0 14px 32px rgba(0,0,0,0.55);
+                box-shadow: 0 1px 3px rgba(0,0,0,0.12);
                 overflow: hidden;
                 display: flex;
                 flex-direction: column;
                 pointer-events: auto;
-                border: 1px solid rgba(255,255,255,0.16);
+                border: 1px solid #e4e6eb;
                 min-width: ${MIN_W}px;
                 min-height: ${MIN_H}px;
             }
@@ -4445,14 +4445,15 @@
                 justify-content: space-between;
                 padding: calc(2px * var(--panel-scale, 1)) calc(32px * var(--panel-scale, 1)) calc(2px * var(--panel-scale, 1)) calc(12px * var(--panel-scale, 1));
                 gap: 12px;
-                background: #02040b;
+                background: #cfd2d8;
+                border-bottom: 1px solid #e4e6eb;
                 user-select: none;
                 cursor: move;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .head .title {
                 font-weight: 700;
                 font-size: calc(9px * var(--panel-scale, 1));
-                color: #fefefe;
+                color: #1c1e21;
                 line-height: 1.1;
                 padding: calc(2px * var(--panel-scale, 1)) 0;
                 white-space: nowrap;
@@ -4466,8 +4467,8 @@
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .head button {
                 border: none;
-                background: rgba(255,255,255,0.08);
-                color: #fefefe;
+                background: #e4e6eb;
+                color: #050505;
                 border-radius: calc(5px * var(--panel-scale, 1));
                 cursor: pointer;
                 font-weight: 600;
@@ -4486,7 +4487,8 @@
                 min-width: calc(30px * var(--panel-scale, 1));
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .head button.play-btn {
-                background: linear-gradient(135deg, #1d4ed8, #2563eb);
+                background: #1877f2;
+                color: #ffffff;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-close {
                 position: absolute;
@@ -4516,7 +4518,7 @@
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .body {
                 flex: 1;
-                background: rgba(13, 24, 58, 0.92);
+                background: #ffffff;
                 display: grid;
                 grid-template-rows:
                     auto
@@ -4547,11 +4549,11 @@
                 justify-content: center;
                 margin-top: calc(-4px * var(--panel-scale, 1));
                 font-weight: 600;
-                color: #fefefe;
+                color: #1c1e21;
                 align-self: flex-start;
                 background: conic-gradient(
                     var(--countdown-progress-color) calc(var(--countdown-progress, 0) * 1turn),
-                    rgba(255,255,255,0.12) 0
+                    #e4e6eb 0
                 );
                 position: relative;
             }
@@ -4560,7 +4562,7 @@
                 position: absolute;
                 inset: calc(6px * var(--panel-scale, 1));
                 border-radius: 50%;
-                background: rgba(5,11,28,0.9);
+                background: #ffffff;
                 z-index: 0;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-countdown .countdown-value {
@@ -4575,38 +4577,39 @@
                 gap: calc(8px * var(--panel-scale, 1));
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta .meta-item {
-                background: rgba(255,255,255,0.05);
+                background: #f7f8fa;
                 padding: calc(6px * var(--panel-scale, 1));
                 border-radius: calc(6px * var(--panel-scale, 1));
-                border: 1px solid rgba(255,255,255,0.07);
+                border: 1px solid #e4e6eb;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta .meta-label {
                 font-size: calc(9px * var(--panel-scale, 1));
                 text-transform: uppercase;
-                opacity: 0.7;
+                color: #65676b;
+                opacity: 1;
                 margin-bottom: 2px;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-meta .meta-value {
                 font-size: calc(11px * var(--panel-scale, 1));
                 font-weight: 600;
-                color: #fefefe;
+                color: #1c1e21;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-text {
                 flex: 1;
-                background: rgba(5,11,28,0.8);
+                background: #f7f8fa;
                 border-radius: calc(8px * var(--panel-scale, 1));
-                border: 1px solid rgba(255,255,255,0.08);
+                border: 1px solid #e4e6eb;
                 padding: calc(8px * var(--panel-scale, 1));
                 font-size: calc(10px * var(--panel-scale, 1));
                 line-height: 1.4;
-                color: #dbeafe;
+                color: #1c1e21;
                 overflow: auto;
                 white-space: pre-wrap;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .result-map-wrap {
                 position: relative;
                 background: #ffffff;
-                border: 1px solid #e5e7eb;
+                border: 1px solid #e4e6eb;
                 border-radius: calc(8px * var(--panel-scale, 1));
                 padding: calc(1px * var(--panel-scale, 1)) calc(4px * var(--panel-scale, 1));
                 display: flex;
@@ -4626,11 +4629,11 @@
                 width: auto;
                 background-color: #ffffff;
                 background-image:
-                    linear-gradient(to right, #e5e7eb 1px, transparent 1px),
-                    linear-gradient(to bottom, #e5e7eb 1px, transparent 1px);
+                    linear-gradient(to right, #e4e6eb 1px, transparent 1px),
+                    linear-gradient(to bottom, #e4e6eb 1px, transparent 1px);
                 background-size: var(--rm-cell, 8px) var(--rm-cell, 8px);
                 background-repeat: repeat;
-                box-shadow: inset -1px 0 #e5e7eb, inset 0 -1px #e5e7eb;
+                box-shadow: inset -1px 0 #e4e6eb, inset 0 -1px #e4e6eb;
                 margin-left: auto;
                 margin-right: auto;
             }
@@ -4657,7 +4660,7 @@
                 opacity: 0;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .rm-cell[data-code="P"] .rm-dot {
-                border-color: #2563eb;
+                border-color: #1877f2;
                 opacity: 1;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .rm-cell[data-code="B"] .rm-dot {
@@ -4699,7 +4702,7 @@
                 align-items: center;
                 gap: calc(6px * var(--panel-scale, 1));
                 width: 100%;
-                color: #e2e8f0;
+                color: #1c1e21;
                 font-size: calc(8px * var(--panel-scale, 1));
                 font-weight: 600;
                 padding: 0 calc(2px * var(--panel-scale, 1));
@@ -4712,11 +4715,13 @@
                 gap: calc(2px * var(--panel-scale, 1));
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .result-stats .stats-total {
-                color: #f8fafc;
-                font-weight: 700;
+                color: #1c1e21;
+                font-weight: 500;
                 display: inline-flex;
                 align-items: center;
+                height: calc(10px * var(--panel-scale, 1));
                 line-height: 1;
+                transform: translateY(calc(-0.5px * var(--panel-scale, 1)));
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .result-stats .stats-dot {
                 width: calc(10px * var(--panel-scale, 1));
@@ -4732,7 +4737,7 @@
                 flex: 0 0 auto;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .result-stats .stats-dot.p {
-                background: #2563eb;
+                background: #1877f2;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .result-stats .stats-dot.b {
                 background: #ef4444;
@@ -4741,7 +4746,7 @@
                 background: #22c55e;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .result-stats .stats-value {
-                color: #f8fafc;
+                color: #1c1e21;
                 font-weight: 500;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .map-countdown {
@@ -4750,7 +4755,7 @@
                 position: absolute;
                 top: calc(4px * var(--panel-scale, 1));
                 right: calc(4px * var(--panel-scale, 1));
-                color: #f8fafc;
+                color: #1c1e21;
                 width: calc(26px * var(--panel-scale, 1));
                 height: calc(26px * var(--panel-scale, 1));
                 border-radius: 999px;
@@ -4761,19 +4766,19 @@
                 display: none;
                 background: conic-gradient(
                     var(--countdown-color) calc(var(--countdown-progress, 0) * 1turn),
-                    rgba(15,23,42,0.25) 0
+                    #e4e6eb 0
                 );
-                border: 1px solid rgba(255,255,255,0.25);
+                border: 1px solid #e4e6eb;
                 z-index: 2;
                 pointer-events: none;
-                text-shadow: 0 0 1px rgba(0,0,0,0.35);
+                text-shadow: none;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .map-countdown::after {
                 content: '';
                 position: absolute;
                 inset: calc(3px * var(--panel-scale, 1));
                 border-radius: 50%;
-                background: rgba(15,23,42,0.9);
+                background: #ffffff;
                 z-index: 0;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .map-countdown::before {
@@ -4781,7 +4786,7 @@
                 position: absolute;
                 inset: 0;
                 border-radius: 50%;
-                box-shadow: inset 0 0 0 calc(0.6px * var(--panel-scale, 1)) rgba(255,255,255,0.15);
+                box-shadow: inset 0 0 0 calc(0.6px * var(--panel-scale, 1)) #e4e6eb;
                 z-index: 1;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .map-countdown .map-countdown-value {
@@ -4809,9 +4814,9 @@
                 width: 100%;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .status-cell {
-                background: rgba(255,255,255,0.05);
+                background: #f7f8fa;
                 border-radius: calc(6px * var(--panel-scale, 1));
-                border: 1px solid rgba(255,255,255,0.08);
+                border: 1px solid #e4e6eb;
                 padding: calc(1px * var(--panel-scale, 1)) calc(3px * var(--panel-scale, 1));
                 min-height: calc(14px * var(--panel-scale, 1));
                 box-sizing: border-box;
@@ -4824,33 +4829,33 @@
                 font-size: calc(6.5px * var(--panel-scale, 1));
                 font-weight: 600;
                 text-transform: uppercase;
-                color: rgba(248,250,252,0.75);
+                color: #65676b;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .status-value {
                 font-size: calc(8px * var(--panel-scale, 1));
                 font-weight: 700;
-                color: #f8fafc;
+                color: #1c1e21;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .status-line {
                 display: grid;
                 grid-template-columns: 1fr 1fr;
                 align-items: center;
-                background: rgba(255,255,255,0.05);
+                background: #f7f8fa;
                 border-radius: calc(6px * var(--panel-scale, 1));
-                border: 1px solid rgba(255,255,255,0.08);
+                border: 1px solid #e4e6eb;
                 padding: calc(1px * var(--panel-scale, 1)) calc(3px * var(--panel-scale, 1));
                 width: 100%;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .status-line .label {
                 font-size: calc(7px * var(--panel-scale, 1));
                 font-weight: 700;
-                color: rgba(248,250,252,0.75);
+                color: #65676b;
                 text-align: center;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .status-line .value {
                 font-size: calc(8px * var(--panel-scale, 1));
                 font-weight: 700;
-                color: #fbbf24;
+                color: #1877f2;
                 text-align: center;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-row {
@@ -4860,22 +4865,22 @@
                 width: 100%;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-item {
-                background: rgba(255,255,255,0.05);
-                border: none;
+                background: #f7f8fa;
+                border: 1px solid #e4e6eb;
                 border-radius: calc(8px * var(--panel-scale, 1));
                 padding: calc(4px * var(--panel-scale, 1)) calc(6px * var(--panel-scale, 1));
                 font-size: calc(9px * var(--panel-scale, 1));
                 font-weight: 600;
                 text-align: center;
-                color: #e2e8f0;
+                color: #1c1e21;
                 height: 100%;
                 display: flex;
                 align-items: center;
                 justify-content: center;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.active {
-                color: #86efac;
-                box-shadow: inset 0 0 0 1px rgba(34,197,94,0.25);
+                color: #1877f2;
+                box-shadow: inset 0 0 0 1px rgba(24,119,242,0.35);
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .resize {
                 position: absolute;
