@@ -4527,6 +4527,7 @@
                     minmax(calc(14px * var(--panel-scale, 1)), 0.35fr)
                     minmax(calc(14px * var(--panel-scale, 1)), 0.35fr)
                     minmax(calc(14px * var(--panel-scale, 1)), 0.35fr)
+                    minmax(calc(14px * var(--panel-scale, 1)), 0.35fr)
                     minmax(calc(18px * var(--panel-scale, 1)), 0.6fr);
                 gap: calc(2px * var(--panel-scale, 1));
                 padding: 0 calc(4px * var(--panel-scale, 1)) calc(6px * var(--panel-scale, 1)) calc(4px * var(--panel-scale, 1));
@@ -4799,6 +4800,61 @@
                 height: 100%;
                 line-height: 1;
             }
+            #${OVERLAY_ID} .${PANEL_CLASS} .map-center {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: transparent;
+                border: none;
+                border-radius: calc(2px * var(--panel-scale, 1));
+                padding: calc(1px * var(--panel-scale, 1)) calc(14px * var(--panel-scale, 1));
+                font-size: calc(10px * var(--panel-scale, 1));
+                font-weight: 800;
+                color: #ffffff;
+                display: none;
+                align-items: center;
+                justify-content: center;
+                z-index: 2;
+                pointer-events: none;
+                text-align: center;
+                min-width: 56%;
+                max-width: 92%;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .map-center::after {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: -120%;
+                width: 120%;
+                height: 100%;
+                background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
+                opacity: 0;
+                pointer-events: none;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .map-center.result-player {
+                background: linear-gradient(90deg, rgba(24,119,242,0) 0%, rgba(24,119,242,0.04) 3%, rgba(24,119,242,0.32) 18%, rgba(24,119,242,1) 50%, rgba(24,119,242,0.32) 82%, rgba(24,119,242,0.04) 97%, rgba(24,119,242,0) 100%);
+                box-shadow: none;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .map-center.result-banker {
+                background: linear-gradient(90deg, rgba(239,68,68,0) 0%, rgba(239,68,68,0.04) 3%, rgba(239,68,68,0.32) 18%, rgba(239,68,68,1) 50%, rgba(239,68,68,0.32) 82%, rgba(239,68,68,0.04) 97%, rgba(239,68,68,0) 100%);
+                box-shadow: none;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .map-center.result-tie {
+                background: linear-gradient(90deg, rgba(34,197,94,0) 0%, rgba(34,197,94,0.04) 3%, rgba(34,197,94,0.32) 18%, rgba(34,197,94,1) 50%, rgba(34,197,94,0.32) 82%, rgba(34,197,94,0.04) 97%, rgba(34,197,94,0) 100%);
+                box-shadow: none;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .map-center.is-pop {
+                animation: map-center-pop 240ms ease-out, map-center-glow 600ms ease-out;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .map-center.is-shimmer::after {
+                animation: map-center-shimmer 600ms ease-out;
+                opacity: 1;
+            }
             #${OVERLAY_ID} .${PANEL_CLASS} .map-countdown .map-countdown-value.is-anim {
                 animation: map-countdown-pop 280ms ease-out;
             }
@@ -4807,6 +4863,21 @@
                 60% { transform: translateY(-3px) scale(1.24); opacity: 1; }
                 100% { transform: translateY(0) scale(1); opacity: 1; }
             }
+            @keyframes map-center-pop {
+                0% { transform: translate(-50%, -50%) scale(0.86); opacity: 0.4; }
+                60% { transform: translate(-50%, -50%) scale(1.06); opacity: 1; }
+                100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            }
+            @keyframes map-center-glow {
+                0% { filter: brightness(0.9); }
+                45% { filter: brightness(1.25); }
+                100% { filter: brightness(1); }
+            }
+            @keyframes map-center-shimmer {
+                0% { left: -120%; opacity: 0; }
+                20% { opacity: 0.6; }
+                100% { left: 120%; opacity: 0; }
+            }
             #${OVERLAY_ID} .${PANEL_CLASS} .status-grid {
                 display: grid;
                 grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -4814,9 +4885,9 @@
                 width: 100%;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .status-cell {
-                background: #f7f8fa;
+                background: #eef2ff;
                 border-radius: calc(6px * var(--panel-scale, 1));
-                border: 1px solid #e4e6eb;
+                border: 1px solid #c7d2fe;
                 padding: calc(1px * var(--panel-scale, 1)) calc(3px * var(--panel-scale, 1));
                 min-height: calc(14px * var(--panel-scale, 1));
                 box-sizing: border-box;
@@ -4829,12 +4900,41 @@
                 font-size: calc(6.5px * var(--panel-scale, 1));
                 font-weight: 600;
                 text-transform: uppercase;
-                color: #65676b;
+                color: #475569;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .status-value {
                 font-size: calc(8px * var(--panel-scale, 1));
                 font-weight: 700;
+                color: #1e293b;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .status-input-cell {
+                background: transparent;
+                border: none;
+                padding: 0;
+                min-height: calc(14px * var(--panel-scale, 1));
+                display: flex;
+                align-items: stretch;
+                box-sizing: border-box;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .status-input {
+                width: 100%;
+                border: 1px solid #e4e6eb;
+                background: #ffffff;
+                border-radius: calc(6px * var(--panel-scale, 1));
+                text-align: center;
+                font-size: calc(8px * var(--panel-scale, 1));
+                font-weight: 600;
                 color: #1c1e21;
+                outline: none;
+                height: 100%;
+                min-height: 0;
+                padding: 0;
+                box-sizing: border-box;
+                margin: 0;
+                display: block;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .status-input::placeholder {
+                color: #9ca3af;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .status-line {
                 display: grid;
@@ -4877,10 +4977,100 @@
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                position: relative;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-label {
+                width: 100%;
+                text-align: center;
+                pointer-events: none;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-row .bet-label {
+                font-weight: 500;
+                color: rgba(255, 255, 255, 0.82);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-extra {
+                position: absolute;
+                top: calc(2px * var(--panel-scale, 1));
+                font-size: calc(11px * var(--panel-scale, 1));
+                font-weight: 700;
+                color: #ffffff;
+                line-height: 1;
+                display: none;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-extra.is-blink {
+                animation: bet-extra-blink 0.9s ease-in-out 2;
+            }
+            @keyframes bet-extra-blink {
+                0%, 100% {
+                    opacity: 1;
+                }
+                40% {
+                    opacity: 0.25;
+                }
+                70% {
+                    opacity: 1;
+                }
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-extra.player {
+                right: calc(4px * var(--panel-scale, 1));
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-extra.banker {
+                left: calc(4px * var(--panel-scale, 1));
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-chip {
+                position: absolute;
+                top: calc(2px * var(--panel-scale, 1));
+                left: calc(4px * var(--panel-scale, 1));
+                width: calc(18px * var(--panel-scale, 1));
+                height: calc(18px * var(--panel-scale, 1));
+                border-radius: 999px;
+                background: #fbbf24;
+                color: #ffffff;
+                font-size: calc(12px * var(--panel-scale, 1));
+                font-weight: 600;
+                display: none;
+                align-items: center;
+                justify-content: center;
+                line-height: 1;
+                pointer-events: none;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-chip .chip-text {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+                height: 100%;
+                line-height: 1;
+                text-align: center;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-chip.banker {
+                left: auto;
+                right: calc(4px * var(--panel-scale, 1));
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-player {
+                background: #1454b8;
+                border-color: #1454b8;
+                color: #ffffff;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-tie {
+                background: #15803d;
+                border-color: #15803d;
+                color: #ffffff;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-banker {
+                background: #b91c1c;
+                border-color: #b91c1c;
+                color: #ffffff;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.active {
                 color: #1877f2;
                 box-shadow: inset 0 0 0 1px rgba(24,119,242,0.35);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-player.active,
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-tie.active,
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-banker.active {
+                color: #ffffff;
+                box-shadow: inset 0 0 0 1px rgba(255,255,255,0.35);
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .resize {
                 position: absolute;
@@ -6847,6 +7037,70 @@
             };
         }
 
+
+        function readBetExtra(root) {
+            if (!root)
+                return { player: '', banker: '' };
+            const readText = (selector) => {
+                try {
+                    const el = root.querySelector(selector);
+                    const text = (el && el.textContent || '').trim();
+                    return text || '';
+                } catch (_) {
+                    return '';
+                }
+            };
+            return {
+                player: readText('span.re_rf.re_rh'),
+                banker: readText('span.re_rf.re_rg')
+            };
+        }
+
+        function readBetChips(root) {
+            if (!root)
+                return { player: '', banker: '' };
+            const readChip = (selector) => {
+                try {
+                    const nodes = Array.from(root.querySelectorAll(selector));
+                    for (const el of nodes) {
+                        const text = (el && el.textContent || '').trim();
+                        if (text)
+                            return text;
+                    }
+                } catch (_) {}
+                return '';
+            };
+            return {
+                player: readChip('.kU_kZ .v0_wa'),
+                banker: readChip('.kU_k0 .v0_wa')
+            };
+        }
+
+        function readCenterResultText(root) {
+            if (!root)
+                return '';
+            try {
+                const el = root.querySelector('.yH_yN');
+                const text = (el && el.textContent || '').trim();
+                return text || '';
+            } catch (_) {
+                return '';
+            }
+        }
+
+        function deriveCenterResultClass(text) {
+            if (!text)
+                return '';
+            const lowered = norm(text);
+            if (lowered.includes('nguoi') || lowered.includes('player'))
+                return 'player';
+            if (lowered.includes('nha cai') || lowered.includes('banker'))
+                return 'banker';
+            if (lowered.includes('hoa') || lowered.includes('tie'))
+                return 'tie';
+            return '';
+        }
+
         function captureTableState(room) {
             try {
                 const st = getPanelState(room.id);
@@ -6875,6 +7129,9 @@
                     : history.join('|');
                 const text = (src.innerText || src.textContent || '').replace(/\s+/g, ' ').trim();
                 const betAreas = collectBetAreas(src);
+                const betExtra = readBetExtra(src);
+                const betChips = readBetChips(src);
+                const centerResult = readCenterResultText(src);
                 const sig = [
                     room.id,
                     countdown ?? '',
@@ -6893,6 +7150,9 @@
                     historyRaw,
                     stats,
                     betAreas,
+                    betExtra,
+                    betChips,
+                    centerResult,
                     sig
                 };
             } catch (_) {
@@ -6981,6 +7241,23 @@
                 return 'Chờ kết quả';
             return 'Bắt đầu đặt cược';
         }
+
+        function deriveStatusFromCountdown(countdown, stats, history) {
+            const total = (stats && stats.total && Number.isFinite(stats.total.value))
+                ? stats.total.value
+                : (Array.isArray(history) ? history.length : 0);
+            const normalized = (typeof countdown === 'number' && Number.isFinite(countdown) && countdown >= 0)
+                ? countdown
+                : null;
+            if (normalized !== null && normalized > 0) {
+                return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
+            }
+            if (!total) {
+                return { text: 'Đang xáo bài', color: '#f59e0b' };
+            }
+            return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
+        }
+
 
         function deriveMetricInfo(text) {
             if (!text)
@@ -7263,8 +7540,78 @@
             if (!el)
                 return;
             const label = (info && info.label) ? info.label : (fallback || '--');
-            el.textContent = label || fallback || '--';
+            try {
+                Array.from(el.childNodes).forEach((node) => {
+                    if (node.nodeType === 3)
+                        el.removeChild(node);
+                });
+            } catch (_) {}
+            let labelNode = null;
+            try {
+                labelNode = el.querySelector('.bet-label');
+            } catch (_) {}
+            if (!labelNode) {
+                labelNode = document.createElement('span');
+                labelNode.className = 'bet-label';
+                const extraNode = el.querySelector && el.querySelector('.bet-extra');
+                if (extraNode)
+                    el.insertBefore(labelNode, extraNode);
+                else
+                    el.appendChild(labelNode);
+            }
+            labelNode.textContent = label || fallback || '--';
             el.classList.toggle('active', !!(info && info.active));
+        }
+
+        function applyBetExtra(view, betExtra) {
+            if (!view)
+                return;
+            const playerVal = (betExtra && betExtra.player) ? betExtra.player : '';
+            const bankerVal = (betExtra && betExtra.banker) ? betExtra.banker : '';
+            const pulse = (el, nextValue) => {
+                if (!el)
+                    return;
+                const prevValue = (el.textContent || '').trim();
+                const shouldBlink = nextValue && nextValue !== prevValue;
+                el.textContent = nextValue;
+                el.style.display = nextValue ? 'block' : 'none';
+                if (!shouldBlink)
+                    return;
+                el.classList.remove('is-blink');
+                void el.offsetWidth;
+                el.classList.add('is-blink');
+            };
+            if (view.betPlayerExtra) {
+                if (!view.betPlayerExtra.isConnected && view.betPlayer)
+                    view.betPlayer.appendChild(view.betPlayerExtra);
+                pulse(view.betPlayerExtra, playerVal);
+            }
+            if (view.betBankerExtra) {
+                if (!view.betBankerExtra.isConnected && view.betBanker)
+                    view.betBanker.appendChild(view.betBankerExtra);
+                pulse(view.betBankerExtra, bankerVal);
+            }
+        }
+
+        function applyBetChips(view, betChips) {
+            if (!view)
+                return;
+            const playerVal = (betChips && betChips.player) ? betChips.player : '';
+            const bankerVal = (betChips && betChips.banker) ? betChips.banker : '';
+            if (view.betPlayerChip) {
+                if (view.betPlayerChipText)
+                    view.betPlayerChipText.textContent = playerVal;
+                else
+                    view.betPlayerChip.textContent = playerVal;
+                view.betPlayerChip.style.display = playerVal ? 'flex' : 'none';
+            }
+            if (view.betBankerChip) {
+                if (view.betBankerChipText)
+                    view.betBankerChipText.textContent = bankerVal;
+                else
+                    view.betBankerChip.textContent = bankerVal;
+                view.betBankerChip.style.display = bankerVal ? 'flex' : 'none';
+            }
         }
 
         function renderPanelState(data) {
@@ -7277,6 +7624,10 @@
             st.lastCountdownTimestamp = Date.now();
             updateCountdownView(st, data.countdown);
             startCountdownLoop(st);
+            const text = data.text || '';
+            const betAreas = data.betAreas || null;
+            const betExtra = data.betExtra || null;
+            const betChips = data.betChips || null;
             const historySig = data.historySig || '';
             if (st.lastHistorySig !== historySig) {
                 st.lastHistorySig = historySig;
@@ -7285,10 +7636,6 @@
                 } else {
                     renderResultMap(view, data.history || []);
                 }
-                const text = data.text || '';
-                const betAreas = data.betAreas || null;
-                if (view.statusLineValue)
-                    view.statusLineValue.textContent = deriveStatusFromText(text);
                 if (view.winLoseValue)
                     view.winLoseValue.textContent = deriveWinLoseValue(text);
                 if (view.betDoorValue)
@@ -7313,6 +7660,45 @@
                 updateBetItem(view.betPlayer, betAreas && betAreas.player, 'Người Chơi');
                 updateBetItem(view.betTie, betAreas && betAreas.tie, 'Hòa');
                 updateBetItem(view.betBanker, betAreas && betAreas.banker, 'Nhà Cái');
+            }
+            const statusInfo = deriveStatusFromCountdown(data.countdown, data.stats || null, data.history || []);
+            if (view.statusLineValue && statusInfo) {
+                if (st.lastStatusText !== statusInfo.text) {
+                    view.statusLineValue.textContent = statusInfo.text;
+                    st.lastStatusText = statusInfo.text;
+                }
+                if (st.lastStatusColor !== statusInfo.color) {
+                    view.statusLineValue.style.color = statusInfo.color;
+                    st.lastStatusColor = statusInfo.color;
+                }
+            }
+            const centerText = (data.centerResult || '').trim();
+            const centerType = deriveCenterResultClass(centerText);
+            const centerSig = centerText + '|' + centerType;
+            if (view.mapCenter && st.lastCenterResult !== centerSig) {
+                view.mapCenter.textContent = centerText;
+                view.mapCenter.style.display = centerText ? 'flex' : 'none';
+                view.mapCenter.classList.remove('result-player', 'result-banker', 'result-tie', 'is-pop', 'is-shimmer');
+                if (centerType)
+                    view.mapCenter.classList.add('result-' + centerType);
+                if (centerText) {
+                    void view.mapCenter.offsetWidth;
+                    view.mapCenter.classList.add('is-pop');
+                    view.mapCenter.classList.add('is-shimmer');
+                }
+                st.lastCenterResult = centerSig;
+            }
+            const chipSig = betChips ? ((betChips.player || '') + '|' + (betChips.banker || '')) : '';
+            if (st.lastBetChipSig !== chipSig) {
+                st.lastBetChipSig = chipSig;
+                applyBetChips(view, betChips);
+            }
+            const extraSig = betExtra ? ((betExtra.player || '') + '|' + (betExtra.banker || '')) : '';
+            const needExtraAttach = (view.betPlayerExtra && !view.betPlayerExtra.isConnected)
+                || (view.betBankerExtra && !view.betBankerExtra.isConnected);
+            if (st.lastBetExtraSig !== extraSig || needExtraAttach) {
+                st.lastBetExtraSig = extraSig;
+                applyBetExtra(view, betExtra);
             }
         }
 
@@ -7414,7 +7800,9 @@
             const countdownValue = document.createElement('span');
             countdownValue.className = 'map-countdown-value';
             countdownBadge.appendChild(countdownValue);
-            mapWrap.append(mapGrid, countdownBadge);
+            const mapCenter = document.createElement('div');
+            mapCenter.className = 'map-center';
+            mapWrap.append(mapGrid, countdownBadge, mapCenter);
 
             const statsRow = document.createElement('div');
             statsRow.className = 'result-stats';
@@ -7485,6 +7873,36 @@
                 cell.append(content);
                 return { cell, value: content };
             };
+            const formatMoneyInputValue = (value) => {
+                if (typeof value !== 'string')
+                    return '';
+                const digits = value.replace(/\D+/g, '');
+                if (!digits)
+                    return '';
+                const trimmed = digits.replace(/^0+(?=\d)/, '');
+                return trimmed.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            };
+            const createStatusInputCell = (placeholder = '') => {
+                const cell = document.createElement('div');
+                cell.className = 'status-cell status-input-cell';
+                const input = document.createElement('input');
+                input.className = 'status-input';
+                input.type = 'text';
+                input.placeholder = placeholder;
+                const normalize = () => {
+                    input.value = formatMoneyInputValue(input.value);
+                };
+                input.addEventListener('blur', normalize);
+                input.addEventListener('change', normalize);
+                input.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter') {
+                        normalize();
+                        input.blur();
+                    }
+                });
+                cell.append(input);
+                return { cell, value: input };
+            };
             const winLoseLabel = createStatusCell('THẮNG/THUA', true);
             const winLoseValue = createStatusCell('--');
             const betDoorLabel = createStatusCell('CỬA ĐẶT', true);
@@ -7497,6 +7915,10 @@
             const winAmountValue = createStatusCell('--');
             const totalWinLoseLabel = createStatusCell('TỔNG THẮNG/THUA', true);
             const totalWinLoseValue = createStatusCell('--');
+            const cutProfitLabel = createStatusCell('CẮT LÃI', true);
+            const cutProfitValue = createStatusInputCell('');
+            const cutLossLabel = createStatusCell('CẮT LỖ', true);
+            const cutLossValue = createStatusInputCell('');
             statusGrid.append(
                 winLoseLabel.cell,
                 winLoseValue.cell,
@@ -7509,13 +7931,17 @@
                 winAmountLabel.cell,
                 winAmountValue.cell,
                 totalWinLoseLabel.cell,
-                totalWinLoseValue.cell
+                totalWinLoseValue.cell,
+                cutProfitLabel.cell,
+                cutProfitValue.cell,
+                cutLossLabel.cell,
+                cutLossValue.cell
             );
-            statusGrid.style.gridRow = '3 / span 3';
+            statusGrid.style.gridRow = '3 / span 4';
 
             const statusLine = document.createElement('div');
             statusLine.className = 'status-line';
-            statusLine.style.gridRow = '6 / span 1';
+            statusLine.style.gridRow = '7 / span 1';
             const statusLineLabel = document.createElement('div');
             statusLineLabel.className = 'label';
             statusLineLabel.textContent = 'TRẠNG THÁI';
@@ -7526,16 +7952,34 @@
 
             const betRow = document.createElement('div');
             betRow.className = 'bet-row';
-            betRow.style.gridRow = '7 / span 1';
+            betRow.style.gridRow = '8 / span 1';
             const betPlayer = document.createElement('div');
-            betPlayer.className = 'bet-item';
+            betPlayer.className = 'bet-item bet-player';
             betPlayer.textContent = 'Người Chơi';
+            const betPlayerExtra = document.createElement('span');
+            betPlayerExtra.className = 'bet-extra player';
+            betPlayer.appendChild(betPlayerExtra);
+            const betPlayerChip = document.createElement('span');
+            betPlayerChip.className = 'bet-chip player';
+            const betPlayerChipText = document.createElement('span');
+            betPlayerChipText.className = 'chip-text';
+            betPlayerChip.appendChild(betPlayerChipText);
+            betPlayer.appendChild(betPlayerChip);
             const betTie = document.createElement('div');
-            betTie.className = 'bet-item';
+            betTie.className = 'bet-item bet-tie';
             betTie.textContent = 'Hòa';
             const betBanker = document.createElement('div');
-            betBanker.className = 'bet-item';
+            betBanker.className = 'bet-item bet-banker';
             betBanker.textContent = 'Nhà Cái';
+            const betBankerExtra = document.createElement('span');
+            betBankerExtra.className = 'bet-extra banker';
+            betBanker.appendChild(betBankerExtra);
+            const betBankerChip = document.createElement('span');
+            betBankerChip.className = 'bet-chip banker';
+            const betBankerChipText = document.createElement('span');
+            betBankerChipText.className = 'chip-text';
+            betBankerChip.appendChild(betBankerChipText);
+            betBanker.appendChild(betBankerChip);
             betRow.append(betPlayer, betTie, betBanker);
 
             body.append(mapWrap, statsRow, statusGrid, statusLine, betRow);
@@ -7575,6 +8019,7 @@
                     mapCells,
                     mapRows,
                     mapCols,
+                    mapCenter,
                     statusGrid,
                     statusLine,
                     betRow,
@@ -7586,10 +8031,21 @@
                     winAmountValue: winAmountValue.value,
                     totalWinLoseValue: totalWinLoseValue.value,
                     betPlayer,
+                    betPlayerExtra,
+                    betPlayerChip,
+                    betPlayerChipText,
                     betTie,
-                    betBanker
+                    betBanker,
+                    betBankerExtra,
+                    betBankerChip,
+                    betBankerChipText
                 },
                 lastSig: '',
+                lastBetExtraSig: '',
+                lastBetChipSig: '',
+                lastStatusText: '',
+                lastStatusColor: '',
+                lastCenterResult: '',
                 lastState: null,
                 closed: false,
                 resolve: (id) => {
