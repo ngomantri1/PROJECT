@@ -1824,6 +1824,57 @@ Ví dụ không hợp lệ:
             }
         }
 
+        private void ApplyGlobalConfigSnapshotToUi()
+        {
+            _suppressTableSync = true;
+            try
+            {
+                _cfg.BetStrategyIndex = _globalCfgSnapshot.BetStrategyIndex;
+                _cfg.BetSeq = _globalCfgSnapshot.BetSeq ?? "";
+                _cfg.BetPatterns = _globalCfgSnapshot.BetPatterns ?? "";
+                _cfg.BetSeqCL = _globalCfgSnapshot.BetSeqCL ?? "";
+                _cfg.BetSeqNI = _globalCfgSnapshot.BetSeqNI ?? "";
+                _cfg.BetPatternsCL = _globalCfgSnapshot.BetPatternsCL ?? "";
+                _cfg.BetPatternsNI = _globalCfgSnapshot.BetPatternsNI ?? "";
+                _cfg.MoneyStrategy = _globalCfgSnapshot.MoneyStrategy ?? "IncreaseWhenLose";
+                _cfg.StakeCsv = _globalCfgSnapshot.StakeCsv ?? "";
+                _cfg.StakeCsvByMoney = _globalCfgSnapshot.StakeCsvByMoney != null
+                    ? new Dictionary<string, string>(_globalCfgSnapshot.StakeCsvByMoney, StringComparer.OrdinalIgnoreCase)
+                    : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                _cfg.S7ResetOnProfit = _globalCfgSnapshot.S7ResetOnProfit;
+
+                if (CmbBetStrategy != null)
+                {
+                    var idx = _cfg.BetStrategyIndex;
+                    if (idx < 0 || idx > 15) idx = 4;
+                    CmbBetStrategy.SelectedIndex = idx;
+                }
+
+                UpdateBetStrategyUi();
+                SyncStrategyFieldsToUI();
+                UpdateTooltips();
+
+                if (CmbMoneyStrategy != null)
+                    ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
+                LoadStakeCsvForCurrentMoneyStrategy();
+                UpdateS7ResetOptionUI();
+                if (ChkS7ResetOnProfit != null)
+                    ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
+            }
+            finally
+            {
+                _suppressTableSync = false;
+            }
+        }
+
+        private void ClearActiveTableFocus()
+        {
+            if (string.IsNullOrWhiteSpace(_activeTableId)) return;
+            UpdateTableSettingFromUi(_activeTableId);
+            _activeTableId = "";
+            ApplyGlobalConfigSnapshotToUi();
+        }
+
         private void ApplyUiConfigToTableSetting(TableSetting setting, bool resetCuts)
         {
             if (setting == null) return;
@@ -2041,6 +2092,10 @@ Ví dụ không hợp lệ:
                                         var id = focusIdEl.GetString() ?? "";
                                         var name = root.TryGetProperty("name", out var nameEl) ? (nameEl.GetString() ?? "") : "";
                                         await HandleTableFocusAsync(id, name);
+                                    }
+                                    if (ev == "blur")
+                                    {
+                                        ClearActiveTableFocus();
                                     }
                                     return;
                                 }
@@ -3271,7 +3326,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (_overlayActiveRooms.Remove(tableId))
                 Log($"[TABLE] Bàn '{tableId}' đã đóng.");
             if (string.Equals(_activeTableId, tableId, StringComparison.OrdinalIgnoreCase))
-                _activeTableId = null;
+                ClearActiveTableFocus();
         }
 
         private void MainWindow_StateChanged_CloseRoomPopup(object? sender, EventArgs e)

@@ -4389,6 +4389,14 @@
         let highestZ = 2147480001;
         let lastFocusId = '';
 
+        function clearPanelFocus() {
+            panelMap.forEach(entry => {
+                if (!entry || !entry.panel)
+                    return;
+                entry.panel.classList.remove('abx-focus');
+            });
+        }
+
         function setPanelFocus(panel) {
             panelMap.forEach(entry => {
                 if (!entry || !entry.panel)
@@ -4410,6 +4418,33 @@
                     name: room && room.name ? room.name : ''
                 });
             } catch (_) {}
+        }
+
+        function notifyBlur(id) {
+            if (!id)
+                return;
+            try {
+                window.chrome?.webview?.postMessage?.({
+                    overlay: 'table',
+                    event: 'blur',
+                    id: id
+                });
+            } catch (_) {}
+        }
+
+        function togglePanelFocus(panel, room) {
+            if (!panel)
+                return;
+            const isFocused = panel.classList.contains('abx-focus');
+            if (isFocused) {
+                clearPanelFocus();
+                const blurId = lastFocusId || (room && room.id ? room.id : '');
+                lastFocusId = '';
+                notifyBlur(blurId);
+                return;
+            }
+            setPanelFocus(panel);
+            notifyFocus(room);
         }
 
         function loadLayouts() {
@@ -8055,8 +8090,7 @@
                 if (e.button !== 0)
                     return;
                 bringToFront(panel);
-                setPanelFocus(panel);
-                notifyFocus(room);
+                togglePanelFocus(panel, room);
             });
 
             const st = {
