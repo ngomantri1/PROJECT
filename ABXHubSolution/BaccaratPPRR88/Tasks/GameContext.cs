@@ -6,6 +6,8 @@ namespace BaccaratPPRR88.Tasks
 {
     public sealed class GameContext
     {
+        public string TableId { get; init; } = "";
+
         // Lấy snapshot mới nhất từ MainWindow (thread-safe)
         public Func<CwSnapshot> GetSnap { get; init; }
 
@@ -62,3 +64,4 @@ namespace BaccaratPPRR88.Tasks
         public Action<bool>? UiWinLoss;       // true = win, false = loss
     }
 }
+

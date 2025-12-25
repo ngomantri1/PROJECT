@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Text.Json;
 
 namespace BaccaratPPRR88.Tasks
 {
@@ -119,11 +120,21 @@ namespace BaccaratPPRR88.Tasks
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke(side));
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
 
+            var tableId = ctx.TableId ?? "";
+            if (string.IsNullOrWhiteSpace(tableId))
+            {
+                ctx.Log?.Invoke("[BET] missing tableId");
+                return false;
+            }
+
+            var tableIdJson = JsonSerializer.Serialize(tableId);
+            var sideJson = JsonSerializer.Serialize(side ?? "");
+
             // GỌI __cw_bet AN TOÀN (giữ nguyên như code hiện tại)
             var js =
                 "(function(){try{" +
                 " if (typeof window.__cw_bet==='function'){" +
-                "   return window.__cw_bet('" + side + "', " + amount + ");" +
+                "   return window.__cw_bet(" + tableIdJson + ", " + sideJson + ", " + amount + ");" +
                 " } else { return 'no'; }" +
                 "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
@@ -163,3 +174,4 @@ namespace BaccaratPPRR88.Tasks
         }
     }
 }
+

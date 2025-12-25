@@ -199,6 +199,375 @@
     })();
     // === END TEXTMAP GUARD ===
 
+    // --- BET BRIDGE: __cw_bet (Player/Banker, required tableId) ---
+    const BET_PLAYER_TAIL =
+        'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.zv_zw[2]/div[1]/div.kU_kV.kU_kZ[1]/div.qE_lp.qE_q1[1]';
+    const BET_BANKER_TAIL =
+        'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[4]/div[1]/div.kU_kV.kU_k0[1]/div.qE_lp.qE_ra[1]';
+
+    const CHIP_LABEL_BY_AMOUNT = {
+        4000: '4',
+        20000: '20',
+        40000: '40',
+        100000: '100',
+        500000: '500',
+        2000000: '2K',
+        5000000: '5K'
+    };
+
+    function betCssFromTailSimple(tail) {
+        const segs = String(tail || '').trim().split('/').filter(Boolean).map(seg => {
+            const m = seg.match(/^([a-zA-Z0-9_-]+)((?:\.[a-zA-Z0-9_-]+)*)?(?:\[(\d+)\])?$/);
+            if (!m)
+                return seg;
+            const tag = m[1],
+                cls = (m[2] || ''),
+                nth = m[3] ? `:nth-of-type(${m[3]})` : '';
+            return `${tag}${cls}${nth}`;
+        });
+        return segs.join(' > ');
+    }
+
+    function betCssEscape(value) {
+        const v = String(value || '');
+        if (window.CSS && typeof window.CSS.escape === 'function')
+            return window.CSS.escape(v);
+        return v.replace(/["\\]/g, '\\$&');
+    }
+
+    function betGetTableIdCandidates(id) {
+        const list = [];
+        const trimmed = String(id || '').trim();
+        if (trimmed)
+            list.push(trimmed);
+        const lower = trimmed.toLowerCase();
+        if (lower.startsWith('tileheight-')) {
+            const raw = trimmed.slice('tileheight-'.length);
+            if (raw)
+                list.push(raw);
+        }
+        return Array.from(new Set(list));
+    }
+
+    function betCollectDocs() {
+        const docs = [];
+        try {
+            docs.push(document);
+        } catch (_) {}
+        try {
+            const iframes = Array.from(document.querySelectorAll('iframe'));
+            for (const ifr of iframes) {
+                try {
+                    const doc = ifr.contentDocument;
+                    if (doc)
+                        docs.push(doc);
+                } catch (_) {}
+            }
+        } catch (_) {}
+        return docs;
+    }
+
+    function betResolveCardRoot(node) {
+        if (!node)
+            return null;
+        return node.closest('div.he_hf.he_hi') ||
+            node.closest('div.hC_hE') ||
+            node.closest('div.ep_bn') ||
+            node.closest('div.hu_hw') ||
+            node.closest('div.rW_rX') ||
+            node.closest('div.mx_G') ||
+            node.closest('div.hq_hr') ||
+            node.closest('div.cU_cV') ||
+            node.closest('div.kx_ca') ||
+            node.closest('div.kx_ky') ||
+            node.closest('div.jF_jJ') ||
+            node.closest('.qW_rl') ||
+            node;
+    }
+
+    function betHasBetTargets(root) {
+        if (!root || !root.querySelector)
+            return false;
+        try {
+            return !!(root.querySelector('.qE_lp.qE_q1') || root.querySelector('.qE_lp.qE_ra'));
+        } catch (_) {}
+        return false;
+    }
+
+    function betFindCardRootById(id) {
+        const candidates = betGetTableIdCandidates(id);
+        if (!candidates.length)
+            return null;
+        const docs = betCollectDocs();
+        const attrs = [
+            'data-table-id',
+            'data-table_id',
+            'data-id',
+            'data-game-id',
+            'data-gameid',
+            'data-room-id',
+            'data-roomid',
+            'data-tableid',
+            'data-table'
+        ];
+        let fallback = null;
+        for (const doc of docs) {
+            for (const needle of candidates) {
+                try {
+                    const byId = doc.getElementById(needle);
+                    if (byId) {
+                        const root = betResolveCardRoot(byId);
+                        if (betHasBetTargets(root))
+                            return root;
+                        if (!fallback)
+                            fallback = root;
+                    }
+                } catch (_) {}
+                for (const attr of attrs) {
+                    try {
+                        const sel = `[${attr}="${betCssEscape(needle)}"]`;
+                        const hit = doc.querySelector(sel);
+                        if (hit) {
+                            const root = betResolveCardRoot(hit);
+                            if (betHasBetTargets(root))
+                                return root;
+                            if (!fallback)
+                                fallback = root;
+                        }
+                    } catch (_) {}
+                }
+            }
+        }
+        for (const doc of docs) {
+            for (const needle of candidates) {
+                if (needle.length < 6)
+                    continue;
+                for (const attr of attrs) {
+                    try {
+                        const sel = `[${attr}*="${betCssEscape(needle)}"]`;
+                        const hit = doc.querySelector(sel);
+                        if (hit) {
+                            const root = betResolveCardRoot(hit);
+                            if (betHasBetTargets(root))
+                                return root;
+                            if (!fallback)
+                                fallback = root;
+                        }
+                    } catch (_) {}
+                }
+            }
+        }
+        return fallback;
+    }
+
+    function betCollectNodes(selector) {
+        const nodes = [];
+        try {
+            nodes.push(...document.querySelectorAll(selector));
+        } catch (_) {}
+        try {
+            const iframes = Array.from(document.querySelectorAll('iframe'));
+            for (const ifr of iframes) {
+                try {
+                    const doc = ifr.contentDocument;
+                    if (doc)
+                        nodes.push(...doc.querySelectorAll(selector));
+                } catch (_) {}
+            }
+        } catch (_) {}
+        return nodes;
+    }
+
+    function betFindByTail(root, tail) {
+        if (!tail)
+            return null;
+        const css = betCssFromTailSimple(tail);
+        if (root && root.querySelector) {
+            try {
+                const el = root.querySelector(css);
+                if (el)
+                    return el;
+            } catch (_) {}
+            return null;
+        }
+        try {
+            const el = document.querySelector(css);
+            if (el)
+                return el;
+        } catch (_) {}
+        try {
+            const iframes = Array.from(document.querySelectorAll('iframe'));
+            for (const ifr of iframes) {
+                try {
+                    const doc = ifr.contentDocument;
+                    if (!doc)
+                        continue;
+                    const el = doc.querySelector(css);
+                    if (el)
+                        return el;
+                } catch (_) {}
+            }
+        } catch (_) {}
+        return null;
+    }
+
+    function betIsVisible(el) {
+        if (!el || !el.getBoundingClientRect)
+            return false;
+        const rc = el.getBoundingClientRect();
+        return !!(rc && rc.width > 2 && rc.height > 2);
+    }
+
+    function betFindFirstVisible(root, selector) {
+        const nodes = [];
+        if (root && root.querySelectorAll) {
+            try {
+                nodes.push(...root.querySelectorAll(selector));
+            } catch (_) {}
+        } else {
+            nodes.push(...betCollectNodes(selector));
+        }
+        for (const el of nodes) {
+            if (betIsVisible(el))
+                return el;
+        }
+        return nodes.length ? nodes[0] : null;
+    }
+
+    function betNormalizeSide(side) {
+        const raw = String(side || '').trim().toUpperCase();
+        if (!raw)
+            return '';
+        if (raw === 'P' || raw === 'PLAYER' || raw === 'PL' || raw === 'CHAN')
+            return 'player';
+        if (raw === 'B' || raw === 'BANKER' || raw === 'BK' || raw === 'LE')
+            return 'banker';
+        return '';
+    }
+
+    function betAmountToLabel(amount) {
+        const n = Number(amount);
+        if (!Number.isFinite(n))
+            return '';
+        if (CHIP_LABEL_BY_AMOUNT[n])
+            return CHIP_LABEL_BY_AMOUNT[n];
+        if (n >= 1000000 && n % 1000000 === 0)
+            return String(n / 1000000) + 'K';
+        if (n >= 1000 && n % 1000 === 0)
+            return String(n / 1000);
+        return String(n);
+    }
+
+    function betFindChip(label) {
+        if (!label)
+            return null;
+        const upper = String(label).trim().toUpperCase();
+        const nodes = betCollectNodes('.v0_wa');
+        for (const el of nodes) {
+            const text = (el.textContent || '').trim().toUpperCase();
+            if (text === upper && betIsVisible(el))
+                return el;
+        }
+        for (const el of nodes) {
+            const text = (el.textContent || '').trim().toUpperCase();
+            if (text === upper)
+                return el;
+        }
+        return null;
+    }
+
+    function betDispatchClick(el) {
+        if (!el)
+            return false;
+        const doc = el.ownerDocument || document;
+        const win = doc.defaultView || window;
+        try {
+            if (el.getBoundingClientRect) {
+                const r = el.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) {
+                    const x = r.left + r.width / 2;
+                    const y = r.top + r.height / 2;
+                    const target = el.closest('button,[role=button],a') || el;
+                    try {
+                        if (typeof win.PointerEvent === 'function') {
+                            const pd = new win.PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 1, pointerType: 'mouse' });
+                            const pu = new win.PointerEvent('pointerup', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 0, pointerType: 'mouse' });
+                            target.dispatchEvent(pd);
+                            target.dispatchEvent(pu);
+                        }
+                        const md = new win.MouseEvent('mousedown', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 1 });
+                        const mu = new win.MouseEvent('mouseup', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 0 });
+                        const mc = new win.MouseEvent('click', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 0 });
+                        target.dispatchEvent(md);
+                        target.dispatchEvent(mu);
+                        target.dispatchEvent(mc);
+                    } catch (_) {}
+                    if (typeof target.click === 'function')
+                        target.click();
+                    return true;
+                }
+            }
+            if (typeof el.click === 'function') {
+                el.click();
+                return true;
+            }
+        } catch (_) {}
+        return false;
+    }
+
+    window.__cw_bet = function (tableId, side, amount) {
+        try {
+            const id = String(tableId || '').trim();
+            if (!id)
+                return 'no-table';
+
+            const root = betFindCardRootById(id);
+            if (!root)
+                return 'no-table';
+
+            const s = betNormalizeSide(side);
+            if (!s)
+                return 'no-side';
+
+            const targetTail = s === 'player' ? BET_PLAYER_TAIL : BET_BANKER_TAIL;
+            const target = betFindByTail(root, targetTail) ||
+                (s === 'player'
+                    ? betFindFirstVisible(root, '.qE_lp.qE_q1')
+                    : betFindFirstVisible(root, '.qE_lp.qE_ra'));
+            if (!target)
+                return 'no-target';
+
+            const label = betAmountToLabel(amount);
+            const chipNode = betFindChip(label);
+            if (!chipNode)
+                return 'no-chip';
+
+            const chipBtn = chipNode.closest('button') || chipNode;
+            if (!betDispatchClick(chipBtn))
+                return 'chip-fail';
+
+            const candidates = [
+                target.closest('.kU_kV'),
+                target,
+                target.closest('.zv_zw'),
+                target.closest('.uU_g0')
+            ].filter(Boolean);
+            let ok = false;
+            for (const el of candidates) {
+                if (betDispatchClick(el)) {
+                    ok = true;
+                    break;
+                }
+            }
+            if (!ok)
+                return 'target-fail';
+
+            return 'ok';
+        } catch (e) {
+            return 'err:' + (e && e.message ? e.message : e);
+        }
+    };
+
     // Skip toàn bộ Home Watch ở domain game
     if (/^games\./i.test(location.hostname)) {
         console.debug('[HomeWatch] Skip on game host');
@@ -4405,6 +4774,13 @@
             });
         }
 
+        function isInteractiveTarget(target) {
+            const el = (target instanceof Element) ? target : null;
+            if (!el)
+                return false;
+            return !!el.closest('button, input, select, textarea');
+        }
+
         function notifyFocus(room) {
             const id = room && room.id ? room.id : '';
             if (!id || id === lastFocusId)
@@ -7870,6 +8246,8 @@
             const btnPlay = document.createElement('button');
             btnPlay.className = 'play-btn';
             btnPlay.textContent = 'Play';
+            btnPlay.addEventListener('pointerdown', (e) => e.stopPropagation());
+            btnPlay.addEventListener('mousedown', (e) => e.stopPropagation());
             btnPlay.addEventListener('click', () => {
                 try {
                     window.chrome?.webview?.postMessage?.({ overlay: 'table', event: 'play', id: room.id });
@@ -8090,6 +8468,8 @@
                 if (e.button !== 0)
                     return;
                 bringToFront(panel);
+                if (isInteractiveTarget(e.target))
+                    return;
                 togglePanelFocus(panel, room);
             });
 
