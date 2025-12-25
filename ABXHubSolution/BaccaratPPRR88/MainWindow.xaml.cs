@@ -476,6 +476,34 @@ Ví dụ không hợp lệ:
 
         }
 
+        private sealed class TableSettingsFile
+        {
+            public int Version { get; set; } = 1;
+            public List<TableSetting> Tables { get; set; } = new();
+        }
+
+        private sealed class TableSetting
+        {
+            public string Id { get; set; } = "";
+            public string Name { get; set; } = "";
+
+            public int BetStrategyIndex { get; set; } = 4;
+            public string BetSeq { get; set; } = "";
+            public string BetPatterns { get; set; } = "";
+            public string BetSeqCL { get; set; } = "";
+            public string BetSeqNI { get; set; } = "";
+            public string BetPatternsCL { get; set; } = "";
+            public string BetPatternsNI { get; set; } = "";
+
+            public string MoneyStrategy { get; set; } = "IncreaseWhenLose";
+            public string StakeCsv { get; set; } = "";
+            public Dictionary<string, string> StakeCsvByMoney { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+            public bool S7ResetOnProfit { get; set; } = true;
+
+            public double CutProfit { get; set; } = 0;
+            public double CutLoss { get; set; } = 0;
+        }
+
         // 1) Model 1 dòng log đặt cược
         private sealed class BetRow
         {
@@ -498,9 +526,23 @@ Ví dụ không hợp lệ:
 
 
         private AppConfig _cfg = new();
+        private AppConfig _globalCfgSnapshot = new();
+        private TableSettingsFile _tableSettings = new();
+
+        private readonly string _tableSettingsPath;
+        private readonly SemaphoreSlim _tableSettingsWriteGate = new(1, 1);
+        private CancellationTokenSource? _tableSettingsSaveCts;
+        private string? _activeTableId;
+        private bool _suppressTableSync = false;
         // JsonOptions cho log: giữ nguyên ký tự Unicode (tiếng Việt) thay vì \uXXXX
         private static readonly JsonSerializerOptions LogJsonOptions = new JsonSerializerOptions
         {
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
+        private static readonly JsonSerializerOptions TableSettingsJsonOptions = new JsonSerializerOptions
+        {
+            WriteIndented = true,
             Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
 
@@ -787,6 +829,7 @@ Ví dụ không hợp lệ:
             Directory.CreateDirectory(_appDataDir);
 
             _cfgPath = Path.Combine(_appDataDir, "config.json");
+            _tableSettingsPath = Path.Combine(_appDataDir, "tablesettings.json");
 
             _logDir = Path.Combine(_appDataDir, "logs");
             Directory.CreateDirectory(_logDir);
@@ -851,7 +894,7 @@ Ví dụ không hợp lệ:
 
                 // Hàng đợi log chờ ghi file
                 while (_fileLogQueue.TryDequeue(out _)) { }
-                }
+            }
             catch
             {
                 // nuốt lỗi, tránh crash app
@@ -1486,6 +1529,7 @@ Ví dụ không hợp lệ:
                 UpdateRoomSummary();
 
 
+                _globalCfgSnapshot = CloneConfig(_cfg);
             }
             catch (Exception ex) { Log("[LoadConfig] " + ex); }
         }
@@ -1530,7 +1574,8 @@ Ví dụ không hợp lệ:
                 var dir = Path.GetDirectoryName(_cfgPath);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-                var json = JsonSerializer.Serialize(_cfg, new JsonSerializerOptions { WriteIndented = true });
+                var cfgToSave = BuildConfigForSave();
+                var json = JsonSerializer.Serialize(cfgToSave, new JsonSerializerOptions { WriteIndented = true });
 
                 // Ghi an toàn: file tạm -> move (atomic)
                 var tmp = _cfgPath + ".tmp";
@@ -1538,9 +1583,327 @@ Ví dụ không hợp lệ:
                 File.Move(tmp, _cfgPath, true);
 
                 Log("Saved config");
+                if (string.IsNullOrWhiteSpace(_activeTableId))
+                    _globalCfgSnapshot = CloneConfig(_cfg);
             }
             catch (Exception ex) { Log("[SaveConfig] " + ex); }
             finally { _cfgWriteGate.Release(); }
+        }
+
+        private static AppConfig CloneConfig(AppConfig cfg)
+        {
+            return cfg with
+            {
+                StakeCsvByMoney = cfg.StakeCsvByMoney != null
+                    ? new Dictionary<string, string>(cfg.StakeCsvByMoney, StringComparer.OrdinalIgnoreCase)
+                    : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                SelectedRooms = cfg.SelectedRooms != null
+                    ? new List<string>(cfg.SelectedRooms)
+                    : new List<string>()
+            };
+        }
+
+        private AppConfig BuildConfigForSave()
+        {
+            var snapshot = CloneConfig(_cfg);
+            if (!string.IsNullOrWhiteSpace(_activeTableId))
+            {
+                snapshot.BetStrategyIndex = _globalCfgSnapshot.BetStrategyIndex;
+                snapshot.BetSeq = _globalCfgSnapshot.BetSeq ?? "";
+                snapshot.BetPatterns = _globalCfgSnapshot.BetPatterns ?? "";
+                snapshot.BetSeqCL = _globalCfgSnapshot.BetSeqCL ?? "";
+                snapshot.BetSeqNI = _globalCfgSnapshot.BetSeqNI ?? "";
+                snapshot.BetPatternsCL = _globalCfgSnapshot.BetPatternsCL ?? "";
+                snapshot.BetPatternsNI = _globalCfgSnapshot.BetPatternsNI ?? "";
+                snapshot.MoneyStrategy = _globalCfgSnapshot.MoneyStrategy ?? "IncreaseWhenLose";
+                snapshot.StakeCsv = _globalCfgSnapshot.StakeCsv ?? "";
+                snapshot.StakeCsvByMoney = _globalCfgSnapshot.StakeCsvByMoney != null
+                    ? new Dictionary<string, string>(_globalCfgSnapshot.StakeCsvByMoney, StringComparer.OrdinalIgnoreCase)
+                    : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                snapshot.S7ResetOnProfit = _globalCfgSnapshot.S7ResetOnProfit;
+            }
+            return snapshot;
+        }
+
+        private void LoadTableSettings()
+        {
+            try
+            {
+                if (File.Exists(_tableSettingsPath))
+                {
+                    var json = File.ReadAllText(_tableSettingsPath, Encoding.UTF8);
+                    var loaded = JsonSerializer.Deserialize<TableSettingsFile>(json) ?? new TableSettingsFile();
+                    loaded.Tables ??= new List<TableSetting>();
+
+                    var map = new Dictionary<string, TableSetting>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var it in loaded.Tables)
+                    {
+                        if (it == null) continue;
+                        var id = (it.Id ?? "").Trim();
+                        if (string.IsNullOrWhiteSpace(id)) continue;
+                        it.Id = id;
+                        it.Name = (it.Name ?? "").Trim();
+                        it.StakeCsvByMoney = it.StakeCsvByMoney != null
+                            ? new Dictionary<string, string>(it.StakeCsvByMoney, StringComparer.OrdinalIgnoreCase)
+                            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        if (!map.ContainsKey(id))
+                            map[id] = it;
+                    }
+
+                    _tableSettings = new TableSettingsFile
+                    {
+                        Version = loaded.Version,
+                        Tables = map.Values.ToList()
+                    };
+                    Log("Loaded table settings: " + _tableSettingsPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[LoadTableSettings] " + ex);
+                _tableSettings = new TableSettingsFile();
+            }
+        }
+
+        private async Task SaveTableSettingsAsync()
+        {
+            if (string.IsNullOrEmpty(_tableSettingsPath))
+            {
+                Log("[SaveTableSettings] skipped: path is empty");
+                return;
+            }
+
+            await _tableSettingsWriteGate.WaitAsync();
+            try
+            {
+                _tableSettings.Tables ??= new List<TableSetting>();
+                var dir = Path.GetDirectoryName(_tableSettingsPath);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+                var json = JsonSerializer.Serialize(_tableSettings, TableSettingsJsonOptions);
+                var tmp = _tableSettingsPath + ".tmp";
+                await File.WriteAllTextAsync(tmp, json, Encoding.UTF8);
+                File.Move(tmp, _tableSettingsPath, true);
+                Log("Saved tablesettings");
+            }
+            catch (Exception ex) { Log("[SaveTableSettings] " + ex); }
+            finally { _tableSettingsWriteGate.Release(); }
+        }
+
+        private async Task TriggerTableSettingsSaveDebouncedAsync()
+        {
+            _tableSettingsSaveCts = await DebounceAsync(_tableSettingsSaveCts, 600, SaveTableSettingsAsync);
+        }
+
+        private TableSetting? FindTableSetting(string tableId)
+        {
+            if (string.IsNullOrWhiteSpace(tableId)) return null;
+            return _tableSettings.Tables.FirstOrDefault(t =>
+                string.Equals(t.Id, tableId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private TableSetting CaptureTableSettingFromUi(string tableId, string? tableName)
+        {
+            var setting = new TableSetting
+            {
+                Id = tableId,
+                Name = (tableName ?? ResolveRoomName(tableId)).Trim()
+            };
+
+            setting.BetStrategyIndex = _cfg.BetStrategyIndex;
+            setting.BetSeq = _cfg.BetSeq ?? "";
+            setting.BetPatterns = _cfg.BetPatterns ?? "";
+            setting.BetSeqCL = _cfg.BetSeqCL ?? "";
+            setting.BetSeqNI = _cfg.BetSeqNI ?? "";
+            setting.BetPatternsCL = _cfg.BetPatternsCL ?? "";
+            setting.BetPatternsNI = _cfg.BetPatternsNI ?? "";
+
+            setting.MoneyStrategy = _cfg.MoneyStrategy ?? "IncreaseWhenLose";
+            setting.StakeCsv = _cfg.StakeCsv ?? "";
+            setting.StakeCsvByMoney = _cfg.StakeCsvByMoney != null
+                ? new Dictionary<string, string>(_cfg.StakeCsvByMoney, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            setting.S7ResetOnProfit = _cfg.S7ResetOnProfit;
+
+            return setting;
+        }
+
+        private TableSetting GetOrCreateTableSetting(string tableId, string? tableName, out bool created)
+        {
+            created = false;
+            var existing = FindTableSetting(tableId);
+            if (existing != null)
+            {
+                if (!string.IsNullOrWhiteSpace(tableName) &&
+                    !string.Equals(existing.Name, tableName, StringComparison.Ordinal))
+                {
+                    existing.Name = tableName.Trim();
+                }
+                return existing;
+            }
+
+            var setting = CaptureTableSettingFromUi(tableId, tableName);
+            _tableSettings.Tables.Add(setting);
+            created = true;
+            return setting;
+        }
+
+        private TableSetting? GetActiveTableSetting()
+        {
+            return string.IsNullOrWhiteSpace(_activeTableId) ? null : FindTableSetting(_activeTableId);
+        }
+
+        private void UpdateTableSettingFromUi(string tableId)
+        {
+            if (_suppressTableSync) return;
+            var setting = FindTableSetting(tableId);
+            if (setting == null) return;
+
+            setting.BetStrategyIndex = _cfg.BetStrategyIndex;
+            setting.BetSeq = _cfg.BetSeq ?? "";
+            setting.BetPatterns = _cfg.BetPatterns ?? "";
+            setting.BetSeqCL = _cfg.BetSeqCL ?? "";
+            setting.BetSeqNI = _cfg.BetSeqNI ?? "";
+            setting.BetPatternsCL = _cfg.BetPatternsCL ?? "";
+            setting.BetPatternsNI = _cfg.BetPatternsNI ?? "";
+            setting.MoneyStrategy = _cfg.MoneyStrategy ?? "IncreaseWhenLose";
+            setting.StakeCsv = _cfg.StakeCsv ?? "";
+            setting.StakeCsvByMoney = _cfg.StakeCsvByMoney != null
+                ? new Dictionary<string, string>(_cfg.StakeCsvByMoney, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            setting.S7ResetOnProfit = _cfg.S7ResetOnProfit;
+
+            if (string.IsNullOrWhiteSpace(setting.Name))
+                setting.Name = ResolveRoomName(setting.Id);
+
+            _ = TriggerTableSettingsSaveDebouncedAsync();
+        }
+
+        private void ApplyTableSettingToUi(TableSetting setting)
+        {
+            if (setting == null) return;
+
+            _suppressTableSync = true;
+            try
+            {
+                _cfg.BetStrategyIndex = setting.BetStrategyIndex;
+                _cfg.BetSeq = setting.BetSeq ?? "";
+                _cfg.BetPatterns = setting.BetPatterns ?? "";
+                _cfg.BetSeqCL = setting.BetSeqCL ?? "";
+                _cfg.BetSeqNI = setting.BetSeqNI ?? "";
+                _cfg.BetPatternsCL = setting.BetPatternsCL ?? "";
+                _cfg.BetPatternsNI = setting.BetPatternsNI ?? "";
+                _cfg.MoneyStrategy = setting.MoneyStrategy ?? "IncreaseWhenLose";
+                _cfg.StakeCsv = setting.StakeCsv ?? "";
+                _cfg.StakeCsvByMoney = setting.StakeCsvByMoney != null
+                    ? new Dictionary<string, string>(setting.StakeCsvByMoney, StringComparer.OrdinalIgnoreCase)
+                    : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                _cfg.S7ResetOnProfit = setting.S7ResetOnProfit;
+
+                if (CmbBetStrategy != null)
+                {
+                    var idx = setting.BetStrategyIndex;
+                    if (idx < 0 || idx > 15) idx = 4;
+                    CmbBetStrategy.SelectedIndex = idx;
+                }
+
+                UpdateBetStrategyUi();
+                SyncStrategyFieldsToUI();
+                UpdateTooltips();
+
+                if (CmbMoneyStrategy != null)
+                    ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
+                LoadStakeCsvForCurrentMoneyStrategy();
+                UpdateS7ResetOptionUI();
+                if (ChkS7ResetOnProfit != null)
+                    ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
+            }
+            finally
+            {
+                _suppressTableSync = false;
+            }
+        }
+
+        private void ApplyUiConfigToTableSetting(TableSetting setting, bool resetCuts)
+        {
+            if (setting == null) return;
+
+            setting.BetStrategyIndex = _cfg.BetStrategyIndex;
+            setting.BetSeq = _cfg.BetSeq ?? "";
+            setting.BetPatterns = _cfg.BetPatterns ?? "";
+            setting.BetSeqCL = _cfg.BetSeqCL ?? "";
+            setting.BetSeqNI = _cfg.BetSeqNI ?? "";
+            setting.BetPatternsCL = _cfg.BetPatternsCL ?? "";
+            setting.BetPatternsNI = _cfg.BetPatternsNI ?? "";
+            setting.MoneyStrategy = _cfg.MoneyStrategy ?? "IncreaseWhenLose";
+            setting.StakeCsv = _cfg.StakeCsv ?? "";
+            setting.StakeCsvByMoney = _cfg.StakeCsvByMoney != null
+                ? new Dictionary<string, string>(_cfg.StakeCsvByMoney, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            setting.S7ResetOnProfit = _cfg.S7ResetOnProfit;
+
+            if (resetCuts)
+            {
+                setting.CutProfit = 0;
+                setting.CutLoss = 0;
+            }
+
+            if (string.IsNullOrWhiteSpace(setting.Name))
+                setting.Name = ResolveRoomName(setting.Id);
+        }
+
+        private string ResolveRoomName(string tableId)
+        {
+            if (string.IsNullOrWhiteSpace(tableId)) return "";
+            var hit = _roomList.FirstOrDefault(r => string.Equals(r.Id, tableId, StringComparison.OrdinalIgnoreCase));
+            if (hit != null && !string.IsNullOrWhiteSpace(hit.Name))
+                return hit.Name;
+            var opt = _roomOptions.FirstOrDefault(r => string.Equals(r.Id, tableId, StringComparison.OrdinalIgnoreCase));
+            if (opt != null && !string.IsNullOrWhiteSpace(opt.Name))
+                return opt.Name;
+            return tableId;
+        }
+
+        private async Task HandleTableFocusAsync(string tableId, string? tableName)
+        {
+            if (string.IsNullOrWhiteSpace(tableId)) return;
+            if (!_overlayActiveRooms.Contains(tableId) && !_selectedRooms.Contains(tableId))
+                return;
+
+            if (!string.Equals(_activeTableId, tableId, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.IsNullOrWhiteSpace(_activeTableId))
+                    UpdateTableSettingFromUi(_activeTableId);
+            }
+
+            var created = false;
+            var setting = GetOrCreateTableSetting(tableId, tableName, out created);
+            _activeTableId = setting.Id;
+            ApplyTableSettingToUi(setting);
+            await PushTableCutValuesToOverlayAsync(setting.Id, setting.CutProfit, setting.CutLoss);
+            if (created)
+                _ = TriggerTableSettingsSaveDebouncedAsync();
+        }
+
+        private async Task PushTableCutValuesToOverlayAsync(string tableId, double cutProfit, double cutLoss)
+        {
+            if (Web?.CoreWebView2 == null || string.IsNullOrWhiteSpace(tableId)) return;
+            var idJson = JsonSerializer.Serialize(tableId);
+            var cp = cutProfit.ToString(CultureInfo.InvariantCulture);
+            var cl = cutLoss.ToString(CultureInfo.InvariantCulture);
+            var script = $"window.__abxTableOverlay && window.__abxTableOverlay.setCutValues && window.__abxTableOverlay.setCutValues({idJson}, {cp}, {cl});";
+            try { await Web.ExecuteScriptAsync(script); } catch { }
+        }
+
+        private async Task SyncTableCutValuesForRoomsAsync(IEnumerable<string> roomIds)
+        {
+            if (roomIds == null) return;
+            foreach (var id in roomIds)
+            {
+                var setting = FindTableSetting(id);
+                if (setting == null) continue;
+                await PushTableCutValuesToOverlayAsync(setting.Id, setting.CutProfit, setting.CutLoss);
+            }
         }
 
         private bool TryPrepareWebMessage(CoreWebView2WebMessageReceivedEventArgs e, out string display, out JsonDocument? doc)
@@ -1672,6 +2035,12 @@ Ví dụ không hợp lệ:
                                     if (ev == "closed" && root.TryGetProperty("id", out var overlayIdEl))
                                     {
                                         OnTableClosed(overlayIdEl.GetString() ?? "");
+                                    }
+                                    if (ev == "focus" && root.TryGetProperty("id", out var focusIdEl))
+                                    {
+                                        var id = focusIdEl.GetString() ?? "";
+                                        var name = root.TryGetProperty("name", out var nameEl) ? (nameEl.GetString() ?? "") : "";
+                                        await HandleTableFocusAsync(id, name);
                                     }
                                     return;
                                 }
@@ -2087,6 +2456,7 @@ Ví dụ không hợp lệ:
         private async Task ApplyBackgroundForStateAsync()
         {
             // Chưa có CoreWebView2 ⇒ để nền đen (WebHost đang Black)
+
             if (Web?.CoreWebView2 == null)
                 return;
 
@@ -2270,7 +2640,7 @@ Ví dụ không hợp lệ:
 
                     Log("[Web] Host fixed runtime not found at: " + hubDir);
                 }
-                }
+            }
             catch
             {
                 // Bỏ qua lỗi detect host, sẽ fallback sang runtime riêng bên dưới
@@ -2542,6 +2912,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 StartLogPump();
                 MoneyHelper.Logger = Log;
                 LoadConfig();
+                LoadTableSettings();
                 InitSeqIcons();
 
                 // NEW: đồng bộ nội dung theo chiến lược đang chọn + gắn tooltip ngay khi mở app
@@ -2647,6 +3018,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private async void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
             try { await SaveConfigAsync(); } catch { }
+            try { await SaveTableSettingsAsync(); } catch { }
             try { await DisableCdpNetworkTapAsync(); } catch { }
             StopLogPump();       // <-- tắt pump
             StopAutoLoginWatcher();
@@ -2853,6 +3225,18 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 return;
             }
 
+
+            var createdAny = false;
+            foreach (var room in selectedRooms)
+            {
+                var created = false;
+                GetOrCreateTableSetting(room.id, room.name, out created);
+                if (created)
+                    createdAny = true;
+            }
+            if (createdAny)
+                _ = TriggerTableSettingsSaveDebouncedAsync();
+
             if (Web?.CoreWebView2 == null)
             {
                 Log("[TABLE] WebView chưa sẵn sàng.");
@@ -2871,6 +3255,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 _overlayActiveRooms.Clear();
                 foreach (var room in selectedRooms)
                     _overlayActiveRooms.Add(room.id);
+                await SyncTableCutValuesForRoomsAsync(selectedRooms.Select(r => r.id));
                 Log($"[TABLE] Tạo overlay cho {selectedRooms.Count} bàn.");
             }
             catch (Exception ex)
@@ -2885,6 +3270,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 return;
             if (_overlayActiveRooms.Remove(tableId))
                 Log($"[TABLE] Bàn '{tableId}' đã đóng.");
+            if (string.Equals(_activeTableId, tableId, StringComparison.OrdinalIgnoreCase))
+                _activeTableId = null;
         }
 
         private void MainWindow_StateChanged_CloseRoomPopup(object? sender, EventArgs e)
@@ -3286,22 +3673,28 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private async void ChkS7ResetOnProfit_Changed(object sender, RoutedEventArgs e)
         {
-            if (!_uiReady) return;
+            if (!_uiReady || _suppressTableSync) return;
             _cfg.S7ResetOnProfit = (ChkS7ResetOnProfit?.IsChecked == true);
             MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
             MoneyHelper.ResetTempProfitForWinUpLoseKeep();
-            await SaveConfigAsync();
+            if (!string.IsNullOrWhiteSpace(_activeTableId))
+                UpdateTableSettingFromUi(_activeTableId);
+            else
+                await SaveConfigAsync();
         }
 
         async void CmbMoneyStrategy_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (!_uiReady) return;
+            if (!_uiReady || _suppressTableSync) return;
             _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
             MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             // NEW: mỗi “Quản lý vốn” có chuỗi tiền riêng → nạp lại ô StakeCsv
             LoadStakeCsvForCurrentMoneyStrategy();
             UpdateS7ResetOptionUI();
-            await SaveConfigAsync();
+            if (!string.IsNullOrWhiteSpace(_activeTableId))
+                UpdateTableSettingFromUi(_activeTableId);
+            else
+                await SaveConfigAsync();
             Log($"[MoneyStrategy] updated: {_cfg.MoneyStrategy}");
         }
 
@@ -4312,7 +4705,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private async void TxtStakeCsv_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (!_uiReady) return;
+            if (!_uiReady || _suppressTableSync) return;
 
             _stakeCts = await DebounceAsync(_stakeCts, 150, async () =>
             {
@@ -4325,7 +4718,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 _cfg.StakeCsvByMoney ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 if (!string.IsNullOrWhiteSpace(id)) _cfg.StakeCsvByMoney[id] = csv;
 
-                await SaveConfigAsync();
+                var activeId = _activeTableId;
+                if (!string.IsNullOrWhiteSpace(activeId))
+                    UpdateTableSettingFromUi(activeId);
+                else
+                    await SaveConfigAsync();
                 Log($"[StakeCsv] updated[{id}]: {csv} -> seq[{_stakeSeq.Length}]");
             });
 
@@ -4351,9 +4748,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
             UpdateTooltips();
             ShowErrorsForCurrentStrategy();   // <— thêm dòng này
 
-            if (!_uiReady) return;
+            if (!_uiReady || _suppressTableSync) return;
             _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? 4;
-            await SaveConfigAsync();
+            if (!string.IsNullOrWhiteSpace(_activeTableId))
+                UpdateTableSettingFromUi(_activeTableId);
+            else
+                await SaveConfigAsync();
         }
 
 
@@ -4496,6 +4896,64 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try { _taskCts?.Cancel(); } catch { }
             _taskCts = null;
             _activeTask = null;
+        }
+
+        private async void ResetStrategyAll_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_uiReady) return;
+
+            try
+            {
+                var selectedRooms = _roomOptions
+                    .Where(it => it.IsSelected)
+                    .Select(it => new
+                    {
+                        id = string.IsNullOrWhiteSpace(it.Id) ? it.Name : it.Id,
+                        name = it.Name
+                    })
+                    .Where(it => !string.IsNullOrWhiteSpace(it.id))
+                    .ToList();
+
+                var targets = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var room in selectedRooms)
+                {
+                    if (!targets.ContainsKey(room.id))
+                        targets[room.id] = room.name ?? "";
+                }
+
+                if (targets.Count == 0)
+                {
+                    foreach (var t in _tableSettings.Tables)
+                    {
+                        if (t == null) continue;
+                        var id = (t.Id ?? "").Trim();
+                        if (string.IsNullOrWhiteSpace(id)) continue;
+                        if (!targets.ContainsKey(id))
+                            targets[id] = t.Name ?? "";
+                    }
+                }
+
+                if (targets.Count == 0)
+                {
+                    Log("[TABLE] Khong co ban nao de dat lai chien luoc.");
+                    return;
+                }
+
+                foreach (var kv in targets)
+                {
+                    var created = false;
+                    var setting = GetOrCreateTableSetting(kv.Key, kv.Value, out created);
+                    ApplyUiConfigToTableSetting(setting, resetCuts: true);
+                }
+
+                await SyncTableCutValuesForRoomsAsync(targets.Keys);
+                _ = TriggerTableSettingsSaveDebouncedAsync();
+                Log($"[TABLE] Da dat lai chien luoc cho {targets.Count} ban.");
+            }
+            catch (Exception ex)
+            {
+                Log("[ResetStrategyAll] " + ex.Message);
+            }
         }
 
 
@@ -4884,6 +5342,21 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private void SetPlayButtonState(bool isRunning)
         {
             if (BtnPlay == null) return;
+
+            if (string.Equals(BtnPlay.Tag as string, "reset-strategy", StringComparison.OrdinalIgnoreCase))
+            {
+                BtnPlay.Click -= PlayXocDia_Click;
+                BtnPlay.Click -= StopXocDia_Click;
+                BtnPlay.Click -= ResetStrategyAll_Click;
+                BtnPlay.Click += ResetStrategyAll_Click;
+                BtnPlay.Content = "Đặt lại chiến lược";
+                var primary = TryFindResource("PrimaryButton") as Style;
+                if (primary != null) BtnPlay.Style = primary;
+                BtnPlay.IsEnabled = true;
+                SetConfigEditable(!isRunning);
+                UpdateTooltips();
+                return;
+            }
 
             BtnPlay.Click -= PlayXocDia_Click;
             BtnPlay.Click -= StopXocDia_Click;
@@ -5384,7 +5857,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var asm = Assembly.GetExecutingAssembly();
             using var s = asm.GetManifestResourceStream(resName)
                 ?? throw new FileNotFoundException($"Resource not found: {resName}");
-            using var r = new StreamReader(s);
+            using var r = new StreamReader(s, Encoding.UTF8, true);
             return r.ReadToEnd();
         }
 
@@ -5404,13 +5877,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var diskPath = Path.Combine(AppContext.BaseDirectory, "js_home_v2.js");
                 if (File.Exists(diskPath))
                 {
-                    var text = RemoveUtf8Bom(await File.ReadAllTextAsync(diskPath));
+                    var text = RemoveUtf8Bom(await File.ReadAllTextAsync(diskPath, Encoding.UTF8));
                     Log($"[Bridge] Loaded HOME JS from disk: {diskPath} (len={text.Length})");
                     if (!string.IsNullOrWhiteSpace(text))
                         return text;
                     Log("[Bridge] HOME JS on disk is empty: " + diskPath);
                 }
-                }
+            }
             catch (Exception ex)
             {
                 Log("[Bridge] Read HOME JS on disk failed: " + ex.Message);
@@ -6006,6 +6479,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 _shutdownCts.Cancel();   // bạn đã có
+                _ = SaveTableSettingsAsync();
                 CleanupWebStuff();       // 🔴 thêm
             }
             catch { }
@@ -6757,7 +7231,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private async void TxtChuoiCau_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (!_uiReady) return;
+            if (!_uiReady || _suppressTableSync) return;
 
             var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 0: CL, 2: N/I
             var txt = (TxtChuoiCau?.Text ?? "").Trim();
@@ -6769,14 +7243,17 @@ private async Task<CancellationTokenSource> DebounceAsync(
             // Bản “chung” để engine đọc khi chạy
             _cfg.BetSeq = txt;
 
-            await SaveConfigAsync();              // <— GHI config.json
+            if (!string.IsNullOrWhiteSpace(_activeTableId))
+                UpdateTableSettingFromUi(_activeTableId);
+            else
+                await SaveConfigAsync();              // <- GHI config.json
             ShowErrorsForCurrentStrategy();       // (nếu bạn có hiển thị lỗi dưới ô)
         }
 
 
         private async void TxtTheCau_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (!_uiReady) return;
+            if (!_uiReady || _suppressTableSync) return;
 
             var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 1: CL, 3: N/I
             var txt = (TxtTheCau?.Text ?? "").Trim();
@@ -6788,7 +7265,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
             // Bản “chung” để engine đọc khi chạy
             _cfg.BetPatterns = txt;
 
-            await SaveConfigAsync();                // <— GHI config.json
+            if (!string.IsNullOrWhiteSpace(_activeTableId))
+                UpdateTableSettingFromUi(_activeTableId);
+            else
+                await SaveConfigAsync();                // <- GHI config.json
             ShowErrorsForCurrentStrategy();         // (nếu có)
         }
 

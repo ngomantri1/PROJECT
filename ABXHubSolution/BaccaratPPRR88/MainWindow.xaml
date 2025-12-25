@@ -1219,8 +1219,9 @@
                                         Grid.Column="0"
                                         MinWidth="140"
                                         Padding="13"
-                                        Click="PlayXocDia_Click"
-                                        Content="Bắt Đầu Cược"
+                                        Click="ResetStrategyAll_Click"
+                                        Content="Đặt lại chiến lược"
+                                        Tag="reset-strategy"
                                         Style="{StaticResource PrimaryButton}"
                                         Visibility="Visible" />
 

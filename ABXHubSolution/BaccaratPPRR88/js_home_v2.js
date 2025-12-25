@@ -4387,6 +4387,30 @@
             baseSelector: ''
         };
         let highestZ = 2147480001;
+        let lastFocusId = '';
+
+        function setPanelFocus(panel) {
+            panelMap.forEach(entry => {
+                if (!entry || !entry.panel)
+                    return;
+                entry.panel.classList.toggle('abx-focus', entry.panel === panel);
+            });
+        }
+
+        function notifyFocus(room) {
+            const id = room && room.id ? room.id : '';
+            if (!id || id === lastFocusId)
+                return;
+            lastFocusId = id;
+            try {
+                window.chrome?.webview?.postMessage?.({
+                    overlay: 'table',
+                    event: 'focus',
+                    id: id,
+                    name: room && room.name ? room.name : ''
+                });
+            } catch (_) {}
+        }
 
         function loadLayouts() {
             try {
@@ -4435,6 +4459,15 @@
                 border: 1px solid #e4e6eb;
                 min-width: ${MIN_W}px;
                 min-height: ${MIN_H}px;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS}.abx-focus {
+                border-color: #f97316;
+                box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.65),
+                    0 0 0 6px rgba(249, 115, 22, 0.25),
+                    0 16px 32px rgba(0,0,0,0.25);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS}.abx-focus .head {
+                background: #fdba74;
             }
             #${OVERLAY_ID} .${PANEL_CLASS}.abx-closed {
                 opacity: 0.2;
@@ -6958,6 +6991,28 @@
             return panelMap.get(id);
         }
 
+        function setCutValues(id, cutProfit, cutLoss) {
+            const st = getPanelState(id);
+            if (!st || !st.view)
+                return false;
+            const formatMoneyInputValue = (value) => {
+                if (value === null || value === undefined)
+                    return '';
+                const digits = String(value).replace(/\D+/g, '');
+                if (!digits)
+                    return '';
+                const trimmed = digits.replace(/^0+(?=\d)/, '');
+                return trimmed.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            };
+            const p = st.view.cutProfitInput;
+            const l = st.view.cutLossInput;
+            if (p)
+                p.value = formatMoneyInputValue(cutProfit);
+            if (l)
+                l.value = formatMoneyInputValue(cutLoss);
+            return true;
+        }
+
         function parseCountdownValue(raw) {
             const str = (raw || '').toString().trim();
             if (!str)
@@ -7996,6 +8051,13 @@
             panel.appendChild(closeBtn);
             bringToFront(panel);
             root.appendChild(panel);
+            panel.addEventListener('mousedown', (e) => {
+                if (e.button !== 0)
+                    return;
+                bringToFront(panel);
+                setPanelFocus(panel);
+                notifyFocus(room);
+            });
 
             const st = {
                 id: room.id,
@@ -8030,6 +8092,8 @@
                     moneyLevelValue: moneyLevelValue.value,
                     winAmountValue: winAmountValue.value,
                     totalWinLoseValue: totalWinLoseValue.value,
+                    cutProfitInput: cutProfitValue.value,
+                    cutLossInput: cutLossValue.value,
                     betPlayer,
                     betPlayerExtra,
                     betPlayerChip,
@@ -8265,6 +8329,8 @@
                     window.chrome?.webview?.postMessage?.({ overlay: 'table', event: 'closed', id });
                 } catch (_) {}
             }
+            if (id === lastFocusId)
+                lastFocusId = '';
             lastStateSig.delete(id);
             if (!desiredPinIds.has(id)) {
                 ensurePinState(id, false);
@@ -8329,7 +8395,8 @@
             reset: resetLayout,
             hide,
             show,
-            close: closePanel
+            close: closePanel,
+            setCutValues
         };
     })();
 
