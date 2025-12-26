@@ -1,0 +1,139 @@
+(function () {
+  const ICON_TAILS = [
+    'div.header_title[1]/div.header_top[1]/div.wrapper[1]/div.right-wrap[2]/div.right-wrap-top[1]/div.logined_wrap[1]/div.logined_item[1]/div.logined_item.user-wrap[4]',
+    'div.header_top[1]/div.wrapper[1]/div.right-wrap[2]/div.right-wrap-top[1]/div.logined_wrap[1]/div.logined_item[1]/div.logined_item.user-wrap[4]/span.menu-btn[1]',
+    'div.wrapper[1]/div.right-wrap[2]/div.right-wrap-top[1]/div.logined_wrap[1]/div.logined_item[1]/div.logined_item.user-wrap[4]/span.menu-btn[1]/img.avatar[1]'
+  ];
+
+  const EXCLUDE = [
+    'nap', 'rut', 'tien', 'vip', 'balance', 'so du', 'tai khoan', 'account',
+    'khuyen mai', 'thong bao', 'dang nhap', 'login', 'withdraw', 'deposit',
+    'game', 'casino', 'live', 'sport', 'promo', 'home'
+  ];
+
+  function norm(s) {
+    try { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+    catch { return String(s || ''); }
+  }
+
+  function isLikelyUsername(s) {
+    const t = String(s || '').trim();
+    if (!t) return false;
+    if (t.includes('%')) return false;
+    if (/^[\d\s,.\-]+$/.test(t)) return false;
+    const n = norm(t).toLowerCase();
+    if (EXCLUDE.some(k => n.includes(k))) return false;
+    if (t.length < 2 || t.length > 40) return false;
+    if (!/[A-Za-z\u00C0-\u024F]/.test(t)) return false;
+    return true;
+  }
+
+  function tailToCss(tail) {
+    return tail.split('/').filter(Boolean).map(part => {
+      const m = part.match(/^([a-zA-Z0-9_-]+)?((?:\.[a-zA-Z0-9_-]+)*)(?:\[(\d+)\])?$/);
+      if (!m) return '';
+      const tag = (m[1] || '*').toLowerCase();
+      const classes = m[2] ? m[2].split('.').filter(Boolean) : [];
+      const idx = m[3] ? parseInt(m[3], 10) : null;
+      let sel = tag + classes.map(c => '.' + c).join('');
+      if (idx) sel += `:nth-of-type(${idx})`;
+      return sel;
+    }).join(' > ');
+  }
+
+  function findByTail(tail) {
+    const css = tailToCss(tail);
+    return document.querySelector(css) || (document.body && document.body.querySelector(css));
+  }
+
+  function readAttr(el) {
+    if (!el || !el.getAttribute) return '';
+    const keys = ['data-username','data-user','data-name','data-nick','title','aria-label','alt'];
+    for (const k of keys) {
+      const v = (el.getAttribute(k) || '').trim();
+      if (isLikelyUsername(v)) return v;
+    }
+    const ds = el.dataset || {};
+    const dv = ds.username || ds.user || ds.name || '';
+    if (isLikelyUsername(dv)) return dv;
+    return '';
+  }
+
+  function scanTextNodes(root) {
+    const out = [];
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: n => (n.nodeValue || '').trim().length ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
+    });
+    let node;
+    while (node = w.nextNode()) {
+      const t = (node.nodeValue || '').trim();
+      if (isLikelyUsername(t)) out.push(t);
+    }
+    return out;
+  }
+
+  function pickClosestToIcon(icon) {
+    const r0 = icon.getBoundingClientRect();
+    const cx = r0.left + r0.width / 2;
+    const cy = r0.top + r0.height / 2;
+
+    let best = '';
+    let bestScore = -999;
+
+    const nodes = Array.from(document.querySelectorAll('span,div,label,a,p'));
+    for (const el of nodes) {
+      const t = (el.textContent || '').trim();
+      if (!isLikelyUsername(t)) continue;
+
+      const r = el.getBoundingClientRect();
+      const dx = (r.left + r.width / 2) - cx;
+      const dy = (r.top + r.height / 2) - cy;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+
+      let sc = 10 - Math.min(10, Math.floor(dist / 40));
+      const cls = (el.className || '').toString().toLowerCase();
+      if (/user|name|nick|account|member/.test(cls)) sc += 3;
+
+      if (sc > bestScore) { bestScore = sc; best = t; }
+    }
+    return best;
+  }
+
+  // 1) tìm icon từ tail
+  let icon = null;
+  for (const t of ICON_TAILS) {
+    icon = findByTail(t);
+    if (icon) break;
+  }
+  if (!icon) {
+    alert('Khong tim thay icon theo tail.');
+    return;
+  }
+
+  // 2) thử lấy từ attr icon + ancestor
+  let name = readAttr(icon);
+  if (!name) {
+    let p = icon.parentElement;
+    for (let i = 0; i < 6 && p; i++) {
+      name = readAttr(p);
+      if (name) break;
+      p = p.parentElement;
+    }
+  }
+
+  // 3) quét text node trong container user-wrap
+  if (!name) {
+    const container = icon.closest('.logined_item.user-wrap') || icon.parentElement;
+    const list = container ? scanTextNodes(container) : [];
+    if (list.length) name = list[0];
+  }
+
+  // 4) fallback: quét text gần icon
+  if (!name) name = pickClosestToIcon(icon);
+
+  if (name) {
+    alert('Username: ' + name);
+  } else {
+    alert('Khong tim thay username khi khong click. Co the chi render sau khi mo menu/popup.');
+  }
+})();

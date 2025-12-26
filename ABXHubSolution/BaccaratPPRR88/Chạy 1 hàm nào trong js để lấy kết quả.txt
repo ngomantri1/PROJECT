@@ -1,0 +1,1 @@
+alert(JSON.stringify(window.__abx_hw_getState()));
