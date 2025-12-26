@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
     'use strict';
     // Muốn hiện và ẩn bảng điều khiển home watch thì tìm dòng sau : showPanel: false // ⬅️ false = ẩn panel; true = hiện panel
     if (window.self !== window.top) {
@@ -109,14 +109,14 @@
                     }
                     return _send.apply(this, arguments);
                 };
-            }
+                    }
             // sendBeacon
             if (w.navigator && typeof w.navigator.sendBeacon === 'function') {
                 const sb = w.navigator.sendBeacon.bind(w.navigator);
                 w.navigator.sendBeacon = (url, data) => isTelemetry(url) ? true : sb(url, data);
             }
         } catch (_) {}
-    }
+            }
 
     // --- Hết: MUTE TELEMETRY ---
     // === BEGIN TEXTMAP GUARD (đặt trước khi return ở games.*) ===
@@ -177,10 +177,10 @@
                         // không replace, chỉ merge để không mất key cũ
                         Object.assign(backing, v);
                     } catch (_) {}
-                }
+                        }
             });
         } catch (_) { /* nếu trang đã định nghĩa sẵn thì bỏ qua */
-        }
+                }
 
         // Tiện ích chờ map “đủ lớn” trước khi dùng
         window.__cw_waitForTextMap = async function (minKeys = 50, timeout = 8000, step = 80) {
@@ -247,7 +247,7 @@
                 list.push(raw);
         }
         return Array.from(new Set(list));
-    }
+        }
 
     function betCollectDocs() {
         const docs = [];
@@ -257,15 +257,15 @@
         try {
             const iframes = Array.from(document.querySelectorAll('iframe'));
             for (const ifr of iframes) {
-                try {
+        try {
                     const doc = ifr.contentDocument;
                     if (doc)
                         docs.push(doc);
-                } catch (_) {}
-            }
         } catch (_) {}
+            }
+                } catch (_) {}
         return docs;
-    }
+            }
 
     function betResolveCardRoot(node) {
         if (!node)
@@ -291,7 +291,7 @@
         try {
             return !!(root.querySelector('.qE_lp.qE_q1') || root.querySelector('.qE_lp.qE_ra'));
         } catch (_) {}
-        return false;
+            return false;
     }
 
     function betFindCardRootById(id) {
@@ -324,7 +324,7 @@
                     }
                 } catch (_) {}
                 for (const attr of attrs) {
-                    try {
+                try {
                         const sel = `[${attr}="${betCssEscape(needle)}"]`;
                         const hit = doc.querySelector(sel);
                         if (hit) {
@@ -333,11 +333,11 @@
                                 return root;
                             if (!fallback)
                                 fallback = root;
-                        }
+                    }
                     } catch (_) {}
-                }
-            }
-        }
+                        }
+                        }
+                        }
         for (const doc of docs) {
             for (const needle of candidates) {
                 if (needle.length < 6)
@@ -354,29 +354,29 @@
                                 fallback = root;
                         }
                     } catch (_) {}
-                }
-            }
-        }
+                        }
+                        }
+                        }
         return fallback;
-    }
+                        }
 
     function betCollectNodes(selector) {
         const nodes = [];
         try {
             nodes.push(...document.querySelectorAll(selector));
-        } catch (_) {}
+                    } catch (_) {}
         try {
             const iframes = Array.from(document.querySelectorAll('iframe'));
             for (const ifr of iframes) {
-                try {
+        try {
                     const doc = ifr.contentDocument;
                     if (doc)
                         nodes.push(...doc.querySelectorAll(selector));
-                } catch (_) {}
+        } catch (_) {}
             }
         } catch (_) {}
         return nodes;
-    }
+            }
 
     function betFindByTail(root, tail) {
         if (!tail)
@@ -387,29 +387,29 @@
                 const el = root.querySelector(css);
                 if (el)
                     return el;
-            } catch (_) {}
-            return null;
-        }
-        try {
-            const el = document.querySelector(css);
-            if (el)
-                return el;
         } catch (_) {}
+            return null;
+    }
+            try {
+            const el = document.querySelector(css);
+                if (el)
+                    return el;
+            } catch (_) {}
         try {
             const iframes = Array.from(document.querySelectorAll('iframe'));
             for (const ifr of iframes) {
-                try {
+        try {
                     const doc = ifr.contentDocument;
                     if (!doc)
                         continue;
                     const el = doc.querySelector(css);
-                    if (el)
-                        return el;
-                } catch (_) {}
+            if (el)
+                return el;
+        } catch (_) {}
             }
         } catch (_) {}
         return null;
-    }
+            }
 
     function betIsVisible(el) {
         if (!el || !el.getBoundingClientRect)
@@ -426,13 +426,13 @@
             } catch (_) {}
         } else {
             nodes.push(...betCollectNodes(selector));
-        }
+    }
         for (const el of nodes) {
             if (betIsVisible(el))
                 return el;
         }
         return nodes.length ? nodes[0] : null;
-    }
+        }
 
     function betNormalizeSide(side) {
         const raw = String(side || '').trim().toUpperCase();
@@ -442,7 +442,7 @@
             return 'player';
         if (raw === 'B' || raw === 'BANKER' || raw === 'BK' || raw === 'LE')
             return 'banker';
-        return '';
+            return '';
     }
 
     function betAmountToLabel(amount) {
@@ -467,14 +467,14 @@
             const text = (el.textContent || '').trim().toUpperCase();
             if (text === upper && betIsVisible(el))
                 return el;
-        }
+    }
         for (const el of nodes) {
             const text = (el.textContent || '').trim().toUpperCase();
             if (text === upper)
                 return el;
         }
-        return null;
-    }
+            return null;
+        }
 
     function betDispatchClick(el) {
         if (!el)
@@ -488,7 +488,7 @@
                     const x = r.left + r.width / 2;
                     const y = r.top + r.height / 2;
                     const target = el.closest('button,[role=button],a') || el;
-                    try {
+        try {
                         if (typeof win.PointerEvent === 'function') {
                             const pd = new win.PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 1, pointerType: 'mouse' });
                             const pu = new win.PointerEvent('pointerup', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 0, pointerType: 'mouse' });
@@ -505,15 +505,15 @@
                     if (typeof target.click === 'function')
                         target.click();
                     return true;
-                }
-            }
+                        }
+                        }
             if (typeof el.click === 'function') {
                 el.click();
-                return true;
-            }
-        } catch (_) {}
+                    return true;
+                }
+                    } catch (_) {}
         return false;
-    }
+                }
 
     window.__cw_bet = function (tableId, side, amount) {
         try {
@@ -558,21 +558,21 @@
                     ok = true;
                     break;
                 }
-            }
+                }
             if (!ok)
                 return 'target-fail';
 
             return 'ok';
         } catch (e) {
             return 'err:' + (e && e.message ? e.message : e);
-        }
+                }
     };
 
     // Skip toàn bộ Home Watch ở domain game
     if (/^games\./i.test(location.hostname)) {
         console.debug('[HomeWatch] Skip on game host');
         return;
-    }
+            }
 
     // Chạy 1 lần duy nhất và chỉ ở top window (không chạy trong iframe)
     if (window.__abx_hw_installed)
@@ -654,7 +654,7 @@
             if (el && isVisibleAndClickable(el)) {
                 return el;
             }
-        }
+            }
 
         // 2) Fallback: quét theo text "PP trực tuyến" trong header
         const candidates = Array.from(
@@ -667,11 +667,11 @@
 
             if (txt.includes('pp trực tuyến') && isVisibleAndClickable(el)) {
                 return el;
-            }
+        }
         }
 
         return null;
-    }
+        }
 
     // ======= Game Regex (dùng trên chuỗi đã norm() — không dấu, lowercase) =======
     const RE_XOCDIA_POS = /\bxoc(?:[-\s]*dia)?\b/; // "xoc", "xoc dia", "xoc-dia", "xocdia"
@@ -717,7 +717,7 @@
             y: Math.round(r.top | 0),
             w: Math.round(r.width | 0),
             h: Math.round(r.height | 0)
-        };
+    };
     };
     const area = r => Math.max(0, r.w) * Math.max(0, r.h);
     const smallFirst = (a, b) => {
@@ -742,23 +742,23 @@
     async function waitFor(test, timeout = 8000, step = 120) {
         const t0 = Date.now();
         while (Date.now() - t0 < timeout) {
-            try {
+        try {
                 const v = test();
                 if (v)
                     return v;
-            } catch (_) {}
+        } catch (_) {}
             await wait(step);
         }
         return null;
-    }
+        }
 
     function textOf(el) {
-        try {
+            try {
             return (el.innerText || el.textContent || '').trim();
         } catch (_) {
             return (el.textContent || '').trim();
         }
-    }
+        }
 
     // đặt gần nhóm utils (trước/hoặc sau textOf)
     function isLikelyUsername(s) {
@@ -792,14 +792,14 @@
                 if (s.tagName === e.tagName)
                     i++;
                 s = s.previousElementSibling;
-            }
+    }
             name += '[' + i + ']';
             parts.push(name);
             e = e.parentElement;
             depth++;
-        }
-        return parts.reverse().join('/');
     }
+        return parts.reverse().join('/');
+            }
 
     const BACC_CARD_SELECTORS = [
         'div.hC_hE.hC_hH',
@@ -821,7 +821,7 @@
             document.querySelectorAll(sel).forEach(card => {
                 addCard(card);
             });
-        });
+            });
         // Fallback for updated DOM: collect from title nodes.
         document.querySelectorAll('span.rW_sl').forEach(node => {
             const root = node.closest('div.he_hf.he_hi') ||
@@ -829,14 +829,14 @@
                 node.closest('div.mx_G') ||
                 node.closest('div.jF_jJ');
             addCard(root);
-        });
+            });
         cards.sort((a, b) => {
             const ra = rectOf(a);
             const rb = rectOf(b);
             if (ra.y !== rb.y)
                 return ra.y - rb.y;
             return ra.x - rb.x;
-        });
+            });
         return cards;
     }
 
@@ -875,7 +875,7 @@
                 const v = readAttr(el, key);
                 if (v)
                     return { id: v, source: 'attr:' + key };
-            }
+    }
             const id = readAttr(el, 'id');
             if (id)
                 return { id, source: 'attr:id' };
@@ -888,15 +888,15 @@
         const elWithAttr = card.querySelector(selector);
         if (elWithAttr) {
             found = tryAttrs(elWithAttr);
-            if (found)
-                return found;
-        }
+        if (found)
+            return found;
+            }
         const text = card.textContent || '';
         const idMatch = text.match(/\bID\s*:\s*([0-9]{4,})\b/i);
         if (idMatch)
             return { id: idMatch[1], source: 'text:ID' };
         return { id: '', source: '' };
-    }
+            }
 
     function dumpBaccarat3Characters(limitPerCard = 150) {
         const cards = collectBaccarat3Cards();
@@ -940,7 +940,7 @@
             if (filteredNodes.length > displayed.length)
                 info.push(`  ...hiển thị ${displayed.length}/${filteredNodes.length} node`);
             return info.join('\n');
-        });
+            });
         return segments.join('\n\n---\n\n');
     }
 
@@ -985,7 +985,7 @@
     function closeLoginPopupIfLoggedIn() {
         try {
             if (!isLoggedInFromDOM())
-                return;
+            return;
 
             // Xóa overlay/modal nếu đang che
             const hideOverlays = () => {
@@ -1001,11 +1001,11 @@
             };
 
             const roots = [];
-            try {
+        try {
                 if (typeof TAIL_LOGIN_POPUP_ROOT === 'string' && TAIL_LOGIN_POPUP_ROOT) {
                     const r = findByTail(TAIL_LOGIN_POPUP_ROOT);
                     if (r) roots.push(r);
-                }
+    }
             } catch (_) {}
             roots.push(
                 ...Array.from(document.querySelectorAll(
@@ -1025,29 +1025,29 @@
                 hideOverlays();
             } else {
                 roots.forEach(r => {
-                    try {
+            try {
                         const ov = r.closest('.v--modal-overlay, .v--modal-box') || r;
                         ov.style.display = 'none';
                         ov.remove();
-                    } catch (_) {}
+            } catch (_) {}
                 });
                 hideOverlays();
-            }
-        } catch (_) {}
-    }
+                }
+            } catch (_) {}
+                }
 
     // Tick định kỳ để đóng popup login nếu đã đăng nhập mà popup vẫn còn
     if (!window.__abx_close_login_timer) {
         window.__abx_close_login_timer = setInterval(() => {
-            try {
+                    try {
                 if (!isLoggedInFromDOM())
                     return;
                 closeLoginPopupIfLoggedIn();
-            } catch (_) {}
+                    } catch (_) {}
         }, 1200);
-    }
+            }
     function showHostMismatchAlertIfAny() {
-        try {
+                    try {
             const cfgHost = (window.__abx_cfg_url_host || '').toLowerCase();
             const currHost = (location && location.host || '').toLowerCase();
             if (cfgHost && currHost && cfgHost !== currHost) {
@@ -1066,8 +1066,8 @@
     async function onAuthStateMaybeChanged(reason = '') {
         // Chỉ cho phép chạy khi cổng đã mở (đã nhìn thấy nút "Đăng nhập")
         if (typeof canRunAuthLoop === 'function' && !canRunAuthLoop()) {
-            return;
-        }
+                    return;
+    }
 
         // Nếu đã có tên rồi thì luôn "giữ" cho đến khi CHẮC CHẮN logout
         const hadName = !!S.username;
@@ -1076,16 +1076,16 @@
         const loggedIn = !!document.querySelector('.user-logged, .base-dropdown-header__user__name, [class*="user-logged"]');
 
         if (loggedIn) {
-            closeLoginPopupIfLoggedIn();
+                closeLoginPopupIfLoggedIn();
             // Nếu đã nhận diện là login nhưng chưa có tên → ép kéo 1 lần
             if (!S.username) {
                 S.fetchDone = false; // cho phép fetch lại
-                try {
+        try {
                     await tryFetchUserProfile();
-                } catch (_) {}
+            } catch (_) {}
                 if (!S.username)
                     probeIframeOnce(); // fallback iframe
-            }
+    }
 
             // ĐANG LOGIN: đọc lại ngay và cập nhật số dư
             const u = findUserFromDOM();
@@ -1103,7 +1103,7 @@
             if (!S.username || !S.balance)
                 pumpAuthProbe(10000);
             return;
-        }
+            }
 
         // KHÔNG THẤY DẤU VẾT LOGIN: chỉ coi là logout khi chắc chắn trong khoảng dài hơn
         const CONFIRM_MS = 1800; // trước đây 600ms → tăng để tránh false positive
@@ -1112,9 +1112,9 @@
             // Nếu trong thời gian chờ mà thấy dấu hiệu login lại thì thôi
             const back = !!document.querySelector('.user-logged, .base-dropdown-header__user__name, [class*="user-logged"]');
             if (back)
-                return;
+            return;
             await new Promise(r => setTimeout(r, 120));
-        }
+            }
 
         // Đến đây mới coi như logout thật.
         if (hadName) {
@@ -1122,20 +1122,20 @@
             // (KHÔNG gọi updateUsername('') để không hiển thị (?))
         } else {
             // Chưa từng có tên → để panel hiển thị (?)
-        }
+            }
         // Balance cũng không "đè 88" nếu không chắc
-    }
+        }
 
     // === DOM Ready helper (thêm mới) ===
     function onDomReady(cb) {
         const ready = document.readyState;
         if (ready === 'interactive' || ready === 'complete') {
-            try {
+                try {
                 cb();
             } catch (e) {
                 console.error('[HomeWatch] onDomReady cb error', e);
-            }
-            return;
+        }
+                return;
         }
         const done = () => {
             document.removeEventListener('DOMContentLoaded', done);
@@ -1144,7 +1144,7 @@
                 cb();
             } catch (e) {
                 console.error('[HomeWatch] onDomReady cb error', e);
-            }
+        }
         };
         const rs = () => {
             const s = document.readyState;
@@ -1155,7 +1155,7 @@
             once: true
         });
         document.addEventListener('readystatechange', rs);
-    }
+            }
 
     // Tail -> CSS
     function cssFromTail(tail) {
@@ -1169,13 +1169,13 @@
             return `${tag}${cls}${nth}`;
         });
         return segs.join(' > ');
-    }
+            }
     function findByTail(tail) {
-        try {
+            try {
             return document.querySelector(cssFromTail(tail));
         } catch (_) {
             return null;
-        }
+    }
     }
 
     function findByTailIn(tail, rootDoc) {
@@ -1185,7 +1185,7 @@
             return doc.querySelector(css);
         } catch (_) {
             return null;
-        }
+    }
     }
 
     // NEW: nhận biết popup đăng nhập đã hiển thị hay chưa
@@ -1195,14 +1195,14 @@
                 const el = findByTail(TAIL_LOGIN_POPUP_ROOT);
                 if (el && el.offsetParent !== null)
                     return true;
-            }
+        }
             // fallback heuristics: một số class/modal phổ biến
             const sel = '.tcg_modal_wrap.loginPopupModal, .loginPopupModal, .popup-login, .login-popup, .modal-login, .login__popup';
             const el2 = document.querySelector(sel);
             return !!(el2 && el2.offsetParent !== null);
         } catch (_) {
             return false;
-        }
+    }
     }
 
     function findLoginButton() {
@@ -1211,13 +1211,13 @@
         try {
             if (typeof TAIL_LOGIN_BTN === 'string' && TAIL_LOGIN_BTN) {
                 btn = findByTail(TAIL_LOGIN_BTN);
-            }
+    }
         } catch (_) {}
 
         // Fallback: layout header mới
         if (!btn) {
             btn = document.querySelector('div.header .hd_login .submit_btn, header .hd_login .submit_btn');
-        }
+            }
 
         // Fallback cũ: header.menu + nút base-button
         if (!btn) {
@@ -1228,14 +1228,14 @@
         if (!btn) {
             btn = Array.from(document.querySelectorAll('button, a, [role="button"], span.submit_btn'))
                 .find(el => norm(textOf(el)).includes('dang nhap'));
-        }
+    }
 
         return btn && btn.isConnected ? btn : null;
     }
 
     function canRunAuthLoop() {
         if (S.authGateOpened)
-            return true;
+                    return true;
 
         // ✅ MỞ CỔNG nếu nhận diện trạng thái đã login (không cần đợi thấy nút)
         const loggedInBlock = document.querySelector('.user-logged, .base-dropdown-header__user__name, .user__name');
@@ -1250,7 +1250,7 @@
             S.authGateOpened = true;
 
         return S.authGateOpened;
-    }
+        }
 
     // ======= Panel =======
     function ensureRoot() {
@@ -1259,7 +1259,7 @@
         if ($panel()) {
             window.__abx_hw_installed = true;
             return;
-        }
+    }
         // Nếu inject ở document_start, body có thể chưa có
         const mount = document.body || document.documentElement;
         if (!mount) {
@@ -1275,7 +1275,7 @@
                 maybe.style.display = 'none';
             window.__abx_hw_installed = true; // ⬅️ đánh dấu đã cài, tránh gọi lại
             return;
-        }
+    }
 
         const root = document.createElement('div');
         // đảm bảo dễ điều khiển/toggle bằng id & class cố định
@@ -1403,12 +1403,12 @@
                 try {
                     return JSON.stringify(val, null, 2);
                 } catch (_) {
-                    try {
+                try {
                         return String(val);
-                    } catch (_) {
+                } catch (_) {
                         return Object.prototype.toString.call(val);
                     }
-                }
+                    }
             };
 
             btn.onclick = () => {
@@ -1418,7 +1418,7 @@
                     out.textContent = dump(val);
                 } catch (e) {
                     out.textContent = 'Error: ' + e;
-                }
+                    }
             };
 
             btnCopy.onclick = async() => {
@@ -1470,15 +1470,15 @@
                     player: [/player(?:\s*\d*)?\s*(\d+)/i, /người chơi\s*(\d+)/i],
                     banker: [/banker(?:\s*\d*)?\s*(\d+)/i, /nhà cái\s*(\d+)/i],
                     tie: [/tie(?:\s*\d*)?\s*(\d+)/i, /hòa\s*(\d+)/i]
-                };
+            };
                 for (const [key, regs] of Object.entries(patterns)) {
                     for (const re of regs) {
                         const match = (text || '').match(re);
                         if (match) {
                             result[key] = Number.parseInt(match[1], 10);
                             break;
-                        }
-                    }
+                }
+                }
                 }
                 return result;
             };
@@ -1488,7 +1488,7 @@
                 const cleaned = str.replace(/[.,]+(?=\d)/g, '');
                 const asNum = Number(cleaned);
                 return Number.isFinite(asNum) ? asNum : null;
-            };
+                };
 
             const parseBets = (text) => {
                 const result = { player: null, banker: null, tie: null };
@@ -1504,8 +1504,8 @@
                             result[key] = toNumber(match[1]);
                             break;
                         }
-                    }
-                }
+                        }
+                        }
                 return result;
             };
 
@@ -1516,7 +1516,7 @@
                     const hit = nodes.find(node => (node.textContent || '').toLowerCase().includes(lowerKey));
                     if (hit) {
                         return formatRect(hit.getBoundingClientRect());
-                    }
+                }
                 }
                 return null;
             };
@@ -1524,7 +1524,7 @@
             const createPayload = () => {
                 const cards = collectBaccarat3Cards();
                 if (!cards.length)
-                    return null;
+                return null;
                     const tables = cards.map(card => {
                         const textSnapshot = normalizeText(card.textContent || '');
                         const resultChain = Array.from(card.querySelectorAll('.np_nu, .yw_yz, .dw_result'))
@@ -1542,10 +1542,10 @@
                         playerSpot: findSpot(card, ['player', 'người chơi']),
                         bankerSpot: findSpot(card, ['banker', 'nhà cái']),
                         rect: formatRect(rectOf(card))
-                    };
+            };
                 }).filter(entry => entry.id || entry.name);
                 if (!tables.length)
-                    return null;
+                return null;
                 return { abx: 'table_update', tables };
             };
 
@@ -1558,21 +1558,21 @@
                 try {
                     if (window.chrome?.webview?.postMessage) {
                         chrome.webview.postMessage(text);
-                        return;
-                    }
+                    return;
+                }
                     if (window.top && window.top !== window && typeof window.top.postMessage === 'function') {
                         window.top.postMessage(text, '*');
-                        return;
-                    }
+                    return;
+                }
                 } catch (err) {
                     console.warn('[HomeWatch] table_update send failed', err);
                 }
-            };
+                    };
 
             const updateTableStatus = (msg) => {
                 tableStatus.textContent = msg;
                 console.log('[HomeWatch table_update]', msg);
-            };
+                    };
 
             let tableScanTimer = null;
             let lastPayload = '';
@@ -1582,12 +1582,12 @@
                 if (!payload) {
                     updateTableStatus('Không tìm thấy bàn chơi nào.');
                     return;
-                }
+                    }
                 const text = JSON.stringify(payload);
                 if (text === lastPayload) {
                     updateTableStatus('Payload chưa thay đổi.');
                     return;
-                }
+                    }
                 sendPayload(payload);
                 lastPayload = text;
                 updateTableStatus(`Đã gửi ${payload.tables.length} bảng (${new Date().toLocaleTimeString()})`);
@@ -1599,7 +1599,7 @@
                     tableScanTimer = null;
                     autoScanBtn.textContent = 'Auto Scan';
                     updateTableStatus('Auto scan dừng.');
-                    return;
+                        return;
                 }
                 scanAndPost();
                 tableScanTimer = setInterval(scanAndPost, 2500);
@@ -1619,8 +1619,8 @@
             const bar = root.querySelector('#hwtitle');
             if (!bar) {
                 console.warn('[HomeWatch] ensureRoot: thiếu #hwtitle');
-                return;
-            }
+                    return;
+                }
             let down = false,
             ox = 0,
             oy = 0;
@@ -1649,29 +1649,29 @@
             const u = root.querySelector('#' + CFG.urlId).value.trim();
             if (/^https?:\/\//i.test(u))
                 location.href = u;
-        };
+            };
         root.querySelector('#' + CFG.linksBtnId).onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
             clearSelected();
             toggle('link');
-        };
+            };
         root.querySelector('#' + CFG.textsBtnId).onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
             clearSelected();
             toggle('text');
-        };
+            };
         root.querySelector('#' + CFG.closePopupBtnId).onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
             clearSelected();
 
             // Khi bấm ClosePopup: thử đóng tất cả popup / overlay hiện có
-            try {
+                try {
                 console.debug('[HomeWatch] ClosePopup button -> closeAdsAndCovers()');
                 closeAdsAndCovers();
-            } catch (_) {}
+                } catch (_) {}
 
             // Vẫn bật overlay popup map để bạn nhìn được vùng đã xử lý
             toggle('popup');
@@ -1741,7 +1741,7 @@
         const ubox = root.querySelector('#' + CFG.urlId);
         if (ubox)
             ubox.value = location.href;
-    }
+            }
 
     (function hookHistory() {
         if (window.__abx_hist_hooked)
@@ -1757,30 +1757,30 @@
                     pumpAuthProbe(6000, 200); // ⬅️ bơm đọc 6s sau mỗi điều hướng SPA
                 } catch (_) {}
                 return r;
-            };
-        }
+        };
+            }
 
         if (typeof rawPush === 'function')
             history.pushState = wrap(rawPush);
         if (typeof rawReplace === 'function')
             history.replaceState = wrap(rawReplace);
         addEventListener('popstate', () => {
-            try {
+                try {
                 onAuthStateMaybeChanged('popstate');
                 pumpAuthProbe(6000, 200); // ⬅️ bơm 6s sau thao tác back/forward
-            } catch (_) {}
+                } catch (_) {}
         }); // back/forward
 
     })();
 
     function updateInfo(extra) {
         if (CFG.showPanel === false)
-            return; // panel đang ẩn -> bỏ qua render
+            return; // panel dang ?n -> b? qua render
         // Tính trạng thái hiển thị thật sự của khu vực xóc đĩa
         const live = (() => {
             const s = document.querySelector('.livestream-section__live');
             return !!(s && s.offsetParent !== null);
-        })();
+    })();
         const loggedIn = isLoggedInFromDOM();
         const balText = S.balance ? S.balance : (loggedIn ? '0' : '(?)');
         const L = [
@@ -1804,13 +1804,13 @@
         const u = document.getElementById(CFG.urlId);
         if (u)
             u.value = location.href;
-    }
+        }
 
     function copyInfoBox() {
-        try {
-            const box = document.getElementById(CFG.infoId);
+            try {
+        const box = document.getElementById(CFG.infoId);
             if (!box)
-                return;
+            return;
 
             const txt = (box.innerText || box.textContent || '').trim();
             if (!txt)
@@ -1830,12 +1830,12 @@
                 ta.style.top = '0';
                 document.body.appendChild(ta);
                 ta.select();
-                try {
+        try {
                     document.execCommand('copy');
-                } catch (_) {}
+            } catch (_) {}
                 document.body.removeChild(ta);
-            }
-        } catch (_) {}
+    }
+            } catch (_) {}
     }
 
     function appendDevLog(line) {
@@ -1845,11 +1845,11 @@
                 const prev = out.textContent || '';
                 out.textContent = (line || '') + '\n---\n' + prev;
                 return;
-            }
-        } catch (_) {}
+    }
+                } catch (_) {}
         try {
             console.log('[HW]', line);
-        } catch (_) {}
+                } catch (_) {}
     }
 
     const ALERT_ID = '__abx_alert_log_popup';
@@ -1881,25 +1881,25 @@
         closeBtn?.addEventListener('click', () => el.remove());
         const copyBtn = document.getElementById(`${ALERT_ID}-copy`);
         copyBtn?.addEventListener('click', async () => {
-            try {
+        try {
                 const ta = document.getElementById(`${ALERT_ID}-ta`);
                 if (ta && ta.value) {
                     await navigator.clipboard.writeText(ta.value);
-                }
+    }
             } catch (_) { /* ignore */ }
-        });
-        return el;
+                });
+            return el;
     }
 
     function showTestAlert(content) {
         try {
             const el = ensureAlertContainer();
-            const ta = document.getElementById(`${ALERT_ID}-ta`);
+                const ta = document.getElementById(`${ALERT_ID}-ta`);
             if (ta) {
                 ta.value = content;
                 ta.focus();
                 ta.select();
-            }
+    }
         } catch (_) {}
     }
 
@@ -1909,17 +1909,17 @@
             try {
                 S.overlayLog = clip(String(msg || ''), 180);
                 updateInfo();
-            } catch (_) {}
-        }
+        } catch (_) {}
+                }
 
         function logToOverlayConsole(msg, level = 'debug') {
             try {
                 if (window.chrome?.webview?.postMessage) {
                     chrome.webview.postMessage(JSON.stringify({ abx: 'console', level, message: msg }));
                 }
-            } catch (_) {}
+        } catch (_) {}
             console.log(msg);
-        }
+                }
 
     function installPostMessageLogger() {
         if (window.__abx_pm_hooked)
@@ -1930,11 +1930,11 @@
         window.__abx_pm_hooked = true;
         const orig = wv.postMessage.bind(wv);
         wv.postMessage = function (data) {
-            try {
+        try {
                 let obj = data;
                 if (typeof data === 'string') {
                     try { obj = JSON.parse(data); } catch (_) {}
-                }
+            }
                 if (obj && obj.overlay === 'table') {
                     appendDevLog('[postMessage overlay] ' + JSON.stringify(obj));
                     const summary = [
@@ -1944,62 +1944,157 @@
                         Array.isArray(obj.tables) ? ('tables=' + obj.tables.length) : ''
                     ].filter(Boolean).join(' ');
                     setOverlayLog(summary || '[overlay]');
-                }
+        }
             } catch (_) {}
             return orig.apply(this, arguments);
         };
         appendDevLog('Đã bật log postMessage (overlay).');
         setOverlayLog('Đã bật log overlay.');
-    }
+        }
 
     // === Automino Home <-> C# bridge (non-intrusive) ===
     (function () {
-        try {
+            try {
             // Gửi an toàn lên host (WebView2)
             function safePost(d) {
-                try {
+            try {
                     if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function') {
-                        try {
+            try {
                             chrome.webview.postMessage(JSON.stringify(d));
-                        } catch (_) {}
+            } catch (_) {}
                     } else {
-                        try {
+            try {
                             parent.postMessage(d, '*');
-                        } catch (_) {}
-                    }
-                } catch (_) {}
-            }
+            } catch (_) {}
+                }
+            } catch (_) {}
+                }
 
             // Lấy state hiện tại để C# có thể poll
             window.__abx_hw_getState = function () {
-                try {
+            try {
                     // ---- Fallback DOM: đọc nhanh trong header khi S.* đang rỗng ----
                     function quickPickUsername() {
-                        try {
-                            // 1) ƯU TIÊN: đọc theo ABS_USERNAME_TAIL (tên nhân vật trên trang profile)
+            try {
+                            const ICON_TAILS = [
+                                'div.header_title[1]/div.header_top[1]/div.wrapper[1]/div.right-wrap[2]/div.right-wrap-top[1]/div.logined_wrap[1]/div.logined_item[1]/div.logined_item.user-wrap[4]',
+                                'div.header_top[1]/div.wrapper[1]/div.right-wrap[2]/div.right-wrap-top[1]/div.logined_wrap[1]/div.logined_item[1]/div.logined_item.user-wrap[4]/span.menu-btn[1]',
+                                'div.wrapper[1]/div.right-wrap[2]/div.right-wrap-top[1]/div.logined_wrap[1]/div.logined_item[1]/div.logined_item.user-wrap[4]/span.menu-btn[1]/img.avatar[1]'
+                            ];
+                            const EXCLUDE = [
+                                'nap', 'rut', 'tien', 'vip', 'balance', 'so du', 'tai khoan', 'account',
+                                'khuyen mai', 'thong bao', 'dang nhap', 'login', 'withdraw', 'deposit',
+                                'game', 'casino', 'live', 'sport', 'promo', 'home'
+                            ];
+                            const normUser = (s) => {
+        try {
+                                    return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                } catch (_) {
+                                    return String(s || '');
+    }
+        };
+                            const isUserCandidate = (s) => {
+        const t = String(s || '').trim();
+            if (!t)
+                    return false;
+                                if (t.includes('%'))
+                    return false;
+                                if (/^[\d\s,.\-+]+$/.test(t))
+                    return false;
+                                const n = normUser(t).toLowerCase();
+                                for (const k of EXCLUDE) {
+                                    if (n.includes(k))
+                    return false;
+            }
+        if (t.length < 2 || t.length > 40)
+                    return false;
+                                if (!/[A-Za-z\u00C0-\u024F]/.test(t))
+                    return false;
+                    return true;
+        };
+                            const readAttrLocal = (el) => {
+            if (!el || !el.getAttribute)
+                        return '';
+                                const keys = ['data-username', 'data-user', 'data-name', 'data-nick', 'title', 'aria-label', 'alt'];
+                                for (const k of keys) {
+                                    const v = (el.getAttribute(k) || '').trim();
+                                    if (isUserCandidate(v))
+                    return v;
+                                    }
+                                const ds = el.dataset || {};
+                                const dv = ds.username || ds.user || ds.name || ds.nick || '';
+                                if (isUserCandidate(dv))
+                                    return dv;
+                        return '';
+        };
+                            const scanTextNodes = (root) => {
+            const out = [];
+        if (!root)
+            return out;
+                                const nf = (window && window.NodeFilter) || NodeFilter;
+                                const w = document.createTreeWalker(root, nf.SHOW_TEXT, {
+                                    acceptNode: n => (n.nodeValue || '').trim().length ? nf.FILTER_ACCEPT : nf.FILTER_SKIP
+        });
+        let node;
+                                while (node = w.nextNode()) {
+                                    const t = (node.nodeValue || '').trim();
+                                    if (isUserCandidate(t))
+                                        out.push(t);
+                            }
+            return out;
+                    };
+                            const pickClosestToIcon = (icon) => {
+                                if (!icon || !icon.getBoundingClientRect)
+                        return '';
+                                const r0 = icon.getBoundingClientRect();
+                                const cx = r0.left + r0.width / 2;
+                                const cy = r0.top + r0.height / 2;
+                                let best = '';
+                                let bestScore = -999;
+                                const nodes = Array.from(document.querySelectorAll('span,div,label,a,p'));
+        for (const el of nodes) {
+                                    const t = (el.textContent || '').trim();
+                                    if (!isUserCandidate(t))
+                continue;
+        const r = el.getBoundingClientRect();
+                                    const dx = (r.left + r.width / 2) - cx;
+                                    const dy = (r.top + r.height / 2) - cy;
+                                    const dist = Math.sqrt(dx * dx + dy * dy);
+                                    let sc = 10 - Math.min(10, Math.floor(dist / 40));
+                                    const cls = (el.className || '').toString().toLowerCase();
+                                    if (/user|name|nick|account|member/.test(cls))
+                                        sc += 3;
+                                    if (sc > bestScore) {
+                                        bestScore = sc;
+                                        best = t;
+                            }
+                            }
+            return best;
+                    };
+
+                            // 1) UU TIEN: ABS_USERNAME_TAIL
                             if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
-                                try {
+                        try {
                                     const elAbs = findByTail(ABS_USERNAME_TAIL);
                                     if (elAbs) {
                                         const val = (elAbs.value != null
                                              ? String(elAbs.value)
                                              : (elAbs.getAttribute && elAbs.getAttribute('value')) || elAbs.textContent || '').trim();
-                                        if (val)
+                                        if (isUserCandidate(val))
                                             return val.replace(/\s+/g, ' ');
-                                    }
-                                } catch (_) {}
-                            }
+                    }
+                        } catch (_) {}
+                    }
 
-                            // 2) Fallback: lấy theo header như trước (khi không có form profile)
+                            // 2) Fallback header nhanh
                             const header = document.querySelector('header.menu, header') || document;
-
                             const pri = header.querySelector(
                                     '.user-logged__info .base-dropdown-header__user__name, p.base-dropdown-header__user__name');
                             if (pri) {
                                 const t = (pri.textContent || '').trim();
-                                if (t)
+                                if (isUserCandidate(t))
                                     return t;
-                            }
+                }
 
                             const roots = [
                                 '.username',
@@ -2014,17 +2109,62 @@
                                         sel + ' .display-name, ' +
                                         sel + ' span.full-name, ' +
                                         sel);
-                                if (el) {
+                            if (el) {
                                     const txt = (el.textContent || '').trim();
-                                    if (txt && !/^(vip|email|đăng|login)/i.test(txt))
+                                    if (isUserCandidate(txt))
                                         return txt;
-                                }
-                            }
-                        } catch (_) {}
-                        return '';
                     }
+                    }
+
+                            // 3) Manh hon: quet quanh icon avatar
+                            let icon = null;
+                            if (typeof resolveAvatarIconCandidate === 'function') {
+                                icon = resolveAvatarIconCandidate();
+                    }
+                            if (!icon && typeof findByTail === 'function') {
+                                for (const t of ICON_TAILS) {
+                                    icon = findByTail(t);
+                                    if (icon)
+                break;
+                    }
+                            }
+                            if (!icon) {
+                                icon = document.querySelector('img.avatar, img[class*="avatar"], img[src*="avatar"], .logined_item.user-wrap img, .logined_wrap img');
+                            }
+                            if (icon) {
+                                let name = readAttrLocal(icon);
+                if (!name) {
+                                    let p = icon.parentElement;
+                for (let i = 0; i < 6 && p; i++) {
+                                        name = readAttrLocal(p);
+                if (name)
+                break;
+            p = p.parentElement;
+                }
+                }
+                if (!name) {
+                                    const container = icon.closest('.logined_item.user-wrap') || icon.parentElement;
+                                    const list = scanTextNodes(container || document.body);
+                                    if (list.length)
+                                        name = list[0];
+                    }
+                                if (!name)
+                                    name = pickClosestToIcon(icon);
+                if (name)
+                                    return name;
+                    }
+
+                            // 4) fallback: logic cu (neu co)
+                            if (typeof findUsernameNearAvatar === 'function') {
+                                const near = findUsernameNearAvatar();
+                                if (isUserCandidate(near))
+                                    return near;
+            }
+        } catch (_) {}
+                        return '';
+            }
                     function quickPickBalance() {
-                        try {
+        try {
                             const header = document.querySelector('header.menu, header') || document;
                             const el = header.querySelector('.base-dropdown-header__user__amount, .user__amount, .user-amount, .balance, [class*="amount"]');
                             if (el) {
@@ -2032,10 +2172,10 @@
                                 const m = raw.match(/(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:\s*(VND|đ|₫|k|K|m|M))?/);
                                 if (m)
                                     return m[1].replace(/[^\d]/g, '');
-                            }
-                        } catch (_) {}
+        }
+        } catch (_) {}
                         return '';
-                    }
+                }
 
                     const u = (typeof S !== 'undefined' && S.username) || quickPickUsername() || '';
                     const b = (typeof S !== 'undefined' && S.balance) || quickPickBalance() || '';
@@ -2047,8 +2187,8 @@
                         href: String(location.href || ''),
                         title: String(document.title || ''),
                         ts: Date.now()
-                    };
-                } catch (_) {
+    };
+            } catch (_) {
                     return {
                         abx: 'home_state',
                         username: '',
@@ -2056,24 +2196,24 @@
                         href: String(location.href || ''),
                         title: String(document.title || ''),
                         ts: Date.now()
-                    };
-                }
-            };
+    };
+            }
+    };
             // Đẩy một gói ngay lập tức
             window.__abx_hw_pushNow = function () {
                 try {
-                    var st = (typeof window.__abx_hw_getState === 'function') ? window.__abx_hw_getState() : null;
-                    if (st) {
-                        st.abx = 'home_tick';
+                            var st = (typeof window.__abx_hw_getState === 'function') ? window.__abx_hw_getState() : null;
+                            if (st) {
+                                st.abx = 'home_tick';
                         // dùng kênh gửi an toàn đã có
                         if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function') {
                             chrome.webview.postMessage(JSON.stringify(st));
-                        } else {
+        } else {
                             parent.postMessage(st, '*');
                         }
-                    }
+                        }
                 } catch (_) {}
-            };
+    };
 
             // Đẩy định kỳ state về C#
             window.__abx_hw_startPush = function (intervalMs) {
@@ -2084,21 +2224,21 @@
                         window.__hw_pushTid = 0;
                     }
                     window.__hw_pushTid = setInterval(function () {
-                        try {
+                try {
                             var st = (typeof window.__abx_hw_getState === 'function') ? window.__abx_hw_getState() : null;
                             if (st) {
                                 st.abx = 'home_tick';
                                 safePost(st);
-                            }
-                        } catch (_) {}
+            }
+                } catch (_) {}
                     }, intervalMs);
-                    try {
+                try {
                         window.__abx_hw_pushNow && window.__abx_hw_pushNow();
-                    } catch (_) {}
+                } catch (_) {}
                     return true;
-                } catch (_) {
+            } catch (_) {
                     return false;
-                }
+    }
             };
 
             window.__abx_hw_stopPush = function () {
@@ -2106,28 +2246,28 @@
                     if (window.__hw_pushTid) {
                         clearInterval(window.__hw_pushTid);
                         window.__hw_pushTid = 0;
-                    }
+            }
                 } catch (_) {}
             };
-        } catch (_) {}
+                } catch (_) {}
     })();
 
     // ===== Public APIs để C# gọi theo "hàm" =====
     window.__abx_hw_clickLogin = function () {
-        try {
+                try {
             if (typeof clickLoginButton === 'function') {
-                clickLoginButton();
-                if (typeof onAuthStateMaybeChanged === 'function')
+                        clickLoginButton();
+                    if (typeof onAuthStateMaybeChanged === 'function')
                     onAuthStateMaybeChanged('api-login');
-                if (typeof isGameHost === 'function' && !isGameHost() && typeof startAutoRetry === 'function')
-                    startAutoRetry(true);
+                    if (typeof isGameHost === 'function' && !isGameHost() && typeof startAutoRetry === 'function')
+                        startAutoRetry(true);
                 return 'ok';
-            }
+                    }
             return 'no-fn';
         } catch (e) {
             return 'err:' + (e && e.message || e);
-        }
-    };
+                    }
+            };
 
     window.__abx_hw_clickPlayXDL = function () {
         try {
@@ -2153,11 +2293,11 @@
         window.chrome.webview.addEventListener('message', (e) => {
             let m = e && e.data,
             cmd = '';
-            try {
+                try {
                 cmd = (typeof m === 'string') ? JSON.parse(m).cmd : (m && m.cmd);
             } catch (_) {
                 cmd = (m && m.cmd) || '';
-            }
+    }
             switch (String(cmd || '')) {
             case 'home_click_login':
                 try {
@@ -2188,7 +2328,7 @@
                         window.__abx_hw_startPush(ms);
                 } catch (_) {}
                 break;
-            }
+    }
         });
     }
 
@@ -2207,9 +2347,9 @@
             if (!mount) {
                 onDomReady(ensureOverlay);
                 return null;
-            }
+    }
             mount.appendChild(ov);
-        }
+    }
 
         // Gắn listeners chỉ 1 lần (idempotent)
         if (!window.__abx_overlay_listeners) {
@@ -2219,14 +2359,14 @@
                 try {
                     if (typeof window.__abx_overlay_rerender === 'function') {
                         window.__abx_overlay_rerender();
-                    }
+    }
                 } catch (_) {}
             };
 
             // Cập nhật overlay khi cuộn / đổi kích thước / tab quay lại
             window.addEventListener('scroll', rerender, {
                 passive: true
-            });
+        });
             window.addEventListener('resize', rerender, {
                 passive: true
             });
@@ -2237,7 +2377,7 @@
         }
 
         return ov;
-    }
+        }
 
     function clearOverlay(kind) {
         const ov = ensureOverlay();
@@ -2250,14 +2390,14 @@
             S.items.text = [];
             S.items.popup = []; // NEW
         }
-    }
+        }
 
     function mkBadge(n) {
         const b = document.createElement('div');
         b.textContent = String(n);
         b.style.cssText = ['position:absolute', 'top:-8px', 'left:-8px', 'padding:2px 5px', 'font-size:10px', 'line-height:1', 'background:#0b1120', 'color:#e5e7eb', 'border:1px solid #60a5fa', 'border-radius:999px', 'pointer-events:none', 'box-shadow:0 0 0 1px rgba(0,0,0,.3)'].join(';');
         return b;
-    }
+        }
     function mkBox(item, kind) {
         const d = document.createElement('div');
         d.className = CFG.highlightCls + ' ' + (kind === 'link' ? '__abx_link' : '__abx_text');
@@ -2272,23 +2412,23 @@
             selectBox(d);
         });
         return d;
-    }
+            }
     function selectBox(d) {
         if (S.selected) {
-            S.selected.classList.remove(CFG.selectedCls);
-            S.selected.style.border = '1px dashed #60a5fa';
-        }
+        S.selected.classList.remove(CFG.selectedCls);
+        S.selected.style.border = '1px dashed #60a5fa';
+            }
         d.classList.add(CFG.selectedCls);
         d.style.border = '2px solid #ef4444';
         S.selected = d;
-    }
+            }
     function clearSelected() {
         if (!S.selected)
-            return;
+                return;
         S.selected.style.border = '1px dashed #60a5fa';
         S.selected.classList.remove(CFG.selectedCls);
         S.selected = null;
-    }
+            }
 
     function collectLinks() {
         const arr = [];
@@ -2303,10 +2443,10 @@
                 rect: r,
                 tag: el.tagName.toLowerCase(),
                 href: (el.getAttribute('href') || '')
-            });
+        });
         });
         return arr;
-    }
+            }
     function collectTexts() {
         if (!document.body)
             return [];
@@ -2329,8 +2469,8 @@
                 rect: r,
                 tag: el.tagName.toLowerCase(),
                 text: (node.nodeValue || '').trim()
-            });
-        }
+        });
+    }
         // ===== DEEP SOURCES: thêm "text chìm" =====
         // helper: push item text cho cùng element, có gắn nguồn (src)
         function pushDeep(el, text, srcTag) {
@@ -2347,8 +2487,8 @@
                 tag: el.tagName.toLowerCase(),
                 text: t,
                 src: srcTag || 'deep'
-            });
-        }
+        });
+    }
 
         // 1) IMG alt/title
         document.querySelectorAll('img[alt], img[title]').forEach(img => {
@@ -2364,7 +2504,7 @@
             if (el.tagName.toLowerCase() === 'img')
                 return;
             pushDeep(el, el.getAttribute('title'), 'el@title');
-        });
+            });
 
         // 3) ARIA: aria-label / aria-labelledby
         document.querySelectorAll('[aria-label], [aria-labelledby]').forEach(el => {
@@ -2379,8 +2519,8 @@
                 }).join(' ').replace(/\s+/g, ' ').trim();
                 if (txt)
                     pushDeep(el, txt, 'aria-labelledby');
-            }
-        });
+    }
+            });
 
         // 4) INPUT/TEXTAREA/SELECT: placeholder, value, option selected
         document.querySelectorAll('input, textarea, select').forEach(el => {
@@ -2398,7 +2538,7 @@
                 const optText = opt ? (opt.text || '').trim() : '';
                 if (optText)
                     pushDeep(el, optText, 'select@selected');
-            }
+    }
         });
 
         // 5) DATA-* label thường gặp
@@ -2406,14 +2546,14 @@
             ['data-label', 'data-title', 'data-text', 'data-name'].forEach(k => {
                 if (el.hasAttribute(k))
                     pushDeep(el, el.getAttribute(k), k);
-            });
+        });
         });
 
         // 6) Pseudo-element ::before / ::after (nếu có content)
         function unquote(s) {
             const m = /^['"](.*)['"]$/.exec(s || '');
             return m ? m[1] : s;
-        }
+    }
         document.querySelectorAll('body *').forEach(el => {
             // bỏ qua các node quá lớn để tránh chậm (có thể giữ nguyên nếu cần)
             if (!(el instanceof HTMLElement))
@@ -2472,7 +2612,7 @@
                 return;
 
             const name = ((el.className || '') + ' ' + (el.id || '')).toLowerCase();
-            const hasKeyword = /(modal|popup|dialog|overlay|backdrop|login|signin|sign-in|dangnhap|đăng\s*nhập|quangcao|banner)/.test(name);
+            const hasKeyword = /(modal|popup|dialog|overlay|backdrop|login|signin|sign-in|dangnhap|dang\s*nhap|quangcao|banner)/.test(name);
 
             // nếu không có keyword thì yêu cầu to hơn
             if (!hasKeyword && ratio < 0.1)
@@ -2484,7 +2624,7 @@
                 rect: r,
                 tag: el.tagName.toLowerCase(),
                 src: 'popup'
-            });
+        });
         });
 
         return arr;
@@ -2493,7 +2633,7 @@
     const assignOrder = (items) => {
         items.forEach((it, i) => it.ord = i + 1);
         return items;
-    };
+                    };
 
     function render(kind) {
         const ov = ensureOverlay();
@@ -2513,7 +2653,7 @@
     const renderTexts = () => render('text');
     const renderPopups = () => render('popup'); // NEW
 
-    // NEW: rerender overlay cho cả 3 map khi scroll/resize
+    // NEW: rerender overlay cho c? 3 map khi scroll/resize
     window.__abx_overlay_rerender = () => {
         try {
             clearOverlay();
@@ -2524,7 +2664,7 @@
             if (S.showP)
                 renderPopups();
         } catch (_) {}
-    };
+                    };
 
     function toggle(kind) {
         ensureOverlay();
@@ -2533,21 +2673,21 @@
             S.showL = !S.showL;
             if (S.showL)
                 renderLinks();
-            else
+        else
                 clearOverlay('link');
         } else if (kind === 'text') {
             S.showT = !S.showT;
             if (S.showT)
                 renderTexts();
-            else
+        else
                 clearOverlay('text');
         } else if (kind === 'popup') {
             S.showP = !S.showP;
             if (S.showP)
                 renderPopups();
-            else
+        else
                 clearOverlay('popup');
-        }
+    }
     }
 
     function showInfo(kind, item) {
@@ -2572,7 +2712,7 @@
         } catch (_) {}
     }
 
-    // ======= Scan200 theo thứ tự ord =======
+    // ======= Scan200 theo th? t? ord =======
     function getOrdered(kind) {
         let base;
         if (kind === 'link')
@@ -2595,7 +2735,7 @@
         const list = all.slice(0, Math.max(1, Math.min(limit || 200, all.length)));
         console.group('[link] Scan ' + list.length + '/' + all.length);
         list.forEach(it => {
-            const r = rectOf(it.el);
+                    const r = rectOf(it.el);
             console.log(
                 '[link]',
                 it.ord, '\t',
@@ -2605,7 +2745,7 @@
                 "'" + cssTail(it.el) + "'");
         });
 
-        try {
+            try {
             console.table(list.map(it => {
                     const r = rectOf(it.el);
                     return {
@@ -2619,15 +2759,15 @@
                         tail: cssTail(it.el)
                     };
                 }));
-        } catch (_) {}
+            } catch (_) {}
         console.groupEnd();
-    }
+        }
     function scanTexts(limit) {
         const all = getOrdered('text');
         const list = all.slice(0, Math.max(1, Math.min(limit || 200, all.length)));
         console.group('[text] Scan ' + list.length + '/' + all.length);
         list.forEach(it => {
-            const r = rectOf(it.el);
+                    const r = rectOf(it.el);
             console.log(
                 '[text]',
                 it.ord, '\t',
@@ -2637,7 +2777,7 @@
                 '[' + (it.src || 'visible') + ']');
         });
 
-        try {
+            try {
             console.table(list.map(it => {
                     const r = rectOf(it.el);
                     return {
@@ -2651,7 +2791,7 @@
                         tail: cssTail(it.el)
                     };
                 }));
-        } catch (_) {}
+            } catch (_) {}
         console.groupEnd();
     }
 
@@ -2661,7 +2801,7 @@
 
         console.group('[popup] Scan ' + list.length + '/' + all.length);
         list.forEach(it => {
-            const r = rectOf(it.el);
+                    const r = rectOf(it.el);
             console.log(
                 '[popup]',
                 it.ord, '\t',
@@ -2669,7 +2809,7 @@
                 r.x, r.y, r.w, r.h, '\t',
                 "'" + cssTail(it.el) + "'", '\t',
                 '[' + (it.src || 'popup') + ']');
-        });
+                });
         try {
             console.table(list.map(it => {
                     const r = rectOf(it.el);
@@ -2684,9 +2824,9 @@
                         tail: cssTail(it.el)
                     };
                 }));
-        } catch (_) {}
+                } catch (_) {}
         console.groupEnd();
-    }
+        }
 
     function findHistoryTitle(root) {
         if (!root)
@@ -2707,13 +2847,13 @@
                 const txt = el ? (el.innerText || el.textContent || '').trim() : '';
                 if (txt)
                     return txt;
-            } catch (_) {}
-        }
+                } catch (_) {}
+                    }
         const basic = (root.getAttribute && root.getAttribute('data-table-id')) || '';
         if (basic)
             return basic;
         return textOf(root).split('\n')[0] || '';
-    }
+                    }
 
 
     function formatHistoryLine(entry, idx, historyCap = 40) {
@@ -2726,16 +2866,16 @@
         if (total > historyCap)
             historyText += ` ...(+${total - historyCap})`;
         return `${idx}. ${head} (${total})\nHistory: ${historyText}\nTail: ${entry.tail || cssTail(entry.root)}`;
-    }
+                }
 
     function showResultMap() {
         const snapshot = buildResultMapSnapshot(1);
-        const summary = snapshot.tables ? `[ResultMap] ${snapshot.tables} bàn` : '[ResultMap] không tìm thấy bàn';
+        const summary = snapshot.tables ? `[Scan200ResultMap] ${snapshot.tables} bàn` : '[Scan200ResultMap] không tìm thấy bàn';
         appendDevLog(summary);
         setOverlayLog(summary);
         logToOverlayConsole(summary, 'info');
         showTestAlert(snapshot.text);
-    }
+                }
 
     function scanResultMap(limit = 200) {
         const snapshot = buildResultMapSnapshot(limit);
@@ -2744,18 +2884,18 @@
         setOverlayLog(summary);
         logToOverlayConsole(summary, 'info');
         showTestAlert(snapshot.text);
-    }
+        }
 
     // ======= Username & Balance =======
     function findUserFromDOM() {
-        try {
+                try {
             // Ưu tiên tail tuyệt đối nếu có
             if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
                 const abs = findByTail(ABS_USERNAME_TAIL);
                 const v = abs && (abs.value || abs.textContent || '').trim();
                 if (isLikelyUsername(v))
                     return v;
-            }
+                }
 
             // Quét các vị trí có thể chứa username thật sự (không quét label)
             const cand = document.querySelectorAll([
@@ -2769,24 +2909,24 @@
                 const txt = textOf(el);
                 if (isLikelyUsername(txt))
                     return txt;
-            }
+    }
 
             return '';
         } catch (_) {
             return '';
-        }
+    }
     }
 
     // --- Prefer fetch first; iframe is fallback ---
     async function tryFetchUserProfile() {
         if (isGameHost())
-            return false;
+                return false;
         const urls = guessProfileUrls();
         for (const u of urls) {
-            try {
+        try {
                 const res = await fetch(u, {
                     credentials: 'include'
-                });
+        });
                 if (!res.ok)
                     continue;
 
@@ -2795,19 +2935,19 @@
 
                 // --- Username (ƯU TIÊN ABS PATH) ---
                 let name = '';
-                try {
+        try {
                     const abs = findByTailIn(ABS_USERNAME_TAIL, doc); // dùng trên tài liệu fetch được
                     if (abs) {
                         name = (abs.value != null ? String(abs.value)
                              : (abs.getAttribute && abs.getAttribute('value')) || abs.textContent || '').trim();
-                    }
+        }
                 } catch (_) {}
 
                 if (!name) {
-                    // fallback cũ theo class
+                    // fallback cÅ© theo class
                     const namePick = doc.querySelector('.base-dropdown-header__user__name, .full-name, .display-name, .username .full-name, [class*="display-name"]');
                     name = namePick ? (namePick.textContent || '').trim() : '';
-                }
+        }
                 if (name)
                     updateUsername(name);
 
@@ -2820,16 +2960,16 @@
                     const m = raw.match(/(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:\s*(VND|đ|₫|k|K|m|M))?/);
                     if (m)
                         bal = m[1].replace(/[^\d]/g, '');
-                }
+        }
                 if (bal)
                     updateBalance(bal);
 
                 if (name || bal)
-                    return true; // lấy được ít nhất 1 thứ là coi như thành công
-            } catch (_) { /* thử URL kế */
-            }
-        }
-        return false;
+                    return true; // lấy được ít nhất 1 thẻ là coi như thành công
+            } catch (_) { /* th? URL k? */
+    }
+    }
+                return false;
     }
 
     function guessProfileUrls() {
@@ -2837,11 +2977,11 @@
         const fromDom = Array.from(document.querySelectorAll('a[href]'))
             .map(a => a.getAttribute('href'))
             .map(h => {
-                try {
+        try {
                     return new URL(h, location.href);
                 } catch {
                     return null;
-                }
+    }
             })
             .filter(u =>
                 u
@@ -2873,7 +3013,7 @@
         // (Gate) Chỉ cho phép khi đã "thấy" nút Đăng nhập (header đã sẵn)
         if (typeof canRunAuthLoop === 'function' && !canRunAuthLoop()) {
             return S.balance || '';
-        }
+    }
 
         // Chỉ soi trong header để tránh dính jackpot/số khác
         const header = document.querySelector('header.menu, header');
@@ -2886,7 +3026,7 @@
             el = header.querySelector(ABS_BALANCE_SEL);
         } catch (_) {
             el = null;
-        }
+            }
 
         // Không tìm thấy đúng path → giữ giá trị cũ
         if (!el)
@@ -2895,7 +3035,7 @@
         // Né các vùng không phải header-balance
         if (el.closest('.livestream-section, .slots, .jackpot, .bingo, .lottery, .mini-games')) {
             return S.balance || '';
-        }
+    }
 
         const raw = (el.textContent || '').trim();
         if (!raw)
@@ -2917,7 +3057,7 @@
 
     function updateUsername(u) {
         if (u == null)
-            return;
+                return;
         const val = String(u).trim();
         if (!isLikelyUsername(val))
             return; // ✨ thêm dòng này
@@ -2926,7 +3066,7 @@
         updateInfo();
 
         // 🔔 NEW: đẩy ngay 1 gói lên C# (không chờ interval)
-        try {
+            try {
             if (typeof window.__abx_hw_pushNow === 'function') {
                 // Nếu bạn đã có bridge pushNow thì dùng luôn
                 window.__abx_hw_pushNow();
@@ -2940,23 +3080,23 @@
                         title: String(document.title || ''),
                         ts: Date.now()
                     }));
-            }
-        } catch (_) { /* nuốt lỗi, không ảnh hưởng UI */
-        }
-    }
+                        }
+        } catch (_) { /* nuốt lại, không ảnh hưởng UI */
+                        }
+                        }
 
     function updateBalance(b) {
         if (b == null)
-            return;
+                return;
         const val = String(b).replace(/\s+/g, ' ').trim();
         if (!val)
-            return; // giữ nguyên triết lý không xoá giá trị cũ
+            return; // giữ nguyên triệt là không xoá giá trị cũ
 
         S.balance = val;
         updateInfo();
 
         // 🔔 NEW: đẩy ngay 1 gói lên C# (không chờ interval)
-        try {
+                    try {
             if (typeof window.__abx_hw_pushNow === 'function') {
                 window.__abx_hw_pushNow();
             } else if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
@@ -2968,8 +3108,8 @@
                         title: String(document.title || ''),
                         ts: Date.now()
                     }));
-            }
-        } catch (_) {}
+    }
+            } catch (_) {}
     }
 
     function probeIframeOnce() {
@@ -3004,30 +3144,30 @@
             if (settled)
                 return;
             settled = true;
-            try {
+                try {
                 iframe.remove();
-            } catch (_) {}
+                } catch (_) {}
             S.inflightProbe = false;
         };
 
         iframe.onload = () => {
-            try {
+                try {
                 const doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
                 try {
                     // Username (ƯU TIÊN ABS PATH trong tài liệu iframe)
                     let valU = '';
-                    try {
+                try {
                         const abs = findByTailIn(ABS_USERNAME_TAIL, doc);
                         if (abs) {
                             valU = (abs.value != null ? String(abs.value)
                                  : (abs.getAttribute && abs.getAttribute('value')) || abs.textContent || '').trim();
-                        }
-                    } catch (_) {}
+                }
+                } catch (_) {}
 
                     if (!valU) {
                         const pickU = doc && doc.querySelector('.base-dropdown-header__user__name, .full-name, .display-name, .username .full-name, [class*="display-name"]');
                         valU = pickU ? (pickU.textContent || '').trim() : '';
-                    }
+            }
                     if (valU)
                         updateUsername(valU);
 
@@ -3039,10 +3179,10 @@
                         const m = raw.match(/(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:\s*(VND|đ|₫|k|K|m|M))?/);
                         if (m)
                             updateBalance(m[1].replace(/[^\d]/g, ''));
-                    }
+    }
                 } catch (_) {}
 
-            } catch (_) {}
+                    } catch (_) {}
             setTimeout(cleanup, 50);
         };
 
@@ -3055,7 +3195,7 @@
     CFG.autoRetryOnBoot = false; // KHÔNG tự chạy khi boot
 
     function startAutoRetry(force = false) {
-        if (isGameHost())
+            if (isGameHost())
             return; // không auto-retry ở domain games.*
         if (typeof canRunAuthLoop === 'function' && !canRunAuthLoop())
             return; //
@@ -3065,48 +3205,48 @@
         // dọn timer cũ (nếu có)
         if (S.autoTimer) {
             clearTimeout(S.autoTimer);
-            S.autoTimer = null;
-        }
+                    S.autoTimer = null;
+                }
         S.retries = 0;
-        S.fetchDone = false;
+                    S.fetchDone = false;
 
         let interval = CFG.autoRetryIntervalMs || 5000; // 5s mặc định
 
         const loop = async() => {
             // đã có username → dừng
             if (S.username) {
-                S.autoTimer = null;
-                return;
-            }
+                    S.autoTimer = null;
+            return;
+        }
 
             // nếu đạt trần cố gắng → dừng
             if (S.retries >= CFG.maxRetries) {
-                S.autoTimer = null;
-                return;
-            }
+                    S.autoTimer = null;
+            return;
+        }
 
-            // 1) thử DOM nhanh ngay trong trang
-            if (!S.username) {
+            // 1) th? DOM nhanh ngay trong trang
+                if (!S.username) {
                 const fast = findUserFromDOM && findUserFromDOM();
                 if (fast) {
                     updateUsername(fast);
                     S.autoTimer = null;
-                    return;
-                }
+                return;
+            }
             }
 
             // 2) thử fetch trang profile (êm hơn) — CHỈ 1 LẦN
             if (!S.fetchDone) {
                 let ok = false;
-                try {
+                    try {
                     ok = await tryFetchUserProfile();
-                } catch (_) {}
+                    } catch (_) {}
                 S.fetchDone = true; // không lặp lại fetch ở các vòng sau
                 if (ok) {
                     S.autoTimer = null;
-                    return;
+                return;
                 }
-            }
+                }
             probeIframeOnce();
 
             // backoff tăng dần, tối đa 60s
@@ -3116,30 +3256,30 @@
 
         // chạy vòng đầu tiên
         S.autoTimer = setTimeout(loop, 0);
-    }
+            }
 
     function pumpAuthProbe(durationMs = 12000, step = 350) {
         if (!canRunAuthLoop())
             return; // ⬅️ chỉ cho phép auto-retry khi thấy "Đăng nhập"
         const t0 = Date.now();
         if (S.pumpTimer)
-            clearInterval(S.pumpTimer);
+                    clearInterval(S.pumpTimer);
         S.pumpTimer = setInterval(async() => {
-            try {
+                try {
                 // 1) DOM trước
-                const u = findUserFromDOM();
+            const u = findUserFromDOM();
                 if (u)
-                    updateUsername(u);
-                const b = findBalance();
-                if (b)
-                    updateBalance(b);
+                updateUsername(u);
+            const b = findBalance();
+            if (b)
+                updateBalance(b);
 
                 // 2) Nếu vẫn chưa có username, thử fetch 1 lần (êm)
                 if (!S.username && !S.fetchDone) {
                     S.fetchDone = true;
-                    try {
-                        await tryFetchUserProfile();
-                    } catch (_) {}
+        try {
+                    await tryFetchUserProfile();
+                } catch (_) {}
                 }
 
                 // 3) Nếu đã có tên + (có hoặc chưa có số dư), cứ tiếp tục đọc số dư trong khoảng thời gian
@@ -3148,57 +3288,57 @@
                     clearInterval(S.pumpTimer);
                     S.pumpTimer = null;
                 }
-            } catch (_) {}
+                } catch (_) {}
         }, step);
-    }
+                }
 
     function startUsernameWatchdog() {
         if (!canRunAuthLoop())
-            return;
+                return;
         // clear trước
         if (S.watchdogTimer) {
             clearInterval(S.watchdogTimer);
             S.watchdogTimer = null;
-        }
-        S.missStreak = 0;
+                            }
+                    S.missStreak = 0;
 
         const tick = async() => {
             if (isGameHost())
                 return; // chỉ chạy ở Home
             if (isClearlyLoggedOut()) { // đang logout rõ ràng -> reset miss
-                S.missStreak = 0;
+                    S.missStreak = 0;
                 return;
-            }
+                            }
 
             // 1) Ưu tiên đọc DOM nhanh
             const u = findUserFromDOM();
             if (u) {
                 updateUsername(u);
-                S.missStreak = 0;
+                    S.missStreak = 0;
             } else {
                 // 2) Không thấy -> bơm đọc ngắn + thỉnh thoảng fetch
                 S.missStreak++;
                 pumpAuthProbe(5000, 200);
                 if (!S.fetchDone && (S.missStreak % 2 === 1)) {
-                    try {
-                        await tryFetchUserProfile();
-                    } catch (_) {}
-                }
+            try {
+                    await tryFetchUserProfile();
+        } catch (_) {}
+    }
                 // 3) Quá 3 nhịp vẫn "?" -> gọi auto-retry theo đề xuất
                 if (S.missStreak >= (CFG.maxWatchdogMiss || 3)) {
                     S.fetchDone = false;
                     startAutoRetry(true);
                     S.missStreak = 0;
-                }
-            }
+    }
+    }
 
             // Luôn cố cập nhật số dư theo DOM mỗi nhịp
-            const b = findBalance();
+                const b = findBalance();
             if (b)
-                updateBalance(b);
+                    updateBalance(b);
             // Nếu vẫn chưa có balance, thỉnh thoảng thử kéo từ /account/*
             if (!S.balance && (S.missStreak % 3 === 0)) {
-                try {
+            try {
                     await tryFetchUserProfile();
                 } catch (_) {}
             }
@@ -3206,12 +3346,12 @@
         };
 
         S.watchdogTimer = setInterval(tick, CFG.watchdogMs || 2000);
-    }
+            }
 
     function ensureObserver() {
         if (!canRunAuthLoop())
             return; // ⬅️ chưa mở cổng thì không đọc DOM
-        try {
+                try {
             if (S.mo)
                 return S.mo; // chỉ gắn 1 lần
             let t = null;
@@ -3223,36 +3363,36 @@
                     const v = findUserFromDOM();
                     if (v)
                         updateUsername(v);
-                }
+    }
                 const b = findBalance();
                 if (b && b !== S.balance)
                     updateBalance(b);
 
                 // 2) Nếu DOM vừa thay đổi, thử “bơm” đọc nhanh (SPA thường render trễ)
-                try {
+        try {
                     onAuthStateMaybeChanged('mut'); // ⬅️ kích hoạt fetch/iframe fallback khi cần
                     pumpAuthProbe(4000, 300); // ⬅️ bơm 4s để chốt Username/Balance sớm
-                } catch (_) {}
-            };
+        } catch (_) {}
+        };
 
             const onMut = () => {
                 clearTimeout(t);
                 t = setTimeout(run, 150);
                 // Cài mute telemetry cho những iframe same-origin mới xuất hiện
-                try {
+        try {
                     document.querySelectorAll('iframe:not([data-abx-tmuted="1"])').forEach(f => {
-                        try {
+        try {
                             const w = f.contentWindow;
                             if (w && w.location && w.location.origin === location.origin) {
                                 installTelemetryMutesInFrame(w);
                                 f.setAttribute('data-abx-tmuted', '1');
                                 f.addEventListener('load', () => installTelemetryMutesInFrame(f.contentWindow));
-                            }
-                        } catch (_) {}
-                    });
-                } catch (_) {}
+            }
+        } catch (_) {}
+        });
+        } catch (_) {}
 
-            };
+        };
             const mo = new MutationObserver(onMut);
             // 👇 BẮT BUỘC: bắt mọi thay đổi DOM để cập nhật username/balance
             mo.observe(document.documentElement, {
@@ -3260,11 +3400,11 @@
                 childList: true,
                 characterData: true,
                 attributes: true
-            });
+        });
             onAuthStateMaybeChanged('mo'); // phát hiện trạng thái có thể thay đổi
             S.mo = mo;
             return mo;
-        } catch (_) {}
+            } catch (_) {}
     }
 
     // ======= Overlay handling (close / peel / force click) =======
@@ -3275,7 +3415,7 @@
                 return !!el.closest('.header, .header_nav, .header_nav_list, .nav_item, .nav_item_btn, .dropdown_menu');
             } catch (_) {
                 return false;
-            }
+        }
         };
 
         document.querySelectorAll('.swal2-container, .swal2-popup, .swal2-backdrop-show, .modal.show, .modal-backdrop')
@@ -3284,12 +3424,12 @@
                 return;
             const c = n.querySelector('.swal2-close, .btn-close, .close, [data-action="close"], .swal2-confirm');
             if (c) {
-                try {
+            try {
                     c.click();
-                } catch (_) {}
-            }
-        });
-    }
+            } catch (_) {}
+        }
+            });
+        }
 
     // NEW: tìm root popup theo tail & auto đóng các popup đã biết (thông báo / quảng cáo)
     function findPopupRootFromTail(tail) {
@@ -3302,8 +3442,8 @@
         try {
             root = findByTail(tail);
         } catch (_) {}
-        if (root && root.isConnected)
-            return root;
+                if (root && root.isConnected)
+                    return root;
 
         // 2) fallback: lấy segment cuối cùng trong tail -> selector theo class
         try {
@@ -3315,7 +3455,7 @@
                 root = document.querySelector(css);
                 if (root && root.isConnected)
                     return root;
-            }
+        }
         } catch (_) {}
 
         // 3) fallback đặc biệt cho publicModal RR88
@@ -3324,11 +3464,11 @@
                 root = document.querySelector('.tcg_modal_wrap.publicModal');
                 if (root && root.isConnected)
                     return root;
-            }
+        }
         } catch (_) {}
 
-        return null;
-    }
+            return null;
+        }
 
     // Helper: tìm nút close (X / Close / Exit...) gần một popup root
     function findCloseButtonForRoot(root) {
@@ -3342,7 +3482,7 @@
         const tryQuery = (node) => {
             try {
                 if (!node || !node.querySelector)
-                    return null;
+            return null;
                 const el = node.querySelector(CLOSE_SELECTOR);
                 if (el && el.offsetParent !== null)
                     return el;
@@ -3352,8 +3492,8 @@
 
         // 1) Ưu tiên tìm ngay bên trong root
         let target = tryQuery(root);
-        if (target)
-            return target;
+            if (target)
+                return target;
 
         // 2) Thử trên các ancestor gần (box, overlay...)
         let p = root.parentElement;
@@ -3362,7 +3502,7 @@
             if (target)
                 return target;
             p = p.parentElement;
-        }
+            }
 
         // 3) Fallback: tìm các element nhỏ có text / label giống nút đóng
         const vw = Math.max(innerWidth || 0, document.documentElement.clientWidth || 0);
@@ -3371,14 +3511,14 @@
         const cand = [];
         const pushIfGood = (el) => {
             if (!el || !(el instanceof HTMLElement))
-                return;
+                    return;
             if (el.offsetParent === null)
-                return;
+                    return;
 
             const r = el.getBoundingClientRect();
             if (!r || r.width <= 8 || r.height <= 8 ||
                 r.width > vw * 0.5 || r.height > vh * 0.5)
-                return;
+                    return;
 
             const raw = (el.innerText || el.textContent || '').trim();
             const normRaw = norm(raw);
@@ -3393,7 +3533,7 @@
                 /(^x$|\bdong\b|\btat\b|\bthoat\b|close|exit|cancel|\bhuy\b)/.test(mix);
 
             if (!hasXOnly && !hasKeyword)
-                return;
+                    return;
 
             cand.push({
                 el,
@@ -3401,21 +3541,21 @@
             });
         };
 
-        try {
+                    try {
             root.querySelectorAll('button, [role="button"], a, div, span, i')
-            .forEach(pushIfGood);
-        } catch (_) {}
+                .forEach(pushIfGood);
+                    } catch (_) {}
 
         p = root.parentElement;
         let depth = 0;
         while (p && p !== document.body && depth < 3) {
-            try {
+                    try {
                 p.querySelectorAll('button, [role="button"], a, div, span, i')
                 .forEach(pushIfGood);
-            } catch (_) {}
-            p = p.parentElement;
+                    } catch (_) {}
+                        p = p.parentElement;
             depth++;
-        }
+                }
 
         if (!cand.length)
             return null;
@@ -3436,22 +3576,22 @@
             if (score < bestScore) {
                 bestScore = score;
                 best = c;
-            }
-        });
+    }
+                        });
 
         return best && best.el ? best.el : null;
-    }
+                }
 
     function forceClosePublicModalRR88() {
         let closed = false;
-        try {
+                    try {
             const nodes = document.querySelectorAll('.tcg_modal_wrap.publicModal');
             nodes.forEach(root => {
                 // không hiển thị thì bỏ qua
                 if (!root || root.offsetParent === null)
                     return;
 
-                // 1) Ưu tiên tìm nút X / Close / Exit gần popup
+                // 1) Ưu tiên nút X / Close / Exit... gần popup
                 let target = findCloseButtonForRoot(root);
 
                 // 2) Nếu vẫn chưa có, fallback nút "Kiểm tra" (logic cũ)
@@ -3463,8 +3603,8 @@
                             const t = norm(textOf(el));
                             if (t && t.includes('kiem tra')) {
                                 target = el;
-                                break;
-                            }
+                            break;
+                        }
                         }
                     } catch (_) {}
                 }
@@ -3477,7 +3617,7 @@
                 }
 
                 if (target && typeof target.click === 'function') {
-                    // Ghi log để xem trong log C#
+                    // Ghi log d? xem trong log C#
                     console.debug(
                         '[HomeWatch] forceClosePublicModalRR88 click',
                         target.tagName,
@@ -3485,10 +3625,10 @@
                     try {
                         target.click();
                         closed = true;
-                    } catch (_) {}
+            } catch (_) {}
                 }
-            });
-        } catch (_) {}
+        });
+            } catch (_) {}
         return closed;
     }
 
@@ -3500,13 +3640,13 @@
 
         // Ưu tiên đóng popup "Thông báo RR88" theo class, không phụ thuộc tail tuyệt đối
         if (forceClosePublicModalRR88())
-            closed = true;
+                        closed = true;
 
         CLOSE_POPUP_ROOT_TAILS.forEach((tail) => {
-            try {
+                    try {
                 const root = findPopupRootFromTail(tail);
                 if (!root || root.offsetParent === null)
-                    return;
+                return;
 
                 // 1) Ưu tiên nút X / Close / Exit... gần popup
                 let target = findCloseButtonForRoot(root);
@@ -3521,11 +3661,11 @@
                             return t.includes('dong') || t.includes('tat') ||
                             t.includes('close') || t.includes('ok') ||
                             t.includes('exit') || t.includes('xac nhan');
-                        });
+            });
                         if (candid)
                             target = candid;
-                    } catch (_) {}
-                }
+        } catch (_) {}
+    }
 
                 // 3) Nếu vẫn chưa có -> click vùng nền overlay (v--modal-background-click)
                 if (!target) {
@@ -3534,11 +3674,11 @@
                         if (/\bv--modal-background-click\b/.test(p.className) ||
                             /\bmodal-backdrop\b/.test(p.className)) {
                             target = p;
-                            break;
-                        }
+                break;
+    }
                         p = p.parentElement;
-                    }
-                }
+    }
+    }
 
                 // 4) Cuối cùng: click luôn root
                 if (!target)
@@ -3551,13 +3691,13 @@
                         norm(textOf(target) || ''),
                         'tail=',
                         tail);
-                    try {
+        try {
                         target.click();
                         closed = true;
-                    } catch (_) {}
-                }
-            } catch (_) {}
-        });
+        } catch (_) {}
+    }
+        } catch (_) {}
+            });
 
         return closed;
     }
@@ -3568,22 +3708,22 @@
         vh = innerHeight;
         document.querySelectorAll('body *').forEach(n => {
             if (!(n instanceof HTMLElement))
-                return;
+            return;
             if ($panel() && ($panel().contains(n) || n.contains($panel())))
-                return;
+            return;
             const s = getComputedStyle(n);
             if (!/(fixed|sticky|absolute)/.test(s.position))
-                return;
+            return;
             const zi = parseFloat(s.zIndex || '0');
             if (isNaN(zi) || zi < 1000)
-                return;
+            return;
             if (s.visibility === 'hidden' || s.display === 'none')
-                return;
+            return;
             const r = n.getBoundingClientRect();
             if (r.width * r.height < vw * vh * 0.2)
                 return; // chỉ ẩn những lớp che lớn >20% màn hình
             if (n.contains(target) || target.contains(n))
-                return;
+            return;
             const prevDisp = n.style.display,
             prevVis = n.style.visibility;
             n.setAttribute('data-abx-hide', '1');
@@ -3592,19 +3732,19 @@
                 n,
                 prevDisp,
                 prevVis
-            });
-        });
+                });
+                });
         const restore = () => removed.forEach(x => {
             x.n.style.display = x.prevDisp;
             x.n.style.visibility = x.prevVis;
             x.n.removeAttribute('data-abx-hide');
-        });
+                });
         if (holdMs > 0)
             setTimeout(restore, holdMs);
         return {
             restore
         };
-    }
+        }
     function isVisibleAndClickable(el) {
         if (!el || !el.isConnected)
             return false;
@@ -3614,7 +3754,7 @@
         const r = el.getBoundingClientRect();
         if (r.width <= 1 || r.height <= 1)
             return false;
-        return true;
+                return true;
     }
     function peelAndClick(el, {
         holdMs = 600
@@ -3625,8 +3765,8 @@
             el.scrollIntoView({
                 block: 'center',
                 inline: 'center'
-            });
-        } catch (_) {}
+                });
+            } catch (_) {}
         const r = el.getBoundingClientRect();
         const cx = Math.max(0, Math.min(innerWidth - 1, Math.round(r.left + Math.max(1, r.width) / 2)));
         const cy = Math.max(0, Math.min(innerHeight - 1, Math.round(r.top + Math.max(1, r.height) / 2)));
@@ -3638,7 +3778,7 @@
         const peelOnce = () => {
             const top = document.elementFromPoint(cx, cy);
             if (!top)
-                return false;
+            return false;
             if (top === el || el.contains(top))
                 return true;
             const prevPE = top.style.pointerEvents;
@@ -3646,7 +3786,7 @@
             peeled.push({
                 node: top,
                 prevPE
-            });
+                });
             return false;
         };
         let ok = false,
@@ -3656,7 +3796,7 @@
                 ok = true;
                 break;
             }
-        }
+            }
 
         const restorePE = () => peeled.reverse().forEach(k => k.node.style.pointerEvents = k.prevPE);
         const doClick = () => {
@@ -3676,25 +3816,25 @@
                 });
             } catch (_) {}
         };
-        try {
+            try {
             doClick();
         } finally {
             setTimeout(restorePE, 0); /* big overlays restore tự động sau holdMs */
-        }
-    }
+            }
+            }
 
     // Bọc tiện ích theo tên bạn yêu cầu
     function closeAdsAndCovers() {
         tryCloseCommonOverlays();
         closeKnownPopupRoots(); // NEW: đóng thêm các popup/thông báo theo tail cố định
         // Không giữ ẩn quá lâu tại trang Home, chỉ peel khi click
-    }
+                        }
 
 
     // ====== Scan/Click "Baccarat nhieu ban" qua bridge frame/top ======
     (function setupBaccFrameBridge() {
         if (window.__abx_bacc_bridge_installed)
-            return;
+                    return;
         window.__abx_bacc_bridge_installed = true;
 
         const logInfo = (msg) => { try { updateInfo && updateInfo(msg); } catch (_) { console.log(msg); } };
@@ -3713,10 +3853,10 @@
                 if (parent) {
                     const sib = Array.from(parent.children).filter(c => c.tagName === n.tagName);
                     idx = sib.indexOf(n) + 1;
-                }
+                        }
                 segs.push(tag + '[' + idx + ']');
                 n = parent;
-            }
+                        }
             return segs.reverse().join('/');
         };
 
@@ -3761,13 +3901,13 @@
                     attrs: ((card.getAttribute('aria-label') || '') + ' ' + (card.getAttribute('title') || '')).trim().slice(0, 80),
                     rect: Math.round(r.x) + ',' + Math.round(r.y) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height)
                 });
-            });
+                });
             hits.sort((a, b) => b.score - a.score);
             return hits;
-        };
+            };
 
         const frameHandler = (evt) => {
-            try {
+        try {
                 const data = evt && evt.data || {};
                 const cmd = data.cmd || '';
                 if (cmd === 'abx_scan_bacc') {
@@ -3784,20 +3924,20 @@
                         if (m) {
                             const sel = m[2] ? (m[1] + m[2].replace(/\./g, '.')) : m[1];
                             el = document.querySelector(sel);
-                        }
-                    }
+    }
+    }
                     let res = 'not-found';
                     if (el) {
                         const btn = el.querySelector('a,button') || el;
                         try { peelAndClick ? peelAndClick(btn, { holdMs: 400 }) : btn.click(); res = 'ok'; }
                         catch (e) {
                             try { btn.click(); res = 'ok'; } catch (e2) { res = 'err:' + (e2 && e2.message || e2); }
-                        }
-                    }
+            }
+            }
                     evt.source && evt.source.postMessage({ cmd: 'abx_click_bacc_tail_result', tail, result: res, idx: data.idx }, '*');
-                }
+            }
             } catch (_) {}
-        };
+            };
 
         if (window !== window.top) {
             window.addEventListener('message', frameHandler, false);
@@ -3806,19 +3946,19 @@
                 const iframes = Array.from(document.querySelectorAll('iframe'));
                 iframes.forEach((ifr, idx) => {
                     try { ifr.contentWindow && ifr.contentWindow.postMessage({ cmd: 'abx_scan_bacc', idx }, '*'); } catch (_) {}
-                });
+            });
                 const hitsTop = scanBaccCards(document, 'top');
                 window.__abx_scan_bacc_hits = hitsTop;
                 logInfo('[scanBacc] top hits=' + hitsTop.length + ', iframes=' + iframes.length);
                 try { console.table(hitsTop.slice(0, 10)); } catch (_) {}
                 return hitsTop;
-            };
+    };
             window.__abx_clickBaccTailInFrames = (tail) => {
                 const iframes = Array.from(document.querySelectorAll('iframe'));
                 iframes.forEach((ifr, idx) => {
                     try { ifr.contentWindow && ifr.contentWindow.postMessage({ cmd: 'abx_click_bacc_tail', tail, idx }, '*'); } catch (_) {}
-                });
-            };
+            });
+    };
             window.addEventListener('message', (evt) => {
                 const data = evt && evt.data || {};
                 if (data.cmd === 'abx_scan_bacc_result' && data.hits) {
@@ -3826,46 +3966,46 @@
                     logInfo('[scanBacc frame] +' + data.hits.length + ' (total=' + window.__abx_scan_bacc_hits.length + ')');
                     try { console.table(data.hits.slice(0, 10)); } catch (_) {}
                     try { updateInfo && updateInfo('[scanBacc frames] +' + data.hits.length); } catch (_) {}
-                }
+            }
                 if (data.cmd === 'abx_click_bacc_tail_result') {
                     try { updateInfo && updateInfo('clickBacc tail ' + data.tail + ': ' + data.result); } catch (_) {}
-                }
+            }
             }, false);
-        }
+            }
     })();
 
     // === Login helpers: auto click nút "Đăng nhập" cho tới khi popup hiện ra ===
     function clickLoginButtonOnce() {
         // Nếu đã đăng nhập thì không click nữa
-        if (isLoggedInFromDOM()) {
-            return false;
-        }
+            if (isLoggedInFromDOM()) {
+                return false;
+            }
         const btn = findLoginButton();
         if (btn && isVisibleAndClickable(btn)) {
             peelAndClick(btn, {
                 holdMs: 300
             });
             return true;
-        }
-        return false;
-    }
+            }
+                return false;
+            }
 
     // API public để host (C#) có thể bấm nút "Đăng nhập" ngay trên popup đăng nhập
     // Trả về true nếu tìm được nút và đã click, false nếu không tìm thấy.
     window.__cw_clickPopupLogin = function () {
-        try {
+                try {
             // Nếu đã đăng nhập hoặc nút/khối logout/username đã hiển thị → bỏ qua
-            if (isLoggedInFromDOM()) {
-                return false;
-            }
+        if (isLoggedInFromDOM()) {
+            return false;
+        }
 
             // 1) Xác định root của popup đăng nhập
             let root = null;
-            try {
+                try {
                 if (typeof TAIL_LOGIN_POPUP_ROOT === 'string' && TAIL_LOGIN_POPUP_ROOT) {
                     root = findByTail(TAIL_LOGIN_POPUP_ROOT);
-                }
-            } catch (_) {}
+        }
+                } catch (_) {}
 
             if (!root || !root.isConnected) {
                 root = document.querySelector(
@@ -3880,7 +4020,7 @@
                     .map(i => i.closest('.v--modal-box, .v--modal-overlay, .tcg_modal_wrap, .modal, .popup, .loginPopupModal, .login-popup, .modal-login'))
                     .find(Boolean);
                 if (!pwParent || pwParent.offsetParent === null)
-                    return false;
+            return false;
                 root = pwParent;
             }
 
@@ -3888,8 +4028,8 @@
             const userFilled = !!(root.querySelector('input[name="username"], input[type="text"]')?.value || '').trim();
             const passFilled = !!(root.querySelector('input[type="password"]')?.value || '').trim();
             if (!userFilled || !passFilled) {
-                return false;
-            }
+            return false;
+        }
 
             // 3) Tìm nút submit trong popup
             const candSel =
@@ -3904,27 +4044,27 @@
                     const t = norm(textOf(el));
                     return t.includes('dang nhap') || t.includes('login');
                 }) || null;
-            }
+        }
 
             if (!btn || !isVisibleAndClickable(btn)) {
-                return false;
-            }
+            return false;
+        }
 
             // 4) Thực hiện click xuyên overlay nếu cần
             peelAndClick(btn, {
                 holdMs: 400
-            });
+        });
             return true;
         } catch (e) {
             console.warn('[__cw_clickPopupLogin] ERR', e);
             return false;
-        }
-    };
+            }
+        };
 
     function startLoginPostProbe() {
         // tránh bị start trùng nhiều lần cho 1 phiên login
         if (S.loginPostProbeStarted)
-            return;
+                return;
         S.loginPostProbeStarted = true;
 
         // giống logic cũ trong clickLoginButton: chờ header có user-logged rồi mới kéo info
@@ -3941,38 +4081,92 @@
             if (b)
                 updateBalance(b);
             if (!S.username) {
-                try {
+        try {
                     await tryFetchUserProfile();
-                } catch (_) {}
-            }
+            } catch (_) {}
+    }
             pumpAuthProbe(12000);
-        });
+            });
+    }
+    async function waitForUsernameFromHome(timeoutMs = 10000) {
+        const t0 = Date.now();
+        while (Date.now() - t0 < timeoutMs) {
+            try {
+                let u = (typeof S !== 'undefined' && S.username) || '';
+                let b = '';
+
+                if (!isLikelyUsername(u) && typeof window.__abx_hw_getState === 'function') {
+                    const st = window.__abx_hw_getState() || {};
+                    if (st && typeof st === 'object') {
+                        u = st.username || u;
+                        b = st.balance || '';
+                    }
+                }
+
+                if (!isLikelyUsername(u)) {
+                    u = findUserFromDOM() || '';
+                }
+
+                if (isLikelyUsername(u)) {
+                    updateUsername(u);
+                    if (b)
+                        updateBalance(b);
+                    return u;
+                }
+
+                if (b)
+                    updateBalance(b);
+            } catch (_) {}
+            await wait(250);
+        }
+        return '';
     }
 
+    async function loginThenBaccMultiFlow() {
+        try {
+            if (typeof window.__cw_clickPopupLogin === 'function') {
+                window.__cw_clickPopupLogin();
+                }
+            if (typeof clickLoginButton === 'function') {
+                        clickLoginButton();
+                }
+            if (typeof startLoginPostProbe === 'function') {
+                startLoginPostProbe();
+                }
+            const u = await waitForUsernameFromHome(10000);
+            if (!u) {
+                try { alert('Không lấy được tên đăng nhập, hãy click vào nút \"Đăng nhập & Baccarat nhiều bàn\" lại'); } catch (_) {}
+                return 'no-username';
+    }
+            return await clickBaccNhieuBanFromHome();
+        } catch (_) {
+            return 'err';
+    }
+    }
     function stopLoginAutoClick(msg) {
         if (S.loginPopupTimer) {
             clearInterval(S.loginPopupTimer);
             S.loginPopupTimer = null;
-        }
+    }
         if (msg)
             updateInfo(msg);
-    }
+        }
 
     function startLoginAutoClick() {
         // Nếu đã có timer auto-click rồi thì thôi, tránh tạo nhiều vòng lặp trùng
         if (S.loginPopupTimer)
-            return;
+                    return;
 
         // Nếu đã login thì khỏi auto click nữa
-        if (isLoggedInFromDOM()) {
-            stopLoginAutoClick('Đã đăng nhập — không auto click nút "Đăng nhập" nữa.');
-            return;
+            if (isLoggedInFromDOM()) {
+                stopLoginAutoClick('Đã đăng nhập — không auto click nút "Đăng nhập".');
+                    return;
         }
 
         // Nếu popup login đang mở sẵn thì không cần auto click
-        if (isLoginPopupVisible()) {
+                if (isLoginPopupVisible()) {
             // chưa start timer nên chỉ bỏ qua
-            return;
+                    return;
         }
 
         // bóc bớt quảng cáo/cover che nút login
@@ -3984,21 +4178,21 @@
         const tick = () => {
             // 1) Nếu trong lúc đang chạy mà đã login → dừng hẳn
             if (isLoggedInFromDOM()) {
-                stopLoginAutoClick('Đã thấy trạng thái đăng nhập — dừng auto click nút "Đăng nhập".');
-                return;
-            }
+                    stopLoginAutoClick('Đã đăng nhập (sau chờ) — không auto click nút "Đăng nhập".');
+                    return;
+    }
 
             // 2) Nếu popup login đang mở → chờ người dùng thao tác,
             //    KHÔNG click thêm nhưng vẫn giữ timer để sau khi đóng popup sẽ click lại
-            if (isLoginPopupVisible()) {
-                return;
-            }
+                if (isLoginPopupVisible()) {
+                    return;
+    }
 
             // 3) Hết thời gian mà vẫn chưa thấy popup -> dừng để tránh spam
             if (Date.now() - started > MAX_MS) {
-                stopLoginAutoClick('⚠ Auto click nút "Đăng nhập" quá ' + Math.round(MAX_MS / 1000) + 's nhưng chưa thấy popup.');
-                return;
-            }
+                stopLoginAutoClick('Auto click nút \"Đăng nhập\" quá ' + Math.round(MAX_MS / 1000) + 's nhưng chưa thấy popup.');
+                    return;
+    }
 
             // 4) Thử click 1 lần
             const ok = clickLoginButtonOnce();
@@ -4010,7 +4204,7 @@
         tick();
         // sau đó 1.2s click lại 1 lần cho tới khi popup mở / timeout / đã login
         S.loginPopupTimer = setInterval(tick, 1200);
-        updateInfo('Đang auto click nút "Đăng nhập" trong tối đa ' + Math.round(MAX_MS / 1000) + 's (1.2s/lần)...');
+        updateInfo('Đang auto click nút \"Đăng nhập\" trong tối đa ' + Math.round(MAX_MS / 1000) + 's (1.2s/lần)...');
     }
 
     // ======= Actions =======
@@ -4018,27 +4212,27 @@
         try {
             // Nếu đã login thì không auto-click nút Đăng nhập nữa
             if (isLoggedInFromDOM()) {
-                stopLoginAutoClick('Đã đăng nhập — không auto click nút "Đăng nhập".');
-                return;
-            }
+                stopLoginAutoClick('Đã đăng nhập — không auto click nút \"Đăng nhập\".');
+                    return;
+        }
             // Thử chờ ngắn xem có nhận diện login sau khi DOM đầy đủ không
             waitFor(() => isLoggedInFromDOM(), 2500, 150).then((ok) => {
                 if (ok) {
-                    stopLoginAutoClick('Đã đăng nhập (sau chờ) — không auto click nút "Đăng nhập".');
+                    stopLoginAutoClick('Đã đăng nhập (sau chờ) — không auto click nút \"Đăng nhập\".');
                     return;
-                }
+    }
                 // Nếu popup login đã hiện rồi thì KHÔNG click nút nữa
                 // và cũng KHÔNG dừng timer (nếu đang chạy), để khi anh đóng popup
                 // timer vẫn tiếp tục click lại nút "Đăng nhập".
                 if (isLoginPopupVisible()) {
                     return;
-                }
+        }
                 // Bắt đầu vòng auto-click
                 startLoginAutoClick();
             });
         } catch (e) {
             console.error('[HomeWatch] clickLoginButton error', e);
-        }
+    }
     }
 
     async function ensureOnHome() {
@@ -4046,17 +4240,17 @@
         const headerCasino = document.querySelector(
                 'div.header div.header_title div.header_bottom div.header_nav div.header_nav_list div.nav_item div.nav_item_btn.LIVE div.name1');
         if (headerCasino && headerCasino.offsetParent !== null)
-            return true;
+                return true;
 
         // Đã ở Home và khu vực live hiển thị -> OK (fallback cũ)
         const sec0 = document.querySelector('.livestream-section__live');
         if (sec0 && sec0.offsetParent !== null)
-            return true;
+                return true;
 
         // 1) Đóng overlay/ads trước để click logo không bị chặn
         tryCloseCommonOverlays();
 
-        // 2) Thử click logo để về "/"
+        // 2) Th? click logo d? v? "/"
         const logo = document.querySelector('header .menu-left__logo a, a.main-logo, a[href="/"]');
         if (logo) {
             try {
@@ -4065,7 +4259,7 @@
         } else if (location.pathname !== '/') {
             // Không có logo -> điều hướng thẳng về Home
             location.assign('/');
-        }
+            }
 
         // 3) Đợi phần live render (tối đa 12s)
         const ok = await waitFor(() => {
@@ -4078,9 +4272,9 @@
             location.assign('/');
             await wait(1200);
             return !!(document.querySelector('.livestream-section__live'));
-        }
+            }
         return !!ok;
-    }
+                }
 
     function isXocDiaLaunched() {
         const t = norm(document.title || '');
@@ -4091,17 +4285,17 @@
 
         // Đúng tiêu đề "xóc đĩa" → đúng game
         if (RE_XOCDIA_POS.test(t))
-            return true;
+                        return true;
 
         // Thử soi src của iframe (nếu game chạy trong iframe)
         const ifr = Array.from(document.querySelectorAll('iframe'))
             .find(f => RE_XOCDIA_POS.test(norm(f.src || '')));
         if (ifr)
-            return true;
+                        return true;
 
         // Mặc định: chưa xác nhận được
-        return false;
-    }
+            return false;
+                    }
 
     async function multiTryClick(resolveBtn, attempts = 50, isOk = () => false, delayMs = 200, holdMs = 600) {
         for (let i = 0; i < attempts; i++) {
@@ -4113,11 +4307,11 @@
             });
             const ok = await waitFor(() => !b.isConnected || !isVisibleAndClickable(b) || isOk(), 1800, 120);
             if (ok)
-                return true;
+                        return true;
             await wait(delayMs);
-        }
+            }
         return isOk();
-    }
+            }
 
     // Chờ tối đa maxWaitMs cho nút render trước khi click
     async function waitButtonUpTo(resolveBtn, maxWaitMs = 10000, step = 200) {
@@ -4128,25 +4322,25 @@
             if (found && found.isConnected)
                 return found;
             await wait(step);
-        }
-        return null;
-    }
+            }
+                return null;
+            }
 
     // Nhant dien trang lobby PP khi da chuyen han sang client.pragmaticplaylive.net
     function isOnPPLobby() {
-        try {
+                    try {
             return /client\.pragmaticplaylive\.net/i.test(location.hostname) &&
                 /\/desktop\/lobby(2)?/i.test(location.pathname);
-        } catch (_) {
-            return false;
-        }
-    }
+            } catch (_) {
+                return false;
+            }
+            }
 
     // Click "Baccarat nhieu ban" truc tiep trong trang lobby PP (same-origin)
     async function clickBaccNhieuBanInPPLobby(maxWaitMs = 10000) {
-        const log = (m) => { try { updateInfo && updateInfo(m); } catch (_) {} };
+            const log = (m) => { try { updateInfo && updateInfo(m); } catch (_) {} };
         const tailFor = (el) => {
-            try {
+                    try {
                 const segs = [];
                 let n = el;
                 const root = document.documentElement;
@@ -4160,8 +4354,8 @@
                 return segs.reverse().join('/');
             } catch (_) {
                 return '';
-            }
-        };
+                }
+                };
         const matchCard = (el) => {
             const t = norm([
                 el.textContent || '',
@@ -4183,8 +4377,8 @@
                 for (const k of Array.from(el.children || [])) stack.push(k);
                 if (el.shadowRoot) {
                     for (const k of Array.from(el.shadowRoot.children || [])) stack.push(k);
-                }
-            }
+        }
+        }
             return out;
         };
         const resolveCard = () => {
@@ -4192,15 +4386,15 @@
                 'div.bq_bt[2]/section[2]/div.eF_eG.fk_fl[1]/div.fk_fm.fk_fp[1]/div.eI_eJ[3]/div.eq_er.eq_eu[1]/div.eq_ev[1]/div.mT_mU.mT_mV[1]'
             ];
             for (const t of TAILS) {
-                try {
+        try {
                     const el = findByTail ? findByTail(t) : null;
                     if (el && isVisibleAndClickable(el)) {
                         const clickable = el.closest('a,button,[role="button"],.mT_mU,.mT_mV,.eq_ev,.eq_er') || el;
                         if (isVisibleAndClickable(clickable))
                             return clickable;
-                    }
+        }
                 } catch (_) { }
-            }
+        }
 
             // Bám text nhưng chấm điểm để tránh trúng container lớn
             const nodes = collectNodes();
@@ -4225,7 +4419,7 @@
                 return null;
             cands.sort((a, b) => b.score - a.score);
             return cands[0].el;
-        };
+            };
 
         log('Dang tim "Baccarat nhieu ban" trong lobby PP...');
         const t0 = Date.now();
@@ -4233,14 +4427,14 @@
             if (!isOnPPLobby()) {
                 log('Khong o lobby PP, bo tim card.');
                 return 'not-lobby';
-            }
+                }
             const card = resolveCard();
             if (card) {
                 log('Thay card, tail=' + tailFor(card));
                 try { console && console.warn && console.warn('[BaccMulti] click card'); } catch (_) {}
                 try { card.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch (_) {}
                 const forceClick = (el) => {
-                    try {
+                try {
                         const r = el.getBoundingClientRect();
                         const cx = r.left + r.width / 2;
                         const cy = r.top + r.height / 2;
@@ -4248,20 +4442,20 @@
                         tgt.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: cx, clientY: cy }));
                         return true;
                     } catch (_) { return false; }
-                };
+            };
                 try { peelAndClick(card, { holdMs: 400 }); }
                 catch (_) {
                     try { card.click(); }
                     catch (_) { forceClick(card); }
                 }
                 return 'ok';
-            }
+                    }
             await wait(400);
-        }
+                    }
         log('Khong tim thay "Baccarat nhieu ban" trong lobby PP (het wait).');
         try { console && console.warn && console.warn('[BaccMulti] no card after wait'); } catch (_) {}
         return 'no-card';
-    }
+                    }
     async function clickBaccNhieuBanFromHome() {
         // Guard: tránh click lặp khi đang load vào game
         const now = Date.now();
@@ -4269,23 +4463,23 @@
         const logStep = (m) => {
             try { updateInfo && updateInfo('[bacc] ' + m); } catch (_) {}
             try { console && console.warn && console.warn('[BaccMulti]', m); } catch (_) {}
-        };
+            };
         logStep('start, url=' + (location.href || '') + ', guard_until=' + (window.__abx_bacc_loading_until || 0));
         if (window.__abx_bacc_loading_until && now < window.__abx_bacc_loading_until) {
             logStep('Dang trong chu ky vao game, bo qua. guard_until=' + window.__abx_bacc_loading_until + ', now=' + now);
-            try { updateInfo && updateInfo('⚠ Đang trong chu kỳ vào game (guard), bỏ qua.'); } catch (_) {}
+            try { updateInfo && updateInfo('? Đang trong chu kỳ vào game (guard), bỏ qua.'); } catch (_) {}
             return 'skip-guard';
-        }
+                }
         window.__abx_bacc_loading_until = now + guardMs;
 
         // Neu dang o thang trang lobby PP thi click ngay tai do
         if (isOnPPLobby()) {
             logStep('dang o lobby PP -> click tai cho');
             return await clickBaccNhieuBanInPPLobby();
-        }
+                }
         // Home + PP truc tuyen + Baccarat nhieu ban (PP)
-        try {
-            if (typeof updateInfo === 'function')
+                    try {
+                if (typeof updateInfo === 'function')
                 updateInfo('Dang co gang vao game "Baccarat nhieu ban" (PP) tu trang Home...');
 
             await ensureOnHome();
@@ -4318,11 +4512,11 @@
                 return false;
             };
             const openCasinoDropdown = () => {
-                try {
+                    try {
                     const nav = document.querySelector('.nav_item_btn.LIVE, .nav_item.LIVE, .nav_item_btn');
                     if (nav)
                         nav.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-                } catch (_) {}
+                    } catch (_) {}
             };
 
             const casinoTails = [
@@ -4335,7 +4529,7 @@
                     const btn = findByTail(t);
                     if (btn && isVisibleAndClickable(btn))
                         return btn.closest('.nav_item_btn.LIVE') || btn;
-                }
+            }
                 const byText = Array.from(document.querySelectorAll('div.header_nav_list .nav_item_btn.LIVE, .nav_item_btn.LIVE .name1'))
                     .find(el => norm(el.textContent || '').includes('casino'));
                 if (byText && isVisibleAndClickable(byText))
@@ -4347,14 +4541,14 @@
             };
 
             const ensurePPDropdownOpen = () => {
-                try {
+                    try {
                     // click/hover nav LIVE thêm lần nữa để dropdown chắc chắn mở
                     const nav = document.querySelector('.nav_item_btn.LIVE, .nav_item.LIVE, .nav_item_btn');
                     if (nav) {
                         nav.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
                         nav.click?.();
-                    }
-                } catch (_) {}
+                }
+                    } catch (_) {}
             };
 
             const resolvePP_TailAndText = () => {
@@ -4366,7 +4560,7 @@
                         if (el && el.isConnected)
                             return el;
                     } catch (_) {}
-                }
+                    }
                 return Array.from(document.querySelectorAll('span.desc, li, a, button, div'))
                     .find(el => /pp\s*truc\s*tuyen/i.test(norm(el.textContent)));
             };
@@ -4392,7 +4586,7 @@
                 if (activeCasino)
                     break;
                 await wait(800);
-            }
+                }
 
             if (activeCasino && DELAY_AFTER_CASINO > 0)
                 await wait(DELAY_AFTER_CASINO);
@@ -4411,20 +4605,20 @@
                     if (ppBtn && safeClick(ppBtn, 400)) {
                         gotPP = true;
                         usedStrat = strat.name;
-                        break;
+                    break;
                     }
                     await wait(1000);
-                }
+                    }
                 if (gotPP)
                     break;
                 ensurePPDropdownOpen();
-            }
+                    }
 
             if (!gotPP) {
                 if (typeof updateInfo === 'function')
                     updateInfo('Khong click duoc nut "PP truc tuyen". Co the bi overlay/che.');
                 return 'no-pp-click';
-            }
+                    }
 
             if (usedStrat && typeof updateInfo === 'function')
                 updateInfo('Da click PP truc tuyen (strategy: ' + usedStrat + ')');
@@ -4447,7 +4641,7 @@
             logStep('listing ready=' + listReady + ' href=' + (location.href || ''));
 
             // 4) tim card "Baccarat nhieu ban" (PP)
-            if (typeof updateInfo === 'function')
+                if (typeof updateInfo === 'function')
                 updateInfo('Dang tim game "Baccarat nhieu ban" (PP)...');
 
             const RE_BACC = /\bbaccarat\b/i;
@@ -4467,9 +4661,9 @@
                         const clickable = el.closest('a,button') || el;
                         if (isVisibleAndClickable(clickable))
                             return clickable;
-                    }
                 }
-                return null;
+                }
+                    return null;
             };
 
             const resolveGameCard = () => {
@@ -4481,13 +4675,13 @@
                 if (!cards.length)
                     return null;
 
-                const cand = [];
+        const cand = [];
 
                 cards.forEach((card, idx) => {
                     const txt = norm(card.innerText || '');
                     const imgTxt = norm(
                         Array.from(card.querySelectorAll('img[alt],img[title]'))
-                            .map(img => img.alt || img.title || '')
+                        .map(img => img.alt || img.title || '')
                             .join(' '));
 
                     const t = txt + ' ' + imgTxt;
@@ -4501,12 +4695,12 @@
 
                     if (score > 0 && isVisibleAndClickable(card)) {
                         cand.push({ el: card, score });
-                    }
+    }
                 });
 
                 if (!cand.length)
                     return null;
-                cand.sort((a, b) => b.score - a.score);
+        cand.sort((a, b) => b.score - a.score);
                 return cand[0].el;
             };
 
@@ -4519,10 +4713,10 @@
 
             if (!card) {
                 logStep('no-card found, url=' + (location.href || ''));
-                if (typeof updateInfo === 'function')
+            if (typeof updateInfo === 'function')
                     updateInfo('Khong tim thay game "Baccarat nhieu ban" (PP).');
                 return 'no-game';
-            }
+                  }
 
             // 5) Click card / nut Play
             const resolverForClick = () => {
@@ -4530,7 +4724,7 @@
                     const btn = card.querySelector('a,button') || card;
                     if (isVisibleAndClickable(btn))
                         return btn;
-                }
+                  }
 
                 const other = resolveGameCard();
                 if (!other)
@@ -4538,16 +4732,16 @@
 
                 const btn2 = other.querySelector('a,button') || other;
                 return isVisibleAndClickable(btn2) ? btn2 : null;
-            };
+    };
 
             // thử điều hướng thẳng nếu card có href/data-url (để tránh bị kẹt ở seamless)
             const directHref =
-                (card && (card.getAttribute('href') || (card.dataset && (card.dataset.href || card.dataset.url)))) ||
-                (card && card.closest('a') ? card.closest('a').href : '');
+                    (card && (card.getAttribute('href') || (card.dataset && (card.dataset.href || card.dataset.url)))) ||
+                    (card && card.closest('a') ? card.closest('a').href : '');
             if (directHref) {
                 logStep('found card href, navigate direct: ' + directHref);
                 try { location.href = directHref; window.__abx_bacc_loading_until = Date.now() + guardMs; return 'nav-href'; } catch (_) {}
-            }
+      }
 
             const ok = await multiTryClick(resolverForClick, 50, () => false, 200, 700);
             if (!ok) {
@@ -4558,7 +4752,7 @@
                         'Title: ' + (document.title || '')
                     ].join('\\n');
                     updateInfo(info);
-                }
+      }
                 logStep('no-click after retries, url=' + (location.href || ''));
                 // fallback: nếu card có href/data-url thì điều hướng thẳng
                 const href =
@@ -4567,10 +4761,10 @@
                 if (href) {
                     logStep('click fail -> navigate direct ' + href);
                     try { location.href = href; return 'nav-href'; } catch (_) {}
-                }
+      }
                 try { console && console.warn && console.warn('[BaccMulti] no-click', { href: location.href, title: document.title }); } catch (_) {}
                 return 'no-click';
-            }
+      }
 
             if (typeof updateInfo === 'function')
                 updateInfo('Da click vao game "Baccarat nhieu ban" (PP).');
@@ -4579,13 +4773,13 @@
         } catch (e) {
             try { console && console.warn && console.warn('[HomeWatch] clickBaccNhieuBanFromHome error:', e); } catch (_) {}
             return 'err:' + (e && e.message ? e.message : String(e));
-        }
+    }
     }
 
     // Reset guard khi quay ve home (tranh mang guard tu PP ve khien lan sau bi chan)
     if (!window.__abx_bacc_guard_reset) {
         window.__abx_bacc_guard_reset = setInterval(() => {
-            try {
+              try {
                 const href = location.href || '';
                 const host = (new URL(href, location.href)).hostname || '';
                 const isHomeHost = /rr\d+\.com/i.test(host) || host.includes('rr5309.com') || host.includes('www.rr');
@@ -4593,7 +4787,7 @@
                     window.__abx_bacc_loading_until = 0;
                     try { updateInfo && updateInfo('[bacc] reset guard on home host'); } catch (_) {}
                     try { console && console.warn && console.warn('[BaccMulti] reset guard on home host'); } catch (_) {}
-                }
+    }
             } catch (_) {}
         }, 1000);
     }    // Auto retry trong lobby PP: cu thay lobby thi thu click "Baccarat nhieu ban"
@@ -4605,17 +4799,17 @@
                       if (__abx_bacc_auto_state !== 'not-lobby') {
                           try { updateInfo && updateInfo('[bacc-auto] Skip: chua o lobby PP'); } catch (_) {}
                           __abx_bacc_auto_state = 'not-lobby';
-                      }
-                      return;
-                  }
+    }
+        return;
+    }
                   // tránh spam khi vừa click/đang load game
                   if (window.__abx_bacc_loading_until && Date.now() < window.__abx_bacc_loading_until) {
                       if (__abx_bacc_auto_state !== 'guard') {
                           try { updateInfo && updateInfo('[bacc-auto] Guard active, doi het thoi gian...'); } catch (_) {}
                           __abx_bacc_auto_state = 'guard';
-                      }
-                      return;
-                  }
+    }
+        return;
+    }
                   try { updateInfo && updateInfo('[bacc-auto] Dang thu click "Baccarat nhieu ban" trong lobby...'); } catch (_) {}
                   const res = await clickBaccNhieuBanInPPLobby(6000);
                   try { console && console.warn && console.warn('[BaccMulti][auto] result:', res); } catch (_) {}
@@ -4623,10 +4817,10 @@
                   __abx_bacc_auto_state = 'res:' + res;
                   if (res === 'ok') {
                       window.__abx_bacc_loading_until = Date.now() + 5000;
-                  }
+    }
               } catch (_) { }
           }, 200);
-      }
+    }
 
     async function clickXocDiaLive() {
     // 1) Đảm bảo đang ở Home
@@ -4668,15 +4862,15 @@
                     el: b,
                     score,
                     idx
-                });
             });
-        });
+            });
+            });
 
         // Sắp xếp theo score, lấy cái tốt nhất và còn click được
         cand.sort((a, b) => b.score - a.score);
         const top = cand.find(c => c.score > 0 && isVisibleAndClickable(c.el));
-        return top ? top.el : null; // ❗ KHÔNG fallback “nút thứ 2” nữa
-    };
+        return top ? top.el : null; // ⛔ KHÔNG fallback nút thứ 2 nữa
+        };
 
     // 3) Đóng quảng cáo/cover phổ biến trước
     closeAdsAndCovers();
@@ -4697,12 +4891,12 @@
     if (!btn) {
         const restMs = Math.max(0, WAIT_MS - TAIL_ONLY_MS);
         btn = await waitButtonUpTo(resolveBtnFallback, restMs, 200);
-    }
+        }
 
     if (!btn) {
-        updateInfo('⚠ Không tìm thấy nút "Chơi Xóc Đĩa Live" trong ≤' + Math.round(WAIT_MS / 1000) + 's sau khi về trang Home.');
-        return;
-    }
+        updateInfo('? Không tìm thấy nút \"Chơi Xóc Đĩa Live\" trong =' + Math.round(WAIT_MS / 1000) + 's sau khi về trang Home.');
+                return;
+        }
 
     // Resolver click: ưu tiên nút đã tìm thấy (tail hoặc fallback); nếu không còn khả dụng, fallback tiếp
     const resolveBtnFallbackSafe = () => resolveBtnFallback();
@@ -4711,11 +4905,11 @@
     // 5) Click 1–3 lần (auto) + xuyên overlay
     const ok = await multiTryClick(resolverForClick, 3, isXocDiaLaunched);
     if (ok) {
-        updateInfo('→ Đã tự động click (đợi nút trong ≤' + Math.round(WAIT_MS / 1000) + 's, sau đó click 1–3 lần) để vào "Chơi Xóc Đĩa Live".');
+        updateInfo('? Đã tự động click (đợi nút trong =' + Math.round(WAIT_MS / 1000) + 's, sau đó click 1–3 lần) để vào \"Chơi Xóc Đĩa Live\".');
     } else {
-        updateInfo('⚠ Không thể vào "Chơi Xóc Đĩa Live". Nút có thể bị khoá hoặc trang chặn điều hướng.');
-    }
-}
+        updateInfo('? Không thể vào \"Chơi Xóc Đĩa Live\". Nút có thể bị khóa hoặc trang chặn điều hướng.');
+        }
+        }
 
     // ======= Multi-table Overlay =======
     (function installTableOverlay() {
@@ -4761,25 +4955,25 @@
         function clearPanelFocus() {
             panelMap.forEach(entry => {
                 if (!entry || !entry.panel)
-                    return;
+                return;
                 entry.panel.classList.remove('abx-focus');
-            });
+                });
         }
 
         function setPanelFocus(panel) {
             panelMap.forEach(entry => {
                 if (!entry || !entry.panel)
-                    return;
+                return;
                 entry.panel.classList.toggle('abx-focus', entry.panel === panel);
-            });
-        }
+                });
+            }
 
         function isInteractiveTarget(target) {
             const el = (target instanceof Element) ? target : null;
             if (!el)
                 return false;
             return !!el.closest('button, input, select, textarea');
-        }
+            }
 
         function notifyFocus(room) {
             const id = room && room.id ? room.id : '';
@@ -4794,7 +4988,7 @@
                     name: room && room.name ? room.name : ''
                 });
             } catch (_) {}
-        }
+            }
 
         function notifyBlur(id) {
             if (!id)
@@ -4806,7 +5000,7 @@
                     id: id
                 });
             } catch (_) {}
-        }
+            }
 
         function togglePanelFocus(panel, room) {
             if (!panel)
@@ -4821,29 +5015,29 @@
             }
             setPanelFocus(panel);
             notifyFocus(room);
-        }
+            }
 
         function loadLayouts() {
             try {
                 const raw = localStorage.getItem(LAYOUT_KEY);
                 if (!raw)
-                    return {};
+                return {};
                 const obj = JSON.parse(raw);
                 return (obj && typeof obj === 'object') ? obj : {};
             } catch (_) {
                 return {};
             }
-        }
+            }
         function saveLayouts() {
             try {
                 localStorage.setItem(LAYOUT_KEY, JSON.stringify(layouts || {}));
             } catch (_) {}
-        }
+            }
 
         function bringToFront(panel) {
             if (!panel) return;
             panel.style.zIndex = (++highestZ).toString();
-        }
+            }
 
         function ensureStyles() {
             if (document.getElementById('__abx_table_overlay_style'))
@@ -5383,7 +5577,7 @@
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .status-input::placeholder {
                 color: #9ca3af;
-            }
+                }
             #${OVERLAY_ID} .${PANEL_CLASS} .status-line {
                 display: grid;
                 grid-template-columns: 1fr 1fr;
@@ -5451,20 +5645,20 @@
             @keyframes bet-extra-blink {
                 0%, 100% {
                     opacity: 1;
-                }
+            }
                 40% {
                     opacity: 0.25;
-                }
+            }
                 70% {
                     opacity: 1;
-                }
+            }
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-extra.player {
                 right: calc(4px * var(--panel-scale, 1));
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-extra.banker {
                 left: calc(4px * var(--panel-scale, 1));
-            }
+        }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-chip {
                 position: absolute;
                 top: calc(2px * var(--panel-scale, 1));
@@ -5481,7 +5675,7 @@
                 justify-content: center;
                 line-height: 1;
                 pointer-events: none;
-            }
+        }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-chip .chip-text {
                 display: flex;
                 align-items: center;
@@ -5490,36 +5684,36 @@
                 height: 100%;
                 line-height: 1;
                 text-align: center;
-            }
+                }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-chip.banker {
                 left: auto;
                 right: calc(4px * var(--panel-scale, 1));
-            }
+                }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-player {
                 background: #1454b8;
                 border-color: #1454b8;
                 color: #ffffff;
-            }
+        }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-tie {
                 background: #15803d;
                 border-color: #15803d;
                 color: #ffffff;
-            }
+        }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-banker {
                 background: #b91c1c;
                 border-color: #b91c1c;
                 color: #ffffff;
-            }
+        }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.active {
                 color: #1877f2;
                 box-shadow: inset 0 0 0 1px rgba(24,119,242,0.35);
-            }
+        }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-player.active,
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-tie.active,
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-banker.active {
                 color: #ffffff;
                 box-shadow: inset 0 0 0 1px rgba(255,255,255,0.35);
-            }
+        }
             #${OVERLAY_ID} .${PANEL_CLASS} .resize {
                 position: absolute;
                 width: 16px;
@@ -5529,7 +5723,7 @@
                 cursor: se-resize;
                 background: rgba(255,255,255,0.18);
                 border-radius: 4px;
-            }
+        }
             `;
             document.head.appendChild(style);
         }
@@ -5541,7 +5735,7 @@
                 root = document.createElement('div');
                 root.id = OVERLAY_ID;
                 document.body.appendChild(root);
-            }
+        }
             return root;
         }
 
@@ -5562,16 +5756,16 @@
                 if (st) {
                     syncPanelLayout(st);
                     syncPanelMapGrid(st);
-                }
-            }
+        }
+        }
         }
 
         function syncPanelLayout(st) {
             if (!st || !st.panel || !st.body || !st.head)
-                return;
+                    return;
             const rc = st.panel.getBoundingClientRect();
             if (!rc || !rc.height)
-                return;
+                    return;
             const headH = Math.max(20, Math.floor(rc.height * 0.1));
             const bodyH = Math.max(0, rc.height - headH);
             st.head.style.height = headH + 'px';
@@ -5599,7 +5793,7 @@
             const offsetX = gap + Math.max(0, Math.floor(extraX / 2));
             const offsetY = gap + Math.max(0, Math.floor(extraY / 2));
             return { rc, cols, rows, baseW, baseH, gap, offsetX, offsetY };
-        }
+            }
 
         function getPanelGridInfo(panel) {
             const root = ensureRoot();
@@ -5627,7 +5821,7 @@
         }
 
         function getRowStandardCell(st, availableWidth) {
-            const cols = st.view?.mapCols || 38;
+            const cols = st.view.mapCols || 38;
             const panel = st.panel;
             const selfCell = Math.max(2, Math.floor(availableWidth / cols));
             const info = getPanelGridInfo(panel);
@@ -5644,35 +5838,35 @@
             let minCell = Infinity;
             panelMap.forEach((entry) => {
                 if (!entry || !entry.panel)
-                    return;
+                return;
                 const eInfo = getPanelGridInfo(entry.panel);
                 if (!eInfo || eInfo.row == null)
-                    return;
+                return;
                 const eRow = clamp(eInfo.row, 0, eInfo.rows - 1);
                 if (eRow !== rowKey)
-                    return;
+                return;
                 const eSizeOk =
                     eInfo.baseW > 0 &&
                     eInfo.baseH > 0 &&
                     Math.abs(eInfo.panelW - eInfo.baseW) / eInfo.baseW <= 0.25 &&
                     Math.abs(eInfo.panelH - eInfo.baseH) / eInfo.baseH <= 0.25;
                 if (!eSizeOk)
-                    return;
+                return;
                 const wrap = entry.view?.mapWrap || entry.view?.mapGrid?.parentElement;
                 if (!wrap)
-                    return;
-                const style = getComputedStyle(wrap);
-                const padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+                return;
+            const style = getComputedStyle(wrap);
+            const padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
                 const aw = Math.max(0, wrap.clientWidth - padX);
                 if (!aw)
-                    return;
+                return;
                 const cell = Math.floor(aw / cols);
                 if (cell > 0)
                     minCell = Math.min(minCell, cell);
             });
             if (!isFinite(minCell) || minCell <= 0) {
                 return selfCell;
-            }
+        }
             return Math.max(2, minCell);
         }
 
@@ -5715,13 +5909,13 @@
             const cols = Math.max(2, Math.ceil(Math.sqrt(count)));
             const rows = Math.max(2, Math.ceil(count / cols));
             return { cols, rows };
-        }
+                }
 
         function rememberRoomDom(name, node) {
             if (!name || !node)
-                return;
+                    return;
             roomDomRegistry.set(name, node);
-        }
+                }
 
         const CARD_ID_ATTRS = [
             'data-table-id',
@@ -5734,7 +5928,7 @@
 
         function resolveCardRoot(node) {
             if (!node)
-                return null;
+            return null;
             return node.closest('div.he_hf.he_hi') ||
                 node.closest('div.hC_hE') ||
                 node.closest('div.ep_bn') ||
@@ -5752,7 +5946,7 @@
 
         function getCardId(root) {
             if (!root)
-                return '';
+            return '';
             try {
                 const id = (root.id || '').trim();
                 if (id)
@@ -5762,17 +5956,17 @@
                     const t = (v || '').trim();
                     if (t)
                         return t;
-                }
+        }
             } catch (_) {}
             return '';
         }
 
         function findCardRootByName(id) {
             if (!id)
-                return null;
+            return null;
             const needle = (id || '').trim();
             if (!needle)
-                return null;
+            return null;
             const cached = roomDomRegistry.get(needle);
             if (cached && cached.isConnected)
                 return cached;
@@ -5782,13 +5976,13 @@
             if (byId) {
                 const root = resolveCardRoot(byId);
                 if (root) {
-                    rememberRoomDom(needle, root);
+                        rememberRoomDom(needle, root);
                     const rootId = getCardId(root);
                     if (rootId && rootId !== needle)
                         rememberRoomDom(rootId, root);
                     return root;
                 }
-            }
+                }
             const selectors = ['span.rY_sn', 'span.qL_qM.qL_qN', 'div.abx-table-title', 'span.rC_rT', 'span.rW_sl'];
             for (const sel of selectors) {
                 const list = Array.from(document.querySelectorAll(sel));
@@ -5802,9 +5996,9 @@
                         rememberRoomDom(rootId, root);
                     return root;
                 }
-            }
-            return null;
-        }
+                }
+                return null;
+                }
 
         function highlightOnce(el, ms = 1200) {
             if (!el) return;
@@ -5828,7 +6022,7 @@
             } catch (_) {}
             if (highlight)
                 highlightOnce(card);
-            return true;
+                    return true;
         }
 
         function scrollLobbyTop(options = {}) {
@@ -5855,7 +6049,7 @@
                 for (let i = 0; i < 6 && p; i++) {
                     pushIfScrollable(p);
                     p = p.parentElement;
-                }
+        }
             } catch (_) {}
 
             let target = null;
@@ -5865,7 +6059,7 @@
                 if (score > bestScore) {
                     bestScore = score;
                     target = el;
-                }
+            }
             }
             if (!target)
                 target = document.scrollingElement || document.documentElement || document.body;
@@ -5875,7 +6069,7 @@
                     target.scrollTo({ top: 0, behavior });
             } catch (_) {
                 try { if (target) target.scrollTop = 0; } catch (_) {}
-            }
+        }
             try { window.scrollTo({ top: 0, behavior }); } catch (_) {}
         }
 
@@ -5900,31 +6094,31 @@
             for (const el of els || []) {
                 if (!el || !el.getBoundingClientRect)
                     continue;
-                const r = el.getBoundingClientRect();
+                    const r = el.getBoundingClientRect();
                 if (!r.width || !r.height)
                     continue;
                 if (!best) {
                     best = el;
                     continue;
-                }
+        }
                 const b = best.getBoundingClientRect();
                 const score = (r.right * 1000) - (r.top * 10);
                 const bestScore = (b.right * 1000) - (b.top * 10);
                 if (score > bestScore)
                     best = el;
-            }
+        }
             return best;
         }
 
         function resolvePinButton(root) {
             if (!root)
-                return null;
+            return null;
             const pins = Array.from(root.querySelectorAll('div.rO_rP'));
             if (pins.length)
                 return pickTopRight(pins) || pins[0];
             for (const sel of PIN_SELECTORS) {
                 const el = root.querySelector(sel);
-                if (!el)
+            if (!el)
                     continue;
                 if (el.tagName === 'BUTTON')
                     return el;
@@ -5933,19 +6127,19 @@
                     return btn;
                 if (typeof el.click === 'function')
                     return el;
-            }
+                }
             return null;
-        }
+                }
 
         function isPinActive(btn) {
             if (!btn)
                 return false;
             try {
                 if (btn.classList && btn.classList.contains('rO_rT'))
-                    return true;
+                        return true;
                 const wrap = btn.closest && btn.closest('div.rO_rP');
                 if (wrap && wrap.classList.contains('rO_rT'))
-                    return true;
+                        return true;
             } catch (_) {}
             const aria = btn.getAttribute && btn.getAttribute('aria-pressed');
             if (aria != null)
@@ -5958,7 +6152,7 @@
             if (!clsSources)
                 return false;
             return /\b(active|selected|on|checked|qC_qH)\b/i.test(clsSources);
-        }
+                    }
 
         function dispatchClickEvents(target, x, y) {
             try {
@@ -5986,10 +6180,10 @@
                             isPrimary: true,
                             button: 0,
                             buttons: 0
-                        });
+            });
                     target.dispatchEvent(evDown);
                     target.dispatchEvent(evUp);
-                }
+        }
             } catch (_) {}
             try {
                 const md = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 1 });
@@ -6015,9 +6209,9 @@
                         dispatchClickEvents(target, x, y);
                         if (typeof target.click === 'function')
                             target.click();
-                        return true;
-                    }
-                }
+                return true;
+            }
+            }
                 const evt = new MouseEvent('click', { view: window, bubbles: true, cancelable: true });
                 el.dispatchEvent(evt);
                 if (typeof el.click === 'function')
@@ -6025,7 +6219,7 @@
                 return true;
             } catch (_) {
                 return false;
-            }
+        }
         }
 
         function clearPinRetry(roomId) {
@@ -6048,7 +6242,7 @@
                 ensurePinState(roomId, shouldPin);
             }, PIN_RETRY_DELAY);
             pinRetryState.set(roomId, st);
-        }
+            }
 
         function setPinSync(roomId, desired) {
             if (desired)
@@ -6064,22 +6258,22 @@
             if (!root) {
                 schedulePinRetry(roomId, shouldPin);
                 return;
-            }
+        }
             const btn = resolvePinButton(root);
             if (!btn) {
                 schedulePinRetry(roomId, shouldPin);
                 return;
-            }
+        }
             const desired = !!shouldPin;
             const current = isPinActive(btn);
             if (current === desired) {
                 clearPinRetry(roomId);
                 setPinSync(roomId, desired);
                 return;
-            }
+                    }
             if (fireClick(btn))
                 schedulePinRetry(roomId, desired);
-        }
+                    }
 
         function syncPinStates(activeList) {
             const ids = Array.isArray(activeList) ? activeList : [];
@@ -6088,7 +6282,7 @@
             Array.from(pinSyncState.keys()).forEach(id => {
                 if (!activeSet.has(id))
                     ensurePinState(id, false);
-            });
+                });
         }
 
         function normalizeSig(list) {
@@ -6105,7 +6299,7 @@
                 const el = root.querySelector(sel);
                 const t = el && (el.textContent || '').trim();
                 if (t) return t;
-            }
+        }
             return '';
         }
 
@@ -6115,7 +6309,7 @@
             if (pins.length)
                 return pickTopRight(pins) || pins[0];
             return null;
-        }
+                }
 
         function collectPinnedInfo() {
             const list = [];
@@ -6135,21 +6329,21 @@
                     if (!seen.has(key)) {
                         seen.add(key);
                         list.push(id);
-                    }
-                }
-            }
+        }
+        }
+        }
             return { list, count: pinCount };
         }
 
         function reportPinnedList(list) {
-            try {
+                try {
                 window.chrome?.webview?.postMessage?.({
                     overlay: 'pin',
                     event: 'pinList',
                     ids: list || []
-                });
-            } catch (_) {}
-        }
+            });
+                } catch (_) {}
+            }
 
         function enforceDesiredPins(desiredList, actualList) {
             syncPinStates(desiredList);
@@ -6171,9 +6365,9 @@
             const desiredSig = normalizeSig(desiredList);
 
             if (pendingDesiredSig && pendingDesiredSig === desiredSig) {
-                if (actualSig !== desiredSig) {
-                    enforceDesiredPins(desiredList, actualList);
-                    return;
+            if (actualSig !== desiredSig) {
+                enforceDesiredPins(desiredList, actualList);
+                return;
                 }
                 pendingDesiredSig = '';
                 lastReportedPinSig = desiredSig;
@@ -6182,20 +6376,20 @@
                     scrollLobbyTop({ behavior: 'auto' });
                 }
                 return;
-            }
+                }
 
             if (actualSig !== desiredSig) {
                 enforceDesiredPins(desiredList, actualList);
-            }
-        }
+                }
+                }
 
         function ensurePinTimer() {
             if (pinTimer)
                 return;
             pinTimer = setInterval(() => {
-                try {
+            try {
                     pinSyncTick();
-                } catch (_) {}
+            } catch (_) {}
             }, PIN_SYNC_INTERVAL);
         }
 
@@ -6203,7 +6397,7 @@
             if (pinTimer) {
                 clearInterval(pinTimer);
                 pinTimer = null;
-            }
+        }
         }
 
         function setDesiredPinList(list) {
@@ -6216,7 +6410,7 @@
         }
 
         function defaultResolveDom(id) {
-            try {
+                try {
                 const byId = document.getElementById(id);
                 if (byId)
                     return resolveCardRoot(byId);
@@ -6236,42 +6430,42 @@
                     const el2 = document.querySelector(s);
                     if (el2)
                         return el2;
-                }
+            }
                 if (cfg.baseSelector) {
                     const matches = Array.from(document.querySelectorAll(cfg.baseSelector))
                         .filter(node => node && node.innerText && node.innerText.includes(id));
                     if (matches.length)
                         return matches[0];
-                }
-            } catch (_) {}
-            return null;
+            }
+                } catch (_) {}
+                return null;
         }
 
         if (!cfg.resolveDom)
             cfg.resolveDom = findCardRootByName;
 
         function parseStats(node) {
-            if (!node)
+                if (!node)
                 return null;
             const children = Array.from(node.children);
             const parseValue = item => {
                 if (!item)
-                    return null;
+                return null;
                 const target = item.querySelector('div.np_nu') || item;
                 const raw = (target.textContent || item.textContent || '').trim();
                 const match = raw.match(/#?(\d+)/);
-                return {
+                    return {
                     display: raw || '',
                     value: match ? Number(match[1]) : null
-                };
-            };
-            return {
+                    };
+                    };
+                    return {
                 total: parseValue(children[0]),
                 player: parseValue(children[1]),
                 banker: parseValue(children[2]),
                 tie: parseValue(children[3])
-            };
-        }
+                    };
+                }
 
         const HISTORY_SELECTORS = [
             'div.qR_lh',
@@ -6292,12 +6486,12 @@
                 return '';
             const lower = str.toLowerCase();
             if (typeof lower.normalize === 'function') {
-                try {
+                    try {
                     return lower.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-                } catch (_) {}
+                    } catch (_) {}
             }
             return lower;
-        }
+            }
 
         function parseRgbColor(color) {
             if (!color)
@@ -6314,8 +6508,8 @@
                     const a = hex.length === 8 ? parseInt(hex.slice(6, 8), 16) / 255 : 1;
                     if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b))
                         return { r, g, b, a };
+                    }
                 }
-            }
             const match = /rgba?\\(([^)]+)\\)/i.exec(trimmed);
             if (match) {
                 const parts = match[1].split(',').map(p => parseFloat(p.trim()));
@@ -6325,15 +6519,15 @@
                         g: parts[1],
                         b: parts[2],
                         a: parts[3] != null ? parts[3] : 1
-                    };
+            };
                 }
-            }
+                }
             return null;
-        }
+                        }
 
         function detectResultColor(el) {
             if (!el)
-                return null;
+            return null;
             const queue = [];
             const push = (node) => {
                 if (node && queue.indexOf(node) === -1)
@@ -6343,9 +6537,9 @@
             push(el.parentElement);
             if (typeof el.closest === 'function') {
                 ['foreignobject', 'svg', 'span[class^="r1_"]', 'div[class^="fe_"]', 'div[class*="nM_"]'].forEach(sel => {
-                    try {
+                try {
                         push(el.closest(sel));
-                    } catch (_) {}
+                } catch (_) {}
                 });
             }
             for (const node of queue) {
@@ -6356,25 +6550,25 @@
                         || node.getAttribute('stroke')
                         || node.getAttribute('data-color')
                         || node.getAttribute('color');
-                    if (attr && attr.trim())
-                        return attr;
-                }
+                        if (attr && attr.trim())
+                            return attr;
+                    }
                 if (typeof window !== 'undefined' && window.SVGElement && node instanceof window.SVGElement) {
                     const circle = node.querySelector && node.querySelector('circle, rect, path');
                     if (circle) {
                         const attr = circle.getAttribute && (circle.getAttribute('fill') || circle.getAttribute('stroke'));
                         if (attr && attr.trim())
                             return attr;
-                    }
-                }
+            }
+        }
                 const style = node.style;
                 if (style) {
-                    for (const prop of ['backgroundColor', 'color', 'fill', 'stroke', 'borderColor']) {
+                        for (const prop of ['backgroundColor', 'color', 'fill', 'stroke', 'borderColor']) {
                         const value = style[prop];
                         if (value && value !== 'transparent')
-                            return value;
-                    }
-                }
+                                return value;
+        }
+        }
                 try {
                     const computed = typeof window !== 'undefined' && window.getComputedStyle && window.getComputedStyle(node);
                     if (computed) {
@@ -6382,10 +6576,10 @@
                             const value = computed[prop];
                             if (value && value !== 'transparent' && value !== 'initial' && value !== 'rgba(0, 0, 0, 0)')
                                 return value;
-                        }
-                    }
+        }
+        }
                 } catch (_) {}
-            }
+        }
             return null;
         }
 
@@ -6393,12 +6587,12 @@
             const normalized = stripDiacritics(text || textOf(el) || '');
             if (normalized) {
                 if (/(^|\\s)(banker|nha cai|nhan cai)(\\s|$)/.test(normalized))
-                    return 'banker';
+                            return 'banker';
                 if (/(^|\\s)(player|nguoi choi)(\\s|$)/.test(normalized))
-                    return 'player';
+                            return 'player';
                 if (/(tie|hoa|ho)/.test(normalized))
-                    return 'tie';
-            }
+                            return 'tie';
+        }
             const color = detectResultColor(el);
             if (color) {
                 const rgb = parseRgbColor(color);
@@ -6412,18 +6606,18 @@
                             return 'player';
                         if (max === rgb.g)
                             return 'tie';
-                    }
-                }
-            }
+        }
+        }
+        }
             return null;
         }
 
         function mapResultTypeToCode(value) {
             if (!value)
-                return null;
+            return null;
             const normalized = stripDiacritics(value);
             if (!normalized)
-                return null;
+            return null;
             if (/^b(anker)?$/.test(normalized) || normalized === 'b' || normalized.includes('banker'))
                 return 'B';
             if (/^p(layer)?$/.test(normalized) || normalized === 'p' || normalized.includes('player'))
@@ -6438,18 +6632,18 @@
             if (!normalized)
                 return '';
             return normalized.replace(/[^a-z0-9]+/g, '');
-        }
+            }
 
         function mapSymbolIdToCode(value) {
             if (!value)
-                return null;
+            return null;
             const raw = String(value);
             const direct = /bigroad[^a-z0-9]*([bpt])/i.exec(raw);
             if (direct)
                 return direct[1].toUpperCase();
             const compact = compactToken(raw);
             if (!compact)
-                return null;
+            return null;
             if (compact.includes('banker') || compact.includes('nhacai') || compact.includes('nhancai'))
                 return 'B';
             if (compact.includes('player') || compact.includes('nguoichoi'))
@@ -6463,7 +6657,7 @@
             if (compact.includes('bigroadt'))
                 return 'T';
             return null;
-        }
+            }
 
         function extractTieCountFromSymbol(value) {
             if (!value)
@@ -6488,21 +6682,21 @@
                 svg = el.closest && el.closest('svg');
             } catch (_) {}
             if (!svg && el.querySelector) {
-                try {
+            try {
                     svg = el.querySelector('svg');
-                } catch (_) {}
-            }
+            } catch (_) {}
+        }
             let text = '';
             if (svg) {
-                try {
+            try {
                     const nodes = Array.from(svg.querySelectorAll('text, tspan'));
                     if (nodes.length) {
                         text = nodes.map(n => (n.textContent || '').trim()).join(' ');
                     } else {
                         text = (svg.textContent || '').trim();
                     }
-                } catch (_) {}
-            }
+            } catch (_) {}
+                    }
             if (!text) {
                 const host = el.closest && el.closest('td');
                 if (host && host.getAttribute) {
@@ -6510,14 +6704,14 @@
                         || host.getAttribute('aria-label')
                         || host.getAttribute('title')
                         || '';
-                }
-            }
+                    }
+                    }
             const m = text.match(/(^|[^0-9])(\d{1,2})(?!\d)/);
             if (!m)
                 return 0;
             const n = Number.parseInt(m[2], 10);
             return Number.isFinite(n) ? Math.max(0, n) : 0;
-        }
+                    }
 
         function resolveHistoryFromUse(el) {
             if (!el)
@@ -6541,7 +6735,7 @@
                 const id = node.getAttribute('id') || '';
                 const mapped = mapSymbolIdToCode(href) || mapSymbolIdToCode(id);
                 if (mapped === 'T')
-                    tieCount = Math.max(tieCount, 1);
+                            tieCount = Math.max(tieCount, 1);
                 else if (mapped)
                     code = mapped;
                 tieCount = Math.max(tieCount, extractTieCountFromSymbol(href), extractTieCountFromSymbol(id), extractTieCountFromText(node));
@@ -6565,9 +6759,9 @@
                             extractTieCountFromSymbol(ref.textContent),
                             extractTieCountFromText(ref)
                         );
-                    }
-                }
-            }
+        }
+        }
+        }
             return { code, tieCount };
         }
 
@@ -6578,7 +6772,7 @@
 
         function resolveHistoryCode(el) {
             if (!el)
-                return null;
+            return null;
             const data = el.dataset || {};
             const candidates = [
                 data.result,
@@ -6593,7 +6787,7 @@
                 const mapped = mapResultTypeToCode(candidate);
                 if (mapped)
                     return mapped;
-            }
+        }
             const byUse = resolveHistoryCodeFromUse(el);
             if (byUse)
                 return byUse;
@@ -6603,8 +6797,8 @@
                 const mapped = mapResultTypeToCode(guessed);
                 if (mapped)
                     return mapped;
-            }
-            return null;
+        }
+                return null;
         }
 
         function collectHistoryNodes(root) {
@@ -6621,15 +6815,15 @@
                 nodes.push(el);
             };
             HISTORY_SELECTORS.forEach(sel => {
-                try {
+            try {
                     root.querySelectorAll(sel).forEach(add);
-                } catch (_) {}
+            } catch (_) {}
             });
             try {
                 root.querySelectorAll('svg foreignObject, svg foreignobject').forEach(foreign => {
                     const childSel = 'div[class*="vv_"], span[class*="r1_"]';
                     foreign.querySelectorAll(childSel).forEach(add);
-                });
+            });
             } catch (_) {}
             return nodes;
         }
@@ -6656,7 +6850,7 @@
             if (vvCodes.length)
                 return vvCodes;
             return history;
-        }
+            }
 
         function colorToCode(color) {
             if (!color)
@@ -6674,8 +6868,8 @@
                 return 'P';
             if (max === rgb.g)
                 return 'T';
-            return null;
-        }
+                return null;
+            }
 
         const HISTORY_MARKER_SELECTORS = [
             'svg circle',
@@ -6711,18 +6905,18 @@
 
         function isWithinHistoryZone(node, root) {
             if (!node || !node.closest || !root)
-                return false;
+                    return false;
             if (!root.contains(node))
-                return false;
+                    return false;
             if (node.closest('div.hC_hE') !== root)
-                return false;
+                    return false;
             for (const hint of HISTORY_ZONE_HINTS) {
                 try {
                     if (node.closest(`[class*="${hint}"]`))
                         return true;
                 } catch (_) {}
-            }
-            return false;
+        }
+                    return false;
         }
 
         function findHistoryShape(node) {
@@ -6730,12 +6924,12 @@
                 return null;
             const tag = (node.tagName || '').toLowerCase();
             if (tag === 'circle' || tag === 'rect' || tag === 'path')
-                return node;
-            try {
+            return node;
+                try {
                 const inner = node.querySelector && node.querySelector('circle, rect, path');
                 if (inner)
                     return inner;
-            } catch (_) {}
+                } catch (_) {}
             return node;
         }
 
@@ -6747,7 +6941,7 @@
                     return !!table.querySelector('use[href*="bigroad"], use[xlink\\:href*="bigroad"]');
                 } catch (_) {
                     return false;
-                }
+        }
             };
             const tables = Array.from(root.querySelectorAll('table.nM_nR'));
             const candidates = tables.length ? tables : Array.from(root.querySelectorAll('table'));
@@ -6761,22 +6955,22 @@
                     const tds = Array.from(row.querySelectorAll('td'));
                     tds.forEach((td, colIndex) => {
                         if (!td)
-                            return;
+                    return;
                         const use = td.querySelector('use[href], use[xlink\\:href]');
                         if (!use)
-                            return;
+                    return;
                         const href = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
                         if (!/bigroad/i.test(href))
-                            return;
+                    return;
                         if (seen.has(use))
-                            return;
+                    return;
                         seen.add(use);
                         cells.push({ el: use, row: rowIndex, col: colIndex });
-                    });
                 });
-            });
+                });
+                });
             return cells;
-        }
+                    }
 
         function collectBigRoadUseCells(root) {
             if (!root)
@@ -6823,8 +7017,8 @@
                     } else {
                         last.center = (last.center * last.count + v) / (last.count + 1);
                         last.count += 1;
-                    }
-                });
+        }
+            });
                 return clusters.map(c => c.center);
             };
 
@@ -6839,7 +7033,7 @@
                     if (d < bestD) {
                         bestD = d;
                         best = i;
-                    }
+                }
                 }
                 return best;
             };
@@ -6853,7 +7047,7 @@
                     cellMap.set(key, { el: item.el, row, col });
             });
             return Array.from(cellMap.values());
-        }
+                }
 
         function collectHistoryMarkerCells(root) {
             if (!root)
@@ -6875,11 +7069,11 @@
                     return;
                 const rect = rectOf(shape);
                 if (!rect || rect.w <= 0 || rect.h <= 0)
-                    return;
+                            return;
                 if (rect.w > 80 || rect.h > 80)
-                    return;
+                            return;
                 if (rect.w < 4 && rect.h < 4)
-                    return;
+                            return;
                 seen.add(node);
                 nodes.push({ el: shape, rect });
             });
@@ -6903,22 +7097,22 @@
                     currentTop = item.rect.y;
                     currentRow = [];
                     grouped.push(currentRow);
-                }
+            }
                 currentRow.push(item);
-            });
+                        });
             const markerCells = [];
             grouped.forEach((rowNodes, rowIndex) => {
                 rowNodes.sort((a, b) => a.rect.x - b.rect.x);
                 rowNodes.forEach((entry, colIndex) => {
                     markerCells.push({
                         el: entry.el,
-                        row: rowIndex,
-                        col: colIndex
-                    });
-                });
-            });
+                            row: rowIndex,
+                            col: colIndex
+                        });
+                        });
+                        });
             return markerCells;
-        }
+                        }
 
         function collectHistoryCells(root) {
             if (!root)
@@ -6935,7 +7129,7 @@
             for (let i = 1; i < candidates.length; i++) {
                 if (candidates[i].cells.length > best.cells.length)
                     best = candidates[i];
-            }
+                        }
             if (best.cells.length)
                 return best.cells;
             const rowNodes = Array.from(root.querySelectorAll('div.ru_rv, div.mv_my, span.lP_lS, div.lP_lR')).filter(row => row && row.closest && row.closest('div.hC_hE') === root);
@@ -6944,21 +7138,21 @@
             rowNodes.forEach((row, rowIndex) => {
                 try {
                     const cols = Array.from(row.querySelectorAll('div.gw_gx, div.ru_rv > div, span.r1_sb'));
-                    cols.forEach((col, colIndex) => {
-                        if (!col)
-                            return;
+                cols.forEach((col, colIndex) => {
+                    if (!col)
+                        return;
                         const circle = col.querySelector('circle') || col.querySelector('rect') || col.querySelector('path');
-                        if (!circle)
-                            return;
+                    if (!circle)
+                        return;
                         if (seenCols.has(circle))
-                            return;
+                        return;
                         seenCols.add(circle);
                         cells.push({
                             el: circle,
                             row: rowIndex,
                             col: colIndex
-                        });
-                    });
+            });
+            });
                 } catch (_) {}
             });
             if (cells.length)
@@ -6973,22 +7167,22 @@
                         if (row && !seen.has(row)) {
                             seen.add(row);
                             rows.push(row);
-                        }
-                    });
+        }
+            });
                 } catch (_) {}
             });
             rows.forEach((row, rowIndex) => {
                 const cols = Array.from(row.querySelectorAll('div.gw_gx, div.vv_vx, span.r1_sa, span.r1_sb'));
                 cols.forEach((col, colIndex) => {
                     if (!col)
-                        return;
+                    return;
                     const circle = col.querySelector('circle') || col.querySelector('rect') || col.querySelector('path') || col;
                     if (!circle)
-                        return;
+                    return;
                     if (general.some(c => c.el === circle))
-                        return;
+                    return;
                     general.push({ el: circle, row: rowIndex, col: colIndex });
-                });
+            });
             });
             return general;
         }
@@ -7023,9 +7217,9 @@
                     symbolCode,
                     tieCount,
                     text: (node.textContent || '').trim()
-                };
+            };
             });
-        }
+                }
 
         function buildHistoryFromRawNodes(raw) {
             if (!Array.isArray(raw) || !raw.length)
@@ -7050,24 +7244,24 @@
                     if (!prev.code && code)
                         prev.code = code;
                     prev.tieCount = Math.max(prev.tieCount || 0, tieCount || 0);
-                }
+                        }
                 maxRow = Math.max(maxRow, row);
                 maxCol = Math.max(maxCol, col);
-            });
+                });
             if (maxRow < 0 || maxCol < 0)
                 return [];
             const colHasAny = (c) => {
-                for (let r = 0; r <= maxRow; r++) {
+                    for (let r = 0; r <= maxRow; r++) {
                     if (grid.has(`${r},${c}`))
                         return true;
-                }
+                    }
                 return false;
             };
             const groups = [];
             let current = null;
             for (let c = 0; c <= maxCol; c++) {
                 if (!colHasAny(c))
-                    continue;
+                        continue;
                 const topHas = grid.has(`0,${c}`);
                 if (topHas || !current) {
                     current = { startCol: c, cols: [c] };
@@ -7075,7 +7269,7 @@
                 } else {
                     current.cols.push(c);
                 }
-            }
+                }
             const tokens = [];
             groups.forEach(group => {
                 const colSet = new Set(group.cols);
@@ -7090,10 +7284,10 @@
                             occList.push({ row: r, col: c, key });
                             len++;
                         }
-                    }
-                });
+                        }
+            });
                 if (!len)
-                    return;
+                        return;
                 occList.sort((a, b) => (a.row - b.row) || (a.col - b.col));
                 let r = 0;
                 let c = group.startCol;
@@ -7104,22 +7298,22 @@
                             r = rr;
                             found = true;
                             break;
-                        }
                     }
+                        }
                     if (!found)
                         return;
-                }
+                        }
                 const used = new Set();
                 for (let i = 0; i < len; i++) {
                     let key = `${r},${c}`;
                     if (!occ.has(key) || used.has(key)) {
                         const pick = occList.find(item => !used.has(item.key));
                         if (!pick)
-                            break;
+                    break;
                         r = pick.row;
                         c = pick.col;
                         key = pick.key;
-                    }
+        }
                     used.add(key);
                     const cell = grid.get(key);
                     if (cell) {
@@ -7129,31 +7323,31 @@
                             const safe = Math.min(25, cell.tieCount);
                             for (let t = 0; t < safe; t++)
                                 tokens.push('T');
-                        }
-                    }
+            }
+            }
                     const downKey = `${r + 1},${c}`;
                     if (r + 1 <= maxRow && occ.has(downKey) && !used.has(downKey)) {
                         r = r + 1;
                         continue;
-                    }
+            }
                     let moved = false;
                     for (let cc = c + 1; cc <= maxCol; cc++) {
                         if (!colSet.has(cc))
-                            continue;
+                        continue;
                         const rk = `${r},${cc}`;
                         if (occ.has(rk) && !used.has(rk)) {
                             c = cc;
                             moved = true;
-                            break;
-                        }
-                    }
+                    break;
+            }
+            }
                     if (moved)
                         continue;
                     break;
-                }
+            }
             });
             return tokens;
-        }
+            }
 
         window.__abxRunResultMapRawHistory = (limit = 1) => {
             const entries = collectBaccaratHistoryEntries();
@@ -7169,7 +7363,7 @@
                     `${j + 1}. [row=${node.row},col=${node.col}] tail=${node.tail} tag=${node.tag} color=${node.color || '(attr)'} computed=${node.computed || '(comp)'} href=${node.href || '(none)'} symbol=${node.symbolCode || '(none)'} tie=${node.tieCount || 0} text=${node.text || '(empty)'}`);
                 const summary = `${idx + 1}. ${entry.name} (${raw.length} ô lịch sử)`;
                 return `${summary}\n${lines.join('\n')}`;
-            });
+                });
             const payload = ['Raw ResultMap history (row/col)', '', ...docs].join('\n\n');
             showTestAlert(payload);
             highlightHistoryCells(target[0], {
@@ -7197,14 +7391,14 @@
             const focusZones = ['div.bF_bG', 'span.lP_lS', 'div.gw_gx', 'div.ru_rv', 'div.lP_lR'];
             const filtered = list.filter(node => {
                 if (!node)
-                    return false;
+                        return false;
                 return focusZones.some(sel => {
                     try {
                         return !!node.closest(sel);
                     } catch (_) {
                         return false;
-                    }
-                });
+            }
+            });
             });
             highlightProbeNodes(filtered);
             const info = filtered.map((node, idx) => {
@@ -7215,11 +7409,11 @@
                 const computed = window.getComputedStyle ? window.getComputedStyle(node) : null;
                 const compColor = computed ? (computed.fill || computed.stroke || '') : '';
                 return `${idx + 1}. tail=${tail} zone=${zoneTail} fill=${fill||'(attr)'} computed=${compColor||'(comp)'} text=${(node.textContent||'').trim()}`;
-            });
+                });
             const batch = ['SVG history probe (filtered ' + filtered.length + ' nodes)', '', ...info].join('\n\n');
             showTestAlert(batch);
             return filtered;
-        };
+            };
 
         window.__abxDumpBigRoadSymbols = () => {
             const symbols = Array.from(document.querySelectorAll('symbol[id]'))
@@ -7229,11 +7423,11 @@
             uses.forEach(use => {
                 const href = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
                 if (!href)
-                    return;
+                return;
                 if (!/bigroad/i.test(href))
-                    return;
+                return;
                 useMap.set(href, (useMap.get(href) || 0) + 1);
-            });
+                });
             if (!symbols.length && !useMap.size) {
                 showTestAlert('Khong tim thay symbol/use bigroad.');
                 return [];
@@ -7262,11 +7456,11 @@
             }
             const payload = ['BigRoad symbols', '', ...lines].join('\n');
             showTestAlert(payload);
-            return {
+                    return {
                 symbols: symbols.map(sym => sym.id || ''),
                 uses: Array.from(useMap.keys())
-            };
-        };
+                    };
+                    };
 
         function highlightProbeNodes(items, options = {}) {
             const normalized = Array.isArray(items) ? items : [];
@@ -7297,10 +7491,10 @@
             overlay.style.pointerEvents = 'none';
             overlay.style.zIndex = '2147483647';
             nodes.forEach(item => {
-                try {
+        try {
                     const rect = item.el.getBoundingClientRect();
                     if (!rect.width && !rect.height)
-                        return;
+                return;
                     const box = document.createElement('div');
                     box.style.position = 'absolute';
                     box.style.border = `2px solid ${borderColor}`;
@@ -7323,8 +7517,8 @@
                     label.style.borderRadius = '999px';
                     box.appendChild(label);
                     overlay.appendChild(box);
-                } catch (_) {}
-            });
+        } catch (_) {}
+                });
             document.body.appendChild(overlay);
             setTimeout(() => {
                 overlay.remove();
@@ -7333,10 +7527,10 @@
 
         function highlightHistoryCells(entry, options = {}) {
             if (!entry || !entry.root)
-                return;
+                    return;
             const cells = collectHistoryCells(entry.root);
             if (!cells.length)
-                return;
+                    return;
             const nodes = cells.map(cell => ({
                 el: cell.el,
                 label: `R${cell.row + 1}C${cell.col + 1}`
@@ -7344,11 +7538,11 @@
             highlightProbeNodes(nodes, options);
         }
 
-        try {
+            try {
             if (window && typeof window !== 'undefined') {
                 window.__abxParseHistory = parseHistory;
             }
-        } catch (_) {}
+            } catch (_) {}
 
         function collectBaccaratHistoryEntries() {
             const cards = collectBaccarat3Cards();
@@ -7367,7 +7561,7 @@
                     name: findHistoryTitle(card) || findHistoryTitle(container),
                     history,
                     tail: cssTail(card)
-                });
+            });
             });
             return entries;
         }
@@ -7377,7 +7571,7 @@
             if (!entries.length) {
                 const text = 'Không tìm thấy bàn Baccarat để hiển thị lịch sử.';
                 return { tables: 0, text, entries: [] };
-            }
+        }
             const list = entries.slice(0, Math.max(1, limit || entries.length));
             const lines = list.map((entry, idx) => formatHistoryLine(entry, idx + 1, 60));
             const header = `ResultMap snapshot (${list.length} bàn)`;
@@ -7400,11 +7594,11 @@
                 fillColor: 'rgba(236, 72, 153, 0.15)'
             });
             return snapshot;
-        };
+            };
 
         function getPanelState(id) {
             return panelMap.get(id);
-        }
+            }
 
         function setCutValues(id, cutProfit, cutLoss) {
             const st = getPanelState(id);
@@ -7412,10 +7606,10 @@
                 return false;
             const formatMoneyInputValue = (value) => {
                 if (value === null || value === undefined)
-                    return '';
+                return '';
                 const digits = String(value).replace(/\D+/g, '');
                 if (!digits)
-                    return '';
+                return '';
                 const trimmed = digits.replace(/^0+(?=\d)/, '');
                 return trimmed.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
             };
@@ -7439,7 +7633,7 @@
             } else {
                 btn.classList.remove('is-running');
                 btn.textContent = 'Play';
-            }
+        }
             return true;
         }
 
@@ -7447,7 +7641,7 @@
             const str = (raw || '').toString().trim();
             if (!str)
                 return null;
-            const mmss = str.match(/(\d{1,2})[:：](\d{2})/);
+            const mmss = str.match(/(\d{1,2})[::](\d{2})/);
             if (mmss) {
                 const mm = Number.parseInt(mmss[1], 10);
                 const ss = Number.parseInt(mmss[2], 10);
@@ -7467,7 +7661,7 @@
                 return el.className.baseVal;
             const cls = el.getAttribute && el.getAttribute('class');
             return cls || '';
-        }
+                }
 
         function findCountdownNode(root) {
             if (!root)
@@ -7483,8 +7677,8 @@
                     if (node && parseCountdownValue(node.textContent) != null)
                         return node;
                 } catch (_) {}
-            }
-            return null;
+        }
+                return null;
         }
 
         function collectBetAreas(root) {
@@ -7496,11 +7690,11 @@
                     el = root.querySelector(selector);
                 } catch (_) {}
                 if (!el) {
-                    return {
+            return {
                         label: fallbackLabel,
                         active: false,
                         visible: false
-                    };
+            };
                 }
                 const cls = getClassString(el);
                 let visible = true;
@@ -7509,18 +7703,18 @@
                     visible = !!(rc && rc.width > 2 && rc.height > 2);
                 } catch (_) {}
                 const label = (el.textContent || fallbackLabel || '').trim() || fallbackLabel;
-                return {
+            return {
                     label,
                     active: cls.includes('qE_qF'),
                     visible
-                };
+            };
             };
             return {
                 player: readArea('.qE_lp.qE_q1', 'Người Chơi'),
                 tie: readArea('.qE_lp.qE_qO', 'Hòa'),
                 banker: readArea('.qE_lp.qE_ra', 'Nhà Cái')
             };
-        }
+                    }
 
 
         function readBetExtra(root) {
@@ -7529,31 +7723,31 @@
             const readText = (selector) => {
                 try {
                     const el = root.querySelector(selector);
-                    const text = (el && el.textContent || '').trim();
-                    return text || '';
-                } catch (_) {
-                    return '';
-                }
+                        const text = (el && el.textContent || '').trim();
+                return text || '';
+            } catch (_) {
+                return '';
+        }
             };
             return {
                 player: readText('span.re_rf.re_rh'),
                 banker: readText('span.re_rf.re_rg')
             };
-        }
+            }
 
         function readBetChips(root) {
             if (!root)
                 return { player: '', banker: '' };
             const readChip = (selector) => {
-                try {
+            try {
                     const nodes = Array.from(root.querySelectorAll(selector));
                     for (const el of nodes) {
-                        const text = (el && el.textContent || '').trim();
+                const text = (el && el.textContent || '').trim();
                         if (text)
                             return text;
-                    }
+        }
                 } catch (_) {}
-                return '';
+            return '';
             };
             return {
                 player: readChip('.kU_kZ .v0_wa'),
@@ -7563,19 +7757,19 @@
 
         function readCenterResultText(root) {
             if (!root)
-                return '';
+            return '';
             try {
                 const el = root.querySelector('.yH_yN');
                 const text = (el && el.textContent || '').trim();
                 return text || '';
             } catch (_) {
-                return '';
-            }
-        }
+            return '';
+                }
+                }
 
         function deriveCenterResultClass(text) {
             if (!text)
-                return '';
+            return '';
             const lowered = norm(text);
             if (lowered.includes('nguoi') || lowered.includes('player'))
                 return 'player';
@@ -7584,7 +7778,7 @@
             if (lowered.includes('hoa') || lowered.includes('tie'))
                 return 'tie';
             return '';
-        }
+                }
 
         function captureTableState(room) {
             try {
@@ -7594,7 +7788,7 @@
                 const candidate = st.resolve(room.id);
                 const src = candidate && candidate.isConnected ? candidate : findCardRootByName(room.id || room.name);
                 if (!src || !src.isConnected)
-                    return null;
+                return null;
                 const countdownNode = findCountdownNode(src);
                 const countdown = parseCountdownValue((countdownNode && countdownNode.textContent) || '');
                 const info = '[HomeWatch countdown] ' + (room.name || room.id) + ' ' + (countdownNode ? (countdownNode.className || countdownNode.getAttribute('class')) : '(missing)') + ' ' + countdown;
@@ -7602,7 +7796,7 @@
                 setOverlayLog(info);
                 if (typeof countdown === 'number' && Number.isFinite(countdown) && countdown >= 0) {
                     st.countdownMax = Math.max(st.countdownMax || countdown, countdown);
-                }
+            }
                 const statsNode = src.querySelector('div.np_nq:nth-of-type(2) div.np_nr');
                 const stats = parseStats(statsNode);
                 const history = parseHistory(src);
@@ -7642,16 +7836,16 @@
                 };
             } catch (_) {
                 return null;
-            }
-        }
+                }
+                }
 
         function formatCountdownDisplay(value) {
             if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
                 const normalized = Math.max(0, Math.floor(value));
                 return normalized.toString();
-            }
+                }
             return '--';
-        }
+                }
 
         function updateCountdownView(st, value) {
             if (!st)
@@ -7678,7 +7872,7 @@
                     textNode.classList.remove('is-anim');
                     void textNode.offsetWidth;
                     textNode.classList.add('is-anim');
-                }
+        }
                 st.lastCountdownDisplay = displayValue;
             } else {
                 textNode.textContent = '';
@@ -7697,8 +7891,8 @@
                     const elapsed = (Date.now() - (st.lastCountdownTimestamp || Date.now())) / 1000;
                     const current = Math.max(0, base - elapsed);
                     updateCountdownView(st, current);
-                }
-                st.countdownLoopId = requestAnimationFrame(step);
+        }
+            st.countdownLoopId = requestAnimationFrame(step);
             };
             st.countdownLoopId = requestAnimationFrame(step);
         }
@@ -7710,7 +7904,7 @@
                 cancelAnimationFrame(st.countdownLoopId);
                 st.countdownLoopId = null;
             }
-        }
+            }
 
         function deriveStatusFromText(text) {
             if (!text)
@@ -7724,7 +7918,7 @@
                 return 'Chia bài';
             if (lowered.includes('cho ket qua') || lowered.includes('ket qua') || lowered.includes('dang doi') || lowered.includes('dang cho'))
                 return 'Chờ kết quả';
-            return 'Bắt đầu đặt cược';
+                return 'Bắt đầu đặt cược';
         }
 
         function deriveStatusFromCountdown(countdown, stats, history) {
@@ -7736,10 +7930,10 @@
                 : null;
             if (normalized !== null && normalized > 0) {
                 return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
-            }
+        }
             if (!total) {
                 return { text: 'Đang xáo bài', color: '#f59e0b' };
-            }
+        }
             return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
         }
 
@@ -7766,8 +7960,8 @@
                 return 'Người chơi';
             if (lowered.includes('hoa') || lowered.includes('tie'))
                 return 'Cửa hòa';
-            return 'Chưa đặt';
-        }
+                return 'Chưa đặt';
+            }
 
         function deriveWinLoseValue(text) {
             if (!text)
@@ -7783,41 +7977,41 @@
         function deriveBetDoorValue(text, betAreas) {
             if (betAreas) {
                 if (betAreas.player && betAreas.player.active)
-                    return 'PLAYER';
+                return 'PLAYER';
                 if (betAreas.banker && betAreas.banker.active)
-                    return 'BANKER';
+                return 'BANKER';
                 if (betAreas.tie && betAreas.tie.active)
-                    return 'HÒA';
+                return 'HÒA';
             }
             if (!text)
-                return '--';
+            return '--';
             const lowered = norm(text);
             if (lowered.includes('player') || lowered.includes('nguoi choi'))
                 return 'PLAYER';
             if (lowered.includes('banker') || lowered.includes('nha cai'))
                 return 'BANKER';
             if (lowered.includes('hoa') || lowered.includes('tie'))
-                return 'HÒA';
+                    return 'HÒA';
             return '--';
         }
 
         function extractNumberByLabel(text, labels) {
             if (!text)
-                return '';
+            return '';
             const lowered = norm(text);
             for (const label of labels || []) {
                 const re = new RegExp(label + '\\s*[:\\-]?\\s*([0-9][0-9.,]*)', 'i');
                 const match = lowered.match(re);
                 if (match && match[1])
                     return match[1];
-            }
+                }
             return '';
-        }
+                }
 
         function deriveMoneyValue(text, labels, fallback = '--') {
             const value = extractNumberByLabel(text, labels);
             return value || fallback;
-        }
+                }
 
         function buildResultMapGrid(tokens, rows = 6, cols = 38) {
             const grid = Array.from({ length: rows }, () => []);
@@ -7835,7 +8029,7 @@
                     if (lastCell)
                         lastCell.tieCount = (lastCell.tieCount || 0) + 1;
                     continue;
-                }
+                    }
                 if (token !== 'P' && token !== 'B')
                     continue;
                 const isNewRun = token !== lastCode;
@@ -7848,14 +8042,14 @@
                     lockRow = null;
                 } else if (token === lastCode) {
                     if (lockRow !== null) {
-                        nextCol += 1;
+                    nextCol += 1;
                         nextRow = lockRow;
                     } else if (nextRow + 1 < rows && !grid[nextRow + 1][nextCol]) {
                         nextRow += 1;
-                    } else {
-                        nextCol += 1;
+                } else {
+                    nextCol += 1;
                         lockRow = nextRow;
-                    }
+            }
                 } else {
                     runStartCol += 1;
                     nextCol = runStartCol;
@@ -7864,7 +8058,7 @@
                 }
                 while (grid[nextRow] && grid[nextRow][nextCol]) {
                     nextCol += 1;
-                }
+            }
                 col = nextCol;
                 row = nextRow;
                 if (isNewRun)
@@ -7875,7 +8069,7 @@
                 lastCell = grid[row][col];
                 lastCode = token;
                 maxCol = Math.max(maxCol, col);
-            }
+        }
             const startCol = Math.max(0, maxCol - (cols - 1));
             const trimmed = Array.from({ length: rows }, () => Array(cols).fill(null));
             for (let r = 0; r < rows; r++) {
@@ -7884,8 +8078,8 @@
                     const cell = rowList[c];
                     if (cell)
                         trimmed[r][c - startCol] = cell;
-                }
-            }
+        }
+        }
             return trimmed;
         }
 
@@ -7914,29 +8108,29 @@
                 return String(a.code || '').localeCompare(String(b.code || ''));
             });
             return list;
-        }
+                }
 
         function buildResultMapGridFromRaw(rawNodes, rows = 6, cols = 38) {
             const grid = Array.from({ length: rows }, () => Array(cols).fill(null));
             if (!Array.isArray(rawNodes) || !rawNodes.length)
-                return grid;
+            return grid;
             let maxCol = -1;
             rawNodes.forEach(node => {
                 if (node && Number.isFinite(node.col))
                     maxCol = Math.max(maxCol, node.col);
             });
             if (maxCol < 0)
-                return grid;
+            return grid;
             const startCol = Math.max(0, maxCol - (cols - 1));
             rawNodes.forEach(node => {
                 if (!node)
-                    return;
+                return;
                 const row = Number.isFinite(node.row) ? node.row : -1;
                 const col = Number.isFinite(node.col) ? node.col : -1;
                 if (row < 0 || row >= rows)
-                    return;
+                return;
                 if (col < startCol || col > maxCol)
-                    return;
+                return;
                 const colIndex = col - startCol;
                 const existing = grid[row][colIndex];
                 const code = node.code || null;
@@ -7947,10 +8141,10 @@
                     if (!existing.code && code)
                         existing.code = code;
                     existing.tieCount = Math.max(existing.tieCount || 0, tieCount);
-                }
+                    }
             });
             return grid;
-        }
+                    }
 
         function applyResultMapGrid(view, grid) {
             if (!view || !view.mapCells || !view.mapCells.length)
@@ -7966,10 +8160,10 @@
                     if (!data) {
                         cell.removeAttribute('data-code');
                         cell.dataset.tie = '0';
-                        if (cell._tieCount)
+                    if (cell._tieCount)
                             cell._tieCount.textContent = '';
                         continue;
-                    }
+        }
                     const tieCount = Math.max(0, data.tieCount || 0);
                     if (data.code)
                         cell.dataset.code = data.code;
@@ -7978,8 +8172,8 @@
                     cell.dataset.tie = tieCount.toString();
                     if (cell._tieCount)
                         cell._tieCount.textContent = tieCount > 1 ? tieCount.toString() : '';
-                }
-            }
+        }
+        }
         }
 
         function renderResultMap(view, tokens) {
@@ -7987,14 +8181,14 @@
             const cols = view.mapCols || 38;
             const grid = buildResultMapGrid(tokens || [], rows, cols);
             applyResultMapGrid(view, grid);
-        }
+            }
 
         function renderResultMapFromRaw(view, rawNodes) {
             const rows = view.mapRows || 6;
             const cols = view.mapCols || 38;
             const grid = buildResultMapGridFromRaw(rawNodes || [], rows, cols);
             applyResultMapGrid(view, grid);
-        }
+            }
 
         function summarizeHistoryStats(history, stats) {
             const counts = { total: 0, player: 0, banker: 0, tie: 0 };
@@ -8006,7 +8200,7 @@
                     counts.banker += 1;
                 else if (token === 'T')
                     counts.tie += 1;
-            });
+                });
             counts.total = list.length;
             if (stats) {
                 if (stats.total && Number.isFinite(stats.total.value))
@@ -8019,10 +8213,10 @@
                     counts.tie = stats.tie.value;
             }
             return counts;
-        }
+            }
 
         function updateBetItem(el, info, fallback) {
-            if (!el)
+                if (!el)
                 return;
             const label = (info && info.label) ? info.label : (fallback || '--');
             try {
@@ -8046,22 +8240,22 @@
             }
             labelNode.textContent = label || fallback || '--';
             el.classList.toggle('active', !!(info && info.active));
-        }
+            }
 
         function applyBetExtra(view, betExtra) {
             if (!view)
-                return;
+                    return;
             const playerVal = (betExtra && betExtra.player) ? betExtra.player : '';
             const bankerVal = (betExtra && betExtra.banker) ? betExtra.banker : '';
             const pulse = (el, nextValue) => {
                 if (!el)
-                    return;
+                return;
                 const prevValue = (el.textContent || '').trim();
                 const shouldBlink = nextValue && nextValue !== prevValue;
                 el.textContent = nextValue;
                 el.style.display = nextValue ? 'block' : 'none';
                 if (!shouldBlink)
-                    return;
+                return;
                 el.classList.remove('is-blink');
                 void el.offsetWidth;
                 el.classList.add('is-blink');
@@ -8076,7 +8270,7 @@
                     view.betBanker.appendChild(view.betBankerExtra);
                 pulse(view.betBankerExtra, bankerVal);
             }
-        }
+            }
 
         function applyBetChips(view, betChips) {
             if (!view)
@@ -8089,15 +8283,15 @@
                 else
                     view.betPlayerChip.textContent = playerVal;
                 view.betPlayerChip.style.display = playerVal ? 'flex' : 'none';
-            }
+        }
             if (view.betBankerChip) {
                 if (view.betBankerChipText)
                     view.betBankerChipText.textContent = bankerVal;
                 else
                     view.betBankerChip.textContent = bankerVal;
                 view.betBankerChip.style.display = bankerVal ? 'flex' : 'none';
-            }
-        }
+                }
+                }
 
         function renderPanelState(data) {
             const st = getPanelState(data.id);
@@ -8120,7 +8314,7 @@
                     renderResultMapFromRaw(view, data.historyRaw);
                 } else {
                     renderResultMap(view, data.history || []);
-                }
+            }
                 if (view.winLoseValue)
                     view.winLoseValue.textContent = deriveWinLoseValue(text);
                 if (view.betDoorValue)
@@ -8156,7 +8350,7 @@
                     view.statusLineValue.style.color = statusInfo.color;
                     st.lastStatusColor = statusInfo.color;
                 }
-            }
+                }
             const centerText = (data.centerResult || '').trim();
             const centerType = deriveCenterResultClass(centerText);
             const centerSig = centerText + '|' + centerType;
@@ -8170,32 +8364,32 @@
                     void view.mapCenter.offsetWidth;
                     view.mapCenter.classList.add('is-pop');
                     view.mapCenter.classList.add('is-shimmer');
-                }
+        }
                 st.lastCenterResult = centerSig;
-            }
+        }
             const chipSig = betChips ? ((betChips.player || '') + '|' + (betChips.banker || '')) : '';
             if (st.lastBetChipSig !== chipSig) {
                 st.lastBetChipSig = chipSig;
                 applyBetChips(view, betChips);
-            }
+        }
             const extraSig = betExtra ? ((betExtra.player || '') + '|' + (betExtra.banker || '')) : '';
             const needExtraAttach = (view.betPlayerExtra && !view.betPlayerExtra.isConnected)
                 || (view.betBankerExtra && !view.betBankerExtra.isConnected);
             if (st.lastBetExtraSig !== extraSig || needExtraAttach) {
                 st.lastBetExtraSig = extraSig;
                 applyBetExtra(view, betExtra);
-            }
+        }
         }
 
         function pushStateIfChanged(states) {
             const changed = [];
             states.forEach(st => {
                 if (!st)
-                    return;
+                return;
                 const prev = lastStateSig.get(st.id);
                 const historySig = st.historySig || '';
                 if (prev === historySig)
-                    return;
+                return;
                 lastStateSig.set(st.id, historySig);
                 changed.push({
                     id: st.id,
@@ -8205,7 +8399,7 @@
                     history: st.history,
                     historyText: st.historyText
                 });
-            });
+                });
             if (!changed.length)
                 return;
             try {
@@ -8215,7 +8409,7 @@
                     tables: changed
                 });
             } catch (_) {}
-        }
+            }
 
         function tickState() {
             if (!rooms.length)
@@ -8230,20 +8424,20 @@
                 clearInterval(stateTimer);
                 stateTimer = null;
             }
-        }
+            }
 
         function stopStateTimerIfIdle() {
             if (!rooms.length) {
                 stopStateTimer();
                 lastStateSig.clear();
-            }
+        }
         }
 
         function ensureStateTimer() {
             if (!rooms.length) {
                 stopStateTimerIfIdle();
                 return;
-            }
+        }
             if (!stateTimer)
                 stateTimer = setInterval(tickState, STATE_INTERVAL);
             tickState();
@@ -8331,7 +8525,7 @@
             const mapCells = [];
             for (let r = 0; r < mapRows; r++) {
                 for (let c = 0; c < mapCols; c++) {
-                    const cell = document.createElement('div');
+                const cell = document.createElement('div');
                     cell.className = 'rm-cell';
                     const dot = document.createElement('div');
                     dot.className = 'rm-dot';
@@ -8346,7 +8540,7 @@
                     cell._tieCount = tieCount;
                     mapCells.push(cell);
                     mapGrid.appendChild(cell);
-                }
+            }
             }
 
             const statusGrid = document.createElement('div');
@@ -8368,7 +8562,7 @@
                     return '';
                 const trimmed = digits.replace(/^0+(?=\d)/, '');
                 return trimmed.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-            };
+                };
             const createStatusInputCell = (placeholder = '') => {
                 const cell = document.createElement('div');
                 cell.className = 'status-cell status-input-cell';
@@ -8378,7 +8572,7 @@
                 input.placeholder = placeholder;
                 const normalize = () => {
                     input.value = formatMoneyInputValue(input.value);
-                };
+            };
                 input.addEventListener('blur', normalize);
                 input.addEventListener('change', normalize);
                 input.addEventListener('keydown', (event) => {
@@ -8481,7 +8675,7 @@
             closeBtn.title = 'Đóng bàn';
             closeBtn.addEventListener('click', () => closePanel(room.id));
             panel.appendChild(closeBtn);
-            bringToFront(panel);
+                bringToFront(panel);
             root.appendChild(panel);
             panel.addEventListener('mousedown', (e) => {
                 if (e.button !== 0)
@@ -8550,7 +8744,7 @@
                     if (typeof cfg.resolveDom === 'function')
                         return cfg.resolveDom(id);
                     return defaultResolveDom(id);
-                }
+        }
             };
             panelMap.set(room.id, st);
             makeDraggable(panel, head);
@@ -8605,7 +8799,7 @@
                 panel.dataset.gridMode = '0';
                 delete panel.dataset.gridRow;
                 delete panel.dataset.gridCol;
-            }
+        }
             panel.style.width = w + 'px';
             panel.style.height = h + 'px';
             panel.style.left = x + 'px';
@@ -8730,9 +8924,9 @@
                     const id = (room.id || room.name || '').trim();
                     const name = (room.name || room.id || '').trim();
                     if (!id)
-                        return null;
+                return null;
                     return { id, name: name || id };
-                }
+        }
                 return null;
             }).filter(Boolean).filter(room => {
                 if (seen.has(room.id))
@@ -8769,7 +8963,7 @@
             if (!desiredPinIds.has(id)) {
                 ensurePinState(id, false);
                 pinSyncState.delete(id);
-            }
+        }
             stopStateTimerIfIdle();
         }
 
@@ -8792,7 +8986,7 @@
                     const st = getPanelState(room.id);
                     if (st)
                         placePanel(st.panel, idx);
-                }
+        }
             });
             layoutAll(true);
             setDesiredPinList(rooms);
@@ -8874,7 +9068,7 @@
                         const bv = findBalance();
                         if (bv)
                             updateBalance(bv);
-                    }
+            }
                 });
 
             }

@@ -226,7 +226,7 @@ namespace BaccaratPPRR88
         // Cache & cờ để không inject lặp lại
         private string? _appJs;
         private string? _homeJs;  // nội dung js_home_v2.js
-        private bool _webMsgHooked; // �`��� g��_n WebMessageReceived �`A�ng 1 l��n
+        private bool _webMsgHooked; // đã gắn WebMessageReceived đúng 1 lần
         private string? _lastForcedLobbyUrl; // luu URL lobby PP da force navigate
         private string? _topForwardId, _appJsRegId;           // id script TOP_FORWARD
                                                               // ID riêng cho autostart của trang Home (đừng dùng chung với _homeJsRegId)
@@ -250,7 +250,9 @@ namespace BaccaratPPRR88
         private int _licenseCheckBusy = 0; // guard chống chồng lệnh
         // === Username lấy từ Home (authoritative) ===
         private string? _homeUsername;                 // username chuẩn lấy từ home_tick
-        private DateTime _homeUsernameAt = DateTime.MinValue; // mốc thời gian bắt được
+        private DateTime _homeUsernameAt = DateTime.MinValue;
+        private string? _homeBalance;
+        private DateTime _homeBalanceAt = DateTime.MinValue; // mốc thời gian bắt được
         private bool _homeLoggedIn = false; // chỉ true khi phát hiện có nút Đăng xuất (đã login)
         private bool _navModeHooked = false;   // đã gắn handler NavigationCompleted để cập nhật UI nhanh về Home?
 
@@ -2147,7 +2149,7 @@ Ví dụ không hợp lệ:
                                 string ui = "";
                                 if (root.TryGetProperty("ui", out var uiEl))
                                     ui = uiEl.GetString() ?? "";
-                                var uname = root.TryGetProperty("nick", out var uEl) ? (uEl.GetString() ?? "") : "";
+                                var uname = root.TryGetProperty("username", out var uEl) ? (uEl.GetString() ?? "") : "";
 
 
                                 if (!string.IsNullOrWhiteSpace(uname))
@@ -2156,7 +2158,6 @@ Ví dụ không hợp lệ:
                                     if (_homeUsername != normalized)
                                     {
                                         _homeUsername = normalized;
-                                        _homeUsernameAt = DateTime.UtcNow;
 
                                         if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
                                         {
@@ -2164,6 +2165,35 @@ Ví dụ không hợp lệ:
                                             _ = SaveConfigAsync(); // fire-and-forget
                                         }
                                     }
+
+                                    _homeUsernameAt = DateTime.UtcNow;
+                                    _ = Dispatcher.BeginInvoke(new Action(() =>
+                                    {
+                                        if (LblUserName != null)
+                                            LblUserName.Text = uname;
+                                    }));
+                                }
+                                var bal = root.TryGetProperty("balance", out var bEl)
+                                    ? (bEl.ValueKind == JsonValueKind.Number ? bEl.GetRawText() : (bEl.GetString() ?? ""))
+                                    : "";
+                                if (!string.IsNullOrWhiteSpace(bal))
+                                {
+                                    var balVal = ParseMoneyOrZero(bal);
+                                    var balText = (balVal > 0 || bal.Trim() == "0")
+                                        ? ((long)balVal).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
+                                        : bal.Trim();
+
+                                    if (_homeBalance != balText)
+                                    {
+                                        _homeBalance = balText;
+                                        _homeBalanceAt = DateTime.UtcNow;
+                                    }
+
+                                    _ = Dispatcher.BeginInvoke(new Action(() =>
+                                    {
+                                        if (LblAmount != null)
+                                            LblAmount.Text = balText;
+                                    }));
                                 }
 
                                 // 1) result: EvalJsAwaitAsync bridge
@@ -2252,7 +2282,7 @@ Ví dụ không hợp lệ:
                                                         if (LblProg != null) LblProg.Text = "-";
                                                     }
                                                     //Cập nhật Tên nhân vật
-                                                    if (LblUserName != null) LblUserName.Text = uname;
+                                                    if (LblUserName != null && !string.IsNullOrWhiteSpace(uname)) LblUserName.Text = uname;
                                                     // Kết quả gần nhất từ chuỗi seq
                                                     var seqStrLocal = snap.seq ?? "";
                                                     char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
@@ -2263,8 +2293,14 @@ Ví dụ không hợp lệ:
                                                     // Tổng tiền
                                                     var amt = snap?.totals?.A;
                                                     if (LblAmount != null)
-                                                        LblAmount.Text = amt.HasValue
-                                                            ? amt.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) : "-";
+                                                    {
+                                                        if (!string.IsNullOrWhiteSpace(_homeBalance))
+                                                            LblAmount.Text = _homeBalance;
+                                                        else if (amt.HasValue)
+                                                            LblAmount.Text = amt.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+                                                        else
+                                                            LblAmount.Text = "-";
+                                                    }
 
                                                     // Chuỗi kết quả
                                                     UpdateSeqUI(snap.seq ?? "");
@@ -2385,7 +2421,7 @@ Ví dụ không hợp lệ:
                                 //    _lockGameUi = false;
                                 //    Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(false)));
                                 //    var uname = root.TryGetProperty("username", out var uEl) ? (uEl.GetString() ?? "") : "";
-                                //    if (!string.IsNullOrWhiteSpace(uname))
+                                // if (!string.IsNullOrWhiteSpace(uname))
                                 //    {
                                 //        var normalized = uname.Trim().ToLowerInvariant();
                                 //        if (_homeUsername != normalized)
@@ -2413,7 +2449,7 @@ Ví dụ không hợp lệ:
                                 //                if (string.IsNullOrWhiteSpace(TxtUser.Text) || TxtUser.Text != uname)
                                 //                    TxtUser.Text = uname;
                                 //            }
-                                //            if (LblUserName != null) LblUserName.Text = uname;
+                                //            if (LblUserName != null && !string.IsNullOrWhiteSpace(uname)) LblUserName.Text = uname;
                                 //            if (LblAmount != null) LblAmount.Text = bal;
                                 //        });
 
@@ -4000,6 +4036,24 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
         }
 
+        private async Task<(string Username, string Balance)> WaitForHomeUserAsync(int timeoutMs, DateTime sinceUtc)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                var u = _homeUsername;
+                var b = _homeBalance;
+                var uOk = !string.IsNullOrWhiteSpace(u) && _homeUsernameAt >= sinceUtc;
+                var bOk = !string.IsNullOrWhiteSpace(b) && _homeBalanceAt >= sinceUtc;
+                if (uOk && bOk)
+                    return (u, b);
+
+                await Task.Delay(250);
+            }
+
+            return (string.Empty, string.Empty);
+        }
+
         // (tuỳ chọn) kích hoạt push thủ công từ C# với ms tùy ý
         private void HomeStartPush(int ms = 800)
         {
@@ -4434,14 +4488,29 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 // đợi nhẹ để trang xử lý login (nếu có)
                 await Task.Delay(400);
 
-                // 2) Sau khi bấm nút login xong thì dùng HomeClickPlayAsync để mở Baccarat nhiều bàn
+                // 2) Đợi tối đa 10s để lấy username + balance mới sau khi bấm login
+                var waitFrom = DateTime.UtcNow;
+                HomeStartPush(240);
+                var homeUser = await WaitForHomeUserAsync(10000, waitFrom);
+                if (string.IsNullOrWhiteSpace(homeUser.Username) || string.IsNullOrWhiteSpace(homeUser.Balance))
+                {
+                    try
+                    {
+                        await Web.ExecuteScriptAsync(
+                            "alert('Không lấy được tên đăng nhập, hãy click vào nút \"Đăng nhập & Baccarat nhiều bàn\" lại');");
+                    }
+                    catch { }
+                    return;
+                }
+
+                // 3) Sau khi lấy được username/balance thì dùng HomeClickPlayAsync để mở Baccarat nhiều bàn
                 var okPlay = await HomeClickPlayAsync();
                 Log("[HOME] play baccarat-nhieu-ban via HomeClickPlayAsync => " + okPlay);
 
-                // 3) Không dùng fallback C# vào Xóc Đĩa nữa để tránh mở sai game
+                // 4) Không dùng fallback C# vào Xóc Đĩa nữa để tránh mở sai game
 
 
-                // 3) Không dùng fallback C# vào Xóc Đĩa nữa để tránh mở sai game
+                // 4) Không dùng fallback C# vào Xóc Đĩa nữa để tránh mở sai game
 
 
                 // 4) Cầu nối: đồng bộ & autostart khi đã vào bàn
@@ -5318,19 +5387,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var lic = await FetchLicenseAsync(username);
             if (lic == null)
             {
-                MessageBox.Show("Khong tim thay license cho tai khoan nay. Hay lien he 0978.248.822.",
+                MessageBox.Show("Không tìm thấy license cho tài khoản này. Hãy liên hệ 0978.248.822.",
                     "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             if (!DateTimeOffset.TryParse(lic.exp, out var expUtc))
             {
-                MessageBox.Show("License khong hop le (exp).", "Automino",
+                MessageBox.Show("License không hợp lệ", "Automino",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             if (DateTimeOffset.UtcNow >= expUtc)
             {
-                MessageBox.Show("Tool da het han. Hay lien he 0978.248.822 de gia han.",
+                MessageBox.Show("Tool đã hết hạn. Hãy liên hệ 0978.248.822 để gia hạn.",
                     "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
@@ -5583,7 +5652,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 StopLicenseRecheckTimer();
                 StopLeaseHeartbeat();
                 var uname = (_homeUsername ?? "").Trim().ToLowerInvariant();
-                if (!string.IsNullOrWhiteSpace(uname))
+                                // if (!string.IsNullOrWhiteSpace(uname))
                     _ = ReleaseLeaseAsync(uname);
             }
         }
@@ -6718,7 +6787,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             StopLeaseHeartbeat();
                             // Thử trả lease luôn để nhường slot
                             var uname = (_homeUsername ?? "").Trim().ToLowerInvariant();
-                            if (!string.IsNullOrWhiteSpace(uname))
+                                // if (!string.IsNullOrWhiteSpace(uname))
                                 _ = ReleaseLeaseAsync(uname);
 
                         }));
@@ -6841,7 +6910,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 CleanupWebStuff();
 
                 var uname = (_homeUsername ?? "").Trim().ToLowerInvariant();
-                if (!string.IsNullOrWhiteSpace(uname))
+                                // if (!string.IsNullOrWhiteSpace(uname))
                     _ = ReleaseLeaseAsync(uname);
             }
             catch { }

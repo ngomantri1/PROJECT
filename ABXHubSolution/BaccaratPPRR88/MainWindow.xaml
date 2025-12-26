@@ -1232,7 +1232,7 @@
                                         Margin="12,0,0,0"
                                         Padding="13"
                                         Click="BtnRunAllTables_Click"
-                                        Content="Ch?y t?t c? b?n"
+                                        Content="Chạy tất cả bàn"
                                         Style="{StaticResource PrimaryButton}"
                                         Visibility="Visible" />
 
