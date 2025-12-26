@@ -9,8 +9,8 @@ namespace BaccaratPPRR88.Tasks
 {
     public sealed class PatternParityTask : IBetTask
     {
-        public string DisplayName => "2) Thế cầu C/L tự nhập";
-        public string Id => "pattern-cl";           // 2) Thế cầu C/L tự nhập
+        public string DisplayName => "2) Thế cầu P/B tự nhập";
+        public string Id => "pattern-cl";           // 2) Thế cầu P/B tự nhập
 
         private static List<(string lhs, string rhs)> Parse(string s)
         {
@@ -41,7 +41,7 @@ namespace BaccaratPPRR88.Tasks
         {
             var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
             var patterns = Parse(ctx.BetPatterns);
-            if (patterns.Count == 0) throw new InvalidOperationException("Chưa nhập CÁC THẾ CẦU (dạng CLL-LLC;LL-L;...)");
+            if (patterns.Count == 0) throw new InvalidOperationException("Chưa nhập CÁC THẾ CẦU (dạng PBB-BBP;BB-B;...)");
 
             var planned = new Queue<char>(); // hàng đợi các lệnh 'C'/'L' cần đánh
             int lastSeqLen = ctx.GetSnap()?.seq?.Length ?? 0;

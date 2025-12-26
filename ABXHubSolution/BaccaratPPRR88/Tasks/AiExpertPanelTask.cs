@@ -5,7 +5,7 @@
 // - CONTRARIAN: Đặt cửa đảo so với quyết định panel (ContrarianEnabled=true).
 // - FEEDBACK SIMULATED: AI học/guard/ewma cập nhật theo "thắng/thua GIẢ LẬP của panel gốc",
 //   không theo kết quả thực tế của cửa đã đặt (để tránh poison khi đánh ngược).
-// - SEQ: luôn lấy trực tiếp từ snap.seq mỗi vòng, chuyển về C/L theo quy tắc:
+// - SEQ: luôn lấy trực tiếp từ snap.seq mỗi vòng, chuyển về P/B theo quy tắc:
 //     + Số: 1,3 => L ; 0,2,4 => C
 //     + Chữ: 'L'/'l' => L ; 'C'/'c' => C
 //   Bỏ qua ký tự khác. Chỉ lấy TỐI ĐA 50 phần tử cuối. An toàn khi chuỗi < 50.
@@ -276,7 +276,7 @@ namespace BaccaratPPRR88.Tasks
             return Task.CompletedTask;
         }
 
-        // Đọc snap.seq -> chuẩn hoá về danh sách 0/1 (C/L) và chuỗi chữ 'C'/'L' để log
+        // Đọc snap.seq -> chuẩn hoá về danh sách 0/1 (P/B) và chuỗi chữ 'C'/'L' để log
         private static void SafeRefreshLastHandsFromSnap(GameContext ctx, PanelState st, bool firstLog = false)
         {
             try
@@ -284,7 +284,7 @@ namespace BaccaratPPRR88.Tasks
                 var snap = ctx.GetSnap();
                 var raw = snap?.seq ?? string.Empty;
 
-                // Parse: nhận cả số (0..4) lẫn chữ (C/L), lọc ký tự khác
+                // Parse: nhận cả số (0..4) lẫn chữ (P/B), lọc ký tự khác
                 var tmp = new List<int>(50);
                 var sb = new System.Text.StringBuilder(60);
 
@@ -312,7 +312,7 @@ namespace BaccaratPPRR88.Tasks
                 if (tmp.Count > 50)
                     tmp = tmp.Skip(tmp.Count - 50).ToList();
 
-                // Xây chuỗi C/L để log
+                // Xây chuỗi P/B để log
                 foreach (var b in tmp)
                     sb.Append(b == 0 ? 'C' : 'L');
                 string seqCL = sb.ToString();

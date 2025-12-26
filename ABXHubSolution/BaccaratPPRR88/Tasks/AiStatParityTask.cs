@@ -7,7 +7,7 @@ using static BaccaratPPRR88.Tasks.TaskUtil;
 namespace BaccaratPPRR88.Tasks
 {
     /// <summary>
-    /// 7) Bám cầu C/L theo thống kê AI — phiên bản đánh LIÊN TỤC
+    /// 7) Bám cầu P/B theo thống kê AI — phiên bản đánh LIÊN TỤC
     /// - Mỗi ván đều vào lệnh (không bỏ nhịp).
     /// - Nếu thua (gãy cầu), vòng sau tính lại mẫu và đánh tiếp.
     /// - Nếu không khớp được mẫu nào → ĐÁNH THEO KẾT QUẢ VỪA VỀ (không đảo 1–1).
@@ -15,7 +15,7 @@ namespace BaccaratPPRR88.Tasks
     /// </summary>
     public sealed class AiStatParityTask : IBetTask
     {
-        public string DisplayName => "7) Bám cầu C/L theo thống kê AI";
+        public string DisplayName => "7) Bám cầu P/B theo thống kê AI";
         public string Id => "ai-stat-cl";
 
         private const int DefaultMaxPatternLen = 6;
@@ -23,7 +23,7 @@ namespace BaccaratPPRR88.Tasks
         private static string ParityCharToSideSafe(char ch) => (ch == 'C') ? "CHAN" : "LE";
 
         /// <summary>
-        /// Dự đoán ký tự C/L ván kế + confidence (0..1).
+        /// Dự đoán ký tự P/B ván kế + confidence (0..1).
         /// Luật:
         /// - k từ k_max→1: match tail; đếm C_count/L_count sau vị trí match.
         /// - C_count ≠ L_count: chọn bên nhiều hơn và conf = |C-L|/(C+L).
@@ -106,7 +106,7 @@ namespace BaccaratPPRR88.Tasks
                 string baseSeq = snap?.seq ?? string.Empty;
                 string baseSession = snap?.session ?? string.Empty;
 
-                // Chuyển lịch sử sang C/L (cũ->mới)
+                // Chuyển lịch sử sang P/B (cũ->mới)
                 string parity = SeqToParityString(baseSeq);
 
                 // Luôn quyết định và vào lệnh — không bỏ nhịp

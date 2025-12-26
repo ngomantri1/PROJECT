@@ -4,7 +4,7 @@ using System.Windows.Media;
 
 namespace BaccaratPPRR88
 {
-    // ViewModel nhỏ cho icon chuỗi (C/L, Win/Lose ...) – khớp code đang set ImageSource
+    // ViewModel nhỏ cho icon chuỗi (P/B, Win/Lose ...) – khớp code đang set ImageSource
     public sealed class SeqIconVM : INotifyPropertyChanged
     {
         private ImageSource? _img;

@@ -986,11 +986,11 @@
                                             Padding="10,8"
                                             HorizontalAlignment="Stretch"
                                             SelectedIndex="4">
-                                            <ComboBoxItem Content="1) Chuỗi cầu C/L (chẵn/lẻ tự nhập)" />
-                                            <ComboBoxItem Content="2) Thế cầu C/L (chẵn/lẻ tự nhập)" />
+                                            <ComboBoxItem Content="1) Chuỗi cầu P/B (player/banker tự nhập)" />
+                                            <ComboBoxItem Content="2) Thế cầu P/B (player/banker tự nhập)" />
                                             <ComboBoxItem Content="3) Bám cầu trước (thông minh)" />
                                             <ComboBoxItem Content="4) Cửa đặt ngẫu nhiên" />
-                                            <ComboBoxItem Content="5) Bám cầu C/L theo thống kê AI" />
+                                            <ComboBoxItem Content="5) Bám cầu P/B theo thống kê AI" />
                                             <ComboBoxItem Content="6) Xu hướng chuyển trạng thái" />
                                             <ComboBoxItem Content="7) Run-length (dài-chuỗi)" />
                                             <ComboBoxItem Content="8) Chuyên gia bỏ phiếu" />
@@ -999,7 +999,7 @@
                                             <ComboBoxItem Content="11) Lịch hai lớp" />
                                             <ComboBoxItem Content="12) AI học tại chỗ (n-gram)" />
                                             <ComboBoxItem Content="13) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime)" />
-                                            <ComboBoxItem Content="14) Top10 tích lũy (khởi từ 50 C/L)" />
+                                            <ComboBoxItem Content="14) Top10 tích lũy (khởi từ 50 P/B)" />
                                         </ComboBox>
                                     </Grid>
 
@@ -1207,11 +1207,12 @@
                                     Margin="0,10,0,0"
                                     HorizontalAlignment="Center"
                                     VerticalAlignment="Center">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
 
                                     <!--  Nút Bắt đầu cược  -->
                                     <Button
@@ -1259,7 +1260,7 @@
                                     <!--  Checkbox Khóa chuột  -->
                                     <CheckBox
                                         x:Name="ChkLockMouse"
-                                        Grid.Column="2"
+                                        Grid.Column="3"
                                         Margin="12,0,0,0"
                                         VerticalAlignment="Center"
                                         Checked="ChkLockMouse_Checked"
@@ -1824,6 +1825,18 @@
                                                 Width="*"
                                                 Binding="{Binding At, StringFormat={}{0:HH:mm:ss dd/MM}}"
                                                 Header="Thời gian">
+                                                <DataGridTextColumn.ElementStyle>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="TextAlignment" Value="Center" />
+                                                    </Style>
+                                                </DataGridTextColumn.ElementStyle>
+                                            </DataGridTextColumn>
+
+                                            <!--  Bàn chơi  -->
+                                            <DataGridTextColumn
+                                                Width="*"
+                                                Binding="{Binding Table}"
+                                                Header="Bàn chơi">
                                                 <DataGridTextColumn.ElementStyle>
                                                     <Style TargetType="TextBlock">
                                                         <Setter Property="TextAlignment" Value="Center" />

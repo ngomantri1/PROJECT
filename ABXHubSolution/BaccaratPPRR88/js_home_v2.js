@@ -562,6 +562,14 @@
             if (!ok)
                 return 'target-fail';
 
+            try {
+                const sideLabel = (s === 'player') ? 'P' : 'B';
+                const payload = { abx: 'bet', tableId: id, side: sideLabel, amount: Number(amount) || 0 };
+                window.chrome?.webview?.postMessage?.(payload);
+                if (window.top && window.top !== window && typeof window.top.postMessage === 'function')
+                    window.top.postMessage(payload, '*');
+            } catch (_) {}
+
             return 'ok';
         } catch (e) {
             return 'err:' + (e && e.message ? e.message : e);
@@ -4933,6 +4941,7 @@
         let layouts = loadLayouts();
         const panelMap = new Map();
         const lastStateSig = new Map();
+        const lastProfitById = new Map();
         const roomDomRegistry = new Map();
         const pinSyncState = new Map();
         const pinRetryState = new Map();
@@ -7807,6 +7816,11 @@
                     ? historyRaw.map(item => `${item.row},${item.col},${item.code || ''},${item.tieCount || 0}`).join('|')
                     : history.join('|');
                 const text = (src.innerText || src.textContent || '').replace(/\s+/g, ' ').trim();
+                const profitRaw = deriveMoneyValue(text, [
+                    'tong\\s*thang', 'tong\\s*thua', 'tong\\s*thang\\s*thua',
+                    'tong\\s*thang\\/thua', 'thang\\s*thua', 'thang\\/thua'
+                ], '');
+                const profit = parseMoneyNumber(profitRaw);
                 const betAreas = collectBetAreas(src);
                 const betExtra = readBetExtra(src);
                 const betChips = readBetChips(src);
@@ -7828,6 +7842,7 @@
                     historySig,
                     historyRaw,
                     stats,
+                    profit,
                     betAreas,
                     betExtra,
                     betChips,
@@ -8011,6 +8026,22 @@
         function deriveMoneyValue(text, labels, fallback = '--') {
             const value = extractNumberByLabel(text, labels);
             return value || fallback;
+                }
+
+        function parseMoneyNumber(value) {
+            if (value == null)
+                return null;
+            const raw = String(value).replace(/\u2212/g, '-').trim();
+            if (!raw)
+                return null;
+            const match = raw.match(/-?\d[\d.,]*/);
+            if (!match)
+                return null;
+            const cleaned = match[0].replace(/[.,]/g, '');
+            if (!cleaned)
+                return null;
+            const num = Number(cleaned);
+            return Number.isFinite(num) ? num : null;
                 }
 
         function buildResultMapGrid(tokens, rows = 6, cols = 38) {
@@ -8411,12 +8442,38 @@
             } catch (_) {}
             }
 
+        function pushProfitIfChanged(states) {
+            const changed = [];
+            states.forEach(st => {
+                if (!st || !st.id)
+                    return;
+                const profit = st.profit;
+                if (typeof profit !== 'number' || !Number.isFinite(profit))
+                    return;
+                const prev = lastProfitById.get(st.id);
+                if (prev === profit)
+                    return;
+                lastProfitById.set(st.id, profit);
+                changed.push({ id: st.id, name: st.name || '', profit });
+            });
+            if (!changed.length)
+                return;
+            try {
+                window.chrome?.webview?.postMessage?.({
+                    overlay: 'table',
+                    event: 'profit',
+                    tables: changed
+                });
+            } catch (_) {}
+        }
+
         function tickState() {
             if (!rooms.length)
                 return;
             const states = rooms.map(r => captureTableState(r)).filter(Boolean);
             states.forEach(renderPanelState);
             pushStateIfChanged(states);
+            pushProfitIfChanged(states);
         }
 
         function stopStateTimer() {
@@ -8430,6 +8487,7 @@
             if (!rooms.length) {
                 stopStateTimer();
                 lastStateSig.clear();
+                lastProfitById.clear();
         }
         }
 
@@ -8960,6 +9018,7 @@
             if (id === lastFocusId)
                 lastFocusId = '';
             lastStateSig.delete(id);
+            lastProfitById.delete(id);
             if (!desiredPinIds.has(id)) {
                 ensurePinState(id, false);
                 pinSyncState.delete(id);

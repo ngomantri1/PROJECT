@@ -208,7 +208,7 @@ namespace BaccaratPPRR88
         private const int NiSeqMax = 50;
         private readonly System.Text.StringBuilder _niSeq = new(NiSeqMax);
 
-        // Tổng C/L của ván đang diễn ra (để dùng khi ván vừa khép lại)
+        // Tổng P/B của ván đang diễn ra (để dùng khi ván vừa khép lại)
         private long _roundTotalsC = 0;
         private long _roundTotalsL = 0;
         private int _lastSeqLenNi = 0;
@@ -305,6 +305,8 @@ namespace BaccaratPPRR88
 
         // 3) Giữ pending bet để chờ kết quả
         private BetRow? _pendingRow;
+        private string _lastBetSig = "";
+        private long _lastBetSigAtMs = 0;
         private const int MaxHistory = 1000;   // tổng số bản ghi giữ trong bộ nhớ & khi load
 
 
@@ -318,20 +320,20 @@ namespace BaccaratPPRR88
         const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/rr88";
 
         // ===================== TOOLTIP TEXTS =====================
-        const string TIP_SEQ_CL =
-        @"Chuỗi CẦU (C/L) — Chiến lược 1
-• Ý nghĩa: C = CHẴN, L = LẺ (không phân biệt hoa/thường).
-• Cú pháp: chỉ gồm ký tự C hoặc L; ký tự khác không hợp lệ.
+        const string TIP_SEQ_PB =
+        @"Chuỗi CẦU (P/B) — Chiến lược 1
+• Ý nghĩa: P = PLAYER, B = BANKER (không phân biệt hoa/thường).
+• Cú pháp: chỉ gồm ký tự P hoặc B; ký tự khác không hợp lệ.
 • Khoảng trắng/tab/xuống dòng: được phép; hệ thống tự bỏ qua.
 • Thứ tự đọc: từ trái sang phải; hết chuỗi sẽ lặp lại từ đầu.
-• Độ dài khuyến nghị: 2–50 ký tự.
+• Độ dài khuyến nghị: 2–100 ký tự.
 Ví dụ hợp lệ:
-  - CLLC
-  - C L L C
+  - PBBP
+  - P B B P
 Ví dụ không hợp lệ:
-  - C,X,L     (có dấu phẩy)
-  - CL1C      (có số)
-  - C L _ C   (ký tự ngoài C/L).";
+  - P,X,B     (có dấu phẩy)
+  - PB1P      (có số)
+  - P B _ P   (ký tự ngoài P/B).";
 
         const string TIP_SEQ_NI =
         @"Chuỗi CẦU (Ít/Nhiều) — Chiến lược 3
@@ -348,24 +350,24 @@ Ví dụ không hợp lệ:
   - IN1I      (có số)
   - I _ N I   (ký tự ngoài I/N).";
 
-        const string TIP_THE_CL =
-        @"Thế CẦU (C/L) — Chiến lược 2
-• Ý nghĩa: C = CHẴN, L = LẺ (không phân biệt hoa/thường).
+        const string TIP_THE_PB =
+        @"Thế CẦU (P/B) — Chiến lược 2
+• Ý nghĩa: P = PLAYER, B = BANKER (không phân biệt hoa/thường).
 • Một quy tắc (mỗi dòng): <mẫu_quá_khứ> -> <cửa_kế_tiếp>  (hoặc dùng dấu - thay cho ->).
 • Phân tách nhiều quy tắc: bằng dấu ',', ';', '|', hoặc xuống dòng.
 • Khoảng trắng: được phép quanh ký hiệu và giữa các quy tắc; 
   Cho phép khoảng trắng BÊN TRONG <cửa_kế_tiếp>.
 • So khớp: xét K kết quả gần nhất với K = độ dài <mẫu_quá_khứ>; nếu khớp thì đặt theo <cửa_kế_tiếp>.
-• <cửa_kế_tiếp>: có thể là 1 ký tự (C/L) hoặc một chuỗi C/L (ví dụ: CLL).
+• <cửa_kế_tiếp>: có thể là 1 ký tự (P/B) hoặc một chuỗi P/B (ví dụ: PBB).
 • Độ dài khuyến nghị cho <mẫu_quá_khứ>: 1–10 ký tự.
 Ví dụ hợp lệ:
-  CCL -> C
-  LLL -> L C
-  CL  -> CLL
+  PPB -> P
+  BBB -> B P
+  PB  -> PBB
 Ví dụ không hợp lệ:
-  C, X, L -> C
-  CL -> C L
-  CL -> C1";
+  P, X, B -> P
+  PB -> P B
+  PB -> P1";
 
 
         const string TIP_THE_NI =
@@ -445,6 +447,8 @@ Ví dụ không hợp lệ:
             [Obsolete] public string Username { get; set; } = "";
             public string StakeCsv { get; set; } = "1000-3000-7000-15000-33000-69000-142000-291000-595000-1215000";
             public int DecisionSeconds { get; set; } = 10;
+            [JsonExtensionData]
+            public Dictionary<string, JsonElement>? Extra { get; set; }
 
             // Remember creds (DPAPI)
             public bool RememberCreds { get; set; } = true;
@@ -462,9 +466,9 @@ Ví dụ không hợp lệ:
             public bool S7ResetOnProfit { get; set; } = true;
             public double CutProfit { get; set; } = 0; // 0 = tắt cắt lãi
             public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
-            public string BetSeqCL { get; set; } = "";        // cho Chiến lược 1
+            public string BetSeqPB { get; set; } = "";        // cho Chiến lược 1
             public string BetSeqNI { get; set; } = "";        // cho Chiến lược 3
-            public string BetPatternsCL { get; set; } = "";   // cho Chiến lược 2
+            public string BetPatternsPB { get; set; } = "";   // cho Chiến lược 2
             public string BetPatternsNI { get; set; } = "";   // cho Chiến lược 4
 
             // Lưu chuỗi tiền theo từng MoneyStrategy
@@ -489,13 +493,15 @@ Ví dụ không hợp lệ:
         {
             public string Id { get; set; } = "";
             public string Name { get; set; } = "";
+            [JsonExtensionData]
+            public Dictionary<string, JsonElement>? Extra { get; set; }
 
             public int BetStrategyIndex { get; set; } = 4;
             public string BetSeq { get; set; } = "";
             public string BetPatterns { get; set; } = "";
-            public string BetSeqCL { get; set; } = "";
+            public string BetSeqPB { get; set; } = "";
             public string BetSeqNI { get; set; } = "";
-            public string BetPatternsCL { get; set; } = "";
+            public string BetPatternsPB { get; set; } = "";
             public string BetPatternsNI { get; set; } = "";
 
             public string MoneyStrategy { get; set; } = "IncreaseWhenLose";
@@ -517,6 +523,8 @@ Ví dụ không hợp lệ:
             public bool Cooldown;
             public int StakeLevelIndexForUi = -1;
             public double WinTotal;
+            public double WinTotalFromJs;
+            public bool HasJsProfit;
             public int MoneyChainIndex;
             public int MoneyChainStep;
             public double MoneyChainProfit;
@@ -528,17 +536,18 @@ Ví dụ không hợp lệ:
         {
             public DateTime At { get; set; }                 // Thời gian đặt
             public string Game { get; set; } = "Xóc đĩa live";
+            public string Table { get; set; } = "";          // Bàn chơi
             public long Stake { get; set; }                  // Tiền cược
-            public string Side { get; set; } = "";           // CHAN/LE
-            public string Result { get; set; } = "";         // Kết quả "CHAN"/"LE"
+            public string Side { get; set; } = "";           // P/B
+            public string Result { get; set; } = "";         // Kết quả P/B
             public string WinLose { get; set; } = "";        // "Thắng"/"Thua"
             public long Account { get; set; }                // Số dư sau ván
         }
 
         public static class SharedIcons
         {
-            public static ImageSource? SideChan, SideLe;        // ảnh “Cửa đặt” CHẴN/LẺ
-            public static ImageSource? ResultChan, ResultLe;    // ảnh “Kết quả” CHẴN/LẺ
+            public static ImageSource? SideChan, SideLe;        // ảnh “Cửa đặt” P/B
+            public static ImageSource? ResultChan, ResultLe;    // ảnh “Kết quả” P/B
             public static ImageSource? Win, Loss;               // ảnh “Thắng/Thua”
         }
 
@@ -1484,6 +1493,8 @@ Ví dụ không hợp lệ:
                     _cfg = JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
                     Log("Loaded config: " + _cfgPath);
                 }
+                if (MigrateClToPb(_cfg))
+                    _ = SaveConfigAsync();
                 _homeUsername = _cfg.LastHomeUsername;
                 // Sinh / nạp clientId cố định cho lease
                 _leaseClientId = string.IsNullOrWhiteSpace(_cfg.LeaseClientId)
@@ -1613,6 +1624,7 @@ Ví dụ không hợp lệ:
         {
             return cfg with
             {
+                Extra = null,
                 StakeCsvByMoney = cfg.StakeCsvByMoney != null
                     ? new Dictionary<string, string>(cfg.StakeCsvByMoney, StringComparer.OrdinalIgnoreCase)
                     : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
@@ -1630,9 +1642,9 @@ Ví dụ không hợp lệ:
                 snapshot.BetStrategyIndex = _globalCfgSnapshot.BetStrategyIndex;
                 snapshot.BetSeq = _globalCfgSnapshot.BetSeq ?? "";
                 snapshot.BetPatterns = _globalCfgSnapshot.BetPatterns ?? "";
-                snapshot.BetSeqCL = _globalCfgSnapshot.BetSeqCL ?? "";
+                snapshot.BetSeqPB = _globalCfgSnapshot.BetSeqPB ?? "";
                 snapshot.BetSeqNI = _globalCfgSnapshot.BetSeqNI ?? "";
-                snapshot.BetPatternsCL = _globalCfgSnapshot.BetPatternsCL ?? "";
+                snapshot.BetPatternsPB = _globalCfgSnapshot.BetPatternsPB ?? "";
                 snapshot.BetPatternsNI = _globalCfgSnapshot.BetPatternsNI ?? "";
                 snapshot.MoneyStrategy = _globalCfgSnapshot.MoneyStrategy ?? "IncreaseWhenLose";
                 snapshot.StakeCsv = _globalCfgSnapshot.StakeCsv ?? "";
@@ -1642,6 +1654,69 @@ Ví dụ không hợp lệ:
                 snapshot.S7ResetOnProfit = _globalCfgSnapshot.S7ResetOnProfit;
             }
             return snapshot;
+        }
+
+        private static string? ReadExtensionString(Dictionary<string, JsonElement>? extra, string key)
+        {
+            if (extra == null || !extra.TryGetValue(key, out var el))
+                return null;
+            return el.ValueKind == JsonValueKind.String ? el.GetString() : el.ToString();
+        }
+
+        private static bool MigrateClToPb(AppConfig cfg)
+        {
+            bool changed = false;
+            var oldSeq = ReadExtensionString(cfg.Extra, "BetSeqCL");
+            var oldPat = ReadExtensionString(cfg.Extra, "BetPatternsCL");
+
+            if (string.IsNullOrWhiteSpace(cfg.BetSeqPB) && !string.IsNullOrWhiteSpace(oldSeq))
+            {
+                cfg.BetSeqPB = NormalizePBInput(oldSeq);
+                changed = true;
+            }
+            if (string.IsNullOrWhiteSpace(cfg.BetPatternsPB) && !string.IsNullOrWhiteSpace(oldPat))
+            {
+                cfg.BetPatternsPB = NormalizePBInput(oldPat);
+                changed = true;
+            }
+
+            if (cfg.Extra != null)
+            {
+                cfg.Extra.Remove("BetSeqCL");
+                cfg.Extra.Remove("BetPatternsCL");
+                if (cfg.Extra.Count == 0)
+                    cfg.Extra = null;
+            }
+
+            return changed;
+        }
+
+        private static bool MigrateClToPb(TableSetting setting)
+        {
+            bool changed = false;
+            var oldSeq = ReadExtensionString(setting.Extra, "BetSeqCL");
+            var oldPat = ReadExtensionString(setting.Extra, "BetPatternsCL");
+
+            if (string.IsNullOrWhiteSpace(setting.BetSeqPB) && !string.IsNullOrWhiteSpace(oldSeq))
+            {
+                setting.BetSeqPB = NormalizePBInput(oldSeq);
+                changed = true;
+            }
+            if (string.IsNullOrWhiteSpace(setting.BetPatternsPB) && !string.IsNullOrWhiteSpace(oldPat))
+            {
+                setting.BetPatternsPB = NormalizePBInput(oldPat);
+                changed = true;
+            }
+
+            if (setting.Extra != null)
+            {
+                setting.Extra.Remove("BetSeqCL");
+                setting.Extra.Remove("BetPatternsCL");
+                if (setting.Extra.Count == 0)
+                    setting.Extra = null;
+            }
+
+            return changed;
         }
 
         private void LoadTableSettings()
@@ -1655,6 +1730,7 @@ Ví dụ không hợp lệ:
                     loaded.Tables ??= new List<TableSetting>();
 
                     var map = new Dictionary<string, TableSetting>(StringComparer.OrdinalIgnoreCase);
+                    bool migrated = false;
                     foreach (var it in loaded.Tables)
                     {
                         if (it == null) continue;
@@ -1665,6 +1741,8 @@ Ví dụ không hợp lệ:
                         it.StakeCsvByMoney = it.StakeCsvByMoney != null
                             ? new Dictionary<string, string>(it.StakeCsvByMoney, StringComparer.OrdinalIgnoreCase)
                             : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        if (MigrateClToPb(it))
+                            migrated = true;
                         if (!map.ContainsKey(id))
                             map[id] = it;
                     }
@@ -1675,6 +1753,8 @@ Ví dụ không hợp lệ:
                         Tables = map.Values.ToList()
                     };
                     Log("Loaded table settings: " + _tableSettingsPath);
+                    if (migrated)
+                        _ = TriggerTableSettingsSaveDebouncedAsync();
                 }
             }
             catch (Exception ex)
@@ -1732,9 +1812,9 @@ Ví dụ không hợp lệ:
             setting.BetStrategyIndex = _cfg.BetStrategyIndex;
             setting.BetSeq = _cfg.BetSeq ?? "";
             setting.BetPatterns = _cfg.BetPatterns ?? "";
-            setting.BetSeqCL = _cfg.BetSeqCL ?? "";
+            setting.BetSeqPB = _cfg.BetSeqPB ?? "";
             setting.BetSeqNI = _cfg.BetSeqNI ?? "";
-            setting.BetPatternsCL = _cfg.BetPatternsCL ?? "";
+            setting.BetPatternsPB = _cfg.BetPatternsPB ?? "";
             setting.BetPatternsNI = _cfg.BetPatternsNI ?? "";
 
             setting.MoneyStrategy = _cfg.MoneyStrategy ?? "IncreaseWhenLose";
@@ -1781,9 +1861,9 @@ Ví dụ không hợp lệ:
             setting.BetStrategyIndex = _cfg.BetStrategyIndex;
             setting.BetSeq = _cfg.BetSeq ?? "";
             setting.BetPatterns = _cfg.BetPatterns ?? "";
-            setting.BetSeqCL = _cfg.BetSeqCL ?? "";
+            setting.BetSeqPB = _cfg.BetSeqPB ?? "";
             setting.BetSeqNI = _cfg.BetSeqNI ?? "";
-            setting.BetPatternsCL = _cfg.BetPatternsCL ?? "";
+            setting.BetPatternsPB = _cfg.BetPatternsPB ?? "";
             setting.BetPatternsNI = _cfg.BetPatternsNI ?? "";
             setting.MoneyStrategy = _cfg.MoneyStrategy ?? "IncreaseWhenLose";
             setting.StakeCsv = _cfg.StakeCsv ?? "";
@@ -1808,9 +1888,9 @@ Ví dụ không hợp lệ:
                 _cfg.BetStrategyIndex = setting.BetStrategyIndex;
                 _cfg.BetSeq = setting.BetSeq ?? "";
                 _cfg.BetPatterns = setting.BetPatterns ?? "";
-                _cfg.BetSeqCL = setting.BetSeqCL ?? "";
+                _cfg.BetSeqPB = setting.BetSeqPB ?? "";
                 _cfg.BetSeqNI = setting.BetSeqNI ?? "";
-                _cfg.BetPatternsCL = setting.BetPatternsCL ?? "";
+                _cfg.BetPatternsPB = setting.BetPatternsPB ?? "";
                 _cfg.BetPatternsNI = setting.BetPatternsNI ?? "";
                 _cfg.MoneyStrategy = setting.MoneyStrategy ?? "IncreaseWhenLose";
                 _cfg.StakeCsv = setting.StakeCsv ?? "";
@@ -1851,9 +1931,9 @@ Ví dụ không hợp lệ:
                 _cfg.BetStrategyIndex = _globalCfgSnapshot.BetStrategyIndex;
                 _cfg.BetSeq = _globalCfgSnapshot.BetSeq ?? "";
                 _cfg.BetPatterns = _globalCfgSnapshot.BetPatterns ?? "";
-                _cfg.BetSeqCL = _globalCfgSnapshot.BetSeqCL ?? "";
+                _cfg.BetSeqPB = _globalCfgSnapshot.BetSeqPB ?? "";
                 _cfg.BetSeqNI = _globalCfgSnapshot.BetSeqNI ?? "";
-                _cfg.BetPatternsCL = _globalCfgSnapshot.BetPatternsCL ?? "";
+                _cfg.BetPatternsPB = _globalCfgSnapshot.BetPatternsPB ?? "";
                 _cfg.BetPatternsNI = _globalCfgSnapshot.BetPatternsNI ?? "";
                 _cfg.MoneyStrategy = _globalCfgSnapshot.MoneyStrategy ?? "IncreaseWhenLose";
                 _cfg.StakeCsv = _globalCfgSnapshot.StakeCsv ?? "";
@@ -1901,9 +1981,9 @@ Ví dụ không hợp lệ:
             setting.BetStrategyIndex = _cfg.BetStrategyIndex;
             setting.BetSeq = _cfg.BetSeq ?? "";
             setting.BetPatterns = _cfg.BetPatterns ?? "";
-            setting.BetSeqCL = _cfg.BetSeqCL ?? "";
+            setting.BetSeqPB = _cfg.BetSeqPB ?? "";
             setting.BetSeqNI = _cfg.BetSeqNI ?? "";
-            setting.BetPatternsCL = _cfg.BetPatternsCL ?? "";
+            setting.BetPatternsPB = _cfg.BetPatternsPB ?? "";
             setting.BetPatternsNI = _cfg.BetPatternsNI ?? "";
             setting.MoneyStrategy = _cfg.MoneyStrategy ?? "IncreaseWhenLose";
             setting.StakeCsv = _cfg.StakeCsv ?? "";
@@ -2117,6 +2197,30 @@ Ví dụ không hợp lệ:
                                         var id = playIdEl.GetString() ?? "";
                                         var name = root.TryGetProperty("name", out var nameEl2) ? (nameEl2.GetString() ?? "") : "";
                                         await ToggleTablePlayAsync(id, name);
+                                    }
+                                    if (ev == "profit")
+                                    {
+                                        if (root.TryGetProperty("tables", out var tablesEl) &&
+                                            tablesEl.ValueKind == JsonValueKind.Array)
+                                        {
+                                            foreach (var it in tablesEl.EnumerateArray())
+                                            {
+                                                var id = it.TryGetProperty("id", out var idElProfit) ? (idElProfit.GetString() ?? "") : "";
+                                                var name = it.TryGetProperty("name", out var nEl) ? (nEl.GetString() ?? "") : "";
+                                                if (!it.TryGetProperty("profit", out var pEl)) continue;
+                                                var profit = ReadJsonMoney(pEl);
+                                                ApplyProfitUpdate(id, name, profit);
+                                            }
+                                        }
+                                        else if (root.TryGetProperty("id", out var pIdEl) &&
+                                                 root.TryGetProperty("profit", out var pValEl))
+                                        {
+                                            var id = pIdEl.GetString() ?? "";
+                                            var name = root.TryGetProperty("name", out var nEl2) ? (nEl2.GetString() ?? "") : "";
+                                            var profit = ReadJsonMoney(pValEl);
+                                            ApplyProfitUpdate(id, name, profit);
+                                        }
+                                        return;
                                     }
                                     if (ev == "blur")
                                     {
@@ -2365,11 +2469,25 @@ Ví dụ không hợp lệ:
                                 // 3) bet ok → tạo dòng placeholder (Result/WinLose = "-") và SHOW TRANG 1
                                 if (abxStr == "bet")
                                 {
+                                    string tableId = root.TryGetProperty("tableId", out var tidEl) ? (tidEl.GetString() ?? "") : "";
+                                    if (string.IsNullOrWhiteSpace(tableId) && root.TryGetProperty("id", out var idEl2))
+                                        tableId = idEl2.GetString() ?? "";
+                                    string tableName = root.TryGetProperty("name", out var tnameEl) ? (tnameEl.GetString() ?? "") : "";
+                                    if (string.IsNullOrWhiteSpace(tableName) && !string.IsNullOrWhiteSpace(tableId))
+                                        tableName = ResolveRoomName(tableId);
+
                                     string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
                                     long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
-                                    string side = sideRaw.Equals("CHAN", StringComparison.OrdinalIgnoreCase) ? "CHAN"
-                                                : sideRaw.Equals("LE", StringComparison.OrdinalIgnoreCase) ? "LE"
-                                                : sideRaw.ToUpperInvariant();
+                                    string side = NormalizeSide(sideRaw);
+                                    if (string.IsNullOrWhiteSpace(side))
+                                        side = sideRaw.ToUpperInvariant();
+
+                                    var sig = $"{tableId}|{side}|{amount}";
+                                    var nowMs = Environment.TickCount64;
+                                    if (sig == _lastBetSig && (nowMs - _lastBetSigAtMs) < 500)
+                                        return;
+                                    _lastBetSig = sig;
+                                    _lastBetSigAtMs = nowMs;
 
                                     Log($"[BET] {side} {amount:N0}");
 
@@ -2380,6 +2498,7 @@ Ví dụ không hợp lệ:
                                     {
                                         At = DateTime.Now,
                                         Game = "Xóc đĩa live",
+                                        Table = tableName,
                                         Stake = amount,
                                         Side = side,
                                         Result = "-",
@@ -3830,24 +3949,24 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             // Chuỗi/Thế cầu
             AttachTip(TxtChuoiCau,
-                (idx == 0) ? TIP_SEQ_CL :
+                (idx == 0) ? TIP_SEQ_PB :
                 (idx == 2) ? TIP_SEQ_NI :
                 "Chọn chiến lược 1 hoặc 3 để nhập Chuỗi cầu.");
 
             AttachTip(TxtTheCau,
-                (idx == 1) ? TIP_THE_CL :
+                (idx == 1) ? TIP_THE_PB :
                 (idx == 3) ? TIP_THE_NI :
                 "Chọn chiến lược 2 hoặc 4 để nhập Thế cầu.");
             // ==== BẮT ĐẦU: Tooltip cho chiến lược đặt cược ====
             string tip = idx switch
             {
-                0 => "1) Chuỗi C/L tự nhập: So khớp chuỗi C/L cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
-                1 => "2) Thế cầu C/L tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
+                0 => "1) Chuỗi P/B tự nhập: So khớp chuỗi P/B cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
+                1 => "2) Thế cầu P/B tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
                 2 => "3) Chuỗi I/N: So khớp dãy Ít/Nhiều (I/N) cấu hình thủ công; khớp thì đặt theo chỉ định; không khớp dùng logic mặc định.",
                 3 => "4) Thế cầu I/N: Ánh xạ mẫu I/N → cửa kế tiếp; ưu tiên mẫu dài; cho phép nhiều luật trong cùng danh sách.",
                 4 => "5) Theo cầu trước (thông minh): Dựa vào ván gần nhất và heuristics nội bộ; đánh liên tục; quản lý vốn theo chuỗi tiền, cut_profit/cut_loss.",
-                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn CHẴN/LẺ ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
-                6 => "7) Bám cầu C/L (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất C/L sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
+                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn P/B ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
+                6 => "7) Bám cầu P/B (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất P/B sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
                 7 => "8) Xu hướng chuyển trạng thái: Thống kê 6 chuyển gần nhất giữa các ván ('lặp' vs 'đảo'); nếu 'đảo' nhiều hơn → đánh ngược ván cuối; ngược lại → theo ván cuối; đánh liên tục.",
                 8 => "9) Run-length (dài chuỗi): Tính độ dài chuỗi ký tự cuối; nếu run ≥ T (mặc định T=3) → đảo để mean-revert; nếu run ngắn → theo đà (momentum); đánh liên tục.",
                 9 => "10) Chuyên gia bỏ phiếu: Kết hợp 5 chuyên gia (theo-last, đảo-last, run-length, transition, AI-stat); chọn phía đa số; hòa → đảo; đánh liên tục để phủ nhiều kịch bản.",
@@ -3856,7 +3975,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 12 => "13) Lịch hai lớp: Lịch pha trộn 10 bước (1–3 theo-last, 4 đảo, 5–7 AI-stat, 8 đảo, 9 theo, 10 AI-stat); lặp lại; cân bằng giữa momentum/mean-revert/thống kê; đánh liên tục.",
                 13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
                 14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
-                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 C/L). Khởi tạo thống kê từ 50 kết quả đầu vào (C/L). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
+                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 P/B). Khởi tạo thống kê từ 50 kết quả đầu vào (P/B). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
                 _ => "Chiến lược chưa xác định."
             };
 
@@ -3878,13 +3997,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             return idx switch
             {
-                0 => "1) Chuỗi C/L tự nhập: So khớp chuỗi C/L cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
-                1 => "2) Thế cầu C/L tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
+                0 => "1) Chuỗi P/B tự nhập: So khớp chuỗi P/B cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
+                1 => "2) Thế cầu P/B tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
                 2 => "3) Chuỗi I/N: So khớp dãy Ít/Nhiều (I/N) cấu hình thủ công; khớp thì đặt theo chỉ định; không khớp dùng logic mặc định.",
                 3 => "4) Thế cầu I/N: Ánh xạ mẫu I/N → cửa kế tiếp; ưu tiên mẫu dài; cho phép nhiều luật trong cùng danh sách.",
                 4 => "5) Theo cầu trước (thông minh): Dựa vào ván gần nhất và heuristics nội bộ; đánh liên tục; quản lý vốn theo chuỗi tiền, cut_profit/cut_loss.",
-                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn CHẴN/LẺ ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
-                6 => "7) Bám cầu C/L (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất C/L sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
+                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn P/B ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
+                6 => "7) Bám cầu P/B (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất P/B sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
                 7 => "8) Xu hướng chuyển trạng thái: Thống kê 6 chuyển gần nhất giữa các ván ('lặp' vs 'đảo'); nếu 'đảo' nhiều hơn → đánh ngược ván cuối; ngược lại → theo ván cuối; đánh liên tục.",
                 8 => "9) Run-length (dài chuỗi): Tính độ dài chuỗi ký tự cuối; nếu run ≥ T (mặc định T=3) → đảo để mean-revert; nếu run ngắn → theo đà (momentum); đánh liên tục.",
                 9 => "10) Chuyên gia bỏ phiếu: Kết hợp 5 chuyên gia (theo-last, đảo-last, run-length, transition, AI-stat); chọn phía đa số; hòa → đảo; đánh liên tục để phủ nhiều kịch bản.",
@@ -3893,7 +4012,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 12 => "13) Lịch hai lớp: Lịch pha trộn 10 bước (1–3 theo-last, 4 đảo, 5–7 AI-stat, 8 đảo, 9 theo, 10 AI-stat); lặp lại; cân bằng giữa momentum/mean-revert/thống kê; đánh liên tục.",
                 13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
                 14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
-                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 C/L). Khởi tạo thống kê từ 50 kết quả đầu vào (C/L). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
+                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 P/B). Khởi tạo thống kê từ 50 kết quả đầu vào (P/B). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
                 _ => "Chiến lược chưa xác định."
             };
         }
@@ -4958,10 +5077,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
             betSeq = setting.BetSeq ?? "";
             betPatterns = setting.BetPatterns ?? "";
             var idx = setting.BetStrategyIndex;
-            if (idx == 0) betSeq = setting.BetSeqCL ?? "";
+            if (idx == 0) betSeq = setting.BetSeqPB ?? "";
             else if (idx == 2) betSeq = setting.BetSeqNI ?? "";
-            if (idx == 1) betPatterns = setting.BetPatternsCL ?? "";
+            if (idx == 1) betPatterns = setting.BetPatternsPB ?? "";
             else if (idx == 3) betPatterns = setting.BetPatternsNI ?? "";
+            betSeq = NormalizePBToCL(betSeq);
+            betPatterns = NormalizePBToCL(betPatterns);
         }
 
         private void UpdateStakeIndexForTable(TableTaskState state, long[] seq, double stake)
@@ -4987,7 +5108,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     var state = kv.Value;
                     if (state?.Cts == null) continue;
                     if (state.Cts.IsCancellationRequested) continue;
-                    total += state.WinTotal;
+                    var tableTotal = state.HasJsProfit ? state.WinTotalFromJs : state.WinTotal;
+                    total += tableTotal;
                 }
             }
             _winTotal = total;
@@ -4999,21 +5121,22 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             var cutProfit = setting.CutProfit;
             var cutLoss = setting.CutLoss;
+            var tableTotal = state.HasJsProfit ? state.WinTotalFromJs : state.WinTotal;
 
             if (cutProfit <= 0 && cutLoss <= 0) return;
 
-            if (cutProfit > 0 && state.WinTotal >= cutProfit)
+            if (cutProfit > 0 && tableTotal >= cutProfit)
             {
-                StopTableTask(setting.Id, $"Dat CAT LAI ban {ResolveRoomName(setting.Id)}: {state.WinTotal:N0} >= {cutProfit:N0}");
+                StopTableTask(setting.Id, $"Dat CAT LAI ban {ResolveRoomName(setting.Id)}: {tableTotal:N0} >= {cutProfit:N0}");
                 return;
             }
 
             if (cutLoss > 0)
             {
                 var lossThreshold = -cutLoss;
-                if (state.WinTotal <= lossThreshold)
+                if (tableTotal <= lossThreshold)
                 {
-                    StopTableTask(setting.Id, $"Dat CAT LO ban {ResolveRoomName(setting.Id)}: {state.WinTotal:N0} <= {lossThreshold:N0}");
+                    StopTableTask(setting.Id, $"Dat CAT LO ban {ResolveRoomName(setting.Id)}: {tableTotal:N0} <= {lossThreshold:N0}");
                 }
             }
         }
@@ -5074,7 +5197,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 UiAddWin = delta => Dispatcher.InvokeAsync(() =>
                 {
                     var net = (delta > 0) ? Math.Round(delta * 0.98) : delta;
-                    state.WinTotal += net;
+                    if (!state.HasJsProfit)
+                        state.WinTotal += net;
                     try { MoneyHelper.NotifyTempProfit(moneyStrategyId, net); } catch { }
                     RecomputeGlobalWinTotal();
                     if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
@@ -5135,6 +5259,44 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 return state;
             }
+        }
+
+        private static double ReadJsonMoney(JsonElement el)
+        {
+            if (el.ValueKind == JsonValueKind.Number)
+                return el.GetDouble();
+            if (el.ValueKind == JsonValueKind.String)
+                return ParseMoneyOrZero(el.GetString() ?? "");
+            return 0;
+        }
+
+        private void ApplyProfitUpdate(string tableId, string? tableName, double profit)
+        {
+            if (string.IsNullOrWhiteSpace(tableId))
+                return;
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                var state = GetOrCreateTableTaskState(tableId, tableName);
+                if (!IsTableRunning(state))
+                    return;
+
+                var next = profit;
+                if (Math.Abs(state.WinTotalFromJs - next) < 0.001 && state.HasJsProfit)
+                    return;
+
+                state.WinTotalFromJs = next;
+                state.WinTotal = next;
+                state.HasJsProfit = true;
+
+                RecomputeGlobalWinTotal();
+                if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
+
+                var setting = FindTableSetting(tableId);
+                if (setting != null)
+                    CheckTableCutAndStopIfNeeded(setting, state);
+                CheckCutAndStopIfNeeded();
+            }));
         }
 
         private static bool IsTableRunning(TableTaskState state)
@@ -5418,19 +5580,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
             int idx = setting.BetStrategyIndex;
             if (idx == 0)
             {
-                var seq = setting.BetSeqCL ?? setting.BetSeq ?? "";
-                if (!ValidateSeqCL(seq, out var err))
+                var seq = setting.BetSeqPB ?? setting.BetSeq ?? "";
+                if (!ValidateSeqPB(seq, out var err))
                 {
-                    Log($"[TABLE] invalid BetSeqCL for {setting.Id}: {err}");
+                    Log($"[TABLE] invalid BetSeqPB for {setting.Id}: {err}");
                     return false;
                 }
             }
             else if (idx == 1)
             {
-                var pat = setting.BetPatternsCL ?? setting.BetPatterns ?? "";
-                if (!ValidatePatternsCL(pat, out var err))
+                var pat = setting.BetPatternsPB ?? setting.BetPatterns ?? "";
+                if (!ValidatePatternsPB(pat, out var err))
                 {
-                    Log($"[TABLE] invalid BetPatternsCL for {setting.Id}: {err}");
+                    Log($"[TABLE] invalid BetPatternsPB for {setting.Id}: {err}");
                     return false;
                 }
             }
@@ -5522,6 +5684,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 state.Cooldown = false;
                 state.StakeLevelIndexForUi = -1;
                 state.WinTotal = 0;
+                state.WinTotalFromJs = 0;
+                state.HasJsProfit = false;
                 state.MoneyChainIndex = 0;
                 state.MoneyChainStep = 0;
                 state.MoneyChainProfit = 0;
@@ -5595,6 +5759,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 return;
 
             try { state.Cts?.Cancel(); } catch { }
+            state.HasJsProfit = false;
+            state.WinTotalFromJs = 0;
+            state.WinTotal = 0;
 
             if (!string.IsNullOrWhiteSpace(reason))
                 Log("[TASK] stop " + reason);
@@ -7114,7 +7281,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             if (_pendingRow == null || string.IsNullOrWhiteSpace(result)) return;
 
-            _pendingRow.Result = result!.ToUpperInvariant();
+            var normResult = NormalizeSide(result ?? "");
+            _pendingRow.Result = string.IsNullOrWhiteSpace(normResult)
+                ? (result ?? "").Trim().ToUpperInvariant()
+                : normResult;
             bool win = string.Equals(_pendingRow.Side, _pendingRow.Result, StringComparison.OrdinalIgnoreCase);
             _pendingRow.WinLose = win ? "Thắng" : "Thua";
             _pendingRow.Account = balanceAfter;
@@ -7161,19 +7331,22 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         if (cols.Length < 7) continue;
                         if (!DateTime.TryParse(cols[0], out var at)) continue;
 
-                        string normSide = NormalizeSide(cols[3]);
-                        string normResult = NormalizeSide(cols[4]);
-                        string normWL = NormalizeWL(cols[5]);
+                        bool hasTable = cols.Length >= 8;
+                        int baseIdx = hasTable ? 0 : -1;
+                        string normSide = NormalizeSide(cols[4 + baseIdx]);
+                        string normResult = NormalizeSide(cols[5 + baseIdx]);
+                        string normWL = NormalizeWL(cols[6 + baseIdx]);
 
                         var row = new BetRow
                         {
                             At = at,
                             Game = cols[1]?.Trim() ?? "",
-                            Stake = long.TryParse(cols[2], out var st) ? st : 0,
+                            Table = hasTable ? (cols[2]?.Trim() ?? "") : "",
+                            Stake = long.TryParse(cols[3 + baseIdx], out var st) ? st : 0,
                             Side = normSide,
                             Result = normResult,
                             WinLose = normWL,
-                            Account = long.TryParse(cols[6], out var ac) ? ac : 0,
+                            Account = long.TryParse(cols[7 + baseIdx], out var ac) ? ac : 0,
                         };
                         tmp.Add(row);
                         if (tmp.Count >= maxTotal) break;
@@ -7199,8 +7372,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private static string NormalizeSide(string s)
         {
             var u = TextNorm.U(s);
-            if (u == "C" || u == "CHAN") return "CHAN";
-            if (u == "L" || u == "LE") return "LE";
+            if (u == "P" || u == "PLAYER") return "P";
+            if (u == "B" || u == "BANKER") return "B";
+            if (u == "C" || u == "CHAN") return "P";
+            if (u == "L" || u == "LE") return "B";
             return (s ?? "").Trim();
         }
         private static string NormalizeWL(string s)
@@ -7287,9 +7462,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 bool exists = File.Exists(file);
                 using var sw = new StreamWriter(file, append: true, Encoding.UTF8);
                 if (!exists)
-                    sw.WriteLine("At,Game,Stake,Side,Result,WinLose,Account");
+                    sw.WriteLine("At,Game,Table,Stake,Side,Result,WinLose,Account");
                 // CSV đơn giản, At lưu ISO để dễ parse
-                sw.WriteLine($"{r.At:O},{r.Game},{r.Stake},{r.Side},{r.Result},{r.WinLose},{r.Account}");
+                sw.WriteLine($"{r.At:O},{r.Game},{r.Table},{r.Stake},{r.Side},{r.Result},{r.WinLose},{r.Account}");
             }
             catch { }
         }
@@ -7386,13 +7561,41 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private static string NormalizeSeq(string raw) =>
     TextNorm.U(Regex.Replace(raw ?? "", @"[,\s\-]+", "")); // bỏ , khoảng trắng, -
 
-        // --- Chuỗi C/L: C,L; 2..50 ký tự sau khi bỏ phân tách ---
-        private static bool ValidateSeqCL(string s, out string err)
+        private static string NormalizePBInput(string raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return "";
+            var sb = new System.Text.StringBuilder(raw.Length);
+            foreach (var ch in raw)
+            {
+                var u = char.ToUpperInvariant(ch);
+                if (u == 'C') u = 'P';
+                else if (u == 'L') u = 'B';
+                sb.Append(u);
+            }
+            return sb.ToString();
+        }
+
+        private static string NormalizePBToCL(string raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return "";
+            var sb = new System.Text.StringBuilder(raw.Length);
+            foreach (var ch in raw)
+            {
+                var u = char.ToUpperInvariant(ch);
+                if (u == 'P') u = 'C';
+                else if (u == 'B') u = 'L';
+                sb.Append(u);
+            }
+            return sb.ToString();
+        }
+
+        // --- Chuỗi P/B: P,B; 2..100 ký tự sau khi bỏ phân tách ---
+        private static bool ValidateSeqPB(string s, out string err)
         {
             err = "";
             if (string.IsNullOrWhiteSpace(s))
             {
-                err = "Vui lòng nhập chuỗi C/L.";
+                err = "Vui lòng nhập chuỗi P/B.";
                 return false;
             }
 
@@ -7401,14 +7604,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 if (char.IsWhiteSpace(ch)) continue;          // chỉ cho phép khoảng trắng
                 char u = char.ToUpperInvariant(ch);
-                if (u == 'C' || u == 'L') { count++; continue; }  // và C/L
-                err = "Chỉ cho phép khoảng trắng và ký tự C hoặc L (không dùng dấu phẩy/gạch/chấm phẩy/gạch dưới, số, ký tự khác).";
+                if (u == 'P' || u == 'B' || u == 'C' || u == 'L') { count++; continue; }
+                err = "Chỉ cho phép khoảng trắng và ký tự P hoặc B.";
                 return false;
             }
 
             if (count < 2 || count > 100)
             {
-                err = "Độ dài 2–50 ký tự (tính theo C/L, bỏ qua khoảng trắng).";
+                err = "Độ dài 2–100 ký tự (tính theo P/B, bỏ qua khoảng trắng).";
                 return false;
             }
 
@@ -7444,13 +7647,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return true;
         }
 
-        // --- Thế cầu C/L: từng dòng "<mẫu> - <đặt>", mẫu gồm C/L/?, đặt là C hoặc L ---
-        private static bool ValidatePatternsCL(string s, out string err)
+        // --- Thế cầu P/B: từng dòng "<mẫu> - <đặt>", mẫu gồm P/B/?, đặt là P hoặc B ---
+        private static bool ValidatePatternsPB(string s, out string err)
         {
             err = "";
             if (string.IsNullOrWhiteSpace(s))
             {
-                err = "Vui lòng nhập các thế cầu C/L.";
+                err = "Vui lòng nhập các thế cầu P/B.";
                 return false;
             }
 
@@ -7465,48 +7668,52 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (line.Length == 0) continue;
                 idx++;
 
-                // <mẫu> (C/L, cho phép khoảng trắng)  -> hoặc -  <chuỗi cầu> (C/L, CHO PHÉP khoảng trắng)
+                // <mẫu> (P/B, cho phép khoảng trắng)  -> hoặc -  <chuỗi cầu> (P/B, CHO PHÉP khoảng trắng)
                 var m = System.Text.RegularExpressions.Regex.Match(
                     line,
-                    @"^\s*([CLcl\s]+)\s*(?:->|-)\s*([CLcl\s]+)\s*$",
+                    @"^\s*([PBCLpbcl\s]+)\s*(?:->|-)\s*([PBCLpbcl\s]+)\s*$",
                     System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
                 if (!m.Success)
                 {
-                    err = $"Quy tắc {idx} không hợp lệ: “{line}”. Dạng đúng: <mẫu> -> <chuỗi cầu> hoặc <mẫu>-<chuỗi cầu>; chỉ dùng C/L; <chuỗi cầu> có thể có khoảng trắng.";
+                    err = $"Quy tắc {idx} không hợp lệ: “{line}”. Dạng đúng: <mẫu> -> <chuỗi cầu> hoặc <mẫu>-<chuỗi cầu>; chỉ dùng P/B; <chuỗi cầu> có thể có khoảng trắng.";
                     return false;
                 }
 
-                // LHS: chỉ C/L + khoảng trắng; độ dài 1–10 sau khi bỏ khoảng trắng
+                // LHS: chỉ P/B + khoảng trắng; độ dài 1–10 sau khi bỏ khoảng trắng
                 var lhsRaw = m.Groups[1].Value;
                 var lhsBuf = new System.Text.StringBuilder(lhsRaw.Length);
                 foreach (char ch in lhsRaw)
                 {
                     if (char.IsWhiteSpace(ch)) continue;
                     char u = char.ToUpperInvariant(ch);
-                    if (u == 'C' || u == 'L') lhsBuf.Append(u);
-                    else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm C/L (cho phép khoảng trắng giữa các ký tự)."; return false; }
+                    if (u == 'C') u = 'P';
+                    else if (u == 'L') u = 'B';
+                    if (u == 'P' || u == 'B') lhsBuf.Append(u);
+                    else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm P/B (cho phép khoảng trắng giữa các ký tự)."; return false; }
                 }
                 var lhs = lhsBuf.ToString();
                 if (lhs.Length < 1 || lhs.Length > 10)
                 {
-                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự (C/L).";
+                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự (P/B).";
                     return false;
                 }
 
-                // RHS: chuỗi cầu C/L (>=1), CHO PHÉP khoảng trắng (bị bỏ qua khi kiểm tra)
+                // RHS: chuỗi cầu P/B (>=1), CHO PHÉP khoảng trắng (bị bỏ qua khi kiểm tra)
                 var rhsRaw = m.Groups[2].Value;
                 var rhsBuf = new System.Text.StringBuilder(rhsRaw.Length);
                 foreach (char ch in rhsRaw)
                 {
                     if (char.IsWhiteSpace(ch)) continue;
                     char u = char.ToUpperInvariant(ch);
-                    if (u == 'C' || u == 'L') rhsBuf.Append(u);
-                    else { err = $"Quy tắc {idx}: <chuỗi cầu> chỉ gồm C/L (có thể nhiều ký tự), cho phép khoảng trắng."; return false; }
+                    if (u == 'C') u = 'P';
+                    else if (u == 'L') u = 'B';
+                    if (u == 'P' || u == 'B') rhsBuf.Append(u);
+                    else { err = $"Quy tắc {idx}: <chuỗi cầu> chỉ gồm P/B (có thể nhiều ký tự), cho phép khoảng trắng."; return false; }
                 }
                 if (rhsBuf.Length < 1)
                 {
-                    err = $"Quy tắc {idx}: <chuỗi cầu> tối thiểu 1 ký tự C/L.";
+                    err = $"Quy tắc {idx}: <chuỗi cầu> tối thiểu 1 ký tự P/B.";
                     return false;
                 }
             }
@@ -7601,9 +7808,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
             ShowErrorsForCurrentStrategy(); // cập nhật UI trước
 
             int idx = CmbBetStrategy?.SelectedIndex ?? 4;
-            if (idx == 0) // 1. Chuỗi C/L
+            if (idx == 0) // 1. Chuỗi P/B
             {
-                if (!ValidateSeqCL(T(TxtChuoiCau), out var err))
+                if (!ValidateSeqPB(T(TxtChuoiCau), out var err))
                 {
                     SetError(LblSeqError, err);
                     BringBelow(TxtChuoiCau);
@@ -7619,9 +7826,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
             //        return false;
             //    }
             //}
-            else if (idx == 1) // 2. Thế C/L
+            else if (idx == 1) // 2. Thế P/B
             {
-                if (!ValidatePatternsCL(T(TxtTheCau), out var err))
+                if (!ValidatePatternsPB(T(TxtTheCau), out var err))
                 {
                     SetError(LblPatError, err);
                     BringBelow(TxtTheCau);
@@ -7645,10 +7852,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private void SyncStrategyFieldsToUI()
         {
             int idx = CmbBetStrategy?.SelectedIndex ?? 4;
-            if (idx == 0) { if (TxtChuoiCau != null) TxtChuoiCau.Text = _cfg.BetSeqCL ?? ""; }
+            if (idx == 0) { if (TxtChuoiCau != null) TxtChuoiCau.Text = _cfg.BetSeqPB ?? ""; }
             else if (idx == 2) { if (TxtChuoiCau != null) TxtChuoiCau.Text = _cfg.BetSeqNI ?? ""; }
 
-            if (idx == 1) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsCL ?? ""; }
+            if (idx == 1) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsPB ?? ""; }
             else if (idx == 3) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsNI ?? ""; }
         }
 
@@ -7679,11 +7886,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             if (!_uiReady || _suppressTableSync) return;
 
-            var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 0: CL, 2: N/I
-            var txt = (TxtChuoiCau?.Text ?? "").Trim();
+            var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 0: P/B, 2: N/I
+            var txtRaw = (TxtChuoiCau?.Text ?? "").Trim();
+            var txt = NormalizePBInput(txtRaw);
 
             // Lưu tách bạch cho từng chiến lược
-            if (idx == 0) _cfg.BetSeqCL = txt;    // Chiến lược 1: Chuỗi C/L
+            if (idx == 0) _cfg.BetSeqPB = txt;    // Chiến lược 1: Chuỗi P/B
             if (idx == 2) _cfg.BetSeqNI = txt;    // Chiến lược 3: Chuỗi N/I
 
             // Bản “chung” để engine đọc khi chạy
@@ -7701,11 +7909,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             if (!_uiReady || _suppressTableSync) return;
 
-            var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 1: CL, 3: N/I
-            var txt = (TxtTheCau?.Text ?? "").Trim();
+            var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 1: P/B, 3: N/I
+            var txtRaw = (TxtTheCau?.Text ?? "").Trim();
+            var txt = NormalizePBInput(txtRaw);
 
             // Lưu tách bạch cho từng chiến lược
-            if (idx == 1) _cfg.BetPatternsCL = txt;  // Chiến lược 2: Thế C/L
+            if (idx == 1) _cfg.BetPatternsPB = txt;  // Chiến lược 2: Thế P/B
             if (idx == 3) _cfg.BetPatternsNI = txt;  // Chiến lược 4: Thế N/I
 
             // Bản “chung” để engine đọc khi chạy
@@ -7785,7 +7994,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 string s = (TxtChuoiCau?.Text ?? "");
                 bool ok = (idx == 0)
-                    ? ValidateSeqCL(s, out var e1)
+                    ? ValidateSeqPB(s, out var e1)
                     : ValidateSeqNI(s, out e1);
                 SetError(LblSeqError, ok ? null : e1);
             }
@@ -7799,7 +8008,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 string s = (TxtTheCau?.Text ?? "");
                 bool ok = (idx == 1)
-                    ? ValidatePatternsCL(s, out var e2)
+                    ? ValidatePatternsPB(s, out var e2)
                     : ValidatePatternsNI(s, out e2);
                 SetError(LblPatError, ok ? null : e2);
             }
