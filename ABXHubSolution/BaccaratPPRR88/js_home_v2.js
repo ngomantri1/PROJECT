@@ -4934,6 +4934,10 @@
                 background: #1877f2;
                 color: #ffffff;
             }
+            #${OVERLAY_ID} .${PANEL_CLASS} .head button.play-btn.is-running {
+                background: #ef4444;
+                color: #ffffff;
+            }
             #${OVERLAY_ID} .${PANEL_CLASS} .panel-close {
                 position: absolute;
                 top: 0;
@@ -7424,6 +7428,21 @@
             return true;
         }
 
+        function setPlayState(id, isRunning) {
+            const st = getPanelState(id);
+            if (!st || !st.view || !st.view.playBtn)
+                return false;
+            const btn = st.view.playBtn;
+            if (isRunning) {
+                btn.classList.add('is-running');
+                btn.textContent = 'Dừng';
+            } else {
+                btn.classList.remove('is-running');
+                btn.textContent = 'Play';
+            }
+            return true;
+        }
+
         function parseCountdownValue(raw) {
             const str = (raw || '').toString().trim();
             if (!str)
@@ -8516,7 +8535,8 @@
                     betBanker,
                     betBankerExtra,
                     betBankerChip,
-                    betBankerChipText
+                    betBankerChipText,
+                    playBtn: btnPlay
                 },
                 lastSig: '',
                 lastBetExtraSig: '',
@@ -8810,7 +8830,8 @@
             hide,
             show,
             close: closePanel,
-            setCutValues
+            setCutValues,
+            setPlayState
         };
     })();
 

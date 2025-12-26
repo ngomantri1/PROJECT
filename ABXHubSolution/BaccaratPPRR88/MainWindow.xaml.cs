@@ -197,8 +197,14 @@ namespace BaccaratPPRR88
         // === Fields ================================================================
         private volatile CwSnapshot _lastSnap;
         private readonly object _snapLock = new();
-        private CancellationTokenSource _taskCts;
-        private IBetTask _activeTask;
+        private readonly Dictionary<string, TableTaskState> _tableTasks = new(StringComparer.OrdinalIgnoreCase);
+        private readonly object _tableTasksGate = new();
+        private readonly SemaphoreSlim _domActionLock = new(1, 1);
+        private readonly SemaphoreSlim _gameReadyGate = new(1, 1);
+        private readonly SemaphoreSlim _licenseGate = new(1, 1);
+        private Task<bool>? _licenseCheckTask;
+        private string? _licenseCheckUser;
+        private int _runAllInProgress = 0;
         private const int NiSeqMax = 50;
         private readonly System.Text.StringBuilder _niSeq = new(NiSeqMax);
 
@@ -209,17 +215,13 @@ namespace BaccaratPPRR88
         private bool _lockMajorMinorUpdates = false;
         private string _baseSession = "";
 
-        private DecisionState _dec = new();
         private long[] _stakeSeq = Array.Empty<long>();
         private System.Collections.Generic.List<long[]> _stakeChains = new();
         private long[] _stakeChainTotals = Array.Empty<long>();
-        // Chỉ dùng cho hiển thị LblLevel: vị trí hiện tại trong _stakeSeq
-        private int _stakeLevelIndexForUi = -1;
 
         private double _decisionPercent = 0.15; // 15% (0.15)
 
         // Chống bắn trùng khi vừa cược
-        private bool _cooldown = false;
 
         // Cache & cờ để không inject lặp lại
         private string? _appJs;
@@ -253,7 +255,6 @@ namespace BaccaratPPRR88
         private bool _navModeHooked = false;   // đã gắn handler NavigationCompleted để cập nhật UI nhanh về Home?
 
 
-        private int _playStartInProgress = 0;// Ngăn PlayXocDia_Click chạy song song
 
         private readonly SemaphoreSlim _cfgWriteGate = new(1, 1);// Khoá ghi config để không bao giờ ghi song song
                                                                  // --- UI mode monitor ---
@@ -502,6 +503,22 @@ Ví dụ không hợp lệ:
 
             public double CutProfit { get; set; } = 0;
             public double CutLoss { get; set; } = 0;
+        }
+
+        private sealed class TableTaskState
+        {
+            public string TableId { get; init; } = "";
+            public string TableName { get; set; } = "";
+            public CancellationTokenSource? Cts;
+            public IBetTask? Task;
+            public DecisionState Decision = new();
+            public bool Cooldown;
+            public int StakeLevelIndexForUi = -1;
+            public double WinTotal;
+            public int MoneyChainIndex;
+            public int MoneyChainStep;
+            public double MoneyChainProfit;
+            public int StartInProgress;
         }
 
         // 1) Model 1 dòng log đặt cược
@@ -2093,6 +2110,12 @@ Ví dụ không hợp lệ:
                                         var name = root.TryGetProperty("name", out var nameEl) ? (nameEl.GetString() ?? "") : "";
                                         await HandleTableFocusAsync(id, name);
                                     }
+                                    if (ev == "play" && root.TryGetProperty("id", out var playIdEl))
+                                    {
+                                        var id = playIdEl.GetString() ?? "";
+                                        var name = root.TryGetProperty("name", out var nameEl2) ? (nameEl2.GetString() ?? "") : "";
+                                        await ToggleTablePlayAsync(id, name);
+                                    }
                                     if (ev == "blur")
                                     {
                                         ClearActiveTableFocus();
@@ -3029,7 +3052,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     await ApplyBackgroundForStateAsync(); // đúng hành vi cũ sau khi có URL
                 }
 
-                SetPlayButtonState(_taskCts != null); // (nếu trong SetPlayButtonState có SetConfigEditable thì sẽ khóa/mở các ô)
+                SetPlayButtonState(HasRunningTasks());
+                UpdateRunAllButtonState(); // (nếu trong SetPlayButtonState có SetConfigEditable thì sẽ khóa/mở các ô)
                 ApplyMouseShieldFromCheck();
 
                 // --- BẮT ĐẦU GIÁM SÁT UI MODE ---
@@ -3323,6 +3347,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             if (string.IsNullOrWhiteSpace(tableId))
                 return;
+            StopTableTask(tableId, "closed");
             if (_overlayActiveRooms.Remove(tableId))
                 Log($"[TABLE] Bàn '{tableId}' đã đóng.");
             if (string.Equals(_activeTableId, tableId, StringComparison.OrdinalIgnoreCase))
@@ -4702,26 +4727,21 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
         }
 
-
-
-        private void RebuildStakeSeq(string? csv)
+        private static void BuildStakeSeqFromCsv(string? csv, out long[] stakeSeq, out List<long[]> stakeChains, out long[] stakeChainTotals)
         {
-            _stakeChains.Clear();
+            stakeChains = new List<long[]>();
 
             csv ??= "";
-            // chuẩn hoá xuống dòng
             var lines = csv.Replace("\r", "").Split('\n');
-
-            var flat = new System.Collections.Generic.List<long>();
+            var flat = new List<long>();
 
             foreach (var rawLine in lines)
             {
                 var line = (rawLine ?? "").Trim();
                 if (line.Length == 0) continue;
 
-                // giống nghiệp vụ cũ: tách theo , ; - khoảng trắng
-                var parts = System.Text.RegularExpressions.Regex.Split(line, @"[,\s;\-]+");
-                var oneChain = new System.Collections.Generic.List<long>();
+                var parts = Regex.Split(line, @"[,\s;\-]+");
+                var oneChain = new List<long>();
 
                 foreach (var p in parts)
                 {
@@ -4730,28 +4750,24 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     {
                         oneChain.Add(v);
                     }
-                    else
-                    {
-                        // nếu có số sai thì bỏ qua giống cách cũ, hoặc bạn có thể show lỗi ở LblSeqError
-                    }
                 }
 
                 if (oneChain.Count > 0)
                 {
-                    _stakeChains.Add(oneChain.ToArray());
+                    stakeChains.Add(oneChain.ToArray());
                     flat.AddRange(oneChain);
                 }
             }
 
-            // nếu user chỉ nhập 1 dòng như cũ thì _stakeChains sẽ chỉ có 1 phần tử
-            _stakeSeq = flat.Count > 0 ? flat.ToArray() : new long[] { 1000 };
-
-            // tính tổng từng chuỗi để dùng cho điều kiện “chuỗi sau thắng >= tổng chuỗi trước”
-            _stakeChainTotals = _stakeChains
+            stakeSeq = flat.Count > 0 ? flat.ToArray() : new long[] { 1000 };
+            stakeChainTotals = stakeChains
                 .Select(ch => ch.Aggregate(0L, (s, x) => s + x))
                 .ToArray();
+        }
 
-            // cập nhật UI hiển thị lỗi nếu cần
+        private void RebuildStakeSeq(string? csv)
+        {
+            BuildStakeSeqFromCsv(csv, out _stakeSeq, out _stakeChains, out _stakeChainTotals);
             ShowSeqError(null);
         }
 
@@ -4811,130 +4827,203 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 await SaveConfigAsync();
         }
 
-
-
-        private GameContext BuildContext()
+        private Task<string> EvalJsLockedAsync(string js)
         {
-            var moneyStrategyId = _cfg.MoneyStrategy ?? "IncreaseWhenLose";
+            if (Web == null)
+                return Task.FromResult("");
+
+            return Dispatcher.InvokeAsync(async () =>
+            {
+                await _domActionLock.WaitAsync();
+                try
+                {
+                    return await Web.ExecuteScriptAsync(js);
+                }
+                finally
+                {
+                    _domActionLock.Release();
+                }
+            }).Task.Unwrap();
+        }
+
+        private static int ResolveStakeLevelIndex(long[] seq, int currentIndex, long stake)
+        {
+            if (seq.Length == 0)
+                return -1;
+
+            if (currentIndex >= 0 && currentIndex < seq.Length && seq[currentIndex] == stake)
+                return currentIndex;
+
+            var next = currentIndex + 1;
+            if (next >= seq.Length) next = 0;
+
+            if (currentIndex >= 0 && seq[next] == stake)
+                return next;
+
+            for (int i = 0; i < seq.Length; i++)
+            {
+                int j = (next + i) % seq.Length;
+                if (seq[j] == stake)
+                    return j;
+            }
+
+            return -1;
+        }
+
+        private string ResolveStakeCsvForSetting(TableSetting setting)
+        {
+            var moneyStrategyId = setting.MoneyStrategy ?? "IncreaseWhenLose";
+            if (setting.StakeCsvByMoney != null &&
+                setting.StakeCsvByMoney.TryGetValue(moneyStrategyId, out var saved) &&
+                !string.IsNullOrWhiteSpace(saved))
+                return saved;
+            if (!string.IsNullOrWhiteSpace(setting.StakeCsv))
+                return setting.StakeCsv;
+            if (_cfg != null && !string.IsNullOrWhiteSpace(_cfg.StakeCsv))
+                return _cfg.StakeCsv;
+            return "1000-3000-7000-15000-33000-69000-142000-291000-595000-1215000";
+        }
+
+        private static void NormalizeTableStrategy(TableSetting setting, out string betSeq, out string betPatterns)
+        {
+            betSeq = setting.BetSeq ?? "";
+            betPatterns = setting.BetPatterns ?? "";
+            var idx = setting.BetStrategyIndex;
+            if (idx == 0) betSeq = setting.BetSeqCL ?? "";
+            else if (idx == 2) betSeq = setting.BetSeqNI ?? "";
+            if (idx == 1) betPatterns = setting.BetPatternsCL ?? "";
+            else if (idx == 3) betPatterns = setting.BetPatternsNI ?? "";
+        }
+
+        private void UpdateStakeIndexForTable(TableTaskState state, long[] seq, double stake)
+        {
+            try
+            {
+                var rounded = (long)Math.Round(stake);
+                state.StakeLevelIndexForUi = ResolveStakeLevelIndex(seq, state.StakeLevelIndexForUi, rounded);
+            }
+            catch
+            {
+                state.StakeLevelIndexForUi = -1;
+            }
+        }
+
+        private void RecomputeGlobalWinTotal()
+        {
+            double total = 0;
+            lock (_tableTasksGate)
+            {
+                foreach (var kv in _tableTasks)
+                {
+                    var state = kv.Value;
+                    if (state?.Cts == null) continue;
+                    if (state.Cts.IsCancellationRequested) continue;
+                    total += state.WinTotal;
+                }
+            }
+            _winTotal = total;
+        }
+
+        private void CheckTableCutAndStopIfNeeded(TableSetting setting, TableTaskState state)
+        {
+            if (setting == null || state == null) return;
+
+            var cutProfit = setting.CutProfit;
+            var cutLoss = setting.CutLoss;
+
+            if (cutProfit <= 0 && cutLoss <= 0) return;
+
+            if (cutProfit > 0 && state.WinTotal >= cutProfit)
+            {
+                StopTableTask(setting.Id, $"Dat CAT LAI ban {ResolveRoomName(setting.Id)}: {state.WinTotal:N0} >= {cutProfit:N0}");
+                return;
+            }
+
+            if (cutLoss > 0)
+            {
+                var lossThreshold = -cutLoss;
+                if (state.WinTotal <= lossThreshold)
+                {
+                    StopTableTask(setting.Id, $"Dat CAT LO ban {ResolveRoomName(setting.Id)}: {state.WinTotal:N0} <= {lossThreshold:N0}");
+                }
+            }
+        }
+
+        private GameContext BuildContextForTable(TableSetting setting, TableTaskState state)
+        {
+            var moneyStrategyId = setting.MoneyStrategy ?? "IncreaseWhenLose";
+            var stakeCsv = ResolveStakeCsvForSetting(setting);
+            BuildStakeSeqFromCsv(stakeCsv, out var stakeSeq, out var stakeChains, out var stakeChainTotals);
+            NormalizeTableStrategy(setting, out var betSeq, out var betPatterns);
+            var tableId = setting.Id ?? "";
+
             return new GameContext
             {
+                TableId = tableId,
                 GetSnap = () => { lock (_snapLock) return _lastSnap; },
-                EvalJsAsync = (js) => Dispatcher.InvokeAsync(() => Web.ExecuteScriptAsync(js)).Task.Unwrap(),
-                Log = (s) => Log(s),
+                EvalJsAsync = EvalJsLockedAsync,
+                Log = s => Log(s),
 
-                StakeSeq = _stakeSeq,
-                StakeChains = _stakeChains.Select(a => a.ToArray()).ToArray(),
-                StakeChainTotals = _stakeChainTotals,
+                StakeSeq = stakeSeq,
+                StakeChains = stakeChains.Select(a => a.ToArray()).ToArray(),
+                StakeChainTotals = stakeChainTotals,
 
                 DecisionPercent = _decisionPercent,
-                State = _dec,
+                State = state.Decision,
                 UiDispatcher = Dispatcher,
-                GetCooldown = () => _cooldown,
-                SetCooldown = (v) => _cooldown = v,
+                GetCooldown = () => state.Cooldown,
+                SetCooldown = v => state.Cooldown = v,
                 MoneyStrategyId = moneyStrategyId,
-                BetSeq = _cfg.BetSeq ?? "",
-                BetPatterns = _cfg.BetPatterns ?? "",
+                BetSeq = betSeq,
+                BetPatterns = betPatterns,
+                MoneyChainIndex = state.MoneyChainIndex,
+                MoneyChainStep = state.MoneyChainStep,
+                MoneyChainProfit = state.MoneyChainProfit,
 
-
-                // ==== 3 callback UI ====
                 UiSetSide = s => Dispatcher.Invoke(() =>
                 {
+                    if (!IsActiveTable(tableId)) return;
                     SetLastSideUI(s);
                 }),
                 UiSetStake = v => Dispatcher.Invoke(() =>
                 {
-                    // TIỀN CƯỢC
+                    UpdateStakeIndexForTable(state, stakeSeq, v);
+                    if (!IsActiveTable(tableId))
+                        return;
+
                     if (LblStake != null)
                         LblStake.Text = v.ToString("N0");
 
-                    // MỨC TIỀN = vị trí trong _stakeSeq (1-based)
-                    // MỨC TIỀN = vị trí/độ dài (ví dụ 4/6, 4/24, ...)
                     if (LblLevel != null)
                     {
-                        try
-                        {
-                            var seq = _stakeSeq ?? Array.Empty<long>();
-                            var rounded = (long)Math.Round(v);
-
-                            int idx = -1;
-
-                            if (seq.Length > 0)
-                            {
-                                // 1) Nếu index cũ vẫn khớp giá trị hiện tại thì giữ luôn
-                                if (_stakeLevelIndexForUi >= 0 &&
-                                    _stakeLevelIndexForUi < seq.Length &&
-                                    seq[_stakeLevelIndexForUi] == rounded)
-                                {
-                                    idx = _stakeLevelIndexForUi;
-                                }
-                                else
-                                {
-                                    // 2) Thử bước tiếp theo trong chuỗi (tiến 1 ô, có vòng lại đầu)
-                                    var next = _stakeLevelIndexForUi + 1;
-                                    if (next >= seq.Length) next = 0;
-
-                                    if (_stakeLevelIndexForUi >= 0 &&
-                                        seq[next] == rounded)
-                                    {
-                                        idx = next;
-                                    }
-                                    else
-                                    {
-                                        // 3) Fallback: quét từ 'next' đến hết, rồi vòng về 0
-                                        for (int i = 0; i < seq.Length; i++)
-                                        {
-                                            int j = (next + i) % seq.Length;
-                                            if (seq[j] == rounded)
-                                            {
-                                                idx = j;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            _stakeLevelIndexForUi = idx;
-
-                            // Nếu tìm thấy, hiển thị "vị trí/tổng", ngược lại hiển thị rỗng
-                            LblLevel.Text = (idx >= 0 && seq.Length > 0)
-                                ? $"{idx + 1}/{seq.Length}"
-                                : "";
-                        }
-                        catch
-                        {
-                            LblLevel.Text = "";
-                            _stakeLevelIndexForUi = -1;
-                        }
+                        LblLevel.Text = (state.StakeLevelIndexForUi >= 0 && stakeSeq.Length > 0)
+                            ? $"{state.StakeLevelIndexForUi + 1}/{stakeSeq.Length}"
+                            : "";
                     }
                 }),
 
                 UiAddWin = delta => Dispatcher.InvokeAsync(() =>
                 {
                     var net = (delta > 0) ? Math.Round(delta * 0.98) : delta;
-                    _winTotal += net;
+                    state.WinTotal += net;
                     try { MoneyHelper.NotifyTempProfit(moneyStrategyId, net); } catch { }
+                    RecomputeGlobalWinTotal();
                     if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
+                    CheckTableCutAndStopIfNeeded(setting, state);
                     CheckCutAndStopIfNeeded();
                 }),
                 UiWinLoss = s => Dispatcher.Invoke(() =>
                 {
+                    if (!IsActiveTable(tableId)) return;
                     SetWinLossUI(s);
                 }),
             };
         }
 
-
-
-
-        private async Task StartTaskAsync(IBetTask task, CancellationToken ct)
+        private async Task RunTableTaskAsync(TableSetting setting, TableTaskState state, IBetTask task, CancellationToken ct)
         {
-            _activeTask = task;
-            _dec = new DecisionState(); // reset trạng thái cho task mới
-            _stakeLevelIndexForUi = -1; // reset vị trí hiển thị mức tiền
-            var ctx = BuildContext();
-            // === Preflight: chờ __cw_bet sẵn sàng trước khi chạy chiến lược ===
-            for (int i = 0; i < 25; i++) // 25 * 200ms ~= 5s
+            var ctx = BuildContextForTable(setting, state);
+            for (int i = 0; i < 25; i++)
             {
                 ct.ThrowIfCancellationRequested();
                 var check = await ctx.EvalJsAsync("(function(){return (typeof window.__cw_bet==='function')?'ok':'no';})()");
@@ -4944,13 +5033,559 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
 
             await task.RunAsync(ctx, ct);
+
+            state.MoneyChainIndex = ctx.MoneyChainIndex;
+            state.MoneyChainStep = ctx.MoneyChainStep;
+            state.MoneyChainProfit = ctx.MoneyChainProfit;
         }
 
-        private void StopTask()
+        private bool IsActiveTable(string tableId)
         {
-            try { _taskCts?.Cancel(); } catch { }
-            _taskCts = null;
-            _activeTask = null;
+            if (string.IsNullOrWhiteSpace(tableId))
+                return false;
+            return string.Equals(_activeTableId, tableId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private TableTaskState GetOrCreateTableTaskState(string tableId, string? tableName = null)
+        {
+            lock (_tableTasksGate)
+            {
+                if (!_tableTasks.TryGetValue(tableId, out var state))
+                {
+                    state = new TableTaskState
+                    {
+                        TableId = tableId,
+                        TableName = !string.IsNullOrWhiteSpace(tableName) ? tableName : ResolveRoomName(tableId)
+                    };
+                    _tableTasks[tableId] = state;
+                }
+                else if (!string.IsNullOrWhiteSpace(tableName))
+                {
+                    state.TableName = tableName;
+                }
+
+                return state;
+            }
+        }
+
+        private static bool IsTableRunning(TableTaskState state)
+        {
+            return state.Cts != null && !state.Cts.IsCancellationRequested;
+        }
+
+        private bool HasRunningTasks()
+        {
+            lock (_tableTasksGate)
+            {
+                foreach (var state in _tableTasks.Values)
+                {
+                    if (state != null && IsTableRunning(state))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void UpdateRunAllButtonState()
+        {
+            if (BtnRunAllTables == null) return;
+
+            var anyRunning = HasRunningTasks();
+            if (anyRunning)
+            {
+                BtnRunAllTables.Content = "D?ng t?t c? b?n";
+                var danger = TryFindResource("DangerButton") as Style;
+                if (danger != null) BtnRunAllTables.Style = danger;
+            }
+            else
+            {
+                BtnRunAllTables.Content = "Ch?y t?t c? b?n";
+                var primary = TryFindResource("PrimaryButton") as Style;
+                if (primary != null) BtnRunAllTables.Style = primary;
+            }
+
+            BtnRunAllTables.IsEnabled = true;
+            SetPlayButtonState(anyRunning);
+        }
+
+        private async Task SetOverlayPlayStateAsync(string tableId, bool isRunning)
+        {
+            if (Web?.CoreWebView2 == null || string.IsNullOrWhiteSpace(tableId))
+                return;
+
+            var idJson = JsonSerializer.Serialize(tableId);
+            var flag = isRunning ? "true" : "false";
+            var script = $"window.__abxTableOverlay && window.__abxTableOverlay.setPlayState && window.__abxTableOverlay.setPlayState({idJson}, {flag});";
+            try { await EvalJsLockedAsync(script); } catch { }
+        }
+
+        private async Task ToggleTablePlayAsync(string tableId, string? tableName = null)
+        {
+            if (string.IsNullOrWhiteSpace(tableId)) return;
+            var state = GetOrCreateTableTaskState(tableId, tableName);
+            if (IsTableRunning(state))
+            {
+                StopTableTask(tableId, "manual");
+                return;
+            }
+
+            await StartTableTaskAsync(tableId, tableName);
+        }
+
+        private async Task<bool> EnsureGameReadyForBetAsync()
+        {
+            if (Web?.CoreWebView2 == null) return false;
+
+            await _gameReadyGate.WaitAsync();
+            try
+            {
+                var typeBetJson = await EvalJsLockedAsync("typeof window.__cw_bet");
+                var typeBet = typeBetJson?.Trim('\"');
+                if (!string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
+                {
+                    Log("[DEC] missing __cw_bet, open game + inject.");
+                    VaoXocDia_Click(this, new RoutedEventArgs());
+
+                    var t0 = DateTime.UtcNow;
+                    const int timeoutBetMs = 30000;
+                    while ((DateTime.UtcNow - t0).TotalMilliseconds < timeoutBetMs)
+                    {
+                        await Task.Delay(400);
+                        try
+                        {
+                            typeBetJson = await EvalJsLockedAsync("typeof window.__cw_bet");
+                            typeBet = typeBetJson?.Trim('\"');
+                            if (string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
+                                break;
+                        }
+                        catch { }
+                    }
+
+                    if (!string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Log("[DEC] cannot find __cw_bet in time.");
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+            finally
+            {
+                _gameReadyGate.Release();
+            }
+        }
+
+        private async Task<bool> EnsureLicenseOnceAsync()
+        {
+            if (!CheckLicense) return true;
+
+            var username = (_homeUsername ?? "").Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                MessageBox.Show("Chua xac dinh duoc tai khoan game tu trang Home.", "Automino",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            Task<bool>? task;
+            await _licenseGate.WaitAsync();
+            try
+            {
+                if (_licenseCheckTask != null && string.Equals(_licenseCheckUser, username, StringComparison.OrdinalIgnoreCase))
+                {
+                    task = _licenseCheckTask;
+                }
+                else
+                {
+                    _licenseCheckUser = username;
+                    _licenseCheckTask = RunLicenseCheckAsync(username);
+                    task = _licenseCheckTask;
+                }
+            }
+            finally
+            {
+                _licenseGate.Release();
+            }
+
+            var ok = await task;
+            if (!ok)
+            {
+                await _licenseGate.WaitAsync();
+                try
+                {
+                    if (_licenseCheckTask == task)
+                    {
+                        _licenseCheckTask = null;
+                        _licenseCheckUser = null;
+                    }
+                }
+                finally
+                {
+                    _licenseGate.Release();
+                }
+            }
+
+            return ok;
+        }
+
+        private async Task<bool> RunLicenseCheckAsync(string username)
+        {
+            bool isTrial = (ChkTrial?.IsChecked == true);
+
+            if (isTrial)
+            {
+                try
+                {
+                    if (DateTimeOffset.TryParse(_cfg.TrialUntil, out var trialUntilUtc) &&
+                        trialUntilUtc > DateTimeOffset.UtcNow)
+                    {
+                        Log("[Trial] resume until " + trialUntilUtc.ToString("u"));
+                        try { await ReleaseLeaseAsync(username); } catch { }
+                        var okLease = await AcquireLeaseOnceAsync(username);
+                        if (!okLease) return false;
+                        StartExpiryCountdown(trialUntilUtc, "trial");
+                        return true;
+                    }
+
+                    var clientId = _leaseClientId;
+                    using var http = new HttpClient(new HttpClientHandler
+                    {
+                        SslProtocols = System.Security.Authentication.SslProtocols.Tls12
+                    });
+
+                    var url = $"{LeaseBaseUrl}/trial/{Uri.EscapeDataString(username)}";
+                    var json = JsonSerializer.Serialize(new { clientId });
+                    var res = await http.PostAsync(
+                        url,
+                        new StringContent(json, Encoding.UTF8, "application/json"));
+
+                    var payload = await res.Content.ReadAsStringAsync();
+                    if (res.IsSuccessStatusCode)
+                    {
+                        DateTimeOffset trialEndsAt;
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(payload);
+                            trialEndsAt = DateTimeOffset.Parse(doc.RootElement.GetProperty("trialEndsAt").GetString());
+                        }
+                        catch { trialEndsAt = DateTimeOffset.UtcNow.AddMinutes(5); }
+
+                        _cfg.TrialUntil = trialEndsAt.ToString("o");
+                        _ = SaveConfigAsync();
+
+                        StartExpiryCountdown(trialEndsAt, "trial");
+                        Log("[Trial] started until: " + trialEndsAt.ToString("u"));
+                        return true;
+                    }
+
+                    string error = null;
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(payload);
+                        if (doc.RootElement.TryGetProperty("error", out var errEl))
+                            error = errEl.GetString();
+                    }
+                    catch { }
+
+                    if (string.Equals(error, "in-use", StringComparison.OrdinalIgnoreCase))
+                    {
+                        MessageBox.Show("Tai khoan dang chay o noi khac. Vui long dung o may kia truoc.",
+                            "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                    else if (string.Equals(error, "trial-consumed", StringComparison.OrdinalIgnoreCase))
+                    {
+                        MessageBox.Show("Het luot dung thu. Hay lien he 0978.248.822.",
+                            "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        MessageBox.Show("Khong the bat dau che do dung thu. Vui long thu lai.",
+                            "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    Log("[Trial ERR] " + ex.Message);
+                    MessageBox.Show("Khong the ket noi che do dung thu.", "Automino",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return false;
+                }
+            }
+
+            var lic = await FetchLicenseAsync(username);
+            if (lic == null)
+            {
+                MessageBox.Show("Khong tim thay license cho tai khoan nay. Hay lien he 0978.248.822.",
+                    "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+            if (!DateTimeOffset.TryParse(lic.exp, out var expUtc))
+            {
+                MessageBox.Show("License khong hop le (exp).", "Automino",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+            if (DateTimeOffset.UtcNow >= expUtc)
+            {
+                MessageBox.Show("Tool da het han. Hay lien he 0978.248.822 de gia han.",
+                    "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            var okLease2 = await AcquireLeaseOnceAsync(username);
+            if (!okLease2) return false;
+
+            StartExpiryCountdown(expUtc, "license");
+            StartLicenseRecheckTimer(username);
+            Log("[License] valid until: " + expUtc.ToString("u"));
+            return true;
+        }
+
+        private bool ValidateInputsForTable(TableSetting setting)
+        {
+            int idx = setting.BetStrategyIndex;
+            if (idx == 0)
+            {
+                var seq = setting.BetSeqCL ?? setting.BetSeq ?? "";
+                if (!ValidateSeqCL(seq, out var err))
+                {
+                    Log($"[TABLE] invalid BetSeqCL for {setting.Id}: {err}");
+                    return false;
+                }
+            }
+            else if (idx == 1)
+            {
+                var pat = setting.BetPatternsCL ?? setting.BetPatterns ?? "";
+                if (!ValidatePatternsCL(pat, out var err))
+                {
+                    Log($"[TABLE] invalid BetPatternsCL for {setting.Id}: {err}");
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private IBetTask CreateBetTask(int strategyIndex)
+        {
+            return strategyIndex switch
+            {
+                0 => new BaccaratPPRR88.Tasks.SeqParityFollowTask(),
+                1 => new BaccaratPPRR88.Tasks.PatternParityTask(),
+                2 => new BaccaratPPRR88.Tasks.SmartPrevTask(),
+                3 => new BaccaratPPRR88.Tasks.RandomParityTask(),
+                4 => new BaccaratPPRR88.Tasks.AiStatParityTask(),
+                5 => new BaccaratPPRR88.Tasks.StateTransitionBiasTask(),
+                6 => new BaccaratPPRR88.Tasks.RunLengthBiasTask(),
+                7 => new BaccaratPPRR88.Tasks.EnsembleMajorityTask(),
+                8 => new BaccaratPPRR88.Tasks.TimeSlicedHedgeTask(),
+                9 => new BaccaratPPRR88.Tasks.KnnSubsequenceTask(),
+                10 => new BaccaratPPRR88.Tasks.DualScheduleHedgeTask(),
+                11 => new BaccaratPPRR88.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()),
+                12 => new BaccaratPPRR88.Tasks.AiExpertPanelTask(),
+                13 => new BaccaratPPRR88.Tasks.Top10PatternFollowTask(),
+                _ => new BaccaratPPRR88.Tasks.SmartPrevTask(),
+            };
+        }
+
+        private async Task StartTableTaskAsync(string tableId, string? tableName = null)
+        {
+            if (string.IsNullOrWhiteSpace(tableId))
+                return;
+
+            var state = GetOrCreateTableTaskState(tableId, tableName);
+            if (Interlocked.Exchange(ref state.StartInProgress, 1) == 1)
+            {
+                Log("[TASK] start already in progress: " + tableId);
+                return;
+            }
+
+            try
+            {
+                if (IsTableRunning(state))
+                {
+                    Log("[TASK] table already running: " + tableId);
+                    return;
+                }
+
+                bool created;
+                var setting = GetOrCreateTableSetting(tableId, tableName, out created);
+                if (created)
+                    _ = TriggerTableSettingsSaveDebouncedAsync();
+
+                if (!ValidateInputsForTable(setting))
+                {
+                    Log("[TASK] invalid config, skip start: " + tableId);
+                    return;
+                }
+
+                await EnsureWebReadyAsync();
+
+                if (!await EnsureGameReadyForBetAsync())
+                    return;
+
+                if (CheckLicense)
+                {
+                    var ok = await EnsureLicenseOnceAsync();
+                    if (!ok) return;
+                }
+
+                await EvalJsLockedAsync("window.__cw_startPush && window.__cw_startPush(240);");
+                Log("[CW] ensure push 240ms");
+
+                var ready = await WaitForBridgeAndGameDataAsync(15000);
+                if (!ready)
+                {
+                    Log("[DEC] data not ready, retry push.");
+                    await EvalJsLockedAsync("window.__cw_startPush && window.__cw_startPush(240);");
+                    ready = await WaitForBridgeAndGameDataAsync(15000);
+                    if (!ready)
+                    {
+                        Log("[DEC] data still not ready, skip start.");
+                        return;
+                    }
+                }
+
+                state.Decision = new DecisionState();
+                state.Cooldown = false;
+                state.StakeLevelIndexForUi = -1;
+                state.WinTotal = 0;
+                state.MoneyChainIndex = 0;
+                state.MoneyChainStep = 0;
+                state.MoneyChainProfit = 0;
+
+                RecomputeGlobalWinTotal();
+                if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
+
+                if (!HasRunningTasks())
+                {
+                    _cutStopTriggered = false;
+                    _winTotal = 0;
+                }
+
+                if (IsActiveTable(tableId))
+                    ResetBetMiniPanel();
+
+                var task = CreateBetTask(setting.BetStrategyIndex);
+                state.Cts = new CancellationTokenSource();
+                state.Task = task;
+
+                _ = SetOverlayPlayStateAsync(tableId, true);
+                UpdateRunAllButtonState();
+
+                var running = Task.Run(() => RunTableTaskAsync(setting, state, task, state.Cts.Token));
+                running.ContinueWith(t =>
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        state.Cts = null;
+                        state.Task = null;
+                        state.Cooldown = false;
+
+                        if (t.IsFaulted)
+                            Log("[Task ERR] " + (t.Exception?.GetBaseException().Message ?? "Unknown error"));
+                        else if (t.IsCanceled)
+                            Log("[Task] canceled");
+                        else
+                            Log("[Task] completed");
+
+                        _ = SetOverlayPlayStateAsync(tableId, false);
+                        RecomputeGlobalWinTotal();
+                        if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
+                        UpdateRunAllButtonState();
+                    }));
+                }, TaskScheduler.Default);
+
+                Log("[Loop] started task: " + task.DisplayName + " (" + tableId + ")");
+            }
+            catch (Exception ex)
+            {
+                Log("[StartTableTask] " + ex.Message);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref state.StartInProgress, 0);
+            }
+        }
+
+        private void StopTableTask(string tableId, string? reason = null)
+        {
+            if (string.IsNullOrWhiteSpace(tableId))
+                return;
+
+            TableTaskState? state;
+            lock (_tableTasksGate)
+            {
+                _tableTasks.TryGetValue(tableId, out state);
+            }
+
+            if (state == null)
+                return;
+
+            try { state.Cts?.Cancel(); } catch { }
+
+            if (!string.IsNullOrWhiteSpace(reason))
+                Log("[TASK] stop " + reason);
+
+            _ = SetOverlayPlayStateAsync(tableId, false);
+            AfterStopTasksUpdate();
+        }
+
+        private void StopAllTables(string? reason = null)
+        {
+            List<string> ids;
+            lock (_tableTasksGate)
+            {
+                ids = _tableTasks.Keys.ToList();
+            }
+
+            foreach (var id in ids)
+            {
+                if (string.IsNullOrWhiteSpace(id)) continue;
+                try { StopTableTaskInternal(id, reason); } catch { }
+            }
+
+            AfterStopTasksUpdate();
+        }
+
+        private void StopTableTaskInternal(string tableId, string? reason)
+        {
+            TableTaskState? state;
+            lock (_tableTasksGate)
+            {
+                _tableTasks.TryGetValue(tableId, out state);
+            }
+
+            if (state == null)
+                return;
+
+            try { state.Cts?.Cancel(); } catch { }
+
+            if (!string.IsNullOrWhiteSpace(reason))
+                Log("[TASK] stop " + reason);
+
+            _ = SetOverlayPlayStateAsync(tableId, false);
+        }
+
+        private void AfterStopTasksUpdate()
+        {
+            RecomputeGlobalWinTotal();
+            if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
+            UpdateRunAllButtonState();
+
+            if (!HasRunningTasks())
+            {
+                TaskUtil.ClearBetCooldown();
+                StopExpiryCountdown();
+                StopLicenseRecheckTimer();
+                StopLeaseHeartbeat();
+                var uname = (_homeUsername ?? "").Trim().ToLowerInvariant();
+                if (!string.IsNullOrWhiteSpace(uname))
+                    _ = ReleaseLeaseAsync(uname);
+            }
         }
 
         private async void ResetStrategyAll_Click(object sender, RoutedEventArgs e)
@@ -5011,364 +5646,55 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
         }
 
-
-
-        private async void PlayXocDia_Click(object sender, RoutedEventArgs e)
+        private async void BtnRunAllTables_Click(object sender, RoutedEventArgs e)
         {
-            // GUARD: không cho 2 luồng start chạy đồng thời
-            if (Interlocked.Exchange(ref _playStartInProgress, 1) == 1)
-            {
-                Log("[DEC] start is already in progress → ignore");
-                return;
-            }
-            // Ngăn double-click trong lúc còn await chuẩn bị
-            if (BtnPlay != null) BtnPlay.IsEnabled = false;
+            if (!_uiReady) return;
+            if (Interlocked.Exchange(ref _runAllInProgress, 1) == 1) return;
             try
             {
-                if (_taskCts != null) { Log("[DEC] a task is already running"); return; }
-
-                await SaveConfigAsync();
-                await EnsureWebReadyAsync();
-                // ✅ Validate trước khi bắt đầu
-                if (!ValidateInputsForCurrentStrategy())
+                if (HasRunningTasks())
                 {
-                    if (BtnPlay != null) BtnPlay.IsEnabled = true; // trả lại nút nếu đang disable vì double-click guard
+                    StopAllTables("manual");
                     return;
                 }
 
-
-                _cutStopTriggered = false;
-                _winTotal = 0;            // tuỳ bạn: nếu muốn đếm lại từ 0 khi bắt đầu
-                if (LblWin != null) LblWin.Text = "0";
-                ResetBetMiniPanel();    // xoá THẮNG/THUA, CỬA ĐẶT, TIỀN CƯỢC, MỨC TIỀN
-
-                // Kiểm tra / tự vào bàn nếu chưa có bridge
-                var typeBetJson = await Web.ExecuteScriptAsync("typeof window.__cw_bet");
-                var typeBet = typeBetJson?.Trim('"');
-                if (!string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
+                var targets = _overlayActiveRooms.ToList();
+                if (targets.Count == 0)
                 {
-                    Log("[DEC] Chưa thấy bridge JS (__cw_bet) → tự động 'Xóc Đĩa Live' và inject.");
-                    VaoXocDia_Click(sender, e);
-
-                    // Poll chờ bridge sẵn sàng tối đa 30s
-                    var t0 = DateTime.UtcNow;
-                    const int timeoutBetMs = 30000;
-                    while ((DateTime.UtcNow - t0).TotalMilliseconds < timeoutBetMs)
-                    {
-                        await Task.Delay(400);
-                        try
-                        {
-                            typeBetJson = await Web.ExecuteScriptAsync("typeof window.__cw_bet");
-                            typeBet = typeBetJson?.Trim('"');
-                            if (string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
-                                break;
-                        }
-                        catch { }
-                    }
-                    if (!string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Log("[DEC] Không thể vào bàn/tiêm JS trong thời gian chờ. Vui lòng thử lại.");
-                        return;
-                    }
+                    Log("[TABLE] Khong co ban dang mo de chay.");
+                    return;
                 }
 
-                // Bật kênh push (idempotent)
-                await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
-                Log("[CW] ensure push 240ms");
-
-                // 🔒 MỚI: Chờ đủ bridge + Cocos + tick để tránh nổ IndexOutOfRange trong task
-                var ready = await WaitForBridgeAndGameDataAsync(15000);
-                if (!ready)
+                foreach (var id in targets)
                 {
-                    Log("[DEC] Dữ liệu chưa sẵn sàng (bridge/cocos/tick). Thử gia hạn push & chờ thêm.");
-                    await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
-                    ready = await WaitForBridgeAndGameDataAsync(15000);
-                    if (!ready)
-                    {
-                        Log("[DEC] Vẫn chưa có dữ liệu, tạm hoãn khởi động chiến lược.");
-                        return;
-                    }
+                    await StartTableTaskAsync(id, ResolveRoomName(id));
                 }
-
-                // Chuẩn bị & chạy Task chiến lược (giữ nguyên)
-                RebuildStakeSeq((TxtStakeCsv?.Text ?? "1000,2000,4000,8000,16000").Trim());
-                _winTotal = 0;
-                if (LblWin != null) LblWin.Text = "0";
-
-                _dec = new DecisionState();
-                _cooldown = false;
-                if (CheckLicense)
-                {
-                    // === PRE-CHECK: Trial hoặc License ===
-                    bool isTrial = (ChkTrial?.IsChecked == true);
-
-                    // Lấy username làm key (tài khoản game)
-                    // Ưu tiên username đã bắt từ Home; chỉ fallback sang ô nhập nếu vẫn chưa bắt được
-                    var username = (_homeUsername ?? "").Trim().ToLowerInvariant();
-                    if (string.IsNullOrWhiteSpace(username))
-                    {
-                        MessageBox.Show("Chưa xác định được tài khoản game từ trang Home. Hãy vào Home để hệ thống tự nhận diện.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
-                        return;
-                    }
-
-                    if (isTrial)
-                    {
-                        try
-                        {
-                            // 1) Nếu còn vé trial chưa hết hạn -> RESUME (KHÔNG gọi /trial lần nữa)
-                            if (DateTimeOffset.TryParse(_cfg.TrialUntil, out var trialUntilUtc) &&
-                                trialUntilUtc > DateTimeOffset.UtcNow)
-                            {
-                                Log("[Trial] resume existing session until " + trialUntilUtc.ToString("u"));
-
-                                // đảm bảo lease sạch rồi acquire lại cho clientId hiện tại
-                                try { await ReleaseLeaseAsync(username); } catch { }
-                                var okLease = await AcquireLeaseOnceAsync(username);
-                                if (!okLease) return;
-
-                                StartExpiryCountdown(trialUntilUtc, "trial");
-                            }
-                            else
-                            {
-                                // 2) Chưa có hoặc đã hết -> gọi /trial để lấy mới (idempotent theo clientId)
-                                var clientId = _leaseClientId;
-
-                                using var http = new System.Net.Http.HttpClient(
-                                    new System.Net.Http.HttpClientHandler
-                                    {
-                                        SslProtocols = System.Security.Authentication.SslProtocols.Tls12
-                                    });
-
-                                var url = $"{LeaseBaseUrl}/trial/{Uri.EscapeDataString(username)}";
-                                var json = System.Text.Json.JsonSerializer.Serialize(new { clientId });
-                                var res = await http.PostAsync(
-                                    url,
-                                    new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json"));
-
-                                var payload = await res.Content.ReadAsStringAsync();
-                                if (res.IsSuccessStatusCode)
-                                {
-                                    // 200 -> parse trialEndsAt; nếu thiếu thì fallback 5'
-                                    DateTimeOffset trialEndsAt;
-                                    try
-                                    {
-                                        using var doc = System.Text.Json.JsonDocument.Parse(payload);
-                                        trialEndsAt = DateTimeOffset.Parse(doc.RootElement.GetProperty("trialEndsAt").GetString());
-                                    }
-                                    catch { trialEndsAt = DateTimeOffset.UtcNow.AddMinutes(5); }
-
-                                    // LƯU để các lần Start sau chỉ RESUME
-                                    _cfg.TrialUntil = trialEndsAt.ToString("o");
-                                    _ = SaveConfigAsync();
-
-                                    StartExpiryCountdown(trialEndsAt, "trial");
-                                    Log("[Trial] started until: " + trialEndsAt.ToString("u"));
-                                }
-                                else
-                                {
-                                    string error = null;
-                                    try
-                                    {
-                                        using var doc = System.Text.Json.JsonDocument.Parse(payload);
-                                        if (doc.RootElement.TryGetProperty("error", out var errEl))
-                                            error = errEl.GetString();
-                                    }
-                                    catch { }
-
-                                    if (string.Equals(error, "in-use", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        MessageBox.Show("Tài khoản đang chạy ở nơi khác. Vui lòng dừng ở máy kia trước.",
-                                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
-                                    }
-                                    else if (string.Equals(error, "trial-consumed", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        MessageBox.Show("Hết lượt dùng thử! Hãy liên hệ 0978.248.822 để gia hạn/mua.",
-                                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
-                                    }
-                                    else
-                                    {
-                                        MessageBox.Show("Không thể bắt đầu chế độ dùng thử. Vui lòng thử lại.",
-                                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
-                                    }
-                                    return;
-                                }
-                            }
-                }
-            catch (Exception exTrial)
-                        {
-                            Log("[Trial ERR] " + exTrial.Message);
-                            MessageBox.Show("Không thể kết nối chế độ dùng thử.", "Automino",
-                                MessageBoxButton.OK, MessageBoxImage.Warning);
-                            return;
-                        }
-                    }
-
-                    else
-                    {
-                        // —— NHÁNH LICENSE (GIỮ NGUYÊN HÀNH VI CŨ) ——
-                        // 1) Lấy license từ GitHub  (không ký số)
-                        var lic = await FetchLicenseAsync(username);
-                        if (lic == null)
-                        {
-                            MessageBox.Show("Không tìm thấy license trên cho tài khoản này. Hãy liên hệ 0978.248.822 để dùng", "Automino",
-                                MessageBoxButton.OK, MessageBoxImage.Warning);
-                            return;
-                        }
-                        if (!DateTimeOffset.TryParse(lic.exp, out var expUtc))
-                        {
-                            MessageBox.Show("License không hợp lệ (exp).", "Automino",
-                                MessageBoxButton.OK, MessageBoxImage.Warning);
-                            return;
-                        }
-                        if (DateTimeOffset.UtcNow >= expUtc)
-                        {
-                            MessageBox.Show("Tool của bạn hết hạn ! Hãy liên hệ 0978.248.822 để gia hạn",
-                                "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
-                            return;
-                        }
-                        // 2) Acquire lease 1 lần (KHÔNG renew trong lúc chạy, theo yêu cầu)
-                        var okLease = await AcquireLeaseOnceAsync(username);
-                        if (!okLease) return;
-
-                        // 3) Bắt đầu đếm ngược đến exp
-                        StartExpiryCountdown(expUtc, "license");
-                        Log("[License] valid until: " + expUtc.ToString("u"));
-                    }
-
-                }
-
-                // Đồng bộ ô hiện hành vào trường chung để Task đọc
-                int __idx = CmbBetStrategy?.SelectedIndex ?? 4;
-                _cfg.BetSeq = (__idx == 0) ? (_cfg.BetSeqCL ?? "") : (__idx == 2 ? (_cfg.BetSeqNI ?? "") : "");
-                _cfg.BetPatterns = (__idx == 1) ? (_cfg.BetPatternsCL ?? "") : (__idx == 3 ? (_cfg.BetPatternsNI ?? "") : "");
-
-
-                // === Khởi động task theo lựa chọn CHIẾN LƯỢC ===
-                _taskCts = new CancellationTokenSource();
-
-                // 👉 Bắt đầu re-check license mỗi 5 phút, gắn với vòng đời _taskCts
-                if (CheckLicense)
-                {
-                    var username = (_homeUsername ?? "").Trim().ToLowerInvariant(); // dùng lại
-                    var token = _taskCts.Token;
-                    _ = Task.Run(async () =>
-                    {
-                        try
-                        {
-                            while (!token.IsCancellationRequested)
-                            {
-                                await Task.Delay(TimeSpan.FromMinutes(5), token);
-                                if (token.IsCancellationRequested) break;
-
-                                try
-                                {
-                                    var lic2 = await FetchLicenseAsync(username);
-
-                                    // CHỈ xử lý khi chắc chắn có exp hợp lệ
-                                    if (lic2 != null && !string.IsNullOrWhiteSpace(lic2.exp) &&
-                                        DateTimeOffset.TryParse(
-                                            lic2.exp,
-                                            System.Globalization.CultureInfo.InvariantCulture,
-                                            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
-                                            out var exp2))
-                                    {
-                                        if (DateTimeOffset.UtcNow >= exp2)
-                                        {
-                                            await Dispatcher.InvokeAsync(() =>
-                                            {
-                                                MessageBox.Show("License đã hết hạn. Dừng đặt cược.", "Automino",
-                                                    MessageBoxButton.OK, MessageBoxImage.Warning);
-                                                StopXocDia_Click(this, new RoutedEventArgs());
-                                            });
-                                            break; // thoát vòng re-check
-                                        }
-                                        else
-                                        {
-                                            // Cập nhật countdown nếu (có thể) gia hạn
-                                            await Dispatcher.InvokeAsync(() =>
-                                            {
-                                                StartExpiryCountdown(exp2, "license");
-                                            });
-                                            Log("[License] re-check ok until " + exp2.ToString("u"));
-                                        }
-                                    }
-                                    else
-                                    {
-                                        // Không lấy được thông tin chắc chắn -> giữ nguyên, lần sau kiểm lại
-                                        Log("[License re-check] license null/empty hoặc không parse được 'exp' -> giữ nguyên phiên.");
-                                    }
-                }
-            catch (TaskCanceledException) { /* token canceled, bỏ qua */ }
-                                catch (Exception ex)
-                                {
-                                    // Lỗi mạng/tạm thời -> KHÔNG dừng, chỉ log & thử lại lần sau
-                                    Log("[License re-check] lỗi: " + ex.Message + " (bỏ qua, sẽ thử lại)");
-                                }
-                            }
-                }
-            catch (TaskCanceledException) { /* token canceled */ }
-                    }, token);
-                }
-
-
-                BaccaratPPRR88.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
-                {
-                    0 => new BaccaratPPRR88.Tasks.SeqParityFollowTask(),     // 1
-                    1 => new BaccaratPPRR88.Tasks.PatternParityTask(),       // 2
-                    2 => new BaccaratPPRR88.Tasks.SmartPrevTask(),           // 3
-                    3 => new BaccaratPPRR88.Tasks.RandomParityTask(),        // 4
-                    4 => new BaccaratPPRR88.Tasks.AiStatParityTask(),        // 5
-                    5 => new BaccaratPPRR88.Tasks.StateTransitionBiasTask(), // 6
-                    6 => new BaccaratPPRR88.Tasks.RunLengthBiasTask(),       // 7
-                    7 => new BaccaratPPRR88.Tasks.EnsembleMajorityTask(),    // 8
-                    8 => new BaccaratPPRR88.Tasks.TimeSlicedHedgeTask(),    // 9
-                    9 => new BaccaratPPRR88.Tasks.KnnSubsequenceTask(),     // 10
-                    10 => new BaccaratPPRR88.Tasks.DualScheduleHedgeTask(),  // 11
-                    11 => new BaccaratPPRR88.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 12
-                    12 => new BaccaratPPRR88.Tasks.AiExpertPanelTask(), // 13
-                    13 => new BaccaratPPRR88.Tasks.Top10PatternFollowTask(), // 14
-                    _ => new BaccaratPPRR88.Tasks.SmartPrevTask(),
-                };
-
-
-                var running = Task.Run(() => StartTaskAsync(task, _taskCts.Token));
-
-                running.ContinueWith(t =>
-                {
-                    Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        SetPlayButtonState(false);
-                        _activeTask = null;
-                        _cooldown = false;
-                        _taskCts = null;
-
-                        if (t.IsFaulted)
-                            Log("[Task ERR] " + (t.Exception?.GetBaseException().Message ?? "Unknown error"));
-                        else if (t.IsCanceled)
-                            Log("[Task] canceled");
-                        else
-                            Log("[Task] completed");
-                    }));
-                }, TaskScheduler.Default);
-
-                Log("[Loop] started task: " + task.DisplayName);
-                SetPlayButtonState(true);
-            }
-            catch (Exception ex)
-            {
-                Log("[PlayXocDia_Click] " + ex);
-                // nếu lỗi trước khi start, trả lại nút
-                if (_taskCts == null && BtnPlay != null) BtnPlay.IsEnabled = true;
             }
             finally
             {
-                // nếu chưa start được task thì bật lại nút
-                if (_taskCts == null && BtnPlay != null) BtnPlay.IsEnabled = true;
-                Interlocked.Exchange(ref _playStartInProgress, 0);
+                Interlocked.Exchange(ref _runAllInProgress, 0);
+                UpdateRunAllButtonState();
             }
         }
 
+        private async void PlayXocDia_Click(object sender, RoutedEventArgs e)
+        {
+            var tableId = _activeTableId ?? "";
+            if (string.IsNullOrWhiteSpace(tableId))
+            {
+                Log("[TASK] no active table for Play");
+                return;
+            }
 
+            var state = GetOrCreateTableTaskState(tableId, ResolveRoomName(tableId));
+            if (IsTableRunning(state))
+            {
+                Log("[TASK] table already running, ignore Play");
+                return;
+            }
+
+            await StartTableTaskAsync(tableId, ResolveRoomName(tableId));
+        }
 
 
         private int _stopInProgress = 0;
@@ -5377,16 +5703,18 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (Interlocked.Exchange(ref _stopInProgress, 1) == 1) return;
             try
             {
-                StopTask();
-                BaccaratPPRR88.Tasks.TaskUtil.ClearBetCooldown();
-                _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
-                Log("[Loop] stopped");
-                SetPlayButtonState(false);
-                StopExpiryCountdown();
-                StopLeaseHeartbeat();
-                var uname = (_homeUsername ?? "").Trim().ToLowerInvariant();
-                if (!string.IsNullOrWhiteSpace(uname))
-                    _ = ReleaseLeaseAsync(uname);
+                if (!string.IsNullOrWhiteSpace(_activeTableId))
+                {
+                    var state = GetOrCreateTableTaskState(_activeTableId, ResolveRoomName(_activeTableId));
+                    if (IsTableRunning(state))
+                    {
+                        StopTableTask(_activeTableId, "manual");
+                        return;
+                    }
+                }
+
+                if (HasRunningTasks())
+                    StopAllTables("manual");
             }
             finally { Interlocked.Exchange(ref _stopInProgress, 0); }
         }
@@ -5758,7 +6086,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 // TIỀN CƯỢC & MỨC TIỀN
                 if (LblStake != null) LblStake.Text = "";  // TIỀN CƯỢC
                 if (LblLevel != null) LblLevel.Text = "";  // MỨC TIỀN
-                _stakeLevelIndexForUi = -1;
 
                 // Lưu ý: KHÔNG reset tổng lãi ở đây để ông chủ còn nhìn sau khi dừng.
             }
@@ -5850,6 +6177,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         /// </summary>
         private async Task CheckLicenseNowAsync(string username)
         {
+            if (!HasRunningTasks()) return;
             if (Interlocked.Exchange(ref _licenseCheckBusy, 1) == 1) return; // đang chạy -> bỏ qua
             try
             {
@@ -5861,7 +6189,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     {
                         MessageBox.Show("Không xác thực được license. Dừng đặt cược.", "Automino",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
-                        StopXocDia_Click(this, new RoutedEventArgs());
+                        StopAllTables("license-expired");
                     });
                     return;
                 }
@@ -5873,7 +6201,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     {
                         MessageBox.Show("License đã hết hạn. Dừng đặt cược.", "Automino",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
-                        StopXocDia_Click(this, new RoutedEventArgs());
+                        StopAllTables("license-expired");
                     });
                     return;
                 }
@@ -6216,11 +6544,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     var typeBet = (await Web.ExecuteScriptAsync("typeof window.__cw_bet"))?.Trim('"');
                     bool hasBet = string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase);
 
-                    // 2) Cocos có chưa
-                    var cocosJson = await Web.ExecuteScriptAsync(
-                        "(function(){try{return !!(window.cc && cc.director && cc.director.getScene);}catch(e){return false;}})()");
-                    bool hasCocos = bool.TryParse(cocosJson, out var b) && b;
-
                     // 3) Đã có tick chưa (ít nhất 1 ký tự seq)
                     bool hasTick = false;
                     lock (_snapLock)
@@ -6228,7 +6551,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         hasTick = _lastSnap?.seq != null && _lastSnap.seq.Length > 0;
                     }
 
-                    if (hasBet && hasCocos && hasTick)
+                    if (hasBet && hasTick)
                         return true;
                 }
                 catch { /* tiếp tục đợi */ }
@@ -6370,11 +6693,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         Dispatcher.BeginInvoke(new Action(() =>
                         {
                             // Tự dừng vòng chơi nếu còn đang chạy
-                            if (_taskCts != null)
-                            {
-                                StopTask();
-                                SetPlayButtonState(false);
-                            }
+                            if (HasRunningTasks())
+            {
+                StopAllTables("expired");
+            }
 
                             // Thông báo theo mode
                             if (_expireMode == "trial")
@@ -6711,13 +7033,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             try
             {
-                StopTask();
-                SetPlayButtonState(false);
+                StopAllTables("cut");
                 MessageBox.Show(reason, "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                 Log("[CUT] " + reason);
             }
             catch { /* ignore */ }
         }
+
 
         private void FinalizeLastBet(string? result, long balanceAfter)
         {
