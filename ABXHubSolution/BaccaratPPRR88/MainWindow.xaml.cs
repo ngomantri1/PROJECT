@@ -5163,13 +5163,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var anyRunning = HasRunningTasks();
             if (anyRunning)
             {
-                BtnRunAllTables.Content = "D?ng t?t c? b?n";
+                BtnRunAllTables.Content = "Dừng chạy tất cả";
                 var danger = TryFindResource("DangerButton") as Style;
                 if (danger != null) BtnRunAllTables.Style = danger;
             }
             else
             {
-                BtnRunAllTables.Content = "Ch?y t?t c? b?n";
+                BtnRunAllTables.Content = "Chạy tất cả bàn";
                 var primary = TryFindResource("PrimaryButton") as Style;
                 if (primary != null) BtnRunAllTables.Style = primary;
             }
