@@ -314,8 +314,8 @@ namespace BaccaratPPRR88
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn
         const string LicenseBranch = "main";          // <- nhánh
-        const string LicenseNameGame = "kh24";          // <- nhánh
-        const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/kh24";
+        const string LicenseNameGame = "rr88";          // <- nhánh
+        const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/rr88";
 
         // ===================== TOOLTIP TEXTS =====================
         const string TIP_SEQ_CL =
@@ -5360,17 +5360,17 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                     if (string.Equals(error, "in-use", StringComparison.OrdinalIgnoreCase))
                     {
-                        MessageBox.Show("Tai khoan dang chay o noi khac. Vui long dung o may kia truoc.",
+                        MessageBox.Show("Tài khoản đang chạy ở nơi khác. Vui lòng dừng ở máy kia trước.",
                             "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                     }
                     else if (string.Equals(error, "trial-consumed", StringComparison.OrdinalIgnoreCase))
                     {
-                        MessageBox.Show("Het luot dung thu. Hay lien he 0978.248.822.",
+                        MessageBox.Show("Hết lượt dùng thử. Hãy liên hệ 0978.248.822.",
                             "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                     }
                     else
                     {
-                        MessageBox.Show("Khong the bat dau che do dung thu. Vui long thu lai.",
+                        MessageBox.Show("Không thể bắt đầu chế độ dùng thử. Vui lòng thử lại.",
                             "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                     }
                     return false;
@@ -5378,7 +5378,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 catch (Exception ex)
                 {
                     Log("[Trial ERR] " + ex.Message);
-                    MessageBox.Show("Khong the ket noi che do dung thu.", "Automino",
+                    MessageBox.Show("Không thể kết nối chế độ dùng thử.", "Automino",
                         MessageBoxButton.OK, MessageBoxImage.Warning);
                     return false;
                 }
