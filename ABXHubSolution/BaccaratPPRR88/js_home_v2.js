@@ -648,7 +648,7 @@
         maxRetries: 6,
         watchdogMs: 1000,
         maxWatchdogMiss: 2,
-        showPanel: true,
+        showPanel: false,
         autoRetryOnBoot: false
     };
 
@@ -6129,6 +6129,11 @@
 
         const PIN_SELECTORS = [
             'div.rO_rP',
+            'div.rJ_rK svg.ka_kb',
+            'div.rJ_rK svg',
+            'div.rJ_rK',
+            'div.rJ_rK .xT_xU',
+            'div.xT_xU svg.ka_kb',
             'div.qC_qE button',
             'div.qC_qE .gK_gB',
             'div.qC_qQ button',
@@ -6175,6 +6180,8 @@
             if (!el)
                     continue;
                 if (el.tagName === 'BUTTON')
+                    return el;
+                if (el.tagName && el.tagName.toLowerCase() === 'svg')
                     return el;
                 const btn = el.closest('button');
                 if (btn)
@@ -6258,11 +6265,9 @@
                     if (r.width > 0 && r.height > 0) {
                         const x = r.left + r.width / 2;
                         const y = r.top + r.height / 2;
-                        const topEl = document.elementFromPoint(x, y);
-                        const target = (topEl && (topEl.closest('button,[role=button],a,div.rO_rP') || topEl)) || el;
-                        dispatchClickEvents(target, x, y);
-                        if (typeof target.click === 'function')
-                            target.click();
+                        dispatchClickEvents(el, x, y);
+                        if (typeof el.click === 'function')
+                            el.click();
                 return true;
             }
             }
