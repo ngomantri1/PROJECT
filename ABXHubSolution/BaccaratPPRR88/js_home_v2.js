@@ -214,6 +214,13 @@
         2000000: '2K',
         5000000: '5K'
     };
+    const CHIP_AMOUNT_BY_LABEL = Object.keys(CHIP_LABEL_BY_AMOUNT).reduce((acc, amount) => {
+        const label = String(CHIP_LABEL_BY_AMOUNT[amount] || '').trim().toUpperCase();
+        const value = Number(amount);
+        if (label && Number.isFinite(value))
+            acc[label] = value;
+        return acc;
+    }, {});
 
     function betCssFromTailSimple(tail) {
         const segs = String(tail || '').trim().split('/').filter(Boolean).map(seg => {
@@ -458,6 +465,19 @@
         return String(n);
     }
 
+    function betLabelToAmount(label) {
+        const raw = String(label || '').trim().toUpperCase();
+        if (!raw)
+            return 0;
+        if (Object.prototype.hasOwnProperty.call(CHIP_AMOUNT_BY_LABEL, raw))
+            return CHIP_AMOUNT_BY_LABEL[raw];
+        const digits = raw.replace(/[^0-9]/g, '');
+        if (!digits)
+            return 0;
+        const num = Number(digits);
+        return Number.isFinite(num) ? num : 0;
+    }
+
     function betFindChip(label) {
         if (!label)
             return null;
@@ -494,6 +514,95 @@
         return '';
     }
 
+    function betReadSideValue(root, side) {
+        try {
+            const chips = readBetChips(root);
+            const extra = readBetExtra(root);
+            return side === 'player'
+                ? String(chips.player || extra.player || '').trim()
+                : String(chips.banker || extra.banker || '').trim();
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function betResolveStakeRoot(target, fallbackRoot) {
+        if (target && target.closest) {
+            return target.closest('.kU_kV') ||
+                target.closest('.zv_zw') ||
+                target.closest('.uU_g0') ||
+                target.closest('.pI_pJ') ||
+                fallbackRoot;
+        }
+        return fallbackRoot;
+    }
+
+    function betCountChips(root, side) {
+        if (!root || !root.querySelectorAll)
+            return 0;
+        const sel = side === 'player' ? '.kU_kZ .v0_wa' : '.kU_k0 .v0_wa';
+        try {
+            return root.querySelectorAll(sel).length;
+        } catch (_) {
+            return 0;
+        }
+    }
+
+    function betIsAreaActive(root, side) {
+        if (!root || !root.querySelector)
+            return false;
+        const sel = side === 'player' ? '.qE_lp.qE_q1' : '.qE_lp.qE_ra';
+        try {
+            const el = root.querySelector(sel);
+            if (!el)
+                return false;
+            const cls = (typeof el.className === 'string') ? el.className : (el.getAttribute && el.getAttribute('class')) || '';
+            return String(cls || '').includes('qE_qF');
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function betHasChipValue(root, side) {
+        if (!root || !root.querySelector)
+            return false;
+        const sel = side === 'player' ? '.kU_kZ .v0_wa' : '.kU_k0 .v0_wa';
+        try {
+            const el = root.querySelector(sel);
+            if (el) {
+                const txt = (el.textContent || '').trim();
+                return !!txt;
+            }
+        } catch (_) {}
+        return false;
+    }
+
+    function betWaitBetConfirm(root, side, beforeVal, beforeSideVal, beforeCount, beforeActive, timeoutMs) {
+        const end = Date.now() + (Number(timeoutMs) || 0);
+        let last = beforeSideVal || beforeVal || '';
+        while (Date.now() < end) {
+            const nowVal = betReadStakeValue(root, side);
+            if (nowVal)
+                last = nowVal;
+            const sideVal = betReadSideValue(root, side);
+            if (sideVal)
+                last = sideVal;
+            const count = betCountChips(root, side);
+            const active = betIsAreaActive(root, side);
+            const hasChipValue = betHasChipValue(root, side);
+            if ((nowVal && nowVal !== beforeVal) ||
+                (sideVal && sideVal !== beforeSideVal) ||
+                (count > beforeCount) ||
+                (!beforeActive && active) ||
+                (!beforeSideVal && sideVal) ||
+                (!beforeVal && nowVal) ||
+                hasChipValue) {
+                return { ok: true, value: last };
+            }
+        }
+        return { ok: false, value: last };
+    }
+
     function betWaitStakeChange(root, side, before, timeoutMs) {
         const end = Date.now() + (Number(timeoutMs) || 0);
         let last = before || '';
@@ -519,7 +628,7 @@
                     const x = r.left + r.width / 2;
                     const y = r.top + r.height / 2;
                     const target = el.closest('button,[role=button],a') || el;
-        try {
+                    try {
                         if (typeof win.PointerEvent === 'function') {
                             const pd = new win.PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 1, pointerType: 'mouse' });
                             const pu = new win.PointerEvent('pointerup', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 0, pointerType: 'mouse' });
@@ -536,81 +645,71 @@
                     if (typeof target.click === 'function')
                         target.click();
                     return true;
-                        }
-                        }
+                }
+            }
             if (typeof el.click === 'function') {
                 el.click();
-                    return true;
-                }
-                    } catch (_) {}
+                return true;
+            }
+        } catch (_) {}
         return false;
                 }
 
     window.__cw_bet = function (tableId, side, amount) {
-        try {
-            const id = String(tableId || '').trim();
-            if (!id)
-                return 'no-table';
-
-            const root = betFindCardRootById(id);
-            if (!root)
-                return 'no-table';
-
-            const s = betNormalizeSide(side);
-            if (!s)
-                return 'no-side';
-
-            const targetTail = s === 'player' ? BET_PLAYER_TAIL : BET_BANKER_TAIL;
-            const target = betFindByTail(root, targetTail) ||
-                (s === 'player'
-                    ? betFindFirstVisible(root, '.qE_lp.qE_q1')
-                    : betFindFirstVisible(root, '.qE_lp.qE_ra'));
-            if (!target)
-                return 'no-target';
-
-            const label = betAmountToLabel(amount);
-            const chipNode = betFindChip(label);
-            if (!chipNode)
-                return 'no-chip';
-
-            const chipBtn = chipNode.closest('button') || chipNode;
-            if (!betDispatchClick(chipBtn))
-                return 'chip-fail';
-
-            const beforeVal = betReadStakeValue(root, s);
-
-            const candidates = [
-                target.closest('.kU_kV'),
-                target,
-                target.closest('.zv_zw'),
-                target.closest('.uU_g0')
-            ].filter(Boolean);
-            let ok = false;
-            for (const el of candidates) {
-                if (betDispatchClick(el)) {
-                    ok = true;
-                    break;
-                }
-                }
-            if (!ok)
-                return 'target-fail';
-
-            const afterVal = betWaitStakeChange(root, s, beforeVal, 500);
-            if (!afterVal || afterVal === beforeVal)
-                return 'no-bet';
-
+        let sent = false;
+        const sendOnce = (id, sideLabel, amountValue) => {
+            if (sent)
+                return;
+            sent = true;
+            if (!id || !sideLabel)
+                return;
             try {
-                const sideLabel = (s === 'player') ? 'P' : 'B';
-                const payload = { abx: 'bet', tableId: id, side: sideLabel, amount: Number(amount) || 0 };
+                const payload = { abx: 'bet', tableId: id, side: sideLabel, amount: amountValue };
                 window.chrome?.webview?.postMessage?.(payload);
                 if (window.top && window.top !== window && typeof window.top.postMessage === 'function')
                     window.top.postMessage(payload, '*');
             } catch (_) {}
+        };
 
-            return 'ok';
-        } catch (e) {
-            return 'err:' + (e && e.message ? e.message : e);
+        try {
+            const id = String(tableId || '').trim();
+            const s = betNormalizeSide(side);
+            const sideLabel = (s === 'player') ? 'P' : (s === 'banker' ? 'B' : '');
+            const amountValue = Number(amount) || 0;
+
+            if (id && sideLabel) {
+                const root = betFindCardRootById(id);
+                const targetTail = s === 'player' ? BET_PLAYER_TAIL : BET_BANKER_TAIL;
+                const target = root
+                    ? (betFindByTail(root, targetTail) ||
+                        (s === 'player'
+                            ? betFindFirstVisible(root, '.qE_lp.qE_q1')
+                            : betFindFirstVisible(root, '.qE_lp.qE_ra')))
+                    : null;
+                const label = betAmountToLabel(amountValue);
+                const chipNode = betFindChip(label);
+                const chipBtn = chipNode ? (chipNode.closest('button') || chipNode) : null;
+                if (chipBtn)
+                    betDispatchClick(chipBtn);
+                if (target) {
+                    const candidates = [
+                        target.closest('.kU_kV'),
+                        target,
+                        target.closest('.zv_zw'),
+                        target.closest('.uU_g0')
+                    ].filter(Boolean);
+                    for (const el of candidates) {
+                        if (betDispatchClick(el))
+                            break;
+                    }
                 }
+                sendOnce(id, sideLabel, amountValue);
+            } else {
+                sendOnce(id, sideLabel, amountValue);
+            }
+        } catch (_) {}
+
+        return 'ok';
     };
 
     // Skip toàn bộ Home Watch ở domain game
@@ -648,7 +747,7 @@
         maxRetries: 6,
         watchdogMs: 1000,
         maxWatchdogMiss: 2,
-        showPanel: false,
+        showPanel: true,
         autoRetryOnBoot: false
     };
 
@@ -4964,7 +5063,7 @@
         const GAP = 8;
         const MIN_W = 150;
         const MIN_H = 120;
-        const STATE_INTERVAL = 900;
+        const STATE_INTERVAL = 600;
         const PIN_SYNC_INTERVAL = 1000;
         const TITLE_SELECTORS = [
             'span.rC_rT',
@@ -7853,6 +7952,18 @@
                 const info = '[HomeWatch countdown] ' + (room.name || room.id) + ' ' + (countdownNode ? (countdownNode.className || countdownNode.getAttribute('class')) : '(missing)') + ' ' + countdown;
                 logToOverlayConsole(info, 'info');
                 setOverlayLog(info);
+                const now = Date.now();
+                let countdownSync = countdown;
+                if (typeof countdown === 'number' && Number.isFinite(countdown) && countdown >= 0) {
+                    const lastVal = st.lastCountdownValue;
+                    const lastTs = st.lastCountdownTimestamp;
+                    if (typeof lastVal === 'number' && Number.isFinite(lastVal) && typeof lastTs === 'number' && lastTs > 0) {
+                        const elapsed = (now - lastTs) / 1000;
+                        if (Math.abs(lastVal - countdown) < 0.01) {
+                            countdownSync = Math.max(0, lastVal - elapsed);
+                        }
+                    }
+                }
                 if (typeof countdown === 'number' && Number.isFinite(countdown) && countdown >= 0) {
                     st.countdownMax = Math.max(st.countdownMax || countdown, countdown);
             }
@@ -7886,6 +7997,7 @@
                     id: room.id,
                     name: room.name || room.id,
                     countdown,
+                    countdownSync,
                     text,
                     history,
                     historyText,
@@ -8367,12 +8479,57 @@
         }
             if (view.betBankerChip) {
                 if (view.betBankerChipText)
-                    view.betBankerChipText.textContent = bankerVal;
+                view.betBankerChipText.textContent = bankerVal;
                 else
                     view.betBankerChip.textContent = bankerVal;
                 view.betBankerChip.style.display = bankerVal ? 'flex' : 'none';
                 }
                 }
+
+        function formatWinLossTotals(st) {
+            const wins = Math.max(0, st && st.winCount || 0);
+            const losses = Math.max(0, st && st.lossCount || 0);
+            return wins + '/' + losses;
+        }
+
+        function applyWinLossTotals(st) {
+            if (!st || !st.view || !st.view.totalWinLoseValue)
+                return;
+            st.view.totalWinLoseValue.textContent = formatWinLossTotals(st);
+        }
+
+        function resetWinLossTotals(st) {
+            if (!st)
+                return;
+            st.winCount = 0;
+            st.lossCount = 0;
+            st.lastOutcomeSig = '';
+            applyWinLossTotals(st);
+        }
+
+        function updateWinLossTotals(st, winLoseText, historySig) {
+            if (!st)
+                return;
+            if (!historySig)
+                return;
+            const outcomeNorm = norm(winLoseText || '');
+            let outcome = '';
+            if (outcomeNorm.includes('thang'))
+                outcome = 'thang';
+            else if (outcomeNorm.includes('thua'))
+                outcome = 'thua';
+            if (!outcome)
+                return;
+            const sig = (historySig || '') + '|' + outcome;
+            if (st.lastOutcomeSig === sig)
+                return;
+            st.lastOutcomeSig = sig;
+            if (outcome === 'thang')
+                st.winCount = (st.winCount || 0) + 1;
+            else
+                st.lossCount = (st.lossCount || 0) + 1;
+            applyWinLossTotals(st);
+        }
 
         function renderPanelState(data) {
             const st = getPanelState(data.id);
@@ -8389,6 +8546,12 @@
             const betExtra = data.betExtra || null;
             const betChips = data.betChips || null;
             const historySig = data.historySig || '';
+            const winLoseText = deriveWinLoseValue(text);
+            if (view.winLoseValue && st.lastWinLoseText !== winLoseText) {
+                view.winLoseValue.textContent = winLoseText;
+                st.lastWinLoseText = winLoseText;
+            }
+            updateWinLossTotals(st, winLoseText, historySig);
             if (st.lastHistorySig !== historySig) {
                 st.lastHistorySig = historySig;
                 if (data.historyRaw && data.historyRaw.length) {
@@ -8396,8 +8559,6 @@
                 } else {
                     renderResultMap(view, data.history || []);
             }
-                if (view.winLoseValue)
-                    view.winLoseValue.textContent = deriveWinLoseValue(text);
                 if (view.betDoorValue)
                     view.betDoorValue.textContent = deriveBetDoorValue(text, betAreas);
                 if (view.betAmountValue)
@@ -8406,8 +8567,6 @@
                     view.moneyLevelValue.textContent = deriveMoneyValue(text, ['muc\\s*tien', 'muc\\s*cuoc', 'limit']);
                 if (view.winAmountValue)
                     view.winAmountValue.textContent = deriveMoneyValue(text, ['tien\\s*thang', 'thang\\s*tien', 'tien\\s*thuong']);
-                if (view.totalWinLoseValue)
-                    view.totalWinLoseValue.textContent = deriveMoneyValue(text, ['tong\\s*thang', 'tong\\s*thua', 'tong\\s*thang\\s*thua', 'tong\\s*thang\\/thua', 'thang\\s*thua', 'thang\\/thua'], data.stats?.total?.display || '--');
                 const statCounts = summarizeHistoryStats(data.history || [], data.stats || null);
                 if (view.statsTotal)
                     view.statsTotal.textContent = '#' + String(statCounts.total || 0);
@@ -8469,8 +8628,11 @@
                 return;
                 const prev = lastStateSig.get(st.id);
                 const historySig = st.historySig || '';
-                const countdownSig = (typeof st.countdown === 'number' && Number.isFinite(st.countdown) && st.countdown >= 0)
-                    ? Math.floor(st.countdown).toString()
+                const countdownValue = (typeof st.countdownSync === 'number' && Number.isFinite(st.countdownSync) && st.countdownSync >= 0)
+                    ? st.countdownSync
+                    : st.countdown;
+                const countdownSig = (typeof countdownValue === 'number' && Number.isFinite(countdownValue) && countdownValue >= 0)
+                    ? Math.round(countdownValue * 10).toString()
                     : '';
                 const sig = historySig + '|' + countdownSig;
                 if (prev === sig)
@@ -8479,7 +8641,7 @@
                 changed.push({
                     id: st.id,
                     name: st.name,
-                    countdown: st.countdown,
+                    countdown: countdownValue,
                     text: st.text,
                     history: st.history,
                     historyText: st.historyText
@@ -8575,6 +8737,9 @@
             btnPlay.addEventListener('mousedown', (e) => e.stopPropagation());
             btnPlay.addEventListener('click', () => {
                 try {
+                    const st = getPanelState(room.id);
+                    if (st)
+                        resetWinLossTotals(st);
                     window.chrome?.webview?.postMessage?.({ overlay: 'table', event: 'play', id: room.id });
                 } catch (_) {}
             });
@@ -8850,6 +9015,10 @@
                 lastStatusText: '',
                 lastStatusColor: '',
                 lastCenterResult: '',
+                winCount: 0,
+                lossCount: 0,
+                lastOutcomeSig: '',
+                lastWinLoseText: '',
                 lastState: null,
                 closed: false,
                 resolve: (id) => {
@@ -8863,6 +9032,7 @@
             makeResizable(panel, resize);
             placePanel(panel, idx);
             syncPanelMapGrid(st);
+            resetWinLossTotals(st);
         }
 
         function placePanel(panel, idx, forceGrid = false) {
@@ -9104,6 +9274,13 @@
             layoutAll(true);
             setDesiredPinList(rooms);
             ensureStateTimer();
+            if (options && options.resetTotals) {
+                rooms.forEach(room => {
+                    const st = getPanelState(room.id);
+                    if (st)
+                        resetWinLossTotals(st);
+                });
+            }
         }
 
         function resetLayout() {

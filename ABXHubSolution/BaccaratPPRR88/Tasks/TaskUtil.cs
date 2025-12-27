@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using System.Windows.Threading;
 using System.Linq;
+using System.Collections.Concurrent;
 using System.Windows;
 using System.Windows.Controls;
 using System.Text.Json;
@@ -13,10 +14,11 @@ namespace BaccaratPPRR88.Tasks
     internal static class TaskUtil
     {
         // Khóa chống bắn đúp: 3s kể từ lần place bet THÀNH CÔNG gần nhất
-        private static long _lastBetOkMs = 0;
+        private static readonly ConcurrentDictionary<string, long> _lastBetOkByTable = new ConcurrentDictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        private static readonly SemaphoreSlim _betQueue = new SemaphoreSlim(1, 1);
 
         // (tuỳ chọn) reset khi dừng task
-        public static void ClearBetCooldown() => Volatile.Write(ref _lastBetOkMs, 0);
+        public static void ClearBetCooldown() => _lastBetOkByTable.Clear();
 
         public static string ParityCharToSide(char ch) => (ch == 'P') ? "P" : "B";
         public static char DigitToParity(char d)
@@ -113,14 +115,6 @@ namespace BaccaratPPRR88.Tasks
 
         public static async Task<bool> PlaceBet(GameContext ctx, string side, long amount, CancellationToken ct)
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var last = Volatile.Read(ref _lastBetOkMs);
-            if (now - last < 3000)  // 3 giây khoá sau lần bet OK gần nhất
-            {
-                ctx.Log?.Invoke($"[BET] cooldown 3s active, skip ({3000 - (now - last)}ms left)");
-                return false;
-            }
-
             // Cập nhật UI chỉ khi thực sự được phép bắn
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke(side));
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
@@ -132,8 +126,19 @@ namespace BaccaratPPRR88.Tasks
                 return false;
             }
 
-            var tableIdJson = JsonSerializer.Serialize(tableId);
-            var sideJson = JsonSerializer.Serialize(side ?? "");
+            await _betQueue.WaitAsync(ct);
+            try
+            {
+                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                var last = _lastBetOkByTable.TryGetValue(tableId, out var lastMs) ? lastMs : 0;
+                if (now - last < 3000)  // 3 giây khoá sau lần bet OK gần nhất
+                {
+                    ctx.Log?.Invoke($"[BET] cooldown 3s active, skip ({3000 - (now - last)}ms left)");
+                    return false;
+                }
+
+                var tableIdJson = JsonSerializer.Serialize(tableId);
+                var sideJson = JsonSerializer.Serialize(side ?? "");
 
             // GỌI __cw_bet AN TOÀN (giữ nguyên như code hiện tại)
             var js =
@@ -150,9 +155,14 @@ namespace BaccaratPPRR88.Tasks
             bool ok = string.Equals(r, "ok", StringComparison.OrdinalIgnoreCase);
 
             if (ok)
-                Volatile.Write(ref _lastBetOkMs, now); // kích hoạt khoá 3s
+                _lastBetOkByTable[tableId] = now; // kích hoạt khoá 3s
 
             return ok;
+            }
+            finally
+            {
+                _betQueue.Release();
+            }
         }
 
 
@@ -179,4 +189,5 @@ namespace BaccaratPPRR88.Tasks
         }
     }
 }
+
 

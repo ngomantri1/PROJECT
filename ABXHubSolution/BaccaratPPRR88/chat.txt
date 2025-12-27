@@ -1,486 +1,606 @@
-[JS] {"abx":"home_tick","username":"","balance":"","href":"https://client.pragmaticplaylive.net/desktop/multibaccarat/","title":"Multibaccarat","ts":1766417354310}
-[JS] {"abx":"home_tick","username":"","balance":"","href":"https://client.pragmaticplaylive.net/desktop/multibaccarat/","title":"Multibaccarat","ts":1766417355098}
-[JS] {"abx":"home_tick","username":"","balance":"","href":"https://client.pragmaticplaylive.net/desktop/multibaccarat/","title":"Multibaccarat","ts":1766417355906}
-[JS] {"abx":"console","level":"log","message":"[text] 1 \t '2' \t 1253 328 2 6 \t 'div.kh_ki[1]/div.kh_ca[1]/div.kz_hk[1]/div.nr_ns[1]/div.t1_mn[2]/div.yv_yw[1]/div.yv_yx[1]/span.yv_yy.yv_yB[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 2 \t '2' \t 820 900 2 6 \t 'div.kh_ki[1]/div.kh_ca[1]/div.kz_hk[1]/div.nr_ns[1]/div.t1_mn[2]/div.yv_yw[1]/div.yv_yx[1]/span.yv_yy.yv_yB[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 3 \t '2' \t 387 584 3 9 \t 'div.kh_ki[1]/div.kh_ca[1]/div.kz_hk[1]/div.nr_ns[1]/div.t1_mn[2]/div.yv_yw[1]/div.yv_yx[1]/span.yv_yy.yv_yz[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 4 \t '2' \t 497 1 5 6 \t 'div.kz_hk[1]/div.nr_ns[1]/table.nr_nw[1]/tbody[1]/tr[1]/td[5]/svg.[object.SVGAnimatedString][1]/text.[object.SVGAnimatedString][1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 5 \t '2' \t 581 33 5 6 \t 'div.kz_hk[1]/div.nr_ns[1]/table.nr_nw[1]/tbody[1]/tr[4]/td[13]/svg.[object.SVGAnimatedString][1]/text.[object.SVGAnimatedString][1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 6 \t '1' \t 1061 77 4 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[5]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 7 \t '1' \t 148 364 4 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[4]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 8 \t '1' \t 182 364 4 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[5]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 9 \t '1' \t 1050 364 4 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[5]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 10 \t '1' \t 1083 364 4 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[6]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 11 \t '1' \t 236 650 4 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[6]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 12 \t '1' \t 655 650 4 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[6]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 13 \t '1' \t 655 936 4 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[6]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 14 \t '3' \t 159 77 7 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[4]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 15 \t '2' \t 233 77 7 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[6]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 16 \t '7' \t 588 77 7 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[4]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 17 \t '2' \t 661 77 7 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[6]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 18 \t '2' \t 1095 77 7 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[6]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 19 \t '2' \t 215 364 7 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[6]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 20 \t '2' \t 939 364 7 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[2]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 21 \t '3' \t 163 936 7 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[4]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 22 \t '3' \t 199 936 7 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[5]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 23 \t '3' \t 507 936 7 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[2]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 24 \t '2' \t 1023 936 7 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[4]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 25 \t '2' \t 1096 936 7 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[6]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 26 \t '0' \t 196 77 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[5]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 27 \t '9' \t 507 77 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[2]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 28 \t '6' \t 624 77 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[5]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 29 \t '4' \t 1024 77 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[4]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 30 \t '6' \t 74 364 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[2]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 31 \t '6' \t 111 364 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[3]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 32 \t '4' \t 592 364 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[4]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 33 \t '4' \t 629 364 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[5]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 34 \t '5' \t 667 364 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[6]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 35 \t '6' \t 976 364 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[3]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 36 \t '0' \t 1013 364 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[4]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 37 \t '4' \t 162 650 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[4]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 38 \t '5' \t 199 650 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[5]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 39 \t '4' \t 507 650 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[2]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 40 \t '6' \t 544 650 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[3]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 41 \t '0' \t 581 650 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[4]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 42 \t '0' \t 618 650 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[5]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 43 \t '5' \t 1028 650 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[4]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 44 \t '5' \t 1065 650 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[5]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 45 \t '5' \t 1102 650 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[6]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 46 \t '6' \t 236 936 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[6]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 47 \t '5' \t 543 936 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[3]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 48 \t '0' \t 580 936 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[4]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 49 \t '0' \t 617 936 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[5]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 50 \t '4' \t 1059 936 8 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div.nI_nQ[5]/div[1]/div.nI_nL.nI_nQ[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 51 \t '13' \t 74 77 12 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[2]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 52 \t '12' \t 939 77 12 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[2]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 53 \t '31' \t 551 364 12 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[3]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 54 \t '14' \t 939 936 13 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[2]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 55 \t '14' \t 981 936 13 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[3]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 56 \t '1' \t 1251 305 6 26 \t 'div.kh_ki[1]/div.kh_ca[1]/div.kz_hk[1]/div.nr_ns[1]/div.t1_mn[2]/div.yv_yw[1]/div.yv_yx[1]/span.yv_yy.yv_yz[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 57 \t '1' \t 818 877 6 26 \t 'div.kh_ki[1]/div.kh_ca[1]/div.kz_hk[1]/div.nr_ns[1]/div.t1_mn[2]/div.yv_yw[1]/div.yv_yx[1]/span.yv_yy.yv_yz[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 58 \t '25' \t 115 77 15 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[3]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 59 \t '26' \t 544 77 15 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[3]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 60 \t '22' \t 980 77 15 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[3]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 61 \t '25' \t 507 364 15 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[2]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 62 \t '22' \t 74 650 15 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[2]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 63 \t '23' \t 118 650 15 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[3]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 64 \t '23' \t 939 650 15 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[2]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 65 \t '29' \t 118 936 15 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[3]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 66 \t 'on' \t 1269 952 13 13 \t 'div.kI_kQ[5]/div.kI_kT[3]/div.O_P[1]/div.gb_gc[6]/div[1]/div.O_Q[1]/div.fc_fe.fc_ff[2]/input.fc_fj[1]' \t [input@value]"}
-[JS] {"abx":"console","level":"log","message":"[text] 67 \t '2' \t 599 390 11 16 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[2]/div[1]/div.kU_kV.kU_kZ[1]/div.kU_ll[1]/span.re_rf.re_rh[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 68 \t '30' \t 983 650 16 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[3]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 69 \t '30' \t 74 936 16 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[2]/div[1]/div.nI_nL[1]/div.nI_nN[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 70 \t '22:29' \t 127 31 20 10 \t 'div.kI_m[2]/div.kI_kK[2]/div.kI_kL[1]/div.mL_mM[1]/div.mL_mN[1]/div.mL_mO[2]/div.mL_mQ[1]/span.tx_ty[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 71 \t '0' \t 258 390 13 16 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[4]/div[1]/div.kU_kV.kU_k0[1]/div.kU_ll[1]/span.re_rf.re_rg[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 72 \t '6' \t 691 390 13 16 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[4]/div[1]/div.kU_kV.kU_k0[1]/div.kU_ll[1]/span.re_rf.re_rg[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 73 \t '0' \t 1030 677 13 16 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[2]/div[1]/div.kU_kV.kU_kZ[1]/div.kU_ll[1]/span.re_rf.re_rh[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 74 \t '#8' \t 882 364 19 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[1]/div[1]/div.nI_nL.nI_nR[1]/div.nI_nN[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 75 \t '#8' \t 449 936 19 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[1]/div[1]/div.nI_nL.nI_nR[1]/div.nI_nN[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 76 \t '12' \t 747 21 15 14 \t 'div.kI_is[3]/div.kI_kO[2]/div.X_bb[1]/div.eh_ei.eh_ej[1]/div.kc_ke[1]/div.oY_oZ.oY_o0[2]/span.fu_fv.fu_fG[1]/span.fu_bZ.fu_fy[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 77 \t '4' \t 164 390 14 16 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[2]/div[1]/div.kU_kV.kU_kZ[1]/div.kU_ll[1]/span.re_rf.re_rh[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 78 \t '#13' \t 16 364 23 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[1]/div[1]/div.nI_nL.nI_nR[1]/div.nI_nN[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 79 \t 'RefreshStreaksIcon' \t 1150 948 16 16 \t 'div.O_S[3]/div[1]/div.gb_gc[1]/div[1]/button.cy_cz[1]/span.cy_cK[1]/div.cy_cM[1]/img[1]' \t [img@alt]"}
-[JS] {"abx":"console","level":"log","message":"[text] 80 \t 'GRRefreshStreaksIcon' \t 1190 948 16 16 \t 'div.O_S[3]/div.cb_ce[2]/div.gb_gc[1]/div[1]/button.cy_cz[1]/span.cy_cK[1]/div.cy_cM[1]/img[1]' \t [img@alt]"}
-[JS] {"abx":"console","level":"log","message":"[text] 81 \t 'DerivativesIcon' \t 1238 948 16 16 \t 'div.kI_kT[3]/div.O_P[1]/div.gb_gc[5]/div[1]/button.cy_cz[1]/span.cy_cK[1]/div.cy_cM[1]/img[1]' \t [img@alt]"}
-[JS] {"abx":"console","level":"log","message":"[text] 82 \t '3' \t 383 591 10 26 \t 'div.kh_ki[1]/div.kh_ca[1]/div.kz_hk[1]/div.nr_ns[1]/div.t1_mn[2]/div.yv_yw[1]/div.yv_yx[1]/span.yv_yy.yv_yB[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 83 \t '#41' \t 16 77 24 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[1]/div[1]/div.nI_nL.nI_nR[1]/div.nI_nN[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 84 \t '#10' \t 449 650 24 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[1]/div[1]/div.nI_nL.nI_nR[1]/div.nI_nN[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 85 \t 'Không Phí' \t 1269 940 33 8 \t 'div.kI_m[2]/div.kI_kQ[5]/div.kI_kT[3]/div.O_P[1]/div.gb_gc[6]/div[1]/div.O_Q[1]/div.O_R[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 86 \t '#42' \t 449 77 27 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[1]/div[1]/div.nI_nL.nI_nR[1]/div.nI_nN[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 87 \t '#38' \t 882 77 27 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[1]/div[1]/div.nI_nL.nI_nR[1]/div.nI_nN[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 88 \t '#62' \t 16 936 27 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[1]/div[1]/div.nI_nL.nI_nR[1]/div.nI_nN[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 89 \t '#30' \t 882 936 27 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[1]/div[1]/div.nI_nL.nI_nR[1]/div.nI_nN[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 90 \t '#60' \t 449 364 28 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[1]/div[1]/div.nI_nL.nI_nR[1]/div.nI_nN[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 91 \t '#49' \t 16 650 28 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[1]/div[1]/div.nI_nL.nI_nR[1]/div.nI_nN[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 92 \t '#58' \t 882 650 28 11 \t 'div.kh_ca[1]/div.kz_hk[1]/div.nI_nJ[2]/div.nI_nK[1]/div[1]/div[1]/div.nI_nL.nI_nR[1]/div.nI_nN[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 93 \t 'Số dư' \t 38 943 31 10 \t 'div.kI_m[2]/div.kI_kQ[5]/div.kI_kR[1]/div.pb_pc[1]/div.pb_pe[2]/div.pb_pf[2]/div.jA_jB[1]/div.jA_jC[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 94 \t '10' \t 1158 937 20 16 \t 'div.O_P[1]/div.O_S[3]/div[1]/div.gb_gc[1]/div[1]/button.cy_cz[1]/span.fu_fv.fu_fC[2]/span.fu_bZ.fu_fy[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 95 \t 'ID' \t 449 786 55 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[11]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 96 \t ':' \t 449 786 55 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[11]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 97 \t '12039118122' \t 449 786 55 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[11]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 98 \t 'ID' \t 882 2218 55 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[27]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 99 \t ':' \t 882 2218 55 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[27]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 100 \t '12039119122' \t 882 2218 55 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[27]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 101 \t 'ID' \t 882 214 56 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[6]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 102 \t ':' \t 882 214 56 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[6]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 103 \t '12039117722' \t 882 214 56 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[6]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 104 \t 'ID' \t 449 500 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[8]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 105 \t ':' \t 449 500 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[8]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 106 \t '12039117922' \t 449 500 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[8]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 107 \t 'ID' \t 16 1073 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[13]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 108 \t ':' \t 16 1073 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[13]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 109 \t '12039119722' \t 16 1073 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[13]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 110 \t 'ID' \t 882 1073 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[15]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 111 \t ':' \t 882 1073 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[15]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 112 \t '12039118222' \t 882 1073 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[15]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 113 \t 'ID' \t 16 1932 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[22]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 114 \t ':' \t 16 1932 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[22]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 115 \t '12039124122' \t 16 1932 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[22]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 116 \t 'ID' \t 16 2218 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[25]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 117 \t ':' \t 16 2218 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[25]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 118 \t '12039118722' \t 16 2218 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[25]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 119 \t 'ID' \t 882 2791 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[33]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 120 \t ':' \t 882 2791 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[33]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 121 \t '12039121522' \t 882 2791 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[33]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 122 \t 'ID' \t 16 3077 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[34]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 123 \t ':' \t 16 3077 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[34]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 124 \t '12039116222' \t 16 3077 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[34]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 125 \t 'ID' \t 16 3936 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[43]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 126 \t ':' \t 16 3936 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[43]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 127 \t '12039125122' \t 16 3936 57 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[43]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 128 \t '₫ 4' \t 16 -91 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[1]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 129 \t '₫ 4' \t 449 -91 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[2]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 130 \t '₫ 4' \t 882 -91 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[3]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 131 \t '₫ 4' \t 16 194 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[4]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 132 \t '₫ 4' \t 449 194 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[5]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 133 \t '₫ 4' \t 882 194 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[6]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 134 \t '₫ 4' \t 16 481 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[7]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 135 \t '₫ 4' \t 449 481 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[8]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 136 \t '₫ 4' \t 882 481 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[9]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 137 \t '₫ 4' \t 16 767 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[10]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 138 \t '₫ 4' \t 449 767 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[11]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 139 \t '₫ 4' \t 882 767 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[12]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 140 \t '₫ 4' \t 16 1053 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[13]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 141 \t '₫ 4' \t 449 1053 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[14]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 142 \t '₫ 4' \t 882 1053 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[15]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 143 \t '₫ 4' \t 16 1340 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[16]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 144 \t '₫ 4' \t 449 1340 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[17]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 145 \t '₫ 4' \t 882 1340 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[18]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 146 \t '₫ 4' \t 16 1626 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[19]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 147 \t '₫ 4' \t 449 1626 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[20]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 148 \t '₫ 4' \t 882 1626 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[21]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 149 \t '₫ 4' \t 16 1912 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[22]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 150 \t '₫ 4' \t 449 1912 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[23]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 151 \t '₫ 4' \t 882 1912 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[24]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 152 \t '₫ 4' \t 16 2198 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[25]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 153 \t '₫ 4' \t 449 2198 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[26]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 154 \t '₫ 4' \t 882 2198 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[27]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 155 \t '₫ 4' \t 16 2485 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[28]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 156 \t '₫ 4' \t 449 2485 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[29]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 157 \t '₫ 4' \t 882 2485 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[30]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 158 \t '₫ 4' \t 16 2771 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[31]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 159 \t '₫ 4' \t 449 2771 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[32]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 160 \t '₫ 4' \t 882 2771 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[33]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 161 \t '₫ 4' \t 16 3057 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[34]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 162 \t '₫ 4' \t 449 3057 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[35]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 163 \t '₫ 4' \t 882 3057 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[36]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 164 \t '₫ 4' \t 16 3344 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[37]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 165 \t '₫ 4' \t 449 3344 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[38]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 166 \t '₫ 4' \t 882 3344 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[39]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 167 \t '₫ 4' \t 16 3630 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[40]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 168 \t '₫ 4' \t 449 3630 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[41]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 169 \t '₫ 4' \t 882 3630 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[42]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 170 \t '₫ 4' \t 16 3916 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[43]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 171 \t '₫ 4' \t 449 3916 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[44]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 172 \t '₫ 4' \t 882 3916 20 20 \t 'div.ec_F[1]/div.he_hf.he_hi[45]/div.ms_mt[3]/div.rM_rN[1]/div.xi_xj[1]/div.gb_gc[1]/div[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 173 \t 'ID' \t 449 1359 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[17]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 174 \t ':' \t 449 1359 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[17]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 175 \t '12039122722' \t 449 1359 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[17]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 176 \t 'ID' \t 449 1932 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[23]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 177 \t ':' \t 449 1932 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[23]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 178 \t '12039122222' \t 449 1932 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[23]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 179 \t 'ID' \t 882 2504 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[30]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 180 \t ':' \t 882 2504 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[30]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 181 \t '12039116022' \t 882 2504 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[30]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 182 \t 'ID' \t 449 3077 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[35]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 183 \t ':' \t 449 3077 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[35]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 184 \t '12039119022' \t 449 3077 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[35]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 185 \t 'ID' \t 449 3650 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[41]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 186 \t ':' \t 449 3650 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[41]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 187 \t '12039110922' \t 449 3650 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[41]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 188 \t 'ID' \t 882 3650 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[42]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 189 \t ':' \t 882 3650 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[42]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 190 \t '12039116922' \t 882 3650 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[42]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 191 \t 'ID' \t 882 3936 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[45]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 192 \t ':' \t 882 3936 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[45]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 193 \t '12039118022' \t 882 3936 58 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[45]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 194 \t 'ID' \t 16 -71 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[1]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 195 \t ':' \t 16 -71 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[1]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 196 \t '12039122022' \t 16 -71 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[1]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 197 \t 'ID' \t 449 -71 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[2]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 198 \t ':' \t 449 -71 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[2]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 199 \t '12039123022' \t 449 -71 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[2]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 200 \t 'ID' \t 882 -71 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[3]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 201 \t ':' \t 882 -71 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[3]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 202 \t '12039124822' \t 882 -71 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[3]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 203 \t 'ID' \t 449 214 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[5]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 204 \t ':' \t 449 214 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[5]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 205 \t '12039124522' \t 449 214 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[5]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 206 \t 'ID' \t 16 500 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[7]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 207 \t ':' \t 16 500 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[7]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 208 \t '12039122922' \t 16 500 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[7]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 209 \t 'ID' \t 882 500 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[9]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 210 \t ':' \t 882 500 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[9]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 211 \t '12039124022' \t 882 500 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[9]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 212 \t 'ID' \t 16 786 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[10]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 213 \t ':' \t 16 786 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[10]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 214 \t '12039125322' \t 16 786 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[10]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 215 \t 'ID' \t 882 786 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[12]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 216 \t ':' \t 882 786 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[12]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 217 \t '12039123822' \t 882 786 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[12]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 218 \t 'ID' \t 449 1073 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[14]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 219 \t ':' \t 449 1073 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[14]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 220 \t '12039124922' \t 449 1073 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[14]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 221 \t 'ID' \t 16 1359 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[16]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 222 \t ':' \t 16 1359 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[16]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 223 \t '12039122522' \t 16 1359 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[16]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 224 \t 'ID' \t 882 1359 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[18]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 225 \t ':' \t 882 1359 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[18]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 226 \t '12039124622' \t 882 1359 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[18]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 227 \t 'ID' \t 16 1645 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[19]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 228 \t ':' \t 16 1645 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[19]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 229 \t '12039125022' \t 16 1645 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[19]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 230 \t 'ID' \t 449 1645 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[20]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 231 \t ':' \t 449 1645 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[20]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 232 \t '12039122322' \t 449 1645 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[20]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 233 \t 'ID' \t 882 1645 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[21]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 234 \t ':' \t 882 1645 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[21]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 235 \t '12039125522' \t 882 1645 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[21]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 236 \t 'ID' \t 882 1932 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[24]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 237 \t ':' \t 882 1932 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[24]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 238 \t '12039123422' \t 882 1932 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[24]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 239 \t 'ID' \t 449 2218 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[26]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 240 \t ':' \t 449 2218 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[26]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 241 \t '12039123922' \t 449 2218 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[26]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 242 \t 'ID' \t 16 2504 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[28]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 243 \t ':' \t 16 2504 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[28]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 244 \t '12039122622' \t 16 2504 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[28]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 245 \t 'ID' \t 449 2504 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[29]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 246 \t ':' \t 449 2504 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[29]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 247 \t '12039124222' \t 449 2504 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[29]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 248 \t 'ID' \t 16 2791 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[31]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 249 \t ':' \t 16 2791 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[31]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 250 \t '12039123522' \t 16 2791 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[31]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 251 \t 'ID' \t 449 2791 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[32]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 252 \t ':' \t 449 2791 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[32]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 253 \t '12039125622' \t 449 2791 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[32]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 254 \t 'ID' \t 882 3077 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[36]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 255 \t ':' \t 882 3077 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[36]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 256 \t '12039125222' \t 882 3077 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[36]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 257 \t 'ID' \t 16 3363 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[37]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 258 \t ':' \t 16 3363 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[37]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 259 \t '12039123322' \t 16 3363 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[37]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 260 \t 'ID' \t 449 3363 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[38]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 261 \t ':' \t 449 3363 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[38]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 262 \t '12039122422' \t 449 3363 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[38]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 263 \t 'ID' \t 882 3363 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[39]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 264 \t ':' \t 882 3363 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[39]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 265 \t '12039123222' \t 882 3363 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[39]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 266 \t 'ID' \t 16 3650 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[40]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 267 \t ':' \t 16 3650 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[40]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 268 \t '12039124322' \t 16 3650 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[40]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 269 \t 'ID' \t 449 3936 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[44]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 270 \t ':' \t 449 3936 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[44]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 271 \t '12039124722' \t 449 3936 59 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[44]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 272 \t 'URL:' \t 65 717 26 16 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[3]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 273 \t 'ID' \t 16 214 60 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[4]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 274 \t ':' \t 16 214 60 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[4]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 275 \t '12039124422' \t 16 214 60 7 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[4]/div.ms_mt[3]/div.rM_rN[1]/div.w0_w1[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 276 \t '₫ 0,00' \t 34 955 41 14 \t 'div.kI_kQ[5]/div.kI_kR[1]/div.pb_pc[1]/div.pb_pe[2]/div.pb_pf[2]/div.jA_jB[1]/div.jA_jE[2]/div.vb_vc[1]' \t [::after]"}
-[JS] {"abx":"console","level":"log","message":"[text] 277 \t 'PRAGMATIC PLAY •' \t 52 31 71 10 \t 'div.kI_m[2]/div.kI_kK[2]/div.kI_kL[1]/div.mL_mM[1]/div.mL_mN[1]/div.mL_mO[2]/div.mL_mQ[1]/span.tx_ty[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 278 \t '₫ 9,56' \t 34 952 40 20 \t 'div.pb_pe[2]/div.pb_pf[2]/div.jA_jB[1]/div.jA_jE[2]/div.vb_vc[1]/div.vb_ve[1]/span[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 279 \t '₫ 0,00' \t 127 952 41 20 \t 'div.pb_pe[2]/div.pb_pf[3]/div.jA_jB.null[1]/div.jA_jE[2]/div.vb_vc[1]/div.vb_ve[1]/span[1]/span[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 280 \t 'Tổng Tiền Cược' \t 104 943 87 10 \t 'div.kI_m[2]/div.kI_kQ[5]/div.kI_kR[1]/div.pb_pc[1]/div.pb_pe[2]/div.pb_pf[3]/div.jA_jB.null[1]/div.jA_jC[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 281 \t 'Table settings' \t 389 -91 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[1]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 282 \t 'Table settings' \t 822 -91 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[2]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 283 \t 'Table settings' \t 1254 -91 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[3]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 284 \t 'Table settings' \t 389 194 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[4]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 285 \t 'Table settings' \t 822 194 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[5]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 286 \t 'Table settings' \t 1254 194 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[6]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 287 \t 'Table settings' \t 389 481 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[7]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 288 \t 'Table settings' \t 822 481 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[8]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 289 \t 'Table settings' \t 1254 481 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[9]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 290 \t 'Table settings' \t 389 767 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[10]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 291 \t 'Table settings' \t 822 767 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[11]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 292 \t 'Table settings' \t 1254 767 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[12]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 293 \t 'Table settings' \t 389 1053 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[13]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 294 \t 'Table settings' \t 822 1053 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[14]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 295 \t 'Table settings' \t 1254 1053 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[15]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 296 \t 'Table settings' \t 389 1340 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[16]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 297 \t 'Table settings' \t 822 1340 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[17]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 298 \t 'Table settings' \t 1254 1340 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[18]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 299 \t 'Table settings' \t 389 1626 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[19]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 300 \t 'Table settings' \t 822 1626 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[20]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 301 \t 'Table settings' \t 1254 1626 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[21]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 302 \t 'Table settings' \t 389 1912 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[22]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 303 \t 'Table settings' \t 822 1912 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[23]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 304 \t 'Table settings' \t 1254 1912 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[24]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 305 \t 'Table settings' \t 389 2198 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[25]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 306 \t 'Table settings' \t 822 2198 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[26]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 307 \t 'Table settings' \t 1254 2198 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[27]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 308 \t 'Table settings' \t 389 2485 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[28]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 309 \t 'Table settings' \t 822 2485 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[29]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 310 \t 'Table settings' \t 1254 2485 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[30]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 311 \t 'Table settings' \t 389 2771 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[31]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 312 \t 'Table settings' \t 822 2771 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[32]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 313 \t 'Table settings' \t 1254 2771 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[33]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 314 \t 'Table settings' \t 389 3057 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[34]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 315 \t 'Table settings' \t 822 3057 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[35]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 316 \t 'Table settings' \t 1254 3057 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[36]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 317 \t 'Table settings' \t 389 3344 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[37]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 318 \t 'Table settings' \t 822 3344 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[38]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 319 \t 'Table settings' \t 1254 3344 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[39]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 320 \t 'Table settings' \t 389 3630 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[40]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 321 \t 'Table settings' \t 822 3630 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[41]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 322 \t 'Table settings' \t 1254 3630 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[42]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 323 \t 'Table settings' \t 389 3916 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[43]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 324 \t 'Table settings' \t 822 3916 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[44]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 325 \t 'Table settings' \t 1254 3916 31 31 \t 'div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.he_hf.he_hi[45]/div.ms_mt[3]/div.rJ_rK[2]/div.gb_gc[3]/div[1]/button.xy_xz[1]' \t [aria-label]"}
-[JS] {"abx":"console","level":"log","message":"[text] 326 \t '4' \t 501 935 32 32 \t 'div[1]/button.lF_lG.lF_lN[1]/span.lF_lR[1]/span.lF_lM[1]/span.so_sp.so_sq[1]/svg.[object.SVGAnimatedString][1]/foreignobject.[object.SVGAnimatedString][1]/div.v0_wa[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 327 \t '20' \t 541 940 32 32 \t 'div[1]/button.lF_lG.lF_lH[1]/span.lF_lR[1]/span.lF_lM[1]/span.so_sp.so_sr[1]/svg.[object.SVGAnimatedString][1]/foreignobject.[object.SVGAnimatedString][1]/div.v0_wa[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 328 \t '40' \t 581 940 32 32 \t 'div[1]/button.lF_lG.lF_lH[1]/span.lF_lR[1]/span.lF_lM[1]/span.so_sp.so_ss[1]/svg.[object.SVGAnimatedString][1]/foreignobject.[object.SVGAnimatedString][1]/div.v0_wa[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 329 \t '100' \t 621 940 32 32 \t 'div[1]/button.lF_lG.lF_lH[1]/span.lF_lR[1]/span.lF_lM[1]/span.so_sp.so_st[1]/svg.[object.SVGAnimatedString][1]/foreignobject.[object.SVGAnimatedString][1]/div.v0_wa[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 330 \t '500' \t 661 940 32 32 \t 'div[1]/button.lF_lG.lF_lH[1]/span.lF_lR[1]/span.lF_lM[1]/span.so_sp.so_su[1]/svg.[object.SVGAnimatedString][1]/foreignobject.[object.SVGAnimatedString][1]/div.v0_wa[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 331 \t '2K' \t 701 940 32 32 \t 'div[1]/button.lF_lG.lF_lH[1]/span.lF_lR[1]/span.lF_lM[1]/span.so_sp.so_sv[1]/svg.[object.SVGAnimatedString][1]/foreignobject.[object.SVGAnimatedString][1]/div.v0_wa[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 332 \t '5K' \t 741 940 32 32 \t 'div[1]/button.lF_lG.lF_lH[1]/span.lF_lR[1]/span.lF_lM[1]/span.so_sp.so_sw[1]/svg.[object.SVGAnimatedString][1]/foreignobject.[object.SVGAnimatedString][1]/div.v0_wa[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 333 \t '20K' \t 781 940 32 32 \t 'div[1]/button.lF_lG.lF_lH[1]/span.lF_lR[1]/span.lF_lM[1]/span.so_sp.so_sx[1]/svg.[object.SVGAnimatedString][1]/foreignobject.[object.SVGAnimatedString][1]/div.v0_wa[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 334 \t 'Go' \t 1234 711 39 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[3]/button[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 335 \t '₫ 100.000,00' \t 104 955 86 14 \t 'div.kI_kQ[5]/div.kI_kR[1]/div.pb_pc[1]/div.pb_pe[2]/div.pb_pf[3]/div.jA_jB.null[1]/div.jA_jE[2]/div.vb_vc[1]' \t [::after]"}
-[JS] {"abx":"console","level":"log","message":"[text] 336 \t 'NHÀ CÁI' \t 618 306 65 20 \t 'div.Cr_Cs.Cr_Cz[2]/div.Cr_Cv[1]/div.Cr_Cw[1]/div.yH_yI[1]/div.yH_uc.yH_yM[1]/div.yH_yS[1]/div.yH_yJ[1]/div.yH_yN[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 337 \t 'Baccarat 1' \t 882 1110 75 20 \t 'div.ec_F[1]/div.he_hf.he_hi[18]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 338 \t 'Copy' \t 136 1135 53 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[5]/div[1]/button[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 339 \t 'Baccarat 2' \t 882 251 78 20 \t 'div.ec_F[1]/div.he_hf.he_hi[9]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 340 \t 'Baccarat 7' \t 64 2255 78 20 \t 'div.ec_F[1]/div.he_hf.he_hi[28]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 341 \t 'Baccarat 3' \t 64 -321 79 20 \t 'div.ec_F[1]/div.he_hf.he_hi[1]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 342 \t 'Baccarat 9' \t 16 1396 79 20 \t 'div.ec_F[1]/div.he_hf.he_hi[19]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 343 \t 'Baccarat 5' \t 882 1396 79 20 \t 'div.ec_F[1]/div.he_hf.he_hi[21]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 344 \t 'Baccarat 6' \t 882 2255 79 20 \t 'div.ec_F[1]/div.he_hf.he_hi[30]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 345 \t 'Run JS' \t 65 1135 65 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[5]/div[1]/button[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 346 \t 'Overlay' \t 1187 651 67 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[2]/button[12]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 347 \t 'TextMap' \t 152 651 72 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[2]/button[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 348 \t 'Mega Baccarat' \t 882 2541 111 20 \t 'div.ec_F[1]/div.he_hf.he_hi[33]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 349 \t 'LinksMap' \t 65 651 79 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[2]/button[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 350 \t 'Copy Info' \t 1263 644 53 44 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[2]/button[13]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 351 \t 'Hòa' \t 186 677 64 37 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.uU_ha[3]/div.zv_zw[1]/div[1]/div.kU_kV.kU_k1[1]/div.qE_lp.qE_qO[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 352 \t 'SUPER 8' \t 186 722 64 37 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.uU_ha[3]/div.zv_zw[2]/div[1]/div.kU_kV.kU_lb[1]/div.qE_lp.qE_qQ[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 353 \t 'Hòa' \t -1375 -1589 64 37 \t 'div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.gX_gZ[46]/div.gX_gY[1]/div.gX_ha.undefined[5]/div.kU_kV.kU_k1[1]/div.qE_lp.qE_qO[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 354 \t 'Super 6' \t -1375 -1544 64 37 \t 'div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.gX_gZ[46]/div.gX_gY[1]/div.gX_ha.undefined[5]/div.kU_kV.kU_la[2]/div.qE_lp.qE_qP[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 355 \t 'SUPER 8' \t -1296 -1589 64 37 \t 'div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.gX_gZ[46]/div.gX_gY[1]/div.gX_ha.undefined[6]/div.kU_kV.kU_lb[1]/div.qE_lp.qE_qQ[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 356 \t 'Fortune 6' \t -1296 -1544 64 37 \t 'div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.gX_gZ[46]/div.gX_gY[1]/div.gX_ha.undefined[6]/div.kU_kV.kU_lc[2]/div.qE_lp.qE_qR[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 357 \t 'Auto Scan' \t 195 1135 83 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[5]/div[1]/button[3]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 358 \t 'ResultMap' \t 763 651 85 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[2]/button[7]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 359 \t 'Super 8 Baccarat' \t 16 537 125 20 \t 'div.ec_F[1]/div.he_hf.he_hi[10]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 360 \t 'Baccarat Nhiều Bàn' \t 52 12 140 18 \t 'div.bk_bl[1]/div.kI_m[2]/div.kI_kK[2]/div.kI_kL[1]/div.mL_mM[1]/div.mL_mN[1]/div.mL_mO[2]/button.mL_mP[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 361 \t 'Baccarat Nhanh 1' \t 16 2541 128 20 \t 'div.ec_F[1]/div.he_hf.he_hi[31]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 362 \t 'Baccarat Nhanh 7' \t 496 823 130 20 \t 'div.ec_F[1]/div.he_hf.he_hi[14]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 363 \t 'Baccarat Siêu Tốc' \t 929 1969 130 20 \t 'div.ec_F[1]/div.he_hf.he_hi[27]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 364 \t 'Baccarat Nhanh 9' \t 64 1110 131 20 \t 'div.ec_F[1]/div.he_hf.he_hi[16]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 365 \t 'Baccarat Nhanh 3' \t 882 2827 131 20 \t 'div.ec_F[1]/div.he_hf.he_hi[36]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 366 \t 'Baccarat Nhanh 2' \t 449 3400 131 20 \t 'div.ec_F[1]/div.he_hf.he_hi[41]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 367 \t 'Baccarat Nhanh 8' \t 929 537 132 20 \t 'div.ec_F[1]/div.he_hf.he_hi[12]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 368 \t 'Baccarat Nhanh 6' \t 449 2541 132 20 \t 'div.ec_F[1]/div.he_hf.he_hi[32]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 369 \t 'Baccarat Nhanh 5' \t 449 3114 132 20 \t 'div.ec_F[1]/div.he_hf.he_hi[38]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 370 \t 'Baccarat Nhanh 11' \t 929 -321 133 20 \t 'div.ec_F[1]/div.he_hf.he_hi[3]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 371 \t 'Baccarat Nhanh 17' \t 449 3686 135 20 \t 'div.ec_F[1]/div.he_hf.he_hi[44]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 372 \t 'Baccarat Nhanh 12' \t 496 -321 136 20 \t 'div.ec_F[1]/div.he_hf.he_hi[2]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 373 \t 'Baccarat Nhanh 13' \t 496 2255 136 20 \t 'div.ec_F[1]/div.he_hf.he_hi[29]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 374 \t 'ClosePopup' \t 232 651 94 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[2]/button[3]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 375 \t 'Baccarat Nhanh 10' \t 496 1396 137 20 \t 'div.ec_F[1]/div.he_hf.he_hi[20]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 376 \t 'Baccarat Nhanh 15' \t 496 1682 137 20 \t 'div.ec_F[1]/div.he_hf.he_hi[23]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 377 \t 'Baccarat Nhanh 18' \t 882 1682 137 20 \t 'div.ec_F[1]/div.he_hf.he_hi[24]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 378 \t 'Baccarat Nhanh 16' \t 449 1969 137 20 \t 'div.ec_F[1]/div.he_hf.he_hi[26]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 379 \t 'Sảnh' \t 975 12 86 32 \t 'div.bk_bl[1]/div.kI_m[2]/div.kI_kK[2]/div.kI_kL[1]/div.ls_lt[2]/div.ls_lu[1]/button.hX_hY[1]/span.hX_hZ[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 380 \t 'Fortune 6 Baccarat' \t 16 1682 139 20 \t 'div.ec_F[1]/div.he_hf.he_hi[22]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[1]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 381 \t 'Dump Bacc3' \t 285 1135 98 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[5]/div[1]/button[4]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 382 \t 'Tất Cả Bàn' \t 535 16 119 24 \t 'div.bk_bl[1]/div.kI_m[2]/div.kI_is[3]/div.kI_kO[2]/div.X_bb[1]/div.eh_ei.eh_ej[1]/div.kc_ke[1]/div.oY_oZ.oY_o1[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 383 \t 'Good Road' \t 658 16 120 24 \t 'div.bk_bl[1]/div.kI_m[2]/div.kI_is[3]/div.kI_kO[2]/div.X_bb[1]/div.eh_ei.eh_ej[1]/div.kc_ke[1]/div.oY_oZ.oY_o0[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 384 \t 'Baccarat Hàn Quốc 1' \t 43 3114 150 20 \t 'div.ec_F[1]/div.he_hf.he_hi[37]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 385 \t 'Baccarat Hàn Quốc 2' \t 908 3400 153 20 \t 'div.ec_F[1]/div.he_hf.he_hi[42]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 386 \t 'Click Đăng Nhập' \t 1003 636 53 59 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[2]/button[9]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 387 \t 'Thử lại (tự động)' \t 1123 636 56 59 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[2]/button[11]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 388 \t 'Scan200TextMap' \t 474 651 125 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[2]/button[5]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 389 \t 'Chơi Xóc Đĩa Live' \t 1064 629 50 74 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[2]/button[10]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 390 \t 'Thu gọn hết' \t 577 8 117 32 \t 'div[5]/div.bk_bl[1]/div.kI_m[2]/div.kI_iF[4]/div.kw_kx.kw_ky[1]/div.vH_vI.vH_vM[1]/div.Bk_vP.vH_vP[2]/button.Gx_Gy[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 391 \t 'Scan200LinksMap' \t 335 651 131 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[2]/button[4]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 392 \t 'Baccarat Nhanh Thái Lan 1' \t 908 3114 192 20 \t 'div.ec_F[1]/div.he_hf.he_hi[39]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 393 \t 'Baccarat Nhanh Thái Lan 2' \t 43 3686 195 20 \t 'div.ec_F[1]/div.he_hf.he_hi[43]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 394 \t 'P 6' \t -1686 -1589 48 82 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.gX_gZ[46]/div.gX_gY[1]/div.kU_kV.kU_lg[1]/div.qE_lp.qE_qU[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 395 \t 'Đôi Super P' \t -1622 -1589 48 82 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.gX_gZ[46]/div.gX_gY[1]/div.kU_kV.kU_lf[2]/div.qE_lp.qE_qK[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 396 \t 'Đôi P' \t -1558 -1589 48 82 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.gX_gZ[46]/div.gX_gY[1]/div.kU_kV.kU_le[3]/div.qE_lp.qE_qH[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 397 \t 'Đôi B' \t -1097 -1589 48 82 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.gX_gZ[46]/div.gX_gY[1]/div.kU_kV.kU_lh[8]/div.qE_lp.qE_qJ[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 398 \t 'Đôi Super B' \t -1033 -1589 48 82 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.gX_gZ[46]/div.gX_gY[1]/div.kU_kV.kU_li[9]/div.qE_lp.qE_qL[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 399 \t 'B 6' \t -969 -1589 48 82 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.gX_gZ[46]/div.gX_gY[1]/div.kU_kV.kU_lj[10]/div.qE_lp.qE_qV[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 400 \t 'Việt Nam Baccarat Nhanh 1' \t 43 -35 198 20 \t 'div.ec_F[1]/div.he_hf.he_hi[4]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 401 \t 'Đôi P' \t 19 104 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[1]/div[1]/div.kU_kV.kU_le[1]/div.qE_lp.qE_qH[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 402 \t 'Đôi B' \t 369 104 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[5]/div[1]/div.kU_kV.kU_lh[1]/div.qE_lp.qE_qJ[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 403 \t 'Đôi P' \t 452 104 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[1]/div[1]/div.kU_kV.kU_le[1]/div.qE_lp.qE_qH[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 404 \t 'Đôi B' \t 802 104 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[5]/div[1]/div.kU_kV.kU_lh[1]/div.qE_lp.qE_qJ[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 405 \t 'Đôi P' \t 884 104 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[1]/div[1]/div.kU_kV.kU_le[1]/div.qE_lp.qE_qH[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 406 \t 'Đôi B' \t 1235 104 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[5]/div[1]/div.kU_kV.kU_lh[1]/div.qE_lp.qE_qJ[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 407 \t 'Đôi P' \t 19 390 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[1]/div[1]/div.kU_kV.kU_le[1]/div.qE_lp.qE_qH[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 408 \t 'Đôi B' \t 369 390 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[5]/div[1]/div.kU_kV.kU_lh[1]/div.qE_lp.qE_qJ[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 409 \t 'Đôi P' \t 452 390 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[1]/div[1]/div.kU_kV.kU_le[1]/div.qE_lp.qE_qH[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 410 \t 'Đôi B' \t 802 390 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[5]/div[1]/div.kU_kV.kU_lh[1]/div.qE_lp.qE_qJ[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 411 \t 'Đôi P' \t 884 390 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.zv_zw[1]/div[1]/div.kU_kV.kU_le[1]/div.qE_lp.qE_qH[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 412 \t 'Đôi B' \t 1235 390 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.zv_zw[5]/div[1]/div.kU_kV.kU_lh[1]/div.qE_lp.qE_qJ[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 413 \t 'Đôi Super P' \t 19 677 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.zv_zw[1]/div[1]/div.kU_kV.kU_lf[1]/div.qE_lp.qE_qK[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 414 \t 'Đôi Super B' \t 369 677 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.zv_zw[5]/div[1]/div.kU_kV.kU_li[1]/div.qE_lp.qE_qL[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 415 \t 'Đôi P' \t 452 677 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[1]/div[1]/div.kU_kV.kU_le[1]/div.qE_lp.qE_qH[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 416 \t 'Đôi B' \t 802 677 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[5]/div[1]/div.kU_kV.kU_lh[1]/div.qE_lp.qE_qJ[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 417 \t 'Đôi P' \t 884 677 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[1]/div[1]/div.kU_kV.kU_le[1]/div.qE_lp.qE_qH[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 418 \t 'Đôi B' \t 1235 677 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[5]/div[1]/div.kU_kV.kU_lh[1]/div.qE_lp.qE_qJ[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 419 \t 'Đôi P' \t 19 963 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[1]/div[1]/div.kU_kV.kU_le[1]/div.qE_lp.qE_qH[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 420 \t 'Đôi B' \t 369 963 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[5]/div[1]/div.kU_kV.kU_lh[1]/div.qE_lp.qE_qJ[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 421 \t 'Đôi P' \t 452 963 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.zv_zw[1]/div[1]/div.kU_kV.kU_le[1]/div.qE_lp.qE_qH[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 422 \t 'Đôi B' \t 802 963 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.zv_zw[5]/div[1]/div.kU_kV.kU_lh[1]/div.qE_lp.qE_qJ[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 423 \t 'Đôi P' \t 884 963 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[1]/div[1]/div.kU_kV.kU_le[1]/div.qE_lp.qE_qH[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 424 \t 'Đôi B' \t 1235 963 48 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[5]/div[1]/div.kU_kV.kU_lh[1]/div.qE_lp.qE_qJ[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 425 \t 'Scan200ResultMap' \t 856 651 138 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[2]/button[8]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 426 \t 'Việt Nam Baccarat Nhanh 2' \t 908 -35 201 20 \t 'div.ec_F[1]/div.he_hf.he_hi[6]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 427 \t 'Việt Nam Baccarat Nhanh 3' \t 43 1969 201 20 \t 'div.ec_F[1]/div.he_hf.he_hi[25]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 428 \t 'Baccarat Nhanh Hàn Quốc 1' \t 43 251 202 20 \t 'div.ec_F[1]/div.he_hf.he_hi[7]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 429 \t 'Baccarat Nhanh Tiếng Hoa 1' \t 475 251 203 20 \t 'div.ec_F[1]/div.he_hf.he_hi[8]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 430 \t 'Baccarat Nhanh Indonesia 1' \t 43 3400 203 20 \t 'div.ec_F[1]/div.he_hf.he_hi[40]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 431 \t 'Baccarat Nhanh Hàn Quốc 2' \t 43 2827 205 20 \t 'div.ec_F[1]/div.he_hf.he_hi[34]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 432 \t 'Baccarat Nhanh Hàn Quốc 3' \t 475 -35 206 20 \t 'div.ec_F[1]/div.he_hf.he_hi[5]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 433 \t 'Baccarat Nhanh Tiếng Hoa 2' \t 908 823 206 20 \t 'div.ec_F[1]/div.he_hf.he_hi[15]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 434 \t 'Baccarat Nhanh Hàn Quốc 5' \t 475 1110 206 20 \t 'div.ec_F[1]/div.he_hf.he_hi[17]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 435 \t 'Baccarat Nhanh Tiếng Hoa 3' \t 43 823 207 20 \t 'div.ec_F[1]/div.he_hf.he_hi[13]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 436 \t 'Baccarat Nhanh Tiếng Nhật 1' \t 908 3686 208 20 \t 'div.ec_F[1]/div.he_hf.he_hi[45]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 437 \t 'Baccarat Nhanh Tiếng Nhật 2' \t 475 537 211 20 \t 'div.ec_F[1]/div.he_hf.he_hi[11]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 438 \t 'Baccarat Nhanh Tiếng Nhật 3' \t 475 2827 211 20 \t 'div.ec_F[1]/div.he_hf.he_hi[35]/div.mx_my[1]/div.mx_G[1]/div.rW_rX[1]/div.rW_sk[2]/div[1]/span.rW_sl[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 439 \t 'Scan200ClosePopup' \t 607 651 147 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[2]/button[6]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 440 \t 'Hòa' \t 186 104 64 83 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.uU_ha[3]/div.zv_zw[1]/div[1]/div.kU_kV.kU_k1[1]/div.qE_lp.qE_qO[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 441 \t 'Hòa' \t 619 104 64 83 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.uU_ha[3]/div.zv_zw[1]/div[1]/div.kU_kV.kU_k1[1]/div.qE_lp.qE_qO[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 442 \t 'Hòa' \t 1052 104 64 83 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.uU_ha[3]/div.zv_zw[1]/div[1]/div.kU_kV.kU_k1[1]/div.qE_lp.qE_qO[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 443 \t 'Hòa' \t 186 390 64 83 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.uU_ha[3]/div.zv_zw[1]/div[1]/div.kU_kV.kU_k1[1]/div.qE_lp.qE_qO[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 444 \t 'Hòa' \t 619 390 64 83 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.uU_ha[3]/div.zv_zw[1]/div[1]/div.kU_kV.kU_k1[1]/div.qE_lp.qE_qO[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 445 \t 'Hòa' \t 1052 390 64 83 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.uU_ha[3]/div.zv_zw[1]/div[1]/div.kU_kV.kU_k1[1]/div.qE_lp.qE_qO[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 446 \t 'Hòa' \t 619 677 64 83 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.uU_ha[3]/div.zv_zw[1]/div[1]/div.kU_kV.kU_k1[1]/div.qE_lp.qE_qO[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 447 \t 'Hòa' \t 1052 677 64 83 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.uU_ha[3]/div.zv_zw[1]/div[1]/div.kU_kV.kU_k1[1]/div.qE_lp.qE_qO[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 448 \t 'Hòa' \t 186 963 64 83 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.uU_ha[3]/div.zv_zw[1]/div[1]/div.kU_kV.kU_k1[1]/div.qE_lp.qE_qO[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 449 \t 'Hòa' \t 619 963 64 83 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.uU_ha[3]/div.zv_zw[1]/div[1]/div.kU_kV.kU_k1[1]/div.qE_lp.qE_qO[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 450 \t 'Hòa' \t 1052 963 64 83 \t 'div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.uU_ha[3]/div.zv_zw[1]/div[1]/div.kU_kV.kU_k1[1]/div.qE_lp.qE_qO[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 451 \t 'Người Chơi' \t -1494 -1589 103 82 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.gX_gZ[46]/div.gX_gY[1]/div.kU_kV.kU_kZ[4]/div.qE_lp.qE_q1[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 452 \t 'Nhà Cái' \t -1216 -1589 103 82 \t 'div.ec_ee.tile-container-wrapper[1]/div.jF_jG[1]/div.jF_jJ.jF_jL[1]/div.ec_F[1]/div.gX_gZ[46]/div.gX_gY[1]/div.kU_kV.kU_k0[7]/div.qE_lp.qE_ra[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 453 \t 'Người Chơi' \t 75 104 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[2]/div[1]/div.kU_kV.kU_kZ[1]/div.qE_lp.qE_q1[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 454 \t 'Nhà Cái' \t 258 104 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[4]/div[1]/div.kU_kV.kU_k0[1]/div.qE_lp.qE_ra[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 455 \t 'Người Chơi' \t 508 104 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[2]/div[1]/div.kU_kV.kU_kZ[1]/div.qE_lp.qE_q1[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 456 \t 'Nhà Cái' \t 691 104 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[4]/div[1]/div.kU_kV.kU_k0[1]/div.qE_lp.qE_ra[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 457 \t 'Người Chơi' \t 941 104 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[2]/div[1]/div.kU_kV.kU_kZ[1]/div.qE_lp.qE_q1[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 458 \t 'Nhà Cái' \t 1124 104 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[4]/div[1]/div.kU_kV.kU_k0[1]/div.qE_lp.qE_ra[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 459 \t 'Người Chơi' \t 941 390 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.zv_zw[2]/div[1]/div.kU_kV.kU_kZ[1]/div.qE_lp.qE_q1[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 460 \t 'Nhà Cái' \t 1124 390 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.zv_zw[4]/div[1]/div.kU_kV.kU_k0[1]/div.qE_lp.qE_ra[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 461 \t 'Người Chơi' \t 75 677 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.zv_zw[2]/div[1]/div.kU_kV.kU_kZ[1]/div.qE_lp.qE_q1[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 462 \t 'Nhà Cái' \t 258 677 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.zv_zw[4]/div[1]/div.kU_kV.kU_k0[1]/div.qE_lp.qE_ra[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 463 \t 'Người Chơi' \t 508 677 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[2]/div[1]/div.kU_kV.kU_kZ[1]/div.qE_lp.qE_q1[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 464 \t 'Nhà Cái' \t 691 677 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[4]/div[1]/div.kU_kV.kU_k0[1]/div.qE_lp.qE_ra[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 465 \t 'Nhà Cái' \t 1124 677 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[4]/div[1]/div.kU_kV.kU_k0[1]/div.qE_lp.qE_ra[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 466 \t 'Người Chơi' \t 75 963 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[2]/div[1]/div.kU_kV.kU_kZ[1]/div.qE_lp.qE_q1[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 467 \t 'Nhà Cái' \t 258 963 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[4]/div[1]/div.kU_kV.kU_k0[1]/div.qE_lp.qE_ra[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 468 \t 'Người Chơi' \t 508 963 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.zv_zw[2]/div[1]/div.kU_kV.kU_kZ[1]/div.qE_lp.qE_q1[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 469 \t 'Nhà Cái' \t 691 963 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.zv_zw[4]/div[1]/div.kU_kV.kU_k0[1]/div.qE_lp.qE_ra[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 470 \t 'Người Chơi' \t 941 963 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[2]/div[1]/div.kU_kV.kU_kZ[1]/div.qE_lp.qE_q1[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 471 \t 'Nhà Cái' \t 1124 963 103 83 \t 'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[4]/div[1]/div.kU_kV.kU_k0[1]/div.qE_lp.qE_ra[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 472 \t 'Table scan: ch??a ch???y' \t 65 1242 1208 14 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[5]/div[2]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 473 \t 'Home Watch' \t 65 605 1208 16 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 474 \t 'https://...' \t 97 711 1130 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[3]/input[1]' \t [input@placeholder]"}
-[JS] {"abx":"console","level":"log","message":"[text] 475 \t 'https://client.pragmaticplaylive.net/desktop/multibaccarat/' \t 97 711 1130 29 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[3]/input[1]' \t [input@value]"}
-[JS] {"abx":"console","level":"log","message":"[text] 476 \t 'Đã bật log postMessage (overlay). --- Kết quả sẽ hiển thị ở đây...' \t 65 1168 1208 62 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[5]/pre[1]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 477 \t 'Dán JS rồi bấm Run (chạy trong top window)' \t 65 1031 1226 96 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[5]/textarea[1]' \t [textarea@placeholder]"}
-[JS] {"abx":"console","level":"log","message":"[text] 478 \t 'window.__abxDumpBaccarat3Characters();' \t 65 1031 1226 96 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[5]/textarea[1]' \t [textarea@value]"}
-[JS] {"abx":"console","level":"log","message":"[text] 479 \t '• URL : https://client.pragmaticplaylive.net/desktop/multibaccarat/ • Tên nhân vật: (?) • Tài khoản: (?) • Title: Multibaccarat • Has Xóc Đĩa: false Log: Đã bật log overlay. Kind :' \t 65 746 1208 277 \t 'html.ready[1]/body[1]/div.abx-homewatch-root[3]/div[4]' \t [visible]"}
-[JS] {"abx":"console","level":"log","message":"[text] 480 \t '0' \t 0 0 1000 1000 \t 'div[2]/div[5]/div.bk_bl[1]/div.eQ_eR[3]/span.so_sp.so_sq[1]/svg.[object.SVGAnimatedString][1]/foreignobject.[object.SVGAnimatedString][1]/div.v0_wa[1]' \t [visible]"}
-[JS] {"abx":"home_tick","username":"","balance":"","href":"https://client.pragmaticplaylive.net/desktop/multibaccarat/","title":"Multibaccarat","ts":1766417356696}
-[JS] {"abx":"home_tick","username":"","balance":"","href":"https://client.pragmaticplaylive.net/desktop/multibaccarat/","title":"Multibaccarat","ts":1766417357500}
-[JS] {"abx":"home_tick","username":"","balance":"","href":"https://client.pragmaticplaylive.net/desktop/multibaccarat/","title":"Multibaccarat","ts":1766417358298}
+[23:05:46] Saved config
+[23:05:46] [GAME] Popup-login (cocos): clicked
+[23:05:46] [AutoLoginWatch] clicked
+[23:05:47] [HOME] cmd home_start_push ms=240
+[23:05:47] [Bridge] Frame injected + autostart armed.
+[23:05:47] [Bridge] Frame injected + autostart armed.
+[23:05:48] [Frame NavStart] id=a-rcbhicmp74tb uri=https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LcMZR0UAAAAALgPMcgHwga7gY5p8QMg1Hj-bmUv&co=aHR0cHM6Ly93d3cucnI1MzA5LmNvbTo0NDM.&hl=en&v=7gg7H51Q-naNfhmCP3_R47ho&size=invisible&anchor-ms=20000&execute-ms=30000&cb=6h4lj3esmvb8
+[23:05:48] [Frame NavDone] id=a-rcbhicmp74tb uri=https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LcMZR0UAAAAALgPMcgHwga7gY5p8QMg1Hj-bmUv&co=aHR0cHM6Ly93d3cucnI1MzA5LmNvbTo0NDM.&hl=en&v=7gg7H51Q-naNfhmCP3_R47ho&size=invisible&anchor-ms=20000&execute-ms=30000&cb=6h4lj3esmvb8
+[23:05:48] [Bridge] Frame injected + autostart armed.
+[23:05:48] [Bridge] Frame injected + autostart armed.
+[23:05:48] [Frame NavStart] id=a-rcbhicmp74tb uri=https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LcMZR0UAAAAALgPMcgHwga7gY5p8QMg1Hj-bmUv&co=aHR0cHM6Ly93d3cucnI1MzA5LmNvbTo0NDM.&hl=en&v=7gg7H51Q-naNfhmCP3_R47ho&size=invisible&anchor-ms=20000&execute-ms=30000&cb=tyeazmolq1dr
+[23:05:48] [Bridge] Frame injected + autostart armed.
+[23:05:48] [Bridge] Frame injected + autostart armed.
+[23:05:48] [Frame NavStart] id=a-rcbhicmp74tb uri=https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LcMZR0UAAAAALgPMcgHwga7gY5p8QMg1Hj-bmUv&co=aHR0cHM6Ly93d3cucnI1MzA5LmNvbTo0NDM.&hl=en&v=7gg7H51Q-naNfhmCP3_R47ho&size=invisible&anchor-ms=20000&execute-ms=30000&cb=lb53r94mfblv
+[23:05:48] [Bridge] Frame injected + autostart armed.
+[23:05:48] [Bridge] Frame injected + autostart armed.
+[23:05:48] [Frame NavStart] id= uri=about:blank
+[23:05:48] [Bridge] Frame DOMContentLoaded -> reinjected + autostart.
+[23:05:48] [Bridge] Frame NavigationCompleted -> reinjected + autostart.
+[23:05:48] [Frame NavDone] id= uri=about:blank
+[23:05:48] [Bridge] Frame DOMContentLoaded -> reinjected + autostart.
+[23:05:48] [Bridge] Frame NavigationCompleted -> reinjected + autostart.
+[23:05:48] [Frame NavDone] id=a-rcbhicmp74tb uri=https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LcMZR0UAAAAALgPMcgHwga7gY5p8QMg1Hj-bmUv&co=aHR0cHM6Ly93d3cucnI1MzA5LmNvbTo0NDM.&hl=en&v=7gg7H51Q-naNfhmCP3_R47ho&size=invisible&anchor-ms=20000&execute-ms=30000&cb=lb53r94mfblv
+[PKT] 23:05:48 WS.created wss://socket.14930291.com/rtmsg/668/vwsst5r0/websocket 
+[PKT] 23:05:48 WS.created wss://socket.14930291.com/rtmsg/994/nqbar5vz/websocket 
+[23:05:48] [Bridge] Frame injected + autostart armed.
+[23:05:48] [Bridge] Frame injected + autostart armed.
+[23:05:48] [Frame NavStart] id=c-rcbhicmp74tb uri=https://www.google.com/recaptcha/api2/bframe?hl=en&v=7gg7H51Q-naNfhmCP3_R47ho&k=6LcMZR0UAAAAALgPMcgHwga7gY5p8QMg1Hj-bmUv&bft=0dAFcWeA7sWRfRyRPxWR3kZl2sc9n2GZhm0Kx3c-D4jwt_D0_z-QUk4vcQqRc99029TPLRatsivsilB-MnfGm6gkTK4rtuPARqCQ
+[23:05:48] [Bridge] Frame injected + autostart armed.
+[23:05:48] [Bridge] Frame injected + autostart armed.
+[23:05:48] [Frame NavStart] id= uri=about:blank
+[23:05:48] [Bridge] Frame DOMContentLoaded -> reinjected + autostart.
+[23:05:48] [Bridge] Frame NavigationCompleted -> reinjected + autostart.
+[23:05:48] [Frame NavDone] id= uri=about:blank
+[23:05:48] [Bridge] Frame DOMContentLoaded -> reinjected + autostart.
+[23:05:48] [Bridge] Frame NavigationCompleted -> reinjected + autostart.
+[23:05:48] [Frame NavDone] id=c-rcbhicmp74tb uri=https://www.google.com/recaptcha/api2/bframe?hl=en&v=7gg7H51Q-naNfhmCP3_R47ho&k=6LcMZR0UAAAAALgPMcgHwga7gY5p8QMg1Hj-bmUv&bft=0dAFcWeA7sWRfRyRPxWR3kZl2sc9n2GZhm0Kx3c-D4jwt_D0_z-QUk4vcQqRc99029TPLRatsivsilB-MnfGm6gkTK4rtuPARqCQ
+[23:05:49] [HOME] play via JS: ok
+[23:05:49] [HOME] play baccarat-nhieu-ban via HomeClickPlayAsync => True
+[23:05:49] [CW] start push 240ms
+[23:05:51] [Bridge] Frame injected + autostart armed.
+[23:05:51] [Bridge] Frame injected + autostart armed.
+[23:05:51] [Frame NavStart] id= uri=about:blank
+[23:05:51] [Bridge] Frame DOMContentLoaded -> reinjected + autostart.
+[23:05:51] [Bridge] Frame NavigationCompleted -> reinjected + autostart.
+[23:05:51] [Frame NavDone] id= uri=about:blank
+[23:05:51] [Frame NavStart] id= uri=about:blank
+[23:05:51] [Bridge] Frame DOMContentLoaded -> reinjected + autostart.
+[23:05:51] [Bridge] Frame NavigationCompleted -> reinjected + autostart.
+[23:05:51] [Frame NavDone] id= uri=about:blank
+[23:05:52] [Frame NavStart] id= uri=about:blank
+[23:05:52] [Bridge] Frame DOMContentLoaded -> reinjected + autostart.
+[23:05:52] [Bridge] Frame NavigationCompleted -> reinjected + autostart.
+[23:05:52] [Frame NavDone] id= uri=about:blank
+[23:05:52] [Frame NavStart] id= uri=https://zfaj98hr0c.gjlgdtmdcj.net/gs2c/openGame.do?stylename=tcg-pl_tcgf4vndk&symbol=101&tc=0HQ7X7eflXYQW4gcy3PODW6xW4ie76UN4UHUqXh5ehTxle1snIcoHUxjuuhaB9yx&extraInfo=eyJlcElkIjoiMHJ5bmdvbWFudHJpIiwiY3VycmVuY3kiOiJWTkQyIn0&dummy=&treq=TFncMRQLJll1WfHHGLcD1IH9CJzuik6aNi1kmf5JvJ5SdD15yPG3dwEThTg56DNF
+[23:05:53] [Frame NavStart] id= uri=https://games.pragmaticplaylive.net/api/secure/GameLaunch?environmentID=203&gameid=101&secureLogin=tcg-pl_tcgf4vndk&symbol=lobby&dataType=LC&lobbyCategory=all&requestCountryCode=VN&userEnvId=203&ppCasinoId=7162&tc=0HQ7X7eflXYQW4gcy3PODW6xW4ie76UN4UHUqXh5ehTxle1snIcoHUxjuuhaB9yx&treq=TFncMRQLJll1WfHHGLcD1IH9CJzuik6aNi1kmf5JvJ5SdD15yPG3dwEThTg56DNF&ppExtraData=eyJyZXF1ZXN0Q291bnRyeUNvZGUiOiJWTiJ9
+[23:05:53] [Frame NavStart] id= uri=https://client.pragmaticplaylive.net/desktop/lobby2/?tabletype=all&casino_id=ppcah00000007162&web_server=https://games.pragmaticplaylive.net&config_url=/cgibin/appconfig/xml/configs/urls.xml&JSESSIONID=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&userId=ppc1735239491269&socket_server=wss://games.pragmaticplaylive.net/game&token=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&stats_collector_uuid=4bc62391-c421-4517-81c1-b91c44c79362&actual_web_server=https://games.pragmaticplaylive.net&socket_port=443&uiAddress=https://client.pragmaticplaylive.net/desktop/lobby2/&uiversion=1.15.2&gametype=all&game_mode=html5_desktop&lobby_version=2&lang=vi&swf_lobby_path=/member/games/lobby.swf&meta_server=https://games.pragmaticplaylive.net&lobbyGameSymbol=null&
+[23:05:53] [Frame NavStart] force top navigate to lobby: https://client.pragmaticplaylive.net/desktop/lobby2/?tabletype=all&casino_id=ppcah00000007162&web_server=https://games.pragmaticplaylive.net&config_url=/cgibin/appconfig/xml/configs/urls.xml&JSESSIONID=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&userId=ppc1735239491269&socket_server=wss://games.pragmaticplaylive.net/game&token=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&stats_collector_uuid=4bc62391-c421-4517-81c1-b91c44c79362&actual_web_server=https://games.pragmaticplaylive.net&socket_port=443&uiAddress=https://client.pragmaticplaylive.net/desktop/lobby2/&uiversion=1.15.2&gametype=all&game_mode=html5_desktop&lobby_version=2&lang=vi&swf_lobby_path=/member/games/lobby.swf&meta_server=https://games.pragmaticplaylive.net&lobbyGameSymbol=null&
+[23:05:54] [Web] NavigationCompleted event: OK
+[23:05:54] [AutoFill] sent set_login to webview
+[23:05:54] [HasAnyWebTick] hasGame=True (2025-12-27T16:05:49.1259199Z), hasHome=False (0001-01-01T00:00:00.0000000)
+[23:05:54] [AutoFill] done (filled only, no click)
+[23:05:54] [Bridge] Injected on current doc, key=1766851553922.5
+[23:05:54] [Bridge] Injected on current doc, key=1766851553922.5
+[23:05:54] [Bridge] Frame injected + autostart armed.
+[23:05:54] [Bridge] Frame injected + autostart armed.
+[23:05:54] [Frame NavStart] id= uri=https://client.pragmaticplaylive.net/account/user-profile
+[PKT] 23:05:54 WS.created wss://dga.pragmaticplaylive.net/ws 
+[23:05:54] [Bridge] Frame DOMContentLoaded -> reinjected + autostart.
+[23:05:54] [Frame NavDone] id= uri=https://client.pragmaticplaylive.net/account/user-profile
+[23:05:54] [Frame NavStart] id= uri=https://client.pragmaticplaylive.net/desktop/lobby/?tabletype=all&casino_id=ppcah00000007162&web_server=https://games.pragmaticplaylive.net&config_url=/cgibin/appconfig/xml/configs/urls.xml&JSESSIONID=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&userId=ppc1735239491269&socket_server=wss://games.pragmaticplaylive.net/game&token=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&stats_collector_uuid=4bc62391-c421-4517-81c1-b91c44c79362&actual_web_server=https://games.pragmaticplaylive.net&socket_port=443&uiAddress=https://client.pragmaticplaylive.net/desktop/lobby2/&uiversion=1.15.2&gametype=all&game_mode=html5_desktop&lobby_version=2&lang=vi&swf_lobby_path=/member/games/lobby.swf&meta_server=https://games.pragmaticplaylive.net&lobbyGameSymbol=&gamePath=/desktop/lobby2&timeStamp=1766851554855&nocache=1
+[23:05:54] [Frame NavDone] id= uri=https://client.pragmaticplaylive.net/desktop/lobby/?tabletype=all&casino_id=ppcah00000007162&web_server=https://games.pragmaticplaylive.net&config_url=/cgibin/appconfig/xml/configs/urls.xml&JSESSIONID=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&userId=ppc1735239491269&socket_server=wss://games.pragmaticplaylive.net/game&token=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&stats_collector_uuid=4bc62391-c421-4517-81c1-b91c44c79362&actual_web_server=https://games.pragmaticplaylive.net&socket_port=443&uiAddress=https://client.pragmaticplaylive.net/desktop/lobby2/&uiversion=1.15.2&gametype=all&game_mode=html5_desktop&lobby_version=2&lang=vi&swf_lobby_path=/member/games/lobby.swf&meta_server=https://games.pragmaticplaylive.net&lobbyGameSymbol=&gamePath=/desktop/lobby2&timeStamp=1766851554855&nocache=1
+[23:05:55] [Bridge] Frame injected + autostart armed.
+[23:05:55] [Bridge] Frame injected + autostart armed.
+[23:05:55] [Frame NavStart] id= uri=https://client.pragmaticplaylive.net/account/user-profile
+[23:05:55] [Bridge] Frame DOMContentLoaded -> reinjected + autostart.
+[23:05:55] [Frame NavDone] id= uri=https://client.pragmaticplaylive.net/account/user-profile
+[23:05:55] [Frame NavStart] id= uri=https://client.pragmaticplaylive.net/desktop/lobby/?tabletype=all&casino_id=ppcah00000007162&web_server=https://games.pragmaticplaylive.net&config_url=/cgibin/appconfig/xml/configs/urls.xml&JSESSIONID=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&userId=ppc1735239491269&socket_server=wss://games.pragmaticplaylive.net/game&token=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&stats_collector_uuid=4bc62391-c421-4517-81c1-b91c44c79362&actual_web_server=https://games.pragmaticplaylive.net&socket_port=443&uiAddress=https://client.pragmaticplaylive.net/desktop/lobby2/&uiversion=1.15.2&gametype=all&game_mode=html5_desktop&lobby_version=2&lang=vi&swf_lobby_path=/member/games/lobby.swf&meta_server=https://games.pragmaticplaylive.net&lobbyGameSymbol=&gamePath=/desktop/lobby2&timeStamp=1766851555460&nocache=1
+[23:05:55] [Frame NavDone] id= uri=https://client.pragmaticplaylive.net/desktop/lobby/?tabletype=all&casino_id=ppcah00000007162&web_server=https://games.pragmaticplaylive.net&config_url=/cgibin/appconfig/xml/configs/urls.xml&JSESSIONID=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&userId=ppc1735239491269&socket_server=wss://games.pragmaticplaylive.net/game&token=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&stats_collector_uuid=4bc62391-c421-4517-81c1-b91c44c79362&actual_web_server=https://games.pragmaticplaylive.net&socket_port=443&uiAddress=https://client.pragmaticplaylive.net/desktop/lobby2/&uiversion=1.15.2&gametype=all&game_mode=html5_desktop&lobby_version=2&lang=vi&swf_lobby_path=/member/games/lobby.swf&meta_server=https://games.pragmaticplaylive.net&lobbyGameSymbol=&gamePath=/desktop/lobby2&timeStamp=1766851555460&nocache=1
+[23:05:58] [ROOMDBG][RefreshRoomList] clean=0 sample=(rỗng)
+[23:05:58] [ROOM] Không tìm thấy bàn (DOM lobby chưa sẵn). Hãy thử bấm 'Lấy danh sách bàn' sau khi lobby load xong.
+[23:05:59] [Web] NavigationCompleted event: Err ConnectionAborted
+[23:05:59] [HasAnyWebTick] hasGame=True (2025-12-27T16:05:49.1259199Z), hasHome=False (0001-01-01T00:00:00.0000000)
+[23:06:00] [Web] NavigationCompleted event: OK
+[23:06:00] [AutoFill] sent set_login to webview
+[23:06:00] [HasAnyWebTick] hasGame=True (2025-12-27T16:05:49.1259199Z), hasHome=False (0001-01-01T00:00:00.0000000)
+[23:06:00] [AutoFill] done (filled only, no click)
+[23:06:00] [Bridge] Injected on current doc, key=1766851559691.8
+[23:06:00] [Bridge] Injected on current doc, key=1766851559691.8
+[23:06:00] [Bridge] Frame injected + autostart armed.
+[23:06:00] [Bridge] Frame injected + autostart armed.
+[23:06:00] [Frame NavStart] id= uri=https://client.pragmaticplaylive.net/account/user-profile
+[23:06:00] [Bridge] Frame DOMContentLoaded -> reinjected + autostart.
+[23:06:00] [Frame NavDone] id= uri=https://client.pragmaticplaylive.net/account/user-profile
+[23:06:00] [Frame NavStart] id= uri=https://client.pragmaticplaylive.net/desktop/undefined/?JSESSIONID=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&actual_web_server=https://games.pragmaticplaylive.net&casino_id=ppcah00000007162&gametype=multibaccarat&tableVariant=&lang=vi&meta_server=https://games.pragmaticplaylive.net&operator_theme=default/multi_baccarat&socket_port=443&socket_service=wss://games.pragmaticplaylive.net/game&table_id=cbcf6qas8fscb222&support_lang_theme=&common_components_theme=&referer=lobby&GrpId=4&launchSource=lcLobby&userId=ppc1735239491269&timeStamp=1766851559691&gamePath=/desktop/multibaccarat&timeStamp=1766851560860&nocache=1
+[23:06:00] [Frame NavDone] id= uri=https://client.pragmaticplaylive.net/desktop/undefined/?JSESSIONID=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&actual_web_server=https://games.pragmaticplaylive.net&casino_id=ppcah00000007162&gametype=multibaccarat&tableVariant=&lang=vi&meta_server=https://games.pragmaticplaylive.net&operator_theme=default/multi_baccarat&socket_port=443&socket_service=wss://games.pragmaticplaylive.net/game&table_id=cbcf6qas8fscb222&support_lang_theme=&common_components_theme=&referer=lobby&GrpId=4&launchSource=lcLobby&userId=ppc1735239491269&timeStamp=1766851559691&gamePath=/desktop/multibaccarat&timeStamp=1766851560860&nocache=1
+[PKT] 23:06:01 WS.created wss://gs22.pragmaticplaylive.net/game?JSESSIONID=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ%21-690838057-5fd76a6c&tableId=cbcf6qas8fscb222&type=json&launchSource=lcLobby&multiTable=true&mtbGroupId=4 
+[23:06:01] [Bridge] Frame injected + autostart armed.
+[23:06:01] [Bridge] Frame injected + autostart armed.
+[23:06:01] [Frame NavStart] id= uri=https://client.pragmaticplaylive.net/account/user-profile
+[23:06:01] [Bridge] Frame DOMContentLoaded -> reinjected + autostart.
+[23:06:01] [Frame NavDone] id= uri=https://client.pragmaticplaylive.net/account/user-profile
+[23:06:01] [Frame NavStart] id= uri=https://client.pragmaticplaylive.net/desktop/undefined/?JSESSIONID=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&actual_web_server=https://games.pragmaticplaylive.net&casino_id=ppcah00000007162&gametype=multibaccarat&tableVariant=&lang=vi&meta_server=https://games.pragmaticplaylive.net&operator_theme=default/multi_baccarat&socket_port=443&socket_service=wss://games.pragmaticplaylive.net/game&table_id=cbcf6qas8fscb222&support_lang_theme=&common_components_theme=&referer=lobby&GrpId=4&launchSource=lcLobby&userId=ppc1735239491269&timeStamp=1766851559691&gamePath=/desktop/multibaccarat&timeStamp=1766851561672&nocache=1
+[23:06:01] [Frame NavDone] id= uri=https://client.pragmaticplaylive.net/desktop/undefined/?JSESSIONID=T_VgjyhLaQusoBDCVCAO2d0MrlX1OekW21MKxLa55KCmLQsuh0NJ!-690838057-5fd76a6c&actual_web_server=https://games.pragmaticplaylive.net&casino_id=ppcah00000007162&gametype=multibaccarat&tableVariant=&lang=vi&meta_server=https://games.pragmaticplaylive.net&operator_theme=default/multi_baccarat&socket_port=443&socket_service=wss://games.pragmaticplaylive.net/game&table_id=cbcf6qas8fscb222&support_lang_theme=&common_components_theme=&referer=lobby&GrpId=4&launchSource=lcLobby&userId=ppc1735239491269&timeStamp=1766851559691&gamePath=/desktop/multibaccarat&timeStamp=1766851561672&nocache=1
+[23:06:03] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:06:03] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:06:03] [ROOM] Đã lấy 45 bàn.
+[23:06:09] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=11
+[23:06:09] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080793422 raw=B B P B T B P pb=BBPBBP countdown=1
+[23:06:09] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080794922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPB countdown=7
+[23:06:09] [TABLE] Tạo overlay cho 3 bàn.
+[23:06:09] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=10
+[23:06:09] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080793422 raw=B B P B T B P pb=BBPBBP countdown=0.413
+[23:06:09] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080794922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPB countdown=6
+[23:06:10] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=9.413
+[23:06:10] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080793422 raw=B B P B T B P pb=BBPBBP countdown=0
+[23:06:10] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080794922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPB countdown=5.402
+[23:06:11] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=9
+[23:06:11] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080794922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPB countdown=5
+[23:06:11] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=8
+[23:06:11] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080794922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPB countdown=4.411
+[23:06:12] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=7.411
+[23:06:12] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080794922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPB countdown=4
+[23:06:12] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=7
+[23:06:12] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080794922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPB countdown=3
+[23:06:13] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=6.418
+[23:06:13] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080794922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPB countdown=2.408
+[23:06:13] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:06:13] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:06:13] [ROOM] Đã lấy 45 bàn.
+[23:06:14] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=6
+[23:06:14] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080794922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPB countdown=2
+[23:06:14] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=5
+[23:06:14] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080794922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPB countdown=1.411
+[23:06:15] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=4.403
+[23:06:15] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080794922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPB countdown=1
+[23:06:15] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=4
+[23:06:15] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080794922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPB countdown=0
+[23:06:16] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=3.41
+[23:06:16] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080793422 raw=B B P B T B P B pb=BBPBBPB countdown=0
+[23:06:16] [Lease] acquire -> 200 OK | {"ok":true,"leased":true}
+[23:06:16] [LicenseCheck] timer stopped
+[23:06:16] [LicenseCheck] timer started (every 5 minutes)
+[23:06:16] [License] valid until: 2026-11-04 16:59:59Z
+[23:06:16] [CW] ensure push 240ms
+[23:06:16] [Loop] started task: 5) Theo cầu trước thông minh (TileHeight-h22z8qhp17sa0vkh)
+[23:06:16] [CW] ensure push 240ms
+[23:06:16] [Loop] started task: 5) Theo cầu trước thông minh (TileHeight-9j3eagurfwmml7z2)
+[23:06:16] [CW] ensure push 240ms
+[23:06:16] [Loop] started task: 5) Theo cầu trước thông minh (TileHeight-cbcf6qas8fscb222)
+[23:06:17] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=3
+[23:06:17] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=2
+[23:06:18] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=1.412
+[23:06:18] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=1
+[23:06:19] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=0.417
+[23:06:20] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T pb=PPPPBBPPBP countdown=0
+[23:06:22] Chiến lược: IncreaseWhenLose
+[23:06:22] Chiến lược: IncreaseWhenLose
+[23:06:22] Chiến lược: IncreaseWhenLose
+[23:06:22] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=14
+[23:06:22] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080794922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=0
+[23:06:22] [BET] B 4,000
+[23:06:22] [BET-JS] result="ok"
+[23:06:23] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=13
+[23:06:23] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=12.402
+[23:06:24] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:06:24] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:06:24] [ROOM] Đã lấy 45 bàn.
+[23:06:24] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=12
+[23:06:24] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=11
+[23:06:25] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=10.418
+[23:06:26] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=10
+[23:06:26] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=9.406
+[23:06:27] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=9
+[23:06:27] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=8
+[23:06:28] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=7.414
+[23:06:28] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=14
+[23:06:28] [BET] P 4,000
+[23:06:28] [BET-JS] result="ok"
+[23:06:29] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=7
+[23:06:29] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=13
+[23:06:29] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=6.417
+[23:06:29] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=12.412
+[23:06:30] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=6
+[23:06:30] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=12
+[23:06:30] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=5
+[23:06:30] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=11
+[23:06:31] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=4.403
+[23:06:31] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=10.397
+[23:06:32] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080795822 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=0
+[23:06:32] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=4
+[23:06:32] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=10
+[23:06:32] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=3.411
+[23:06:32] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=9.407
+[23:06:33] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=3
+[23:06:33] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=9
+[23:06:33] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=2
+[23:06:33] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=8
+[23:06:34] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=1.403
+[23:06:34] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=7.398
+[23:06:34] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:06:34] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:06:34] [ROOM] Đã lấy 45 bàn.
+[23:06:35] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=1
+[23:06:35] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=7
+[23:06:35] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=0.413
+[23:06:35] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=6.408
+[23:06:36] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B pb=BBPBBPB countdown=0
+[23:06:36] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=6
+[23:06:37] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=5
+[23:06:37] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=4.399
+[23:06:38] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=14
+[23:06:38] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=4
+[23:06:38] [BET] P 4,000
+[23:06:38] [BET-JS] result="ok"
+[23:06:38] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=13
+[23:06:38] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=3.402
+[23:06:39] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=12.408
+[23:06:39] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=3
+[23:06:39] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=12
+[23:06:39] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=2
+[23:06:40] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=11.41
+[23:06:40] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=1.401
+[23:06:41] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=11
+[23:06:41] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=1
+[23:06:41] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=10
+[23:06:41] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=0.403
+[23:06:42] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=9.411
+[23:06:42] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBP countdown=0
+[23:06:42] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=9
+[23:06:43] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=8.414
+[23:06:44] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=8
+[23:06:44] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=7
+[23:06:45] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:06:45] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:06:45] [ROOM] Đã lấy 45 bàn.
+[23:06:45] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=6.41
+[23:06:45] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080799022 raw=B B P B T B P B B pb=BBPBBPBB countdown=0
+[23:06:45] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=6
+[23:06:46] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=5.414
+[23:06:47] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=5
+[23:06:47] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=4
+[23:06:48] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=3.413
+[23:06:48] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=3
+[23:06:49] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=2.411
+[23:06:50] [TASK] stop manual
+[23:06:50] [TASK] stop manual
+[23:06:50] [TASK] stop manual
+[23:06:50] [LicenseCheck] timer stopped
+[23:06:50] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=2
+[23:06:50] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080800322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=0
+[23:06:50] [Task] canceled
+[23:06:50] [Task] canceled
+[23:06:50] [Task] canceled
+[23:06:50] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=1
+[23:06:51] [Lease] release sent: 200
+[23:06:51] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=0.42
+[23:06:51] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=14
+[23:06:52] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B pb=PPPPBBPPBPB countdown=0
+[23:06:52] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=13
+[23:06:52] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=12.406
+[23:06:53] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=12
+[23:06:53] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=11
+[23:06:54] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=10.405
+[23:06:55] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=10
+[23:06:55] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:06:55] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:06:55] [ROOM] Đã lấy 45 bàn.
+[23:06:55] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=9.406
+[23:06:56] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=9
+[23:06:56] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=14
+[23:06:56] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=8
+[23:06:56] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=13
+[23:06:57] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=7.407
+[23:06:57] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=12.401
+[23:06:58] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=7
+[23:06:58] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=12
+[23:06:58] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=6.406
+[23:06:58] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=11
+[23:06:59] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=6
+[23:06:59] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=10.407
+[23:07:00] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=5
+[23:07:00] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=10
+[23:07:00] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=4.408
+[23:07:00] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=9.404
+[23:07:00] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=4
+[23:07:00] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=9
+[23:07:01] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=3.403
+[23:07:01] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=8
+[23:07:02] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=3
+[23:07:02] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=7.397
+[23:07:02] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080802322 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=0
+[23:07:02] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=2
+[23:07:02] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=7
+[23:07:03] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=1.407
+[23:07:03] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=6.403
+[23:07:04] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=1
+[23:07:04] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=6
+[23:07:04] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=0.404
+[23:07:04] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=5
+[23:07:05] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B pb=BBPBBPBB countdown=0
+[23:07:05] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=4.408
+[23:07:05] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=4
+[23:07:05] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:07:05] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:07:05] [ROOM] Đã lấy 45 bàn.
+[23:07:06] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=3.403
+[23:07:07] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=3
+[23:07:07] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=2
+[23:07:08] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=1.405
+[23:07:08] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=14
+[23:07:08] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=1
+[23:07:09] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=13
+[23:07:09] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=0.401
+[23:07:10] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=12.413
+[23:07:10] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPP countdown=0
+[23:07:10] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=12
+[23:07:11] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=11
+[23:07:11] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=10.412
+[23:07:12] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=10
+[23:07:13] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=9.417
+[23:07:13] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=9
+[23:07:14] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=8
+[23:07:14] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=7.407
+[23:07:14] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080804622 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=0
+[23:07:15] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=7
+[23:07:16] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=6.414
+[23:07:16] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:07:16] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:07:16] [ROOM] Đã lấy 45 bàn.
+[23:07:16] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=6
+[23:07:17] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=5
+[23:07:17] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080805922 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=0
+[23:07:17] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=4.408
+[23:07:18] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=4
+[23:07:19] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=3.412
+[23:07:19] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=3
+[23:07:20] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=2
+[23:07:20] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=1.411
+[23:07:20] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=14
+[23:07:21] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=1
+[23:07:21] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=13
+[23:07:22] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=0.412
+[23:07:22] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=12.408
+[23:07:22] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B pb=PPPPBBPPBPBB countdown=0
+[23:07:22] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=12
+[23:07:23] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=11.405
+[23:07:24] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=11
+[23:07:24] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=13
+[23:07:24] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=10
+[23:07:24] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=12.407
+[23:07:24] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=9.409
+[23:07:24] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=12
+[23:07:25] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=9
+[23:07:25] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=11.402
+[23:07:26] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=8.407
+[23:07:26] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=11
+[23:07:26] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:07:26] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:07:26] [ROOM] Đã lấy 45 bàn.
+[23:07:26] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=8
+[23:07:26] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=10
+[23:07:27] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=7
+[23:07:27] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=9.402
+[23:07:28] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=6.407
+[23:07:28] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=9
+[23:07:29] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=6
+[23:07:29] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=8.398
+[23:07:29] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=5.407
+[23:07:29] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=8
+[23:07:29] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080808222 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=0
+[23:07:29] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=5
+[23:07:29] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=7
+[23:07:30] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=4
+[23:07:30] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=6.396
+[23:07:30] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=3.415
+[23:07:30] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=6
+[23:07:31] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=3
+[23:07:31] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=5.402
+[23:07:32] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=2.404
+[23:07:32] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=5
+[23:07:32] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=2
+[23:07:32] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=4
+[23:07:33] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=1
+[23:07:33] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=3.404
+[23:07:34] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=0.407
+[23:07:34] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=3
+[23:07:35] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080811022 raw=B B P B T B P B B B pb=BBPBBPBBB countdown=0
+[23:07:35] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=2.403
+[23:07:35] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=2
+[23:07:35] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=1
+[23:07:36] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=14
+[23:07:36] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=0.404
+[23:07:36] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:07:36] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:07:36] [ROOM] Đã lấy 45 bàn.
+[23:07:36] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=13
+[23:07:36] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080811422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=0
+[23:07:37] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=12.412
+[23:07:38] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=12
+[23:07:38] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=11
+[23:07:39] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=10.411
+[23:07:40] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=10
+[23:07:40] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=9.431
+[23:07:41] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=9
+[23:07:42] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=8
+[23:07:42] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=7.41
+[23:07:43] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=7
+[23:07:43] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=6.412
+[23:07:44] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=6
+[23:07:45] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=5
+[23:07:45] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=4.408
+[23:07:46] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=4
+[23:07:47] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=3.411
+[23:07:47] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:07:47] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:07:47] [ROOM] Đã lấy 45 bàn.
+[23:07:47] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=3
+[23:07:48] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=2
+[23:07:48] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=1.411
+[23:07:48] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=1
+[23:07:49] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=0.408
+[23:07:50] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P pb=PPPPBBPPBPBBP countdown=0
+[23:07:50] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=14
+[23:07:51] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=13
+[23:07:51] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=12.405
+[23:07:52] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=12
+[23:07:53] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=11
+[23:07:53] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=10.409
+[23:07:54] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=10
+[23:07:54] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=9.414
+[23:07:55] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=9
+[23:07:55] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=14
+[23:07:56] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=8
+[23:07:56] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=13
+[23:07:56] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=7.411
+[23:07:56] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=12
+[23:07:57] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=7
+[23:07:57] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=11.401
+[23:07:57] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:07:57] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:07:57] [ROOM] Đã lấy 45 bàn.
+[23:07:57] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=6.408
+[23:07:57] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=11
+[23:07:58] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=6
+[23:07:58] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=10.402
+[23:07:59] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=5
+[23:07:59] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=10
+[23:07:59] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080814022 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=0
+[23:07:59] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=4.408
+[23:07:59] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=9
+[23:08:00] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=4
+[23:08:00] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=8.402
+[23:08:00] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=3.411
+[23:08:00] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=8
+[23:08:01] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=3
+[23:08:01] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=7.401
+[23:08:02] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=2
+[23:08:02] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=7
+[23:08:02] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=1.412
+[23:08:02] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=6
+[23:08:03] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=1
+[23:08:03] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=5.399
+[23:08:03] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=0.41
+[23:08:03] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=5
+[23:08:04] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T pb=BBPBBPBBB countdown=0
+[23:08:04] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=4.404
+[23:08:05] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=4
+[23:08:05] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=3
+[23:08:06] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=14
+[23:08:06] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=2.408
+[23:08:06] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=13
+[23:08:06] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=2
+[23:08:08] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=12
+[23:08:08] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=1.399
+[23:08:08] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:08:08] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:08:08] [ROOM] Đã lấy 45 bàn.
+[23:08:08] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=11.413
+[23:08:08] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=1
+[23:08:09] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=11
+[23:08:09] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPB countdown=0
+[23:08:10] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=10.409
+[23:08:10] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=10
+[23:08:11] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=9
+[23:08:11] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=8.412
+[23:08:12] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=8
+[23:08:12] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080817322 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=0
+[23:08:12] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=7.409
+[23:08:13] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=7
+[23:08:13] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=6
+[23:08:14] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=5.41
+[23:08:15] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=5
+[23:08:15] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=4.412
+[23:08:16] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=4
+[23:08:16] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080818422 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=0
+[23:08:16] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=3
+[23:08:17] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=2.416
+[23:08:17] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=2
+[23:08:17] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=14
+[23:08:18] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=1.421
+[23:08:18] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=13
+[23:08:18] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=1
+[23:08:18] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=12.407
+[23:08:19] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:08:19] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:08:19] [ROOM] Đã lấy 45 bàn.
+[23:08:20] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B pb=PPPPBBPPBPBBPB countdown=0
+[23:08:20] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=12
+[23:08:20] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=11.409
+[23:08:21] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=11
+[23:08:21] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=10
+[23:08:22] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=9.408
+[23:08:23] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=9
+[23:08:23] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=14
+[23:08:23] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=8.408
+[23:08:23] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=13
+[23:08:24] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=8
+[23:08:24] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=12.402
+[23:08:24] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=7
+[23:08:24] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=12
+[23:08:25] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=6.407
+[23:08:25] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=11
+[23:08:25] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=6
+[23:08:25] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=10.403
+[23:08:26] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=5.406
+[23:08:26] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=10
+[23:08:26] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=5
+[23:08:26] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=9.406
+[23:08:27] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=4
+[23:08:27] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=9
+[23:08:27] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=3.404
+[23:08:27] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=8
+[23:08:29] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=3
+[23:08:29] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=7.404
+[23:08:29] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=2.41
+[23:08:29] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=7
+[23:08:29] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:08:29] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:08:29] [ROOM] Đã lấy 45 bàn.
+[23:08:30] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=2
+[23:08:30] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=6.404
+[23:08:30] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=1
+[23:08:30] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=6
+[23:08:31] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=0.407
+[23:08:31] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=5
+[23:08:31] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080819822 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=0
+[23:08:31] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B pb=BBPBBPBBBB countdown=0
+[23:08:31] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=4.402
+[23:08:32] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=4
+[23:08:32] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=3.405
+[23:08:34] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=3
+[23:08:34] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=2
+[23:08:35] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=1.4
+[23:08:35] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=1
+[23:08:36] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=0.401
+[23:08:36] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBB countdown=0
+[23:08:38] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=14
+[23:08:38] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=13
+[23:08:40] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=12
+[23:08:40] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=11.41
+[23:08:40] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:08:40] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:08:40] [ROOM] Đã lấy 45 bàn.
+[23:08:41] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=11
+[23:08:41] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=10.414
+[23:08:41] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080822822 raw=B B P B T B P B B B T B B pb=BBPBBPBBBBB countdown=0
+[23:08:41] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=10
+[23:08:42] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=9
+[23:08:42] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=8.413
+[23:08:44] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=8
+[23:08:44] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=7.414
+[23:08:45] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=7
+[23:08:45] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=6
+[23:08:46] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=5.414
+[23:08:46] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080823822 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBBP countdown=0
+[23:08:46] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=5
+[23:08:47] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=4.41
+[23:08:47] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080828622 raw=B B P B T B P B B B T B B pb=BBPBBPBBBBB countdown=14
+[23:08:48] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=4
+[23:08:48] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080828622 raw=B B P B T B P B B B T B B pb=BBPBBPBBBBB countdown=13
+[23:08:48] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=3
+[23:08:48] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080828622 raw=B B P B T B P B B B T B B pb=BBPBBPBBBBB countdown=12.416
+[23:08:49] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=2.403
+[23:08:49] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080828622 raw=B B P B T B P B B B T B B pb=BBPBBPBBBBB countdown=12
+[23:08:49] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=2
+[23:08:49] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080828622 raw=B B P B T B P B B B T B B pb=BBPBBPBBBBB countdown=11.416
+[23:08:50] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=1.413
+[23:08:50] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080828622 raw=B B P B T B P B B B T B B pb=BBPBBPBBBBB countdown=11
+[23:08:50] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=1
+[23:08:50] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080828622 raw=B B P B T B P B B B T B B pb=BBPBBPBBBBB countdown=10
+[23:08:50] [ROOMDBG][RefreshRoomList] clean=45 sample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 | Baccarat 6 | Baccarat 7
+[23:08:50] [ROOMDBG][RebuildRoomOptions] roomList=45 selectedRooms=3 selectedOptions=3 roomSample=Baccarat 1 | Baccarat 2 | Baccarat 3 | Baccarat 5 selectedSample=TileHeight-h22z8qhp17sa0vkh | TileHeight-9j3eagurfwmml7z2 | TileHeight-cbcf6qas8fscb222 missing=(rỗng)
+[23:08:50] [ROOM] Đã lấy 45 bàn.
+[23:08:52] [SEQ] TileHeight-h22z8qhp17sa0vkh id=12080827022 raw=P T P P P B B P T P B P T B B P B B pb=PPPPBBPPBPBBPBB countdown=0
+[23:08:52] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080828622 raw=B B P B T B P B B B T B B pb=BBPBBPBBBBB countdown=9.404
+[23:08:52] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080828622 raw=B B P B T B P B B B T B B pb=BBPBBPBBBBB countdown=9
+[23:08:52] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080829322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBBP countdown=14
+[23:08:53] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080828622 raw=B B P B T B P B B B T B B pb=BBPBBPBBBBB countdown=8.404
+[23:08:53] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080829322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBBP countdown=13
+[23:08:53] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080828622 raw=B B P B T B P B B B T B B pb=BBPBBPBBBBB countdown=8
+[23:08:53] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080829322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBBP countdown=12.405
+[23:08:53] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080828622 raw=B B P B T B P B B B T B B pb=BBPBBPBBBBB countdown=7
+[23:08:53] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080829322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBBP countdown=12
+[23:08:54] [SEQ] TileHeight-9j3eagurfwmml7z2 id=12080828622 raw=B B P B T B P B B B T B B pb=BBPBBPBBBBB countdown=6.405
+[23:08:54] [SEQ] TileHeight-cbcf6qas8fscb222 id=12080829322 raw=B B B P B P B B P B B B P P P B B T T P P B B T B P B B B P B B P P B P P B T B P pb=BBBPBPBBPBBBPPPBBPPBBBPBBBPBBPPBPPBBP countdown=11

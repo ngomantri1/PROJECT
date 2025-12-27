@@ -1485,7 +1485,8 @@
                                             Grid.Row="1"
                                             Grid.ColumnSpan="2"
                                             Padding="0"
-                                            Style="{StaticResource GhostCell}">
+                                            Style="{StaticResource GhostCell}"
+                                            Visibility="Collapsed">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
@@ -1551,7 +1552,8 @@
                                             Grid.Row="2"
                                             Grid.ColumnSpan="2"
                                             Padding="0"
-                                            Style="{StaticResource GhostCell}">
+                                            Style="{StaticResource GhostCell}"
+                                            Visibility="Collapsed">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
@@ -1618,14 +1620,14 @@
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
 
-                                                <Border Grid.Column="0" Style="{StaticResource GhostQFirst}">
+                                                <Border Grid.Column="0" Style="{StaticResource GhostQFirst}" Visibility="Collapsed">
                                                     <TextBlock
                                                         VerticalAlignment="Center"
                                                         Style="{StaticResource CapsLabel}"
                                                         Text="MỨC TIỀN" />
                                                 </Border>
 
-                                                <Border Grid.Column="1" Style="{StaticResource GhostQLast}">
+                                                <Border Grid.Column="1" Style="{StaticResource GhostQLast}" Visibility="Collapsed">
                                                     <TextBlock
                                                         x:Name="LblLevel"
                                                         HorizontalAlignment="Center"

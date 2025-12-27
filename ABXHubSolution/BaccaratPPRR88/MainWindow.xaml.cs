@@ -2670,7 +2670,7 @@ Ví dụ không hợp lệ:
                                         tableName = ResolveRoomName(tableId);
 
                                     string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
-                                    long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
+                                    long amount = root.TryGetProperty("amount", out var ae) ? ReadJsonLong(ae) : 0;
                                     string side = NormalizeSide(sideRaw);
                                     if (string.IsNullOrWhiteSpace(side))
                                         side = sideRaw.ToUpperInvariant();
@@ -3673,7 +3673,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var roomsJson = JsonSerializer.Serialize(selectedRooms);
             var optionsJson = JsonSerializer.Serialize(new
             {
-                baseSelector = ".rW_sl,.rY_sn,[data-table-name],[data-tablename],[data-table-id],[data-tabletitle],[data-table-title],[data-title],[data-name]"
+                baseSelector = ".rW_sl,.rY_sn,[data-table-name],[data-tablename],[data-table-id],[data-tabletitle],[data-table-title],[data-title],[data-name]",
+                resetTotals = true
             });
             var script = $"window.__abxTableOverlay && window.__abxTableOverlay.openRooms({roomsJson}, {optionsJson});";
             try
@@ -5470,6 +5471,22 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 return el.GetDouble();
             if (el.ValueKind == JsonValueKind.String)
                 return ParseMoneyOrZero(el.GetString() ?? "");
+            return 0;
+        }
+
+        private static long ReadJsonLong(JsonElement el)
+        {
+            if (el.ValueKind == JsonValueKind.Number)
+            {
+                if (el.TryGetInt64(out var v))
+                    return v;
+                return (long)Math.Round(el.GetDouble(), MidpointRounding.AwayFromZero);
+            }
+            if (el.ValueKind == JsonValueKind.String)
+            {
+                var d = ParseMoneyOrZero(el.GetString() ?? "");
+                return (long)Math.Round(d, MidpointRounding.AwayFromZero);
+            }
             return 0;
         }
 
