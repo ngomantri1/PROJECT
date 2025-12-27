@@ -16,38 +16,38 @@ namespace BaccaratPPRR88.Tasks
     public sealed class AiStatParityTask : IBetTask
     {
         public string DisplayName => "7) Bám cầu P/B theo thống kê AI";
-        public string Id => "ai-stat-cl";
+        public string Id => "ai-stat-pb";
 
         private const int DefaultMaxPatternLen = 6;
 
-        private static string ParityCharToSideSafe(char ch) => (ch == 'C') ? "CHAN" : "LE";
+        private static string ParityCharToSideSafe(char ch) => (ch == 'P') ? "P" : "B";
 
         /// <summary>
         /// Dự đoán ký tự P/B ván kế + confidence (0..1).
         /// Luật:
-        /// - k từ k_max→1: match tail; đếm C_count/L_count sau vị trí match.
-        /// - C_count ≠ L_count: chọn bên nhiều hơn và conf = |C-L|/(C+L).
+        /// - k từ k_max→1: match tail; đếm P_count/B_count sau vị trí match.
+        /// - P_count ≠ B_count: chọn bên nhiều hơn và conf = |P-B|/(P+B).
         /// - Hòa: ưu tiên lần xuất hiện gần nhất; nếu không có → ĐÁNH NGƯỢC so với ván cuối (cầu 1–1).
         /// - KHÔNG CÓ MẪU NÀO: Fallback = THEO VÁN CUỐI (đánh đúng kết quả vừa về).
         /// </summary>
         private static (char next, double conf) PredictNextWithConfidence(string input, int maxPatternLen = DefaultMaxPatternLen)
         {
-            if (string.IsNullOrWhiteSpace(input)) return ('C', 0);
+            if (string.IsNullOrWhiteSpace(input)) return ('P', 0);
 
             var seq = new string(input
-                .Where(ch => ch == 'C' || ch == 'c' || ch == 'L' || ch == 'l')
+                .Where(ch => ch == 'P' || ch == 'p' || ch == 'B' || ch == 'b')
                 .Select(char.ToUpperInvariant)
                 .ToArray());
 
             int n = seq.Length;
-            if (n == 0) return ('C', 0);
+            if (n == 0) return ('P', 0);
             if (n == 1) return (seq[0], 0); // theo đúng kết quả vừa về
 
             for (int k = Math.Min(maxPatternLen, n - 1); k >= 1; k--)
             {
                 var tail = seq.Substring(n - k, k);
 
-                int cCount = 0, lCount = 0;
+                int pCount = 0, bCount = 0;
                 int mostRecentIdx = -1;
                 char mostRecentNext = '\0';
 
@@ -56,8 +56,8 @@ namespace BaccaratPPRR88.Tasks
                     if (seq.AsSpan(i, k).SequenceEqual(seq.AsSpan(n - k, k)))
                     {
                         char next = seq[i + k];
-                        if (next == 'C') cCount++;
-                        else if (next == 'L') lCount++;
+                        if (next == 'P') pCount++;
+                        else if (next == 'B') bCount++;
 
                         if (i > mostRecentIdx)
                         {
@@ -67,12 +67,12 @@ namespace BaccaratPPRR88.Tasks
                     }
                 }
 
-                if (cCount + lCount > 0)
+                if (pCount + bCount > 0)
                 {
-                    if (cCount > lCount)
-                        return ('C', (double)(cCount - lCount) / (cCount + lCount));
-                    if (lCount > cCount)
-                        return ('L', (double)(lCount - cCount) / (cCount + lCount));
+                    if (pCount > bCount)
+                        return ('P', (double)(pCount - bCount) / (pCount + bCount));
+                    if (bCount > pCount)
+                        return ('B', (double)(bCount - pCount) / (pCount + bCount));
 
                     // HÒA tần suất:
                     // - Nếu có "lần xuất hiện gần nhất" -> dùng nó.
@@ -81,7 +81,7 @@ namespace BaccaratPPRR88.Tasks
                         return (mostRecentNext, 0.0);
 
                     char last = seq[n - 1];
-                    char opposite = (last == 'C') ? 'L' : 'C'; // cầu 1–1
+                    char opposite = (last == 'P') ? 'B' : 'P'; // cầu 1–1
                     return (opposite, 0.0);
                 }
             }
@@ -93,7 +93,7 @@ namespace BaccaratPPRR88.Tasks
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
             var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
-            ctx.Log?.Invoke($"[AI-Stat-CL] Khởi chạy liên tục: k_max={DefaultMaxPatternLen}, vốn={ctx.MoneyStrategyId}");
+            ctx.Log?.Invoke($"[AI-Stat-PB] Khởi chạy liên tục: k_max={DefaultMaxPatternLen}, vốn={ctx.MoneyStrategyId}");
 
             while (true)
             {
@@ -124,7 +124,7 @@ namespace BaccaratPPRR88.Tasks
                 {
                     stake = money.GetStakeForThisBet();
                 }
-                ctx.Log?.Invoke($"[AI-Stat-CL] pick={side}, conf={conf:F2}, stake={stake:N0}");
+                ctx.Log?.Invoke($"[AI-Stat-PB] pick={side}, conf={conf:F2}, stake={stake:N0}");
 
                 await PlaceBet(ctx, side, stake, ct);
 
@@ -159,7 +159,7 @@ namespace BaccaratPPRR88.Tasks
                 // Không nghỉ nhịp: vòng sau tự tính lại cầu dựa trên lịch sử mới
                 if (!win)
                 {
-                    ctx.Log?.Invoke("[AI-Stat-CL] Gãy cầu → tính lại cầu mới và đánh tiếp (không dừng).");
+                    ctx.Log?.Invoke("[AI-Stat-PB] Gãy cầu → tính lại cầu mới và đánh tiếp (không dừng).");
                 }
             }
         }

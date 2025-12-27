@@ -16,8 +16,8 @@ namespace BaccaratPPRR88.Tasks
             var raw = (ctx.BetSeq ?? "").Trim().ToUpperInvariant().Replace(" ", "");
             if (string.IsNullOrEmpty(raw)) throw new InvalidOperationException("Chưa nhập CHUỖI CẦU (P/B).");
 
-            // chỉ giữ C hoặc L
-            char[] seq = Array.FindAll(raw.ToCharArray(), ch => ch == 'C' || ch == 'L');
+            // chỉ giữ P hoặc B
+            char[] seq = Array.FindAll(raw.ToCharArray(), ch => ch == 'P' || ch == 'B');
             if (seq.Length == 0) throw new InvalidOperationException("CHUỖI CẦU không hợp lệ.");
 
             int k = 0;

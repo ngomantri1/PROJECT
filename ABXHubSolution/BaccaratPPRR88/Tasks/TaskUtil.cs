@@ -18,13 +18,19 @@ namespace BaccaratPPRR88.Tasks
         // (tuỳ chọn) reset khi dừng task
         public static void ClearBetCooldown() => Volatile.Write(ref _lastBetOkMs, 0);
 
-        public static string ParityCharToSide(char ch) => (ch == 'C') ? "CHAN" : "LE";
-        public static char DigitToParity(char d) => (d == '0' || d == '2' || d == '4') ? 'C' : 'L';
+        public static string ParityCharToSide(char ch) => (ch == 'P') ? "P" : "B";
+        public static char DigitToParity(char d)
+        {
+            if (d == 'P' || d == 'B') return d;
+            if (char.IsDigit(d))
+                return ((d - '0') % 2 == 0) ? 'P' : 'B';
+            return 'P';
+        }
         // TaskUtil.cs (trong class TaskUtil)
         private static readonly object _betLock = new object();
         private static string _lastBetSeq = "";
         private static long _lastBetMs = 0;
-        // Reset UI 1 lần ngay khi vào cửa sổ đặt (p >= DecisionPercent)
+        // Reset UI 1 lần ngay khi vào cửa sổ đặt (countdown >= DecisionPercent)
         private static bool _uiRoundResetDone = false;
         public static string SeqToParityString(string digitSeq)
         {
@@ -36,7 +42,7 @@ namespace BaccaratPPRR88.Tasks
 
         public static bool IsWin(string betSide, char lastDigit)
         {
-            var lastSide = (lastDigit == '0' || lastDigit == '2' || lastDigit == '4') ? "CHAN" : "LE";
+            var lastSide = ParityCharToSide(DigitToParity(lastDigit));
             return string.Equals(betSide, lastSide, StringComparison.OrdinalIgnoreCase);
         }
 
@@ -62,7 +68,7 @@ namespace BaccaratPPRR88.Tasks
 
 
 
-        // Gọi khi đã có p (percent) để reset đúng 1 lần
+        // Gọi khi đã có countdown (giây) để reset đúng 1 lần
         public static void UiRoundMaybeReset(double p, double decisionPercent)
         {
             if (_uiRoundResetDone) return;
@@ -78,13 +84,12 @@ namespace BaccaratPPRR88.Tasks
 
         public static async Task WaitUntilBetWindow(GameContext ctx, CancellationToken ct)
         {
-            // Quy ước: prog = phần trăm thời gian đã trôi/hoặc còn lại. Ở code bạn set LblProg = p*100,
-            // ta chọn ngưỡng “<= DecisionPercent” để vào tiền trễ (15% cuối).
+            // Quy ước: prog = countdown (giây). Chờ tới khi còn <= DecisionPercent giây thì vào tiền trễ.
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                double p = s?.prog ?? 1.0;
+                double p = s?.prog ?? 0.0;
                 //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
                 if (p <= ctx.DecisionPercent && p > 0) break;
                 await Task.Delay(120, ct);
@@ -98,7 +103,7 @@ namespace BaccaratPPRR88.Tasks
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                double p = s?.prog ?? 1.0;
+                double p = s?.prog ?? 0.0;
                 //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
                 if (p >= ctx.DecisionPercent) break;
                 await Task.Delay(120, ct);

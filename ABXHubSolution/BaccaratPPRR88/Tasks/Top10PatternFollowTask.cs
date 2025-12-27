@@ -17,46 +17,46 @@ namespace BaccaratPPRR88.Tasks
     /// - Khi THẮNG: được phép CHUYỂN sang chuỗi mới nếu count(new) >= count(current).
     /// - Quản lý vốn: MoneyManager như các task khác; vào cửa theo DecisionPercent.
     /// </summary>
-    public sealed class Top10PatternFollowTask : IBetTask
-    {
-        public string DisplayName => "16) Top10 tích lũy (khởi từ 50 P/B)";
-        public string Id => "top10-50-cl";
+        public sealed class Top10PatternFollowTask : IBetTask
+        {
+            public string DisplayName => "16) Top10 tích lũy (khởi từ 50 P/B)";
+        public string Id => "top10-50-pb";
 
         private const int WindowLen = 10;
         private const int FrameLen = 50; // cửa sổ 50 phiên gần nhất
 
-        // key: chuỗi 10 ký tự 'C'/'L'
+        // key: chuỗi 10 ký tự 'P'/'B'
         // value: (count, lastTick) → tie-break theo độ tươi (tick lớn hơn = mới hơn)
         private static (int count, long lastTick) GetOrDefault(Dictionary<string, (int, long)> dict, string k)
             => dict.TryGetValue(k, out var v) ? v : (0, 0);
 
-        private static string TakeLast50CL(string cl)
+        private static string TakeLast50PB(string pb)
         {
-            if (string.IsNullOrEmpty(cl)) return "";
-            return (cl.Length <= FrameLen) ? cl : cl.Substring(cl.Length - FrameLen, FrameLen);
+            if (string.IsNullOrEmpty(pb)) return "";
+            return (pb.Length <= FrameLen) ? pb : pb.Substring(pb.Length - FrameLen, FrameLen);
         }
 
         /// <summary>
         /// Quét khởi tạo theo thứ tự yêu cầu:
         /// (50..41) → (49..40) → ... → (10..1)
-        /// Với chuỗi cl50 theo thứ tự cũ→mới, thì (50..41) chính là Substring(40,10), sau đó start 39, 38, ... đến 0.
+        /// Với chuỗi pb50 theo thứ tự cũ→mới, thì (50..41) chính là Substring(40,10), sau đó start 39, 38, ... đến 0.
         /// </summary>
-        private static void BuildInitialCounts(string cl50, Dictionary<string, (int count, long lastTick)> counts, ref long tick)
+        private static void BuildInitialCounts(string pb50, Dictionary<string, (int count, long lastTick)> counts, ref long tick)
         {
-            if (cl50.Length < FrameLen) return; // an toàn nếu dữ liệu đầu vào ngắn hơn (dù ông chủ nói luôn đủ 50)
+            if (pb50.Length < FrameLen) return; // an toàn nếu dữ liệu đầu vào ngắn hơn (dù ông chủ nói luôn đủ 50)
             for (int start = FrameLen - WindowLen; start >= 0; start--) // 40 → 0
             {
-                string seg = cl50.Substring(start, WindowLen);
+                string seg = pb50.Substring(start, WindowLen);
                 var cur = GetOrDefault(counts, seg);
                 counts[seg] = (cur.count + 1, ++tick); // ++tick để mẫu xử lý trước (mới hơn) có tick lớn hơn
             }
         }
 
-        /// <summary>+1 cho “10 phiên mới về” (41..50) của cl50 hiện tại.</summary>
-        private static void AddRightmost10(string cl50, Dictionary<string, (int count, long lastTick)> counts, ref long tick)
+        /// <summary>+1 cho “10 phiên mới về” (41..50) của pb50 hiện tại.</summary>
+        private static void AddRightmost10(string pb50, Dictionary<string, (int count, long lastTick)> counts, ref long tick)
         {
-            if (cl50.Length < FrameLen) return;
-            string seg = cl50.Substring(FrameLen - WindowLen, WindowLen); // 41..50
+            if (pb50.Length < FrameLen) return;
+            string seg = pb50.Substring(FrameLen - WindowLen, WindowLen); // 41..50
             var cur = GetOrDefault(counts, seg);
             counts[seg] = (cur.count + 1, ++tick);
         }
@@ -87,21 +87,21 @@ namespace BaccaratPPRR88.Tasks
             long tick = 0;
 
             var snap0 = ctx.GetSnap?.Invoke();
-            string clAll0 = SeqToParityString(snap0?.seq ?? "");
-            string cl50 = TakeLast50CL(clAll0);
+            string pbAll0 = SeqToParityString(snap0?.seq ?? "");
+            string pb50 = TakeLast50PB(pbAll0);
 
             // Ông chủ nói luôn có sẵn 50 → không chờ; nhưng vẫn an toàn nếu ngắn hơn.
-            if (cl50.Length >= FrameLen)
+            if (pb50.Length >= FrameLen)
             {
-                BuildInitialCounts(cl50, counts, ref tick);
+                BuildInitialCounts(pb50, counts, ref tick);
             }
             else
             {
                 // fallback an toàn nếu dữ liệu ít hơn 50 (hiếm khi xảy ra)
-                int len = cl50.Length;
+                int len = pb50.Length;
                 for (int start = Math.Max(0, len - WindowLen); start >= 0; start--)
                 {
-                    string seg = cl50.Substring(start, Math.Min(WindowLen, len - start));
+                    string seg = pb50.Substring(start, Math.Min(WindowLen, len - start));
                     if (seg.Length == WindowLen)
                     {
                         var cur = GetOrDefault(counts, seg);
@@ -110,7 +110,7 @@ namespace BaccaratPPRR88.Tasks
                 }
             }
 
-            string lastSeenCl50 = cl50;
+            string lastSeenPb50 = pb50;
 
             // Chọn chuỗi đang đánh = chuỗi có count lớn nhất (tie → mới nhất)
             var (curPattern, curCount) = PickBest(counts);
@@ -138,8 +138,8 @@ namespace BaccaratPPRR88.Tasks
                     if (string.IsNullOrEmpty(curPattern))
                     {
                         // fallback an toàn: theo ván gần nhất
-                        char lastCl = SeqToParityString(baseSeq).LastOrDefault();
-                        string fallbackSide = (lastCl == 'C') ? "CHAN" : "LE";
+                        char lastPb = SeqToParityString(baseSeq).LastOrDefault();
+                        string fallbackSide = (lastPb == 'P') ? "P" : "B";
                         var stake0 = money.GetStakeForThisBet();
                         await PlaceBet(ctx, fallbackSide, stake0, ct);
 
@@ -149,12 +149,12 @@ namespace BaccaratPPRR88.Tasks
 
                         // Cập nhật lại list 10 mới về
                         var s2 = ctx.GetSnap?.Invoke();
-                        string clAll2 = SeqToParityString(s2?.seq ?? "");
-                        string cl50_2 = TakeLast50CL(clAll2);
-                        if (!string.Equals(cl50_2, lastSeenCl50, StringComparison.Ordinal))
+                        string pbAll2 = SeqToParityString(s2?.seq ?? "");
+                        string pb50_2 = TakeLast50PB(pbAll2);
+                        if (!string.Equals(pb50_2, lastSeenPb50, StringComparison.Ordinal))
                         {
-                            AddRightmost10(cl50_2, counts, ref tick);
-                            lastSeenCl50 = cl50_2;
+                            AddRightmost10(pb50_2, counts, ref tick);
+                            lastSeenPb50 = pb50_2;
                         }
                         continue;
                     }
@@ -208,14 +208,14 @@ namespace BaccaratPPRR88.Tasks
                     money.OnRoundResult(win);
                 }
 
-                // Sau khi có kết quả: cập nhật CL50 & +1 cho "10 mới về" (41..50)
+                // Sau khi có kết quả: cập nhật PB50 & +1 cho "10 mới về" (41..50)
                 var sAfter = ctx.GetSnap?.Invoke();
-                string clAll = SeqToParityString(sAfter?.seq ?? "");
-                string cl50_now = TakeLast50CL(clAll);
-                if (!string.Equals(cl50_now, lastSeenCl50, StringComparison.Ordinal))
+                string pbAll = SeqToParityString(sAfter?.seq ?? "");
+                string pb50_now = TakeLast50PB(pbAll);
+                if (!string.Equals(pb50_now, lastSeenPb50, StringComparison.Ordinal))
                 {
-                    AddRightmost10(cl50_now, counts, ref tick);
-                    lastSeenCl50 = cl50_now;
+                    AddRightmost10(pb50_now, counts, ref tick);
+                    lastSeenPb50 = pb50_now;
                 }
 
                 // Nếu THẮNG → được chuyển chuỗi mới nếu count(new) >= count(current)

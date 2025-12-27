@@ -438,9 +438,9 @@
         const raw = String(side || '').trim().toUpperCase();
         if (!raw)
             return '';
-        if (raw === 'P' || raw === 'PLAYER' || raw === 'PL' || raw === 'CHAN')
+        if (raw === 'P' || raw === 'PLAYER' || raw === 'PL')
             return 'player';
-        if (raw === 'B' || raw === 'BANKER' || raw === 'BK' || raw === 'LE')
+        if (raw === 'B' || raw === 'BANKER' || raw === 'BK')
             return 'banker';
             return '';
     }
@@ -475,6 +475,37 @@
         }
             return null;
         }
+
+    function betReadStakeValue(root, side) {
+        try {
+            const chips = readBetChips(root);
+            if (side === 'player' && chips && chips.player)
+                return String(chips.player || '').trim();
+            if (side === 'banker' && chips && chips.banker)
+                return String(chips.banker || '').trim();
+        } catch (_) {}
+        try {
+            const extra = readBetExtra(root);
+            if (side === 'player' && extra && extra.player)
+                return String(extra.player || '').trim();
+            if (side === 'banker' && extra && extra.banker)
+                return String(extra.banker || '').trim();
+        } catch (_) {}
+        return '';
+    }
+
+    function betWaitStakeChange(root, side, before, timeoutMs) {
+        const end = Date.now() + (Number(timeoutMs) || 0);
+        let last = before || '';
+        while (Date.now() < end) {
+            const now = betReadStakeValue(root, side);
+            if (now && now !== before)
+                return now;
+            if (now)
+                last = now;
+        }
+        return last || '';
+    }
 
     function betDispatchClick(el) {
         if (!el)
@@ -546,6 +577,8 @@
             if (!betDispatchClick(chipBtn))
                 return 'chip-fail';
 
+            const beforeVal = betReadStakeValue(root, s);
+
             const candidates = [
                 target.closest('.kU_kV'),
                 target,
@@ -561,6 +594,10 @@
                 }
             if (!ok)
                 return 'target-fail';
+
+            const afterVal = betWaitStakeChange(root, s, beforeVal, 500);
+            if (!afterVal || afterVal === beforeVal)
+                return 'no-bet';
 
             try {
                 const sideLabel = (s === 'player') ? 'P' : 'B';
@@ -5992,6 +6029,14 @@
                     return root;
                 }
                 }
+            const byAttr = defaultResolveDom(needle);
+            if (byAttr) {
+                rememberRoomDom(needle, byAttr);
+                const rootId = getCardId(byAttr);
+                if (rootId && rootId !== needle)
+                    rememberRoomDom(rootId, byAttr);
+                return byAttr;
+            }
             const selectors = ['span.rY_sn', 'span.qL_qM.qL_qN', 'div.abx-table-title', 'span.rC_rT', 'span.rW_sl'];
             for (const sel of selectors) {
                 const list = Array.from(document.querySelectorAll(sel));
@@ -8419,9 +8464,13 @@
                 return;
                 const prev = lastStateSig.get(st.id);
                 const historySig = st.historySig || '';
-                if (prev === historySig)
+                const countdownSig = (typeof st.countdown === 'number' && Number.isFinite(st.countdown) && st.countdown >= 0)
+                    ? Math.floor(st.countdown).toString()
+                    : '';
+                const sig = historySig + '|' + countdownSig;
+                if (prev === sig)
                 return;
-                lastStateSig.set(st.id, historySig);
+                lastStateSig.set(st.id, sig);
                 changed.push({
                     id: st.id,
                     name: st.name,

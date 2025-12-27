@@ -42,19 +42,19 @@ namespace BaccaratPPRR88
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Resources (pack URI).
     internal static class FallbackIcons
     {
-        private const string SideChanPng = "Assets/side/CHAN.png";
-        private const string SideLePng = "Assets/side/LE.png";
-        private const string ResultChanPng = "Assets/side/CHAN.png";
-        private const string ResultLePng = "Assets/side/LE.png";
+        private const string SidePlayerPng = "Assets/side/CHAN.png";
+        private const string SideBankerPng = "Assets/side/LE.png";
+        private const string ResultPlayerPng = "Assets/side/CHAN.png";
+        private const string ResultBankerPng = "Assets/side/LE.png";
         private const string WinPng = "Assets/kq/THANG.png";
         private const string LossPng = "Assets/kq/THUA.png";
 
-        private static ImageSource? _sideChan, _sideLe, _resultChan, _resultLe, _win, _loss;
+        private static ImageSource? _sidePlayer, _sideBanker, _resultPlayer, _resultBanker, _win, _loss;
 
-        public static ImageSource? GetSideChan() => SharedIcons.SideChan ?? (_sideChan ??= Load(SideChanPng));
-        public static ImageSource? GetSideLe() => SharedIcons.SideLe ?? (_sideLe ??= Load(SideLePng));
-        public static ImageSource? GetResultChan() => SharedIcons.ResultChan ?? (_resultChan ??= Load(ResultChanPng));
-        public static ImageSource? GetResultLe() => SharedIcons.ResultLe ?? (_resultLe ??= Load(ResultLePng));
+        public static ImageSource? GetSidePlayer() => SharedIcons.SidePlayer ?? (_sidePlayer ??= Load(SidePlayerPng));
+        public static ImageSource? GetSideBanker() => SharedIcons.SideBanker ?? (_sideBanker ??= Load(SideBankerPng));
+        public static ImageSource? GetResultPlayer() => SharedIcons.ResultPlayer ?? (_resultPlayer ??= Load(ResultPlayerPng));
+        public static ImageSource? GetResultBanker() => SharedIcons.ResultBanker ?? (_resultBanker ??= Load(ResultBankerPng));
         public static ImageSource? GetWin() => SharedIcons.Win ?? (_win ??= Load(WinPng));
         public static ImageSource? GetLoss() => SharedIcons.Loss ?? (_loss ??= Load(LossPng));
 
@@ -102,8 +102,8 @@ namespace BaccaratPPRR88
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
             var u = TextNorm.U(value?.ToString() ?? "");
-            if (u == "CHAN" || u == "C") return FallbackIcons.GetSideChan();
-            if (u == "LE" || u == "L") return FallbackIcons.GetSideLe();
+            if (u == "P" || u == "PLAYER") return FallbackIcons.GetSidePlayer();
+            if (u == "B" || u == "BANKER") return FallbackIcons.GetSideBanker();
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -114,8 +114,8 @@ namespace BaccaratPPRR88
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
             var u = TextNorm.U(value?.ToString() ?? "");
-            if (u == "CHAN" || u == "C") return FallbackIcons.GetResultChan();
-            if (u == "LE" || u == "L") return FallbackIcons.GetResultLe();
+            if (u == "P" || u == "PLAYER") return FallbackIcons.GetResultPlayer();
+            if (u == "B" || u == "BANKER") return FallbackIcons.GetResultBanker();
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -199,6 +199,8 @@ namespace BaccaratPPRR88
         private readonly object _snapLock = new();
         private readonly Dictionary<string, TableTaskState> _tableTasks = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _tableTasksGate = new();
+        private readonly Dictionary<string, TableOverlayState> _tableOverlayStates = new(StringComparer.OrdinalIgnoreCase);
+        private readonly object _tableOverlayGate = new();
         private readonly SemaphoreSlim _domActionLock = new(1, 1);
         private readonly SemaphoreSlim _gameReadyGate = new(1, 1);
         private readonly SemaphoreSlim _licenseGate = new(1, 1);
@@ -208,9 +210,6 @@ namespace BaccaratPPRR88
         private const int NiSeqMax = 50;
         private readonly System.Text.StringBuilder _niSeq = new(NiSeqMax);
 
-        // Tổng P/B của ván đang diễn ra (để dùng khi ván vừa khép lại)
-        private long _roundTotalsC = 0;
-        private long _roundTotalsL = 0;
         private int _lastSeqLenNi = 0;
         private bool _lockMajorMinorUpdates = false;
         private string _baseSession = "";
@@ -219,7 +218,7 @@ namespace BaccaratPPRR88
         private System.Collections.Generic.List<long[]> _stakeChains = new();
         private long[] _stakeChainTotals = Array.Empty<long>();
 
-        private double _decisionPercent = 0.15; // 15% (0.15)
+        private double _decisionPercent = 3; // 3s
 
         // Chống bắn trùng khi vừa cược
 
@@ -531,6 +530,20 @@ Ví dụ không hợp lệ:
             public int StartInProgress;
         }
 
+        private sealed class TableOverlayState
+        {
+            public string TableId { get; set; } = "";
+            public string TableName { get; set; } = "";
+            public string HistoryRaw { get; set; } = "";
+            public string HistoryPB { get; set; } = "";
+            public string SeqDigits { get; set; } = "";
+            public string SessionKey { get; set; } = "";
+            public double Countdown { get; set; }
+            public double CountdownMax { get; set; }
+            public DateTime LastUpdate { get; set; } = DateTime.MinValue;
+            public string LastLogSig { get; set; } = "";
+        }
+
         // 1) Model 1 dòng log đặt cược
         private sealed class BetRow
         {
@@ -546,8 +559,8 @@ Ví dụ không hợp lệ:
 
         public static class SharedIcons
         {
-            public static ImageSource? SideChan, SideLe;        // ảnh “Cửa đặt” P/B
-            public static ImageSource? ResultChan, ResultLe;    // ảnh “Kết quả” P/B
+            public static ImageSource? SidePlayer, SideBanker;        // ảnh “Cửa đặt” P/B
+            public static ImageSource? ResultPlayer, ResultBanker;    // ảnh “Kết quả” P/B
             public static ImageSource? Win, Loss;               // ảnh “Thắng/Thua”
         }
 
@@ -1493,7 +1506,7 @@ Ví dụ không hợp lệ:
                     _cfg = JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
                     Log("Loaded config: " + _cfgPath);
                 }
-                if (MigrateClToPb(_cfg))
+                if (MigrateLegacySeqToPb(_cfg))
                     _ = SaveConfigAsync();
                 _homeUsername = _cfg.LastHomeUsername;
                 // Sinh / nạp clientId cố định cho lease
@@ -1663,11 +1676,13 @@ Ví dụ không hợp lệ:
             return el.ValueKind == JsonValueKind.String ? el.GetString() : el.ToString();
         }
 
-        private static bool MigrateClToPb(AppConfig cfg)
+        private static bool MigrateLegacySeqToPb(AppConfig cfg)
         {
             bool changed = false;
-            var oldSeq = ReadExtensionString(cfg.Extra, "BetSeqCL");
-            var oldPat = ReadExtensionString(cfg.Extra, "BetPatternsCL");
+            const string LegacySeqKey = "BetSeqCL";
+            const string LegacyPatternKey = "BetPatternsCL";
+            var oldSeq = ReadExtensionString(cfg.Extra, LegacySeqKey);
+            var oldPat = ReadExtensionString(cfg.Extra, LegacyPatternKey);
 
             if (string.IsNullOrWhiteSpace(cfg.BetSeqPB) && !string.IsNullOrWhiteSpace(oldSeq))
             {
@@ -1682,8 +1697,8 @@ Ví dụ không hợp lệ:
 
             if (cfg.Extra != null)
             {
-                cfg.Extra.Remove("BetSeqCL");
-                cfg.Extra.Remove("BetPatternsCL");
+                cfg.Extra.Remove(LegacySeqKey);
+                cfg.Extra.Remove(LegacyPatternKey);
                 if (cfg.Extra.Count == 0)
                     cfg.Extra = null;
             }
@@ -1691,11 +1706,13 @@ Ví dụ không hợp lệ:
             return changed;
         }
 
-        private static bool MigrateClToPb(TableSetting setting)
+        private static bool MigrateLegacySeqToPb(TableSetting setting)
         {
             bool changed = false;
-            var oldSeq = ReadExtensionString(setting.Extra, "BetSeqCL");
-            var oldPat = ReadExtensionString(setting.Extra, "BetPatternsCL");
+            const string LegacySeqKey = "BetSeqCL";
+            const string LegacyPatternKey = "BetPatternsCL";
+            var oldSeq = ReadExtensionString(setting.Extra, LegacySeqKey);
+            var oldPat = ReadExtensionString(setting.Extra, LegacyPatternKey);
 
             if (string.IsNullOrWhiteSpace(setting.BetSeqPB) && !string.IsNullOrWhiteSpace(oldSeq))
             {
@@ -1710,8 +1727,8 @@ Ví dụ không hợp lệ:
 
             if (setting.Extra != null)
             {
-                setting.Extra.Remove("BetSeqCL");
-                setting.Extra.Remove("BetPatternsCL");
+                setting.Extra.Remove(LegacySeqKey);
+                setting.Extra.Remove(LegacyPatternKey);
                 if (setting.Extra.Count == 0)
                     setting.Extra = null;
             }
@@ -1741,7 +1758,7 @@ Ví dụ không hợp lệ:
                         it.StakeCsvByMoney = it.StakeCsvByMoney != null
                             ? new Dictionary<string, string>(it.StakeCsvByMoney, StringComparer.OrdinalIgnoreCase)
                             : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                        if (MigrateClToPb(it))
+                        if (MigrateLegacySeqToPb(it))
                             migrated = true;
                         if (!map.ContainsKey(id))
                             map[id] = it;
@@ -2014,6 +2031,153 @@ Ví dụ không hợp lệ:
             return tableId;
         }
 
+        private static readonly Regex RoundIdRegex = new(@"\bID\s*:\s*(\d+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static char? NormalizeHistoryToken(string? token)
+        {
+            if (string.IsNullOrWhiteSpace(token)) return null;
+            var t = TextNorm.U(token);
+            if (t.Length == 0) return null;
+            if (t.StartsWith("P") || t.Contains("PLAYER")) return 'P';
+            if (t.StartsWith("B") || t.Contains("BANKER")) return 'B';
+            if (t.StartsWith("T") || t.Contains("HOA") || t.Contains("TIE")) return 'T';
+            var c = char.ToUpperInvariant(t[0]);
+            if (c == 'P' || c == 'B' || c == 'T') return c;
+            return null;
+        }
+
+        private static List<char> BuildHistoryTokens(JsonElement historyEl, string? historyText)
+        {
+            var list = new List<char>();
+            if (historyEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var it in historyEl.EnumerateArray())
+                {
+                    if (it.ValueKind != JsonValueKind.String) continue;
+                    var c = NormalizeHistoryToken(it.GetString());
+                    if (c.HasValue) list.Add(c.Value);
+                }
+            }
+
+            if (list.Count == 0 && !string.IsNullOrWhiteSpace(historyText))
+            {
+                var parts = historyText.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var part in parts)
+                {
+                    var c = NormalizeHistoryToken(part);
+                    if (c.HasValue) list.Add(c.Value);
+                }
+            }
+
+            return list;
+        }
+
+        private static string BuildSeqDigits(string historyPb)
+        {
+            if (string.IsNullOrWhiteSpace(historyPb)) return "";
+            var sb = new System.Text.StringBuilder(historyPb.Length);
+            foreach (var ch in historyPb)
+            {
+                var u = char.ToUpperInvariant(ch);
+                if (u == 'P') sb.Append('0');
+                else if (u == 'B') sb.Append('1');
+            }
+            return sb.ToString();
+        }
+
+        private static string ExtractRoundId(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return "";
+            var m = RoundIdRegex.Match(text);
+            return m.Success ? m.Groups[1].Value : "";
+        }
+
+        private void UpdateOverlayStateFromJs(string tableId, string? tableName, string? text, JsonElement historyEl, string? historyText, double countdown)
+        {
+            if (string.IsNullOrWhiteSpace(tableId)) return;
+
+            var tokens = BuildHistoryTokens(historyEl, historyText);
+            var historyRaw = tokens.Count > 0 ? string.Join(" ", tokens) : "";
+            var historyPb = new string(tokens.Where(c => c == 'P' || c == 'B').ToArray());
+            var seqDigits = BuildSeqDigits(historyPb);
+            var sessionKey = ExtractRoundId(text);
+
+            if (countdown < 0) countdown = 0;
+
+            TableOverlayState state;
+            lock (_tableOverlayGate)
+            {
+                if (!_tableOverlayStates.TryGetValue(tableId, out state))
+                {
+                    state = new TableOverlayState
+                    {
+                        TableId = tableId,
+                        TableName = !string.IsNullOrWhiteSpace(tableName) ? tableName : ResolveRoomName(tableId)
+                    };
+                    _tableOverlayStates[tableId] = state;
+                }
+                else if (!string.IsNullOrWhiteSpace(tableName))
+                {
+                    state.TableName = tableName;
+                }
+
+                if (!string.IsNullOrWhiteSpace(historyRaw))
+                    state.HistoryRaw = historyRaw;
+                if (!string.IsNullOrWhiteSpace(historyPb))
+                    state.HistoryPB = historyPb;
+                if (!string.IsNullOrWhiteSpace(seqDigits))
+                    state.SeqDigits = seqDigits;
+                if (!string.IsNullOrWhiteSpace(sessionKey))
+                    state.SessionKey = sessionKey;
+
+                state.Countdown = countdown;
+                if (countdown > 0 && countdown > state.CountdownMax)
+                    state.CountdownMax = countdown;
+                state.LastUpdate = DateTime.UtcNow;
+
+                var logSig = $"{state.SessionKey}|{state.HistoryPB}|{state.Countdown:0.###}";
+                if (logSig != state.LastLogSig)
+                {
+                    Log($"[SEQ] {tableId} id={state.SessionKey} raw={state.HistoryRaw} pb={state.HistoryPB} countdown={state.Countdown:0.###}");
+                    state.LastLogSig = logSig;
+                }
+            }
+        }
+
+        private bool TryGetOverlaySnapshot(string tableId, out CwSnapshot snap)
+        {
+            snap = new CwSnapshot
+            {
+                abx = "overlay_state",
+                seq = "",
+                session = "",
+                ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                prog = 0
+            };
+
+            if (string.IsNullOrWhiteSpace(tableId))
+                return false;
+
+            TableOverlayState? state;
+            lock (_tableOverlayGate)
+            {
+                _tableOverlayStates.TryGetValue(tableId, out state);
+                if (state == null || string.IsNullOrWhiteSpace(state.SessionKey) || string.IsNullOrWhiteSpace(state.SeqDigits))
+                    return false;
+
+                var prog = state.Countdown > 0 ? state.Countdown : 0;
+                snap = new CwSnapshot
+                {
+                    abx = "overlay_state",
+                    seq = state.SeqDigits ?? "",
+                    session = state.SessionKey ?? "",
+                    prog = prog,
+                    ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                };
+                return true;
+            }
+        }
+
         private async Task HandleTableFocusAsync(string tableId, string? tableName)
         {
             if (string.IsNullOrWhiteSpace(tableId)) return;
@@ -2198,6 +2362,35 @@ Ví dụ không hợp lệ:
                                         var name = root.TryGetProperty("name", out var nameEl2) ? (nameEl2.GetString() ?? "") : "";
                                         await ToggleTablePlayAsync(id, name);
                                     }
+                                    if (ev == "state")
+                                    {
+                                        if (root.TryGetProperty("tables", out var tablesEl) &&
+                                            tablesEl.ValueKind == JsonValueKind.Array)
+                                        {
+                                            foreach (var it in tablesEl.EnumerateArray())
+                                            {
+                                                var id = it.TryGetProperty("id", out var idElState) ? (idElState.GetString() ?? "") : "";
+                                                if (string.IsNullOrWhiteSpace(id)) continue;
+                                                var name = it.TryGetProperty("name", out var nElState) ? (nElState.GetString() ?? "") : "";
+                                                var text = it.TryGetProperty("text", out var textEl) ? (textEl.GetString() ?? "") : "";
+                                                var historyText = it.TryGetProperty("historyText", out var htEl) ? (htEl.GetString() ?? "") : "";
+                                                var historyEl = it.TryGetProperty("history", out var hEl) ? hEl : default;
+
+                                                double countdown = 0;
+                                                if (it.TryGetProperty("countdown", out var cEl))
+                                                {
+                                                    if (cEl.ValueKind == JsonValueKind.Number)
+                                                        countdown = cEl.GetDouble();
+                                                    else if (cEl.ValueKind == JsonValueKind.String &&
+                                                             double.TryParse(cEl.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var cval))
+                                                        countdown = cval;
+                                                }
+
+                                                UpdateOverlayStateFromJs(id, name, text, historyEl, historyText, countdown);
+                                            }
+                                        }
+                                        return;
+                                    }
                                     if (ev == "profit")
                                     {
                                         if (root.TryGetProperty("tables", out var tablesEl) &&
@@ -2334,10 +2527,10 @@ Ví dụ không hợp lệ:
                                                     !string.Equals(sessionStr, _baseSession, StringComparison.Ordinal))
                                                 {
                                                     char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
-                                                    bool winIsChan = (tail == '0' || tail == '2' || tail == '4');
+                                                    bool winIsPlayer = (tail == '0' || tail == '2' || tail == '4');
 
                                                     // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
-                                                    var kqStr = winIsChan ? "CHAN" : "LE";
+                                                    var kqStr = winIsPlayer ? "P" : "B";
                                                     long? accNow2 = snap?.totals?.A;
                                                     if (_pendingRow != null && accNow2.HasValue)
                                                     {
@@ -2376,9 +2569,9 @@ Ví dụ không hợp lệ:
                                                     // Progress / % thời gian
                                                     if (snap.prog.HasValue)
                                                     {
-                                                        var p = Math.Max(0, Math.Min(1, snap.prog.Value));
-                                                        if (PrgBet != null) PrgBet.Value = p;
-                                                        if (LblProg != null) LblProg.Text = $"{(int)Math.Round(p * 100)}%";
+                                                        var seconds = Math.Max(0, snap.prog.Value);
+                                                        if (PrgBet != null) PrgBet.Value = seconds > 0 ? 1 : 0;
+                                                        if (LblProg != null) LblProg.Text = $"{seconds.ToString("0.#", CultureInfo.InvariantCulture)}s";
                                                     }
                                                     else
                                                     {
@@ -2390,8 +2583,8 @@ Ví dụ không hợp lệ:
                                                     // Kết quả gần nhất từ chuỗi seq
                                                     var seqStrLocal = snap.seq ?? "";
                                                     char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
-                                                    var kq = (last == '0' || last == '2' || last == '4') ? "CHAN"
-                                                             : (last == '1' || last == '3') ? "LE" : "";
+                                                    var kq = (last == '0' || last == '2' || last == '4') ? "P"
+                                                             : (last == '1' || last == '3') ? "B" : "";
                                                     SetLastResultUI(kq);
 
                                                     // Tổng tiền
@@ -5081,8 +5274,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
             else if (idx == 2) betSeq = setting.BetSeqNI ?? "";
             if (idx == 1) betPatterns = setting.BetPatternsPB ?? "";
             else if (idx == 3) betPatterns = setting.BetPatternsNI ?? "";
-            betSeq = NormalizePBToCL(betSeq);
-            betPatterns = NormalizePBToCL(betPatterns);
         }
 
         private void UpdateStakeIndexForTable(TableTaskState state, long[] seq, double stake)
@@ -5152,7 +5343,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return new GameContext
             {
                 TableId = tableId,
-                GetSnap = () => { lock (_snapLock) return _lastSnap; },
+                GetSnap = () =>
+                {
+                    if (TryGetOverlaySnapshot(tableId, out var snap))
+                        return snap;
+                    return new CwSnapshot
+                    {
+                        abx = "overlay_state",
+                        seq = "",
+                        session = "",
+                        prog = 0,
+                        ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    };
+                },
                 EvalJsAsync = EvalJsLockedAsync,
                 Log = s => Log(s),
 
@@ -5667,12 +5870,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 await EvalJsLockedAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[CW] ensure push 240ms");
 
-                var ready = await WaitForBridgeAndGameDataAsync(15000);
+                var ready = await WaitForBridgeAndGameDataAsync(tableId, 15000);
                 if (!ready)
                 {
                     Log("[DEC] data not ready, retry push.");
                     await EvalJsLockedAsync("window.__cw_startPush && window.__cw_startPush(240);");
-                    ready = await WaitForBridgeAndGameDataAsync(15000);
+                    ready = await WaitForBridgeAndGameDataAsync(tableId, 15000);
                     if (!ready)
                     {
                         Log("[DEC] data still not ready, skip start.");
@@ -5818,6 +6021,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 StopExpiryCountdown();
                 StopLicenseRecheckTimer();
                 StopLeaseHeartbeat();
+                _licenseCheckTask = null;
+                _licenseCheckUser = null;
                 var uname = (_homeUsername ?? "").Trim().ToLowerInvariant();
                                 // if (!string.IsNullOrWhiteSpace(uname))
                     _ = ReleaseLeaseAsync(uname);
@@ -6212,19 +6417,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
             string sRaw = result ?? string.Empty;
             string s = sRaw.Trim().ToUpperInvariant();
 
-            bool isChan = false, isLe = false;
+            bool isPlayer = false, isBanker = false;
 
             if (s.Length == 1 && char.IsDigit(s[0]))
             {
-                // tail số từ chuỗi kết quả: 0/2/4 => CHẴN, 1/3 => LẺ
+                // tail số từ chuỗi kết quả: 0/2/4 => PLAYER, 1/3 => BANKER
                 char d = s[0];
-                isChan = (d == '0' || d == '2' || d == '4');
-                isLe = (d == '1' || d == '3');
+                isPlayer = (d == '0' || d == '2' || d == '4');
+                isBanker = (d == '1' || d == '3');
             }
             else
             {
-                isChan = (s == "CHAN" || s == "CHẴN" || s == "C");
-                isLe = (s == "LE" || s == "LẺ" || s == "L");
+                isPlayer = (s == "P" || s == "PLAYER");
+                isBanker = (s == "B" || s == "BANKER");
             }
 
             // Helper: fallback hiển thị chữ
@@ -6238,20 +6443,20 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 }
             }
 
-            if (!isChan && !isLe)
+            if (!isPlayer && !isBanker)
             {
                 ShowText("");
                 return;
             }
 
-            // Ưu tiên lấy ảnh trong Resource (ImgCHAN/ImgLE) -> nếu không có thì dùng SharedIcons
-            string resKey = isLe ? "ImgLE" : "ImgCHAN";
+            // Ưu tiên lấy ảnh trong Resource (ImgPlayer/ImgBanker) -> nếu không có thì dùng SharedIcons
+            string resKey = isBanker ? "ImgBanker" : "ImgPlayer";
             var resImg = TryFindResource(resKey) as ImageSource;
 
             ImageSource? icon =
                 resImg
-                ?? (isChan ? (SharedIcons.ResultChan ?? SharedIcons.SideChan)
-                           : (SharedIcons.ResultLe ?? SharedIcons.SideLe));
+                ?? (isPlayer ? (SharedIcons.ResultPlayer ?? SharedIcons.SidePlayer)
+                             : (SharedIcons.ResultBanker ?? SharedIcons.SideBanker));
 
             if (icon != null && ImgKetQua != null)
             {
@@ -6261,13 +6466,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (LblKetQua != null) LblKetQua.Visibility = Visibility.Collapsed;
 
                 // Cache lại để DataGrid (converters) có thể "kế thừa" từ trạng thái
-                if (isChan) SharedIcons.ResultChan = icon;
-                else SharedIcons.ResultLe = icon;
+                if (isPlayer) SharedIcons.ResultPlayer = icon;
+                else SharedIcons.ResultBanker = icon;
             }
             else
             {
                 // Không có ảnh -> fallback chữ có dấu
-                ShowText(isChan ? "CHẴN" : "LẺ");
+                ShowText(isPlayer ? "PLAYER" : "BANKER");
             }
         }
 
@@ -6276,8 +6481,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             // Chuẩn hoá
             var s = (result ?? "").Trim().ToUpperInvariant();
-            bool isLe = s == "LE" || s == "LẺ" || s == "L";
-            bool isChan = s == "CHAN" || s == "CHẴN" || s == "C";
+            bool isBanker = s == "B" || s == "BANKER";
+            bool isPlayer = s == "P" || s == "PLAYER";
 
             void ShowText(string text)
             {
@@ -6289,9 +6494,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 }
             }
 
-            if (isLe || isChan)
+            if (isBanker || isPlayer)
             {
-                var key = isLe ? "ImgLE" : "ImgCHAN";
+                var key = isBanker ? "ImgBanker" : "ImgPlayer";
                 var img = TryFindResource(key) as ImageSource;
                 if (img != null && ImgSide != null)
                 {
@@ -6769,31 +6974,40 @@ private async Task<CancellationTokenSource> DebounceAsync(
         }
 
 
-        private async Task<bool> WaitForBridgeAndGameDataAsync(int timeoutMs = 20000)
+        private async Task<bool> WaitForBridgeAndGameDataAsync(string tableId, int timeoutMs = 20000)
         {
             var t0 = DateTime.UtcNow;
+            bool lastHasBet = false;
+            bool lastHasState = false;
             while ((DateTime.UtcNow - t0).TotalMilliseconds < timeoutMs)
             {
                 try
                 {
                     // 1) __cw_bet có chưa
-                    var typeBet = (await Web.ExecuteScriptAsync("typeof window.__cw_bet"))?.Trim('"');
+                    var typeBet = (await EvalJsLockedAsync("typeof window.__cw_bet"))?.Trim('"');
                     bool hasBet = string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase);
 
-                    // 3) Đã có tick chưa (ít nhất 1 ký tự seq)
-                    bool hasTick = false;
-                    lock (_snapLock)
+                    // 2) Đã có dữ liệu overlay theo bàn chưa (seq + sessionKey)
+                    bool hasState = false;
+                    lock (_tableOverlayGate)
                     {
-                        hasTick = _lastSnap?.seq != null && _lastSnap.seq.Length > 0;
+                        if (_tableOverlayStates.TryGetValue(tableId, out var st))
+                        {
+                            hasState = !string.IsNullOrWhiteSpace(st.SessionKey) &&
+                                       !string.IsNullOrWhiteSpace(st.SeqDigits);
+                        }
                     }
 
-                    if (hasBet && hasTick)
+                    lastHasBet = hasBet;
+                    lastHasState = hasState;
+                    if (hasBet && hasState)
                         return true;
                 }
                 catch { /* tiếp tục đợi */ }
 
                 await Task.Delay(300);
             }
+            Log($"[DEC] data not ready (bet={lastHasBet}, state={lastHasState}).");
             return false;
         }
 
@@ -7374,8 +7588,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var u = TextNorm.U(s);
             if (u == "P" || u == "PLAYER") return "P";
             if (u == "B" || u == "BANKER") return "B";
-            if (u == "C" || u == "CHAN") return "P";
-            if (u == "L" || u == "LE") return "B";
             return (s ?? "").Trim();
         }
         private static string NormalizeWL(string s)
@@ -7575,20 +7787,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return sb.ToString();
         }
 
-        private static string NormalizePBToCL(string raw)
-        {
-            if (string.IsNullOrEmpty(raw)) return "";
-            var sb = new System.Text.StringBuilder(raw.Length);
-            foreach (var ch in raw)
-            {
-                var u = char.ToUpperInvariant(ch);
-                if (u == 'P') u = 'C';
-                else if (u == 'B') u = 'L';
-                sb.Append(u);
-            }
-            return sb.ToString();
-        }
-
         // --- Chuỗi P/B: P,B; 2..100 ký tự sau khi bỏ phân tách ---
         private static bool ValidateSeqPB(string s, out string err)
         {
@@ -7600,11 +7798,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
 
             int count = 0;
-            foreach (var ch in s)
+            foreach (var ch in NormalizePBInput(s))
             {
                 if (char.IsWhiteSpace(ch)) continue;          // chỉ cho phép khoảng trắng
                 char u = char.ToUpperInvariant(ch);
-                if (u == 'P' || u == 'B' || u == 'C' || u == 'L') { count++; continue; }
+                if (u == 'P' || u == 'B') { count++; continue; }
                 err = "Chỉ cho phép khoảng trắng và ký tự P hoặc B.";
                 return false;
             }
@@ -7671,7 +7869,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 // <mẫu> (P/B, cho phép khoảng trắng)  -> hoặc -  <chuỗi cầu> (P/B, CHO PHÉP khoảng trắng)
                 var m = System.Text.RegularExpressions.Regex.Match(
                     line,
-                    @"^\s*([PBCLpbcl\s]+)\s*(?:->|-)\s*([PBCLpbcl\s]+)\s*$",
+                    @"^\s*([PBpb\s]+)\s*(?:->|-)\s*([PBpb\s]+)\s*$",
                     System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
                 if (!m.Success)
@@ -7687,8 +7885,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 {
                     if (char.IsWhiteSpace(ch)) continue;
                     char u = char.ToUpperInvariant(ch);
-                    if (u == 'C') u = 'P';
-                    else if (u == 'L') u = 'B';
                     if (u == 'P' || u == 'B') lhsBuf.Append(u);
                     else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm P/B (cho phép khoảng trắng giữa các ký tự)."; return false; }
                 }
@@ -7706,8 +7902,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 {
                     if (char.IsWhiteSpace(ch)) continue;
                     char u = char.ToUpperInvariant(ch);
-                    if (u == 'C') u = 'P';
-                    else if (u == 'L') u = 'B';
                     if (u == 'P' || u == 'B') rhsBuf.Append(u);
                     else { err = $"Quy tắc {idx}: <chuỗi cầu> chỉ gồm P/B (có thể nhiều ký tự), cho phép khoảng trắng."; return false; }
                 }

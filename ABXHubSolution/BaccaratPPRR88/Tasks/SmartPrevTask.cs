@@ -30,8 +30,8 @@ namespace BaccaratPPRR88.Tasks
 
         private static string DecideNextSide(string parity)
         {
-            if (parity.Length == 0) return "CHAN"; // mặc định
-            char lastParity = parity[^1];          // 'C' hoặc 'L'
+            if (parity.Length == 0) return "P"; // mặc định
+            char lastParity = parity[^1];          // 'P' hoặc 'B'
             var (seg1, _, seg3) = SplitSegments(parity);
 
             // Theo yêu cầu của bạn:
@@ -39,7 +39,7 @@ namespace BaccaratPPRR88.Tasks
             // - seg1 < seg3  → ĐÁNH GIỐNG kết quả vừa về
             // - seg1 > seg3  → ĐÁNH GIỐNG kết quả vừa về
             bool sameAsLast = (seg1 != seg3);
-            char pick = sameAsLast ? lastParity : (lastParity == 'C' ? 'L' : 'C');
+            char pick = sameAsLast ? lastParity : (lastParity == 'P' ? 'B' : 'P');
             return ParityCharToSide(pick);
         }
 

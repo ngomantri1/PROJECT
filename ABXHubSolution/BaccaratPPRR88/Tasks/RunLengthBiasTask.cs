@@ -17,12 +17,12 @@ namespace BaccaratPPRR88.Tasks
 
         private const int T = 3; // ngưỡng run-length
 
-        private static char Opp(char c) => c == 'C' ? 'L' : 'C';
-        private static string ToSide(char c) => (c == 'C') ? "CHAN" : "LE";
+        private static char Opp(char c) => c == 'P' ? 'B' : 'P';
+        private static string ToSide(char c) => (c == 'P') ? "P" : "B";
 
         private static char DecideNext(string parity)
         {
-            if (string.IsNullOrEmpty(parity)) return 'C';
+            if (string.IsNullOrEmpty(parity)) return 'P';
             char last = parity[^1];
             // đếm run-length của last từ cuối ngược về
             int run = 1;

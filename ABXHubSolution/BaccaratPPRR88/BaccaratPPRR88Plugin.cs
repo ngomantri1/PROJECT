@@ -142,18 +142,18 @@ namespace BaccaratPPRR88
                 }
             }
 
-            SetImg("ImgCHAN", "Assets/side/CHAN.png");
-            SetImg("ImgLE", "Assets/side/LE.png");
+            SetImg("ImgPlayer", "Assets/side/CHAN.png");
+            SetImg("ImgBanker", "Assets/side/LE.png");
             SetImg("ImgTHANG", "Assets/kq/THANG.png");
             SetImg("ImgTHUA", "Assets/kq/THUA.png");
 
             // giữ lại để các converter trong MainWindow dùng chung
             try
             {
-                if (dict["ImgCHAN"] is ImageSource chan) BaccaratPPRR88.MainWindow.SharedIcons.SideChan = chan;
-                if (dict["ImgLE"] is ImageSource le) BaccaratPPRR88.MainWindow.SharedIcons.SideLe = le;
-                if (dict["ImgCHAN"] is ImageSource chan2) BaccaratPPRR88.MainWindow.SharedIcons.ResultChan = chan2;
-                if (dict["ImgLE"] is ImageSource le2) BaccaratPPRR88.MainWindow.SharedIcons.ResultLe = le2;
+                if (dict["ImgPlayer"] is ImageSource player) BaccaratPPRR88.MainWindow.SharedIcons.SidePlayer = player;
+                if (dict["ImgBanker"] is ImageSource banker) BaccaratPPRR88.MainWindow.SharedIcons.SideBanker = banker;
+                if (dict["ImgPlayer"] is ImageSource player2) BaccaratPPRR88.MainWindow.SharedIcons.ResultPlayer = player2;
+                if (dict["ImgBanker"] is ImageSource banker2) BaccaratPPRR88.MainWindow.SharedIcons.ResultBanker = banker2;
                 if (dict["ImgTHANG"] is ImageSource win) BaccaratPPRR88.MainWindow.SharedIcons.Win = win;
                 if (dict["ImgTHUA"] is ImageSource loss) BaccaratPPRR88.MainWindow.SharedIcons.Loss = loss;
             }

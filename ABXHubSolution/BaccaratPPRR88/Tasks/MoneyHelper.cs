@@ -307,8 +307,8 @@ namespace BaccaratPPRR88.Tasks
             return s;
         }
 
-        // ====== CÁC HÀM PHỤ CŨ (giữ nguyên) ======
-        public static string DigitSeqToParity(string digits)  // "1234" -> "LCLC"
+        // ====== CÁC HÀM PHỤ (P/B) ======
+        public static string DigitSeqToPb(string digits)  // "1234" -> "BPBP"
         {
             if (string.IsNullOrEmpty(digits)) return "";
             var s = digits.Trim();
@@ -316,14 +316,14 @@ namespace BaccaratPPRR88.Tasks
             int k = 0;
             foreach (var ch in s)
             {
-                if (ch == '0' || ch == '2' || ch == '4') arr[k++] = 'C';
-                else if (ch == '1' || ch == '3') arr[k++] = 'L';
+                if (ch == '0' || ch == '2' || ch == '4') arr[k++] = 'P';
+                else if (ch == '1' || ch == '3') arr[k++] = 'B';
                 // khác -> bỏ qua
             }
             return new string(arr, 0, k);
         }
 
-        public static string OppCL(string cl) => cl == "CHAN" ? "LE" : (cl == "LE" ? "CHAN" : cl);
-        public static string ClCharToSide(char cl) => (cl == 'C') ? "CHAN" : "LE";
+        public static string OppPB(string pb) => pb == "P" ? "B" : (pb == "B" ? "P" : pb);
+        public static string PbCharToSide(char pb) => (pb == 'P') ? "P" : "B";
     }
 }

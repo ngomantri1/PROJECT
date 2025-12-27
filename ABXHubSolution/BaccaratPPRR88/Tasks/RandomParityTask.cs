@@ -9,17 +9,17 @@ namespace BaccaratPPRR88.Tasks
     public sealed class RandomParityTask : IBetTask
     {
         public string DisplayName => "6) Cửa đặt ngẫu nhiên";
-        public string Id => "random-cl"; // 6) Ngẫu nhiên
+        public string Id => "random-pb"; // 6) Ngẫu nhiên
 
         private static readonly ThreadLocal<Random> _rng =
             new(() => new Random(unchecked(Environment.TickCount * 31 + Environment.CurrentManagedThreadId)));
 
-        private static string DecideRandomSide() => (_rng.Value!.Next(2) == 0) ? "CHAN" : "LE";
+        private static string DecideRandomSide() => (_rng.Value!.Next(2) == 0) ? "P" : "B";
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
             var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
-            ctx.Log?.Invoke($"[RandomCL] Khởi chạy: vốn={ctx.MoneyStrategyId}");
+            ctx.Log?.Invoke($"[RandomPB] Khởi chạy: vốn={ctx.MoneyStrategyId}");
 
             while (true)
             {
@@ -43,7 +43,7 @@ namespace BaccaratPPRR88.Tasks
                 {
                     stake = money.GetStakeForThisBet();
                 }
-                ctx.Log?.Invoke($"[RandomCL] Chọn ngẫu nhiên: {side}, stake={stake:N0}");
+                ctx.Log?.Invoke($"[RandomPB] Chọn ngẫu nhiên: {side}, stake={stake:N0}");
 
                 await PlaceBet(ctx, side, stake, ct);
 

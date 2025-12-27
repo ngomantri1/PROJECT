@@ -6,8 +6,8 @@
     <Application.Resources>
         <ResourceDictionary>
             <!--  Dùng pack URI: pack://application:,,,/ + đường dẫn trong project  -->
-            <BitmapImage x:Key="ImgLE" UriSource="pack://application:,,,/Assets/kq/le.png" />
-            <BitmapImage x:Key="ImgCHAN" UriSource="pack://application:,,,/Assets/kq/chan.png" />
+            <BitmapImage x:Key="ImgBanker" UriSource="pack://application:,,,/Assets/kq/le.png" />
+            <BitmapImage x:Key="ImgPlayer" UriSource="pack://application:,,,/Assets/kq/chan.png" />
             <BitmapImage x:Key="ImgTHANG" UriSource="pack://application:,,,/Assets/kq/thang.png" />
             <BitmapImage x:Key="ImgTHUA" UriSource="pack://application:,,,/Assets/kq/thua.png" />
         </ResourceDictionary>

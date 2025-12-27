@@ -17,12 +17,12 @@ namespace BaccaratPPRR88.Tasks
 
         private int _roundInBlock = 0; // 0..9
 
-        private static char Opp(char c) => c == 'C' ? 'L' : 'C';
-        private static string ToSide(char c) => (c == 'C') ? "CHAN" : "LE";
+        private static char Opp(char c) => c == 'P' ? 'B' : 'P';
+        private static string ToSide(char c) => (c == 'P') ? "P" : "B";
 
         private char Decide(string parity)
         {
-            char last = (parity.Length == 0) ? 'C' : parity[^1];
+            char last = (parity.Length == 0) ? 'P' : parity[^1];
             int idx = (_roundInBlock % 10); // 0..9
             return (idx < 5) ? last : Opp(last);
         }

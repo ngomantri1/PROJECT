@@ -20,8 +20,8 @@ namespace BaccaratPPRR88.Tasks
         private const int KMax = 6;
         private const int KMin = 3;
 
-        private static char Opp(char c) => (c == 'C') ? 'L' : 'C';
-        private static string ToSide(char c) => (c == 'C') ? "CHAN" : "LE";
+        private static char Opp(char c) => (c == 'P') ? 'B' : 'P';
+        private static string ToSide(char c) => (c == 'P') ? "P" : "B";
 
         private static int Hamming(ReadOnlySpan<char> a, ReadOnlySpan<char> b)
         {
@@ -33,7 +33,7 @@ namespace BaccaratPPRR88.Tasks
         private static char Decide(string p)
         {
             int n = p.Length;
-            if (n <= 1) return (n == 0) ? 'C' : p[^1];
+            if (n <= 1) return (n == 0) ? 'P' : p[^1];
 
             for (int k = Math.Min(KMax, n - 1); k >= KMin; k--)
             {
@@ -48,14 +48,14 @@ namespace BaccaratPPRR88.Tasks
                     {
                         char next = p[i + k];
                         int w = (d == 0) ? 2 : 1;
-                        if (next == 'C') scoreC += w; else if (next == 'L') scoreL += w;
+                        if (next == 'P') scoreC += w; else if (next == 'B') scoreL += w;
                     }
                 }
 
                 if (scoreC + scoreL > 0)
                 {
-                    if (scoreC > scoreL) return 'C';
-                    if (scoreL > scoreC) return 'L';
+                    if (scoreC > scoreL) return 'P';
+                    if (scoreL > scoreC) return 'B';
                     return Opp(p[^1]); // hòa
                 }
             }

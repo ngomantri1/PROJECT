@@ -34,8 +34,8 @@ namespace BaccaratPPRR88
             TryMerge(app.Resources, "pack://application:,,,/BaccaratPPRR88;component/Assets/Images.xaml");
 
             // 2. fallback: tự tạo ảnh để dù Images.xaml không load được vẫn không vỡ XAML
-            EnsureImage(app.Resources, "ImgLE", "pack://application:,,,/BaccaratPPRR88;component/Assets/side/LE.png");
-            EnsureImage(app.Resources, "ImgCHAN", "pack://application:,,,/BaccaratPPRR88;component/Assets/side/CHAN.png");
+            EnsureImage(app.Resources, "ImgBanker", "pack://application:,,,/BaccaratPPRR88;component/Assets/side/LE.png");
+            EnsureImage(app.Resources, "ImgPlayer", "pack://application:,,,/BaccaratPPRR88;component/Assets/side/CHAN.png");
             EnsureImage(app.Resources, "ImgTHANG", "pack://application:,,,/BaccaratPPRR88;component/Assets/kq/THANG.png");
             EnsureImage(app.Resources, "ImgTHUA", "pack://application:,,,/BaccaratPPRR88;component/Assets/kq/THUA.png");
 

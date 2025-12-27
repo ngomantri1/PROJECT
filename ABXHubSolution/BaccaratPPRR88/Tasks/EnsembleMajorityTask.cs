@@ -24,15 +24,15 @@ namespace BaccaratPPRR88.Tasks
         private const int TransK = 6;
         private const int AiK = 6;
 
-        private static char Opp(char c) => c == 'C' ? 'L' : 'C';
-        private static string ToSide(char c) => (c == 'C') ? "CHAN" : "LE";
+        private static char Opp(char c) => c == 'P' ? 'B' : 'P';
+        private static string ToSide(char c) => (c == 'P') ? "P" : "B";
 
-        private static char ExpertA_FollowLast(string p) => p.Length == 0 ? 'C' : p[^1];
-        private static char ExpertB_OppLast(string p) => p.Length == 0 ? 'L' : Opp(p[^1]);
+        private static char ExpertA_FollowLast(string p) => p.Length == 0 ? 'P' : p[^1];
+        private static char ExpertB_OppLast(string p) => p.Length == 0 ? 'B' : Opp(p[^1]);
 
         private static char ExpertC_RunLen(string p)
         {
-            if (p.Length == 0) return 'C';
+            if (p.Length == 0) return 'P';
             char last = p[^1];
             int run = 1; for (int i = p.Length - 2; i >= 0 && p[i] == last; i--) run++;
             return (run >= RunLenT) ? Opp(last) : last;
@@ -40,7 +40,7 @@ namespace BaccaratPPRR88.Tasks
 
         private static char ExpertD_Trans(string p)
         {
-            if (p.Length < 2) return p.Length == 0 ? 'C' : p[^1];
+            if (p.Length < 2) return p.Length == 0 ? 'P' : p[^1];
             int consider = Math.Min(TransK + 1, p.Length);
             int same = 0, flip = 0;
             for (int i = p.Length - consider + 1; i < p.Length; i++)
@@ -51,7 +51,7 @@ namespace BaccaratPPRR88.Tasks
         private static char ExpertE_Ai(string p)
         {
             // exact-match như AiStat: k từ AiK -> 1; đếm tần suất next; hòa->đảo; không có mẫu->theo cuối
-            int n = p.Length; if (n <= 1) return n == 0 ? 'C' : p[^1];
+            int n = p.Length; if (n <= 1) return n == 0 ? 'P' : p[^1];
             for (int k = Math.Min(AiK, n - 1); k >= 1; k--)
             {
                 var tail = p.Substring(n - k, k);
@@ -61,13 +61,13 @@ namespace BaccaratPPRR88.Tasks
                     if (p.AsSpan(i, k).SequenceEqual(p.AsSpan(n - k, k)))
                     {
                         char next = p[i + k];
-                        if (next == 'C') c++; else if (next == 'L') l++;
+                        if (next == 'P') c++; else if (next == 'B') l++;
                     }
                 }
                 if (c + l > 0)
                 {
-                    if (c > l) return 'C';
-                    if (l > c) return 'L';
+                    if (c > l) return 'P';
+                    if (l > c) return 'B';
                     return Opp(p[^1]); // hòa
                 }
             }
@@ -82,11 +82,11 @@ namespace BaccaratPPRR88.Tasks
             char d = ExpertD_Trans(parity);
             char e = ExpertE_Ai(parity);
 
-            int vc = (a == 'C' ? 1 : 0) + (b == 'C' ? 1 : 0) + (c == 'C' ? 1 : 0) + (d == 'C' ? 1 : 0) + (e == 'C' ? 1 : 0);
+            int vc = (a == 'P' ? 1 : 0) + (b == 'P' ? 1 : 0) + (c == 'P' ? 1 : 0) + (d == 'P' ? 1 : 0) + (e == 'P' ? 1 : 0);
             int vl = 5 - vc;
-            if (vc > vl) return 'C';
-            if (vl > vc) return 'L';
-            return parity.Length == 0 ? 'C' : Opp(parity[^1]); // tie safeguard
+            if (vc > vl) return 'P';
+            if (vl > vc) return 'B';
+            return parity.Length == 0 ? 'P' : Opp(parity[^1]); // tie safeguard
         }
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)

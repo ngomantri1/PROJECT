@@ -93,7 +93,7 @@ namespace BaccaratPPRR88.Tasks
             return Path.Combine(dir, "ngram_adaptive_state_v2.json");
         }
 
-        private static string ToSide(char c) => c == 'C' ? "CHAN" : "LE";
+        private static string ToSide(char c) => c == 'P' ? "P" : "B";
 
         // ======================== RUN LOOP ========================
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
@@ -151,11 +151,11 @@ namespace BaccaratPPRR88.Tasks
                 char finalPick;
                 if (undecidable)
                 {
-                    finalPick = _rng.NextDouble() < 0.5 ? 'C' : 'L';
+                    finalPick = _rng.NextDouble() < 0.5 ? 'P' : 'B';
                 }
                 else
                 {
-                    finalPick = (score >= 0) ? 'C' : 'L';
+                    finalPick = (score >= 0) ? 'P' : 'B';
                 }
 
                 string side = ToSide(finalPick);
@@ -428,7 +428,7 @@ namespace BaccaratPPRR88.Tasks
             private double _alpha;
             private double _rescaleThreshold;
 
-            // tables[k][key] => (c:count_C, l:count_L)
+            // tables[k][key] => (c:count_P, l:count_B)
             private readonly Dictionary<int, (double c, double l)>[] _tables;
 
             public NGramModel(int kMax, double alpha, double rescaleThreshold)
@@ -477,7 +477,7 @@ namespace BaccaratPPRR88.Tasks
                     var tab = _tables[k];
                     if (!tab.TryGetValue(key, out var cnt)) cnt = (0, 0);
 
-                    if (actual == 'C') cnt.c += 1.0; else cnt.l += 1.0;
+                    if (actual == 'P') cnt.c += 1.0; else cnt.l += 1.0;
 
                     double total = cnt.c + cnt.l;
                     if (total >= _rescaleThreshold) { cnt.c *= 0.5; cnt.l *= 0.5; }
@@ -560,7 +560,7 @@ namespace BaccaratPPRR88.Tasks
             {
                 int bits = 0, n = parity.Length;
                 for (int i = Math.Max(0, n - k); i < n; i++)
-                    bits = (bits << 1) | (parity[i] == 'L' ? 1 : 0); // C=0, L=1
+                    bits = (bits << 1) | (parity[i] == 'B' ? 1 : 0); // P=0, B=1
                 return bits;
             }
         }

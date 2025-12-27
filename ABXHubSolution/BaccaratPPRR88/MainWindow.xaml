@@ -477,8 +477,8 @@
         <local:ProgressWidthConverter x:Key="FillWidthConv" />
 
         <!--  PACK URI CHO ẢNH  -->
-        <BitmapImage x:Key="ImgLE" UriSource="pack://application:,,,/Assets/side/LE.png" />
-        <BitmapImage x:Key="ImgCHAN" UriSource="pack://application:,,,/Assets/side/CHAN.png" />
+        <BitmapImage x:Key="ImgBanker" UriSource="pack://application:,,,/Assets/side/LE.png" />
+        <BitmapImage x:Key="ImgPlayer" UriSource="pack://application:,,,/Assets/side/CHAN.png" />
         <BitmapImage x:Key="ImgTHANG" UriSource="pack://application:,,,/Assets/kq/THANG.png" />
         <BitmapImage x:Key="ImgTHUA" UriSource="pack://application:,,,/Assets/kq/THUA.png" />
     </Window.Resources>
