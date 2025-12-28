@@ -2682,7 +2682,8 @@ Ví dụ không hợp lệ:
                                     _lastBetSig = sig;
                                     _lastBetSigAtMs = nowMs;
 
-                                    Log($"[BET] {side} {amount:N0}");
+                                    var tableIdLog = string.IsNullOrWhiteSpace(tableId) ? "?" : tableId;
+                                    Log($"[BET] {tableIdLog} {side} {amount:N0}");
 
                                     long accNow = 0;
                                     try { accNow = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }

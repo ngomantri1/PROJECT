@@ -274,6 +274,143 @@
         return docs;
             }
 
+    const BET_ID_ATTRS = [
+        'data-table-id',
+        'data-table_id',
+        'data-id',
+        'data-game-id',
+        'data-gameid',
+        'data-room-id',
+        'data-roomid',
+        'data-tableid',
+        'data-table'
+    ];
+
+    function betFindAncestorById(node, needle, attrs) {
+        let cur = node;
+        const target = String(needle || '').trim();
+        if (!cur || !target)
+            return null;
+        while (cur && cur.nodeType === 1) {
+            try {
+                if ((cur.id || '') === target)
+                    return cur;
+                if (cur.getAttribute) {
+                    for (const attr of attrs) {
+                        if ((cur.getAttribute(attr) || '') === target)
+                            return cur;
+                    }
+                }
+            } catch (_) {}
+            cur = cur.parentElement;
+        }
+        return null;
+    }
+
+    function betIsInsideOverlay(node) {
+        try {
+            if (!node || !node.closest)
+                return false;
+            return !!node.closest('#__abx_table_overlay_root');
+        } catch (_) {}
+        return false;
+    }
+
+    function betResolveRootFromOverlay(id) {
+        try {
+            const ov = window.__abxTableOverlay;
+            if (ov && typeof ov.resolveRoomDom === 'function') {
+                const root = ov.resolveRoomDom(id);
+                if (root && !betIsInsideOverlay(root))
+                    return root;
+            }
+        } catch (_) {}
+        return null;
+    }
+
+    function betIsTargetInsideRoot(root, target) {
+        if (!root || !target)
+            return false;
+        try {
+            if (root.contains && root.contains(target))
+                return true;
+        } catch (_) {}
+        try {
+            const rr = root.getBoundingClientRect ? root.getBoundingClientRect() : null;
+            const tr = target.getBoundingClientRect ? target.getBoundingClientRect() : null;
+            if (!rr || !tr)
+                return false;
+            const cx = tr.left + tr.width / 2;
+            const cy = tr.top + tr.height / 2;
+            return (cx >= rr.left && cx <= rr.right && cy >= rr.top && cy <= rr.bottom);
+        } catch (_) {}
+        return false;
+    }
+
+    function betTargetMatchesAnyId(target, candidates) {
+        if (!target || !candidates || !candidates.length)
+            return false;
+        for (const needle of candidates) {
+            if (betFindAncestorById(target, needle, BET_ID_ATTRS))
+                return true;
+        }
+        return false;
+    }
+
+    function betFindTargetByTableId(id, side) {
+        const s = betNormalizeSide(side);
+        const selector = (s === 'player')
+            ? '.qE_lp.qE_q1'
+            : (s === 'banker' ? '.qE_lp.qE_ra' : '');
+        if (!selector)
+            return null;
+        const candidates = betGetTableIdCandidates(id);
+        if (!candidates.length)
+            return null;
+        const docs = betCollectDocs();
+        let fallback = null;
+        for (const doc of docs) {
+            let nodes = [];
+            try {
+                nodes = Array.from(doc.querySelectorAll(selector));
+            } catch (_) {}
+            for (const needle of candidates) {
+                for (const el of nodes) {
+                    if (!el)
+                        continue;
+                    if (betFindAncestorById(el, needle, BET_ID_ATTRS)) {
+                        if (betIsVisible(el))
+                            return el;
+                        if (!fallback)
+                            fallback = el;
+                    }
+                }
+            }
+        }
+        if (!fallback) {
+            let single = null;
+            let count = 0;
+            for (const doc of docs) {
+                let nodes = [];
+                try {
+                    nodes = Array.from(doc.querySelectorAll(selector));
+                } catch (_) {}
+                for (const el of nodes) {
+                    if (betIsVisible(el)) {
+                        count += 1;
+                        if (count == 1)
+                            single = el;
+                        else
+                            return null;
+                    }
+                }
+            }
+            if (count == 1 && single)
+                return single;
+        }
+        return fallback;
+    }
+
     function betResolveCardRoot(node) {
         if (!node)
             return null;
@@ -306,24 +443,17 @@
         if (!candidates.length)
             return null;
         const docs = betCollectDocs();
-        const attrs = [
-            'data-table-id',
-            'data-table_id',
-            'data-id',
-            'data-game-id',
-            'data-gameid',
-            'data-room-id',
-            'data-roomid',
-            'data-tableid',
-            'data-table'
-        ];
+        const attrs = BET_ID_ATTRS;
         let fallback = null;
         for (const doc of docs) {
             for (const needle of candidates) {
                 try {
                     const byId = doc.getElementById(needle);
                     if (byId) {
-                        const root = betResolveCardRoot(byId);
+                        if (betIsInsideOverlay(byId))
+                            continue;
+                        const exact = betFindAncestorById(byId, needle, attrs);
+                        const root = exact || betResolveCardRoot(byId);
                         if (betHasBetTargets(root))
                             return root;
                         if (!fallback)
@@ -335,31 +465,15 @@
                         const sel = `[${attr}="${betCssEscape(needle)}"]`;
                         const hit = doc.querySelector(sel);
                         if (hit) {
-                            const root = betResolveCardRoot(hit);
+                            if (betIsInsideOverlay(hit))
+                                continue;
+                            const exact = betFindAncestorById(hit, needle, attrs);
+                            const root = exact || betResolveCardRoot(hit);
                             if (betHasBetTargets(root))
                                 return root;
                             if (!fallback)
                                 fallback = root;
                     }
-                    } catch (_) {}
-                        }
-                        }
-                        }
-        for (const doc of docs) {
-            for (const needle of candidates) {
-                if (needle.length < 6)
-                    continue;
-                for (const attr of attrs) {
-                    try {
-                        const sel = `[${attr}*="${betCssEscape(needle)}"]`;
-                        const hit = doc.querySelector(sel);
-                        if (hit) {
-                            const root = betResolveCardRoot(hit);
-                            if (betHasBetTargets(root))
-                                return root;
-                            if (!fallback)
-                                fallback = root;
-                        }
                     } catch (_) {}
                         }
                         }
@@ -397,24 +511,6 @@
         } catch (_) {}
             return null;
     }
-            try {
-            const el = document.querySelector(css);
-                if (el)
-                    return el;
-            } catch (_) {}
-        try {
-            const iframes = Array.from(document.querySelectorAll('iframe'));
-            for (const ifr of iframes) {
-        try {
-                    const doc = ifr.contentDocument;
-                    if (!doc)
-                        continue;
-                    const el = doc.querySelector(css);
-            if (el)
-                return el;
-        } catch (_) {}
-            }
-        } catch (_) {}
         return null;
             }
 
@@ -478,11 +574,16 @@
         return Number.isFinite(num) ? num : 0;
     }
 
-    function betFindChip(label) {
+    function betFindChip(label, doc) {
         if (!label)
             return null;
         const upper = String(label).trim().toUpperCase();
-        const nodes = betCollectNodes('.v0_wa');
+        const nodes = [];
+        if (doc && doc.querySelectorAll) {
+            try { nodes.push(...doc.querySelectorAll('.v0_wa')); } catch (_) {}
+        }
+        if (nodes.length === 0)
+            nodes.push(...betCollectNodes('.v0_wa'));
         for (const el of nodes) {
             const text = (el.textContent || '').trim().toUpperCase();
             if (text === upper && betIsVisible(el))
@@ -619,22 +720,46 @@
     function betDispatchClick(el) {
         if (!el)
             return false;
-        const doc = el.ownerDocument || document;
-        const win = doc.defaultView || window;
         try {
-            if (el.getBoundingClientRect) {
-                const r = el.getBoundingClientRect();
+            const target = el.closest('button,[role=button],a') || el;
+            const doc = target.ownerDocument || document;
+            const win = doc.defaultView || window;
+            if (target.getBoundingClientRect) {
+                const r = target.getBoundingClientRect();
                 if (r.width > 0 && r.height > 0) {
                     const x = r.left + r.width / 2;
                     const y = r.top + r.height / 2;
-                    const target = el.closest('button,[role=button],a') || el;
                     try {
                         if (typeof win.PointerEvent === 'function') {
-                            const pd = new win.PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 1, pointerType: 'mouse' });
-                            const pu = new win.PointerEvent('pointerup', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 0, pointerType: 'mouse' });
-                            target.dispatchEvent(pd);
-                            target.dispatchEvent(pu);
+                            const evDown = new win.PointerEvent('pointerdown', {
+                                bubbles: true,
+                                cancelable: true,
+                                view: win,
+                                clientX: x,
+                                clientY: y,
+                                pointerId: 1,
+                                pointerType: 'mouse',
+                                isPrimary: true,
+                                button: 0,
+                                buttons: 1
+                            });
+                            const evUp = new win.PointerEvent('pointerup', {
+                                bubbles: true,
+                                cancelable: true,
+                                view: win,
+                                clientX: x,
+                                clientY: y,
+                                pointerId: 1,
+                                pointerType: 'mouse',
+                                isPrimary: true,
+                                button: 0,
+                                buttons: 0
+                            });
+                            target.dispatchEvent(evDown);
+                            target.dispatchEvent(evUp);
                         }
+                    } catch (_) {}
+                    try {
                         const md = new win.MouseEvent('mousedown', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 1 });
                         const mu = new win.MouseEvent('mouseup', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 0 });
                         const mc = new win.MouseEvent('click', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 0 });
@@ -642,18 +767,110 @@
                         target.dispatchEvent(mu);
                         target.dispatchEvent(mc);
                     } catch (_) {}
-                    if (typeof target.click === 'function')
-                        target.click();
-                    return true;
                 }
             }
-            if (typeof el.click === 'function') {
-                el.click();
+            if (typeof target.click === 'function') {
+                target.click();
                 return true;
             }
+            const fallback = new (doc.defaultView || window).MouseEvent('click', { bubbles: true, cancelable: true, view: doc.defaultView || window });
+            target.dispatchEvent(fallback);
+            return true;
         } catch (_) {}
         return false;
                 }
+
+    function betDispatchClickOnce(el, mode) {
+        if (!el)
+            return false;
+        try {
+            const target = el.closest('button,[role=button],a') || el;
+            const doc = target.ownerDocument || document;
+            const win = doc.defaultView || window;
+            const kind = (mode || 'click').toLowerCase();
+            if (kind === 'click') {
+                if (typeof target.click === 'function') {
+                    target.click();
+                    return true;
+                }
+                const ev = new win.MouseEvent('click', { bubbles: true, cancelable: true, view: win });
+                target.dispatchEvent(ev);
+                return true;
+            }
+            if (!target.getBoundingClientRect)
+                return false;
+            const r = target.getBoundingClientRect();
+            if (!(r.width > 0 && r.height > 0))
+                return false;
+            const x = r.left + r.width / 2;
+            const y = r.top + r.height / 2;
+            if (kind === 'pointer') {
+                if (typeof win.PointerEvent !== 'function')
+                    return false;
+                const evDown = new win.PointerEvent('pointerdown', {
+                    bubbles: true,
+                    cancelable: true,
+                    view: win,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 1,
+                    pointerType: 'mouse',
+                    isPrimary: true,
+                    button: 0,
+                    buttons: 1
+                });
+                const evUp = new win.PointerEvent('pointerup', {
+                    bubbles: true,
+                    cancelable: true,
+                    view: win,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 1,
+                    pointerType: 'mouse',
+                    isPrimary: true,
+                    button: 0,
+                    buttons: 0
+                });
+                target.dispatchEvent(evDown);
+                target.dispatchEvent(evUp);
+                return true;
+            }
+            if (kind === 'mouse') {
+                const md = new win.MouseEvent('mousedown', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 1 });
+                const mu = new win.MouseEvent('mouseup', { bubbles: true, cancelable: true, view: win, clientX: x, clientY: y, button: 0, buttons: 0 });
+                target.dispatchEvent(md);
+                target.dispatchEvent(mu);
+                return true;
+            }
+            return true;
+        } catch (_) {}
+        return false;
+    }
+
+    function betShowToast(msg, ttlMs) {
+        try {
+            const id = '__abx_bet_toast';
+            let el = document.getElementById(id);
+            if (!el) {
+                el = document.createElement('div');
+                el.id = id;
+                el.style.cssText = [
+                    'position:fixed', 'top:12px', 'right:12px', 'z-index:2147482000',
+                    'max-width:420px', 'background:#081028', 'color:#fefefe',
+                    'border:1px solid rgba(255,255,255,0.15)', 'border-radius:10px',
+                    'box-shadow:0 10px 26px rgba(0,0,0,.55)', 'padding:10px 12px',
+                    'font:13px/1.4 Consolas,monospace', 'pointer-events:none'
+                ].join(';');
+                document.body.appendChild(el);
+            }
+            el.textContent = String(msg || '').slice(0, 220);
+            if (window.__abx_bet_toast_timer)
+                clearTimeout(window.__abx_bet_toast_timer);
+            window.__abx_bet_toast_timer = setTimeout(() => {
+                try { el.remove(); } catch (_) {}
+            }, Math.max(200, Number(ttlMs) || 3000));
+        } catch (_) {}
+    }
 
     window.__cw_bet = function (tableId, side, amount) {
         let sent = false;
@@ -670,6 +887,20 @@
                     window.top.postMessage(payload, '*');
             } catch (_) {}
         };
+        const logBetWarn = (msg) => {
+            try {
+                if (typeof logToOverlayConsole === 'function')
+                    logToOverlayConsole('[bet] ' + msg, 'warn');
+            } catch (_) {}
+            try {
+                if (typeof updateInfo === 'function')
+                    updateInfo('[bet] ' + msg);
+            } catch (_) {}
+            try {
+                if (console && console.warn)
+                    console.warn('[BET]', msg);
+            } catch (_) {}
+        };
 
         try {
             const id = String(tableId || '').trim();
@@ -678,29 +909,54 @@
             const amountValue = Number(amount) || 0;
 
             if (id && sideLabel) {
-                const root = betFindCardRootById(id);
+                const idCandidates = betGetTableIdCandidates(id);
+                let root = betResolveRootFromOverlay(id);
+                const trustedRoot = !!root;
+                if (!root)
+                    root = betFindCardRootById(id);
+                if (!root) {
+                    logBetWarn('root not found for tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue);
+                }
                 const targetTail = s === 'player' ? BET_PLAYER_TAIL : BET_BANKER_TAIL;
-                const target = root
+                const selector = s === 'player' ? '.qE_lp.qE_q1' : '.qE_lp.qE_ra';
+                let target = root
                     ? (betFindByTail(root, targetTail) ||
                         (s === 'player'
                             ? betFindFirstVisible(root, '.qE_lp.qE_q1')
                             : betFindFirstVisible(root, '.qE_lp.qE_ra')))
                     : null;
+                if (target && root && !betIsTargetInsideRoot(root, target)) {
+                    target = null;
+                }
+                if (target && !trustedRoot && !betTargetMatchesAnyId(target, idCandidates)) {
+                    target = null;
+                }
+                if (!target) {
+                    target = betFindTargetByTableId(id, s);
+                }
+                if (!target) {
+                    logBetWarn('target not found for tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue);
+                }
                 const label = betAmountToLabel(amountValue);
-                const chipNode = betFindChip(label);
+                const rootDoc = root ? (root.ownerDocument || document) : document;
+                const chipNode = betFindChip(label, rootDoc);
                 const chipBtn = chipNode ? (chipNode.closest('button') || chipNode) : null;
                 if (chipBtn)
-                    betDispatchClick(chipBtn);
+                    betDispatchClickOnce(chipBtn, 'click');
+                else
+                    logBetWarn('chip not found for amount=' + amountValue + ' tableId=' + id);
                 if (target) {
-                    const candidates = [
-                        target.closest('.kU_kV'),
-                        target,
-                        target.closest('.zv_zw'),
-                        target.closest('.uU_g0')
-                    ].filter(Boolean);
-                    for (const el of candidates) {
-                        if (betDispatchClick(el))
-                            break;
+                    const clickTarget =
+                        target.closest('.kU_kV') ||
+                        target.closest('.zv_zw') ||
+                        target.closest('.uU_g0') ||
+                        target;
+                    if (clickTarget) {
+                        const role = (clickTarget.getAttribute && clickTarget.getAttribute('role')) || '';
+                        const useClick = clickTarget.tagName === 'BUTTON' || role === 'button';
+                        betDispatchClickOnce(clickTarget, useClick ? 'click' : 'pointer');
+                        const tail = (typeof cssTail === 'function') ? cssTail(clickTarget) : '';
+                        betShowToast('BET CLICK tableId=' + id + ' side=' + sideLabel + (tail ? ' target=' + tail : ''), 3000);
                     }
                 }
                 sendOnce(id, sideLabel, amountValue);
@@ -6599,6 +6855,18 @@
                 return null;
         }
 
+        function resolveRoomDom(id) {
+            try {
+                const st = getPanelState(id);
+                if (st && typeof st.resolve === 'function') {
+                    const root = st.resolve(id);
+                    if (root)
+                        return root;
+                }
+            } catch (_) {}
+            return defaultResolveDom(id);
+        }
+
         if (!cfg.resolveDom)
             cfg.resolveDom = findCardRootByName;
 
@@ -9315,7 +9583,8 @@
             show,
             close: closePanel,
             setCutValues,
-            setPlayState
+            setPlayState,
+            resolveRoomDom
         };
     })();
 
