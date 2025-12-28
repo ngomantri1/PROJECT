@@ -3617,6 +3617,39 @@ private async Task<CancellationTokenSource> DebounceAsync(
             _ = SpawnTableOverlayAsync();
         }
 
+        private async void BtnCloseAllOverlay_Click(object sender, RoutedEventArgs e)
+        {
+            var ids = _overlayActiveRooms.Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
+            if (ids.Count == 0)
+            {
+                Log("[TABLE] Chưa có overlay nào đang mở.");
+                return;
+            }
+
+            foreach (var id in ids)
+            {
+                try { StopTableTask(id); } catch { }
+            }
+
+            if (Web?.CoreWebView2 == null)
+            {
+                Log("[TABLE] WebView chưa sẵn sàng.");
+                return;
+            }
+
+            try
+            {
+                var idsJson = JsonSerializer.Serialize(ids);
+                var script = $"(function(){{ if (!window.__abxTableOverlay || !window.__abxTableOverlay.close) return; var ids = {idsJson}; ids.forEach(function(id){{ try{{ window.__abxTableOverlay.close(id); }}catch(e){{}} }}); }})();";
+                await Web.ExecuteScriptAsync(script);
+                Log($"[TABLE] Đã đóng overlay {ids.Count} bàn.");
+            }
+            catch (Exception ex)
+            {
+                Log("[TABLE] Lỗi đóng overlay: " + ex.Message);
+            }
+        }
+
         private async void BtnResetOverlay_Click(object sender, RoutedEventArgs e)
         {
             if (Web?.CoreWebView2 == null)

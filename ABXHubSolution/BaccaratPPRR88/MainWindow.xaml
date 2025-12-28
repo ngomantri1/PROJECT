@@ -698,7 +698,7 @@
                             Style="{StaticResource Card}"
                             Visibility="Collapsed">
                             <StackPanel>
-                                <!-- Dropdown multi-select danh s?ch b?n -->
+                                <!--  Dropdown multi-select danh s?ch b?n  -->
                                 <StackPanel Margin="6,0,6,0">
                                     <Border
                                         x:Name="RoomHeader"
@@ -725,14 +725,14 @@
                                             </StackPanel>
                                             <Button
                                                 x:Name="BtnReloadRoomList"
-                                                DockPanel.Dock="Right"
                                                 Width="44"
                                                 MinWidth="44"
                                                 MinHeight="36"
-                                                Padding="0"
                                                 Margin="6,0,0,0"
+                                                Padding="0"
                                                 HorizontalAlignment="Right"
                                                 Click="BtnReloadRoomList_Click"
+                                                DockPanel.Dock="Right"
                                                 Style="{StaticResource PrimaryButton}"
                                                 ToolTip="Làm mới bàn">
                                                 <TextBlock
@@ -745,56 +745,54 @@
 
                                     <Popup
                                         x:Name="RoomPopup"
+                                        AllowsTransparency="True"
                                         Placement="Bottom"
                                         PlacementTarget="{Binding ElementName=RoomHeader}"
-                                        StaysOpen="True"
-                                        AllowsTransparency="True">
+                                        StaysOpen="True">
                                         <Border
+                                            MinWidth="{Binding ActualWidth, ElementName=RoomHeader}"
+                                            Padding="10"
                                             Background="White"
                                             BorderBrush="{StaticResource CardBorder}"
                                             BorderThickness="1"
                                             CornerRadius="10"
-                                            Padding="10"
-                                            Effect="{StaticResource SoftShadow}"
-                                            MinWidth="{Binding ActualWidth, ElementName=RoomHeader}">
+                                            Effect="{StaticResource SoftShadow}">
                                             <StackPanel>
                                                 <DockPanel Margin="0,0,0,6">
                                                     <CheckBox
                                                         x:Name="ChkRoomAll"
                                                         MinWidth="100"
                                                         VerticalAlignment="Center"
-                                                        FontWeight="SemiBold"
-                                                        Foreground="#111827"
                                                         Click="ChkRoomAll_Click"
                                                         Content="Chọn tất cả"
+                                                        FontWeight="SemiBold"
+                                                        Foreground="#111827"
                                                         IsThreeState="True" />
                                                     <TextBlock
                                                         x:Name="TxtRoomCount"
-                                                        DockPanel.Dock="Right"
                                                         VerticalAlignment="Center"
+                                                        DockPanel.Dock="Right"
                                                         FontSize="12"
                                                         Foreground="#374151"
                                                         Text="0/0 đã chọn" />
                                                 </DockPanel>
 
                                                 <Border
+                                                    Padding="6"
                                                     Background="#F9FAFB"
                                                     BorderBrush="{StaticResource CardBorder}"
                                                     BorderThickness="1"
-                                                    CornerRadius="8"
-                                                    Padding="6">
+                                                    CornerRadius="8">
                                                     <ScrollViewer
                                                         MaxHeight="420"
-                                                        VerticalScrollBarVisibility="Auto"
-                                                        HorizontalScrollBarVisibility="Disabled">
+                                                        HorizontalScrollBarVisibility="Disabled"
+                                                        VerticalScrollBarVisibility="Auto">
                                                         <Grid>
                                                             <Grid.ColumnDefinitions>
                                                                 <ColumnDefinition Width="*" />
                                                                 <ColumnDefinition Width="*" />
                                                             </Grid.ColumnDefinitions>
-                                                            <ItemsControl
-                                                                x:Name="RoomItemsCol1"
-                                                                ItemsSource="{Binding RoomOptionsCol1, RelativeSource={RelativeSource AncestorType=Window}}">
+                                                            <ItemsControl x:Name="RoomItemsCol1" ItemsSource="{Binding RoomOptionsCol1, RelativeSource={RelativeSource AncestorType=Window}}">
                                                                 <ItemsControl.ItemsPanel>
                                                                     <ItemsPanelTemplate>
                                                                         <StackPanel />
@@ -802,27 +800,27 @@
                                                                 </ItemsControl.ItemsPanel>
                                                                 <ItemsControl.ItemTemplate>
                                                                     <DataTemplate>
-                                                                            <Border
-                                                                                x:Name="RoomBorder"
-                                                                                Background="#f8fafc"
-                                                                                CornerRadius="8"
-                                                                                Margin="0"
-                                                                                Padding="0">
-                                                                                <CheckBox
-                                                                                    x:Name="RoomCheck"
-                                                                                    Padding="6,0"
-                                                                                    Background="#d1fae5"
-                                                                                    BorderBrush="#34d399"
-                                                                                    BorderThickness="1"
-                                                                                    VerticalAlignment="Center"
-                                                                                    VerticalContentAlignment="Center"
-                                                                                    HorizontalContentAlignment="Left"
-                                                                                    FontSize="12"
-                                                                                    FontWeight="SemiBold"
-                                                                                    Foreground="#0f172a"
-                                                                                    Content="{Binding Name}"
-                                                                                    IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                                                    Checked="RoomItemCheck_Click"
+                                                                        <Border
+                                                                            x:Name="RoomBorder"
+                                                                            Margin="0"
+                                                                            Padding="0"
+                                                                            Background="#f8fafc"
+                                                                            CornerRadius="8">
+                                                                            <CheckBox
+                                                                                x:Name="RoomCheck"
+                                                                                Padding="6,0"
+                                                                                VerticalAlignment="Center"
+                                                                                HorizontalContentAlignment="Left"
+                                                                                VerticalContentAlignment="Center"
+                                                                                Background="#d1fae5"
+                                                                                BorderBrush="#34d399"
+                                                                                BorderThickness="1"
+                                                                                Checked="RoomItemCheck_Click"
+                                                                                Content="{Binding Name}"
+                                                                                FontSize="12"
+                                                                                FontWeight="SemiBold"
+                                                                                Foreground="#0f172a"
+                                                                                IsChecked="{Binding IsSelected, Mode=TwoWay}"
                                                                                 Unchecked="RoomItemCheck_Click" />
                                                                         </Border>
                                                                         <DataTemplate.Triggers>
@@ -848,27 +846,27 @@
                                                                 </ItemsControl.ItemsPanel>
                                                                 <ItemsControl.ItemTemplate>
                                                                     <DataTemplate>
-                                                                            <Border
-                                                                                x:Name="RoomBorder"
-                                                                                Background="#f8fafc"
-                                                                                CornerRadius="8"
-                                                                                Margin="0"
-                                                                                Padding="0">
-                                                                                <CheckBox
-                                                                                    x:Name="RoomCheck"
-                                                                                    Padding="6,0"
-                                                                                    Background="#d1fae5"
-                                                                                    BorderBrush="#34d399"
-                                                                                    BorderThickness="1"
-                                                                                    VerticalAlignment="Center"
-                                                                                    VerticalContentAlignment="Center"
-                                                                                    HorizontalContentAlignment="Left"
-                                                                                    FontSize="12"
-                                                                                    FontWeight="SemiBold"
-                                                                                    Foreground="#0f172a"
-                                                                                    Content="{Binding Name}"
-                                                                                    IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                                                    Checked="RoomItemCheck_Click"
+                                                                        <Border
+                                                                            x:Name="RoomBorder"
+                                                                            Margin="0"
+                                                                            Padding="0"
+                                                                            Background="#f8fafc"
+                                                                            CornerRadius="8">
+                                                                            <CheckBox
+                                                                                x:Name="RoomCheck"
+                                                                                Padding="6,0"
+                                                                                VerticalAlignment="Center"
+                                                                                HorizontalContentAlignment="Left"
+                                                                                VerticalContentAlignment="Center"
+                                                                                Background="#d1fae5"
+                                                                                BorderBrush="#34d399"
+                                                                                BorderThickness="1"
+                                                                                Checked="RoomItemCheck_Click"
+                                                                                Content="{Binding Name}"
+                                                                                FontSize="12"
+                                                                                FontWeight="SemiBold"
+                                                                                Foreground="#0f172a"
+                                                                                IsChecked="{Binding IsSelected, Mode=TwoWay}"
                                                                                 Unchecked="RoomItemCheck_Click" />
                                                                         </Border>
                                                                         <DataTemplate.Triggers>
@@ -888,30 +886,38 @@
                                             </StackPanel>
                                         </Border>
                                     </Popup>
-                                      <StackPanel
-                                          Orientation="Horizontal"
-                                          HorizontalAlignment="Center"
-                                          Margin="0,12,0,0">
-                                          <Button
-                                              x:Name="BtnCreateOverlay"
-                                              MinWidth="120"
-                                              Padding="16,10"
-                                              Content="Tạo bàn chơi"
-                                              Style="{StaticResource PrimaryButton}"
-                                              Click="BtnCreateOverlay_Click"
-                                              IsEnabled="False" />
-                                          <Button
-                                              x:Name="BtnResetOverlay"
-                                              Margin="16,0,0,0"
-                                              MinWidth="120"
-                                              Padding="16,10"
-                                              Content="Reset layout"
-                                              Style="{StaticResource PrimaryButton}"
-                                              Click="BtnResetOverlay_Click" />
-                                      </StackPanel>
-                                  </StackPanel>
-                              </StackPanel>
-                          </Border>
+                                    <StackPanel
+                                        Margin="0,12,0,0"
+                                        HorizontalAlignment="Center"
+                                        Orientation="Horizontal">
+                                        <Button
+                                            x:Name="BtnCreateOverlay"
+                                            MinWidth="120"
+                                            Padding="16,10"
+                                            Click="BtnCreateOverlay_Click"
+                                            Content="Tạo bàn chơi"
+                                            IsEnabled="False"
+                                            Style="{StaticResource PrimaryButton}" />
+                                        <Button
+                                            x:Name="BtnCloseAllOverlay"
+                                            MinWidth="120"
+                                            Margin="16,0,0,0"
+                                            Padding="16,10"
+                                            Click="BtnCloseAllOverlay_Click"
+                                            Content="Đóng tất cả bàn"
+                                            Style="{StaticResource PrimaryButton}" />
+                                        <Button
+                                            x:Name="BtnResetOverlay"
+                                            MinWidth="120"
+                                            Margin="16,0,0,0"
+                                            Padding="16,10"
+                                            Click="BtnResetOverlay_Click"
+                                            Content="Đặt lại màn hình"
+                                            Style="{StaticResource PrimaryButton}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
                         <Border
                             x:Name="GroupStrategyMoney"
@@ -1140,11 +1146,11 @@
                                         Grid.Column="1"
                                         Margin="{StaticResource ValueFieldMargin}"
                                         VerticalAlignment="Center"
+                                        Checked="ChkS7ResetOnProfit_Changed"
                                         Content="Có lãi quay về mức đầu"
                                         Foreground="#222"
-                                        Visibility="Collapsed"
-                                        Checked="ChkS7ResetOnProfit_Changed"
-                                        Unchecked="ChkS7ResetOnProfit_Changed" />
+                                        Unchecked="ChkS7ResetOnProfit_Changed"
+                                        Visibility="Collapsed" />
 
                                     <!--  ĐẶT KHI CÒN (GIÂY)  -->
                                     <TextBlock
@@ -1207,30 +1213,30 @@
                                     Margin="0,10,0,0"
                                     HorizontalAlignment="Center"
                                     VerticalAlignment="Center">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
 
                                     <!--  Nút Bắt đầu cược  -->
                                     <Button
                                         x:Name="BtnPlay"
-                                        Grid.Column="0"
+                                        Grid.Column="1"
                                         MinWidth="140"
+                                        Margin="12,0,0,0"
                                         Padding="13"
                                         Click="ResetStrategyAll_Click"
                                         Content="Đặt lại chiến lược"
-                                        Tag="reset-strategy"
                                         Style="{StaticResource PrimaryButton}"
+                                        Tag="reset-strategy"
                                         Visibility="Visible" />
 
                                     <Button
                                         x:Name="BtnRunAllTables"
-                                        Grid.Column="1"
+                                        Grid.Column="0"
                                         MinWidth="160"
-                                        Margin="12,0,0,0"
                                         Padding="13"
                                         Click="BtnRunAllTables_Click"
                                         Content="Chạy tất cả bàn"
@@ -1620,14 +1626,20 @@
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
 
-                                                <Border Grid.Column="0" Style="{StaticResource GhostQFirst}" Visibility="Collapsed">
+                                                <Border
+                                                    Grid.Column="0"
+                                                    Style="{StaticResource GhostQFirst}"
+                                                    Visibility="Collapsed">
                                                     <TextBlock
                                                         VerticalAlignment="Center"
                                                         Style="{StaticResource CapsLabel}"
                                                         Text="MỨC TIỀN" />
                                                 </Border>
 
-                                                <Border Grid.Column="1" Style="{StaticResource GhostQLast}" Visibility="Collapsed">
+                                                <Border
+                                                    Grid.Column="1"
+                                                    Style="{StaticResource GhostQLast}"
+                                                    Visibility="Collapsed">
                                                     <TextBlock
                                                         x:Name="LblLevel"
                                                         HorizontalAlignment="Center"
