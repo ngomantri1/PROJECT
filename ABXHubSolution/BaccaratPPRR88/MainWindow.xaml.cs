@@ -532,6 +532,7 @@ Ví dụ không hợp lệ:
             public int MoneyChainStep;
             public double MoneyChainProfit;
             public int StartInProgress;
+            public string LastBetSide = "";
         }
 
         private sealed class TableOverlayState
@@ -1070,7 +1071,7 @@ Ví dụ không hợp lệ:
         private void Log(string msg)
         {
             var line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
-            EnqueueUi(line);
+            //EnqueueUi(line);
             EnqueueFile(line);
         }
 
@@ -2166,7 +2167,7 @@ Ví dụ không hợp lệ:
             lock (_tableOverlayGate)
             {
                 _tableOverlayStates.TryGetValue(tableId, out state);
-                if (state == null || string.IsNullOrWhiteSpace(state.SessionKey) || string.IsNullOrWhiteSpace(state.SeqDigits))
+                if (state == null || string.IsNullOrWhiteSpace(state.SessionKey))
                     return false;
 
                 var prog = state.Countdown > 0 ? state.Countdown : 0;
@@ -2338,11 +2339,11 @@ Ví dụ không hợp lệ:
                             if (!TryPrepareWebMessage(e, out var display, out parsedDoc))
                             {
                                 if (!string.IsNullOrWhiteSpace(display))
-                                    EnqueueUi($"[JS] {display}");
+                                    //EnqueueUi($"[JS] {display}");
                                 return;
                             }
 
-                            EnqueueUi($"[JS] {display}"); // chỉ hiển thị UI, không ghi ra file
+                            //EnqueueUi($"[JS] {display}"); // chỉ hiển thị UI, không ghi ra file
                             var root = parsedDoc.RootElement.Clone();
 
                                 if (root.TryGetProperty("overlay", out var overlayEl) &&
@@ -5479,6 +5480,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 UiSetSide = s => Dispatcher.Invoke(() =>
                 {
                     if (!IsActiveTable(tableId)) return;
+                    state.LastBetSide = (s ?? "").Trim().ToUpperInvariant();
                     SetLastSideUI(s);
                 }),
                 UiSetStake = v => Dispatcher.Invoke(() =>
@@ -5493,7 +5495,21 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 UiAddWin = delta => Dispatcher.InvokeAsync(() =>
                 {
-                    var net = (delta > 0) ? Math.Round(delta * 0.98) : delta;
+                    var stake = Math.Abs(delta);
+                    var isWin = delta > 0;
+                    var side = (state.LastBetSide ?? "").Trim().ToUpperInvariant();
+                    double net;
+                    if (isWin)
+                    {
+                        if (side == "B" || side == "BANKER")
+                            net = Math.Round(stake * 0.95);
+                        else
+                            net = stake;
+                    }
+                    else
+                    {
+                        net = -stake;
+                    }
                     if (!state.HasJsProfit)
                         state.WinTotal += net;
                     try { MoneyHelper.NotifyTempProfit(moneyStrategyId, net); } catch { }
@@ -5935,7 +5951,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             };
         }
 
-        private async Task StartTableTaskAsync(string tableId, string? tableName = null)
+        private async Task StartTableTaskAsync(string tableId, string? tableName = null, bool skipGlobalChecks = false)
         {
             if (string.IsNullOrWhiteSpace(tableId))
                 return;
@@ -5966,15 +5982,18 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     return;
                 }
 
-                await EnsureWebReadyAsync();
-
-                if (!await EnsureGameReadyForBetAsync())
-                    return;
-
-                if (CheckLicense)
+                if (!skipGlobalChecks)
                 {
-                    var ok = await EnsureLicenseOnceAsync();
-                    if (!ok) return;
+                    await EnsureWebReadyAsync();
+
+                    if (!await EnsureGameReadyForBetAsync())
+                        return;
+
+                    if (CheckLicense)
+                    {
+                        var ok = await EnsureLicenseOnceAsync();
+                        if (!ok) return;
+                    }
                 }
 
                 await EvalJsLockedAsync("window.__cw_startPush && window.__cw_startPush(240);");
@@ -6216,10 +6235,32 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     return;
                 }
 
+                await EnsureWebReadyAsync();
+                if (!await EnsureGameReadyForBetAsync())
+                    return;
+                if (CheckLicense)
+                {
+                    var ok = await EnsureLicenseOnceAsync();
+                    if (!ok) return;
+                }
+
+                async Task StartOneAsync(string id, string name, int delayMs)
+                {
+                    if (delayMs > 0)
+                        await Task.Delay(delayMs);
+                    await StartTableTaskAsync(id, name, skipGlobalChecks: true);
+                }
+
+                var tasks = new List<Task>();
+                var idx = 0;
                 foreach (var id in targets)
                 {
-                    await StartTableTaskAsync(id, ResolveRoomName(id));
+                    var name = ResolveRoomName(id);
+                    var delayMs = idx * 60;
+                    tasks.Add(StartOneAsync(id, name, delayMs));
+                    idx++;
                 }
+                await Task.WhenAll(tasks);
             }
             finally
             {
@@ -7102,8 +7143,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     {
                         if (_tableOverlayStates.TryGetValue(tableId, out var st))
                         {
-                            hasState = !string.IsNullOrWhiteSpace(st.SessionKey) &&
-                                       !string.IsNullOrWhiteSpace(st.SeqDigits);
+                            hasState = !string.IsNullOrWhiteSpace(st.SessionKey);
                         }
                     }
 

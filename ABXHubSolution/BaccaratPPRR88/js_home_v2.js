@@ -631,6 +631,64 @@
         return null;
     }
 
+    function betIsChipActive(el) {
+        if (!el)
+            return false;
+        const btn = el.closest && (el.closest('button,[role=button],a') || el);
+        if (!btn)
+            return false;
+        const aria = (btn.getAttribute && (btn.getAttribute('aria-pressed') || btn.getAttribute('aria-selected') || btn.getAttribute('aria-checked'))) || null;
+        if (aria != null)
+            return aria === 'true';
+        const clsSources = [
+            btn.className || '',
+            btn.parentElement && btn.parentElement.className || '',
+            el.className || ''
+        ].filter(Boolean).join(' ');
+        if (!clsSources)
+            return false;
+        if (/\b(active|selected|on|checked|qC_qH|rO_rT)\b/i.test(clsSources))
+            return true;
+        return /\blF_lN\b/.test(clsSources);
+    }
+
+    function betGetSelectedChipAmount(doc) {
+        const nodes = [];
+        if (doc && doc.querySelectorAll) {
+            try { nodes.push(...doc.querySelectorAll('.v0_wa')); } catch (_) {}
+        }
+        if (nodes.length === 0)
+            nodes.push(...betCollectNodes('.v0_wa'));
+        for (const el of nodes) {
+            if (!betIsChipActive(el))
+                continue;
+            const txt = (el.textContent || '').trim();
+            const amt = betLabelToAmount(txt);
+            if (Number.isFinite(amt) && amt > 0)
+                return amt;
+        }
+        try {
+            const docAny = doc || document;
+            const sel = [
+                'button[aria-pressed="true"] .v0_wa',
+                'button[aria-selected="true"] .v0_wa',
+                'button[aria-checked="true"] .v0_wa',
+                'button.lF_lN .v0_wa',
+                '.lF_lN .v0_wa',
+                '.active .v0_wa',
+                '.selected .v0_wa'
+            ].join(',');
+            const el = docAny.querySelector(sel);
+            if (el) {
+                const txt = (el.textContent || '').trim();
+                const amt = betLabelToAmount(txt);
+                if (Number.isFinite(amt) && amt > 0)
+                    return amt;
+            }
+        } catch (_) {}
+        return null;
+    }
+
     function betCollectChipValues(doc) {
         const nodes = [];
         if (doc && doc.querySelectorAll) {
@@ -667,7 +725,7 @@
         return { plan, remaining };
     }
 
-    function betSchedulePlan(plan, target, doc) {
+    function betSchedulePlan(plan, target, doc, onDone) {
         if (!plan || !plan.length || !target)
             return false;
         const steps = [];
@@ -684,27 +742,133 @@
             const role = (target.getAttribute && target.getAttribute('role')) || '';
             return (target.tagName === 'BUTTON' || role === 'button') ? 'click' : 'pointer';
         };
+        const warn = (msg) => {
+            if (typeof logBetWarn === 'function')
+                logBetWarn(msg);
+        };
         let idx = 0;
-        const run = () => {
-            if (idx >= steps.length)
+        let currentChipValue = null;
+        let chipRetry = 0;
+        const CHIP_SWITCH_DELAY = 240;
+        const BET_CLICK_DELAY = 160;
+        const CHIP_DOUBLE_CLICK_GAP = 80;
+        const CHIP_VERIFY_RETRY = 3;
+        let finished = false;
+        const finish = (ok) => {
+            if (finished)
                 return;
+            finished = true;
+            if (typeof onDone === 'function')
+                onDone(ok !== false);
+        };
+        const clickChipValue = (value) => {
+            const chipNode = betFindChipByAmount(value, doc) || betFindChip(betAmountToLabel(value), doc);
+            const chipBtn = chipNode ? (chipNode.closest('button') || chipNode) : null;
+            if (!chipBtn)
+                return false;
+            betDispatchClickOnce(chipBtn, 'click');
+            setTimeout(() => {
+                const cur = betGetSelectedChipAmount(doc);
+                if (cur == null || cur !== value)
+                    betDispatchClickOnce(chipBtn, 'click');
+            }, CHIP_DOUBLE_CLICK_GAP);
+            return true;
+        };
+        const run = () => {
+            if (idx >= steps.length) {
+                finish(true);
+                return;
+            }
             const step = steps[idx++];
             if (step.type === 'chip') {
-                const chipNode = betFindChipByAmount(step.value, doc) || betFindChip(betAmountToLabel(step.value), doc);
-                const chipBtn = chipNode ? (chipNode.closest('button') || chipNode) : null;
-                if (chipBtn) {
-                    betDispatchClickOnce(chipBtn, 'click');
+                currentChipValue = step.value;
+                chipRetry = 0;
+                if (clickChipValue(step.value)) {
+                    setTimeout(run, CHIP_SWITCH_DELAY);
+                    return;
                 } else {
-                    logBetWarn('chip not found for amount=' + step.value);
+                    warn('chip not found for amount=' + step.value);
+                    finish(false);
                     return;
                 }
             } else {
+                if (currentChipValue != null) {
+                    const cur = betGetSelectedChipAmount(doc);
+                    if (cur !== currentChipValue) {
+                        chipRetry++;
+                        if (chipRetry <= CHIP_VERIFY_RETRY && clickChipValue(currentChipValue)) {
+                            idx--;
+                            setTimeout(run, CHIP_SWITCH_DELAY);
+                            return;
+                        }
+                        warn('chip mismatch expected=' + currentChipValue + ' actual=' + cur);
+                        finish(false);
+                        return;
+                    }
+                }
+                chipRetry = 0;
                 betDispatchClickOnce(target, clickMode());
             }
-            setTimeout(run, 60);
+            const delayMs = step.type === 'chip' ? CHIP_SWITCH_DELAY : BET_CLICK_DELAY;
+            setTimeout(run, delayMs);
         };
         run();
         return true;
+    }
+
+    function betSchedulePlanAsync(plan, target, doc) {
+        return new Promise(resolve => {
+            const ok = betSchedulePlan(plan, target, doc, resolve);
+            if (!ok)
+                resolve(false);
+        });
+    }
+
+    function betWaitBetConfirmAsync(root, side, beforeVal, beforeSideVal, beforeCount, beforeActive, timeoutMs) {
+        const end = Date.now() + (Number(timeoutMs) || 0);
+        let last = beforeSideVal || beforeVal || '';
+        return new Promise(resolve => {
+            const check = () => {
+                const nowVal = betReadStakeValue(root, side);
+                if (nowVal)
+                    last = nowVal;
+                const sideVal = betReadSideValue(root, side);
+                if (sideVal)
+                    last = sideVal;
+                const count = betCountChips(root, side);
+                const active = betIsAreaActive(root, side);
+                const hasChipValue = betHasChipValue(root, side);
+                if ((nowVal && nowVal !== beforeVal) ||
+                    (sideVal && sideVal !== beforeSideVal) ||
+                    (count > beforeCount) ||
+                    (!beforeActive && active) ||
+                    (!beforeSideVal && sideVal) ||
+                    (!beforeVal && nowVal) ||
+                    hasChipValue) {
+                    resolve({ ok: true, value: last });
+                    return;
+                }
+                if (Date.now() >= end) {
+                    resolve({ ok: false, value: last });
+                    return;
+                }
+                setTimeout(check, 50);
+            };
+            check();
+        });
+    }
+
+    function betEnqueueTask(fn) {
+        try {
+            if (!window.__abx_bet_chain)
+                window.__abx_bet_chain = Promise.resolve();
+            const run = () => Promise.resolve().then(fn).catch(() => false);
+            window.__abx_bet_chain = window.__abx_bet_chain.then(run, run);
+            return window.__abx_bet_chain;
+        } catch (_) {
+            try { return Promise.resolve().then(fn); } catch (_) {}
+        }
+        return Promise.resolve(false);
     }
 
     function betFindChip(label, doc) {
@@ -1085,11 +1249,30 @@
                         logBetWarn('cannot build chip plan amount=' + amountValue + ' remaining=' + planResult.remaining);
                         return 'err:plan';
                     }
-                    betSchedulePlan(planResult.plan, clickTarget, rootDoc);
+                    const stakeRoot = betResolveStakeRoot(clickTarget, root) || root;
+                    betEnqueueTask(async () => {
+                        const beforeVal = stakeRoot ? betReadStakeValue(stakeRoot, s) : null;
+                        const beforeSideVal = stakeRoot ? betReadSideValue(stakeRoot, s) : null;
+                        const beforeCount = stakeRoot ? betCountChips(stakeRoot, s) : 0;
+                        const beforeActive = stakeRoot ? betIsAreaActive(stakeRoot, s) : false;
+                        const ok = await betSchedulePlanAsync(planResult.plan, clickTarget, rootDoc);
+                        if (!ok) {
+                            logBetWarn('plan not completed tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue);
+                            return;
+                        }
+                        let confirmed = true;
+                        if (stakeRoot) {
+                            const result = await betWaitBetConfirmAsync(stakeRoot, s, beforeVal, beforeSideVal, beforeCount, beforeActive, 800);
+                            confirmed = !!(result && result.ok);
+                            if (!confirmed) {
+                                logBetWarn('stake not changed tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue);
+                            }
+                        }
+                        if (confirmed)
+                            sendOnce(id, sideLabel, amountValue);
+                    });
                     const tail = (typeof cssTail === 'function') ? cssTail(clickTarget) : '';
-                    betShowToast('BET PLAN tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue + (tail ? ' target=' + tail : ''), 3000);
                 }
-                sendOnce(id, sideLabel, amountValue);
             } else {
                 sendOnce(id, sideLabel, amountValue);
             }
@@ -2578,6 +2761,7 @@
                 }
 
     function installPostMessageLogger() {
+        return; // disabled for performance
         if (window.__abx_pm_hooked)
             return;
         const wv = window.chrome && window.chrome.webview;
