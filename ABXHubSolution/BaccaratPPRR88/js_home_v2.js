@@ -561,6 +561,32 @@
         return String(n);
     }
 
+    function betAmountToLabels(amount) {
+        const n = Number(amount);
+        if (!Number.isFinite(n) || n <= 0)
+            return [];
+        const labels = [];
+        const primary = betAmountToLabel(n);
+        if (primary)
+            labels.push(primary);
+        labels.push(String(n));
+        try {
+            labels.push(n.toLocaleString('en-US'));
+        } catch (_) {}
+        if (n >= 1000 && n % 1000 === 0) {
+            const k = String(n / 1000);
+            labels.push(k);
+            labels.push(k + 'K');
+            labels.push(k + 'k');
+        }
+        if (n >= 1000000 && n % 1000000 === 0) {
+            const m = String(n / 1000000);
+            labels.push(m + 'M');
+            labels.push(m + 'm');
+        }
+        return Array.from(new Set(labels.filter(Boolean)));
+    }
+
     function betLabelToAmount(label) {
         const raw = String(label || '').trim().toUpperCase();
         if (!raw)
@@ -572,6 +598,111 @@
             return 0;
         const num = Number(digits);
         return Number.isFinite(num) ? num : 0;
+    }
+
+    function betFindChipByAmount(amount, doc) {
+        const labels = betAmountToLabels(amount);
+        if (!labels.length)
+            return null;
+        for (const label of labels) {
+            const upper = String(label).trim().toUpperCase();
+            const nodes = [];
+            if (doc && doc.querySelectorAll) {
+                try { nodes.push(...doc.querySelectorAll('.v0_wa')); } catch (_) {}
+            }
+            if (nodes.length === 0)
+                nodes.push(...betCollectNodes('.v0_wa'));
+            for (const el of nodes) {
+                const text = (el.textContent || '').trim().toUpperCase();
+                if (text !== upper)
+                    continue;
+                const btn = el.closest && el.closest('button,[role=button],a');
+                if (btn && betIsVisible(el))
+                    return el;
+            }
+            for (const el of nodes) {
+                const text = (el.textContent || '').trim().toUpperCase();
+                if (text === upper && betIsVisible(el))
+                    return el;
+            }
+        }
+        return null;
+    }
+
+    function betCollectChipValues(doc) {
+        const nodes = [];
+        if (doc && doc.querySelectorAll) {
+            try { nodes.push(...doc.querySelectorAll('.v0_wa')); } catch (_) {}
+        }
+        if (nodes.length === 0)
+            nodes.push(...betCollectNodes('.v0_wa'));
+        const withBtn = nodes.filter(el => el && el.closest && el.closest('button,[role=button],a'));
+        const list = (withBtn.length ? withBtn : nodes)
+            .map(el => (el && el.textContent || '').trim())
+            .filter(Boolean)
+            .map(txt => betLabelToAmount(txt))
+            .filter(v => Number.isFinite(v) && v > 0);
+        return Array.from(new Set(list)).sort((a, b) => b - a);
+    }
+
+    function betBuildChipPlan(amount, doc) {
+        let remaining = Number(amount) || 0;
+        if (!Number.isFinite(remaining) || remaining <= 0)
+            return { plan: [], remaining: 0 };
+        const values = betCollectChipValues(doc);
+        const fallback = Object.keys(CHIP_LABEL_BY_AMOUNT).map(v => Number(v)).filter(v => Number.isFinite(v));
+        const avail = values.length ? values : fallback.sort((a, b) => b - a);
+        const plan = [];
+        for (const value of avail) {
+            if (value <= 0 || remaining < value)
+                continue;
+            const count = Math.floor(remaining / value);
+            if (count > 0) {
+                plan.push({ value, count });
+                remaining -= value * count;
+            }
+        }
+        return { plan, remaining };
+    }
+
+    function betSchedulePlan(plan, target, doc) {
+        if (!plan || !plan.length || !target)
+            return false;
+        const steps = [];
+        for (const item of plan) {
+            if (!item || !item.value || !item.count)
+                continue;
+            steps.push({ type: 'chip', value: item.value });
+            for (let i = 0; i < item.count; i++)
+                steps.push({ type: 'bet' });
+        }
+        if (!steps.length)
+            return false;
+        const clickMode = () => {
+            const role = (target.getAttribute && target.getAttribute('role')) || '';
+            return (target.tagName === 'BUTTON' || role === 'button') ? 'click' : 'pointer';
+        };
+        let idx = 0;
+        const run = () => {
+            if (idx >= steps.length)
+                return;
+            const step = steps[idx++];
+            if (step.type === 'chip') {
+                const chipNode = betFindChipByAmount(step.value, doc) || betFindChip(betAmountToLabel(step.value), doc);
+                const chipBtn = chipNode ? (chipNode.closest('button') || chipNode) : null;
+                if (chipBtn) {
+                    betDispatchClickOnce(chipBtn, 'click');
+                } else {
+                    logBetWarn('chip not found for amount=' + step.value);
+                    return;
+                }
+            } else {
+                betDispatchClickOnce(target, clickMode());
+            }
+            setTimeout(run, 60);
+        };
+        run();
+        return true;
     }
 
     function betFindChip(label, doc) {
@@ -939,25 +1070,22 @@
                 }
                 const label = betAmountToLabel(amountValue);
                 const rootDoc = root ? (root.ownerDocument || document) : document;
-                const chipNode = betFindChip(label, rootDoc);
-                const chipBtn = chipNode ? (chipNode.closest('button') || chipNode) : null;
-                if (chipBtn)
-                    betDispatchClickOnce(chipBtn, 'click');
-                else
-                    logBetWarn('chip not found for amount=' + amountValue + ' tableId=' + id);
-                if (target) {
+                if (!target) {
+                    logBetWarn('target not found for tableId=' + id + ' side=' + sideLabel);
+                } else {
                     const clickTarget =
                         target.closest('.kU_kV') ||
                         target.closest('.zv_zw') ||
                         target.closest('.uU_g0') ||
                         target;
-                    if (clickTarget) {
-                        const role = (clickTarget.getAttribute && clickTarget.getAttribute('role')) || '';
-                        const useClick = clickTarget.tagName === 'BUTTON' || role === 'button';
-                        betDispatchClickOnce(clickTarget, useClick ? 'click' : 'pointer');
-                        const tail = (typeof cssTail === 'function') ? cssTail(clickTarget) : '';
-                        betShowToast('BET CLICK tableId=' + id + ' side=' + sideLabel + (tail ? ' target=' + tail : ''), 3000);
+                    const planResult = betBuildChipPlan(amountValue, rootDoc);
+                    if (!planResult.plan.length || planResult.remaining > 0) {
+                        logBetWarn('cannot build chip plan amount=' + amountValue + ' remaining=' + planResult.remaining);
+                        return 'err:plan';
                     }
+                    betSchedulePlan(planResult.plan, clickTarget, rootDoc);
+                    const tail = (typeof cssTail === 'function') ? cssTail(clickTarget) : '';
+                    betShowToast('BET PLAN tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue + (tail ? ' target=' + tail : ''), 3000);
                 }
                 sendOnce(id, sideLabel, amountValue);
             } else {
