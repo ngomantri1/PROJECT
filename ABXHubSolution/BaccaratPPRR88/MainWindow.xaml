@@ -1626,27 +1626,21 @@
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
 
-                                                <Border
-                                                    Grid.Column="0"
-                                                    Style="{StaticResource GhostQFirst}"
-                                                    Visibility="Collapsed">
+                                                <Border Grid.Column="0" Style="{StaticResource GhostQFirst}">
                                                     <TextBlock
                                                         VerticalAlignment="Center"
                                                         Style="{StaticResource CapsLabel}"
-                                                        Text="MỨC TIỀN" />
+                                                        Text="TỔNG CƯỢC" />
                                                 </Border>
 
-                                                <Border
-                                                    Grid.Column="1"
-                                                    Style="{StaticResource GhostQLast}"
-                                                    Visibility="Collapsed">
+                                                <Border Grid.Column="1" Style="{StaticResource GhostQMid}">
                                                     <TextBlock
-                                                        x:Name="LblLevel"
+                                                        x:Name="LblTotalStake"
                                                         HorizontalAlignment="Center"
                                                         VerticalAlignment="Center"
                                                         FontWeight="SemiBold"
                                                         Style="{StaticResource ValueText}"
-                                                        Text="" />
+                                                        Text="0" />
                                                 </Border>
 
                                                 <Border Grid.Column="2" Style="{StaticResource GhostQMid}">

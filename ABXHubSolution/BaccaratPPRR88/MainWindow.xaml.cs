@@ -252,6 +252,10 @@ namespace BaccaratPPRR88
         private DateTime _homeUsernameAt = DateTime.MinValue;
         private string? _homeBalance;
         private DateTime _homeBalanceAt = DateTime.MinValue; // mốc thời gian bắt được
+        private string? _gameBalance;
+        private DateTime _gameBalanceAt = DateTime.MinValue;
+        private string? _gameTotalBet;
+        private DateTime _gameTotalBetAt = DateTime.MinValue;
         private bool _homeLoggedIn = false; // chỉ true khi phát hiện có nút Đăng xuất (đã login)
         private bool _navModeHooked = false;   // đã gắn handler NavigationCompleted để cập nhật UI nhanh về Home?
 
@@ -2447,6 +2451,8 @@ Ví dụ không hợp lệ:
                                 if (root.TryGetProperty("ui", out var uiEl))
                                     ui = uiEl.GetString() ?? "";
                                 var uname = root.TryGetProperty("username", out var uEl) ? (uEl.GetString() ?? "") : "";
+                                var isGameUi = string.Equals(ui, "game", StringComparison.OrdinalIgnoreCase);
+                                var isGameBalanceMsg = string.Equals(abxStr, "game_balance", StringComparison.OrdinalIgnoreCase);
 
 
                                 if (!string.IsNullOrWhiteSpace(uname))
@@ -2475,23 +2481,67 @@ Ví dụ không hợp lệ:
                                     : "";
                                 if (!string.IsNullOrWhiteSpace(bal))
                                 {
-                                    var balVal = ParseMoneyOrZero(bal);
-                                    var balText = (balVal > 0 || bal.Trim() == "0")
-                                        ? ((long)balVal).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
-                                        : bal.Trim();
-
-                                    if (_homeBalance != balText)
+                                    if (isGameUi || isGameBalanceMsg)
                                     {
-                                        _homeBalance = balText;
-                                        _homeBalanceAt = DateTime.UtcNow;
+                                        var balText = NormalizeGameBalanceText(bal);
+                                        if (!string.IsNullOrWhiteSpace(balText))
+                                        {
+                                            if (_gameBalance != balText)
+                                            {
+                                                _gameBalance = balText;
+                                                _gameBalanceAt = DateTime.UtcNow;
+                                            }
+                                            _ = Dispatcher.BeginInvoke(new Action(() =>
+                                            {
+                                                if (LblAmount != null)
+                                                    LblAmount.Text = balText;
+                                            }));
+                                        }
                                     }
-
-                                    _ = Dispatcher.BeginInvoke(new Action(() =>
+                                    else
                                     {
-                                        if (LblAmount != null)
-                                            LblAmount.Text = balText;
-                                    }));
+                                        var balVal = ParseMoneyOrZero(bal);
+                                        var balText = (balVal > 0 || bal.Trim() == "0")
+                                            ? ((long)balVal).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
+                                            : bal.Trim();
+
+                                        if (_homeBalance != balText)
+                                        {
+                                            _homeBalance = balText;
+                                            _homeBalanceAt = DateTime.UtcNow;
+                                        }
+
+                                        _ = Dispatcher.BeginInvoke(new Action(() =>
+                                        {
+                                            if (LblAmount != null)
+                                                LblAmount.Text = balText;
+                                        }));
+                                    }
                                 }
+
+                                var totalBet = root.TryGetProperty("total_bet", out var tbEl)
+                                    ? (tbEl.ValueKind == JsonValueKind.Number ? tbEl.GetRawText() : (tbEl.GetString() ?? ""))
+                                    : "";
+                                if (!string.IsNullOrWhiteSpace(totalBet) && (isGameUi || isGameBalanceMsg))
+                                {
+                                    var totalText = NormalizeGameBalanceText(totalBet);
+                                    if (!string.IsNullOrWhiteSpace(totalText))
+                                    {
+                                        if (_gameTotalBet != totalText)
+                                        {
+                                            _gameTotalBet = totalText;
+                                            _gameTotalBetAt = DateTime.UtcNow;
+                                        }
+                                        _ = Dispatcher.BeginInvoke(new Action(() =>
+                                        {
+                                            if (LblTotalStake != null)
+                                                LblTotalStake.Text = totalText;
+                                        }));
+                                    }
+                                }
+
+                                if (isGameBalanceMsg)
+                                    return;
 
                                 // 1) result: EvalJsAwaitAsync bridge
                                 if (abxStr == "result" && root.TryGetProperty("id", out var idEl))
@@ -2532,6 +2582,8 @@ Ví dụ không hợp lệ:
                                                     // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
                                                     var kqStr = winIsPlayer ? "P" : "B";
                                                     long? accNow2 = snap?.totals?.A;
+                                                    if (!accNow2.HasValue && !string.IsNullOrWhiteSpace(_gameBalance))
+                                                        accNow2 = (long)ParseMoneyOrZero(_gameBalance);
                                                     if (_pendingRow != null && accNow2.HasValue)
                                                     {
                                                         FinalizeLastBet(kqStr, accNow2.Value);
@@ -2589,14 +2641,28 @@ Ví dụ không hợp lệ:
 
                                                     // Tổng tiền
                                                     var amt = snap?.totals?.A;
+                                                    var hasFreshGameBalance = !string.IsNullOrWhiteSpace(_gameBalance) &&
+                                                                              (DateTime.UtcNow - _gameBalanceAt) <= TimeSpan.FromSeconds(10);
                                                     if (LblAmount != null)
                                                     {
-                                                        if (!string.IsNullOrWhiteSpace(_homeBalance))
+                                                        if (hasFreshGameBalance)
+                                                            LblAmount.Text = _gameBalance;
+                                                        else if (!string.IsNullOrWhiteSpace(_homeBalance))
                                                             LblAmount.Text = _homeBalance;
                                                         else if (amt.HasValue)
                                                             LblAmount.Text = amt.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
                                                         else
                                                             LblAmount.Text = "-";
+                                                    }
+
+                                                    var hasFreshGameTotalBet = !string.IsNullOrWhiteSpace(_gameTotalBet) &&
+                                                                               (DateTime.UtcNow - _gameTotalBetAt) <= TimeSpan.FromSeconds(10);
+                                                    if (LblTotalStake != null)
+                                                    {
+                                                        if (hasFreshGameTotalBet)
+                                                            LblTotalStake.Text = _gameTotalBet;
+                                                        else
+                                                            LblTotalStake.Text = "-";
                                                     }
 
                                                     // Chuỗi kết quả
@@ -5423,13 +5489,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                     if (LblStake != null)
                         LblStake.Text = v.ToString("N0");
-
-                    if (LblLevel != null)
-                    {
-                        LblLevel.Text = (state.StakeLevelIndexForUi >= 0 && stakeSeq.Length > 0)
-                            ? $"{state.StakeLevelIndexForUi + 1}/{stakeSeq.Length}"
-                            : "";
-                    }
                 }),
 
                 UiAddWin = delta => Dispatcher.InvokeAsync(() =>
@@ -6575,9 +6634,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 // KẾT QUẢ (nếu có hiển thị)
                 SetLastResultUI(null);
 
-                // TIỀN CƯỢC & MỨC TIỀN
+                // TIỀN CƯỢC
                 if (LblStake != null) LblStake.Text = "";  // TIỀN CƯỢC
-                if (LblLevel != null) LblLevel.Text = "";  // MỨC TIỀN
 
                 // Lưu ý: KHÔNG reset tổng lãi ở đây để ông chủ còn nhìn sau khi dừng.
             }
@@ -7452,6 +7510,17 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (string.IsNullOrWhiteSpace(s)) return 0;
             var cleaned = new string(s.Where(c => char.IsDigit(c) || (c == '-' && s.IndexOf(c) == 0)).ToArray());
             return double.TryParse(cleaned, out var v) ? v : 0;
+        }
+
+        private static string NormalizeGameBalanceText(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return "";
+            var s = raw.Replace("\u00A0", " ").Trim();
+            var m = Regex.Match(s, @"[\u20AB\u0111]\s*([0-9.,]+)", RegexOptions.IgnoreCase);
+            if (m.Success)
+                return m.Groups[1].Value.Trim();
+            m = Regex.Match(s, @"([0-9]{1,3}(?:[.,][0-9]{2,3})+|[0-9]+)");
+            return m.Success ? m.Groups[1].Value.Trim() : "";
         }
 
         // Gán UI từ config (gọi ở nơi bạn đã áp config ra UI, ví dụ sau LoadConfig)

@@ -2,7 +2,9 @@
     'use strict';
     // Muốn hiện và ẩn bảng điều khiển home watch thì tìm dòng sau : showPanel: false // ⬅️ false = ẩn panel; true = hiện panel
     if (window.self !== window.top) {
-        return;
+        if (!/^games\./i.test(location.hostname)) {
+            return;
+        }
     }
     function isTelemetry(u) {
         try {
@@ -1096,8 +1098,134 @@
         return 'ok';
     };
 
+    // Game balance sync (games.*)
+    const GAME_BALANCE_TAIL =
+        'div.bk_bl[1]/div.kI_m[2]/div.kI_kQ[5]/div.kI_kR[1]/div.pb_pc[1]';
+
+    function normalizeGameBalanceText(raw) {
+        const s = String(raw || '').replace(/\s+/g, ' ').trim();
+        if (!s)
+            return '';
+        const m = s.match(/[\u20AB\u0111]\s*([0-9.,]+)/i);
+        if (m)
+            return (m[1] || '').trim();
+        const m2 = s.match(/([0-9]{1,3}(?:[.,][0-9]{2,3})+|[0-9]+)/);
+        return m2 ? m2[1].trim() : '';
+    }
+
+    function normalizeLabelText(s) {
+        return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    }
+
+    function extractLabeledMoney(raw, labelKey) {
+        if (!raw)
+            return '';
+        const labelNorm = normalizeLabelText(labelKey);
+        const lines = String(raw)
+            .split(/\n+/)
+            .map(v => v.replace(/\s+/g, ' ').trim())
+            .filter(Boolean);
+        for (let i = 0; i < lines.length; i++) {
+            const n = normalizeLabelText(lines[i]);
+            if (n === labelNorm || n.includes(labelNorm)) {
+                for (let j = i + 1; j < lines.length; j++) {
+                    const val = normalizeGameBalanceText(lines[j]);
+                    if (val)
+                        return val;
+                }
+            }
+        }
+        return '';
+    }
+
+    function readGameInfoRaw() {
+        let raw = '';
+        let el = null;
+        try {
+            if (GAME_BALANCE_TAIL)
+                el = findByTail(GAME_BALANCE_TAIL);
+        } catch (_) {}
+        if (el)
+            raw = textOf(el);
+
+        if (!raw) {
+            const nodes = Array.from(document.querySelectorAll('div,span,p,b,strong'));
+            const label = nodes.find(n => {
+                const t = textOf(n);
+                if (!t)
+                    return false;
+                const norm = normalizeLabelText(t);
+                return norm.includes('so du') || norm.includes('tong tien cuoc');
+            });
+            if (label) {
+                const container = label.closest('div') || label.parentElement || label;
+                raw = textOf(container);
+            }
+        }
+
+        return raw;
+    }
+
+    function readGameBalanceText() {
+        const raw = readGameInfoRaw();
+        const v = extractLabeledMoney(raw, 'so du');
+        if (v)
+            return v;
+        if (/[\u20AB\u0111]/i.test(raw))
+            return normalizeGameBalanceText(raw);
+        return '';
+    }
+
+    function readGameTotalBetText() {
+        const raw = readGameInfoRaw();
+        const v = extractLabeledMoney(raw, 'tong tien cuoc');
+        if (v)
+            return v;
+        return extractLabeledMoney(raw, 'tong cuoc');
+    }
+
+    function pushGameMoneyIfChanged(balanceVal, totalBetVal, source) {
+        const b = String(balanceVal || '').trim();
+        const t = String(totalBetVal || '').trim();
+        if (!b && !t)
+            return;
+        let changed = false;
+        if (b && window.__abx_last_game_balance !== b) {
+            window.__abx_last_game_balance = b;
+            changed = true;
+        }
+        if (t && window.__abx_last_game_total_bet !== t) {
+            window.__abx_last_game_total_bet = t;
+            changed = true;
+        }
+        if (!changed)
+            return;
+        const payload = { abx: 'game_balance', ui: 'game', balance: b, total_bet: t, source: source || '', tail: GAME_BALANCE_TAIL, ts: Date.now() };
+        try { window.chrome?.webview?.postMessage?.(payload); } catch (_) {}
+        try { if (window.top && window.top !== window) window.top.postMessage(payload, '*'); } catch (_) {}
+    }
+
+    function startGameBalanceWatch() {
+        if (window.__abx_game_balance_timer)
+            return;
+        window.__abx_game_balance_timer = setInterval(() => {
+            try {
+                const b = readGameBalanceText();
+                const t = readGameTotalBetText();
+                pushGameMoneyIfChanged(b, t, 'scan');
+            } catch (_) {}
+        }, 1000);
+        try {
+            const b0 = readGameBalanceText();
+            const t0 = readGameTotalBetText();
+            pushGameMoneyIfChanged(b0, t0, 'init');
+        } catch (_) {}
+    }
+
     // Skip toàn bộ Home Watch ở domain game
+    try { startGameBalanceWatch(); } catch (_) {}
     if (/^games\./i.test(location.hostname)) {
+        try { startGameBalanceWatch(); } catch (_) {}
         console.debug('[HomeWatch] Skip on game host');
         return;
             }
