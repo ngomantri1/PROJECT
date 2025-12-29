@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -84,12 +84,25 @@ namespace BaccaratPPRR88.Tasks
         // Gọi khi kết thúc ván (đã chấm THẮNG/THUA) để ván sau reset tiếp
         public static void UiRoundAllowNextReset() => _uiRoundResetDone = false;
 
+        private static void ApplyGlobalResetIfNeeded(GameContext ctx)
+        {
+            if (ctx == null) return;
+            var resetVersion = MoneyHelper.GetGlobalResetVersion();
+            if (ctx.MoneyResetVersion == resetVersion) return;
+
+            ctx.MoneyResetVersion = resetVersion;
+            ctx.MoneyChainIndex = 0;
+            ctx.MoneyChainStep = 0;
+            ctx.MoneyChainProfit = 0;
+        }
+
         public static async Task WaitUntilBetWindow(GameContext ctx, CancellationToken ct)
         {
             // Quy ước: prog = countdown (giây). Chờ tới khi còn <= DecisionPercent giây thì vào tiền trễ.
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
+                ApplyGlobalResetIfNeeded(ctx);
                 var s = ctx.GetSnap?.Invoke();
                 double p = s?.prog ?? 0.0;
                 //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
@@ -104,6 +117,7 @@ namespace BaccaratPPRR88.Tasks
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
+                ApplyGlobalResetIfNeeded(ctx);
                 var s = ctx.GetSnap?.Invoke();
                 double p = s?.prog ?? 0.0;
                 //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
@@ -173,6 +187,7 @@ namespace BaccaratPPRR88.Tasks
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
+                ApplyGlobalResetIfNeeded(ctx);
                 var s = ctx.GetSnap?.Invoke();
                 var curSeq = s?.seq ?? "";
                 var curSession = s?.session ?? "";

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 
@@ -36,6 +36,7 @@ namespace BaccaratPPRR88.Tasks
         public int MoneyChainStep { get; set; } = 0;
         // tiền thắng đã tích lũy được trong chuỗi hiện tại
         public double MoneyChainProfit { get; set; } = 0;
+        public long MoneyResetVersion { get; set; } = 0;
 
         // Ngưỡng % còn lại để ra quyết định
         public double DecisionPercent { get; init; }

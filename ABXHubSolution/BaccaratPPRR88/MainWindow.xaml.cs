@@ -469,6 +469,7 @@ Ví dụ không hợp lệ:
             public bool S7ResetOnProfit { get; set; } = true;
             public double CutProfit { get; set; } = 0; // 0 = tắt cắt lãi
             public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
+            public bool AutoResetOnCut { get; set; } = false; // đủ cắt lãi/lỗ -> reset về mức đầu
             public string BetSeqPB { get; set; } = "";        // cho Chiến lược 1
             public string BetSeqNI { get; set; } = "";        // cho Chiến lược 3
             public string BetPatternsPB { get; set; } = "";   // cho Chiến lược 2
@@ -531,6 +532,7 @@ Ví dụ không hợp lệ:
             public int MoneyChainIndex;
             public int MoneyChainStep;
             public double MoneyChainProfit;
+            public long MoneyResetVersion;
             public int StartInProgress;
             public string LastBetSide = "";
         }
@@ -1542,6 +1544,7 @@ Ví dụ không hợp lệ:
                 if (ChkS7ResetOnProfit != null) ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
                 MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
                 UpdateS7ResetOptionUI();
+                if (ChkAutoResetOnCut != null) ChkAutoResetOnCut.IsChecked = _cfg.AutoResetOnCut;
 
 
                 if (ChkRemember != null) ChkRemember.IsChecked = _cfg.RememberCreds;
@@ -1616,6 +1619,8 @@ Ví dụ không hợp lệ:
                 _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
                 if (ChkS7ResetOnProfit != null)
                     _cfg.S7ResetOnProfit = (ChkS7ResetOnProfit.IsChecked == true);
+                if (ChkAutoResetOnCut != null)
+                    _cfg.AutoResetOnCut = (ChkAutoResetOnCut.IsChecked == true);
                 _cfg.SelectedRooms = _selectedRooms.ToList();
 
 
@@ -1671,6 +1676,7 @@ Ví dụ không hợp lệ:
                     : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 snapshot.S7ResetOnProfit = _globalCfgSnapshot.S7ResetOnProfit;
             }
+            snapshot.AutoResetOnCut = _cfg?.AutoResetOnCut ?? false;
             return snapshot;
         }
 
@@ -1963,6 +1969,7 @@ Ví dụ không hợp lệ:
                     ? new Dictionary<string, string>(_globalCfgSnapshot.StakeCsvByMoney, StringComparer.OrdinalIgnoreCase)
                     : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 _cfg.S7ResetOnProfit = _globalCfgSnapshot.S7ResetOnProfit;
+                _cfg.AutoResetOnCut = _globalCfgSnapshot.AutoResetOnCut;
 
                 if (CmbBetStrategy != null)
                 {
@@ -1981,6 +1988,8 @@ Ví dụ không hợp lệ:
                 UpdateS7ResetOptionUI();
                 if (ChkS7ResetOnProfit != null)
                     ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
+                if (ChkAutoResetOnCut != null)
+                    ChkAutoResetOnCut.IsChecked = _cfg.AutoResetOnCut;
             }
             finally
             {
@@ -4213,6 +4222,16 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 await SaveConfigAsync();
         }
 
+        private async void ChkAutoResetOnCut_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!_uiReady || _suppressTableSync) return;
+            if (_cfg == null) return;
+            _cfg.AutoResetOnCut = (ChkAutoResetOnCut?.IsChecked == true);
+            if (_globalCfgSnapshot != null)
+                _globalCfgSnapshot.AutoResetOnCut = _cfg.AutoResetOnCut;
+            await SaveConfigAsync();
+        }
+
         async void CmbMoneyStrategy_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!_uiReady || _suppressTableSync) return;
@@ -5476,6 +5495,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 MoneyChainIndex = state.MoneyChainIndex,
                 MoneyChainStep = state.MoneyChainStep,
                 MoneyChainProfit = state.MoneyChainProfit,
+                MoneyResetVersion = state.MoneyResetVersion,
 
                 UiSetSide = s => Dispatcher.Invoke(() =>
                 {
@@ -5543,6 +5563,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             state.MoneyChainIndex = ctx.MoneyChainIndex;
             state.MoneyChainStep = ctx.MoneyChainStep;
             state.MoneyChainProfit = ctx.MoneyChainProfit;
+            state.MoneyResetVersion = ctx.MoneyResetVersion;
         }
 
         private bool IsActiveTable(string tableId)
@@ -6021,6 +6042,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 state.MoneyChainIndex = 0;
                 state.MoneyChainStep = 0;
                 state.MoneyChainProfit = 0;
+                state.MoneyResetVersion = MoneyHelper.GetGlobalResetVersion();
 
                 RecomputeGlobalWinTotal();
                 if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
@@ -7543,6 +7565,17 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         // Dùng lại cờ này nếu bạn đã có, hoặc thêm mới:
         private bool _cutStopTriggered = false;
+        private int _cutAutoResetInProgress = 0;
+
+        private bool TryEnterCutAutoReset()
+        {
+            return Interlocked.CompareExchange(ref _cutAutoResetInProgress, 1, 0) == 0;
+        }
+
+        private void ExitCutAutoReset()
+        {
+            Interlocked.Exchange(ref _cutAutoResetInProgress, 0);
+        }
 
         // Parse tiền: cho phép số âm ở đầu, bỏ dấu chấm phẩy khoảng trắng
         private static double ParseMoney(string s)
@@ -7568,6 +7601,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             if (TxtCutProfit != null) TxtCutProfit.Text = (_cfg?.CutProfit ?? 0).ToString("N0");
             if (TxtCutLoss != null) TxtCutLoss.Text = (_cfg?.CutLoss ?? 0).ToString("N0");
+            if (ChkAutoResetOnCut != null) ChkAutoResetOnCut.IsChecked = (_cfg?.AutoResetOnCut == true);
         }
 
         private static double ParseMoneyOrZero(string s)
@@ -7610,6 +7644,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private void CheckCutAndStopIfNeeded()
         {
             if (_cutStopTriggered) return;
+            if (_cutAutoResetInProgress != 0) return;
 
             double cutProfit = _cfg?.CutProfit ?? 0;   // dương ⇒ bật cắt lãi
             double cutLoss = _cfg?.CutLoss ?? 0;   // dương ⇒ bật cắt lỗ (ngưỡng là -cutLoss)
@@ -7618,8 +7653,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (cutProfit <= 0 && cutLoss <= 0) return;
 
             // Ưu tiên cắt lãi
-            if (cutProfit > 0 && _winTotal >= cutProfit)
+                        if (cutProfit > 0 && _winTotal >= cutProfit)
             {
+                if (_cfg?.AutoResetOnCut == true)
+                {
+                    if (TryEnterCutAutoReset())
+                        ResetAllProfitAndStepsForCut($"Dat CAT LAI: win={_winTotal:N0} >= {cutProfit:N0}");
+                    return;
+                }
                 _cutStopTriggered = true;
                 StopTaskAndNotify($"Đạt CẮT LÃI: Tiền thắng = {_winTotal:N0} ≥ {cutProfit:N0}");
                 return;
@@ -7629,8 +7670,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (cutLoss > 0)
             {
                 var lossThreshold = -cutLoss;
-                if (_winTotal <= lossThreshold)
+                                if (_winTotal <= lossThreshold)
                 {
+                    if (_cfg?.AutoResetOnCut == true)
+                    {
+                        if (TryEnterCutAutoReset())
+                            ResetAllProfitAndStepsForCut($"Dat CAT LO: win={_winTotal:N0} <= {lossThreshold:N0}");
+                        return;
+                    }
                     _cutStopTriggered = true;
                     StopTaskAndNotify($"Đạt CẮT LỖ: Tiền thắng = {_winTotal:N0} ≤ {lossThreshold:N0}");
                     return;
@@ -7639,6 +7686,62 @@ private async Task<CancellationTokenSource> DebounceAsync(
         }
 
 
+        private void ResetAllProfitAndStepsForCut(string reason)
+        {
+            void DoReset()
+            {
+                try
+                {
+                    Log("[CUT] " + reason);
+
+                    var resetVersion = MoneyHelper.RequestGlobalResetToLevel1();
+
+                    lock (_tableTasksGate)
+                    {
+                        foreach (var kv in _tableTasks)
+                        {
+                            var state = kv.Value;
+                            if (state == null) continue;
+
+                            state.WinTotal = 0;
+                            state.WinTotalFromJs = 0;
+                            state.HasJsProfit = false;
+                            state.MoneyChainIndex = 0;
+                            state.MoneyChainStep = 0;
+                            state.MoneyChainProfit = 0;
+                            state.MoneyResetVersion = resetVersion;
+                            state.StakeLevelIndexForUi = -1;
+                        }
+                    }
+
+                    MoneyHelper.ResetTempProfitForWinUpLoseKeep();
+
+                    RecomputeGlobalWinTotal();
+                    if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
+
+                    if (!string.IsNullOrWhiteSpace(_activeTableId) && IsActiveTable(_activeTableId))
+                        ResetBetMiniPanel();
+
+                    _cutStopTriggered = false;
+                }
+                catch (Exception ex)
+                {
+                    Log("[CUT] reset error: " + ex.Message);
+                }
+                finally
+                {
+                    ExitCutAutoReset();
+                }
+            }
+
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(DoReset);
+                return;
+            }
+
+            DoReset();
+        }
         private void StopTaskAndNotify(string reason)
         {
             try
@@ -8391,3 +8494,4 @@ private async Task<CancellationTokenSource> DebounceAsync(
     }
 
 }
+

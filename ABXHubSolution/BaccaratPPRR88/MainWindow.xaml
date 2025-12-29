@@ -1208,6 +1208,14 @@
                                         LostFocus="TxtCut_LostFocus" />
 
                                 </Grid>
+                                <CheckBox
+                                    x:Name="ChkAutoResetOnCut"
+                                    Margin="12,6,0,0"
+                                    VerticalAlignment="Center"
+                                    Checked="ChkAutoResetOnCut_Changed"
+                                    Content="Đủ cắt lãi, cắt lỗ tự động về mức cược đầu"
+                                    Foreground="#222"
+                                    Unchecked="ChkAutoResetOnCut_Changed" />
                                 <Grid
                                     Grid.Row="0"
                                     Margin="0,10,0,0"

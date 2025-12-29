@@ -8,8 +8,10 @@ namespace BaccaratPPRR88.Tasks
         private readonly long[] _seq;
         private readonly string _id;
         private int _i;                       // index hiện tại (0-based)
-        private bool _needDoubleNext;         // Victor2: vừa thắng xong → ván tới gấp đôi
-        private bool _usedDoubleThisRound;    // Victor2: ván vừa cược có gấp đôi hay không
+        private bool _needDoubleNext;         // Victor2: vừa thắng xong → ván tới gấp đôi
+        private bool _usedDoubleThisRound;
+
+        private long _lastResetVersion = -1;
 
         public MoneyManager(long[] seq, string id)
         {
@@ -23,6 +25,14 @@ namespace BaccaratPPRR88.Tasks
         /// <summary>Tiền sẽ đặt ở VÁN SẮP CƯỢC (có xét gấp đôi với Victor2).</summary>
         public long GetStakeForThisBet()
         {
+            var resetVersion = MoneyHelper.GetGlobalResetVersion();
+            if (_lastResetVersion != resetVersion)
+            {
+                _lastResetVersion = resetVersion;
+                _i = 0;
+                _needDoubleNext = false;
+                _usedDoubleThisRound = false;
+            }
             if (_id == "Victor2" && _needDoubleNext)
             {
                 _usedDoubleThisRound = true;
@@ -107,3 +117,4 @@ namespace BaccaratPPRR88.Tasks
         }
     }
 }
+

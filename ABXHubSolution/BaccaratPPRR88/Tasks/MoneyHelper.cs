@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.Threading;
 
 namespace BaccaratPPRR88.Tasks
 {
@@ -6,6 +7,10 @@ namespace BaccaratPPRR88.Tasks
     {
         public static Action<string>? Logger { get; set; }
         public static bool S7ResetOnProfit { get; set; } = true;
+        private static long _globalResetVersion = 0;
+
+        public static long GetGlobalResetVersion() => Interlocked.Read(ref _globalResetVersion);
+        public static long RequestGlobalResetToLevel1() => Interlocked.Increment(ref _globalResetVersion);
 
         private static void S7Log(string msg)
         {
