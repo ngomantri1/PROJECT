@@ -42,10 +42,10 @@ namespace BaccaratPPRR88
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Resources (pack URI).
     internal static class FallbackIcons
     {
-        private const string SidePlayerPng = "Assets/side/CHAN.png";
-        private const string SideBankerPng = "Assets/side/LE.png";
-        private const string ResultPlayerPng = "Assets/side/CHAN.png";
-        private const string ResultBankerPng = "Assets/side/LE.png";
+        private const string SidePlayerPng = "Assets/side/PLAYER.png";
+        private const string SideBankerPng = "Assets/side/BANKER.png";
+        private const string ResultPlayerPng = "Assets/side/PLAYER.png";
+        private const string ResultBankerPng = "Assets/side/BANKER.png";
         private const string WinPng = "Assets/kq/THANG.png";
         private const string LossPng = "Assets/kq/THUA.png";
 

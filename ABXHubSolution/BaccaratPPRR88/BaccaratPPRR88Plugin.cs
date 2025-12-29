@@ -142,8 +142,8 @@ namespace BaccaratPPRR88
                 }
             }
 
-            SetImg("ImgPlayer", "Assets/side/CHAN.png");
-            SetImg("ImgBanker", "Assets/side/LE.png");
+            SetImg("ImgPlayer", "Assets/side/PLAYER.png");
+            SetImg("ImgBanker", "Assets/side/BANKER.png");
             SetImg("ImgTHANG", "Assets/kq/THANG.png");
             SetImg("ImgTHUA", "Assets/kq/THUA.png");
 
@@ -170,13 +170,13 @@ namespace BaccaratPPRR88
 
                 TryLog(host, "[XocDia] Plugin asm path: " + asmPath);
 
-                var probe1 = Path.Combine(asmDir, "Assets", "side", "CHAN.png");
-                var probe2 = Path.Combine(asmDir, "assets", "side", "CHAN.png");
+                var probe1 = Path.Combine(asmDir, "Assets", "side", "PLAYER.png");
+                var probe2 = Path.Combine(asmDir, "assets", "side", "PLAYER.png");
 
                 TryLog(host, "[XocDia] Probe file (Assets): " + probe1 + " exists=" + File.Exists(probe1));
                 TryLog(host, "[XocDia] Probe file (assets): " + probe2 + " exists=" + File.Exists(probe2));
 
-                TryLog(host, "[XocDia] Expecting URI: /BaccaratPPRR88;component/Assets/side/CHAN.png");
+                TryLog(host, "[XocDia] Expecting URI: /BaccaratPPRR88;component/Assets/side/PLAYER.png");
             }
             catch (Exception ex)
             {

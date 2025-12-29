@@ -477,8 +477,8 @@
         <local:ProgressWidthConverter x:Key="FillWidthConv" />
 
         <!--  PACK URI CHO ẢNH  -->
-        <BitmapImage x:Key="ImgBanker" UriSource="pack://application:,,,/Assets/side/LE.png" />
-        <BitmapImage x:Key="ImgPlayer" UriSource="pack://application:,,,/Assets/side/CHAN.png" />
+        <BitmapImage x:Key="ImgBanker" UriSource="pack://application:,,,/Assets/side/BANKER.png" />
+        <BitmapImage x:Key="ImgPlayer" UriSource="pack://application:,,,/Assets/side/PLAYER.png" />
         <BitmapImage x:Key="ImgTHANG" UriSource="pack://application:,,,/Assets/kq/THANG.png" />
         <BitmapImage x:Key="ImgTHUA" UriSource="pack://application:,,,/Assets/kq/THUA.png" />
     </Window.Resources>
@@ -1879,7 +1879,7 @@
                                                         <Grid VerticalAlignment="Center">
                                                             <Image
                                                                 x:Name="ImgSide"
-                                                                Height="20"
+                                                                Height="24"
                                                                 Source="{Binding Side, Converter={StaticResource SideToIcon}}"
                                                                 Visibility="Visible" />
                                                             <TextBlock
@@ -1906,7 +1906,7 @@
                                                         <Grid VerticalAlignment="Center">
                                                             <Image
                                                                 x:Name="ImgKq"
-                                                                Height="20"
+                                                                Height="24"
                                                                 Source="{Binding Result, Converter={StaticResource KetQuaToIcon}}"
                                                                 Visibility="Visible" />
                                                             <TextBlock
