@@ -1937,7 +1937,7 @@
                                                             <Grid VerticalAlignment="Center">
                                                                 <Image
                                                                     x:Name="ImgWL"
-                                                                    Height="18"
+                                                                    Height="24"
                                                                     Source="{Binding WinLose, Converter={StaticResource WinLossToIcon}}"
                                                                     Visibility="Visible" />
                                                                 <TextBlock
@@ -1967,7 +1967,7 @@
                                             <!--  Tài khoản  -->
                                             <DataGridTextColumn
                                                 Width="*"
-                                                Binding="{Binding Account, StringFormat=N0}"
+                                                Binding="{Binding Account, StringFormat=N2}"
                                                 Header="Tài khoản">
                                                 <DataGridTextColumn.ElementStyle>
                                                     <Style TargetType="TextBlock">

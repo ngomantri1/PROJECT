@@ -308,6 +308,8 @@ namespace BaccaratPPRR88
 
         // 3) Giữ pending bet để chờ kết quả
         private BetRow? _pendingRow;
+        private readonly Dictionary<string, BetRow> _pendingBetsByTable = new(StringComparer.OrdinalIgnoreCase);
+        private readonly object _pendingBetGate = new();
         private string _lastBetSig = "";
         private long _lastBetSigAtMs = 0;
         private const int MaxHistory = 1000;   // tổng số bản ghi giữ trong bộ nhớ & khi load
@@ -545,6 +547,7 @@ Ví dụ không hợp lệ:
             public string HistoryPB { get; set; } = "";
             public string SeqDigits { get; set; } = "";
             public string SessionKey { get; set; } = "";
+            public string LastFinalizedSessionKey { get; set; } = "";
             public double Countdown { get; set; }
             public double CountdownMax { get; set; }
             public DateTime LastUpdate { get; set; } = DateTime.MinValue;
@@ -561,7 +564,7 @@ Ví dụ không hợp lệ:
             public string Side { get; set; } = "";           // P/B
             public string Result { get; set; } = "";         // Kết quả P/B
             public string WinLose { get; set; } = "";        // "Thắng"/"Thua"
-            public long Account { get; set; }                // Số dư sau ván
+            public double Account { get; set; }                // Số dư sau ván
         }
 
         public static class SharedIcons
@@ -2115,10 +2118,12 @@ Ví dụ không hợp lệ:
             var historyPb = new string(tokens.Where(c => c == 'P' || c == 'B').ToArray());
             var seqDigits = BuildSeqDigits(historyPb);
             var sessionKey = ExtractRoundId(text);
+            var lastToken = tokens.Count > 0 ? tokens[^1] : (char?)null;
 
             if (countdown < 0) countdown = 0;
 
             TableOverlayState state;
+            bool shouldFinalize = false;
             lock (_tableOverlayGate)
             {
                 if (!_tableOverlayStates.TryGetValue(tableId, out state))
@@ -2135,6 +2140,7 @@ Ví dụ không hợp lệ:
                     state.TableName = tableName;
                 }
 
+                var prevSessionKey = state.SessionKey;
                 if (!string.IsNullOrWhiteSpace(historyRaw))
                     state.HistoryRaw = historyRaw;
                 if (!string.IsNullOrWhiteSpace(historyPb))
@@ -2154,6 +2160,34 @@ Ví dụ không hợp lệ:
                 {
                     Log($"[SEQ] {tableId} id={state.SessionKey} raw={state.HistoryRaw} pb={state.HistoryPB} countdown={state.Countdown:0.###}");
                     state.LastLogSig = logSig;
+                }
+
+                if (!string.IsNullOrWhiteSpace(sessionKey) &&
+                    !string.Equals(prevSessionKey, sessionKey, StringComparison.Ordinal) &&
+                    !string.Equals(state.LastFinalizedSessionKey, sessionKey, StringComparison.Ordinal))
+                {
+                    state.LastFinalizedSessionKey = sessionKey;
+                    shouldFinalize = true;
+                }
+            }
+
+            if (shouldFinalize && lastToken.HasValue)
+            {
+                double accNow = 0;
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(_gameBalance))
+                        accNow = ParseMoneyOrZero(_gameBalance);
+                    else
+                        accNow = ParseMoneyOrZero(LblAmount?.Text ?? "0");
+                }
+                catch { /* ignore parse */ }
+
+                if (TryPopPendingBet(tableId, out var row))
+                {
+                    if (accNow <= 0 && row.Account > 0)
+                        accNow = row.Account;
+                    FinalizeBetRow(row, lastToken.Value.ToString(), accNow);
                 }
             }
         }
@@ -2591,12 +2625,22 @@ Ví dụ không hợp lệ:
 
                                                     // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
                                                     var kqStr = winIsPlayer ? "P" : "B";
-                                                    long? accNow2 = snap?.totals?.A;
-                                                    if (!accNow2.HasValue && !string.IsNullOrWhiteSpace(_gameBalance))
-                                                        accNow2 = (long)ParseMoneyOrZero(_gameBalance);
-                                                    if (_pendingRow != null && accNow2.HasValue)
+                                                    double accNow2 = 0;
+                                                    if (!string.IsNullOrWhiteSpace(_gameBalance))
+                                                        accNow2 = ParseMoneyOrZero(_gameBalance);
+                                                    else if (snap?.totals?.A != null)
+                                                        accNow2 = snap.totals.A.Value;
+                                                    else if (_pendingRow != null)
+                                                        accNow2 = _pendingRow.Account;
+
+                                                    bool hasTablePending = false;
+                                                    lock (_pendingBetGate)
                                                     {
-                                                        FinalizeLastBet(kqStr, accNow2.Value);
+                                                        hasTablePending = _pendingBetsByTable.Count > 0;
+                                                    }
+                                                    if (!hasTablePending && _pendingRow != null)
+                                                    {
+                                                        FinalizeLastBet(kqStr, accNow2);
                                                     }
 
                                                     _lockMajorMinorUpdates = false; // xong chu kỳ này
@@ -2761,8 +2805,8 @@ Ví dụ không hợp lệ:
                                     var tableIdLog = string.IsNullOrWhiteSpace(tableId) ? "?" : tableId;
                                     Log($"[BET] {tableIdLog} {side} {amount:N0}");
 
-                                    long accNow = 0;
-                                    try { accNow = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
+                                    double accNow = 0;
+                                    try { accNow = ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
 
                                     _pendingRow = new BetRow
                                     {
@@ -2777,6 +2821,14 @@ Ví dụ không hợp lệ:
                                     };
 
                                     // MỚI NHẤT Ở ĐẦU DANH SÁCH (trang 1)
+                                    if (!string.IsNullOrWhiteSpace(tableId))
+                                    {
+                                        lock (_pendingBetGate)
+                                        {
+                                            _pendingBetsByTable[tableId] = _pendingRow;
+                                        }
+                                    }
+
                                     _betAll.Insert(0, _pendingRow);
                                     if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
                                     // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
@@ -7580,9 +7632,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         // Parse tiền: cho phép số âm ở đầu, bỏ dấu chấm phẩy khoảng trắng
         private static double ParseMoney(string s)
         {
-            if (string.IsNullOrWhiteSpace(s)) return 0;
-            var cleaned = new string(s.Where(c => char.IsDigit(c) || (c == '-' && s.IndexOf(c) == 0)).ToArray());
-            return double.TryParse(cleaned, out var v) ? v : 0;
+            return ParseMoneyOrZero(s);
         }
 
         private static string NormalizeGameBalanceText(string raw)
@@ -7606,10 +7656,49 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private static double ParseMoneyOrZero(string s)
         {
-            if (string.IsNullOrWhiteSpace(s)) return 0;            // ⬅️ rỗng = 0 (tắt)
-                                                                   // Cho phép số âm ở đầu, bỏ dấu ngăn cách
-            var cleaned = new string(s.Where(c => char.IsDigit(c) || (c == '-' && s.IndexOf(c) == 0)).ToArray());
-            return double.TryParse(cleaned, out var v) ? v : 0;
+            if (string.IsNullOrWhiteSpace(s)) return 0;
+
+            var raw = s.Replace("\u00A0", " ").Trim();
+            var sb = new StringBuilder();
+            for (int i = 0; i < raw.Length; i++)
+            {
+                var c = raw[i];
+                if (char.IsDigit(c) || c == ',' || c == '.' || (c == '-' && sb.Length == 0))
+                    sb.Append(c);
+            }
+
+            var cleaned = sb.ToString();
+            if (string.IsNullOrEmpty(cleaned)) return 0;
+
+            int lastComma = cleaned.LastIndexOf(',');
+            int lastDot = cleaned.LastIndexOf('.');
+            string normalized = cleaned;
+
+            if (lastComma >= 0 && lastDot >= 0)
+            {
+                if (lastComma > lastDot)
+                    normalized = cleaned.Replace(".", "").Replace(",", ".");
+                else
+                    normalized = cleaned.Replace(",", "");
+            }
+            else if (lastComma >= 0)
+            {
+                int digitsAfter = cleaned.Length - lastComma - 1;
+                if (digitsAfter >= 1 && digitsAfter <= 2)
+                    normalized = cleaned.Replace(".", "").Replace(",", ".");
+                else
+                    normalized = cleaned.Replace(",", "");
+            }
+            else if (lastDot >= 0)
+            {
+                int digitsAfter = cleaned.Length - lastDot - 1;
+                if (digitsAfter >= 1 && digitsAfter <= 2)
+                    normalized = cleaned.Replace(",", "");
+                else
+                    normalized = cleaned.Replace(".", "");
+            }
+
+            return double.TryParse(normalized, NumberStyles.Any, CultureInfo.InvariantCulture, out var v) ? v : 0;
         }
 
         private async void TxtCut_LostFocus(object sender, RoutedEventArgs e)
@@ -7753,8 +7842,58 @@ private async Task<CancellationTokenSource> DebounceAsync(
             catch { /* ignore */ }
         }
 
+        private bool TryPopPendingBet(string tableId, out BetRow row)
+        {
+            row = null!;
+            if (string.IsNullOrWhiteSpace(tableId)) return false;
 
-        private void FinalizeLastBet(string? result, long balanceAfter)
+            lock (_pendingBetGate)
+            {
+                if (!_pendingBetsByTable.TryGetValue(tableId, out row!))
+                    return false;
+                _pendingBetsByTable.Remove(tableId);
+            }
+
+            if (ReferenceEquals(_pendingRow, row))
+                _pendingRow = null;
+
+            return row != null;
+        }
+
+        private void FinalizeBetRow(BetRow row, string? result, double balanceAfter)
+        {
+            if (row == null || string.IsNullOrWhiteSpace(result)) return;
+
+            var normResult = NormalizeSide(result ?? "");
+            row.Result = string.IsNullOrWhiteSpace(normResult)
+                ? (result ?? "").Trim().ToUpperInvariant()
+                : normResult;
+
+            if (string.Equals(row.Result, "T", StringComparison.OrdinalIgnoreCase))
+            {
+                row.WinLose = "Hòa";
+            }
+            else
+            {
+                bool win = string.Equals(row.Side, row.Result, StringComparison.OrdinalIgnoreCase);
+                row.WinLose = win ? "Thắng" : "Thua";
+            }
+
+            row.Account = balanceAfter;
+            try { AppendBetCsv(row); } catch { /* ignore IO */ }
+
+            if (_autoFollowNewest)
+            {
+                ShowFirstPage();
+            }
+            else
+            {
+                RefreshCurrentPage();
+            }
+        }
+
+
+        private void FinalizeLastBet(string? result, double balanceAfter)
         {
             if (_pendingRow == null || string.IsNullOrWhiteSpace(result)) return;
 
@@ -7762,8 +7901,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
             _pendingRow.Result = string.IsNullOrWhiteSpace(normResult)
                 ? (result ?? "").Trim().ToUpperInvariant()
                 : normResult;
-            bool win = string.Equals(_pendingRow.Side, _pendingRow.Result, StringComparison.OrdinalIgnoreCase);
-            _pendingRow.WinLose = win ? "Thắng" : "Thua";
+            if (string.Equals(_pendingRow.Result, "T", StringComparison.OrdinalIgnoreCase))
+            {
+                _pendingRow.WinLose = "Hòa";
+            }
+            else
+            {
+                bool win = string.Equals(_pendingRow.Side, _pendingRow.Result, StringComparison.OrdinalIgnoreCase);
+                _pendingRow.WinLose = win ? "Thắng" : "Thua";
+            }
             _pendingRow.Account = balanceAfter;
 
             // ❗KHÔNG Add lại vào _betAll (đã chèn ở thời điểm BET)
@@ -7823,7 +7969,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             Side = normSide,
                             Result = normResult,
                             WinLose = normWL,
-                            Account = long.TryParse(cols[7 + baseIdx], out var ac) ? ac : 0,
+                            Account = double.TryParse(cols[7 + baseIdx], NumberStyles.Any, CultureInfo.InvariantCulture, out var ac) ? ac : 0,
                         };
                         tmp.Add(row);
                         if (tmp.Count >= maxTotal) break;
@@ -7858,6 +8004,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var u = TextNorm.U(s);
             if (u.StartsWith("THANG")) return "Thắng";
             if (u.StartsWith("THUA")) return "Thua";
+            if (u.StartsWith("HOA") || u == "T" || u == "TIE") return "Hòa";
             return (s ?? "").Trim();
         }
 
@@ -7939,7 +8086,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (!exists)
                     sw.WriteLine("At,Game,Table,Stake,Side,Result,WinLose,Account");
                 // CSV đơn giản, At lưu ISO để dễ parse
-                sw.WriteLine($"{r.At:O},{r.Game},{r.Table},{r.Stake},{r.Side},{r.Result},{r.WinLose},{r.Account}");
+                var accountText = r.Account.ToString("0.##", CultureInfo.InvariantCulture);
+                sw.WriteLine($"{r.At:O},{r.Game},{r.Table},{r.Stake},{r.Side},{r.Result},{r.WinLose},{accountText}");
             }
             catch { }
         }
@@ -8494,4 +8642,5 @@ private async Task<CancellationTokenSource> DebounceAsync(
     }
 
 }
+
 
