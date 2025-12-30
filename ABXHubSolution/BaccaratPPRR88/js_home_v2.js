@@ -1492,21 +1492,6 @@
         'div.header_nav[1]/div.header_nav_list[1]/div.nav_item[2]/div.dropdown_menu.LIVE[2]/div.drop_bg[1]/ul.drop_ul.noCenter[2]/li[1]/span.desc[2]';
     // Tìm nút "PP trực tuyến" theo tail + text, chỉ nhận khi đang visible
     function findPPProviderButton() {
-        // 1) Ưu tiên tìm theo 2 tail đã cấu hình
-        const tails = [TAIL_PP_TRUC_TUYEN, TAIL_PP_TRUC_TUYEN_ALT];
-
-        for (const t of tails) {
-            if (!t)
-                continue;
-            const el = findByTail(t);
-            if (el && isVisibleAndClickable(el)) {
-                return el;
-            }
-            }
-
-        // 2) Fallback: quét theo text "PP trực tuyến" trong header
-        const candidates = Array.from(
-                document.querySelectorAll('span.desc, li, a, button, div'));
         const normalizePPText = (value) => {
             try {
                 return String(value || '')
@@ -1519,12 +1504,31 @@
             }
         };
         const normalizePPValue = (value) => normalizePPText(value).replace(/\s+/g, ' ').trim();
+        const isExactPP = (value) => normalizePPValue(value) === 'pp truc tuyen';
+        const pickClickable = (el) =>
+            (el && (el.closest('a,button,[role=button],li') || el)) || null;
+
+        // 1) ?u ti?n t?m theo 2 tail ?? c?u h?nh
+        const tails = [TAIL_PP_TRUC_TUYEN, TAIL_PP_TRUC_TUYEN_ALT];
+
+        for (const t of tails) {
+            if (!t)
+                continue;
+            const el = findByTail(t);
+            if (el && isVisibleAndClickable(el) && isExactPP(el.textContent || '')) {
+                return pickClickable(el);
+            }
+        }
+
+        // 2) Fallback: qu?t theo text "PP tr?c tuy?n" trong header
+        const candidates = Array.from(
+            document.querySelectorAll('span.desc, li, a, button, div'));
         const menu = document.querySelector('.dropdown_menu.LIVE');
         if (menu) {
             const liHit = Array.from(menu.querySelectorAll('li'))
-                .find(li => normalizePPValue(li.textContent || '') === 'pp truc tuyen');
+                .find(li => isExactPP(li.textContent || ''));
             if (liHit && isVisibleAndClickable(liHit))
-                return liHit;
+                return pickClickable(liHit);
         }
 
         for (const el of candidates) {
@@ -1533,12 +1537,12 @@
                 continue;
 
             if (txt === 'pp truc tuyen' && isVisibleAndClickable(el)) {
-                return el;
-        }
+                return pickClickable(el);
+            }
         }
 
         return null;
-        }
+    }
 
     // ======= Game Regex (dùng trên chuỗi đã norm() — không dấu, lowercase) =======
     const RE_XOCDIA_POS = /\bxoc(?:[-\s]*dia)?\b/; // "xoc", "xoc dia", "xoc-dia", "xocdia"
@@ -5402,6 +5406,18 @@
                 try { el.click(); return true; } catch (_) {}
                 return false;
             };
+            const clickPPItem = (el) => {
+                if (!el) return false;
+                const li = el.closest('li') || el;
+                try { li.scrollIntoView({ block: 'center', inline: 'center' }); } catch (_) {}
+                const desc = li.querySelector('span.desc');
+                if (desc && safeClick(desc, 300))
+                    return true;
+                if (safeClick(li, 400))
+                    return true;
+                const btn = li.querySelector('a,button');
+                return btn ? safeClick(btn, 400) : false;
+            };
             const openCasinoDropdown = () => {
                     try {
                     const nav = document.querySelector('.nav_item_btn.LIVE, .nav_item.LIVE, .nav_item_btn');
@@ -5441,17 +5457,7 @@
                 }
                     } catch (_) {}
             };
-
             const resolvePP_TailAndText = () => {
-                const tails = [TAIL_PP_TRUC_TUYEN, TAIL_PP_TRUC_TUYEN_ALT];
-                for (const t of tails) {
-                    if (!t) continue;
-                    try {
-                        const el = findByTail(t);
-                        if (el && el.isConnected)
-                            return el;
-                    } catch (_) {}
-                    }
                 const normalizePPText = (value) => {
                     try {
                         return String(value || '')
@@ -5464,30 +5470,36 @@
                     }
                 };
                 const normalizePPValue = (value) => normalizePPText(value).replace(/\s+/g, ' ').trim();
+                const isExactPP = (value) => normalizePPValue(value) === 'pp truc tuyen';
                 const pickClickable = (el) =>
                     (el && (el.closest('a,button,[role=button],li') || el)) || null;
+
+                const tails = [TAIL_PP_TRUC_TUYEN, TAIL_PP_TRUC_TUYEN_ALT];
+                for (const t of tails) {
+                    if (!t) continue;
+                    try {
+                        const el = findByTail(t);
+                        if (el && el.isConnected && isExactPP(el.textContent || ''))
+                            return pickClickable(el);
+                    } catch (_) {}
+                }
+
                 const findExact = (root) => {
                     if (!root || !root.querySelectorAll)
                         return null;
+                    const liList = Array.from(root.querySelectorAll('li'));
+                    for (const li of liList) {
+                        if (isExactPP(li.textContent || ''))
+                            return pickClickable(li);
+                    }
                     const nodes = Array.from(root.querySelectorAll('span.desc, li, a, button, div'));
                     for (const el of nodes) {
-                        const txt = normalizePPValue(el.textContent || '');
-                        if (txt === 'pp truc tuyen')
+                        if (isExactPP(el.textContent || ''))
                             return pickClickable(el);
                     }
                     return null;
                 };
                 return findExact(document.querySelector('.dropdown_menu.LIVE')) || findExact(document);
-            };
-            const resolvePP_ByBroadText = () => {
-                const match = (el) => /pp\s*(live|truc\s*tuyen)|pragmatic\s*play|pragmatic/.test(norm(el.textContent));
-                return Array.from(document.querySelectorAll('li, a, button, span, div'))
-                    .find(el => match(el));
-            };
-            const resolvePP_ClickParent = () => {
-                const el = resolvePP_TailAndText() || resolvePP_ByBroadText();
-                if (!el) return null;
-                return el.closest('li, .dropdown_menu, .nav_item, .nav_item_btn') || el;
             };
 
             // pha 1: click Casino toi da 8 lan
@@ -5508,16 +5520,14 @@
 
             // pha 2: click PP truc tuyen voi nhieu phuong an
             const strategies = [
-                { name: 'tail+text', resolver: resolvePP_TailAndText },
-                { name: 'broad-text', resolver: resolvePP_ByBroadText },
-                { name: 'parent-fallback', resolver: resolvePP_ClickParent }
+                { name: 'strict', resolver: resolvePP_TailAndText }
             ];
             let gotPP = false;
             let usedStrat = '';
             for (const strat of strategies) {
                 for (let i = 0; i < 6; i++) {
                     const ppBtn = strat.resolver();
-                    if (ppBtn && safeClick(ppBtn, 400)) {
+                    if (ppBtn && clickPPItem(ppBtn)) {
                         gotPP = true;
                         usedStrat = strat.name;
                     break;
