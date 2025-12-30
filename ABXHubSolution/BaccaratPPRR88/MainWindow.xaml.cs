@@ -46,17 +46,21 @@ namespace BaccaratPPRR88
         private const string SideBankerPng = "Assets/side/BANKER.png";
         private const string ResultPlayerPng = "Assets/side/PLAYER.png";
         private const string ResultBankerPng = "Assets/side/BANKER.png";
+        private const string ResultTiePng = "Assets/side/HOA.png";
         private const string WinPng = "Assets/kq/THANG.png";
         private const string LossPng = "Assets/kq/THUA.png";
+        private const string TiePng = "Assets/kq/HOA.png";
 
-        private static ImageSource? _sidePlayer, _sideBanker, _resultPlayer, _resultBanker, _win, _loss;
+        private static ImageSource? _sidePlayer, _sideBanker, _resultPlayer, _resultBanker, _resultTie, _win, _loss, _tie;
 
         public static ImageSource? GetSidePlayer() => SharedIcons.SidePlayer ?? (_sidePlayer ??= Load(SidePlayerPng));
         public static ImageSource? GetSideBanker() => SharedIcons.SideBanker ?? (_sideBanker ??= Load(SideBankerPng));
         public static ImageSource? GetResultPlayer() => SharedIcons.ResultPlayer ?? (_resultPlayer ??= Load(ResultPlayerPng));
         public static ImageSource? GetResultBanker() => SharedIcons.ResultBanker ?? (_resultBanker ??= Load(ResultBankerPng));
+        public static ImageSource? GetResultTie() => SharedIcons.ResultTie ?? (_resultTie ??= Load(ResultTiePng));
         public static ImageSource? GetWin() => SharedIcons.Win ?? (_win ??= Load(WinPng));
         public static ImageSource? GetLoss() => SharedIcons.Loss ?? (_loss ??= Load(LossPng));
+        public static ImageSource? GetTie() => SharedIcons.Tie ?? (_tie ??= Load(TiePng));
 
         private static ImageSource? Load(string relativePath)
         {
@@ -116,6 +120,7 @@ namespace BaccaratPPRR88
             var u = TextNorm.U(value?.ToString() ?? "");
             if (u == "P" || u == "PLAYER") return FallbackIcons.GetResultPlayer();
             if (u == "B" || u == "BANKER") return FallbackIcons.GetResultBanker();
+            if (u == "T" || u == "TIE" || u.Contains("HOA")) return FallbackIcons.GetResultTie();
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -128,6 +133,7 @@ namespace BaccaratPPRR88
             var u = TextNorm.U(value?.ToString() ?? "");
             if (u.StartsWith("THANG")) return FallbackIcons.GetWin();
             if (u.StartsWith("THUA")) return FallbackIcons.GetLoss();
+            if (u.StartsWith("HOA") || u == "T" || u == "TIE") return FallbackIcons.GetTie();
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -546,6 +552,7 @@ Ví dụ không hợp lệ:
             public string HistoryRaw { get; set; } = "";
             public string HistoryPB { get; set; } = "";
             public string SeqDigits { get; set; } = "";
+            public string LastToken { get; set; } = "";
             public string SessionKey { get; set; } = "";
             public string LastFinalizedSessionKey { get; set; } = "";
             public double Countdown { get; set; }
@@ -570,8 +577,8 @@ Ví dụ không hợp lệ:
         public static class SharedIcons
         {
             public static ImageSource? SidePlayer, SideBanker;        // ảnh “Cửa đặt” P/B
-            public static ImageSource? ResultPlayer, ResultBanker;    // ảnh “Kết quả” P/B
-            public static ImageSource? Win, Loss;               // ảnh “Thắng/Thua”
+            public static ImageSource? ResultPlayer, ResultBanker, ResultTie;    // ảnh “Kết quả” P/B/T
+            public static ImageSource? Win, Loss, Tie;               // ảnh “Thắng/Thua/Hòa”
         }
 
 
@@ -1076,7 +1083,7 @@ Ví dụ không hợp lệ:
         private void Log(string msg)
         {
             var line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
-            //EnqueueUi(line);
+            EnqueueUi(line);
             EnqueueFile(line);
         }
 
@@ -1230,14 +1237,74 @@ Ví dụ không hợp lệ:
                 var js = @"(function(){
   try{
     const titleSelectors = ['span.rC_rT','span.rW_sl','span.rY_sn','span.qL_qM.qL_qN','.tile-name','.game-title'];
+    const cardSelectors = ['div[id^=""TileHeight-""]','div.gC_gE.gC_gH.gC_gI'];
+    const heuristicSelectors = ['div.pu_pv','div.uH_gQ','svg use[href^=""#bigroad-""]','svg use[*|href^=""#bigroad-""]','svg [href^=""#bigroad-""]'];
     const idAttrs = ['id','data-table-id','data-id','data-game-id','data-tableid','data-table','data-table-name','data-tablename'];
     const nameAttrs = ['data-table-name','data-tablename','data-tabletitle','data-table-title','data-title','data-name','data-display-name','data-displayname','data-label','aria-label','title','alt'];
+    const noiseWords = ['PLAYER','BANKER','TIE','BET','BETTING','RESULT','WIN','LOSS','TOTAL','ODDS','PAIR','TABLE SETTINGS','SETTINGS','SETTING','OPTIONS'];
+    const overlaySkipSelector = '.abx-homewatch-root,[data-abx-root=""homewatch""],#__abx_hw_root,#__abx_table_overlay_root';
+    const normalizeText = (s)=> clean(s).replace(/\s+/g,' ').trim();
+    const normalizeKey = (s)=>{
+      try{
+        return normalizeText(s).normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+      }catch(_){
+        return normalizeText(s).toLowerCase();
+      }
+    };
+    const isNameCandidate = (t)=>{
+      if(!t) return false;
+      const u = t.toUpperCase();
+      if(u.length < 3 || u.length > 40) return false;
+      if(/\d{6,}/.test(u)) return false;
+      for(const w of noiseWords){
+        if(u.includes(w)) return false;
+      }
+      return true;
+    };
+    const findNameFromAttrs = (card)=>{
+      if(!card || !card.querySelectorAll) return '';
+      let best = '';
+      const nodes = card.querySelectorAll('[data-table-name],[data-tablename],[data-tabletitle],[data-table-title],[data-title],[data-name],[data-display-name],[data-displayname],[data-label],[aria-label],[title],[alt]');
+      for(const el of nodes){
+        if(el.closest && el.closest(overlaySkipSelector)) continue;
+        const val = extractName(el, false);
+        if(!val) continue;
+        const key = normalizeKey(val);
+        if(key.includes('baccarat')) return val;
+        if(!isNameCandidate(val)) continue;
+        if(!best || val.length < best.length) best = val;
+      }
+      return best;
+    };
+    const findNameFromTextNodes = (card)=>{
+      if(!card || !card.querySelectorAll) return '';
+      let best = '';
+      let bestKeyword = '';
+      const nodes = card.querySelectorAll('span,div,small,button');
+      for(const el of nodes){
+        if(el.children && el.children.length) continue;
+        if(el.closest && el.closest(overlaySkipSelector)) continue;
+        const t = normalizeText(el.textContent || '');
+        if(!t) continue;
+        const u = t.toUpperCase();
+        const k = normalizeKey(t);
+        if(k.includes('baccarat')){
+          if(!bestKeyword || t.length < bestKeyword.length) bestKeyword = t;
+          continue;
+        }
+        if(!isNameCandidate(t)) continue;
+        if(!best || t.length < best.length) best = t;
+      }
+      return bestKeyword || best;
+    };
     const seen = new Set();
     const rooms = [];
     const clean = (s)=> (s||'').trim();
     const resolveRoot = (el)=>{
       if(!el) return null;
-      return el.closest('div.he_hf.he_hi') ||
+      return el.closest('div[id^=""TileHeight-""]') ||
+             el.closest('div.gC_gE.gC_gH.gC_gI') ||
+             el.closest('div.he_hf.he_hi') ||
              el.closest('div.hC_hE') ||
              el.closest('div.jF_jJ') ||
              el.closest('div.ec_F') ||
@@ -1259,7 +1326,7 @@ Ví dụ không hợp lệ:
       }
       return '';
     };
-    const extractName = (el)=>{
+    const extractName = (el, allowText)=>{
       if(!el) return '';
       for(const a of nameAttrs){
         try{
@@ -1267,17 +1334,41 @@ Ví dụ không hợp lệ:
           if(v) return v;
         }catch(_){}
       }
-      const text = clean(el.innerText || el.textContent || '');
-      return text;
+      if(allowText){
+        const text = normalizeText(el.innerText || el.textContent || '');
+        return text;
+      }
+      return '';
+    };
+    const extractNameFromCard = (card)=>{
+      if(!card || !card.querySelector) return '';
+      for(const sel of titleSelectors){
+        try{
+          const node = card.querySelector(sel);
+          const name = extractName(node, true);
+          if(name) return name;
+        }catch(_){}
+      }
+      const attrName = findNameFromAttrs(card);
+      if(attrName) return attrName;
+      const fallback = findNameFromTextNodes(card);
+      if(fallback) return fallback;
+      return '';
     };
     const addRoom = (id, name)=>{
       const rid = clean(id) || clean(name);
-      const rname = clean(name);
+      const rname = clean(name) || clean(id);
       if(!rid || !rname) return;
       const key = rid.toLowerCase();
       if(seen.has(key)) return;
       seen.add(key);
       rooms.push({ id: rid, name: rname });
+    };
+    const addRoomFromCard = (card)=>{
+      if(!card) return;
+      const id = extractId(card);
+      const name = extractNameFromCard(card);
+      addRoom(id, name || id);
     };
     const collectRoots = (root)=>{
       const list=[];
@@ -1305,7 +1396,7 @@ Ví dụ không hợp lệ:
         titleSelectors.forEach(sel=>{
           try{
             rt.querySelectorAll(sel).forEach(el=>{
-              const name = extractName(el);
+              const name = extractName(el, true);
               if(!name) return;
               const card = resolveRoot(el);
               const id = extractId(card) || extractId(el);
@@ -1315,12 +1406,36 @@ Ví dụ không hợp lệ:
         });
       });
     };
+    const scanCards = (root)=>{
+      if(!root) return;
+      try{
+        cardSelectors.forEach(sel=>{
+          root.querySelectorAll(sel).forEach(card=>{
+            addRoomFromCard(card);
+          });
+        });
+      }catch(_){}
+    };
+    const scanHeuristic = (root)=>{
+      if(!root) return;
+      try{
+        const sel = heuristicSelectors.join(',');
+        root.querySelectorAll(sel).forEach(node=>{
+          const card = (node.closest && node.closest(cardSelectors.join(','))) || resolveRoot(node);
+          if(card) addRoomFromCard(card);
+        });
+      }catch(_){}
+    };
     scanDocument(document);
+    scanCards(document);
+    if(rooms.length < 5) scanHeuristic(document);
     const iframes = Array.from(document.querySelectorAll('iframe'));
     for(const fr of iframes){
       try{
         const doc = fr.contentDocument || fr.contentWindow?.document;
         scanDocument(doc);
+        scanCards(doc);
+        if(rooms.length < 5) scanHeuristic(doc);
       }catch(_){}
     }
     return rooms;
@@ -1381,6 +1496,10 @@ Ví dụ không hợp lệ:
                         (srcLower.Contains("/desktop/") && srcLower.Contains("multibaccarat"));
                     var inLobby = srcLower.Contains("pragmaticplaylive") && pathLooksLikeLobby;
                     var looksLikeBaccarat = filtered.Any(n => TextNorm.U(n.Name).Contains("BACCARAT"));
+                    if (!looksLikeBaccarat)
+                        looksLikeBaccarat = filtered.Any(n => (n.Id ?? "").StartsWith("TileHeight-", StringComparison.OrdinalIgnoreCase));
+                    if (!looksLikeBaccarat && inLobby && filtered.Count >= 10)
+                        looksLikeBaccarat = true;
                     var beforeSig = BuildRoomsSignature(_selectedRooms);
 
                     await Dispatcher.InvokeAsync(() =>
@@ -2147,6 +2266,8 @@ Ví dụ không hợp lệ:
                     state.HistoryPB = historyPb;
                 if (!string.IsNullOrWhiteSpace(seqDigits))
                     state.SeqDigits = seqDigits;
+                if (lastToken.HasValue)
+                    state.LastToken = lastToken.Value.ToString();
                 if (!string.IsNullOrWhiteSpace(sessionKey))
                     state.SessionKey = sessionKey;
 
@@ -2198,6 +2319,7 @@ Ví dụ không hợp lệ:
             {
                 abx = "overlay_state",
                 seq = "",
+                last = "",
                 session = "",
                 ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 prog = 0
@@ -2218,6 +2340,7 @@ Ví dụ không hợp lệ:
                 {
                     abx = "overlay_state",
                     seq = state.SeqDigits ?? "",
+                    last = state.LastToken ?? "",
                     session = state.SessionKey ?? "",
                     prog = prog,
                     ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
@@ -2382,11 +2505,11 @@ Ví dụ không hợp lệ:
                             if (!TryPrepareWebMessage(e, out var display, out parsedDoc))
                             {
                                 if (!string.IsNullOrWhiteSpace(display))
-                                    //EnqueueUi($"[JS] {display}");
+                                    EnqueueUi($"[JS] {display}");
                                 return;
                             }
 
-                            //EnqueueUi($"[JS] {display}"); // chỉ hiển thị UI, không ghi ra file
+                            EnqueueUi($"[JS] {display}"); // chỉ hiển thị UI, không ghi ra file
                             var root = parsedDoc.RootElement.Clone();
 
                                 if (root.TryGetProperty("overlay", out var overlayEl) &&
@@ -3937,9 +4060,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             if (sender is CheckBox cb && cb.DataContext is RoomOption opt)
             {
-                var targetId = !string.IsNullOrWhiteSpace(opt.Id) ? opt.Id : opt.Name;
-                if (cb.IsChecked == true && _uiReady)
-                    _ = ScrollRoomIntoViewAsync(targetId);
+                // Không scroll vào đúng bàn khi tick; để JS scroll top sau khi ghim xong.
                 // Binding updates opt.IsSelected; SyncSelectedRoomsFromOptions() will persist selection.
             }
             UpdateRoomSummary();
@@ -6641,8 +6762,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
             // Chuẩn hoá & chấp nhận cả tail số '0'..'4'
             string sRaw = result ?? string.Empty;
             string s = sRaw.Trim().ToUpperInvariant();
+            string u = TextNorm.U(sRaw);
 
-            bool isPlayer = false, isBanker = false;
+            bool isPlayer = false, isBanker = false, isTie = false;
 
             if (s.Length == 1 && char.IsDigit(s[0]))
             {
@@ -6655,6 +6777,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 isPlayer = (s == "P" || s == "PLAYER");
                 isBanker = (s == "B" || s == "BANKER");
+                isTie = (s == "T" || s == "TIE" || u.Contains("HOA"));
             }
 
             // Helper: fallback hiển thị chữ
@@ -6668,20 +6791,21 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 }
             }
 
-            if (!isPlayer && !isBanker)
+            if (!isPlayer && !isBanker && !isTie)
             {
                 ShowText("");
                 return;
             }
 
             // Ưu tiên lấy ảnh trong Resource (ImgPlayer/ImgBanker) -> nếu không có thì dùng SharedIcons
-            string resKey = isBanker ? "ImgBanker" : "ImgPlayer";
+            string resKey = isTie ? "ImgTie" : (isBanker ? "ImgBanker" : "ImgPlayer");
             var resImg = TryFindResource(resKey) as ImageSource;
 
             ImageSource? icon =
                 resImg
-                ?? (isPlayer ? (SharedIcons.ResultPlayer ?? SharedIcons.SidePlayer)
-                             : (SharedIcons.ResultBanker ?? SharedIcons.SideBanker));
+                ?? (isTie ? (SharedIcons.ResultTie ?? FallbackIcons.GetResultTie())
+                          : (isPlayer ? (SharedIcons.ResultPlayer ?? SharedIcons.SidePlayer)
+                                      : (SharedIcons.ResultBanker ?? SharedIcons.SideBanker)));
 
             if (icon != null && ImgKetQua != null)
             {
@@ -6691,13 +6815,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (LblKetQua != null) LblKetQua.Visibility = Visibility.Collapsed;
 
                 // Cache lại để DataGrid (converters) có thể "kế thừa" từ trạng thái
-                if (isPlayer) SharedIcons.ResultPlayer = icon;
+                if (isTie) SharedIcons.ResultTie = icon;
+                else if (isPlayer) SharedIcons.ResultPlayer = icon;
                 else SharedIcons.ResultBanker = icon;
             }
             else
             {
                 // Không có ảnh -> fallback chữ có dấu
-                ShowText(isPlayer ? "PLAYER" : "BANKER");
+                ShowText(isTie ? "HÒA" : (isPlayer ? "PLAYER" : "BANKER"));
             }
         }
 

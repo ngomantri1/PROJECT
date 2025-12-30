@@ -202,10 +202,8 @@
     // === END TEXTMAP GUARD ===
 
     // --- BET BRIDGE: __cw_bet (Player/Banker, required tableId) ---
-    const BET_PLAYER_TAIL =
-        'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0[1]/div.zv_zw[2]/div[1]/div.kU_kV.kU_kZ[1]/div.qE_lp.qE_q1[1]';
-    const BET_BANKER_TAIL =
-        'div.kh_ca[1]/div.kz_hk[1]/div.pI_pJ[3]/div.uU_g0.uU_uV[1]/div.zv_zw[4]/div[1]/div.kU_kV.kU_k0[1]/div.qE_lp.qE_ra[1]';
+    const BET_PLAYER_TAIL = 'div.qC_lC.qC_q0[1]';
+    const BET_BANKER_TAIL = 'div.qC_lC.qC_q1[1]';
 
     const CHIP_LABEL_BY_AMOUNT = {
         4000: '4',
@@ -223,6 +221,7 @@
             acc[label] = value;
         return acc;
     }, {});
+    const BET_CHIP_LABEL_SELECTORS = ['.wo_wq', '.v0_wa'];
 
     function betCssFromTailSimple(tail) {
         const segs = String(tail || '').trim().split('/').filter(Boolean).map(seg => {
@@ -275,6 +274,21 @@
                 } catch (_) {}
         return docs;
             }
+
+    function betCollectChipNodes(doc) {
+        const nodes = [];
+        if (doc && doc.querySelectorAll) {
+            for (const sel of BET_CHIP_LABEL_SELECTORS) {
+                try { nodes.push(...doc.querySelectorAll(sel)); } catch (_) {}
+            }
+        }
+        if (!nodes.length) {
+            for (const sel of BET_CHIP_LABEL_SELECTORS) {
+                try { nodes.push(...betCollectNodes(sel)); } catch (_) {}
+            }
+        }
+        return nodes;
+    }
 
     const BET_ID_ATTRS = [
         'data-table-id',
@@ -362,8 +376,8 @@
     function betFindTargetByTableId(id, side) {
         const s = betNormalizeSide(side);
         const selector = (s === 'player')
-            ? '.qE_lp.qE_q1'
-            : (s === 'banker' ? '.qE_lp.qE_ra' : '');
+            ? '.qC_lC.qC_q0.qC_qE.qC_qV, .qE_lp.qE_q1'
+            : (s === 'banker' ? '.qC_lC.qC_q1.qC_qE.qC_qV, .qE_lp.qE_ra' : '');
         if (!selector)
             return null;
         const candidates = betGetTableIdCandidates(id);
@@ -416,7 +430,9 @@
     function betResolveCardRoot(node) {
         if (!node)
             return null;
-        return node.closest('div.he_hf.he_hi') ||
+        return node.closest('div[id^="TileHeight-"]') ||
+            node.closest('div.gC_gE.gC_gH.gC_gI') ||
+            node.closest('div.he_hf.he_hi') ||
             node.closest('div.hC_hE') ||
             node.closest('div.ep_bn') ||
             node.closest('div.hu_hw') ||
@@ -435,7 +451,8 @@
         if (!root || !root.querySelector)
             return false;
         try {
-            return !!(root.querySelector('.qE_lp.qE_q1') || root.querySelector('.qE_lp.qE_ra'));
+            return !!(root.querySelector('.qC_lC.qC_q0.qC_qE.qC_qV, .qE_lp.qE_q1') ||
+                root.querySelector('.qC_lC.qC_q1.qC_qE.qC_qV, .qE_lp.qE_ra'));
         } catch (_) {}
             return false;
     }
@@ -608,12 +625,7 @@
             return null;
         for (const label of labels) {
             const upper = String(label).trim().toUpperCase();
-            const nodes = [];
-            if (doc && doc.querySelectorAll) {
-                try { nodes.push(...doc.querySelectorAll('.v0_wa')); } catch (_) {}
-            }
-            if (nodes.length === 0)
-                nodes.push(...betCollectNodes('.v0_wa'));
+            const nodes = betCollectChipNodes(doc);
             for (const el of nodes) {
                 const text = (el.textContent || '').trim().toUpperCase();
                 if (text !== upper)
@@ -653,12 +665,7 @@
     }
 
     function betGetSelectedChipAmount(doc) {
-        const nodes = [];
-        if (doc && doc.querySelectorAll) {
-            try { nodes.push(...doc.querySelectorAll('.v0_wa')); } catch (_) {}
-        }
-        if (nodes.length === 0)
-            nodes.push(...betCollectNodes('.v0_wa'));
+        const nodes = betCollectChipNodes(doc);
         for (const el of nodes) {
             if (!betIsChipActive(el))
                 continue;
@@ -670,6 +677,13 @@
         try {
             const docAny = doc || document;
             const sel = [
+                'button[aria-pressed="true"] .wo_wq',
+                'button[aria-selected="true"] .wo_wq',
+                'button[aria-checked="true"] .wo_wq',
+                'button.lF_lN .wo_wq',
+                '.lF_lN .wo_wq',
+                '.active .wo_wq',
+                '.selected .wo_wq',
                 'button[aria-pressed="true"] .v0_wa',
                 'button[aria-selected="true"] .v0_wa',
                 'button[aria-checked="true"] .v0_wa',
@@ -690,12 +704,7 @@
     }
 
     function betCollectChipValues(doc) {
-        const nodes = [];
-        if (doc && doc.querySelectorAll) {
-            try { nodes.push(...doc.querySelectorAll('.v0_wa')); } catch (_) {}
-        }
-        if (nodes.length === 0)
-            nodes.push(...betCollectNodes('.v0_wa'));
+        const nodes = betCollectChipNodes(doc);
         const withBtn = nodes.filter(el => el && el.closest && el.closest('button,[role=button],a'));
         const list = (withBtn.length ? withBtn : nodes)
             .map(el => (el && el.textContent || '').trim())
@@ -875,12 +884,7 @@
         if (!label)
             return null;
         const upper = String(label).trim().toUpperCase();
-        const nodes = [];
-        if (doc && doc.querySelectorAll) {
-            try { nodes.push(...doc.querySelectorAll('.v0_wa')); } catch (_) {}
-        }
-        if (nodes.length === 0)
-            nodes.push(...betCollectNodes('.v0_wa'));
+        const nodes = betCollectChipNodes(doc);
         for (const el of nodes) {
             const text = (el.textContent || '').trim().toUpperCase();
             if (text === upper && betIsVisible(el))
@@ -938,7 +942,9 @@
     function betCountChips(root, side) {
         if (!root || !root.querySelectorAll)
             return 0;
-        const sel = side === 'player' ? '.kU_kZ .v0_wa' : '.kU_k0 .v0_wa';
+        const sel = side === 'player'
+            ? '.kU_kZ .wo_wq, .kU_kZ .v0_wa'
+            : '.kU_k0 .wo_wq, .kU_k0 .v0_wa';
         try {
             return root.querySelectorAll(sel).length;
         } catch (_) {
@@ -949,13 +955,15 @@
     function betIsAreaActive(root, side) {
         if (!root || !root.querySelector)
             return false;
-        const sel = side === 'player' ? '.qE_lp.qE_q1' : '.qE_lp.qE_ra';
+        const sel = side === 'player'
+            ? '.qC_lC.qC_q0.qC_qE.qC_qV, .qE_lp.qE_q1'
+            : '.qC_lC.qC_q1.qC_qE.qC_qV, .qE_lp.qE_ra';
         try {
             const el = root.querySelector(sel);
             if (!el)
                 return false;
             const cls = (typeof el.className === 'string') ? el.className : (el.getAttribute && el.getAttribute('class')) || '';
-            return String(cls || '').includes('qE_qF');
+            return /\b(qE_qF|qC_qH|active|selected|on|checked)\b/i.test(String(cls || ''));
         } catch (_) {
             return false;
         }
@@ -964,7 +972,9 @@
     function betHasChipValue(root, side) {
         if (!root || !root.querySelector)
             return false;
-        const sel = side === 'player' ? '.kU_kZ .v0_wa' : '.kU_k0 .v0_wa';
+        const sel = side === 'player'
+            ? '.kU_kZ .wo_wq, .kU_kZ .v0_wa'
+            : '.kU_k0 .wo_wq, .kU_k0 .v0_wa';
         try {
             const el = root.querySelector(sel);
             if (el) {
@@ -1215,12 +1225,11 @@
                     logBetWarn('root not found for tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue);
                 }
                 const targetTail = s === 'player' ? BET_PLAYER_TAIL : BET_BANKER_TAIL;
-                const selector = s === 'player' ? '.qE_lp.qE_q1' : '.qE_lp.qE_ra';
+                const selector = s === 'player'
+                    ? '.qC_lC.qC_q0.qC_qE.qC_qV, .qE_lp.qE_q1'
+                    : '.qC_lC.qC_q1.qC_qE.qC_qV, .qE_lp.qE_ra';
                 let target = root
-                    ? (betFindByTail(root, targetTail) ||
-                        (s === 'player'
-                            ? betFindFirstVisible(root, '.qE_lp.qE_q1')
-                            : betFindFirstVisible(root, '.qE_lp.qE_ra')))
+                    ? (betFindByTail(root, targetTail) || betFindFirstVisible(root, selector))
                     : null;
                 if (target && root && !betIsTargetInsideRoot(root, target)) {
                     target = null;
@@ -1498,13 +1507,32 @@
         // 2) Fallback: quét theo text "PP trực tuyến" trong header
         const candidates = Array.from(
                 document.querySelectorAll('span.desc, li, a, button, div'));
+        const normalizePPText = (value) => {
+            try {
+                return String(value || '')
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '')
+                    .toLowerCase()
+                    .trim();
+            } catch (_) {
+                return String(value || '').toLowerCase().trim();
+            }
+        };
+        const normalizePPValue = (value) => normalizePPText(value).replace(/\s+/g, ' ').trim();
+        const menu = document.querySelector('.dropdown_menu.LIVE');
+        if (menu) {
+            const liHit = Array.from(menu.querySelectorAll('li'))
+                .find(li => normalizePPValue(li.textContent || '') === 'pp truc tuyen');
+            if (liHit && isVisibleAndClickable(liHit))
+                return liHit;
+        }
 
         for (const el of candidates) {
-            const txt = (el.textContent || '').trim().toLowerCase();
+            const txt = normalizePPValue(el.textContent || '');
             if (!txt)
                 continue;
 
-            if (txt.includes('pp trực tuyến') && isVisibleAndClickable(el)) {
+            if (txt === 'pp truc tuyen' && isVisibleAndClickable(el)) {
                 return el;
         }
         }
@@ -1641,10 +1669,20 @@
             }
 
     const BACC_CARD_SELECTORS = [
+        'div[id^="TileHeight-"]',
+        'div.gC_gE.gC_gH.gC_gI',
         'div.hC_hE.hC_hH',
         'div.rC_rE',
         'div.rC_rS',
         'div.ec_F div.he_hf.he_hi'
+    ];
+
+    const BACC_CARD_HEURISTIC_SELECTORS = [
+        'div.pu_pv',
+        'div.uH_gQ',
+        'svg use[href^="#bigroad-"]',
+        'svg use[*|href^="#bigroad-"]',
+        'svg [href^="#bigroad-"]'
     ];
 
     function collectBaccarat3Cards() {
@@ -1669,6 +1707,19 @@
                 node.closest('div.jF_jJ');
             addCard(root);
             });
+        if (cards.length < 10) {
+            const rootSel = 'div[id^="TileHeight-"], div.gC_gE.gC_gH.gC_gI';
+            BACC_CARD_HEURISTIC_SELECTORS.forEach(sel => {
+                try {
+                    document.querySelectorAll(sel).forEach(node => {
+                        const root = node.closest(rootSel) ||
+                            resolveCardRoot(node) ||
+                            node.closest('div');
+                        addCard(root);
+                    });
+                } catch (_) {}
+            });
+        }
         cards.sort((a, b) => {
             const ra = rectOf(a);
             const rb = rectOf(b);
@@ -5401,8 +5452,32 @@
                             return el;
                     } catch (_) {}
                     }
-                return Array.from(document.querySelectorAll('span.desc, li, a, button, div'))
-                    .find(el => /pp\s*truc\s*tuyen/i.test(norm(el.textContent)));
+                const normalizePPText = (value) => {
+                    try {
+                        return String(value || '')
+                            .normalize('NFD')
+                            .replace(/[\u0300-\u036f]/g, '')
+                            .toLowerCase()
+                            .trim();
+                    } catch (_) {
+                        return String(value || '').toLowerCase().trim();
+                    }
+                };
+                const normalizePPValue = (value) => normalizePPText(value).replace(/\s+/g, ' ').trim();
+                const pickClickable = (el) =>
+                    (el && (el.closest('a,button,[role=button],li') || el)) || null;
+                const findExact = (root) => {
+                    if (!root || !root.querySelectorAll)
+                        return null;
+                    const nodes = Array.from(root.querySelectorAll('span.desc, li, a, button, div'));
+                    for (const el of nodes) {
+                        const txt = normalizePPValue(el.textContent || '');
+                        if (txt === 'pp truc tuyen')
+                            return pickClickable(el);
+                    }
+                    return null;
+                };
+                return findExact(document.querySelector('.dropdown_menu.LIVE')) || findExact(document);
             };
             const resolvePP_ByBroadText = () => {
                 const match = (el) => /pp\s*(live|truc\s*tuyen)|pragmatic\s*play|pragmatic/.test(norm(el.textContent));
@@ -6890,10 +6965,10 @@
                 pushIfScrollable(document.body);
                 const hints = document.querySelectorAll(
                     'div.X_Y, div.X_bb, div.bk_bl, div.kI_kO, div.kI_is, div.kI_m, div.ec_ee, ' +
-                    'div.tile-container-wrapper, div.he_hf, div.he_hi'
+                    'div.tile-container-wrapper, div.he_hf, div.he_hi, div.gC_gE.gC_gH.gC_gI, div[id^="TileHeight-"]'
                 );
                 hints.forEach(pushIfScrollable);
-                const card = document.querySelector('div.he_hf.he_hi');
+                const card = document.querySelector('div[id^="TileHeight-"], div.gC_gE.gC_gH.gC_gI, div.he_hf.he_hi');
                 let p = card;
                 for (let i = 0; i < 6 && p; i++) {
                     pushIfScrollable(p);
@@ -6901,28 +6976,30 @@
         }
             } catch (_) {}
 
-            let target = null;
-            let bestScore = 0;
-            for (const el of candidates) {
-                const score = (el.scrollHeight || 0) - (el.clientHeight || 0);
-                if (score > bestScore) {
-                    bestScore = score;
-                    target = el;
+            const uniq = Array.from(new Set(candidates));
+            if (!uniq.length) {
+                uniq.push(document.scrollingElement || document.documentElement || document.body);
             }
-            }
-            if (!target)
-                target = document.scrollingElement || document.documentElement || document.body;
 
-            try {
-                if (target)
-                    target.scrollTo({ top: 0, behavior });
-            } catch (_) {
-                try { if (target) target.scrollTop = 0; } catch (_) {}
-        }
-            try { window.scrollTo({ top: 0, behavior }); } catch (_) {}
+            const scrollAll = () => {
+                uniq.forEach(el => {
+                    if (!el)
+                        return;
+                    try { el.scrollTo({ top: 0, behavior }); }
+                    catch (_) { try { el.scrollTop = 0; } catch (_) {} }
+                });
+                try { window.scrollTo({ top: 0, behavior }); } catch (_) {}
+            };
+            scrollAll();
+            setTimeout(scrollAll, 120);
+            setTimeout(scrollAll, 350);
+            setTimeout(scrollAll, 700);
         }
 
         const PIN_SELECTORS = [
+            'div.rj_rk',
+            'div.rj_rk svg',
+            'div.rj_rk path',
             'div.rO_rP',
             'div.rJ_rK svg.ka_kb',
             'div.rJ_rK svg',
@@ -6967,6 +7044,9 @@
         function resolvePinButton(root) {
             if (!root)
             return null;
+            const pinRoot = root.querySelector('div.rj_rk');
+            if (pinRoot)
+                return pinRoot.querySelector('svg') || pinRoot;
             const pins = Array.from(root.querySelectorAll('div.rO_rP'));
             if (pins.length)
                 return pickTopRight(pins) || pins[0];
@@ -6989,8 +7069,27 @@
 
         function isPinActive(btn) {
             if (!btn)
-                return false;
+                return null;
             try {
+                const wrapNew = btn.closest && btn.closest('div.rj_rk');
+                if (wrapNew && wrapNew.classList && wrapNew.classList.contains('rj_ro'))
+                        return true;
+                const pinRoot = wrapNew || btn;
+                const outline = pinRoot.querySelector && pinRoot.querySelector('path.rj_rm');
+                if (outline) {
+                    const win = outline.ownerDocument && outline.ownerDocument.defaultView;
+                    const style = win && win.getComputedStyle ? win.getComputedStyle(outline) : null;
+                    const fill = (style && style.fill) || outline.getAttribute('fill') || '';
+                    const stroke = (style && style.stroke) || outline.getAttribute('stroke') || '';
+                    const fillNorm = String(fill || '').toLowerCase();
+                    const strokeNorm = String(stroke || '').toLowerCase();
+                    const isTransparent = (v) =>
+                        !v || v === 'none' || v === 'transparent' || v.includes('rgba(0, 0, 0, 0)');
+                    if (fillNorm && !isTransparent(fillNorm))
+                        return true;
+                    if (strokeNorm && (strokeNorm.includes('rgb(255, 255, 255)') || strokeNorm.includes('#fff') || strokeNorm.includes('white')))
+                        return false;
+                }
                 if (btn.classList && btn.classList.contains('rO_rT'))
                         return true;
                 const wrap = btn.closest && btn.closest('div.rO_rP');
@@ -7006,7 +7105,7 @@
                 btn.closest && (btn.closest('.qC_qE, .qC_qF, .qC_qH, .qC_qQ')?.className || '')
             ].filter(Boolean).join(' ');
             if (!clsSources)
-                return false;
+                return null;
             return /\b(active|selected|on|checked|qC_qH)\b/i.test(clsSources);
                     }
 
@@ -7120,6 +7219,10 @@
         }
             const desired = !!shouldPin;
             const current = isPinActive(btn);
+            if (current == null) {
+                schedulePinRetry(roomId, desired);
+                return;
+            }
             if (current === desired) {
                 clearPinRetry(roomId);
                 setPinSync(roomId, desired);
@@ -7159,6 +7262,9 @@
 
         function getPinElementFromCard(card) {
             if (!card) return null;
+            const pinRoot = card.querySelector('div.rj_rk');
+            if (pinRoot)
+                return pinRoot.querySelector('svg') || pinRoot;
             const pins = Array.from(card.querySelectorAll('div.rO_rP'));
             if (pins.length)
                 return pickTopRight(pins) || pins[0];
@@ -7168,7 +7274,22 @@
         function collectPinnedInfo() {
             const list = [];
             const seen = new Set();
-            const cards = Array.from(document.querySelectorAll('div.he_hf.he_hi'));
+            const cards = [];
+            const cardSeen = new WeakSet();
+            const addCard = (card) => {
+                if (!card || cardSeen.has(card))
+                    return;
+                cardSeen.add(card);
+                cards.push(card);
+            };
+            BACC_CARD_SELECTORS.forEach(sel => {
+                document.querySelectorAll(sel).forEach(card => {
+                    addCard(card);
+                });
+            });
+            document.querySelectorAll('div.he_hf.he_hi').forEach(card => {
+                addCard(card);
+            });
             let pinCount = 0;
             for (const card of cards) {
                 const pin = getPinElementFromCard(card);
@@ -7178,7 +7299,8 @@
                 const id = getCardId(card) || title;
                 if (!id)
                     continue;
-                if (pin.classList && pin.classList.contains('rO_rT')) {
+                const active = isPinActive(pin);
+                if (active === true) {
                     const key = id.toLowerCase();
                     if (!seen.has(key)) {
                         seen.add(key);
@@ -8532,19 +8654,12 @@
         function findCountdownNode(root) {
             if (!root)
                 return null;
-            const selectors = [
-                'span.yI_yL.yI_yM',
-                'span.yv_yy.yv_yz',
-                'span.yv_yy.yv_yB'
-            ];
-            for (const sel of selectors) {
-                try {
-                    const node = root.querySelector(sel);
-                    if (node && parseCountdownValue(node.textContent) != null)
-                        return node;
-                } catch (_) {}
-        }
-                return null;
+            try {
+                const node = root.querySelector('span.ya_ye.ya_yf');
+                if (node && parseCountdownValue(node.textContent) != null)
+                    return node;
+            } catch (_) {}
+            return null;
         }
 
         function collectBetAreas(root) {
@@ -8571,14 +8686,14 @@
                 const label = (el.textContent || fallbackLabel || '').trim() || fallbackLabel;
             return {
                     label,
-                    active: cls.includes('qE_qF'),
+                    active: /\b(qE_qF|qC_qH|active|selected|on|checked)\b/i.test(String(cls || '')),
                     visible
             };
             };
             return {
-                player: readArea('.qE_lp.qE_q1', 'Người Chơi'),
+                player: readArea('.qC_lC.qC_q0.qC_qE.qC_qV, .qE_lp.qE_q1', 'Người Chơi'),
                 tie: readArea('.qE_lp.qE_qO', 'Hòa'),
-                banker: readArea('.qE_lp.qE_ra', 'Nhà Cái')
+                banker: readArea('.qC_lC.qC_q1.qC_qE.qC_qV, .qE_lp.qE_ra', 'Nhà Cái')
             };
                     }
 
@@ -8616,8 +8731,8 @@
             return '';
             };
             return {
-                player: readChip('.kU_kZ .v0_wa'),
-                banker: readChip('.kU_k0 .v0_wa')
+                player: readChip('.kU_kZ .wo_wq, .kU_kZ .v0_wa'),
+                banker: readChip('.kU_k0 .wo_wq, .kU_k0 .v0_wa')
             };
         }
 

@@ -625,12 +625,14 @@
                                         Grid.Row="3"
                                         Grid.Column="0"
                                         Style="{StaticResource CapsLabel}"
-                                        Text="MÃ XÁC MINH" />
+                                        Text="MÃ XÁC MINH" 
+                                        Visibility="Collapsed" />
                                     <TextBox
                                         x:Name="TxtVerify"
                                         Grid.Row="3"
                                         Grid.Column="1"
-                                        TextChanged="TxtVerify_TextChanged" />
+                                        TextChanged="TxtVerify_TextChanged" 
+                                        Visibility="Collapsed" />
 
                                     <!--  CHECKBOXES  -->
                                     <TextBlock
