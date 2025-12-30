@@ -1083,7 +1083,7 @@ Ví dụ không hợp lệ:
         private void Log(string msg)
         {
             var line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
-            EnqueueUi(line);
+            //EnqueueUi(line);
             EnqueueFile(line);
         }
 
@@ -2505,11 +2505,11 @@ Ví dụ không hợp lệ:
                             if (!TryPrepareWebMessage(e, out var display, out parsedDoc))
                             {
                                 if (!string.IsNullOrWhiteSpace(display))
-                                    EnqueueUi($"[JS] {display}");
+                                    //EnqueueUi($"[JS] {display}");
                                 return;
                             }
 
-                            EnqueueUi($"[JS] {display}"); // chỉ hiển thị UI, không ghi ra file
+                            //EnqueueUi($"[JS] {display}"); // chỉ hiển thị UI, không ghi ra file
                             var root = parsedDoc.RootElement.Clone();
 
                                 if (root.TryGetProperty("overlay", out var overlayEl) &&

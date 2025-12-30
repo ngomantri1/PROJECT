@@ -1,0 +1,12 @@
+Tốt, log v10 xác nhận DOM mới đúng với selector:
+
+Player: div.qC_lC.qC_q0.qC_qV (data-betcode=0)
+Banker: div.qC_lC.qC_q1.qC_qV (data-betcode=1)
+Tie: div.qC_lC.qC_qN.qC_qV (data-betcode=2)
+Mình đã cập nhật js_home_v2.js để dùng đúng selector này (không đổi nghiệp vụ). Những chỗ đã chỉnh:
+
+betFindTargetByTableId
+betHasBetTargets
+__cw_bet (selector vùng cược)
+betIsAreaActive
+collectBetAreas

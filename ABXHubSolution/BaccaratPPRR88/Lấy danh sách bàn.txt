@@ -1,0 +1,63 @@
+(() => {
+  function norm(s){return String(s||'').replace(/\s+/g,' ').trim();}
+  function cls(el){return (el && el.className && typeof el.className==='string') ? el.className.trim() : '';}
+  function fmt(el){
+    if (!el) return 'null';
+    const r = el.getBoundingClientRect ? el.getBoundingClientRect() : {left:0,top:0,width:0,height:0};
+    return `${el.tagName}#${el.id||''}.${cls(el).replace(/\s+/g,'.')} rect=${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`;
+  }
+  function modal(text){
+    let box = document.getElementById('__abx_modal');
+    if (box) box.remove();
+    const wrap = document.createElement('div');
+    wrap.id = '__abx_modal';
+    wrap.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2147483647;background:#0b1220;color:#fff;border:1px solid #334155;border-radius:10px;padding:10px;max-width:560px;max-height:70vh;overflow:auto;font:12px/1.4 Consolas,monospace';
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'width:540px;height:320px;background:#0f172a;color:#e2e8f0;border:1px solid #334155';
+    const btn = document.createElement('button');
+    btn.textContent = 'Copy';
+    btn.style.cssText = 'margin-top:6px;padding:6px 10px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer';
+    btn.onclick = () => { ta.select(); document.execCommand('copy'); };
+    wrap.appendChild(ta);
+    wrap.appendChild(btn);
+    document.body.appendChild(wrap);
+  }
+
+  function findCardName(card){
+    const sels = [
+      '.sb_ss',
+      '.sb_sr span',
+      '.mb_mc .sb_ss',
+      '.mb_mc span',
+      '.sb_sc span'
+    ];
+    for (const sel of sels){
+      const n = card.querySelector(sel);
+      if (n && norm(n.textContent)) return norm(n.textContent);
+    }
+    return '';
+  }
+
+  const docs = [document];
+  Array.from(document.querySelectorAll('iframe')).forEach(f=>{
+    try{ if (f.contentDocument) docs.push(f.contentDocument); }catch(_){}
+  });
+
+  const seen = new Set();
+  const lines = [];
+  lines.push('CARD LIST');
+  docs.forEach((doc, di) => {
+    const cards = Array.from(doc.querySelectorAll('div[id^="TileHeight-"]'));
+    if (!cards.length) return;
+    cards.forEach((card) => {
+      if (!card || !card.id || seen.has(card.id)) return;
+      seen.add(card.id);
+      const name = findCardName(card);
+      lines.push(`${card.id} | name="${name}" | ${fmt(card)}`);
+    });
+  });
+
+  if (!lines.length) lines.push('No TileHeight cards found.');
+  modal(lines.join('\n'));
+})();

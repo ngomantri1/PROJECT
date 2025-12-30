@@ -376,8 +376,8 @@
     function betFindTargetByTableId(id, side) {
         const s = betNormalizeSide(side);
         const selector = (s === 'player')
-            ? '.qC_lC.qC_q0.qC_qE.qC_qV, .qE_lp.qE_q1'
-            : (s === 'banker' ? '.qC_lC.qC_q1.qC_qE.qC_qV, .qE_lp.qE_ra' : '');
+            ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1'
+            : (s === 'banker' ? '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra' : '');
         if (!selector)
             return null;
         const candidates = betGetTableIdCandidates(id);
@@ -451,8 +451,8 @@
         if (!root || !root.querySelector)
             return false;
         try {
-            return !!(root.querySelector('.qC_lC.qC_q0.qC_qE.qC_qV, .qE_lp.qE_q1') ||
-                root.querySelector('.qC_lC.qC_q1.qC_qE.qC_qV, .qE_lp.qE_ra'));
+            return !!(root.querySelector('.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1') ||
+                root.querySelector('.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra'));
         } catch (_) {}
             return false;
     }
@@ -555,6 +555,41 @@
         }
         return nodes.length ? nodes[0] : null;
         }
+
+    function betFindTargetByBetcode(root, side) {
+        if (!root || !root.querySelector)
+            return null;
+        const s = betNormalizeSide(side);
+        const code = s === 'player' ? '0' : (s === 'banker' ? '1' : (s === 'tie' ? '2' : ''));
+        if (!code)
+            return null;
+        let el = null;
+        try { el = root.querySelector(`[data-betcode="${code}"]`); } catch (_) {}
+        if (el && betIsVisible(el))
+            return el;
+        const cls = s === 'player'
+            ? '.qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0'
+            : (s === 'banker' ? '.qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1' : '.qC_lC.qC_qN.qC_qV, .qC_lC.qC_qN');
+        try { el = root.querySelector(cls); } catch (_) {}
+        return el || null;
+    }
+
+    function betIsBetLabel(el) {
+        if (!el || !el.getAttribute)
+            return false;
+        if (el.getAttribute('data-betcode'))
+            return true;
+        try {
+            return !!(el.classList && el.classList.contains('qC_lC'));
+        } catch (_) {}
+        return false;
+    }
+
+    function betResolveBetClickTarget(target, root) {
+        if (!target)
+            return null;
+        return target;
+    }
 
     function betNormalizeSide(side) {
         const raw = String(side || '').trim().toUpperCase();
@@ -749,6 +784,10 @@
             return false;
         const clickMode = () => {
             const role = (target.getAttribute && target.getAttribute('role')) || '';
+            if (target.classList && target.classList.contains('qC_lC'))
+                return 'point';
+            if (target.getAttribute && target.getAttribute('data-betcode'))
+                return 'point';
             return (target.tagName === 'BUTTON' || role === 'button') ? 'click' : 'pointer';
         };
         const warn = (msg) => {
@@ -956,14 +995,17 @@
         if (!root || !root.querySelector)
             return false;
         const sel = side === 'player'
-            ? '.qC_lC.qC_q0.qC_qE.qC_qV, .qE_lp.qE_q1'
-            : '.qC_lC.qC_q1.qC_qE.qC_qV, .qE_lp.qE_ra';
+            ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1'
+            : '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra';
         try {
             const el = root.querySelector(sel);
             if (!el)
                 return false;
-            const cls = (typeof el.className === 'string') ? el.className : (el.getAttribute && el.getAttribute('class')) || '';
-            return /\b(qE_qF|qC_qH|active|selected|on|checked)\b/i.test(String(cls || ''));
+            const container = el.closest('.yW_yX, .lg_lh, .lg_ll, .lg_lm, .lg_ln, .lg_lr, .lg_lu, .lg_lx');
+            const clsEl = (typeof el.className === 'string') ? el.className : (el.getAttribute && el.getAttribute('class')) || '';
+            const clsContainer = container ? ((typeof container.className === 'string') ? container.className : (container.getAttribute && container.getAttribute('class')) || '') : '';
+            const cls = String(clsEl || '') + ' ' + String(clsContainer || '');
+            return /\b(qE_qF|qC_qH|active|selected|on|checked)\b/i.test(cls);
         } catch (_) {
             return false;
         }
@@ -1091,10 +1133,21 @@
         if (!el)
             return false;
         try {
-            const target = el.closest('button,[role=button],a') || el;
+            const isBetLabel = betIsBetLabel(el);
+            const target = isBetLabel ? el : (el.closest('button,[role=button],a') || el);
+            const inCard = !!(target.closest && (target.closest('div[id^="TileHeight-"]') || target.closest('div.gC_gE.gC_gH.gC_gI')));
+            if (isBetLabel) {
+                return betDispatchClickAtPoint(target);
+            }
+            if (inCard && typeof peelAndClick === 'function') {
+                try { peelAndClick(target, { holdMs: 160 }); return true; } catch (_) {}
+            }
             const doc = target.ownerDocument || document;
             const win = doc.defaultView || window;
             const kind = (mode || 'click').toLowerCase();
+            if (kind === 'point') {
+                return betDispatchClickAtPoint(target);
+            }
             if (kind === 'click') {
                 if (typeof target.click === 'function') {
                     target.click();
@@ -1152,6 +1205,81 @@
             return true;
         } catch (_) {}
         return false;
+    }
+
+    function betDispatchClickAtPoint(target) {
+        if (!target || !target.getBoundingClientRect)
+            return false;
+        const doc = target.ownerDocument || document;
+        const win = doc.defaultView || window;
+        const r = target.getBoundingClientRect();
+        if (!(r.width > 0 && r.height > 0))
+            return false;
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const peeled = [];
+        const peel = () => {
+            try {
+                const top = doc.elementFromPoint(cx, cy);
+                if (!top)
+                    return true;
+                if (top === target || target.contains(top))
+                    return true;
+                const prev = top.style.pointerEvents;
+                top.style.setProperty('pointer-events', 'none', 'important');
+                peeled.push({ node: top, prev });
+                return false;
+            } catch (_) {}
+            return true;
+        };
+        let guard = 18;
+        while (guard-- > 0) {
+            if (peel())
+                break;
+        }
+        const topNow = doc.elementFromPoint(cx, cy) || target;
+        try {
+            if (typeof win.PointerEvent === 'function') {
+                const evDown = new win.PointerEvent('pointerdown', {
+                    bubbles: true,
+                    cancelable: true,
+                    view: win,
+                    clientX: cx,
+                    clientY: cy,
+                    pointerId: 1,
+                    pointerType: 'mouse',
+                    isPrimary: true,
+                    button: 0,
+                    buttons: 1
+                });
+                const evUp = new win.PointerEvent('pointerup', {
+                    bubbles: true,
+                    cancelable: true,
+                    view: win,
+                    clientX: cx,
+                    clientY: cy,
+                    pointerId: 1,
+                    pointerType: 'mouse',
+                    isPrimary: true,
+                    button: 0,
+                    buttons: 0
+                });
+                topNow.dispatchEvent(evDown);
+                topNow.dispatchEvent(evUp);
+            }
+            const md = new win.MouseEvent('mousedown', { bubbles: true, cancelable: true, view: win, clientX: cx, clientY: cy, button: 0, buttons: 1 });
+            const mu = new win.MouseEvent('mouseup', { bubbles: true, cancelable: true, view: win, clientX: cx, clientY: cy, button: 0, buttons: 0 });
+            const mc = new win.MouseEvent('click', { bubbles: true, cancelable: true, view: win, clientX: cx, clientY: cy, button: 0, buttons: 0 });
+            topNow.dispatchEvent(md);
+            topNow.dispatchEvent(mu);
+            topNow.dispatchEvent(mc);
+        } finally {
+            for (let i = peeled.length - 1; i >= 0; i--) {
+                const item = peeled[i];
+                try { item.node.style.pointerEvents = item.prev; } catch (_) {}
+            }
+        }
+        return true;
     }
 
     function betShowToast(msg, ttlMs) {
@@ -1226,10 +1354,10 @@
                 }
                 const targetTail = s === 'player' ? BET_PLAYER_TAIL : BET_BANKER_TAIL;
                 const selector = s === 'player'
-                    ? '.qC_lC.qC_q0.qC_qE.qC_qV, .qE_lp.qE_q1'
-                    : '.qC_lC.qC_q1.qC_qE.qC_qV, .qE_lp.qE_ra';
+                    ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1'
+                    : '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra';
                 let target = root
-                    ? (betFindByTail(root, targetTail) || betFindFirstVisible(root, selector))
+                    ? (betFindTargetByBetcode(root, s) || betFindByTail(root, targetTail) || betFindFirstVisible(root, selector))
                     : null;
                 if (target && root && !betIsTargetInsideRoot(root, target)) {
                     target = null;
@@ -1237,7 +1365,7 @@
                 if (target && !trustedRoot && !betTargetMatchesAnyId(target, idCandidates)) {
                     target = null;
                 }
-                if (!target) {
+                if (!target && !root) {
                     target = betFindTargetByTableId(id, s);
                 }
                 if (!target) {
@@ -1248,11 +1376,7 @@
                 if (!target) {
                     logBetWarn('target not found for tableId=' + id + ' side=' + sideLabel);
                 } else {
-                    const clickTarget =
-                        target.closest('.kU_kV') ||
-                        target.closest('.zv_zw') ||
-                        target.closest('.uU_g0') ||
-                        target;
+                    const clickTarget = betResolveBetClickTarget(target, root) || target;
                     const planResult = betBuildChipPlan(amountValue, rootDoc);
                     if (!planResult.plan.length || planResult.remaining > 0) {
                         logBetWarn('cannot build chip plan amount=' + amountValue + ' remaining=' + planResult.remaining);
@@ -8701,9 +8825,9 @@
             };
             };
             return {
-                player: readArea('.qC_lC.qC_q0.qC_qE.qC_qV, .qE_lp.qE_q1', 'Người Chơi'),
-                tie: readArea('.qE_lp.qE_qO', 'Hòa'),
-                banker: readArea('.qC_lC.qC_q1.qC_qE.qC_qV, .qE_lp.qE_ra', 'Nhà Cái')
+                player: readArea('.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1', 'Người Chơi'),
+                tie: readArea('.pu_pv .qC_lC.qC_qN.qC_qV, .qC_lC.qC_qN.qC_qV, .pu_pv [data-betcode="2"].qC_lC, [data-betcode="2"].qC_lC, .qE_lp.qE_qO', 'Hòa'),
+                banker: readArea('.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra', 'Nhà Cái')
             };
                     }
 
