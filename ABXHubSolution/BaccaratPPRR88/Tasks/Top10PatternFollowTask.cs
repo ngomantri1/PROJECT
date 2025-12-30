@@ -143,9 +143,12 @@ namespace BaccaratPPRR88.Tasks
                         var stake0 = money.GetStakeForThisBet();
                         await PlaceBet(ctx, fallbackSide, stake0, ct);
 
-                        bool win0 = await WaitRoundFinishAndJudge(ctx, fallbackSide, baseSession, ct);
-                        await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win0 ? stake0 : -stake0));
-                        money.OnRoundResult(win0);
+                        bool? win0 = await WaitRoundFinishAndJudge(ctx, fallbackSide, baseSession, ct);
+                        if (win0.HasValue)
+                        {
+                            await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win0.Value ? stake0 : -stake0));
+                            money.OnRoundResult(win0.Value);
+                        }
 
                         // Cập nhật lại list 10 mới về
                         var s2 = ctx.GetSnap?.Invoke();
@@ -180,8 +183,11 @@ namespace BaccaratPPRR88.Tasks
                 await PlaceBet(ctx, side, stake, ct);
 
                 // Chờ KẾT QUẢ: WaitRoundFinishAndJudge so sánh phiên
-                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
+                bool? win = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
+                if (win.HasValue)
+                {
+                    await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win.Value ? stake : -stake));
+                }
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {
                     // cần biến local để truyền ref
@@ -189,13 +195,16 @@ namespace BaccaratPPRR88.Tasks
                     int chainStep = ctx.MoneyChainStep;
                     double chainProfit = ctx.MoneyChainProfit;
 
-                    MoneyHelper.UpdateAfterRoundMultiChain(
-                        ctx.StakeChains,
-                        ctx.StakeChainTotals,
-                        ref chainIndex,
-                        ref chainStep,
-                        ref chainProfit,
-                        win);
+                    if (win.HasValue)
+                    {
+                        MoneyHelper.UpdateAfterRoundMultiChain(
+                            ctx.StakeChains,
+                            ctx.StakeChainTotals,
+                            ref chainIndex,
+                            ref chainStep,
+                            ref chainProfit,
+                            win.Value);
+                    }
 
                     // gán ngược lại vào context
                     ctx.MoneyChainIndex = chainIndex;
@@ -205,7 +214,10 @@ namespace BaccaratPPRR88.Tasks
                 else
                 {
                     // 4 kiểu cũ vẫn đi qua MoneyManager
-                    money.OnRoundResult(win);
+                    if (win.HasValue)
+                    {
+                        money.OnRoundResult(win.Value);
+                    }
                 }
 
                 // Sau khi có kết quả: cập nhật PB50 & +1 cho "10 mới về" (41..50)
@@ -220,7 +232,7 @@ namespace BaccaratPPRR88.Tasks
 
                 // Nếu THẮNG → được chuyển chuỗi mới nếu count(new) >= count(current)
                 bool switched = false;
-                if (win)
+                if (win.HasValue && win.Value)
                 {
                     var (bestPat, bestCnt) = PickBest(counts);
                     if (!string.IsNullOrEmpty(bestPat) && (bestCnt >= curCount) && bestPat != curPattern)

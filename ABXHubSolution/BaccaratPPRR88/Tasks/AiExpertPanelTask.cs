@@ -207,10 +207,20 @@ namespace BaccaratPPRR88.Tasks
                 // Chấm điểm thực tế theo cửa đã đặt
                 var snapBefore = ctx.GetSnap();
                 string baseSession = snapBefore?.session ?? string.Empty;
-                bool ok = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
+                bool? ok = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
+                if (!ok.HasValue)
+                {
+                    Log(ctx, "[AI15] RESULT ok=TIE => skip training/profit update");
+                    st.lastPanelPick = panelPick;
+                    st.lastPlacedPick = placedPick;
+                    st.lastOk = null;
+                    continue;
+                }
+
+                bool okValue = ok.Value;
 
                 // P&L theo kết quả thực
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(ok ? stake : -stake));
+                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(okValue ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {
                     // cần biến local để truyền ref
@@ -224,7 +234,7 @@ namespace BaccaratPPRR88.Tasks
                         ref chainIndex,
                         ref chainStep,
                         ref chainProfit,
-                        ok);
+                        okValue);
 
                     // gán ngược lại vào context
                     ctx.MoneyChainIndex = chainIndex;
@@ -234,18 +244,18 @@ namespace BaccaratPPRR88.Tasks
                 else
                 {
                     // 4 kiểu cũ vẫn đi qua MoneyManager
-                    money.OnRoundResult(ok);
+                    money.OnRoundResult(okValue);
                 }
 
                 // TÍNH panelWin (giả lập) và trainingWin (cho học)
                 // trueWinSide: 0/1 là P/B thực tế thắng
-                int trueWinSide = ok ? placedPick : 1 - placedPick;
+                int trueWinSide = okValue ? placedPick : 1 - placedPick;
                 bool panelWin = (trueWinSide == panelPick);
 
                 bool trainingWin = panelWin;       // HỌC THEO PANEL GỐC (GIẢ LẬP)
                 int trainingPick = panelPick;     // pick dùng để học
 
-                Log(ctx, $"[AI15] RESULT ok={(ok ? "WIN" : "LOSE")} | trueWin={(trueWinSide == 0 ? "P" : "B")} | panelPick={(panelPick == 0 ? "P" : "B")} -> panelWin={(panelWin ? "WIN" : "LOSE")} | trainingWin={(trainingWin ? "WIN" : "LOSE")}");
+                Log(ctx, $"[AI15] RESULT ok={(okValue ? "WIN" : "LOSE")} | trueWin={(trueWinSide == 0 ? "P" : "B")} | panelPick={(panelPick == 0 ? "P" : "B")} -> panelWin={(panelWin ? "WIN" : "LOSE")} | trainingWin={(trainingWin ? "WIN" : "LOSE")}");
 
                 // Cập nhật trạng thái học/guard/ewma theo trainingWin
                 UpdateAfterTraining(st, trainingWin, trainingPick);
@@ -257,7 +267,7 @@ namespace BaccaratPPRR88.Tasks
                 // Lưu để log vòng tới
                 st.lastPanelPick = panelPick;
                 st.lastPlacedPick = placedPick;
-                st.lastOk = ok;
+                st.lastOk = okValue;
             }
         }
 

@@ -112,8 +112,8 @@ namespace BaccaratPPRR88.Tasks
             switch (strategyId ?? "IncreaseWhenLose")
             {
                 case "IncreaseWhenLose":
-                    if (win == true || win == null) step = 0;
-                    else step = (step + 1) % n;
+                    if (win == true) step = 0;
+                    else if (win == false) step = (step + 1) % n;
                     v2DoublePhase = false;
                     break;
 
@@ -139,8 +139,8 @@ namespace BaccaratPPRR88.Tasks
                     break;
 
                 case "ReverseFibo":
-                    if (win == true || win == null) step = 0;
-                    else step = Math.Min(step + 1, n - 1); // dồn lên mức cao nhất rồi giữ nguyên
+                    if (win == true) step = 0;
+                    else if (win == false) step = Math.Min(step + 1, n - 1); // dồn lên mức cao nhất rồi giữ nguyên
                     v2DoublePhase = false;
                     break;
 
@@ -171,8 +171,8 @@ namespace BaccaratPPRR88.Tasks
                     }
 
                 default:
-                    if (win == true || win == null) step = 0;
-                    else step = (step + 1) % n;
+                    if (win == true) step = 0;
+                    else if (win == false) step = (step + 1) % n;
                     v2DoublePhase = false;
                     break;
             }

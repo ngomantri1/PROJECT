@@ -70,8 +70,9 @@ namespace BaccaratPPRR88.Tasks
                 ctx.Log?.Invoke($"[StateTrans] next={side}, stake={stake:N0}");
 
                 await PlaceBet(ctx, side, stake, ct);
-                bool win = await WaitRoundFinishAndJudge(ctx, side, snap?.session ?? "", ct);
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
+                bool? win = await WaitRoundFinishAndJudge(ctx, side, snap?.session ?? "", ct);
+                if (win.HasValue)
+                    await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win.Value ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {
                     // cần biến local để truyền ref
@@ -79,13 +80,16 @@ namespace BaccaratPPRR88.Tasks
                     int chainStep = ctx.MoneyChainStep;
                     double chainProfit = ctx.MoneyChainProfit;
 
-                    MoneyHelper.UpdateAfterRoundMultiChain(
-                        ctx.StakeChains,
-                        ctx.StakeChainTotals,
-                        ref chainIndex,
-                        ref chainStep,
-                        ref chainProfit,
-                        win);
+                    if (win.HasValue)
+                    {
+                        MoneyHelper.UpdateAfterRoundMultiChain(
+                            ctx.StakeChains,
+                            ctx.StakeChainTotals,
+                            ref chainIndex,
+                            ref chainStep,
+                            ref chainProfit,
+                            win.Value);
+                    }
 
                     // gán ngược lại vào context
                     ctx.MoneyChainIndex = chainIndex;
@@ -95,7 +99,8 @@ namespace BaccaratPPRR88.Tasks
                 else
                 {
                     // 4 kiểu cũ vẫn đi qua MoneyManager
-                    money.OnRoundResult(win);
+                    if (win.HasValue)
+                        money.OnRoundResult(win.Value);
                 }
             }
         }

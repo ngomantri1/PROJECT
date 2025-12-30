@@ -177,8 +177,9 @@ namespace BaccaratPPRR88.Tasks
                 await PlaceBet(ctx, side, stake, ct);
 
                 // 5) Kết quả ván
-                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
+                bool? win = await WaitRoundFinishAndJudge(ctx, side, baseSession, ct);
+                if (win.HasValue)
+                    await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win.Value ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {
                     // cần biến local để truyền ref
@@ -186,13 +187,16 @@ namespace BaccaratPPRR88.Tasks
                     int chainStep = ctx.MoneyChainStep;
                     double chainProfit = ctx.MoneyChainProfit;
 
-                    MoneyHelper.UpdateAfterRoundMultiChain(
-                        ctx.StakeChains,
-                        ctx.StakeChainTotals,
-                        ref chainIndex,
-                        ref chainStep,
-                        ref chainProfit,
-                        win);
+                    if (win.HasValue)
+                    {
+                        MoneyHelper.UpdateAfterRoundMultiChain(
+                            ctx.StakeChains,
+                            ctx.StakeChainTotals,
+                            ref chainIndex,
+                            ref chainStep,
+                            ref chainProfit,
+                            win.Value);
+                    }
 
                     // gán ngược lại vào context
                     ctx.MoneyChainIndex = chainIndex;
@@ -202,11 +206,15 @@ namespace BaccaratPPRR88.Tasks
                 else
                 {
                     // 4 kiểu cũ vẫn đi qua MoneyManager
-                    money.OnRoundResult(win);
+                    if (win.HasValue)
+                        money.OnRoundResult(win.Value);
                 }
 
                 // 6) cập nhật loss streak
-                _lossStreak = win ? 0 : _lossStreak + 1;
+                if (win.HasValue)
+                {
+                    _lossStreak = win.Value ? 0 : _lossStreak + 1;
+                }
 
                 // 7) Học online từ kết quả thực
                 var postSnap = ctx.GetSnap?.Invoke();
@@ -228,7 +236,10 @@ namespace BaccaratPPRR88.Tasks
                 }
 
                 // 8) Cập nhật thích nghi (episode escalate, auto-decay, persist)
-                OnJudgedAndAdapt(ctx, win, undecidable);
+                if (win.HasValue)
+                {
+                    OnJudgedAndAdapt(ctx, win.Value, undecidable);
+                }
             }
         }
 

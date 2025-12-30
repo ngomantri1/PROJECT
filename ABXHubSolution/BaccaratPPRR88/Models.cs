@@ -25,6 +25,7 @@ namespace BaccaratPPRR88
         public double? prog { get; set; }
         public CwTotals totals { get; set; }
         public string seq { get; set; }
+        public string? last { get; set; }
         public string? niSeq { get; set; }
         public long ts { get; set; }
         public string side { get; set; }

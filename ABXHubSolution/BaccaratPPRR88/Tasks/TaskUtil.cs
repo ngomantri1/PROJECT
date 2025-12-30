@@ -42,8 +42,10 @@ namespace BaccaratPPRR88.Tasks
             return new string(a);
         }
 
-        public static bool IsWin(string betSide, char lastDigit)
+        public static bool? IsWin(string betSide, char lastDigit)
         {
+            if (lastDigit == 'T' || lastDigit == 't')
+                return null;
             var lastSide = ParityCharToSide(DigitToParity(lastDigit));
             return string.Equals(betSide, lastSide, StringComparison.OrdinalIgnoreCase);
         }
@@ -181,7 +183,7 @@ namespace BaccaratPPRR88.Tasks
 
 
 
-        public static async Task<bool> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSession, CancellationToken ct)
+        public static async Task<bool?> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSession, CancellationToken ct)
         {
             // chờ seq tăng độ dài → có kết quả mới
             while (true)
@@ -193,8 +195,19 @@ namespace BaccaratPPRR88.Tasks
                 var curSession = s?.session ?? "";
                 if (!string.Equals(curSession, baseSession, StringComparison.Ordinal))
                 {
-                    bool win = IsWin(betSide, curSeq[^1]);
-                    await ctx.UiDispatcher.InvokeAsync(() => ctx.UiWinLoss?.Invoke(win));
+                    char lastDigit = '\0';
+                    var lastToken = s?.last;
+                    if (!string.IsNullOrWhiteSpace(lastToken))
+                        lastDigit = lastToken[0];
+                    else if (curSeq.Length > 0)
+                        lastDigit = curSeq[^1];
+
+                    if (lastDigit == '\0')
+                        return null;
+
+                    bool? win = IsWin(betSide, lastDigit);
+                    if (win.HasValue)
+                        await ctx.UiDispatcher.InvokeAsync(() => ctx.UiWinLoss?.Invoke(win.Value));
                     // cộng tiền lũy kế: +amount khi thắng, -amount khi thua (đơn giản)
                     //TaskUtil.UiRoundAllowNextReset();
                     return win;
