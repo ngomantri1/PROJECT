@@ -9607,6 +9607,42 @@
                 }
                 }
 
+        // Keep last bet info during dealing when DOM temporarily hides values.
+        function resolveHeldBetInfo(st, incoming, historySig, holdKey, holdSigKey) {
+            const normalize = (value) => {
+                if (value === null || value === undefined)
+                    return '';
+                return String(value).trim();
+            };
+            const normalized = {
+                player: normalize(incoming && incoming.player),
+                banker: normalize(incoming && incoming.banker)
+            };
+            const hasIncoming = !!(normalized.player || normalized.banker);
+            const hold = (st && st[holdKey]) ? st[holdKey] : { player: '', banker: '' };
+            const holdSig = (st && st[holdSigKey]) ? st[holdSigKey] : '';
+            if (hasIncoming) {
+                const merged = {
+                    player: normalized.player || hold.player || '',
+                    banker: normalized.banker || hold.banker || ''
+                };
+                if (st) {
+                    st[holdKey] = merged;
+                    st[holdSigKey] = historySig || '';
+                }
+                return merged;
+            }
+            if ((historySig || '') === holdSig && (hold.player || hold.banker)) {
+                return hold;
+            }
+            const cleared = { player: '', banker: '' };
+            if (st) {
+                st[holdKey] = cleared;
+                st[holdSigKey] = historySig || '';
+            }
+            return cleared;
+        }
+
         function formatWinLossTotals(st) {
             const wins = Math.max(0, st && st.winCount || 0);
             const losses = Math.max(0, st && st.lossCount || 0);
@@ -9667,6 +9703,8 @@
             const betExtra = data.betExtra || null;
             const betChips = data.betChips || null;
             const historySig = data.historySig || '';
+            const displayBetChips = resolveHeldBetInfo(st, betChips, historySig, 'lastBetChipsHold', 'lastBetChipsHoldSig');
+            const displayBetExtra = resolveHeldBetInfo(st, betExtra, historySig, 'lastBetExtraHold', 'lastBetExtraHoldSig');
             const winLoseText = deriveWinLoseValue(text);
             if (view.winLoseValue && st.lastWinLoseText !== winLoseText) {
                 view.winLoseValue.textContent = winLoseText;
@@ -9737,17 +9775,17 @@
         }
                 st.lastCenterResult = centerSig;
         }
-            const chipSig = betChips ? ((betChips.player || '') + '|' + (betChips.banker || '')) : '';
+            const chipSig = displayBetChips ? ((displayBetChips.player || '') + '|' + (displayBetChips.banker || '')) : '';
             if (st.lastBetChipSig !== chipSig) {
                 st.lastBetChipSig = chipSig;
-                applyBetChips(view, betChips);
+                applyBetChips(view, displayBetChips);
         }
-            const extraSig = betExtra ? ((betExtra.player || '') + '|' + (betExtra.banker || '')) : '';
+            const extraSig = displayBetExtra ? ((displayBetExtra.player || '') + '|' + (displayBetExtra.banker || '')) : '';
             const needExtraAttach = (view.betPlayerExtra && !view.betPlayerExtra.isConnected)
                 || (view.betBankerExtra && !view.betBankerExtra.isConnected);
             if (st.lastBetExtraSig !== extraSig || needExtraAttach) {
                 st.lastBetExtraSig = extraSig;
-                applyBetExtra(view, betExtra);
+                applyBetExtra(view, displayBetExtra);
         }
         }
 
@@ -10142,6 +10180,10 @@
                 lastSig: '',
                 lastBetExtraSig: '',
                 lastBetChipSig: '',
+                lastBetExtraHold: { player: '', banker: '' },
+                lastBetExtraHoldSig: '',
+                lastBetChipsHold: { player: '', banker: '' },
+                lastBetChipsHoldSig: '',
                 lastStatusText: '',
                 lastStatusColor: '',
                 lastCenterResult: '',
