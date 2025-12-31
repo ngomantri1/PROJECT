@@ -1247,6 +1247,25 @@
             return false;
         const cx = r.left + r.width / 2;
         const cy = r.top + r.height / 2;
+        const peeled = [];
+        const peelOnce = () => {
+            const top = doc.elementFromPoint ? doc.elementFromPoint(cx, cy) : null;
+            if (!top)
+                return true;
+            if (top === target || (target.contains && target.contains(top)))
+                return true;
+            if (top === doc.documentElement || top === doc.body)
+                return true;
+            const prevPE = top.style.pointerEvents;
+            top.style.setProperty('pointer-events', 'none', 'important');
+            peeled.push({ node: top, prevPE });
+            return false;
+        };
+        let guard = 12;
+        while (guard-- > 0) {
+            if (peelOnce())
+                break;
+        }
         let clickEl = target;
         try {
             const top = doc.elementFromPoint ? doc.elementFromPoint(cx, cy) : null;
@@ -1288,7 +1307,12 @@
             clickEl.dispatchEvent(md);
             clickEl.dispatchEvent(mu);
             clickEl.dispatchEvent(mc);
-        } catch (_) {}
+        } catch (_) {} finally {
+            if (peeled.length)
+                setTimeout(() => {
+                    peeled.reverse().forEach(k => { try { k.node.style.pointerEvents = k.prevPE; } catch (_) {} });
+                }, 0);
+        }
         return true;
     }
 
