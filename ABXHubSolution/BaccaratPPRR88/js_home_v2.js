@@ -9249,7 +9249,20 @@
             return '--';
         }
 
-        function deriveBetDoorValue(text, betAreas) {
+        function hasAnyBet(betAreas, betExtra, betChips) {
+            const areaActive = !!(betAreas && ((betAreas.player && betAreas.player.active)
+                || (betAreas.banker && betAreas.banker.active)
+                || (betAreas.tie && betAreas.tie.active)));
+            if (areaActive)
+                return true;
+            if (betChips && (betChips.player || betChips.banker))
+                return true;
+            if (betExtra && (betExtra.player || betExtra.banker))
+                return true;
+            return false;
+        }
+
+        function deriveBetDoorValue(text, betAreas, betChips) {
             if (betAreas) {
                 if (betAreas.player && betAreas.player.active)
                 return 'PLAYER';
@@ -9257,6 +9270,16 @@
                 return 'BANKER';
                 if (betAreas.tie && betAreas.tie.active)
                 return 'HÒA';
+            }
+            if (betChips) {
+                const hasPlayer = !!betChips.player;
+                const hasBanker = !!betChips.banker;
+                if (hasPlayer && !hasBanker)
+                    return 'PLAYER';
+                if (hasBanker && !hasPlayer)
+                    return 'BANKER';
+                if (hasPlayer && hasBanker)
+                    return 'P/B';
             }
             if (!text)
             return '--';
@@ -9657,14 +9680,23 @@
                 } else {
                     renderResultMap(view, data.history || []);
             }
+                const hasBet = hasAnyBet(betAreas, betExtra, betChips);
                 if (view.betDoorValue)
-                    view.betDoorValue.textContent = deriveBetDoorValue(text, betAreas);
+                    view.betDoorValue.textContent = hasBet
+                        ? deriveBetDoorValue(text, betAreas, betChips)
+                        : '--';
                 if (view.betAmountValue)
-                    view.betAmountValue.textContent = deriveMoneyValue(text, ['tien\\s*cuoc', 'cuoc\\s*tien']);
+                    view.betAmountValue.textContent = hasBet
+                        ? deriveMoneyValue(text, ['tien\\s*cuoc', 'cuoc\\s*tien'])
+                        : '--';
                 if (view.moneyLevelValue)
-                    view.moneyLevelValue.textContent = deriveMoneyValue(text, ['muc\\s*tien', 'muc\\s*cuoc', 'limit']);
+                    view.moneyLevelValue.textContent = hasBet
+                        ? deriveMoneyValue(text, ['muc\\s*tien', 'muc\\s*cuoc', 'limit'])
+                        : '--';
                 if (view.winAmountValue)
-                    view.winAmountValue.textContent = deriveMoneyValue(text, ['tien\\s*thang', 'thang\\s*tien', 'tien\\s*thuong']);
+                    view.winAmountValue.textContent = hasBet
+                        ? deriveMoneyValue(text, ['tien\\s*thang', 'thang\\s*tien', 'tien\\s*thuong'])
+                        : '--';
                 const statCounts = summarizeHistoryStats(data.history || [], data.stats || null);
                 if (view.statsTotal)
                     view.statsTotal.textContent = '#' + String(statCounts.total || 0);
