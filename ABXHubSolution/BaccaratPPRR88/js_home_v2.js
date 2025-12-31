@@ -1391,7 +1391,7 @@
                     ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1'
                     : '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra';
                 let target = root
-                    ? (betFindTargetByBetcode(root, s) || betFindByTail(root, targetTail) || betFindFirstVisible(root, selector))
+                    ? (betFindByTail(root, targetTail) || betFindFirstVisible(root, selector))
                     : null;
                 if (target && root && !betIsTargetInsideRoot(root, target)) {
                     target = null;
@@ -1399,7 +1399,7 @@
                 if (target && !trustedRoot && !betTargetMatchesAnyId(target, idCandidates)) {
                     target = null;
                 }
-                if (!target && !root) {
+                if (!target) {
                     target = betFindTargetByTableId(id, s);
                 }
                 if (!target) {
@@ -1410,7 +1410,11 @@
                 if (!target) {
                     logBetWarn('target not found for tableId=' + id + ' side=' + sideLabel);
                 } else {
-                    const clickTarget = betResolveBetClickTarget(target, root) || target;
+                    const clickTarget =
+                        target.closest('.kU_kV') ||
+                        target.closest('.zv_zw') ||
+                        target.closest('.uU_g0') ||
+                        target;
                     const planResult = betBuildChipPlan(amountValue, rootDoc);
                     if (!planResult.plan.length || planResult.remaining > 0) {
                         logBetWarn('cannot build chip plan amount=' + amountValue + ' remaining=' + planResult.remaining);
@@ -1435,8 +1439,8 @@
                                 logBetWarn('stake not changed tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue);
                             }
                         }
-                        if (confirmed)
-                            sendOnce(id, sideLabel, amountValue);
+                        // Giống behavior cũ: đã chạy plan xong thì vẫn gửi để lưu lịch sử
+                        sendOnce(id, sideLabel, amountValue);
                     });
                     const tail = (typeof cssTail === 'function') ? cssTail(clickTarget) : '';
                 }
