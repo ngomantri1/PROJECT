@@ -543,6 +543,8 @@ Ví dụ không hợp lệ:
             public long MoneyResetVersion;
             public int StartInProgress;
             public string LastBetSide = "";
+            public long LastBetAmount;
+            public string LastBetLevelText = "";
         }
 
         private sealed class TableOverlayState
@@ -2309,6 +2311,13 @@ Ví dụ không hợp lệ:
                     if (accNow <= 0 && row.Account > 0)
                         accNow = row.Account;
                     FinalizeBetRow(row, lastToken.Value.ToString(), accNow);
+                    if (!string.IsNullOrWhiteSpace(tableId))
+                    {
+                        var st = GetOrCreateTableTaskState(tableId);
+                        st.LastBetAmount = 0;
+                        st.LastBetLevelText = "";
+                        _ = PushBetPlanToOverlayAsync(tableId, "", 0, "");
+                    }
                 }
             }
         }
@@ -2377,6 +2386,17 @@ Ví dụ không hợp lệ:
             var cp = cutProfit.ToString(CultureInfo.InvariantCulture);
             var cl = cutLoss.ToString(CultureInfo.InvariantCulture);
             var script = $"window.__abxTableOverlay && window.__abxTableOverlay.setCutValues && window.__abxTableOverlay.setCutValues({idJson}, {cp}, {cl});";
+            try { await Web.ExecuteScriptAsync(script); } catch { }
+        }
+
+        private async Task PushBetPlanToOverlayAsync(string tableId, string? side, long amount, string? levelText)
+        {
+            if (Web?.CoreWebView2 == null || string.IsNullOrWhiteSpace(tableId)) return;
+            var idJson = JsonSerializer.Serialize(tableId);
+            var sideJson = JsonSerializer.Serialize(side ?? "");
+            var levelJson = JsonSerializer.Serialize(levelText ?? "");
+            var amt = amount.ToString(CultureInfo.InvariantCulture);
+            var script = $"window.__abxTableOverlay && window.__abxTableOverlay.setBetPlan && window.__abxTableOverlay.setBetPlan({idJson}, {sideJson}, {amt}, {levelJson});";
             try { await Web.ExecuteScriptAsync(script); } catch { }
         }
 
@@ -5672,13 +5692,20 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 UiSetSide = s => Dispatcher.Invoke(() =>
                 {
-                    if (!IsActiveTable(tableId)) return;
                     state.LastBetSide = (s ?? "").Trim().ToUpperInvariant();
+                    _ = PushBetPlanToOverlayAsync(tableId, state.LastBetSide, state.LastBetAmount, state.LastBetLevelText);
+                    if (!IsActiveTable(tableId)) return;
                     SetLastSideUI(s);
                 }),
                 UiSetStake = v => Dispatcher.Invoke(() =>
                 {
                     UpdateStakeIndexForTable(state, stakeSeq, v);
+                    var rounded = (long)Math.Round(v);
+                    state.LastBetAmount = rounded;
+                    state.LastBetLevelText = (state.StakeLevelIndexForUi >= 0 && stakeSeq.Length > 0)
+                        ? $"{state.StakeLevelIndexForUi + 1}/{stakeSeq.Length}"
+                        : "";
+                    _ = PushBetPlanToOverlayAsync(tableId, state.LastBetSide, state.LastBetAmount, state.LastBetLevelText);
                     if (!IsActiveTable(tableId))
                         return;
 
