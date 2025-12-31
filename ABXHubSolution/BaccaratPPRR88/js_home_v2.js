@@ -810,15 +810,43 @@
                 onDone(ok !== false);
         };
         const clickChipValue = (value) => {
-            const chipNode = betFindChipByAmount(value, doc) || betFindChip(betAmountToLabel(value), doc);
-            const chipBtn = chipNode ? (chipNode.closest('button') || chipNode) : null;
-            if (!chipBtn)
+            const labels = betAmountToLabels(value);
+            if (!labels.length)
                 return false;
-            betDispatchClickOnce(chipBtn, 'click');
+            const cardRoot = target.closest && (target.closest('div[id^="TileHeight-"]') || target.closest('div.gC_gE.gC_gH.gC_gI'));
+            const rootRect = cardRoot && cardRoot.getBoundingClientRect ? cardRoot.getBoundingClientRect() : null;
+            const nodes = [];
+            if (doc && doc.querySelectorAll) {
+                try { nodes.push(...doc.querySelectorAll('.wo_wq,.v0_wa')); } catch (_) {}
+            }
+            if (!nodes.length) {
+                try { nodes.push(...betCollectNodes('.wo_wq,.v0_wa')); } catch (_) {}
+            }
+            let chipTarget = null;
+            for (const el of nodes) {
+                if (!el || !el.getBoundingClientRect)
+                    continue;
+                const r = el.getBoundingClientRect();
+                if (rootRect &&
+                    r.left >= rootRect.left && r.right <= rootRect.right &&
+                    r.top >= rootRect.top && r.bottom <= rootRect.bottom) {
+                    continue;
+                }
+                const txt = String(el.textContent || '').trim().toUpperCase();
+                if (!txt)
+                    continue;
+                if (labels.includes(txt)) {
+                    chipTarget = el;
+                    break;
+                }
+            }
+            if (!chipTarget)
+                return false;
+            betDispatchClickOnce(chipTarget, 'point');
             setTimeout(() => {
                 const cur = betGetSelectedChipAmount(doc);
                 if (cur == null || cur !== value)
-                    betDispatchClickOnce(chipBtn, 'click');
+                    betDispatchClickOnce(chipTarget, 'point');
             }, CHIP_DOUBLE_CLICK_GAP);
             return true;
         };
@@ -842,7 +870,7 @@
             } else {
                 if (currentChipValue != null) {
                     const cur = betGetSelectedChipAmount(doc);
-                    if (cur !== currentChipValue) {
+                    if (cur != null && cur !== currentChipValue) {
                         chipRetry++;
                         if (chipRetry <= CHIP_VERIFY_RETRY && clickChipValue(currentChipValue)) {
                             idx--;
@@ -981,11 +1009,19 @@
     function betCountChips(root, side) {
         if (!root || !root.querySelectorAll)
             return 0;
-        const sel = side === 'player'
-            ? '.kU_kZ .wo_wq, .kU_kZ .v0_wa'
-            : '.kU_k0 .wo_wq, .kU_k0 .v0_wa';
         try {
-            return root.querySelectorAll(sel).length;
+            const nodes = betCollectChipNodesInRoot(root);
+            if (!nodes.length)
+                return 0;
+            const centers = betGetBetCenters(root);
+            let count = 0;
+            for (const el of nodes) {
+                const r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+                const s = r ? betPickSideByCenter(r, centers) : '';
+                if (s === side)
+                    count += 1;
+            }
+            return count;
         } catch (_) {
             return 0;
         }
@@ -1014,15 +1050,9 @@
     function betHasChipValue(root, side) {
         if (!root || !root.querySelector)
             return false;
-        const sel = side === 'player'
-            ? '.kU_kZ .wo_wq, .kU_kZ .v0_wa'
-            : '.kU_k0 .wo_wq, .kU_k0 .v0_wa';
         try {
-            const el = root.querySelector(sel);
-            if (el) {
-                const txt = (el.textContent || '').trim();
-                return !!txt;
-            }
+            const chips = readBetChips(root);
+            return side === 'player' ? !!(chips && chips.player) : !!(chips && chips.banker);
         } catch (_) {}
         return false;
     }
@@ -1217,30 +1247,15 @@
             return false;
         const cx = r.left + r.width / 2;
         const cy = r.top + r.height / 2;
-        const peeled = [];
-        const peel = () => {
-            try {
-                const top = doc.elementFromPoint(cx, cy);
-                if (!top)
-                    return true;
-                if (top === target || target.contains(top))
-                    return true;
-                const prev = top.style.pointerEvents;
-                top.style.setProperty('pointer-events', 'none', 'important');
-                peeled.push({ node: top, prev });
-                return false;
-            } catch (_) {}
-            return true;
-        };
-        let guard = 18;
-        while (guard-- > 0) {
-            if (peel())
-                break;
-        }
-        const topNow = doc.elementFromPoint(cx, cy) || target;
+        let clickEl = target;
+        try {
+            const top = doc.elementFromPoint ? doc.elementFromPoint(cx, cy) : null;
+            if (top && top.getBoundingClientRect)
+                clickEl = top;
+        } catch (_) {}
         try {
             if (typeof win.PointerEvent === 'function') {
-                const evDown = new win.PointerEvent('pointerdown', {
+                const pd = new win.PointerEvent('pointerdown', {
                     bubbles: true,
                     cancelable: true,
                     view: win,
@@ -1252,7 +1267,7 @@
                     button: 0,
                     buttons: 1
                 });
-                const evUp = new win.PointerEvent('pointerup', {
+                const pu = new win.PointerEvent('pointerup', {
                     bubbles: true,
                     cancelable: true,
                     view: win,
@@ -1264,21 +1279,16 @@
                     button: 0,
                     buttons: 0
                 });
-                topNow.dispatchEvent(evDown);
-                topNow.dispatchEvent(evUp);
+                clickEl.dispatchEvent(pd);
+                clickEl.dispatchEvent(pu);
             }
             const md = new win.MouseEvent('mousedown', { bubbles: true, cancelable: true, view: win, clientX: cx, clientY: cy, button: 0, buttons: 1 });
             const mu = new win.MouseEvent('mouseup', { bubbles: true, cancelable: true, view: win, clientX: cx, clientY: cy, button: 0, buttons: 0 });
             const mc = new win.MouseEvent('click', { bubbles: true, cancelable: true, view: win, clientX: cx, clientY: cy, button: 0, buttons: 0 });
-            topNow.dispatchEvent(md);
-            topNow.dispatchEvent(mu);
-            topNow.dispatchEvent(mc);
-        } finally {
-            for (let i = peeled.length - 1; i >= 0; i--) {
-                const item = peeled[i];
-                try { item.node.style.pointerEvents = item.prev; } catch (_) {}
-            }
-        }
+            clickEl.dispatchEvent(md);
+            clickEl.dispatchEvent(mu);
+            clickEl.dispatchEvent(mc);
+        } catch (_) {}
         return true;
     }
 
@@ -8850,9 +8860,112 @@
             };
             }
 
+        function betGetLabelNode(root, code) {
+            if (!root || !root.querySelector)
+                return null;
+            const sel = code === '0'
+                ? '[data-betcode="0"], .qC_lC.qC_q0'
+                : (code === '1'
+                    ? '[data-betcode="1"], .qC_lC.qC_q1'
+                    : '[data-betcode="2"], .qC_lC.qC_qN');
+            try { return root.querySelector(sel); } catch (_) { return null; }
+        }
+
+        function betGetCenter(el) {
+            if (!el || !el.getBoundingClientRect)
+                return null;
+            const r = el.getBoundingClientRect();
+            if (!(r.width > 1 && r.height > 1))
+                return null;
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        }
+
+        function betGetBetCenters(root) {
+            const p = betGetCenter(betGetLabelNode(root, '0'));
+            const b = betGetCenter(betGetLabelNode(root, '1'));
+            const t = betGetCenter(betGetLabelNode(root, '2'));
+            return { p, b, t };
+        }
+
+        function betCollectChipNodesInRoot(root) {
+            if (!root || !root.getBoundingClientRect)
+                return [];
+            const rootRect = root.getBoundingClientRect();
+            const maxW = rootRect.width * 2.5;
+            const maxH = rootRect.height * 2.5;
+            const nodes = betCollectNodes('.wo_wq, .v0_wa');
+            return nodes.filter(el => {
+                if (!el || !el.getBoundingClientRect)
+                    return false;
+                const r = el.getBoundingClientRect();
+                if (!(r.width > 1 && r.height > 1))
+                    return false;
+                if (r.width > maxW || r.height > maxH)
+                    return false;
+                const txt = (el.textContent || '').trim();
+                if (!txt || betLabelToAmount(txt) <= 0)
+                    return false;
+                const cx = r.left + r.width / 2;
+                const cy = r.top + r.height / 2;
+                return (cx >= rootRect.left && cx <= rootRect.right && cy >= rootRect.top && cy <= rootRect.bottom);
+            });
+        }
+
+        function betPickSideByCenter(chipRect, centers) {
+            if (!chipRect)
+                return '';
+            const cx = chipRect.left + chipRect.width / 2;
+            const cy = chipRect.top + chipRect.height / 2;
+            let best = { side: '', dist: Infinity };
+            const check = (side, c) => {
+                if (!c)
+                    return;
+                const dx = cx - c.x;
+                const dy = cy - c.y;
+                const d = dx * dx + dy * dy;
+                if (d < best.dist)
+                    best = { side, dist: d };
+            };
+            check('player', centers.p);
+            check('banker', centers.b);
+            check('tie', centers.t);
+            return best.side;
+        }
+
+        function betPickMaxText(prev, next) {
+            const a = betLabelToAmount(prev);
+            const b = betLabelToAmount(next);
+            if (!prev)
+                return next || '';
+            if (b > a)
+                return next;
+            return prev;
+        }
+
         function readBetChips(root) {
             if (!root)
                 return { player: '', banker: '' };
+            try {
+                const nodes = betCollectChipNodesInRoot(root);
+                if (nodes.length) {
+                    const centers = betGetBetCenters(root);
+                    let playerVal = '';
+                    let bankerVal = '';
+                    for (const el of nodes) {
+                        const text = (el && el.textContent || '').trim();
+                        if (!text || betLabelToAmount(text) <= 0)
+                            continue;
+                        const r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+                        const side = r ? betPickSideByCenter(r, centers) : '';
+                        if (side === 'player')
+                            playerVal = betPickMaxText(playerVal, text);
+                        else if (side === 'banker')
+                            bankerVal = betPickMaxText(bankerVal, text);
+                    }
+                    if (playerVal || bankerVal)
+                        return { player: playerVal, banker: bankerVal };
+                }
+            } catch (_) {}
             const readChip = (selector) => {
             try {
                     const nodes = Array.from(root.querySelectorAll(selector));
