@@ -8873,18 +8873,78 @@
         function readBetExtra(root) {
             if (!root)
                 return { player: '', banker: '' };
-            const readText = (selector) => {
+            const extractBestNumericMatch = (text) => {
+                const matches = String(text || '').match(/-?\d[\d.,]*/g);
+                if (!matches)
+                    return '';
+                let best = '';
+                let bestVal = 0;
+                for (const raw of matches) {
+                    const val = betLabelToAmount(raw);
+                    if (val > bestVal) {
+                        bestVal = val;
+                        best = raw;
+                    }
+                }
+                return best;
+            };
+            const getBetAreaScope = (area) => {
+                if (!area || !area.closest)
+                    return area;
+                return area.closest('.yW_yX, .lg_lh, .lg_ll, .lg_lm, .lg_ln, .lg_lr, .lg_lu, .lg_lx') || area;
+            };
+            const readNumericFromScope = (scope) => {
+                if (!scope || !scope.querySelectorAll)
+                    return '';
+                if (!betIsVisible(scope))
+                    return '';
+                const nodes = [scope, ...Array.from(scope.querySelectorAll('span,div,p,b,i,em,strong'))];
+                let bestText = '';
+                let bestVal = 0;
+                for (const el of nodes) {
+                    if (!el)
+                        continue;
+                    if (!betIsVisible(el))
+                        continue;
+                    const text = (el.textContent || '').trim();
+                    if (!text)
+                        continue;
+                    const candidate = extractBestNumericMatch(text);
+                    if (!candidate)
+                        continue;
+                    const val = betLabelToAmount(candidate);
+                    if (val > bestVal) {
+                        bestVal = val;
+                        bestText = candidate;
+                    }
+                }
+                return bestText;
+            };
+            const readText = (selector, scope) => {
                 try {
-                    const el = root.querySelector(selector);
+                    const base = scope || root;
+                    const el = base.querySelector(selector);
                         const text = (el && el.textContent || '').trim();
                 return text || '';
             } catch (_) {
                 return '';
         }
             };
+            const readFromArea = (code) => {
+                const area = betGetLabelNode(root, code);
+                if (!area)
+                    return '';
+                if (!betIsVisible(area))
+                    return '';
+                const hasWinTag = (area.classList && area.classList.contains('qC_qE')) || area.querySelector('.qC_qE');
+                if (!hasWinTag)
+                    return '';
+                const scope = getBetAreaScope(area);
+                return readNumericFromScope(scope);
+            };
             return {
-                player: readText('span.re_rf.re_rh'),
-                banker: readText('span.re_rf.re_rg')
+                player: readText('span.re_rf.re_rh') || readFromArea('0'),
+                banker: readText('span.re_rf.re_rg') || readFromArea('1')
             };
             }
 
@@ -8994,20 +9054,83 @@
                         return { player: playerVal, banker: bankerVal };
                 }
             } catch (_) {}
-            const readChip = (selector) => {
             try {
-                    const nodes = Array.from(root.querySelectorAll(selector));
+                const pickSideFromContainer = (el) => {
+                    if (!el || !el.closest)
+                        return '';
+                    const container = el.closest('.yW_yX') || el.closest('.lg_lh, .lg_ll, .lg_lm, .lg_ln, .lg_lr, .lg_lu, .lg_lx');
+                    if (!container || !container.querySelector)
+                        return '';
+                    if (!betIsVisible(container))
+                        return '';
+                    if (container.querySelector('[data-betcode="0"], .qC_lC.qC_q0'))
+                        return 'player';
+                    if (container.querySelector('[data-betcode="1"], .qC_lC.qC_q1'))
+                        return 'banker';
+                    if (container.querySelector('[data-betcode="2"], .qC_lC.qC_qN'))
+                        return 'tie';
+                    return '';
+                };
+                const pickSideByRootMid = (el) => {
+                    if (!el || !el.getBoundingClientRect)
+                        return '';
+                    const r = el.getBoundingClientRect();
+                    if (!(r.width > 1 && r.height > 1))
+                        return '';
+                    const rootRect = root.getBoundingClientRect ? root.getBoundingClientRect() : null;
+                    if (!rootRect || !(rootRect.width > 1 && rootRect.height > 1))
+                        return '';
+                    const midX = rootRect.left + rootRect.width / 2;
+                    const cx = r.left + r.width / 2;
+                    return cx < midX ? 'player' : 'banker';
+                };
+                const nodes = Array.from(root.querySelectorAll('.yW_yX .wo_wq, .yW_yX .v0_wa, .lg_lh .wo_wq, .lg_lh .v0_wa, .lg_ll .wo_wq, .lg_ll .v0_wa'));
+                if (nodes.length) {
+                    let playerVal = '';
+                    let bankerVal = '';
+                    for (const el of nodes) {
+                        if (!el)
+                            continue;
+                        if (!betIsVisible(el))
+                            continue;
+                        const text = (el.textContent || '').trim();
+                        if (!text || betLabelToAmount(text) <= 0)
+                            continue;
+                        const side = pickSideFromContainer(el) || pickSideByRootMid(el);
+                        if (side === 'player')
+                            playerVal = betPickMaxText(playerVal, text);
+                        else if (side === 'banker')
+                            bankerVal = betPickMaxText(bankerVal, text);
+                    }
+                    if (playerVal || bankerVal)
+                        return { player: playerVal, banker: bankerVal };
+                }
+            } catch (_) {}
+            const readChip = (selector, scope) => {
+            try {
+                    const base = scope || root;
+                    const nodes = Array.from(base.querySelectorAll(selector));
                     for (const el of nodes) {
                 const text = (el && el.textContent || '').trim();
-                        if (text)
+                        if (text && (!el || !el.getBoundingClientRect || betIsVisible(el)))
                             return text;
         }
                 } catch (_) {}
             return '';
             };
+            const readChipFromArea = (code) => {
+                const area = betGetLabelNode(root, code);
+                if (!area)
+                    return '';
+                return readChip('.wo_wq, .v0_wa', area);
+            };
+            const areaPlayer = readChipFromArea('0');
+            const areaBanker = readChipFromArea('1');
+            if (areaPlayer || areaBanker)
+                return { player: areaPlayer, banker: areaBanker };
             return {
-                player: readChip('.kU_kZ .wo_wq, .kU_kZ .v0_wa'),
-                banker: readChip('.kU_k0 .wo_wq, .kU_k0 .v0_wa')
+                player: readChip('.kU_kZ .wo_wq, .kU_kZ .v0_wa, [data-betcode="0"] .wo_wq, [data-betcode="0"] .v0_wa, .qC_lC.qC_q0 .wo_wq, .qC_lC.qC_q0 .v0_wa'),
+                banker: readChip('.kU_k0 .wo_wq, .kU_k0 .v0_wa, [data-betcode="1"] .wo_wq, [data-betcode="1"] .v0_wa, .qC_lC.qC_q1 .wo_wq, .qC_lC.qC_q1 .v0_wa')
             };
         }
 
@@ -9607,42 +9730,6 @@
                 }
                 }
 
-        // Keep last bet info during dealing when DOM temporarily hides values.
-        function resolveHeldBetInfo(st, incoming, historySig, holdKey, holdSigKey) {
-            const normalize = (value) => {
-                if (value === null || value === undefined)
-                    return '';
-                return String(value).trim();
-            };
-            const normalized = {
-                player: normalize(incoming && incoming.player),
-                banker: normalize(incoming && incoming.banker)
-            };
-            const hasIncoming = !!(normalized.player || normalized.banker);
-            const hold = (st && st[holdKey]) ? st[holdKey] : { player: '', banker: '' };
-            const holdSig = (st && st[holdSigKey]) ? st[holdSigKey] : '';
-            if (hasIncoming) {
-                const merged = {
-                    player: normalized.player || hold.player || '',
-                    banker: normalized.banker || hold.banker || ''
-                };
-                if (st) {
-                    st[holdKey] = merged;
-                    st[holdSigKey] = historySig || '';
-                }
-                return merged;
-            }
-            if ((historySig || '') === holdSig && (hold.player || hold.banker)) {
-                return hold;
-            }
-            const cleared = { player: '', banker: '' };
-            if (st) {
-                st[holdKey] = cleared;
-                st[holdSigKey] = historySig || '';
-            }
-            return cleared;
-        }
-
         function formatWinLossTotals(st) {
             const wins = Math.max(0, st && st.winCount || 0);
             const losses = Math.max(0, st && st.lossCount || 0);
@@ -9703,8 +9790,6 @@
             const betExtra = data.betExtra || null;
             const betChips = data.betChips || null;
             const historySig = data.historySig || '';
-            const displayBetChips = resolveHeldBetInfo(st, betChips, historySig, 'lastBetChipsHold', 'lastBetChipsHoldSig');
-            const displayBetExtra = resolveHeldBetInfo(st, betExtra, historySig, 'lastBetExtraHold', 'lastBetExtraHoldSig');
             const winLoseText = deriveWinLoseValue(text);
             if (view.winLoseValue && st.lastWinLoseText !== winLoseText) {
                 view.winLoseValue.textContent = winLoseText;
@@ -9775,17 +9860,17 @@
         }
                 st.lastCenterResult = centerSig;
         }
-            const chipSig = displayBetChips ? ((displayBetChips.player || '') + '|' + (displayBetChips.banker || '')) : '';
+            const chipSig = betChips ? ((betChips.player || '') + '|' + (betChips.banker || '')) : '';
             if (st.lastBetChipSig !== chipSig) {
                 st.lastBetChipSig = chipSig;
-                applyBetChips(view, displayBetChips);
+                applyBetChips(view, betChips);
         }
-            const extraSig = displayBetExtra ? ((displayBetExtra.player || '') + '|' + (displayBetExtra.banker || '')) : '';
+            const extraSig = betExtra ? ((betExtra.player || '') + '|' + (betExtra.banker || '')) : '';
             const needExtraAttach = (view.betPlayerExtra && !view.betPlayerExtra.isConnected)
                 || (view.betBankerExtra && !view.betBankerExtra.isConnected);
             if (st.lastBetExtraSig !== extraSig || needExtraAttach) {
                 st.lastBetExtraSig = extraSig;
-                applyBetExtra(view, displayBetExtra);
+                applyBetExtra(view, betExtra);
         }
         }
 
@@ -10180,10 +10265,6 @@
                 lastSig: '',
                 lastBetExtraSig: '',
                 lastBetChipSig: '',
-                lastBetExtraHold: { player: '', banker: '' },
-                lastBetExtraHoldSig: '',
-                lastBetChipsHold: { player: '', banker: '' },
-                lastBetChipsHoldSig: '',
                 lastStatusText: '',
                 lastStatusColor: '',
                 lastCenterResult: '',
