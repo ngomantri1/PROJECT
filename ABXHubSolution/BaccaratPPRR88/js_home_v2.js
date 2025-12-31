@@ -8930,6 +8930,28 @@
                 return '';
         }
             };
+            const readVisibleText = (selector, scope) => {
+                if (!selector)
+                    return '';
+                try {
+                    const base = scope || root;
+                    const nodes = Array.from(base.querySelectorAll(selector));
+                    let fallback = '';
+                    for (const el of nodes) {
+                        if (!el)
+                            continue;
+                        const text = (el.textContent || '').trim();
+                        if (!text)
+                            continue;
+                        if (!fallback)
+                            fallback = text;
+                        if (betIsVisible(el))
+                            return text;
+                    }
+                    return fallback;
+                } catch (_) {}
+                return '';
+            };
             const readFromArea = (code) => {
                 const area = betGetLabelNode(root, code);
                 if (!area)
@@ -8942,6 +8964,14 @@
                 const scope = getBetAreaScope(area);
                 return readNumericFromScope(scope);
             };
+            const playerResult = readVisibleText('span.rc_re.rc_rg');
+            const bankerResult = readVisibleText('span.rc_re.rc_rf');
+            if (playerResult || bankerResult) {
+                return {
+                    player: playerResult || '',
+                    banker: bankerResult || ''
+                };
+            }
             return {
                 player: readText('span.re_rf.re_rh') || readFromArea('0'),
                 banker: readText('span.re_rf.re_rg') || readFromArea('1')
@@ -9137,6 +9167,72 @@
         function readCenterResultText(root) {
             if (!root)
             return '';
+            const scoreNode = (el) => {
+                if (!el)
+                    return -1;
+                let score = 0;
+                try {
+                    const cs = window.getComputedStyle ? window.getComputedStyle(el) : null;
+                    if (cs) {
+                        const opacity = parseFloat(cs.opacity || '1');
+                        if (Number.isFinite(opacity))
+                            score += opacity;
+                        const fw = parseInt(cs.fontWeight || '0', 10);
+                        if (Number.isFinite(fw))
+                            score += Math.min(Math.max(fw, 0), 900) / 1000;
+                        if (cs.textShadow && cs.textShadow !== 'none')
+                            score += 0.6;
+                        if (cs.backgroundColor && cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && cs.backgroundColor !== 'transparent')
+                            score += 0.4;
+                    }
+                } catch (_) {}
+                try {
+                    let p = el.parentElement;
+                    for (let i = 0; i < 2 && p; i++) {
+                        const pc = window.getComputedStyle ? window.getComputedStyle(p) : null;
+                        if (pc) {
+                            if (pc.boxShadow && pc.boxShadow !== 'none')
+                                score += 0.2;
+                            if (pc.backgroundColor && pc.backgroundColor !== 'rgba(0, 0, 0, 0)' && pc.backgroundColor !== 'transparent')
+                                score += 0.2;
+                        }
+                        const cls = (p.className && p.className.toString ? p.className.toString() : '') || '';
+                        if (/(active|selected|win|result|highlight|current)/i.test(cls))
+                            score += 0.3;
+                        p = p.parentElement;
+                    }
+                } catch (_) {}
+                return score;
+            };
+            const pickWinner = (selector) => {
+                if (!root || !root.querySelectorAll)
+                    return { text: '', score: -1 };
+                let best = { text: '', score: -1 };
+                try {
+                    const nodes = Array.from(root.querySelectorAll(selector));
+                    for (const el of nodes) {
+                        if (!el || !betIsVisible(el))
+                            continue;
+                        const text = (el.textContent || '').trim();
+                        if (!text)
+                            continue;
+                        const score = scoreNode(el);
+                        if (!best.text || score > best.score) {
+                            best = { text, score };
+                        }
+                    }
+                } catch (_) {}
+                return best;
+            };
+            const playerPick = pickWinner('.ym_tS.ym_yp .ym_ys');
+            const bankerPick = pickWinner('.ym_tS.ym_yr .ym_ys');
+            if (playerPick.text || bankerPick.text) {
+                if (!bankerPick.text)
+                    return playerPick.text;
+                if (!playerPick.text)
+                    return bankerPick.text;
+                return (playerPick.score >= bankerPick.score) ? playerPick.text : bankerPick.text;
+            }
             try {
                 const el = root.querySelector('.yH_yN');
                 const text = (el && el.textContent || '').trim();
