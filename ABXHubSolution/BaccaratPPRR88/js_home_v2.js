@@ -810,43 +810,15 @@
                 onDone(ok !== false);
         };
         const clickChipValue = (value) => {
-            const labels = betAmountToLabels(value);
-            if (!labels.length)
+            const chipNode = betFindChipByAmount(value, doc) || betFindChip(betAmountToLabel(value), doc);
+            const chipBtn = chipNode ? (chipNode.closest('button,[role=button],a') || chipNode) : null;
+            if (!chipBtn)
                 return false;
-            const cardRoot = target.closest && (target.closest('div[id^="TileHeight-"]') || target.closest('div.gC_gE.gC_gH.gC_gI'));
-            const rootRect = cardRoot && cardRoot.getBoundingClientRect ? cardRoot.getBoundingClientRect() : null;
-            const nodes = [];
-            if (doc && doc.querySelectorAll) {
-                try { nodes.push(...doc.querySelectorAll('.wo_wq,.v0_wa')); } catch (_) {}
-            }
-            if (!nodes.length) {
-                try { nodes.push(...betCollectNodes('.wo_wq,.v0_wa')); } catch (_) {}
-            }
-            let chipTarget = null;
-            for (const el of nodes) {
-                if (!el || !el.getBoundingClientRect)
-                    continue;
-                const r = el.getBoundingClientRect();
-                if (rootRect &&
-                    r.left >= rootRect.left && r.right <= rootRect.right &&
-                    r.top >= rootRect.top && r.bottom <= rootRect.bottom) {
-                    continue;
-                }
-                const txt = String(el.textContent || '').trim().toUpperCase();
-                if (!txt)
-                    continue;
-                if (labels.includes(txt)) {
-                    chipTarget = el;
-                    break;
-                }
-            }
-            if (!chipTarget)
-                return false;
-            betDispatchClickOnce(chipTarget, 'point');
+            betDispatchClickOnce(chipBtn, 'click', { noScroll: true });
             setTimeout(() => {
                 const cur = betGetSelectedChipAmount(doc);
                 if (cur == null || cur !== value)
-                    betDispatchClickOnce(chipTarget, 'point');
+                    betDispatchClickOnce(chipBtn, 'click', { noScroll: true });
             }, CHIP_DOUBLE_CLICK_GAP);
             return true;
         };
@@ -883,7 +855,7 @@
                     }
                 }
                 chipRetry = 0;
-                betDispatchClickOnce(target, clickMode());
+                betDispatchClickOnce(target, clickMode(), { noScroll: true });
             }
             const delayMs = step.type === 'chip' ? CHIP_SWITCH_DELAY : BET_CLICK_DELAY;
             setTimeout(run, delayMs);
@@ -1159,7 +1131,7 @@
         return false;
                 }
 
-    function betDispatchClickOnce(el, mode) {
+    function betDispatchClickOnce(el, mode, opts = {}) {
         if (!el)
             return false;
         try {
@@ -1170,7 +1142,8 @@
                 return betDispatchClickAtPoint(target);
             }
             if (inCard && typeof peelAndClick === 'function') {
-                try { peelAndClick(target, { holdMs: 160 }); return true; } catch (_) {}
+                const allowScroll = !(opts && opts.noScroll);
+                try { peelAndClick(target, { holdMs: 160, scrollIntoView: allowScroll }); return true; } catch (_) {}
             }
             const doc = target.ownerDocument || document;
             const win = doc.defaultView || window;
@@ -1613,7 +1586,7 @@
         maxRetries: 6,
         watchdogMs: 1000,
         maxWatchdogMiss: 2,
-        showPanel: true,
+        showPanel: false,
         autoRetryOnBoot: false
     };
 
@@ -4814,16 +4787,19 @@
                 return true;
     }
     function peelAndClick(el, {
-        holdMs = 600
+        holdMs = 600,
+        scrollIntoView = true
     } = {}) {
         if (!el)
             return;
-        try {
-            el.scrollIntoView({
-                block: 'center',
-                inline: 'center'
+        if (scrollIntoView) {
+            try {
+                el.scrollIntoView({
+                    block: 'center',
+                    inline: 'center'
                 });
             } catch (_) {}
+        }
         const r = el.getBoundingClientRect();
         const cx = Math.max(0, Math.min(innerWidth - 1, Math.round(r.left + Math.max(1, r.width) / 2)));
         const cy = Math.max(0, Math.min(innerHeight - 1, Math.round(r.top + Math.max(1, r.height) / 2)));
@@ -6020,6 +5996,7 @@
         let layouts = loadLayouts();
         const panelMap = new Map();
         const betPlanById = new Map();
+        const betStatsById = new Map();
         const lastStateSig = new Map();
         const lastProfitById = new Map();
         const roomDomRegistry = new Map();
@@ -8819,6 +8796,31 @@
             return true;
         }
 
+        function setBetStats(id, winAmount, winCount, lossCount) {
+            const tableId = String(id || '').trim();
+            if (!tableId)
+                return false;
+            const amount = Number(winAmount);
+            const wins = Number(winCount);
+            const losses = Number(lossCount);
+            const hasStats = Number.isFinite(amount) || Number.isFinite(wins) || Number.isFinite(losses);
+            const stats = hasStats
+                ? {
+                    winAmount: Number.isFinite(amount) ? amount : 0,
+                    winCount: Number.isFinite(wins) ? Math.max(0, Math.floor(wins)) : 0,
+                    lossCount: Number.isFinite(losses) ? Math.max(0, Math.floor(losses)) : 0
+                }
+                : null;
+            if (stats)
+                betStatsById.set(tableId, stats);
+            else
+                betStatsById.delete(tableId);
+            const st = getPanelState(tableId);
+            if (st)
+                st.betStats = stats;
+            return true;
+        }
+
         function parseCountdownValue(raw) {
             const str = (raw || '').toString().trim();
             if (!str)
@@ -9867,6 +9869,19 @@
             return '';
         }
 
+        function formatWinAmountValue(value) {
+            if (value === null || value === undefined)
+                return '--';
+            const num = Number(value);
+            if (!Number.isFinite(num))
+                return '--';
+            const rounded = Math.round(num);
+            if (rounded === 0)
+                return '0';
+            const absText = Math.abs(rounded).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            return rounded < 0 ? ('-' + absText) : absText;
+        }
+
         function formatWinLossTotals(st) {
             const wins = Math.max(0, st && st.winCount || 0);
             const losses = Math.max(0, st && st.lossCount || 0);
@@ -9935,11 +9950,34 @@
             const planActive = !!(planSideNorm || planAmountText || planLevelText);
             const planSig = planActive ? (planSideNorm + '|' + planAmountText + '|' + planLevelText) : '';
             const winLoseText = deriveWinLoseValue(text);
-            if (view.winLoseValue && st.lastWinLoseText !== winLoseText) {
-                view.winLoseValue.textContent = winLoseText;
-                st.lastWinLoseText = winLoseText;
+            if (view.winLoseValue) {
+                if (winLoseText && winLoseText !== '--') {
+                    if (st.lastWinLoseText !== winLoseText) {
+                        view.winLoseValue.textContent = winLoseText;
+                        st.lastWinLoseText = winLoseText;
+                    }
+                } else if (!st.lastWinLoseText) {
+                    const fallback = winLoseText || '--';
+                    view.winLoseValue.textContent = fallback;
+                    st.lastWinLoseText = fallback;
+                }
             }
-            updateWinLossTotals(st, winLoseText, historySig);
+            const betStats = st.betStats || null;
+            const statsSig = betStats
+                ? String(betStats.winCount || 0) + '|' + String(betStats.lossCount || 0) + '|' + String(betStats.winAmount || 0)
+                : '';
+            if (betStats) {
+                if (st.lastBetStatsSig !== statsSig) {
+                    st.lastBetStatsSig = statsSig;
+                    st.winCount = Math.max(0, betStats.winCount || 0);
+                    st.lossCount = Math.max(0, betStats.lossCount || 0);
+                    applyWinLossTotals(st);
+                    if (view.winAmountValue)
+                        view.winAmountValue.textContent = formatWinAmountValue(betStats.winAmount);
+                }
+            } else {
+                updateWinLossTotals(st, winLoseText, historySig);
+            }
             if (st.lastBetPlanSig !== planSig) {
                 st.lastBetPlanSig = planSig;
                 if (planActive) {
@@ -9986,9 +10024,9 @@
                         ? (planLevelText || '--')
                         : (hasBet ? deriveMoneyValue(text, ['muc\\s*tien', 'muc\\s*cuoc', 'limit']) : '--');
                 if (view.winAmountValue)
-                    view.winAmountValue.textContent = hasBet
-                        ? deriveMoneyValue(text, ['tien\\s*thang', 'thang\\s*tien', 'tien\\s*thuong'])
-                        : '--';
+                    view.winAmountValue.textContent = betStats
+                        ? formatWinAmountValue(betStats.winAmount)
+                        : (hasBet ? deriveMoneyValue(text, ['tien\\s*thang', 'thang\\s*tien', 'tien\\s*thuong']) : '--');
                 const statCounts = summarizeHistoryStats(data.history || [], data.stats || null);
                 if (view.statsTotal)
                     view.statsTotal.textContent = '#' + String(statCounts.total || 0);
@@ -10386,6 +10424,7 @@
             });
 
             const cachedPlan = betPlanById.get(room.id) || null;
+            const cachedStats = betStatsById.get(room.id) || null;
             const st = {
                 id: room.id,
                 panel,
@@ -10396,6 +10435,7 @@
                 lastCountdownValue: null,
                 lastCountdownTimestamp: null,
                 betPlan: cachedPlan,
+                betStats: cachedStats,
                 view: {
                     countdownBadge,
                     countdownValue,
@@ -10440,6 +10480,7 @@
                 lastStatusColor: '',
                 lastCenterResult: '',
                 lastBetPlanSig: '',
+                lastBetStatsSig: '',
                 winCount: 0,
                 lossCount: 0,
                 lastOutcomeSig: '',
@@ -10742,6 +10783,7 @@
             setCutValues,
             setPlayState,
             setBetPlan,
+            setBetStats,
             resolveRoomDom
         };
     })();

@@ -545,6 +545,9 @@ Ví dụ không hợp lệ:
             public string LastBetSide = "";
             public long LastBetAmount;
             public string LastBetLevelText = "";
+            public int WinCount;
+            public int LossCount;
+            public long LastWinAmount;
         }
 
         private sealed class TableOverlayState
@@ -1085,7 +1088,7 @@ Ví dụ không hợp lệ:
         private void Log(string msg)
         {
             var line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
-            EnqueueUi(line);
+            //EnqueueUi(line);
             EnqueueFile(line);
         }
 
@@ -2313,6 +2316,7 @@ Ví dụ không hợp lệ:
                     FinalizeBetRow(row, lastToken.Value.ToString(), accNow);
                     if (!string.IsNullOrWhiteSpace(tableId))
                     {
+                        ApplyBetStatsForTable(tableId, row);
                         var st = GetOrCreateTableTaskState(tableId);
                         st.LastBetAmount = 0;
                         st.LastBetLevelText = "";
@@ -2397,6 +2401,17 @@ Ví dụ không hợp lệ:
             var levelJson = JsonSerializer.Serialize(levelText ?? "");
             var amt = amount.ToString(CultureInfo.InvariantCulture);
             var script = $"window.__abxTableOverlay && window.__abxTableOverlay.setBetPlan && window.__abxTableOverlay.setBetPlan({idJson}, {sideJson}, {amt}, {levelJson});";
+            try { await Web.ExecuteScriptAsync(script); } catch { }
+        }
+
+        private async Task PushBetStatsToOverlayAsync(string tableId, long winAmount, int winCount, int lossCount)
+        {
+            if (Web?.CoreWebView2 == null || string.IsNullOrWhiteSpace(tableId)) return;
+            var idJson = JsonSerializer.Serialize(tableId);
+            var winAmt = winAmount.ToString(CultureInfo.InvariantCulture);
+            var winC = winCount.ToString(CultureInfo.InvariantCulture);
+            var lossC = lossCount.ToString(CultureInfo.InvariantCulture);
+            var script = $"window.__abxTableOverlay && window.__abxTableOverlay.setBetStats && window.__abxTableOverlay.setBetStats({idJson}, {winAmt}, {winC}, {lossC});";
             try { await Web.ExecuteScriptAsync(script); } catch { }
         }
 
@@ -2525,11 +2540,11 @@ Ví dụ không hợp lệ:
                             if (!TryPrepareWebMessage(e, out var display, out parsedDoc))
                             {
                                 if (!string.IsNullOrWhiteSpace(display))
-                                    EnqueueUi($"[JS] {display}");
+                                    //EnqueueUi($"[JS] {display}");
                                 return;
                             }
 
-                            EnqueueUi($"[JS] {display}"); // chỉ hiển thị UI, không ghi ra file
+                            //EnqueueUi($"[JS] {display}"); // chỉ hiển thị UI, không ghi ra file
                             var root = parsedDoc.RootElement.Clone();
 
                                 if (root.TryGetProperty("overlay", out var overlayEl) &&
@@ -8044,6 +8059,49 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
         }
 
+        private static bool IsTieResult(string result)
+        {
+            var u = TextNorm.U(result);
+            return u == "T" || u == "TIE" || u.StartsWith("HOA");
+        }
+
+        private static long ComputeWinAmount(long stake, string side)
+        {
+            if (stake <= 0) return 0;
+            var norm = NormalizeSide(side ?? "");
+            if (string.Equals(norm, "B", StringComparison.OrdinalIgnoreCase))
+                return (long)Math.Round(stake * 0.95);
+            if (string.Equals(norm, "P", StringComparison.OrdinalIgnoreCase))
+                return stake;
+            return stake;
+        }
+
+        private void ApplyBetStatsForTable(string tableId, BetRow row)
+        {
+            if (row == null || string.IsNullOrWhiteSpace(tableId))
+                return;
+            var state = GetOrCreateTableTaskState(tableId, row.Table);
+            var side = NormalizeSide(row.Side ?? "");
+            var result = NormalizeSide(row.Result ?? "");
+            var isTie = IsTieResult(row.Result ?? "");
+            long winAmount = 0;
+            if (!isTie && !string.IsNullOrWhiteSpace(side) && !string.IsNullOrWhiteSpace(result))
+            {
+                if (string.Equals(side, result, StringComparison.OrdinalIgnoreCase))
+                {
+                    winAmount = ComputeWinAmount(row.Stake, side);
+                    state.WinCount++;
+                }
+                else
+                {
+                    winAmount = -Math.Abs(row.Stake);
+                    state.LossCount++;
+                }
+            }
+            state.LastWinAmount = winAmount;
+            _ = PushBetStatsToOverlayAsync(tableId, winAmount, state.WinCount, state.LossCount);
+        }
+
 
         private void FinalizeLastBet(string? result, double balanceAfter)
         {
@@ -8075,6 +8133,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
             else
             {
                 RefreshCurrentPage();   // (mục 3 bên dưới)
+            }
+
+            if (!string.IsNullOrWhiteSpace(_activeTableId))
+            {
+                ApplyBetStatsForTable(_activeTableId, _pendingRow);
             }
 
             _pendingRow = null; // sẵn sàng ván tiếp theo
