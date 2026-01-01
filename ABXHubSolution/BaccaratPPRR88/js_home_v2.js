@@ -1349,6 +1349,10 @@
             const s = betNormalizeSide(side);
             const sideLabel = (s === 'player') ? 'P' : (s === 'banker' ? 'B' : '');
             const amountValue = Number(amount) || 0;
+            if (amountValue <= 0) {
+                sendOnce(id, sideLabel, amountValue);
+                return 'ok';
+            }
 
             if (id && sideLabel) {
                 const idCandidates = betGetTableIdCandidates(id);
