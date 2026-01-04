@@ -478,6 +478,7 @@ Ví dụ không hợp lệ:
             public double CutProfit { get; set; } = 0; // 0 = tắt cắt lãi
             public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
             public bool AutoResetOnCut { get; set; } = false; // đủ cắt lãi/lỗ -> reset về mức đầu
+            public bool AutoResetOnWinGeTotal { get; set; } = false; // tiền thắng >= tổng cược -> reset về mức đầu
             public string BetSeqPB { get; set; } = "";        // cho Chiến lược 1
             public string BetSeqNI { get; set; } = "";        // cho Chiến lược 3
             public string BetPatternsPB { get; set; } = "";   // cho Chiến lược 2
@@ -1672,6 +1673,7 @@ Ví dụ không hợp lệ:
                 MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
                 UpdateS7ResetOptionUI();
                 if (ChkAutoResetOnCut != null) ChkAutoResetOnCut.IsChecked = _cfg.AutoResetOnCut;
+                if (ChkAutoResetOnWinGeTotal != null) ChkAutoResetOnWinGeTotal.IsChecked = _cfg.AutoResetOnWinGeTotal;
 
 
                 if (ChkRemember != null) ChkRemember.IsChecked = _cfg.RememberCreds;
@@ -1748,6 +1750,8 @@ Ví dụ không hợp lệ:
                     _cfg.S7ResetOnProfit = (ChkS7ResetOnProfit.IsChecked == true);
                 if (ChkAutoResetOnCut != null)
                     _cfg.AutoResetOnCut = (ChkAutoResetOnCut.IsChecked == true);
+                if (ChkAutoResetOnWinGeTotal != null)
+                    _cfg.AutoResetOnWinGeTotal = (ChkAutoResetOnWinGeTotal.IsChecked == true);
                 _cfg.SelectedRooms = _selectedRooms.ToList();
 
 
@@ -1804,6 +1808,7 @@ Ví dụ không hợp lệ:
                 snapshot.S7ResetOnProfit = _globalCfgSnapshot.S7ResetOnProfit;
             }
             snapshot.AutoResetOnCut = _cfg?.AutoResetOnCut ?? false;
+            snapshot.AutoResetOnWinGeTotal = _cfg?.AutoResetOnWinGeTotal ?? false;
             return snapshot;
         }
 
@@ -2097,6 +2102,7 @@ Ví dụ không hợp lệ:
                     : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 _cfg.S7ResetOnProfit = _globalCfgSnapshot.S7ResetOnProfit;
                 _cfg.AutoResetOnCut = _globalCfgSnapshot.AutoResetOnCut;
+                _cfg.AutoResetOnWinGeTotal = _globalCfgSnapshot.AutoResetOnWinGeTotal;
 
                 if (CmbBetStrategy != null)
                 {
@@ -2117,6 +2123,8 @@ Ví dụ không hợp lệ:
                     ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
                 if (ChkAutoResetOnCut != null)
                     ChkAutoResetOnCut.IsChecked = _cfg.AutoResetOnCut;
+                if (ChkAutoResetOnWinGeTotal != null)
+                    ChkAutoResetOnWinGeTotal.IsChecked = _cfg.AutoResetOnWinGeTotal;
             }
             finally
             {
@@ -2738,6 +2746,7 @@ Ví dụ không hợp lệ:
                                         {
                                             if (LblTotalStake != null)
                                                 LblTotalStake.Text = totalText;
+                                            CheckWinGeTotalBetResetIfNeeded();
                                         }));
                                     }
                                 }
@@ -4440,6 +4449,17 @@ private async Task<CancellationTokenSource> DebounceAsync(
             await SaveConfigAsync();
         }
 
+        private async void ChkAutoResetOnWinGeTotal_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!_uiReady || _suppressTableSync) return;
+            if (_cfg == null) return;
+            _cfg.AutoResetOnWinGeTotal = (ChkAutoResetOnWinGeTotal?.IsChecked == true);
+            if (_globalCfgSnapshot != null)
+                _globalCfgSnapshot.AutoResetOnWinGeTotal = _cfg.AutoResetOnWinGeTotal;
+            await SaveConfigAsync();
+            CheckWinGeTotalBetResetIfNeeded();
+        }
+
         async void CmbMoneyStrategy_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!_uiReady || _suppressTableSync) return;
@@ -5752,6 +5772,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
                     CheckTableCutAndStopIfNeeded(setting, state);
                     CheckCutAndStopIfNeeded();
+                    CheckWinGeTotalBetResetIfNeeded();
                 }),
                 UiWinLoss = s => Dispatcher.Invoke(() =>
                 {
@@ -5861,6 +5882,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (setting != null)
                     CheckTableCutAndStopIfNeeded(setting, state);
                 CheckCutAndStopIfNeeded();
+                CheckWinGeTotalBetResetIfNeeded();
             }));
         }
 
@@ -7819,6 +7841,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (TxtCutProfit != null) TxtCutProfit.Text = (_cfg?.CutProfit ?? 0).ToString("N0");
             if (TxtCutLoss != null) TxtCutLoss.Text = (_cfg?.CutLoss ?? 0).ToString("N0");
             if (ChkAutoResetOnCut != null) ChkAutoResetOnCut.IsChecked = (_cfg?.AutoResetOnCut == true);
+            if (ChkAutoResetOnWinGeTotal != null) ChkAutoResetOnWinGeTotal.IsChecked = (_cfg?.AutoResetOnWinGeTotal == true);
         }
 
         private static double ParseMoneyOrZero(string s)
@@ -7894,6 +7917,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             // Nếu đang chạy thì kiểm tra & cắt ngay nếu đủ điều kiện
             CheckCutAndStopIfNeeded();
+            CheckWinGeTotalBetResetIfNeeded();
         }
 
 
@@ -7941,6 +7965,30 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
         }
 
+        private double GetCurrentTotalBetValue()
+        {
+            var hasFreshGameTotalBet = !string.IsNullOrWhiteSpace(_gameTotalBet) &&
+                                       (DateTime.UtcNow - _gameTotalBetAt) <= TimeSpan.FromSeconds(10);
+            var raw = hasFreshGameTotalBet ? _gameTotalBet : (LblTotalStake?.Text ?? "");
+            return ParseMoneyOrZero(raw ?? "");
+        }
+
+        private void CheckWinGeTotalBetResetIfNeeded()
+        {
+            if (_cutStopTriggered) return;
+            if (_cutAutoResetInProgress != 0) return;
+            if (_cfg?.AutoResetOnWinGeTotal != true) return;
+
+            var totalBet = GetCurrentTotalBetValue();
+            if (totalBet <= 0) return;
+
+            if (_winTotal >= totalBet)
+            {
+                if (TryEnterCutAutoReset())
+                    ResetAllProfitAndStepsForCut($"Dat WIN >= TONG CUOC: win={_winTotal:N0} >= total={totalBet:N0}");
+            }
+        }
+
 
         private void ResetAllProfitAndStepsForCut(string reason)
         {
@@ -7967,6 +8015,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             state.MoneyChainProfit = 0;
                             state.MoneyResetVersion = resetVersion;
                             state.StakeLevelIndexForUi = -1;
+                            state.WinCount = 0;
+                            state.LossCount = 0;
+                            state.LastWinAmount = 0;
+                            _ = PushBetStatsToOverlayAsync(state.TableId, 0, 0, 0);
                         }
                     }
 

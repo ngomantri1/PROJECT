@@ -1218,6 +1218,14 @@
                                     Content="Đủ cắt lãi, cắt lỗ tự động về mức cược đầu"
                                     Foreground="#222"
                                     Unchecked="ChkAutoResetOnCut_Changed" />
+                                <CheckBox
+                                    x:Name="ChkAutoResetOnWinGeTotal"
+                                    Margin="12,4,0,0"
+                                    VerticalAlignment="Center"
+                                    Checked="ChkAutoResetOnWinGeTotal_Changed"
+                                    Content="Tiền thắng >= tổng cược tự động về mức cược đầu"
+                                    Foreground="#222"
+                                    Unchecked="ChkAutoResetOnWinGeTotal_Changed" />
                                 <Grid
                                     Grid.Row="0"
                                     Margin="0,10,0,0"
