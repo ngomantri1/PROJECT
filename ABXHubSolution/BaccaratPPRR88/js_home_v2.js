@@ -1586,7 +1586,7 @@
         maxRetries: 6,
         watchdogMs: 1000,
         maxWatchdogMiss: 2,
-        showPanel: false,
+        showPanel: true,
         autoRetryOnBoot: false
     };
 
@@ -2933,6 +2933,134 @@
     }
 
     window.__abx_hw_showDataAlert = showTestAlert;
+
+    const DOMLOG_STATE_KEY = '__abx_domlog_state';
+
+    function getDomLogState() {
+        if (!window[DOMLOG_STATE_KEY]) {
+            window[DOMLOG_STATE_KEY] = {
+                enabled: false,
+                logs: [],
+                handler: null
+            };
+        }
+        return window[DOMLOG_STATE_KEY];
+    }
+
+    function domLogCssTail(el) {
+        try {
+            const parts = [];
+            let cur = el;
+            while (cur && cur.nodeType === 1 && parts.length < 10) {
+                const tag = cur.tagName.toLowerCase();
+                const cls = (cur.className && typeof cur.className === 'string')
+                    ? '.' + cur.className.trim().split(/\s+/).slice(0, 2).join('.')
+                    : '';
+                let idx = 1;
+                if (cur.parentElement) {
+                    const siblings = Array.from(cur.parentElement.children).filter(x => x.tagName === cur.tagName);
+                    idx = siblings.indexOf(cur) + 1;
+                }
+                parts.unshift(`${tag}${cls}[${idx}]`);
+                cur = cur.parentElement;
+            }
+            return parts.join('/');
+        } catch (_) {}
+        return '';
+    }
+
+    function domLogDump(el) {
+        if (!el)
+            return '';
+        try {
+            const r = el.getBoundingClientRect ? el.getBoundingClientRect() : { x: 0, y: 0, width: 0, height: 0 };
+            const text = (el.textContent || '').trim().slice(0, 120);
+            const href = el.getAttribute && el.getAttribute('href');
+            const src = el.getAttribute && el.getAttribute('src');
+            return [
+                `Tag  : ${el.tagName || ''}`,
+                `Class: ${(el.className && el.className.toString) ? el.className.toString() : ''}`,
+                `Id   : ${el.id || ''}`,
+                `Href : ${href || ''}`,
+                `Src  : ${src || ''}`,
+                `Text : ${text}`,
+                `Rect : [${Math.round(r.x)}, ${Math.round(r.y)}, ${Math.round(r.width)}, ${Math.round(r.height)}]`,
+                `Tail : ${domLogCssTail(el)}`
+            ].join('\n');
+        } catch (_) {}
+        return '';
+    }
+
+    function domLogRender(state) {
+        try {
+            const el = ensureAlertContainer();
+            const ta = document.getElementById(`${ALERT_ID}-ta`);
+            if (ta) {
+                ta.value = (state.logs || []).join('\n\n');
+                ta.scrollTop = ta.scrollHeight || 0;
+            }
+            return el;
+        } catch (_) {}
+        return null;
+    }
+
+    function domLogClickHandler(e) {
+        try {
+            const state = getDomLogState();
+            if (!state.enabled || !e || !e.altKey)
+                return;
+            const block = domLogDump(e.target);
+            if (!block)
+                return;
+            state.logs.push(block);
+            domLogRender(state);
+        } catch (_) {}
+    }
+
+    window.__abx_hw_domlog_start = function () {
+        const state = getDomLogState();
+        if (state.enabled)
+            return 'ok';
+        state.enabled = true;
+        state.logs = [];
+        state.handler = domLogClickHandler;
+        document.addEventListener('click', domLogClickHandler, true);
+        showTestAlert('DOM log started. Alt+Click to capture.');
+        return 'ok';
+    };
+
+    window.__abx_hw_domlog_stop = function () {
+        const state = getDomLogState();
+        if (!state.enabled)
+            return 'ok';
+        state.enabled = false;
+        if (state.handler) {
+            document.removeEventListener('click', state.handler, true);
+            state.handler = null;
+        }
+        return 'ok';
+    };
+
+    window.__abx_hw_domlog_clear = function () {
+        const state = getDomLogState();
+        state.logs = [];
+        domLogRender(state);
+        return 'ok';
+    };
+
+    window.__abx_hw_domlog_dump = function (selectorOrEl) {
+        const state = getDomLogState();
+        let el = selectorOrEl;
+        if (typeof selectorOrEl === 'string') {
+            try { el = document.querySelector(selectorOrEl); } catch (_) { el = null; }
+        }
+        const block = domLogDump(el);
+        if (block) {
+            state.logs.push(block);
+            domLogRender(state);
+        }
+        return block || '';
+    };
 
     const CENTER_ALERT_ID = '__abx_center_alert_popup';
     let _centerAlertTimer = 0;
