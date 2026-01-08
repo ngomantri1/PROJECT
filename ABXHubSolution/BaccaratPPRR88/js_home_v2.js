@@ -221,7 +221,7 @@
             acc[label] = value;
         return acc;
     }, {});
-    const BET_CHIP_LABEL_SELECTORS = ['.wo_wq', '.v0_wa'];
+    const BET_CHIP_LABEL_SELECTORS = ['.wo_wq', '.v0_wa', '.vb_ve'];
 
     function betCssFromTailSimple(tail) {
         const segs = String(tail || '').trim().split('/').filter(Boolean).map(seg => {
@@ -376,8 +376,8 @@
     function betFindTargetByTableId(id, side) {
         const s = betNormalizeSide(side);
         const selector = (s === 'player')
-            ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1'
-            : (s === 'banker' ? '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra' : '');
+            ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt'
+            : (s === 'banker' ? '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru' : '');
         if (!selector)
             return null;
         const candidates = betGetTableIdCandidates(id);
@@ -432,6 +432,8 @@
             return null;
         return node.closest('div[id^="TileHeight-"]') ||
             node.closest('div.gC_gE.gC_gH.gC_gI') ||
+            node.closest('div.hu_hv.hu_hy') ||
+            node.closest('div.eB_eC.tile-container-wrapper') ||
             node.closest('div.he_hf.he_hi') ||
             node.closest('div.hC_hE') ||
             node.closest('div.ep_bn') ||
@@ -451,8 +453,8 @@
         if (!root || !root.querySelector)
             return false;
         try {
-            return !!(root.querySelector('.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1') ||
-                root.querySelector('.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra'));
+            return !!(root.querySelector('.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt') ||
+                root.querySelector('.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru'));
         } catch (_) {}
             return false;
     }
@@ -568,8 +570,8 @@
         if (el && betIsVisible(el))
             return el;
         const cls = s === 'player'
-            ? '.qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0'
-            : (s === 'banker' ? '.qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1' : '.qC_lC.qC_qN.qC_qV, .qC_lC.qC_qN');
+            ? '.qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt'
+            : (s === 'banker' ? '.qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru' : '.qC_lC.qC_qN.qC_qV, .qC_lC.qC_qN');
         try { el = root.querySelector(cls); } catch (_) {}
         return el || null;
     }
@@ -580,7 +582,7 @@
         if (el.getAttribute('data-betcode'))
             return true;
         try {
-            return !!(el.classList && el.classList.contains('qC_lC'));
+            return !!(el.classList && (el.classList.contains('qC_lC') || el.classList.contains('qX_lc')));
         } catch (_) {}
         return false;
     }
@@ -694,7 +696,7 @@
         ].filter(Boolean).join(' ');
         if (!clsSources)
             return false;
-        if (/\b(active|selected|on|checked|qC_qH|rO_rT)\b/i.test(clsSources))
+        if (/\b(active|selected|on|checked|qC_qH|rO_rT|lL_lT)\b/i.test(clsSources))
             return true;
         return /\blF_lN\b/.test(clsSources);
     }
@@ -725,7 +727,14 @@
                 'button.lF_lN .v0_wa',
                 '.lF_lN .v0_wa',
                 '.active .v0_wa',
-                '.selected .v0_wa'
+                '.selected .v0_wa',
+                'button[aria-pressed="true"] .vb_ve',
+                'button[aria-selected="true"] .vb_ve',
+                'button[aria-checked="true"] .vb_ve',
+                'button.lL_lT .vb_ve',
+                '.lL_lT .vb_ve',
+                '.active .vb_ve',
+                '.selected .vb_ve'
             ].join(',');
             const el = docAny.querySelector(sel);
             if (el) {
@@ -973,6 +982,8 @@
                 target.closest('.zv_zw') ||
                 target.closest('.uU_g0') ||
                 target.closest('.pI_pJ') ||
+                target.closest('.kI_kJ') ||
+                target.closest('.yu_yv') ||
                 fallbackRoot;
         }
         return fallbackRoot;
@@ -1003,13 +1014,13 @@
         if (!root || !root.querySelector)
             return false;
         const sel = side === 'player'
-            ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1'
-            : '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra';
+            ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt'
+            : '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru';
         try {
             const el = root.querySelector(sel);
             if (!el)
                 return false;
-            const container = el.closest('.yW_yX, .lg_lh, .lg_ll, .lg_lm, .lg_ln, .lg_lr, .lg_lu, .lg_lx');
+            const container = el.closest('.yW_yX, .lg_lh, .lg_ll, .lg_lm, .lg_ln, .lg_lr, .lg_lu, .lg_lx, .kI_kJ, .kI_kN, .kI_kO, .yu_yv');
             const clsEl = (typeof el.className === 'string') ? el.className : (el.getAttribute && el.getAttribute('class')) || '';
             const clsContainer = container ? ((typeof container.className === 'string') ? container.className : (container.getAttribute && container.getAttribute('class')) || '') : '';
             const cls = String(clsEl || '') + ' ' + String(clsContainer || '');
@@ -1361,8 +1372,8 @@
                 }
                 const targetTail = s === 'player' ? BET_PLAYER_TAIL : BET_BANKER_TAIL;
                 const selector = s === 'player'
-                    ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1'
-                    : '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra';
+                    ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt'
+                    : '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru';
                 let target = root
                     ? (betFindByTail(root, targetTail) || betFindFirstVisible(root, selector))
                     : null;
@@ -1387,6 +1398,8 @@
                         target.closest('.kU_kV') ||
                         target.closest('.zv_zw') ||
                         target.closest('.uU_g0') ||
+                        target.closest('.kI_kJ') ||
+                        target.closest('.yu_yv') ||
                         target;
                     const planResult = betBuildChipPlan(amountValue, rootDoc);
                     if (!planResult.plan.length || planResult.remaining > 0) {
@@ -1813,7 +1826,8 @@
         'div.hC_hE.hC_hH',
         'div.rC_rE',
         'div.rC_rS',
-        'div.ec_F div.he_hf.he_hi'
+        'div.ec_F div.he_hf.he_hi',
+        'div.hu_hv.hu_hy'
     ];
 
     const BACC_CARD_HEURISTIC_SELECTORS = [
@@ -1839,15 +1853,16 @@
             });
             });
         // Fallback for updated DOM: collect from title nodes.
-        document.querySelectorAll('span.rW_sl').forEach(node => {
-            const root = node.closest('div.he_hf.he_hi') ||
+        document.querySelectorAll('span.rW_sl, div.ls_by').forEach(node => {
+            const root = node.closest('div.hu_hv.hu_hy') ||
+                node.closest('div.he_hf.he_hi') ||
                 node.closest('div.rW_rX') ||
                 node.closest('div.mx_G') ||
                 node.closest('div.jF_jJ');
             addCard(root);
             });
         if (cards.length < 10) {
-            const rootSel = 'div[id^="TileHeight-"], div.gC_gE.gC_gH.gC_gI';
+            const rootSel = 'div[id^="TileHeight-"], div.gC_gE.gC_gH.gC_gI, div.hu_hv.hu_hy';
             BACC_CARD_HEURISTIC_SELECTORS.forEach(sel => {
                 try {
                     document.querySelectorAll(sel).forEach(node => {
@@ -1934,7 +1949,7 @@
         const segments = cards.map((card, index) => {
             const cardIdInfo = extractBaccCardId(card);
             const identifier = cardIdInfo.id || card.getAttribute('data-table-id') || card.dataset.tableId || '';
-            const name = (card.querySelector('.tile-name, .rY_sn, .game-title, .rW_sl')?.textContent || '').trim();
+            const name = (card.querySelector('.tile-name, .rY_sn, .game-title, .rW_sl, .ls_by')?.textContent || '').trim();
             const headingParts = ['Card #' + (index + 1)];
             if (identifier)
                 headingParts.push('[id:' + identifier + ']');
@@ -2562,8 +2577,8 @@
                             .join('');
                         return {
                             id: card.getAttribute('data-table-id') || card.dataset.tableId || '',
-                            name: normalizeText(card.querySelector('.rC_rT, .rC_rE span, .rY_sn, .rW_sl, .tile-name, .title, .game-title')?.textContent),
-                        countdown: (card.querySelector('span.yv_yy.yv_yz, span.yv_yy.yv_yB, [data-countdown], [class*=count]')?.textContent || '').replace(/[^\d]/g, '') || null,
+                        name: normalizeText(card.querySelector('.rC_rT, .rC_rE span, .rY_sn, .rW_sl, .tile-name, .title, .game-title, .ls_by')?.textContent),
+                        countdown: (card.querySelector('span.yv_yy.yv_yz, span.yv_yy.yv_yB, span.yw_yz.yw_yA.yw_yF, span.yw_yz.yw_yA, [data-countdown], [class*=count]')?.textContent || '').replace(/[^\d]/g, '') || null,
                         resultChain,
                         counts: parseCounts(textSnapshot),
                         bets: parseBets(textSnapshot),
@@ -4038,6 +4053,7 @@
             '.rY_sn',
             '.game-title',
             '.abx-table-title',
+            '.ls_by',
             '[data-table-name]',
             '[data-title]'
         ];
@@ -6159,7 +6175,8 @@
             'span.rW_sl',
             'span.rY_sn',
             'span.qL_qM.qL_qN',
-            'div.abx-table-title'
+            'div.abx-table-title',
+            'div.ls_by'
         ];
 
         let rooms = [];
@@ -7166,6 +7183,8 @@
             if (!node)
             return null;
             return node.closest('div.he_hf.he_hi') ||
+                node.closest('div.hu_hv.hu_hy') ||
+                node.closest('div.eB_eC.tile-container-wrapper') ||
                 node.closest('div.hC_hE') ||
                 node.closest('div.ep_bn') ||
                 node.closest('div.hu_hw') ||
@@ -7227,7 +7246,7 @@
                     rememberRoomDom(rootId, byAttr);
                 return byAttr;
             }
-            const selectors = ['span.rY_sn', 'span.qL_qM.qL_qN', 'div.abx-table-title', 'span.rC_rT', 'span.rW_sl'];
+            const selectors = ['span.rY_sn', 'span.qL_qM.qL_qN', 'div.abx-table-title', 'span.rC_rT', 'span.rW_sl', 'div.ls_by'];
             for (const sel of selectors) {
                 const list = Array.from(document.querySelectorAll(sel));
                 const match = list.find(el => (el.textContent || '').trim() === needle);
@@ -7321,6 +7340,11 @@
             'div.rj_rk svg',
             'div.rj_rk path',
             'div.rO_rP',
+            'div.qs_qt.qs_qx',
+            'div.qs_qt.qs_qx svg',
+            'div.qs_qt.qs_qx path',
+            'div.gs_gt svg',
+            'div.gs_gt path',
             'div.rJ_rK svg.ka_kb',
             'div.rJ_rK svg',
             'div.rJ_rK',
@@ -7367,6 +7391,9 @@
             const pinRoot = root.querySelector('div.rj_rk');
             if (pinRoot)
                 return pinRoot.querySelector('svg') || pinRoot;
+            const pinNew = root.querySelector('div.qs_qt.qs_qx');
+            if (pinNew)
+                return pinNew;
             const pins = Array.from(root.querySelectorAll('div.rO_rP'));
             if (pins.length)
                 return pickTopRight(pins) || pins[0];
@@ -7394,6 +7421,12 @@
                 const wrapNew = btn.closest && btn.closest('div.rj_rk');
                 if (wrapNew && wrapNew.classList && wrapNew.classList.contains('rj_ro'))
                         return true;
+                const wrapNew2 = btn.closest && btn.closest('div.qs_qt.qs_qx');
+                if (wrapNew2 && wrapNew2.classList) {
+                    const cls = wrapNew2.className || '';
+                    if (/\b(active|selected|on|checked)\b/i.test(String(cls)))
+                        return true;
+                }
                 const pinRoot = wrapNew || btn;
                 const outline = pinRoot.querySelector && pinRoot.querySelector('path.rj_rm');
                 if (outline) {
@@ -7409,6 +7442,23 @@
                         return true;
                     if (strokeNorm && (strokeNorm.includes('rgb(255, 255, 255)') || strokeNorm.includes('#fff') || strokeNorm.includes('white')))
                         return false;
+                }
+                if (wrapNew2) {
+                    const anyPath = wrapNew2.querySelector && wrapNew2.querySelector('path');
+                    if (anyPath) {
+                        const win2 = anyPath.ownerDocument && anyPath.ownerDocument.defaultView;
+                        const style2 = win2 && win2.getComputedStyle ? win2.getComputedStyle(anyPath) : null;
+                        const fill2 = (style2 && style2.fill) || anyPath.getAttribute('fill') || '';
+                        const stroke2 = (style2 && style2.stroke) || anyPath.getAttribute('stroke') || '';
+                        const fillNorm2 = String(fill2 || '').toLowerCase();
+                        const strokeNorm2 = String(stroke2 || '').toLowerCase();
+                        const isTransparent2 = (v) =>
+                            !v || v === 'none' || v === 'transparent' || v.includes('rgba(0, 0, 0, 0)');
+                        if (fillNorm2 && !isTransparent2(fillNorm2))
+                            return true;
+                        if (strokeNorm2 && (strokeNorm2.includes('rgb(255, 255, 255)') || strokeNorm2.includes('#fff') || strokeNorm2.includes('white')))
+                            return false;
+                    }
                 }
                 if (btn.classList && btn.classList.contains('rO_rT'))
                         return true;
@@ -7585,6 +7635,9 @@
             const pinRoot = card.querySelector('div.rj_rk');
             if (pinRoot)
                 return pinRoot.querySelector('svg') || pinRoot;
+            const pinNew = card.querySelector('div.qs_qt.qs_qx');
+            if (pinNew)
+                return pinNew;
             const pins = Array.from(card.querySelectorAll('div.rO_rP'));
             if (pins.length)
                 return pickTopRight(pins) || pins[0];
@@ -9021,7 +9074,7 @@
             if (!root)
                 return null;
             try {
-                const node = root.querySelector('span.ya_ye.ya_yf');
+                const node = root.querySelector('span.ya_ye.ya_yf, span.yw_yz.yw_yA.yw_yF, span.yw_yz.yw_yA');
                 if (node && parseCountdownValue(node.textContent) != null)
                     return node;
             } catch (_) {}
@@ -9057,9 +9110,9 @@
             };
             };
             return {
-                player: readArea('.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1', 'Người Chơi'),
+                player: readArea('.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt', 'Người Chơi'),
                 tie: readArea('.pu_pv .qC_lC.qC_qN.qC_qV, .qC_lC.qC_qN.qC_qV, .pu_pv [data-betcode="2"].qC_lC, [data-betcode="2"].qC_lC, .qE_lp.qE_qO', 'Hòa'),
-                banker: readArea('.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra', 'Nhà Cái')
+                banker: readArea('.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru', 'Nhà Cái')
             };
                     }
 
@@ -9085,7 +9138,7 @@
             const getBetAreaScope = (area) => {
                 if (!area || !area.closest)
                     return area;
-                return area.closest('.yW_yX, .lg_lh, .lg_ll, .lg_lm, .lg_ln, .lg_lr, .lg_lu, .lg_lx') || area;
+                return area.closest('.yW_yX, .lg_lh, .lg_ll, .lg_lm, .lg_ln, .lg_lr, .lg_lu, .lg_lx, .kI_kJ, .kI_kN, .kI_kO, .yu_yv, .pN_pO') || area;
             };
             const readNumericFromScope = (scope) => {
                 if (!scope || !scope.querySelectorAll)
@@ -9152,14 +9205,17 @@
                     return '';
                 if (!betIsVisible(area))
                     return '';
-                const hasWinTag = (area.classList && area.classList.contains('qC_qE')) || area.querySelector('.qC_qE');
+                const hasWinTag = (area.classList && area.classList.contains('qC_qE')) ||
+                    area.querySelector('.qC_qE') ||
+                    area.querySelector('.rx_ry.rx_rz') ||
+                    area.querySelector('.rx_ry');
                 if (!hasWinTag)
                     return '';
                 const scope = getBetAreaScope(area);
                 return readNumericFromScope(scope);
             };
-            const playerResult = readVisibleText('span.rc_re.rc_rg');
-            const bankerResult = readVisibleText('span.rc_re.rc_rf');
+            const playerResult = readVisibleText('span.rc_re.rc_rg, .kI_kN span.rx_ry.rx_rz, .kI_kN span.rx_ry');
+            const bankerResult = readVisibleText('span.rc_re.rc_rf, .kI_kO span.rx_ry.rx_rz, .kI_kO span.rx_ry');
             if (playerResult || bankerResult) {
                 return {
                     player: playerResult || '',
@@ -9176,9 +9232,9 @@
             if (!root || !root.querySelector)
                 return null;
             const sel = code === '0'
-                ? '[data-betcode="0"], .qC_lC.qC_q0'
+                ? '[data-betcode="0"], .qC_lC.qC_q0, .qX_lc.qX_rt'
                 : (code === '1'
-                    ? '[data-betcode="1"], .qC_lC.qC_q1'
+                    ? '[data-betcode="1"], .qC_lC.qC_q1, .qX_lc.qX_ru'
                     : '[data-betcode="2"], .qC_lC.qC_qN');
             try { return root.querySelector(sel); } catch (_) { return null; }
         }
@@ -9205,7 +9261,7 @@
             const rootRect = root.getBoundingClientRect();
             const maxW = rootRect.width * 2.5;
             const maxH = rootRect.height * 2.5;
-            const nodes = betCollectNodes('.wo_wq, .v0_wa');
+            const nodes = betCollectNodes('.wo_wq, .v0_wa, .vb_ve');
             return nodes.filter(el => {
                 if (!el || !el.getBoundingClientRect)
                     return false;
@@ -9282,14 +9338,18 @@
                 const pickSideFromContainer = (el) => {
                     if (!el || !el.closest)
                         return '';
+                    if (el.closest('.kI_kN'))
+                        return 'player';
+                    if (el.closest('.kI_kO'))
+                        return 'banker';
                     const container = el.closest('.yW_yX') || el.closest('.lg_lh, .lg_ll, .lg_lm, .lg_ln, .lg_lr, .lg_lu, .lg_lx');
                     if (!container || !container.querySelector)
                         return '';
                     if (!betIsVisible(container))
                         return '';
-                    if (container.querySelector('[data-betcode="0"], .qC_lC.qC_q0'))
+                    if (container.querySelector('[data-betcode="0"], .qC_lC.qC_q0, .qX_lc.qX_rt'))
                         return 'player';
-                    if (container.querySelector('[data-betcode="1"], .qC_lC.qC_q1'))
+                    if (container.querySelector('[data-betcode="1"], .qC_lC.qC_q1, .qX_lc.qX_ru'))
                         return 'banker';
                     if (container.querySelector('[data-betcode="2"], .qC_lC.qC_qN'))
                         return 'tie';
@@ -9308,7 +9368,7 @@
                     const cx = r.left + r.width / 2;
                     return cx < midX ? 'player' : 'banker';
                 };
-                const nodes = Array.from(root.querySelectorAll('.yW_yX .wo_wq, .yW_yX .v0_wa, .lg_lh .wo_wq, .lg_lh .v0_wa, .lg_ll .wo_wq, .lg_ll .v0_wa'));
+                const nodes = Array.from(root.querySelectorAll('.yW_yX .wo_wq, .yW_yX .v0_wa, .yW_yX .vb_ve, .lg_lh .wo_wq, .lg_lh .v0_wa, .lg_lh .vb_ve, .lg_ll .wo_wq, .lg_ll .v0_wa, .lg_ll .vb_ve, .kI_kJ .vb_ve, .kI_kN .vb_ve, .kI_kO .vb_ve, .yu_yv .vb_ve'));
                 if (nodes.length) {
                     let playerVal = '';
                     let bankerVal = '';
@@ -9346,15 +9406,15 @@
                 const area = betGetLabelNode(root, code);
                 if (!area)
                     return '';
-                return readChip('.wo_wq, .v0_wa', area);
+                return readChip('.wo_wq, .v0_wa, .vb_ve', area);
             };
             const areaPlayer = readChipFromArea('0');
             const areaBanker = readChipFromArea('1');
             if (areaPlayer || areaBanker)
                 return { player: areaPlayer, banker: areaBanker };
             return {
-                player: readChip('.kU_kZ .wo_wq, .kU_kZ .v0_wa, [data-betcode="0"] .wo_wq, [data-betcode="0"] .v0_wa, .qC_lC.qC_q0 .wo_wq, .qC_lC.qC_q0 .v0_wa'),
-                banker: readChip('.kU_k0 .wo_wq, .kU_k0 .v0_wa, [data-betcode="1"] .wo_wq, [data-betcode="1"] .v0_wa, .qC_lC.qC_q1 .wo_wq, .qC_lC.qC_q1 .v0_wa')
+                player: readChip('.kU_kZ .wo_wq, .kU_kZ .v0_wa, .kU_kZ .vb_ve, [data-betcode="0"] .wo_wq, [data-betcode="0"] .v0_wa, [data-betcode="0"] .vb_ve, .qC_lC.qC_q0 .wo_wq, .qC_lC.qC_q0 .v0_wa, .qC_lC.qC_q0 .vb_ve, .kI_kN .vb_ve, .qX_lc.qX_rt .vb_ve'),
+                banker: readChip('.kU_k0 .wo_wq, .kU_k0 .v0_wa, .kU_k0 .vb_ve, [data-betcode="1"] .wo_wq, [data-betcode="1"] .v0_wa, [data-betcode="1"] .vb_ve, .qC_lC.qC_q1 .wo_wq, .qC_lC.qC_q1 .v0_wa, .qC_lC.qC_q1 .vb_ve, .kI_kO .vb_ve, .qX_lc.qX_ru .vb_ve')
             };
         }
 
@@ -9418,8 +9478,8 @@
                 } catch (_) {}
                 return best;
             };
-            const playerPick = pickWinner('.ym_tS.ym_yp .ym_ys');
-            const bankerPick = pickWinner('.ym_tS.ym_yr .ym_ys');
+            const playerPick = pickWinner('.ym_tS.ym_yp .ym_ys, .yI_uA.yI_yL .yI_yO');
+            const bankerPick = pickWinner('.ym_tS.ym_yr .ym_ys, .yI_uA.yI_yN .yI_yO');
             if (playerPick.text || bankerPick.text) {
                 if (!bankerPick.text)
                     return playerPick.text;

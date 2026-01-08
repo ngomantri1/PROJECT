@@ -1245,8 +1245,8 @@ Ví dụ không hợp lệ:
 
                 var js = @"(function(){
   try{
-    const titleSelectors = ['span.rC_rT','span.rW_sl','span.rY_sn','span.qL_qM.qL_qN','.tile-name','.game-title'];
-    const cardSelectors = ['div[id^=""TileHeight-""]','div.gC_gE.gC_gH.gC_gI'];
+    const titleSelectors = ['span.rC_rT','span.rW_sl','span.rY_sn','span.qL_qM.qL_qN','.tile-name','.game-title','.ls_by'];
+    const cardSelectors = ['div[id^=""TileHeight-""]','div.gC_gE.gC_gH.gC_gI','div.hu_hv.hu_hy'];
     const heuristicSelectors = ['div.pu_pv','div.uH_gQ','svg use[href^=""#bigroad-""]','svg use[*|href^=""#bigroad-""]','svg [href^=""#bigroad-""]'];
     const idAttrs = ['id','data-table-id','data-id','data-game-id','data-tableid','data-table','data-table-name','data-tablename'];
     const nameAttrs = ['data-table-name','data-tablename','data-tabletitle','data-table-title','data-title','data-name','data-display-name','data-displayname','data-label','aria-label','title','alt'];
@@ -1476,6 +1476,29 @@ Ví dụ không hợp lệ:
                     .Where(x => !string.IsNullOrWhiteSpace(x.Name))
                     .GroupBy(x => string.IsNullOrWhiteSpace(x.Id) ? x.Name : x.Id, StringComparer.OrdinalIgnoreCase)
                     .Select(g => g.First())
+                    .GroupBy(x => TextNorm.U(x.Name), StringComparer.Ordinal)
+                    .Select(g =>
+                    {
+                        if (g.Count() == 1)
+                            return g.First();
+                        RoomEntry? best = null;
+                        int bestScore = int.MinValue;
+                        foreach (var item in g)
+                        {
+                            var score = 0;
+                            if (!string.IsNullOrWhiteSpace(item.Id) && !string.Equals(item.Id, item.Name, StringComparison.OrdinalIgnoreCase))
+                                score += 2;
+                            if (!string.IsNullOrWhiteSpace(item.Id) && item.Id.StartsWith("TileHeight-", StringComparison.OrdinalIgnoreCase))
+                                score += 1;
+                            if (score > bestScore)
+                            {
+                                bestScore = score;
+                                best = item;
+                            }
+                        }
+                        return best ?? g.First();
+                    })
+                    .Where(x => x != null)
                     .OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase)
                     .ToList();
 
@@ -4015,7 +4038,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var roomsJson = JsonSerializer.Serialize(selectedRooms);
             var optionsJson = JsonSerializer.Serialize(new
             {
-                baseSelector = ".rW_sl,.rY_sn,[data-table-name],[data-tablename],[data-table-id],[data-tabletitle],[data-table-title],[data-title],[data-name]",
+                baseSelector = ".rW_sl,.rY_sn,.ls_by,[data-table-name],[data-tablename],[data-table-id],[data-tabletitle],[data-table-title],[data-title],[data-name]",
                 resetTotals = true
             });
             var script = $"window.__abxTableOverlay && window.__abxTableOverlay.openRooms({roomsJson}, {optionsJson});";
