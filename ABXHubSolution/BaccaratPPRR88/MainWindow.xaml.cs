@@ -549,6 +549,9 @@ Ví dụ không hợp lệ:
             public int WinCount;
             public int LossCount;
             public long LastWinAmount;
+            public long WinTotalOverlay;
+            public bool HoldWinTotalUntilLevel1;
+            public bool HoldWinTotalSkipLogged;
         }
 
         private sealed class TableOverlayState
@@ -2423,6 +2426,15 @@ Ví dụ không hợp lệ:
             try { await Web.ExecuteScriptAsync(script); } catch { }
         }
 
+        private async Task ShowCenterWebAlertAsync(string message)
+        {
+            if (Web?.CoreWebView2 == null) return;
+            if (string.IsNullOrWhiteSpace(message)) return;
+            var msgJson = JsonSerializer.Serialize(message);
+            var script = $"window.__abx_hw_showCenterAlert && window.__abx_hw_showCenterAlert({msgJson});";
+            try { await Web.ExecuteScriptAsync(script); } catch { }
+        }
+
         private async Task SyncTableCutValuesForRoomsAsync(IEnumerable<string> roomIds)
         {
             if (roomIds == null) return;
@@ -2737,6 +2749,7 @@ Ví dụ không hợp lệ:
                                     var totalText = NormalizeGameBalanceText(totalBet);
                                     if (!string.IsNullOrWhiteSpace(totalText))
                                     {
+                                        totalText = NormalizeGameTotalBetText(totalText);
                                         if (_gameTotalBet != totalText)
                                         {
                                             _gameTotalBet = totalText;
@@ -5735,6 +5748,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 UiSetStake = v => Dispatcher.Invoke(() =>
                 {
                     UpdateStakeIndexForTable(state, stakeSeq, v);
+                    if (state.HoldWinTotalUntilLevel1 && state.StakeLevelIndexForUi == 0 && v > 0)
+                    {
+                        state.HoldWinTotalUntilLevel1 = false;
+                        state.HoldWinTotalSkipLogged = false;
+                        Log($"[WINHOLD] resume accumulate at level 1 ({tableId})");
+                    }
                     var rounded = (long)Math.Round(v);
                     state.LastBetAmount = rounded;
                     state.LastBetLevelText = (state.StakeLevelIndexForUi >= 0 && stakeSeq.Length > 0)
@@ -5750,6 +5769,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 UiAddWin = delta => Dispatcher.InvokeAsync(() =>
                 {
+                    if (state.HoldWinTotalUntilLevel1 && state.StakeLevelIndexForUi != 0)
+                    {
+                        if (!state.HoldWinTotalSkipLogged)
+                        {
+                            state.HoldWinTotalSkipLogged = true;
+                            Log($"[WINHOLD] skip accumulate until level 1 ({tableId})");
+                        }
+                        return;
+                    }
                     var stake = Math.Abs(delta);
                     var isWin = delta > 0;
                     var side = (state.LastBetSide ?? "").Trim().ToUpperInvariant();
@@ -5866,6 +5894,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var state = GetOrCreateTableTaskState(tableId, tableName);
                 if (!IsTableRunning(state))
                     return;
+                if (state.HoldWinTotalUntilLevel1 && state.StakeLevelIndexForUi != 0)
+                {
+                    if (!state.HoldWinTotalSkipLogged)
+                    {
+                        state.HoldWinTotalSkipLogged = true;
+                        Log($"[WINHOLD] skip accumulate until level 1 ({tableId})");
+                    }
+                    return;
+                }
 
                 var next = profit;
                 if (Math.Abs(state.WinTotalFromJs - next) < 0.001 && state.HasJsProfit)
@@ -6214,6 +6251,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (string.IsNullOrWhiteSpace(tableId))
                 return;
 
+            _stopCleanupDone = false;
             var state = GetOrCreateTableTaskState(tableId, tableName);
             if (Interlocked.Exchange(ref state.StartInProgress, 1) == 1)
             {
@@ -6276,10 +6314,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 state.WinTotal = 0;
                 state.WinTotalFromJs = 0;
                 state.HasJsProfit = false;
+                state.WinTotalOverlay = 0;
                 state.MoneyChainIndex = 0;
-                state.MoneyChainStep = 0;
-                state.MoneyChainProfit = 0;
-                state.MoneyResetVersion = MoneyHelper.GetGlobalResetVersion();
+                    state.MoneyChainStep = 0;
+                    state.MoneyChainProfit = 0;
+                    state.MoneyResetVersion = MoneyHelper.GetGlobalResetVersion();
+                    state.HoldWinTotalUntilLevel1 = false;
+                    state.HoldWinTotalSkipLogged = false;
 
                 RecomputeGlobalWinTotal();
                 if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
@@ -6363,19 +6404,30 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private void StopAllTables(string? reason = null)
         {
+            if (Interlocked.Exchange(ref _stopAllInProgress, 1) == 1)
+                return;
             List<string> ids;
             lock (_tableTasksGate)
             {
                 ids = _tableTasks.Keys.ToList();
             }
 
-            foreach (var id in ids)
+            try
             {
-                if (string.IsNullOrWhiteSpace(id)) continue;
-                try { StopTableTaskInternal(id, reason); } catch { }
-            }
+                if (!string.IsNullOrWhiteSpace(reason))
+                    Log("[STOP] all tables, reason=" + reason);
+                foreach (var id in ids)
+                {
+                    if (string.IsNullOrWhiteSpace(id)) continue;
+                    try { StopTableTaskInternal(id, reason); } catch { }
+                }
 
-            AfterStopTasksUpdate();
+                AfterStopTasksUpdate();
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _stopAllInProgress, 0);
+            }
         }
 
         private void StopTableTaskInternal(string tableId, string? reason)
@@ -6405,6 +6457,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             if (!HasRunningTasks())
             {
+                if (_stopCleanupDone)
+                    return;
+                _stopCleanupDone = true;
                 TaskUtil.ClearBetCooldown();
                 StopExpiryCountdown();
                 StopLicenseRecheckTimer();
@@ -6414,6 +6469,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var uname = (_homeUsername ?? "").Trim().ToLowerInvariant();
                                 // if (!string.IsNullOrWhiteSpace(uname))
                     _ = ReleaseLeaseAsync(uname);
+                Log("[STOP] cleanup done");
             }
         }
 
@@ -6549,6 +6605,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
 
         private int _stopInProgress = 0;
+        private int _stopAllInProgress = 0;
+        private bool _stopCleanupDone = false;
+        private long _leaseReleaseLastAt = 0;
         private void StopXocDia_Click(object sender, RoutedEventArgs e)
         {
             if (Interlocked.Exchange(ref _stopInProgress, 1) == 1) return;
@@ -7020,6 +7079,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
         /// </summary>
         private void StopLicenseRecheckTimer()
         {
+            if (_licenseCheckTimer == null)
+                return;
             try { _licenseCheckTimer?.Change(Timeout.Infinite, Timeout.Infinite); } catch { }
             try { _licenseCheckTimer?.Dispose(); } catch { }
             _licenseCheckTimer = null;
@@ -7510,6 +7571,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private async Task ReleaseLeaseAsync(string username)
         {
             if (string.IsNullOrWhiteSpace(LeaseBaseUrl)) return;
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var last = Interlocked.Read(ref _leaseReleaseLastAt);
+            if (nowMs - last < 3000)
+                return;
+            Interlocked.Exchange(ref _leaseReleaseLastAt, nowMs);
             try
             {
                 using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
@@ -7835,6 +7901,24 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return m.Success ? m.Groups[1].Value.Trim() : "";
         }
 
+        private static string NormalizeGameTotalBetText(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return "";
+            var s = raw.Replace("\u00A0", " ").Trim();
+            if (string.IsNullOrWhiteSpace(s)) return "";
+            var value = ParseMoneyOrZero(s);
+            if (value <= 0) return s;
+
+            var hasThousandsGroup = Regex.IsMatch(s, @"\d[.,]\d{3}(?:[.,]\d{3})+");
+            if (!hasThousandsGroup && value < 1000)
+            {
+                var scaled = Math.Round(value * 1000);
+                return ((long)scaled).ToString("N0", CultureInfo.InvariantCulture);
+            }
+
+            return s;
+        }
+
         // Gán UI từ config (gọi ở nơi bạn đã áp config ra UI, ví dụ sau LoadConfig)
         private void ApplyCutUiFromConfig()
         {
@@ -7985,18 +8069,20 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (_winTotal >= totalBet)
             {
                 if (TryEnterCutAutoReset())
-                    ResetAllProfitAndStepsForCut($"Dat WIN >= TONG CUOC: win={_winTotal:N0} >= total={totalBet:N0}");
+                    ResetAllProfitAndStepsForCut($"Dat WIN >= TONG CUOC: win={_winTotal:N0} >= total={totalBet:N0}", true);
             }
         }
 
 
-        private void ResetAllProfitAndStepsForCut(string reason)
+        private void ResetAllProfitAndStepsForCut(string reason, bool holdWinUntilLevel1 = false, string? alertMessage = null)
         {
             void DoReset()
             {
                 try
                 {
                     Log("[CUT] " + reason);
+                    var alertText = string.IsNullOrWhiteSpace(alertMessage) ? reason : alertMessage;
+                    _ = ShowCenterWebAlertAsync(alertText);
 
                     var resetVersion = MoneyHelper.RequestGlobalResetToLevel1();
 
@@ -8010,17 +8096,22 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             state.WinTotal = 0;
                             state.WinTotalFromJs = 0;
                             state.HasJsProfit = false;
+                            state.WinTotalOverlay = 0;
                             state.MoneyChainIndex = 0;
                             state.MoneyChainStep = 0;
                             state.MoneyChainProfit = 0;
                             state.MoneyResetVersion = resetVersion;
                             state.StakeLevelIndexForUi = -1;
+                            state.HoldWinTotalUntilLevel1 = holdWinUntilLevel1;
+                            state.HoldWinTotalSkipLogged = false;
                             state.WinCount = 0;
                             state.LossCount = 0;
                             state.LastWinAmount = 0;
                             _ = PushBetStatsToOverlayAsync(state.TableId, 0, 0, 0);
                         }
                     }
+                    if (holdWinUntilLevel1)
+                        Log("[WINHOLD] enabled: wait level 1 to resume accumulate");
 
                     MoneyHelper.ResetTempProfitForWinUpLoseKeep();
 
@@ -8054,6 +8145,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             try
             {
+                _ = ShowCenterWebAlertAsync(reason);
                 StopAllTables("cut");
                 MessageBox.Show(reason, "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                 Log("[CUT] " + reason);
@@ -8137,21 +8229,26 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var result = NormalizeSide(row.Result ?? "");
             var isTie = IsTieResult(row.Result ?? "");
             long winAmount = 0;
+            var counted = false;
             if (!isTie && !string.IsNullOrWhiteSpace(side) && !string.IsNullOrWhiteSpace(result))
             {
                 if (string.Equals(side, result, StringComparison.OrdinalIgnoreCase))
                 {
                     winAmount = ComputeWinAmount(row.Stake, side);
                     state.WinCount++;
+                    counted = true;
                 }
                 else
                 {
                     winAmount = -Math.Abs(row.Stake);
                     state.LossCount++;
+                    counted = true;
                 }
             }
+            if (counted)
+                state.WinTotalOverlay += winAmount;
             state.LastWinAmount = winAmount;
-            _ = PushBetStatsToOverlayAsync(tableId, winAmount, state.WinCount, state.LossCount);
+            _ = PushBetStatsToOverlayAsync(tableId, state.WinTotalOverlay, state.WinCount, state.LossCount);
         }
 
 

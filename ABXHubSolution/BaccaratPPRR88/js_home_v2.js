@@ -2934,6 +2934,48 @@
 
     window.__abx_hw_showDataAlert = showTestAlert;
 
+    const CENTER_ALERT_ID = '__abx_center_alert_popup';
+    let _centerAlertTimer = 0;
+
+    function ensureCenterAlert() {
+        let el = document.getElementById(CENTER_ALERT_ID);
+        if (el)
+            return el;
+        el = document.createElement('div');
+        el.id = CENTER_ALERT_ID;
+        el.style.cssText = [
+            'position:fixed', 'left:50%', 'top:45%', 'transform:translate(-50%,-50%)',
+            'z-index:2147481100', 'min-width:220px', 'max-width:70vw',
+            'background:rgba(7,14,25,.95)', 'color:#ffffff', 'padding:14px 18px',
+            'border-radius:12px', 'box-shadow:0 12px 32px rgba(0,0,0,.6)',
+            'border:1px solid rgba(255,255,255,.18)', 'font:15px/1.4 "Segoe UI",Arial,sans-serif',
+            'text-align:center', 'white-space:pre-line', 'pointer-events:none',
+            'opacity:0', 'transition:opacity .2s ease'
+        ].join(';');
+        document.body.appendChild(el);
+        return el;
+    }
+
+    function showCenterAlert(message, durationMs = 2600) {
+        try {
+            if (!message)
+                return;
+            const el = ensureCenterAlert();
+            el.textContent = String(message);
+            el.style.display = 'block';
+            el.style.opacity = '1';
+            if (_centerAlertTimer)
+                clearTimeout(_centerAlertTimer);
+            const ms = Math.max(1200, Number(durationMs) || 2600);
+            _centerAlertTimer = setTimeout(() => {
+                el.style.opacity = '0';
+                setTimeout(() => { el.style.display = 'none'; }, 240);
+            }, ms);
+        } catch (_) {}
+    }
+
+    window.__abx_hw_showCenterAlert = showCenterAlert;
+
         function setOverlayLog(msg) {
             try {
                 S.overlayLog = clip(String(msg || ''), 180);
@@ -9492,6 +9534,17 @@
             return '--';
         }
 
+        function deriveWinLoseColor(text) {
+            if (!text)
+                return '';
+            const lowered = norm(text);
+            if (lowered.includes('thang'))
+                return '#22c55e';
+            if (lowered.includes('thua'))
+                return '#ef4444';
+            return '';
+        }
+
         function hasAnyBet(betAreas, betExtra, betChips) {
             const areaActive = !!(betAreas && ((betAreas.player && betAreas.player.active)
                 || (betAreas.banker && betAreas.banker.active)
@@ -9534,6 +9587,15 @@
             if (lowered.includes('hoa') || lowered.includes('tie'))
                     return 'HÒA';
             return '--';
+        }
+
+        function deriveBetDoorColor(value) {
+            const raw = String(value || '').trim().toUpperCase();
+            if (raw === 'PLAYER' || raw === 'P')
+                return '#1454b8';
+            if (raw === 'BANKER' || raw === 'B')
+                return '#b91c1c';
+            return '';
         }
 
         function extractNumberByLabel(text, labels) {
@@ -9950,6 +10012,7 @@
             const planActive = !!(planSideNorm || planAmountText || planLevelText);
             const planSig = planActive ? (planSideNorm + '|' + planAmountText + '|' + planLevelText) : '';
             const winLoseText = deriveWinLoseValue(text);
+            const winLoseColor = deriveWinLoseColor(winLoseText);
             if (view.winLoseValue) {
                 if (winLoseText && winLoseText !== '--') {
                     if (st.lastWinLoseText !== winLoseText) {
@@ -9960,6 +10023,10 @@
                     const fallback = winLoseText || '--';
                     view.winLoseValue.textContent = fallback;
                     st.lastWinLoseText = fallback;
+                }
+                if (st.lastWinLoseColor !== winLoseColor) {
+                    view.winLoseValue.style.color = winLoseColor || '';
+                    st.lastWinLoseColor = winLoseColor;
                 }
             }
             const betStats = st.betStats || null;
@@ -9972,8 +10039,11 @@
                     st.winCount = Math.max(0, betStats.winCount || 0);
                     st.lossCount = Math.max(0, betStats.lossCount || 0);
                     applyWinLossTotals(st);
-                    if (view.winAmountValue)
-                        view.winAmountValue.textContent = formatWinAmountValue(betStats.winAmount);
+                    if (view.winAmountValue) {
+                        const winText = formatWinAmountValue(betStats.winAmount);
+                        view.winAmountValue.textContent = winText;
+                        st.lastWinAmountText = winText;
+                    }
                 }
             } else {
                 updateWinLossTotals(st, winLoseText, historySig);
@@ -9987,6 +10057,13 @@
                         view.betAmountValue.textContent = planAmountText || '--';
                     if (view.moneyLevelValue)
                         view.moneyLevelValue.textContent = planLevelText || '--';
+                    if (view.betDoorValue) {
+                        const doorColor = deriveBetDoorColor(view.betDoorValue.textContent);
+                        if (st.lastBetDoorColor !== doorColor) {
+                            view.betDoorValue.style.color = doorColor || '';
+                            st.lastBetDoorColor = doorColor;
+                        }
+                    }
                 } else {
                     const hasBet = hasAnyBet(betAreas, betExtra, betChips);
                     if (view.betDoorValue)
@@ -10001,6 +10078,13 @@
                         view.moneyLevelValue.textContent = hasBet
                             ? deriveMoneyValue(text, ['muc\\s*tien', 'muc\\s*cuoc', 'limit'])
                             : '--';
+                    if (view.betDoorValue) {
+                        const doorColor = deriveBetDoorColor(view.betDoorValue.textContent);
+                        if (st.lastBetDoorColor !== doorColor) {
+                            view.betDoorValue.style.color = doorColor || '';
+                            st.lastBetDoorColor = doorColor;
+                        }
+                    }
                 }
             }
             if (st.lastHistorySig !== historySig) {
@@ -10023,10 +10107,22 @@
                     view.moneyLevelValue.textContent = planActive
                         ? (planLevelText || '--')
                         : (hasBet ? deriveMoneyValue(text, ['muc\\s*tien', 'muc\\s*cuoc', 'limit']) : '--');
-                if (view.winAmountValue)
-                    view.winAmountValue.textContent = betStats
-                        ? formatWinAmountValue(betStats.winAmount)
-                        : (hasBet ? deriveMoneyValue(text, ['tien\\s*thang', 'thang\\s*tien', 'tien\\s*thuong']) : '--');
+                if (view.betDoorValue) {
+                    const doorColor = deriveBetDoorColor(view.betDoorValue.textContent);
+                    if (st.lastBetDoorColor !== doorColor) {
+                        view.betDoorValue.style.color = doorColor || '';
+                        st.lastBetDoorColor = doorColor;
+                    }
+                }
+                if (view.winAmountValue && !betStats) {
+                    const derivedWin = hasBet
+                        ? deriveMoneyValue(text, ['tien\\s*thang', 'thang\\s*tien', 'tien\\s*thuong'])
+                        : '';
+                    if (derivedWin && derivedWin !== '--' && derivedWin !== st.lastWinAmountText) {
+                        view.winAmountValue.textContent = derivedWin;
+                        st.lastWinAmountText = derivedWin;
+                    }
+                }
                 const statCounts = summarizeHistoryStats(data.history || [], data.stats || null);
                 if (view.statsTotal)
                     view.statsTotal.textContent = '#' + String(statCounts.total || 0);
@@ -10330,7 +10426,7 @@
             const moneyLevelLabel = createStatusCell('MỨC TIỀN', true);
             const moneyLevelValue = createStatusCell('--');
             const winAmountLabel = createStatusCell('TIỀN THẮNG', true);
-            const winAmountValue = createStatusCell('--');
+            const winAmountValue = createStatusCell('0');
             const totalWinLoseLabel = createStatusCell('TỔNG THẮNG/THUA', true);
             const totalWinLoseValue = createStatusCell('--');
             const cutProfitLabel = createStatusCell('CẮT LÃI', true);
@@ -10485,6 +10581,9 @@
                 lossCount: 0,
                 lastOutcomeSig: '',
                 lastWinLoseText: '',
+                lastWinLoseColor: '',
+                lastBetDoorColor: '',
+                lastWinAmountText: '0',
                 lastState: null,
                 closed: false,
                 resolve: (id) => {
