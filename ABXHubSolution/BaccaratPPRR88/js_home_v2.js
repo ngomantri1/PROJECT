@@ -2,6 +2,11 @@
     'use strict';
     // Muốn hiện và ẩn bảng điều khiển home watch thì tìm dòng sau : showPanel: false // ⬅️ false = ẩn panel; true = hiện panel
     // Cho phép chạy ở mọi iframe (không giới hạn host)
+    const ABX_CTX = {
+        isTop: window.self === window.top,
+        isIframe: window.self !== window.top,
+        isGameHost: /^games\./i.test(location.hostname)
+    };
     function isTelemetry(u) {
         try {
             const href = typeof u === 'string' ? u : (u && u.url) || '';
@@ -1836,7 +1841,10 @@
 
     // Skip toàn bộ Home Watch ở domain game
     try { startGameBalanceWatch(); } catch (_) {}
-    // allow Home Watch on games.* (no early return)
+    if (ABX_CTX.isGameHost) {
+        try { startGameBalanceWatch(); } catch (_) {}
+        console.debug('[HomeWatch] Skip on game host');
+    }
 
     // Chạy 1 lần duy nhất và chỉ ở top window (không chạy trong iframe)
     if (window.__abx_hw_installed)
@@ -2572,6 +2580,10 @@
             window.__abx_hw_installed = true;
             return;
     }
+        if (!ABX_CTX.isTop) {
+            window.__abx_hw_installed = true;
+            return;
+        }
         // Nếu inject ở document_start, body có thể chưa có
         const mount = document.body || document.documentElement;
         if (!mount) {
