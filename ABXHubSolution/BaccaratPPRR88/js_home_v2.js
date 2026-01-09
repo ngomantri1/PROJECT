@@ -221,7 +221,7 @@
             acc[label] = value;
         return acc;
     }, {});
-    const BET_CHIP_LABEL_SELECTORS = ['.wo_wq', '.v0_wa'];
+    const BET_CHIP_LABEL_SELECTORS = ['.wo_wq', '.v0_wa', '.vb_ve'];
 
     function betCssFromTailSimple(tail) {
         const segs = String(tail || '').trim().split('/').filter(Boolean).map(seg => {
@@ -376,8 +376,8 @@
     function betFindTargetByTableId(id, side) {
         const s = betNormalizeSide(side);
         const selector = (s === 'player')
-            ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1'
-            : (s === 'banker' ? '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra' : '');
+            ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt'
+            : (s === 'banker' ? '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru' : '');
         if (!selector)
             return null;
         const candidates = betGetTableIdCandidates(id);
@@ -432,6 +432,8 @@
             return null;
         return node.closest('div[id^="TileHeight-"]') ||
             node.closest('div.gC_gE.gC_gH.gC_gI') ||
+            node.closest('div.hu_hv.hu_hy') ||
+            node.closest('div.eB_eC.tile-container-wrapper') ||
             node.closest('div.he_hf.he_hi') ||
             node.closest('div.hC_hE') ||
             node.closest('div.ep_bn') ||
@@ -451,8 +453,8 @@
         if (!root || !root.querySelector)
             return false;
         try {
-            return !!(root.querySelector('.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1') ||
-                root.querySelector('.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra'));
+            return !!(root.querySelector('.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt') ||
+                root.querySelector('.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru'));
         } catch (_) {}
             return false;
     }
@@ -568,8 +570,8 @@
         if (el && betIsVisible(el))
             return el;
         const cls = s === 'player'
-            ? '.qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0'
-            : (s === 'banker' ? '.qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1' : '.qC_lC.qC_qN.qC_qV, .qC_lC.qC_qN');
+            ? '.qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt'
+            : (s === 'banker' ? '.qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru' : '.qC_lC.qC_qN.qC_qV, .qC_lC.qC_qN');
         try { el = root.querySelector(cls); } catch (_) {}
         return el || null;
     }
@@ -580,7 +582,7 @@
         if (el.getAttribute('data-betcode'))
             return true;
         try {
-            return !!(el.classList && el.classList.contains('qC_lC'));
+            return !!(el.classList && (el.classList.contains('qC_lC') || el.classList.contains('qX_lc')));
         } catch (_) {}
         return false;
     }
@@ -694,7 +696,7 @@
         ].filter(Boolean).join(' ');
         if (!clsSources)
             return false;
-        if (/\b(active|selected|on|checked|qC_qH|rO_rT)\b/i.test(clsSources))
+        if (/\b(active|selected|on|checked|qC_qH|rO_rT|lL_lT)\b/i.test(clsSources))
             return true;
         return /\blF_lN\b/.test(clsSources);
     }
@@ -725,7 +727,14 @@
                 'button.lF_lN .v0_wa',
                 '.lF_lN .v0_wa',
                 '.active .v0_wa',
-                '.selected .v0_wa'
+                '.selected .v0_wa',
+                'button[aria-pressed="true"] .vb_ve',
+                'button[aria-selected="true"] .vb_ve',
+                'button[aria-checked="true"] .vb_ve',
+                'button.lL_lT .vb_ve',
+                '.lL_lT .vb_ve',
+                '.active .vb_ve',
+                '.selected .vb_ve'
             ].join(',');
             const el = docAny.querySelector(sel);
             if (el) {
@@ -810,43 +819,15 @@
                 onDone(ok !== false);
         };
         const clickChipValue = (value) => {
-            const labels = betAmountToLabels(value);
-            if (!labels.length)
+            const chipNode = betFindChipByAmount(value, doc) || betFindChip(betAmountToLabel(value), doc);
+            const chipBtn = chipNode ? (chipNode.closest('button,[role=button],a') || chipNode) : null;
+            if (!chipBtn)
                 return false;
-            const cardRoot = target.closest && (target.closest('div[id^="TileHeight-"]') || target.closest('div.gC_gE.gC_gH.gC_gI'));
-            const rootRect = cardRoot && cardRoot.getBoundingClientRect ? cardRoot.getBoundingClientRect() : null;
-            const nodes = [];
-            if (doc && doc.querySelectorAll) {
-                try { nodes.push(...doc.querySelectorAll('.wo_wq,.v0_wa')); } catch (_) {}
-            }
-            if (!nodes.length) {
-                try { nodes.push(...betCollectNodes('.wo_wq,.v0_wa')); } catch (_) {}
-            }
-            let chipTarget = null;
-            for (const el of nodes) {
-                if (!el || !el.getBoundingClientRect)
-                    continue;
-                const r = el.getBoundingClientRect();
-                if (rootRect &&
-                    r.left >= rootRect.left && r.right <= rootRect.right &&
-                    r.top >= rootRect.top && r.bottom <= rootRect.bottom) {
-                    continue;
-                }
-                const txt = String(el.textContent || '').trim().toUpperCase();
-                if (!txt)
-                    continue;
-                if (labels.includes(txt)) {
-                    chipTarget = el;
-                    break;
-                }
-            }
-            if (!chipTarget)
-                return false;
-            betDispatchClickOnce(chipTarget, 'point');
+            betDispatchClickOnce(chipBtn, 'click', { noScroll: true });
             setTimeout(() => {
                 const cur = betGetSelectedChipAmount(doc);
                 if (cur == null || cur !== value)
-                    betDispatchClickOnce(chipTarget, 'point');
+                    betDispatchClickOnce(chipBtn, 'click', { noScroll: true });
             }, CHIP_DOUBLE_CLICK_GAP);
             return true;
         };
@@ -883,7 +864,7 @@
                     }
                 }
                 chipRetry = 0;
-                betDispatchClickOnce(target, clickMode());
+                betDispatchClickOnce(target, clickMode(), { noScroll: true });
             }
             const delayMs = step.type === 'chip' ? CHIP_SWITCH_DELAY : BET_CLICK_DELAY;
             setTimeout(run, delayMs);
@@ -1001,6 +982,8 @@
                 target.closest('.zv_zw') ||
                 target.closest('.uU_g0') ||
                 target.closest('.pI_pJ') ||
+                target.closest('.kI_kJ') ||
+                target.closest('.yu_yv') ||
                 fallbackRoot;
         }
         return fallbackRoot;
@@ -1031,13 +1014,13 @@
         if (!root || !root.querySelector)
             return false;
         const sel = side === 'player'
-            ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1'
-            : '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra';
+            ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt'
+            : '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru';
         try {
             const el = root.querySelector(sel);
             if (!el)
                 return false;
-            const container = el.closest('.yW_yX, .lg_lh, .lg_ll, .lg_lm, .lg_ln, .lg_lr, .lg_lu, .lg_lx');
+            const container = el.closest('.yW_yX, .lg_lh, .lg_ll, .lg_lm, .lg_ln, .lg_lr, .lg_lu, .lg_lx, .kI_kJ, .kI_kN, .kI_kO, .yu_yv');
             const clsEl = (typeof el.className === 'string') ? el.className : (el.getAttribute && el.getAttribute('class')) || '';
             const clsContainer = container ? ((typeof container.className === 'string') ? container.className : (container.getAttribute && container.getAttribute('class')) || '') : '';
             const cls = String(clsEl || '') + ' ' + String(clsContainer || '');
@@ -1159,7 +1142,7 @@
         return false;
                 }
 
-    function betDispatchClickOnce(el, mode) {
+    function betDispatchClickOnce(el, mode, opts = {}) {
         if (!el)
             return false;
         try {
@@ -1170,7 +1153,8 @@
                 return betDispatchClickAtPoint(target);
             }
             if (inCard && typeof peelAndClick === 'function') {
-                try { peelAndClick(target, { holdMs: 160 }); return true; } catch (_) {}
+                const allowScroll = !(opts && opts.noScroll);
+                try { peelAndClick(target, { holdMs: 160, scrollIntoView: allowScroll }); return true; } catch (_) {}
             }
             const doc = target.ownerDocument || document;
             const win = doc.defaultView || window;
@@ -1376,10 +1360,6 @@
             const s = betNormalizeSide(side);
             const sideLabel = (s === 'player') ? 'P' : (s === 'banker' ? 'B' : '');
             const amountValue = Number(amount) || 0;
-            if (amountValue <= 0) {
-                sendOnce(id, sideLabel, amountValue);
-                return 'ok';
-            }
 
             if (id && sideLabel) {
                 const idCandidates = betGetTableIdCandidates(id);
@@ -1392,8 +1372,8 @@
                 }
                 const targetTail = s === 'player' ? BET_PLAYER_TAIL : BET_BANKER_TAIL;
                 const selector = s === 'player'
-                    ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1'
-                    : '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra';
+                    ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt'
+                    : '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru';
                 let target = root
                     ? (betFindByTail(root, targetTail) || betFindFirstVisible(root, selector))
                     : null;
@@ -1418,6 +1398,8 @@
                         target.closest('.kU_kV') ||
                         target.closest('.zv_zw') ||
                         target.closest('.uU_g0') ||
+                        target.closest('.kI_kJ') ||
+                        target.closest('.yu_yv') ||
                         target;
                     const planResult = betBuildChipPlan(amountValue, rootDoc);
                     if (!planResult.plan.length || planResult.remaining > 0) {
@@ -1617,7 +1599,7 @@
         maxRetries: 6,
         watchdogMs: 1000,
         maxWatchdogMiss: 2,
-        showPanel: true,
+        showPanel: false,
         autoRetryOnBoot: false
     };
 
@@ -1844,7 +1826,8 @@
         'div.hC_hE.hC_hH',
         'div.rC_rE',
         'div.rC_rS',
-        'div.ec_F div.he_hf.he_hi'
+        'div.ec_F div.he_hf.he_hi',
+        'div.hu_hv.hu_hy'
     ];
 
     const BACC_CARD_HEURISTIC_SELECTORS = [
@@ -1870,15 +1853,16 @@
             });
             });
         // Fallback for updated DOM: collect from title nodes.
-        document.querySelectorAll('span.rW_sl').forEach(node => {
-            const root = node.closest('div.he_hf.he_hi') ||
+        document.querySelectorAll('span.rW_sl, div.ls_by').forEach(node => {
+            const root = node.closest('div.hu_hv.hu_hy') ||
+                node.closest('div.he_hf.he_hi') ||
                 node.closest('div.rW_rX') ||
                 node.closest('div.mx_G') ||
                 node.closest('div.jF_jJ');
             addCard(root);
             });
         if (cards.length < 10) {
-            const rootSel = 'div[id^="TileHeight-"], div.gC_gE.gC_gH.gC_gI';
+            const rootSel = 'div[id^="TileHeight-"], div.gC_gE.gC_gH.gC_gI, div.hu_hv.hu_hy';
             BACC_CARD_HEURISTIC_SELECTORS.forEach(sel => {
                 try {
                     document.querySelectorAll(sel).forEach(node => {
@@ -1965,7 +1949,7 @@
         const segments = cards.map((card, index) => {
             const cardIdInfo = extractBaccCardId(card);
             const identifier = cardIdInfo.id || card.getAttribute('data-table-id') || card.dataset.tableId || '';
-            const name = (card.querySelector('.tile-name, .rY_sn, .game-title, .rW_sl')?.textContent || '').trim();
+            const name = (card.querySelector('.tile-name, .rY_sn, .game-title, .rW_sl, .ls_by')?.textContent || '').trim();
             const headingParts = ['Card #' + (index + 1)];
             if (identifier)
                 headingParts.push('[id:' + identifier + ']');
@@ -2593,8 +2577,8 @@
                             .join('');
                         return {
                             id: card.getAttribute('data-table-id') || card.dataset.tableId || '',
-                            name: normalizeText(card.querySelector('.rC_rT, .rC_rE span, .rY_sn, .rW_sl, .tile-name, .title, .game-title')?.textContent),
-                        countdown: (card.querySelector('span.yv_yy.yv_yz, span.yv_yy.yv_yB, [data-countdown], [class*=count]')?.textContent || '').replace(/[^\d]/g, '') || null,
+                        name: normalizeText(card.querySelector('.rC_rT, .rC_rE span, .rY_sn, .rW_sl, .tile-name, .title, .game-title, .ls_by')?.textContent),
+                        countdown: (card.querySelector('span.yv_yy.yv_yz, span.yv_yy.yv_yB, span.yw_yz.yw_yA.yw_yF, span.yw_yz.yw_yA, [data-countdown], [class*=count]')?.textContent || '').replace(/[^\d]/g, '') || null,
                         resultChain,
                         counts: parseCounts(textSnapshot),
                         bets: parseBets(textSnapshot),
@@ -2964,6 +2948,176 @@
     }
 
     window.__abx_hw_showDataAlert = showTestAlert;
+
+    const DOMLOG_STATE_KEY = '__abx_domlog_state';
+
+    function getDomLogState() {
+        if (!window[DOMLOG_STATE_KEY]) {
+            window[DOMLOG_STATE_KEY] = {
+                enabled: false,
+                logs: [],
+                handler: null
+            };
+        }
+        return window[DOMLOG_STATE_KEY];
+    }
+
+    function domLogCssTail(el) {
+        try {
+            const parts = [];
+            let cur = el;
+            while (cur && cur.nodeType === 1 && parts.length < 10) {
+                const tag = cur.tagName.toLowerCase();
+                const cls = (cur.className && typeof cur.className === 'string')
+                    ? '.' + cur.className.trim().split(/\s+/).slice(0, 2).join('.')
+                    : '';
+                let idx = 1;
+                if (cur.parentElement) {
+                    const siblings = Array.from(cur.parentElement.children).filter(x => x.tagName === cur.tagName);
+                    idx = siblings.indexOf(cur) + 1;
+                }
+                parts.unshift(`${tag}${cls}[${idx}]`);
+                cur = cur.parentElement;
+            }
+            return parts.join('/');
+        } catch (_) {}
+        return '';
+    }
+
+    function domLogDump(el) {
+        if (!el)
+            return '';
+        try {
+            const r = el.getBoundingClientRect ? el.getBoundingClientRect() : { x: 0, y: 0, width: 0, height: 0 };
+            const text = (el.textContent || '').trim().slice(0, 120);
+            const href = el.getAttribute && el.getAttribute('href');
+            const src = el.getAttribute && el.getAttribute('src');
+            return [
+                `Tag  : ${el.tagName || ''}`,
+                `Class: ${(el.className && el.className.toString) ? el.className.toString() : ''}`,
+                `Id   : ${el.id || ''}`,
+                `Href : ${href || ''}`,
+                `Src  : ${src || ''}`,
+                `Text : ${text}`,
+                `Rect : [${Math.round(r.x)}, ${Math.round(r.y)}, ${Math.round(r.width)}, ${Math.round(r.height)}]`,
+                `Tail : ${domLogCssTail(el)}`
+            ].join('\n');
+        } catch (_) {}
+        return '';
+    }
+
+    function domLogRender(state) {
+        try {
+            const el = ensureAlertContainer();
+            const ta = document.getElementById(`${ALERT_ID}-ta`);
+            if (ta) {
+                ta.value = (state.logs || []).join('\n\n');
+                ta.scrollTop = ta.scrollHeight || 0;
+            }
+            return el;
+        } catch (_) {}
+        return null;
+    }
+
+    function domLogClickHandler(e) {
+        try {
+            const state = getDomLogState();
+            if (!state.enabled || !e || !e.altKey)
+                return;
+            const block = domLogDump(e.target);
+            if (!block)
+                return;
+            state.logs.push(block);
+            domLogRender(state);
+        } catch (_) {}
+    }
+
+    window.__abx_hw_domlog_start = function () {
+        const state = getDomLogState();
+        if (state.enabled)
+            return 'ok';
+        state.enabled = true;
+        state.logs = [];
+        state.handler = domLogClickHandler;
+        document.addEventListener('click', domLogClickHandler, true);
+        showTestAlert('DOM log started. Alt+Click to capture.');
+        return 'ok';
+    };
+
+    window.__abx_hw_domlog_stop = function () {
+        const state = getDomLogState();
+        if (!state.enabled)
+            return 'ok';
+        state.enabled = false;
+        if (state.handler) {
+            document.removeEventListener('click', state.handler, true);
+            state.handler = null;
+        }
+        return 'ok';
+    };
+
+    window.__abx_hw_domlog_clear = function () {
+        const state = getDomLogState();
+        state.logs = [];
+        domLogRender(state);
+        return 'ok';
+    };
+
+    window.__abx_hw_domlog_dump = function (selectorOrEl) {
+        const state = getDomLogState();
+        let el = selectorOrEl;
+        if (typeof selectorOrEl === 'string') {
+            try { el = document.querySelector(selectorOrEl); } catch (_) { el = null; }
+        }
+        const block = domLogDump(el);
+        if (block) {
+            state.logs.push(block);
+            domLogRender(state);
+        }
+        return block || '';
+    };
+
+    const CENTER_ALERT_ID = '__abx_center_alert_popup';
+    let _centerAlertTimer = 0;
+
+    function ensureCenterAlert() {
+        let el = document.getElementById(CENTER_ALERT_ID);
+        if (el)
+            return el;
+        el = document.createElement('div');
+        el.id = CENTER_ALERT_ID;
+        el.style.cssText = [
+            'position:fixed', 'left:50%', 'top:45%', 'transform:translate(-50%,-50%)',
+            'z-index:2147481100', 'min-width:220px', 'max-width:70vw',
+            'background:rgba(7,14,25,.95)', 'color:#ffffff', 'padding:14px 18px',
+            'border-radius:12px', 'box-shadow:0 12px 32px rgba(0,0,0,.6)',
+            'border:1px solid rgba(255,255,255,.18)', 'font:15px/1.4 "Segoe UI",Arial,sans-serif',
+            'text-align:center', 'white-space:pre-line', 'pointer-events:none',
+            'opacity:0', 'transition:opacity .2s ease'
+        ].join(';');
+        document.body.appendChild(el);
+        return el;
+    }
+
+    function showCenterAlert(message, durationMs = 2600) {
+        try {
+            if (!message)
+                return;
+            const el = ensureCenterAlert();
+            el.textContent = String(message);
+            el.style.display = 'block';
+            el.style.opacity = '1';
+            if (_centerAlertTimer)
+                clearTimeout(_centerAlertTimer);
+            const ms = Math.max(1200, Number(durationMs) || 2600);
+            _centerAlertTimer = setTimeout(() => {
+                el.style.opacity = '0';
+                setTimeout(() => { el.style.display = 'none'; }, 240);
+            }, ms);
+        } catch (_) {}
+    }
+
+    window.__abx_hw_showCenterAlert = showCenterAlert;
 
         function setOverlayLog(msg) {
             try {
@@ -3899,6 +4053,7 @@
             '.rY_sn',
             '.game-title',
             '.abx-table-title',
+            '.ls_by',
             '[data-table-name]',
             '[data-title]'
         ];
@@ -4818,16 +4973,19 @@
                 return true;
     }
     function peelAndClick(el, {
-        holdMs = 600
+        holdMs = 600,
+        scrollIntoView = true
     } = {}) {
         if (!el)
             return;
-        try {
-            el.scrollIntoView({
-                block: 'center',
-                inline: 'center'
+        if (scrollIntoView) {
+            try {
+                el.scrollIntoView({
+                    block: 'center',
+                    inline: 'center'
                 });
             } catch (_) {}
+        }
         const r = el.getBoundingClientRect();
         const cx = Math.max(0, Math.min(innerWidth - 1, Math.round(r.left + Math.max(1, r.width) / 2)));
         const cy = Math.max(0, Math.min(innerHeight - 1, Math.round(r.top + Math.max(1, r.height) / 2)));
@@ -6017,13 +6175,15 @@
             'span.rW_sl',
             'span.rY_sn',
             'span.qL_qM.qL_qN',
-            'div.abx-table-title'
+            'div.abx-table-title',
+            'div.ls_by'
         ];
 
         let rooms = [];
         let layouts = loadLayouts();
         const panelMap = new Map();
         const betPlanById = new Map();
+        const betStatsById = new Map();
         const lastStateSig = new Map();
         const lastProfitById = new Map();
         const roomDomRegistry = new Map();
@@ -7023,6 +7183,8 @@
             if (!node)
             return null;
             return node.closest('div.he_hf.he_hi') ||
+                node.closest('div.hu_hv.hu_hy') ||
+                node.closest('div.eB_eC.tile-container-wrapper') ||
                 node.closest('div.hC_hE') ||
                 node.closest('div.ep_bn') ||
                 node.closest('div.hu_hw') ||
@@ -7084,7 +7246,7 @@
                     rememberRoomDom(rootId, byAttr);
                 return byAttr;
             }
-            const selectors = ['span.rY_sn', 'span.qL_qM.qL_qN', 'div.abx-table-title', 'span.rC_rT', 'span.rW_sl'];
+            const selectors = ['span.rY_sn', 'span.qL_qM.qL_qN', 'div.abx-table-title', 'span.rC_rT', 'span.rW_sl', 'div.ls_by'];
             for (const sel of selectors) {
                 const list = Array.from(document.querySelectorAll(sel));
                 const match = list.find(el => (el.textContent || '').trim() === needle);
@@ -7178,6 +7340,11 @@
             'div.rj_rk svg',
             'div.rj_rk path',
             'div.rO_rP',
+            'div.qs_qt.qs_qx',
+            'div.qs_qt.qs_qx svg',
+            'div.qs_qt.qs_qx path',
+            'div.gs_gt svg',
+            'div.gs_gt path',
             'div.rJ_rK svg.ka_kb',
             'div.rJ_rK svg',
             'div.rJ_rK',
@@ -7224,6 +7391,9 @@
             const pinRoot = root.querySelector('div.rj_rk');
             if (pinRoot)
                 return pinRoot.querySelector('svg') || pinRoot;
+            const pinNew = root.querySelector('div.qs_qt.qs_qx');
+            if (pinNew)
+                return pinNew;
             const pins = Array.from(root.querySelectorAll('div.rO_rP'));
             if (pins.length)
                 return pickTopRight(pins) || pins[0];
@@ -7251,6 +7421,12 @@
                 const wrapNew = btn.closest && btn.closest('div.rj_rk');
                 if (wrapNew && wrapNew.classList && wrapNew.classList.contains('rj_ro'))
                         return true;
+                const wrapNew2 = btn.closest && btn.closest('div.qs_qt.qs_qx');
+                if (wrapNew2 && wrapNew2.classList) {
+                    const cls = wrapNew2.className || '';
+                    if (/\b(active|selected|on|checked)\b/i.test(String(cls)))
+                        return true;
+                }
                 const pinRoot = wrapNew || btn;
                 const outline = pinRoot.querySelector && pinRoot.querySelector('path.rj_rm');
                 if (outline) {
@@ -7266,6 +7442,23 @@
                         return true;
                     if (strokeNorm && (strokeNorm.includes('rgb(255, 255, 255)') || strokeNorm.includes('#fff') || strokeNorm.includes('white')))
                         return false;
+                }
+                if (wrapNew2) {
+                    const anyPath = wrapNew2.querySelector && wrapNew2.querySelector('path');
+                    if (anyPath) {
+                        const win2 = anyPath.ownerDocument && anyPath.ownerDocument.defaultView;
+                        const style2 = win2 && win2.getComputedStyle ? win2.getComputedStyle(anyPath) : null;
+                        const fill2 = (style2 && style2.fill) || anyPath.getAttribute('fill') || '';
+                        const stroke2 = (style2 && style2.stroke) || anyPath.getAttribute('stroke') || '';
+                        const fillNorm2 = String(fill2 || '').toLowerCase();
+                        const strokeNorm2 = String(stroke2 || '').toLowerCase();
+                        const isTransparent2 = (v) =>
+                            !v || v === 'none' || v === 'transparent' || v.includes('rgba(0, 0, 0, 0)');
+                        if (fillNorm2 && !isTransparent2(fillNorm2))
+                            return true;
+                        if (strokeNorm2 && (strokeNorm2.includes('rgb(255, 255, 255)') || strokeNorm2.includes('#fff') || strokeNorm2.includes('white')))
+                            return false;
+                    }
                 }
                 if (btn.classList && btn.classList.contains('rO_rT'))
                         return true;
@@ -7442,6 +7635,9 @@
             const pinRoot = card.querySelector('div.rj_rk');
             if (pinRoot)
                 return pinRoot.querySelector('svg') || pinRoot;
+            const pinNew = card.querySelector('div.qs_qt.qs_qx');
+            if (pinNew)
+                return pinNew;
             const pins = Array.from(card.querySelectorAll('div.rO_rP'));
             if (pins.length)
                 return pickTopRight(pins) || pins[0];
@@ -8823,6 +9019,31 @@
             return true;
         }
 
+        function setBetStats(id, winAmount, winCount, lossCount) {
+            const tableId = String(id || '').trim();
+            if (!tableId)
+                return false;
+            const amount = Number(winAmount);
+            const wins = Number(winCount);
+            const losses = Number(lossCount);
+            const hasStats = Number.isFinite(amount) || Number.isFinite(wins) || Number.isFinite(losses);
+            const stats = hasStats
+                ? {
+                    winAmount: Number.isFinite(amount) ? amount : 0,
+                    winCount: Number.isFinite(wins) ? Math.max(0, Math.floor(wins)) : 0,
+                    lossCount: Number.isFinite(losses) ? Math.max(0, Math.floor(losses)) : 0
+                }
+                : null;
+            if (stats)
+                betStatsById.set(tableId, stats);
+            else
+                betStatsById.delete(tableId);
+            const st = getPanelState(tableId);
+            if (st)
+                st.betStats = stats;
+            return true;
+        }
+
         function parseCountdownValue(raw) {
             const str = (raw || '').toString().trim();
             if (!str)
@@ -8853,7 +9074,7 @@
             if (!root)
                 return null;
             try {
-                const node = root.querySelector('span.ya_ye.ya_yf');
+                const node = root.querySelector('span.ya_ye.ya_yf, span.yw_yz.yw_yA.yw_yF, span.yw_yz.yw_yA');
                 if (node && parseCountdownValue(node.textContent) != null)
                     return node;
             } catch (_) {}
@@ -8889,9 +9110,9 @@
             };
             };
             return {
-                player: readArea('.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1', 'Người Chơi'),
+                player: readArea('.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt', 'Người Chơi'),
                 tie: readArea('.pu_pv .qC_lC.qC_qN.qC_qV, .qC_lC.qC_qN.qC_qV, .pu_pv [data-betcode="2"].qC_lC, [data-betcode="2"].qC_lC, .qE_lp.qE_qO', 'Hòa'),
-                banker: readArea('.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra', 'Nhà Cái')
+                banker: readArea('.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru', 'Nhà Cái')
             };
                     }
 
@@ -8917,7 +9138,7 @@
             const getBetAreaScope = (area) => {
                 if (!area || !area.closest)
                     return area;
-                return area.closest('.yW_yX, .lg_lh, .lg_ll, .lg_lm, .lg_ln, .lg_lr, .lg_lu, .lg_lx') || area;
+                return area.closest('.yW_yX, .lg_lh, .lg_ll, .lg_lm, .lg_ln, .lg_lr, .lg_lu, .lg_lx, .kI_kJ, .kI_kN, .kI_kO, .yu_yv, .pN_pO') || area;
             };
             const readNumericFromScope = (scope) => {
                 if (!scope || !scope.querySelectorAll)
@@ -8984,14 +9205,17 @@
                     return '';
                 if (!betIsVisible(area))
                     return '';
-                const hasWinTag = (area.classList && area.classList.contains('qC_qE')) || area.querySelector('.qC_qE');
+                const hasWinTag = (area.classList && area.classList.contains('qC_qE')) ||
+                    area.querySelector('.qC_qE') ||
+                    area.querySelector('.rx_ry.rx_rz') ||
+                    area.querySelector('.rx_ry');
                 if (!hasWinTag)
                     return '';
                 const scope = getBetAreaScope(area);
                 return readNumericFromScope(scope);
             };
-            const playerResult = readVisibleText('span.rc_re.rc_rg');
-            const bankerResult = readVisibleText('span.rc_re.rc_rf');
+            const playerResult = readVisibleText('span.rc_re.rc_rg, .kI_kN span.rx_ry.rx_rz, .kI_kN span.rx_ry');
+            const bankerResult = readVisibleText('span.rc_re.rc_rf, .kI_kO span.rx_ry.rx_rz, .kI_kO span.rx_ry');
             if (playerResult || bankerResult) {
                 return {
                     player: playerResult || '',
@@ -9008,9 +9232,9 @@
             if (!root || !root.querySelector)
                 return null;
             const sel = code === '0'
-                ? '[data-betcode="0"], .qC_lC.qC_q0'
+                ? '[data-betcode="0"], .qC_lC.qC_q0, .qX_lc.qX_rt'
                 : (code === '1'
-                    ? '[data-betcode="1"], .qC_lC.qC_q1'
+                    ? '[data-betcode="1"], .qC_lC.qC_q1, .qX_lc.qX_ru'
                     : '[data-betcode="2"], .qC_lC.qC_qN');
             try { return root.querySelector(sel); } catch (_) { return null; }
         }
@@ -9037,7 +9261,7 @@
             const rootRect = root.getBoundingClientRect();
             const maxW = rootRect.width * 2.5;
             const maxH = rootRect.height * 2.5;
-            const nodes = betCollectNodes('.wo_wq, .v0_wa');
+            const nodes = betCollectNodes('.wo_wq, .v0_wa, .vb_ve');
             return nodes.filter(el => {
                 if (!el || !el.getBoundingClientRect)
                     return false;
@@ -9114,14 +9338,18 @@
                 const pickSideFromContainer = (el) => {
                     if (!el || !el.closest)
                         return '';
+                    if (el.closest('.kI_kN'))
+                        return 'player';
+                    if (el.closest('.kI_kO'))
+                        return 'banker';
                     const container = el.closest('.yW_yX') || el.closest('.lg_lh, .lg_ll, .lg_lm, .lg_ln, .lg_lr, .lg_lu, .lg_lx');
                     if (!container || !container.querySelector)
                         return '';
                     if (!betIsVisible(container))
                         return '';
-                    if (container.querySelector('[data-betcode="0"], .qC_lC.qC_q0'))
+                    if (container.querySelector('[data-betcode="0"], .qC_lC.qC_q0, .qX_lc.qX_rt'))
                         return 'player';
-                    if (container.querySelector('[data-betcode="1"], .qC_lC.qC_q1'))
+                    if (container.querySelector('[data-betcode="1"], .qC_lC.qC_q1, .qX_lc.qX_ru'))
                         return 'banker';
                     if (container.querySelector('[data-betcode="2"], .qC_lC.qC_qN'))
                         return 'tie';
@@ -9140,7 +9368,7 @@
                     const cx = r.left + r.width / 2;
                     return cx < midX ? 'player' : 'banker';
                 };
-                const nodes = Array.from(root.querySelectorAll('.yW_yX .wo_wq, .yW_yX .v0_wa, .lg_lh .wo_wq, .lg_lh .v0_wa, .lg_ll .wo_wq, .lg_ll .v0_wa'));
+                const nodes = Array.from(root.querySelectorAll('.yW_yX .wo_wq, .yW_yX .v0_wa, .yW_yX .vb_ve, .lg_lh .wo_wq, .lg_lh .v0_wa, .lg_lh .vb_ve, .lg_ll .wo_wq, .lg_ll .v0_wa, .lg_ll .vb_ve, .kI_kJ .vb_ve, .kI_kN .vb_ve, .kI_kO .vb_ve, .yu_yv .vb_ve'));
                 if (nodes.length) {
                     let playerVal = '';
                     let bankerVal = '';
@@ -9178,15 +9406,15 @@
                 const area = betGetLabelNode(root, code);
                 if (!area)
                     return '';
-                return readChip('.wo_wq, .v0_wa', area);
+                return readChip('.wo_wq, .v0_wa, .vb_ve', area);
             };
             const areaPlayer = readChipFromArea('0');
             const areaBanker = readChipFromArea('1');
             if (areaPlayer || areaBanker)
                 return { player: areaPlayer, banker: areaBanker };
             return {
-                player: readChip('.kU_kZ .wo_wq, .kU_kZ .v0_wa, [data-betcode="0"] .wo_wq, [data-betcode="0"] .v0_wa, .qC_lC.qC_q0 .wo_wq, .qC_lC.qC_q0 .v0_wa'),
-                banker: readChip('.kU_k0 .wo_wq, .kU_k0 .v0_wa, [data-betcode="1"] .wo_wq, [data-betcode="1"] .v0_wa, .qC_lC.qC_q1 .wo_wq, .qC_lC.qC_q1 .v0_wa')
+                player: readChip('.kU_kZ .wo_wq, .kU_kZ .v0_wa, .kU_kZ .vb_ve, [data-betcode="0"] .wo_wq, [data-betcode="0"] .v0_wa, [data-betcode="0"] .vb_ve, .qC_lC.qC_q0 .wo_wq, .qC_lC.qC_q0 .v0_wa, .qC_lC.qC_q0 .vb_ve, .kI_kN .vb_ve, .qX_lc.qX_rt .vb_ve'),
+                banker: readChip('.kU_k0 .wo_wq, .kU_k0 .v0_wa, .kU_k0 .vb_ve, [data-betcode="1"] .wo_wq, [data-betcode="1"] .v0_wa, [data-betcode="1"] .vb_ve, .qC_lC.qC_q1 .wo_wq, .qC_lC.qC_q1 .v0_wa, .qC_lC.qC_q1 .vb_ve, .kI_kO .vb_ve, .qX_lc.qX_ru .vb_ve')
             };
         }
 
@@ -9250,8 +9478,8 @@
                 } catch (_) {}
                 return best;
             };
-            const playerPick = pickWinner('.ym_tS.ym_yp .ym_ys');
-            const bankerPick = pickWinner('.ym_tS.ym_yr .ym_ys');
+            const playerPick = pickWinner('.ym_tS.ym_yp .ym_ys, .yI_uA.yI_yL .yI_yO');
+            const bankerPick = pickWinner('.ym_tS.ym_yr .ym_ys, .yI_uA.yI_yN .yI_yO');
             if (playerPick.text || bankerPick.text) {
                 if (!bankerPick.text)
                     return playerPick.text;
@@ -9494,6 +9722,17 @@
             return '--';
         }
 
+        function deriveWinLoseColor(text) {
+            if (!text)
+                return '';
+            const lowered = norm(text);
+            if (lowered.includes('thang'))
+                return '#22c55e';
+            if (lowered.includes('thua'))
+                return '#ef4444';
+            return '';
+        }
+
         function hasAnyBet(betAreas, betExtra, betChips) {
             const areaActive = !!(betAreas && ((betAreas.player && betAreas.player.active)
                 || (betAreas.banker && betAreas.banker.active)
@@ -9536,6 +9775,15 @@
             if (lowered.includes('hoa') || lowered.includes('tie'))
                     return 'HÒA';
             return '--';
+        }
+
+        function deriveBetDoorColor(value) {
+            const raw = String(value || '').trim().toUpperCase();
+            if (raw === 'PLAYER' || raw === 'P')
+                return '#1454b8';
+            if (raw === 'BANKER' || raw === 'B')
+                return '#b91c1c';
+            return '';
         }
 
         function extractNumberByLabel(text, labels) {
@@ -9871,6 +10119,19 @@
             return '';
         }
 
+        function formatWinAmountValue(value) {
+            if (value === null || value === undefined)
+                return '--';
+            const num = Number(value);
+            if (!Number.isFinite(num))
+                return '--';
+            const rounded = Math.round(num);
+            if (rounded === 0)
+                return '0';
+            const absText = Math.abs(rounded).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            return rounded < 0 ? ('-' + absText) : absText;
+        }
+
         function formatWinLossTotals(st) {
             const wins = Math.max(0, st && st.winCount || 0);
             const losses = Math.max(0, st && st.lossCount || 0);
@@ -9939,11 +10200,42 @@
             const planActive = !!(planSideNorm || planAmountText || planLevelText);
             const planSig = planActive ? (planSideNorm + '|' + planAmountText + '|' + planLevelText) : '';
             const winLoseText = deriveWinLoseValue(text);
-            if (view.winLoseValue && st.lastWinLoseText !== winLoseText) {
-                view.winLoseValue.textContent = winLoseText;
-                st.lastWinLoseText = winLoseText;
+            const winLoseColor = deriveWinLoseColor(winLoseText);
+            if (view.winLoseValue) {
+                if (winLoseText && winLoseText !== '--') {
+                    if (st.lastWinLoseText !== winLoseText) {
+                        view.winLoseValue.textContent = winLoseText;
+                        st.lastWinLoseText = winLoseText;
+                    }
+                } else if (!st.lastWinLoseText) {
+                    const fallback = winLoseText || '--';
+                    view.winLoseValue.textContent = fallback;
+                    st.lastWinLoseText = fallback;
+                }
+                if (st.lastWinLoseColor !== winLoseColor) {
+                    view.winLoseValue.style.color = winLoseColor || '';
+                    st.lastWinLoseColor = winLoseColor;
+                }
             }
-            updateWinLossTotals(st, winLoseText, historySig);
+            const betStats = st.betStats || null;
+            const statsSig = betStats
+                ? String(betStats.winCount || 0) + '|' + String(betStats.lossCount || 0) + '|' + String(betStats.winAmount || 0)
+                : '';
+            if (betStats) {
+                if (st.lastBetStatsSig !== statsSig) {
+                    st.lastBetStatsSig = statsSig;
+                    st.winCount = Math.max(0, betStats.winCount || 0);
+                    st.lossCount = Math.max(0, betStats.lossCount || 0);
+                    applyWinLossTotals(st);
+                    if (view.winAmountValue) {
+                        const winText = formatWinAmountValue(betStats.winAmount);
+                        view.winAmountValue.textContent = winText;
+                        st.lastWinAmountText = winText;
+                    }
+                }
+            } else {
+                updateWinLossTotals(st, winLoseText, historySig);
+            }
             if (st.lastBetPlanSig !== planSig) {
                 st.lastBetPlanSig = planSig;
                 if (planActive) {
@@ -9953,6 +10245,13 @@
                         view.betAmountValue.textContent = planAmountText || '--';
                     if (view.moneyLevelValue)
                         view.moneyLevelValue.textContent = planLevelText || '--';
+                    if (view.betDoorValue) {
+                        const doorColor = deriveBetDoorColor(view.betDoorValue.textContent);
+                        if (st.lastBetDoorColor !== doorColor) {
+                            view.betDoorValue.style.color = doorColor || '';
+                            st.lastBetDoorColor = doorColor;
+                        }
+                    }
                 } else {
                     const hasBet = hasAnyBet(betAreas, betExtra, betChips);
                     if (view.betDoorValue)
@@ -9967,6 +10266,13 @@
                         view.moneyLevelValue.textContent = hasBet
                             ? deriveMoneyValue(text, ['muc\\s*tien', 'muc\\s*cuoc', 'limit'])
                             : '--';
+                    if (view.betDoorValue) {
+                        const doorColor = deriveBetDoorColor(view.betDoorValue.textContent);
+                        if (st.lastBetDoorColor !== doorColor) {
+                            view.betDoorValue.style.color = doorColor || '';
+                            st.lastBetDoorColor = doorColor;
+                        }
+                    }
                 }
             }
             if (st.lastHistorySig !== historySig) {
@@ -9989,10 +10295,22 @@
                     view.moneyLevelValue.textContent = planActive
                         ? (planLevelText || '--')
                         : (hasBet ? deriveMoneyValue(text, ['muc\\s*tien', 'muc\\s*cuoc', 'limit']) : '--');
-                if (view.winAmountValue)
-                    view.winAmountValue.textContent = hasBet
+                if (view.betDoorValue) {
+                    const doorColor = deriveBetDoorColor(view.betDoorValue.textContent);
+                    if (st.lastBetDoorColor !== doorColor) {
+                        view.betDoorValue.style.color = doorColor || '';
+                        st.lastBetDoorColor = doorColor;
+                    }
+                }
+                if (view.winAmountValue && !betStats) {
+                    const derivedWin = hasBet
                         ? deriveMoneyValue(text, ['tien\\s*thang', 'thang\\s*tien', 'tien\\s*thuong'])
-                        : '--';
+                        : '';
+                    if (derivedWin && derivedWin !== '--' && derivedWin !== st.lastWinAmountText) {
+                        view.winAmountValue.textContent = derivedWin;
+                        st.lastWinAmountText = derivedWin;
+                    }
+                }
                 const statCounts = summarizeHistoryStats(data.history || [], data.stats || null);
                 if (view.statsTotal)
                     view.statsTotal.textContent = '#' + String(statCounts.total || 0);
@@ -10296,7 +10614,7 @@
             const moneyLevelLabel = createStatusCell('MỨC TIỀN', true);
             const moneyLevelValue = createStatusCell('--');
             const winAmountLabel = createStatusCell('TIỀN THẮNG', true);
-            const winAmountValue = createStatusCell('--');
+            const winAmountValue = createStatusCell('0');
             const totalWinLoseLabel = createStatusCell('TỔNG THẮNG/THUA', true);
             const totalWinLoseValue = createStatusCell('--');
             const cutProfitLabel = createStatusCell('CẮT LÃI', true);
@@ -10390,6 +10708,7 @@
             });
 
             const cachedPlan = betPlanById.get(room.id) || null;
+            const cachedStats = betStatsById.get(room.id) || null;
             const st = {
                 id: room.id,
                 panel,
@@ -10400,6 +10719,7 @@
                 lastCountdownValue: null,
                 lastCountdownTimestamp: null,
                 betPlan: cachedPlan,
+                betStats: cachedStats,
                 view: {
                     countdownBadge,
                     countdownValue,
@@ -10444,10 +10764,14 @@
                 lastStatusColor: '',
                 lastCenterResult: '',
                 lastBetPlanSig: '',
+                lastBetStatsSig: '',
                 winCount: 0,
                 lossCount: 0,
                 lastOutcomeSig: '',
                 lastWinLoseText: '',
+                lastWinLoseColor: '',
+                lastBetDoorColor: '',
+                lastWinAmountText: '0',
                 lastState: null,
                 closed: false,
                 resolve: (id) => {
@@ -10746,6 +11070,7 @@
             setCutValues,
             setPlayState,
             setBetPlan,
+            setBetStats,
             resolveRoomDom
         };
     })();
