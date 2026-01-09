@@ -4833,7 +4833,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                            var payload = resp.TryGetProperty("payloadData", out var pd) ? (pd.GetString() ?? "") : "";
                            var opcode = resp.TryGetProperty("opcode", out var op) ? op.GetInt32() : 1;
                            var isBin = opcode != 1;
-                           //if (IsInteresting(url)) LogPacket("WS.recv", url, PreviewPayload(payload, isBin), isBin);
+                           if (IsInteresting(url)) LogPacket("WS.recv", url, PreviewPayload(payload, isBin), isBin);
                        }
                        catch (Exception ex) { Log("[CDP wsRecv] " + ex.Message); }
                    };
@@ -4852,7 +4852,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                            var payload = resp.TryGetProperty("payloadData", out var pd) ? (pd.GetString() ?? "") : "";
                            var opcode = resp.TryGetProperty("opcode", out var op) ? op.GetInt32() : 1;
                            var isBin = opcode != 1;
-                           //if (IsInteresting(url)) LogPacket("WS.send", url, PreviewPayload(payload, isBin), isBin);
+                           if (IsInteresting(url)) LogPacket("WS.send", url, PreviewPayload(payload, isBin), isBin);
                        }
                        catch (Exception ex) { Log("[CDP wsSend] " + ex.Message); }
                    };
