@@ -1,7 +1,11 @@
 (function () {
     'use strict';
     // Muốn hiện và ẩn bảng điều khiển home watch thì tìm dòng sau : showPanel: false // ⬅️ false = ẩn panel; true = hiện panel
-    // Cho phép chạy ở mọi iframe (không giới hạn host)
+    if (window.self !== window.top) {
+        if (!/^games\./i.test(location.hostname)) {
+            return;
+        }
+    }
     function isTelemetry(u) {
         try {
             const href = typeof u === 'string' ? u : (u && u.url) || '';
@@ -118,282 +122,6 @@
 
     // --- Hết: MUTE TELEMETRY ---
     // === BEGIN TEXTMAP GUARD (đặt trước khi return ở games.*) ===
-    // --- WS GAME TAP (baccarat result/state, no DOM fallback) ---
-    const WS_BACC_STATE = {
-        tables: Object.create(null),
-        lastUpdate: 0
-    };
-    window.__abx_ws_bacc_state = WS_BACC_STATE;
-
-    function wsNormalizeTableId(value) {
-        const raw = (value || '').toString().trim();
-        if (!raw)
-            return '';
-        const m = /^TileHeight-(.+)$/i.exec(raw);
-        return m ? m[1] : raw;
-    }
-
-    function wsEnsureTable(tableId) {
-        if (!tableId)
-            return null;
-        const id = wsNormalizeTableId(tableId);
-        if (!id)
-            return null;
-        let st = WS_BACC_STATE.tables[id];
-        if (!st) {
-            st = {
-                id,
-                historyRaw: [],
-                historySig: '',
-                historyTokens: [],
-                historyUpdatedAt: 0,
-                stats: null,
-                statsUpdatedAt: 0,
-                centerResult: '',
-                centerUpdatedAt: 0
-            };
-            WS_BACC_STATE.tables[id] = st;
-        }
-        return st;
-    }
-
-    function wsBuildHistorySig(rawNodes) {
-        if (!Array.isArray(rawNodes) || !rawNodes.length)
-            return '';
-        return rawNodes
-            .map(item => `${item.row},${item.col},${item.code || ''},${item.tieCount || 0}`)
-            .join('|');
-    }
-
-    function wsBuildHistoryTokensFromRaw(rawNodes) {
-        if (!Array.isArray(rawNodes) || !rawNodes.length)
-            return [];
-        const list = rawNodes
-            .filter(Boolean)
-            .slice()
-            .sort((a, b) => {
-                if (a.col !== b.col)
-                    return a.col - b.col;
-                if (a.row !== b.row)
-                    return a.row - b.row;
-                return String(a.code || '').localeCompare(String(b.code || ''));
-            });
-        const tokens = [];
-        list.forEach(node => {
-            const code = (node.code || '').toString().toUpperCase();
-            if (code === 'P' || code === 'B') {
-                tokens.push(code);
-                const tieCount = Number.isFinite(node.tieCount) ? Math.max(0, node.tieCount) : 0;
-                for (let i = 0; i < tieCount; i++)
-                    tokens.push('T');
-            } else if (code === 'T') {
-                tokens.push('T');
-            }
-        });
-        return tokens;
-    }
-
-    function wsParseBigRoadCell(cell) {
-        const raw = (cell == null) ? '' : String(cell).trim();
-        if (!raw || raw === '---')
-            return null;
-        const codeMatch = raw.match(/^[PBT]/i);
-        if (!codeMatch)
-            return null;
-        const code = codeMatch[0].toUpperCase();
-        const tieMatch = raw.match(/(\d+)$/);
-        const tieCount = tieMatch ? parseInt(tieMatch[1], 10) : 0;
-        return { code, tieCount: Number.isFinite(tieCount) ? Math.max(0, tieCount) : 0 };
-    }
-
-    function wsBuildHistoryRawFromBigRoad(bigRoad) {
-        if (!Array.isArray(bigRoad) || !bigRoad.length)
-            return [];
-        const rawNodes = [];
-        for (let row = 0; row < bigRoad.length; row++) {
-            const cols = bigRoad[row] || [];
-            for (let col = 0; col < cols.length; col++) {
-                const parsed = wsParseBigRoadCell(cols[col]);
-                if (!parsed)
-                    continue;
-                rawNodes.push({
-                    row,
-                    col,
-                    code: parsed.code,
-                    tieCount: parsed.tieCount
-                });
-            }
-        }
-        return rawNodes;
-    }
-
-    function wsMakeStats(total, player, banker, tie) {
-        const toNum = (v) => {
-            const n = parseInt(v, 10);
-            return Number.isFinite(n) ? n : 0;
-        };
-        const t = toNum(total);
-        const p = toNum(player);
-        const b = toNum(banker);
-        const ti = toNum(tie);
-        return {
-            total: { value: t, display: t ? '#' + t : '0' },
-            player: { value: p, display: String(p) },
-            banker: { value: b, display: String(b) },
-            tie: { value: ti, display: String(ti) }
-        };
-    }
-
-    function wsMakeStatsFromSummary(summary) {
-        if (!summary)
-            return null;
-        const total = summary.totalGames || summary.totalGame || summary.total;
-        return wsMakeStats(
-            total,
-            summary.playerWinCounter,
-            summary.bankerWinCounter,
-            summary.tieCounter
-        );
-    }
-
-    function wsMakeStatsFromLA(statLA) {
-        if (!statLA)
-            return null;
-        const p = statLA.pwc;
-        const b = statLA.bwc;
-        const t = statLA.tc;
-        const total = (parseInt(p, 10) || 0) + (parseInt(b, 10) || 0) + (parseInt(t, 10) || 0);
-        return wsMakeStats(total, p, b, t);
-    }
-
-    function wsFormatCenterResult(result) {
-        const raw = (result || '').toString().trim();
-        if (!raw)
-            return '';
-        const lowered = raw.toLowerCase();
-        if (lowered.includes('player'))
-            return 'NGƯỜI CHƠI';
-        if (lowered.includes('banker'))
-            return 'NHÀ CÁI';
-        if (lowered.includes('tie') || lowered.includes('draw'))
-            return 'HÒA';
-        return raw;
-    }
-
-    function wsHandleStatistic(tableId, payload) {
-        if (!payload)
-            return;
-        const table = wsEnsureTable(tableId);
-        if (!table)
-            return;
-        let value = payload.value;
-        if (typeof value === 'string') {
-            try {
-                value = JSON.parse(value);
-            } catch (_) {
-                value = null;
-            }
-        }
-        if (!value || !Array.isArray(value.bigRoad))
-            return;
-        const rawNodes = wsBuildHistoryRawFromBigRoad(value.bigRoad);
-        table.historyRaw = rawNodes;
-        table.historySig = wsBuildHistorySig(rawNodes);
-        table.historyTokens = wsBuildHistoryTokensFromRaw(rawNodes);
-        table.historyUpdatedAt = Date.now();
-        WS_BACC_STATE.lastUpdate = Date.now();
-    }
-
-    function wsHandleStatLA(tableId, payload) {
-        if (!payload)
-            return;
-        let value = payload.value;
-        if (typeof value === 'string') {
-            try {
-                value = JSON.parse(value);
-            } catch (_) {
-                value = null;
-            }
-        }
-        if (!value)
-            return;
-        const table = wsEnsureTable(tableId || value.table);
-        if (!table)
-            return;
-        const stats = wsMakeStatsFromLA(value);
-        if (stats) {
-            table.stats = stats;
-            table.statsUpdatedAt = Date.now();
-        }
-    }
-
-    function wsHandleShoeSummary(tableId, summary) {
-        if (!summary)
-            return;
-        const table = wsEnsureTable(tableId || summary.table);
-        if (!table)
-            return;
-        const stats = wsMakeStatsFromSummary(summary);
-        if (stats) {
-            table.stats = stats;
-            table.statsUpdatedAt = Date.now();
-        }
-    }
-
-    function wsHandleGameResult(tableId, payload) {
-        if (!payload)
-            return;
-        const table = wsEnsureTable(tableId || payload.table);
-        if (!table)
-            return;
-        const res = payload.result || payload.value || '';
-        table.centerResult = wsFormatCenterResult(res);
-        table.centerUpdatedAt = Date.now();
-    }
-
-    function wsHandleWsPayload(url, payload) {
-        if (!payload || typeof payload !== 'object')
-            return;
-        if (payload.gameresult)
-            wsHandleGameResult(payload.gameresult.table, payload.gameresult);
-        if (payload.statistic)
-            wsHandleStatistic(payload.statistic.table, payload.statistic);
-        if (payload.statisticLA)
-            wsHandleStatLA(payload.statisticLA.table, payload.statisticLA);
-        if (payload.ShoeSummary)
-            wsHandleShoeSummary(payload.ShoeSummary.table, payload.ShoeSummary);
-    }
-
-    (function installWsGameTap() {
-        if (window.__abx_ws_game_tap)
-            return;
-        window.__abx_ws_game_tap = true;
-        const OrigWS = window.WebSocket;
-        if (typeof OrigWS !== 'function')
-            return;
-        const WrappedWebSocket = function (url, protocols) {
-            const ws = protocols ? new OrigWS(url, protocols) : new OrigWS(url);
-            try {
-                const u = String(url || '');
-                if (/pragmaticplaylive\\.net\\/game/i.test(u)) {
-                    ws.addEventListener('message', (evt) => {
-                        try {
-                            const data = evt && evt.data;
-                            if (typeof data !== 'string' || data[0] !== '{')
-                                return;
-                            const obj = JSON.parse(data);
-                            wsHandleWsPayload(u, obj);
-                        } catch (_) {}
-                    });
-                }
-            } catch (_) {}
-            return ws;
-        };
-        WrappedWebSocket.prototype = OrigWS.prototype;
-        Object.setPrototypeOf(WrappedWebSocket, OrigWS);
-        window.WebSocket = WrappedWebSocket;
-    })();
-
     (function installTextMapGuard() {
         if (window.__cw_tm_installed)
             return;
@@ -1836,7 +1564,11 @@
 
     // Skip toàn bộ Home Watch ở domain game
     try { startGameBalanceWatch(); } catch (_) {}
-    // allow Home Watch on games.* (no early return)
+    if (/^games\./i.test(location.hostname)) {
+        try { startGameBalanceWatch(); } catch (_) {}
+        console.debug('[HomeWatch] Skip on game host');
+        return;
+            }
 
     // Chạy 1 lần duy nhất và chỉ ở top window (không chạy trong iframe)
     if (window.__abx_hw_installed)
@@ -7845,12 +7577,7 @@
         function ensurePinState(roomId, shouldPin) {
             if (!roomId)
                 return;
-            let root = findCardRootByName(roomId);
-            if (!root) {
-                const altName = resolveRoomNameForPin(roomId);
-                if (altName)
-                    root = findCardRootByName(altName);
-            }
+            const root = findCardRootByName(roomId);
             if (!root) {
                 schedulePinRetry(roomId, shouldPin);
                 return;
@@ -7891,18 +7618,6 @@
                 .filter(Boolean)
                 .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
                 .join('|');
-        }
-
-        function resolveRoomNameForPin(roomId) {
-            const raw = (roomId || '').trim();
-            if (!raw || !Array.isArray(rooms))
-                return '';
-            const normalized = wsNormalizeTableId(raw);
-            let match = rooms.find(r => r && ((r.id || '').trim() === raw || (r.id || '').trim() === normalized));
-            if (!match && normalized)
-                match = rooms.find(r => r && wsNormalizeTableId((r.id || '').trim()) === normalized);
-            const name = match && (match.name || '').trim();
-            return name || '';
         }
 
         function getCardTitle(root) {
@@ -8044,45 +7759,35 @@
         }
 
         function defaultResolveDom(id) {
-            try {
-                const raw = (id || '').trim();
-                if (!raw)
-                    return null;
-                const ids = [raw];
-                const normalized = wsNormalizeTableId(raw);
-                if (normalized && normalized !== raw)
-                    ids.push(normalized);
-                for (const key of ids) {
-                    const byId = document.getElementById(key);
-                    if (byId)
-                        return resolveCardRoot(byId);
-                    const sel = [
-                        `[data-table-id="${key}"]`,
-                        `[data-id="${key}"]`,
-                        `[data-game-id="${key}"]`,
-                        `[data-tableid="${key}"]`,
-                        `[data-table="${key}"]`,
-                        `.table-${key}`,
-                        `.table_${key}`
-                    ].join(',');
-                    const el = document.querySelector(sel);
-                    if (el)
-                        return el;
-                    if (cfg.selectorTemplate) {
-                        const s = cfg.selectorTemplate.replace(/\{id\}/g, key);
-                        const el2 = document.querySelector(s);
-                        if (el2)
-                            return el2;
-                    }
-                    if (cfg.baseSelector) {
-                        const matches = Array.from(document.querySelectorAll(cfg.baseSelector))
-                            .filter(node => node && node.innerText && node.innerText.includes(key));
-                        if (matches.length)
-                            return matches[0];
-                    }
-                }
-            } catch (_) {}
-            return null;
+                try {
+                const byId = document.getElementById(id);
+                if (byId)
+                    return resolveCardRoot(byId);
+                const sel = [
+                    `[data-table-id="${id}"]`,
+                    `[data-id="${id}"]`,
+                    `[data-game-id="${id}"]`,
+                    `[data-tableid="${id}"]`,
+                    `.table-${id}`,
+                    `.table_${id}`
+                ].join(',');
+                const el = document.querySelector(sel);
+                if (el)
+                    return el;
+                if (cfg.selectorTemplate) {
+                    const s = cfg.selectorTemplate.replace(/\{id\}/g, id);
+                    const el2 = document.querySelector(s);
+                    if (el2)
+                        return el2;
+            }
+                if (cfg.baseSelector) {
+                    const matches = Array.from(document.querySelectorAll(cfg.baseSelector))
+                        .filter(node => node && node.innerText && node.innerText.includes(id));
+                    if (matches.length)
+                        return matches[0];
+            }
+                } catch (_) {}
+                return null;
         }
 
         function resolveRoomDom(id) {
@@ -9833,32 +9538,15 @@
                 if (typeof countdown === 'number' && Number.isFinite(countdown) && countdown >= 0) {
                     st.countdownMax = Math.max(st.countdownMax || countdown, countdown);
             }
-                const wsTableId = wsNormalizeTableId(room.id || '');
-                const wsState = wsTableId ? WS_BACC_STATE.tables[wsTableId] : null;
-                if (wsState && typeof wsState.historyUpdatedAt === 'number' &&
-                    wsState.historyUpdatedAt > (st.lastWsHistoryUpdatedAt || 0)) {
-                    st.lastWsHistoryRaw = wsState.historyRaw || [];
-                    st.lastWsHistorySig = wsState.historySig || wsBuildHistorySig(wsState.historyRaw || []);
-                    st.lastWsHistoryTokens = (wsState.historyTokens && wsState.historyTokens.length)
-                        ? wsState.historyTokens
-                        : wsBuildHistoryTokensFromRaw(wsState.historyRaw || []);
-                    st.lastWsHistoryUpdatedAt = wsState.historyUpdatedAt;
-                }
-                if (wsState && typeof wsState.statsUpdatedAt === 'number' &&
-                    wsState.statsUpdatedAt > (st.lastWsStatsUpdatedAt || 0)) {
-                    st.lastWsStats = wsState.stats || null;
-                    st.lastWsStatsUpdatedAt = wsState.statsUpdatedAt;
-                }
-                if (wsState && typeof wsState.centerUpdatedAt === 'number' &&
-                    wsState.centerUpdatedAt > (st.lastWsCenterUpdatedAt || 0)) {
-                    st.lastWsCenterResult = wsState.centerResult || '';
-                    st.lastWsCenterUpdatedAt = wsState.centerUpdatedAt;
-                }
-                const historyRaw = st.lastWsHistoryRaw || [];
-                const historySig = st.lastWsHistorySig || '';
-                const history = st.lastWsHistoryTokens || [];
+                const statsNode = src.querySelector('div.np_nq:nth-of-type(2) div.np_nr');
+                const stats = parseStats(statsNode);
+                const history = parseHistory(src);
                 const historyText = history && history.length ? history.join(' ') : '';
-                const stats = st.lastWsStats || null;
+                const rawNodes = collectRawHistoryNodes(src);
+                const historyRaw = normalizeHistoryRawNodes(rawNodes);
+                const historySig = historyRaw.length
+                    ? historyRaw.map(item => `${item.row},${item.col},${item.code || ''},${item.tieCount || 0}`).join('|')
+                    : history.join('|');
                 const text = (src.innerText || src.textContent || '').replace(/\s+/g, ' ').trim();
                 const profitRaw = deriveMoneyValue(text, [
                     'tong\\s*thang', 'tong\\s*thua', 'tong\\s*thang\\s*thua',
@@ -9868,7 +9556,7 @@
                 const betAreas = collectBetAreas(src);
                 const betExtra = readBetExtra(src);
                 const betChips = readBetChips(src);
-                const centerResult = st.lastWsCenterResult || '';
+                const centerResult = readCenterResultText(src);
                 const sig = [
                     room.id,
                     countdown ?? '',
@@ -11319,7 +11007,6 @@
             cfg = Object.assign(cfg, options || {});
             const normalized = normalizeRooms(list);
             ensureRoot();
-            console.log('[HomeWatch] boot ok');
             const activeIds = new Set(normalized.map(r => r.id));
             const toRemove = [];
             panelMap.forEach((_, id) => {
