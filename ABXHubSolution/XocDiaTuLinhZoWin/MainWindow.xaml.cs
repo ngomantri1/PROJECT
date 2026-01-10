@@ -321,6 +321,7 @@ namespace XocDiaTuLinhZoWin
         // === License periodic re-check (5 phút/lần) ===
         private System.Threading.Timer? _licenseCheckTimer;
         private int _licenseCheckBusy = 0; // guard chống chồng lệnh
+        private bool _licenseVerified = false;
         // === Username lấy từ Home (authoritative) ===
         private string? _homeUsername;                 // username chuẩn lấy từ home_tick
         private DateTime _homeUsernameAt = DateTime.MinValue; // mốc thời gian bắt được
@@ -882,22 +883,31 @@ Ví dụ không hợp lệ:
                     //if (BtnPlay != null)
                     //    BtnPlay.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
 
-                    // NHÓM MỚI: ẩn/hiện theo chế độ
+                    // Nhóm mới: ẩn/hiện theo bản quyền + trạng thái game
+                    var showPanels = isGame || _licenseVerified;
+
                     if (GroupLoginNav != null)
-                        GroupLoginNav.Visibility = isGame ? Visibility.Collapsed : Visibility.Visible;
+                        GroupLoginNav.Visibility = showPanels ? Visibility.Collapsed : Visibility.Visible;
 
                     if (GroupStrategyMoney != null)
-                        GroupStrategyMoney.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
+                        GroupStrategyMoney.Visibility = showPanels ? Visibility.Visible : Visibility.Collapsed;
 
                     if (GroupStatus != null)
-                        GroupStatus.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
+                        GroupStatus.Visibility = showPanels ? Visibility.Visible : Visibility.Collapsed;
 
                     if (GroupConsole != null)
-                        GroupConsole.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
+                        GroupConsole.Visibility = showPanels ? Visibility.Visible : Visibility.Collapsed;
                 });
             }
             catch { }
         }
+
+        private void SetLicenseUi(bool verified)
+        {
+            _licenseVerified = verified;
+            SetModeUi(_isGameUi);
+        }
+        
 
         private string GetAiNGramStatePath()
         {
@@ -1716,8 +1726,10 @@ Ví dụ không hợp lệ:
                     settings.IsWebMessageEnabled = true;
                     // (tuỳ chọn khác, giữ nguyên nếu bạn không cần)
                     // settings.AreDefaultContextMenusEnabled = false;
-                    // settings.AreDevToolsEnabled = true;
+                    settings.AreDevToolsEnabled = true;
                 }
+
+                try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
                 // Điều hướng mọi window.open về cùng WebView2
@@ -3086,6 +3098,7 @@ Ví dụ không hợp lệ:
                                 if (!okLease) return;
 
                                 StartExpiryCountdown(trialUntilUtc, "trial");
+                                SetLicenseUi(true);
                             }
                             else
                             {
@@ -3118,6 +3131,7 @@ Ví dụ không hợp lệ:
                                     _ = SaveConfigAsync();
 
                                     StartExpiryCountdown(trialEndsAt, "trial");
+                                    SetLicenseUi(true);
                                     Log("[Trial] started until: " + trialEndsAt.ToString("u"));
                                 }
                                 else
@@ -3198,6 +3212,7 @@ Ví dụ không hợp lệ:
                         if (!okLease) return;
 
                         StartExpiryCountdown(expUtc, "license");
+                        SetLicenseUi(true);
                         StartLicenseRecheckTimer(username);
                         Log("[License] valid until: " + expUtc.ToString("u"));
                     }
@@ -4483,6 +4498,7 @@ Ví dụ không hợp lệ:
                     {
                         MessageBox.Show("Không xác thực được license. Dừng đặt cược.", "Automino",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
+                        SetLicenseUi(false);
                         StopXocDia_Click(this, new RoutedEventArgs());
                     });
                     return;
@@ -4494,6 +4510,7 @@ Ví dụ không hợp lệ:
                     {
                         MessageBox.Show("Mật khẩu license không đúng. Dừng đặt cược.", "Automino",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
+                        SetLicenseUi(false);
                         StopXocDia_Click(this, new RoutedEventArgs());
                     });
                     return;
@@ -4506,6 +4523,7 @@ Ví dụ không hợp lệ:
                     {
                         MessageBox.Show("License đã hết hạn. Dừng đặt cược.", "Automino",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
+                        SetLicenseUi(false);
                         StopXocDia_Click(this, new RoutedEventArgs());
                     });
                     return;
@@ -4963,6 +4981,7 @@ Ví dụ không hợp lệ:
 
                             // Ngắt heartbeat trước khi trả lease
                             StopLeaseHeartbeat();
+                            SetLicenseUi(false);
                             StopLicenseRecheckTimer();
                             // Thử trả lease luôn để nhường slot
                             var uname = ResolveLeaseUsername();

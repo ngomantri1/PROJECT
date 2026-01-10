@@ -57,11 +57,25 @@
             } catch (_) {}
         } catch (_) {}
     })();
-
-    if (!(window.cc && cc.director && cc.director.getScene)) {
-        return;
+    function __cw_waitReady() {
+        if (window.__cw_waiting_v4) return;
+        window.__cw_waiting_v4 = 1;
+        var tries = 0;
+        var timer = setInterval(function () {
+            try {
+                if (window.cc && cc.director && cc.director.getScene) {
+                    clearInterval(timer);
+                    window.__cw_waiting_v4 = 0;
+                    __cw_boot();
+                } else if (++tries > 120) {
+                    clearInterval(timer);
+                    window.__cw_waiting_v4 = 0;
+                }
+            } catch (e) {}
+        }, 500);
     }
 
+    function __cw_boot() {
     /* ---------------- utils ---------------- */
     var V2 = (cc.v2 || cc.Vec2);
     var sleep = function (ms) {
@@ -129,11 +143,15 @@
         return String(v);
     };
     var cssRect = function (r) {
+        var x = (r && r.sx != null) ? r.sx : r.x;
+        var y = (r && r.sy != null) ? r.sy : r.y;
+        var w = (r && r.sw != null) ? r.sw : r.w;
+        var h = (r && r.sh != null) ? r.sh : r.h;
         return {
-            left: r.x + 'px',
-            top: r.y + 'px',
-            width: r.w + 'px',
-            height: r.h + 'px'
+            left: x + 'px',
+            top: y + 'px',
+            width: w + 'px',
+            height: h + 'px'
         };
     };
     var area = function (r) {
@@ -161,6 +179,45 @@
     }
 
     /* ---------------- scene helpers ---------------- */
+    function toScreenPt(node, p) {
+        try {
+            var cam = null;
+            if (cc.Camera && cc.Camera.findCamera) {
+                cam = cc.Camera.findCamera(node);
+            } else if (cc.Camera && cc.Camera.main) {
+                cam = cc.Camera.main;
+            }
+            if (cam && cam.worldToScreen) {
+                var sp = cam.worldToScreen(p);
+                var fs = (cc.view && cc.view.getFrameSize) ? cc.view.getFrameSize() : null;
+                var vs = (cc.view && cc.view.getVisibleSize) ? cc.view.getVisibleSize() : null;
+                if (fs && vs && vs.width && vs.height) {
+                    return {
+                        x: sp.x * (fs.width / vs.width),
+                        y: sp.y * (fs.height / vs.height)
+                    };
+                }
+                return {
+                    x: sp.x,
+                    y: sp.y
+                };
+            }
+        } catch (e) {}
+        try {
+            if (cc.view && cc.view._convertPointWithScale) {
+                var sp2 = cc.view._convertPointWithScale(p);
+                if (sp2)
+                    return {
+                        x: sp2.x,
+                        y: sp2.y
+                    };
+            }
+        } catch (e) {}
+        return {
+            x: p.x || 0,
+            y: p.y || 0
+        };
+    }
     function wRect(node) {
         try {
             var p = node.convertToWorldSpaceAR(new V2(0, 0));
@@ -168,18 +225,44 @@
                 width: 0,
                 height: 0
             });
+            var ax = (node.anchorX != null ? node.anchorX : 0.5);
+            var ay = (node.anchorY != null ? node.anchorY : 0.5);
+            var wx = p.x || 0;
+            var wy = p.y || 0;
+            var ww = cs.width || 0;
+            var wh = cs.height || 0;
+            var blx = wx - ww * ax;
+            var bly = wy - wh * ay;
+            var tr = {
+                x: blx + ww,
+                y: bly + wh
+            };
+            var sp1 = toScreenPt(node, new V2(blx, bly));
+            var sp2 = toScreenPt(node, new V2(tr.x, tr.y));
+            var sx = Math.min(sp1.x, sp2.x);
+            var sy = Math.min(sp1.y, sp2.y);
+            var sw = Math.abs(sp2.x - sp1.x);
+            var sh = Math.abs(sp2.y - sp1.y);
             return {
-                x: p.x || 0,
-                y: p.y || 0,
-                w: cs.width || 0,
-                h: cs.height || 0
+                x: wx,
+                y: wy,
+                w: ww,
+                h: wh,
+                sx: sx,
+                sy: sy,
+                sw: sw,
+                sh: sh
             };
         } catch (e) {
             return {
                 x: 0,
                 y: 0,
                 w: 0,
-                h: 0
+                h: 0,
+                sx: 0,
+                sy: 0,
+                sw: 0,
+                sh: 0
             };
         }
     }
@@ -245,6 +328,10 @@
                         y: r.y,
                         w: r.w,
                         h: r.h,
+                        sx: r.sx,
+                        sy: r.sy,
+                        sw: r.sw,
+                        sh: r.sh,
                         tail: tail,
                         tl: tail.toLowerCase(),
                         n: {
@@ -271,6 +358,10 @@
                     y: r.y,
                     w: r.w,
                     h: r.h,
+                    sx: r.sx,
+                    sy: r.sy,
+                    sw: r.sw,
+                    sh: r.sh,
                     tail: tailOf(n, 12),
                     tl: tailOf(n, 12).toLowerCase()
                 });
@@ -323,6 +414,10 @@
                 y: y,
                 w: w,
                 h: h,
+                sx: L.sx,
+                sy: L.sy,
+                sw: L.sw,
+                sh: L.sh,
                 n: {
                     x: x / innerWidth,
                     y: y / innerHeight,
@@ -373,6 +468,10 @@
                 y: y,
                 w: w,
                 h: h,
+                sx: L.sx,
+                sy: L.sy,
+                sw: L.sw,
+                sh: L.sh,
                 n: {
                     x: x / innerWidth,
                     y: y / innerHeight,
@@ -885,7 +984,11 @@
                             x: m.x,
                             y: m.y,
                             w: m.w,
-                            h: m.h
+                            h: m.h,
+                            sx: m.sx,
+                            sy: m.sy,
+                            sw: m.sw,
+                            sh: m.sh
                         },
                         tail: m.tail,
                         txt: m.txt,
@@ -929,7 +1032,11 @@
                             x: b.x,
                             y: b.y,
                             w: b.w,
-                            h: b.h
+                            h: b.h,
+                            sx: b.sx,
+                            sy: b.sy,
+                            sw: b.sw,
+                            sh: b.sh
                         },
                         tail: b.tail,
                         txt: '',
@@ -971,7 +1078,11 @@
                             x: t.x,
                             y: t.y,
                             w: t.w,
-                            h: t.h
+                            h: t.h,
+                            sx: t.sx,
+                            sy: t.sy,
+                            sw: t.sw,
+                            sh: t.sh
                         },
                         tail: t.tail,
                         txt: t.text,
@@ -1977,7 +2088,11 @@
                     x: r.x,
                     y: r.y,
                     w: r.w,
-                    h: r.h
+                    h: r.h,
+                    sx: r.sx,
+                    sy: r.sy,
+                    sw: r.sw,
+                    sh: r.sh
                 };
                 var txt = String(r.text || '');
                 S.focus.txt = txt;
@@ -2334,5 +2449,13 @@
         };
 
     })();
+
+    }
+
+    if (window.cc && cc.director && cc.director.getScene) {
+        __cw_boot();
+    } else {
+        __cw_waitReady();
+    }
 
 })();
