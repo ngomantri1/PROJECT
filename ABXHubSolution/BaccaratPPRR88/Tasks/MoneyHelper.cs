@@ -9,7 +9,7 @@ namespace BaccaratPPRR88.Tasks
         public static Action<string>? Logger { get; set; }
         public static bool S7ResetOnProfit { get; set; } = true;
         private static long _globalResetVersion = 0;
-        private const int MultiChainHoldLosses = 4;
+        private const int MultiChainHoldLosses = 2;
 
         private sealed class MultiChainState
         {
