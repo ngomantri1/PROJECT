@@ -282,6 +282,105 @@
         a.reverse();
         return a.slice(-limit).join('/');
     }
+    var GAME_PREFAB_KEY = 'prefab_game_14';
+    function fullPath(n, limit) {
+        limit = limit || 80;
+        var a = [];
+        try {
+            var t = n,
+            c = 0;
+            while (t && c < limit) {
+                if (t.name)
+                    a.push(t.name);
+                t = t.parent || t._parent || null;
+                c++;
+            }
+        } catch (e) {}
+        a.reverse();
+        return a.join('/');
+    }
+    function nodeInGame(n) {
+        try {
+            var t = n,
+            c = 0;
+            while (t && c < 200) {
+                var nm = t.name || '';
+                if (String(nm).toLowerCase().indexOf(GAME_PREFAB_KEY) !== -1)
+                    return true;
+                t = t.parent || t._parent || null;
+                c++;
+            }
+        } catch (e) {}
+        try {
+            var p = fullPath(n, 200);
+            return String(p || '').toLowerCase().indexOf(GAME_PREFAB_KEY) !== -1;
+        } catch (e) {
+            return false;
+        }
+    }
+    var COUNTDOWN_TAIL_RIGHT = 'node_in_multimode/top/right/xdtl_jackpot_anim_right/lbl_countdown';
+    var COUNTDOWN_TAIL_LEFT = 'node_in_multimode/top/left/xdtl_jackpot_anim_left/lbl_countdown';
+    function readCountdownSec() {
+        var right = null,
+        left = null;
+        walkNodes(function (n) {
+            if (!nodeInGame(n))
+                return;
+            var comps = (n._components || []);
+            for (var i = 0; i < comps.length; i++) {
+                var c = comps[i];
+                if (c && typeof c.string !== 'undefined') {
+                    var text = String(c.string == null ? '' : c.string).trim();
+                    if (!text)
+                        continue;
+                    var path = fullPath(n, 80);
+                    var pathL = String(path || '').toLowerCase();
+                    if (pathL.indexOf(COUNTDOWN_TAIL_RIGHT) !== -1) {
+                        right = {
+                            text: text,
+                            tail: path
+                        };
+                    } else if (pathL.indexOf(COUNTDOWN_TAIL_LEFT) !== -1) {
+                        left = {
+                            text: text,
+                            tail: path
+                        };
+                    }
+                }
+            }
+        });
+        function parseSec(txt) {
+            var m = String(txt || '').match(/(\d+)/);
+            return m ? parseInt(m[1], 10) : null;
+        }
+        var secR = right ? parseSec(right.text) : null;
+        var secL = left ? parseSec(left.text) : null;
+        if (secR != null && secR > 0) {
+            S._progTail = right.tail || '';
+            S._progIsSec = true;
+            window.__cw_prog_tail = S._progTail;
+            return secR;
+        }
+        if (secL != null && secL > 0) {
+            S._progTail = left.tail || '';
+            S._progIsSec = true;
+            window.__cw_prog_tail = S._progTail;
+            return secL;
+        }
+        if (secR != null) {
+            S._progTail = right.tail || '';
+            S._progIsSec = true;
+            window.__cw_prog_tail = S._progTail;
+            return secR;
+        }
+        if (secL != null) {
+            S._progTail = left.tail || '';
+            S._progIsSec = true;
+            window.__cw_prog_tail = S._progTail;
+            return secL;
+        }
+        return null;
+    }
     function walkNodes(cb) {
         var scene = cc.director.getScene();
         if (!scene)
@@ -314,6 +413,8 @@
     function collectLabels() {
         var out = [];
         walkNodes(function (n) {
+            if (!nodeInGame(n))
+                return;
             var comps = (n._components || []);
             for (var i = 0; i < comps.length; i++) {
                 var c = comps[i];
@@ -350,6 +451,8 @@
     function collectButtons() {
         var out = [];
         walkNodes(function (n) {
+            if (!nodeInGame(n))
+                return;
             var btns = getComps(n, cc.Button);
             if (btns && btns.length) {
                 var r = wRect(n);
@@ -370,27 +473,44 @@
         return out;
     }
     function collectProgress() {
+        var cd = readCountdownSec();
+        if (cd != null)
+            return cd;
+        S._progIsSec = false;
         var bars = [];
         walkNodes(function (n) {
+            if (!nodeInGame(n))
+                return;
             var comps = getComps(n, cc.ProgressBar);
             if (comps && comps.length) {
                 var r = wRect(n);
                 for (var i = 0; i < comps.length; i++) {
                     bars.push({
                         comp: comps[i],
-                        rect: r
+                        rect: r,
+                        tail: tailOf(n, 12)
                     });
                 }
             }
         });
-        if (!bars.length)
+        if (!bars.length) {
+            S._progTail = '';
+            window.__cw_prog_tail = '';
             return null;
+        }
         var H = innerHeight,
         cs = bars.filter(function (b) {
             var r = b.rect;
             return r.w > 300 && r.h >= 6 && r.h <= 60 && r.y < H * 0.75;
         });
-        var bar = (cs[0] || bars[0]).comp;
+        var barPick = (cs[0] || bars[0]);
+        var bar = barPick.comp;
+        try {
+            S._progTail = barPick.tail || '';
+        } catch (e) {}
+        try {
+            window.__cw_prog_tail = barPick.tail || '';
+        } catch (e) {}
         var pr = (bar && typeof bar.progress !== 'undefined') ? bar.progress : 0;
         return clamp01(Number(pr));
     }
@@ -450,38 +570,226 @@
             return true;
         return s.length >= 4;
     }
-    function buildTextRects() {
-        var ls = collectLabels(),
-        out = [];
-        for (var i = 0; i < ls.length; i++) {
-            var L = ls[i];
-            var s = (L.text || '').trim();
-            if (!isTextCandidate(s))
-                continue;
-            var x = Math.round(L.x),
-            y = Math.round(L.y),
-            w = Math.round(L.w),
-            h = Math.round(L.h);
-            out.push({
-                text: s,
-                x: x,
-                y: y,
-                w: w,
-                h: h,
-                sx: L.sx,
-                sy: L.sy,
-                sw: L.sw,
-                sh: L.sh,
-                n: {
-                    x: x / innerWidth,
-                    y: y / innerHeight,
-                    w: w / innerWidth,
-                    h: h / innerHeight
-                },
-                tail: L.tail,
-                tl: L.tl
-            });
+    function rectForTextMap(n, text) {
+        var r = wRect(n);
+        if ((r.x || r.y || r.w || r.h))
+            return r;
+        function worldPt(x, y) {
+            try {
+                if (n && n.convertToWorldSpaceAR)
+                    return n.convertToWorldSpaceAR(new V2(x, y));
+            } catch (e) {}
+            try {
+                if (cc.UITransform && n && n.getComponent) {
+                    var ut = n.getComponent(cc.UITransform);
+                    if (ut && ut.convertToWorldSpaceAR)
+                        return ut.convertToWorldSpaceAR(new V2(x, y));
+                }
+            } catch (e) {}
+            try {
+                if (n && n.getWorldPosition) {
+                    var wp = n.getWorldPosition();
+                    return {
+                        x: (wp.x || 0) + (x || 0),
+                        y: (wp.y || 0) + (y || 0)
+                    };
+                }
+            } catch (e) {}
+            try {
+                if (n && n.worldPosition) {
+                    return {
+                        x: (n.worldPosition.x || 0) + (x || 0),
+                        y: (n.worldPosition.y || 0) + (y || 0)
+                    };
+                }
+            } catch (e) {}
+            return {
+                x: 0,
+                y: 0
+            };
         }
+        function sizeFromNode() {
+            try {
+                if (n.getContentSize)
+                    return n.getContentSize();
+            } catch (e) {}
+            try {
+                if (n._contentSize)
+                    return n._contentSize;
+            } catch (e) {}
+            try {
+                if (cc.UITransform && n.getComponent) {
+                    var ut = n.getComponent(cc.UITransform);
+                    if (ut) {
+                        if (ut.contentSize)
+                            return ut.contentSize;
+                        if (ut.width != null && ut.height != null)
+                            return {
+                                width: ut.width,
+                                height: ut.height
+                            };
+                    }
+                }
+            } catch (e) {}
+            return {
+                width: 0,
+                height: 0
+            };
+        }
+        function rectFromWorld(x1, y1, x2, y2) {
+            var minX = Math.min(x1, x2);
+            var minY = Math.min(y1, y2);
+            var maxX = Math.max(x1, x2);
+            var maxY = Math.max(y1, y2);
+            var sp1 = toScreenPt(n, new V2(minX, minY));
+            var sp2 = toScreenPt(n, new V2(maxX, maxY));
+            var sx = Math.min(sp1.x, sp2.x);
+            var sy = Math.min(sp1.y, sp2.y);
+            var sw = Math.abs(sp2.x - sp1.x);
+            var sh = Math.abs(sp2.y - sp1.y);
+            return {
+                x: minX,
+                y: minY,
+                w: Math.abs(maxX - minX),
+                h: Math.abs(maxY - minY),
+                sx: sx,
+                sy: sy,
+                sw: sw,
+                sh: sh
+            };
+        }
+        try {
+            var sz = sizeFromNode();
+            if (sz && (sz.width || sz.height)) {
+                var p0 = worldPt(0, 0);
+                var ax = (n.anchorX != null ? n.anchorX : 0.5);
+                var ay = (n.anchorY != null ? n.anchorY : 0.5);
+                var blx = (p0.x || 0) - (sz.width || 0) * ax;
+                var bly = (p0.y || 0) - (sz.height || 0) * ay;
+                return rectFromWorld(blx, bly, blx + (sz.width || 0), bly + (sz.height || 0));
+            }
+        } catch (e) {}
+        try {
+            var lb = getComp(n, cc.Label) || getComp(n, cc.RichText);
+            var rd = null;
+            if (lb && lb._assembler && lb._assembler._renderData)
+                rd = lb._assembler._renderData;
+            else if (lb && lb._renderData)
+                rd = lb._renderData;
+            if (rd && rd._data && rd._data.length >= 10) {
+                var data = rd._data;
+                var minX = 1e9,
+                minY = 1e9,
+                maxX = -1e9,
+                maxY = -1e9;
+                for (var i = 0; i + 1 < data.length; i += 5) {
+                    var dx = data[i],
+                    dy = data[i + 1];
+                    if (!isFinite(dx) || !isFinite(dy))
+                        continue;
+                    if (dx < minX)
+                        minX = dx;
+                    if (dy < minY)
+                        minY = dy;
+                    if (dx > maxX)
+                        maxX = dx;
+                    if (dy > maxY)
+                        maxY = dy;
+                }
+                if (minX <= maxX && minY <= maxY) {
+                    var p1 = worldPt(minX, minY);
+                    var p2 = worldPt(maxX, maxY);
+                    return rectFromWorld(p1.x || 0, p1.y || 0, p2.x || 0, p2.y || 0);
+                }
+            }
+        } catch (e) {}
+        try {
+            if (n.getBoundingBoxToWorld) {
+                var bb = n.getBoundingBoxToWorld();
+                if (bb && (bb.x || bb.y || bb.width || bb.height)) {
+                    return rectFromWorld(bb.x || 0, bb.y || 0, (bb.x || 0) + (bb.width || 0), (bb.y || 0) + (bb.height || 0));
+                }
+            }
+        } catch (e) {}
+        try {
+            if (cc.UITransform && n.getComponent) {
+                var ut = n.getComponent(cc.UITransform);
+                if (ut && ut.getBoundingBoxToWorld) {
+                    var bb2 = ut.getBoundingBoxToWorld();
+                    if (bb2 && (bb2.x || bb2.y || bb2.width || bb2.height)) {
+                        return rectFromWorld(bb2.x || 0, bb2.y || 0, (bb2.x || 0) + (bb2.width || 0), (bb2.y || 0) + (bb2.height || 0));
+                    }
+                }
+            }
+        } catch (e) {}
+        try {
+            var lb2 = getComp(n, cc.Label) || getComp(n, cc.RichText);
+            if (lb2) {
+                var fs = lb2.fontSize || lb2._fontSize || 0;
+                var lh = lb2.lineHeight || lb2._lineHeight || fs;
+                var t = String(text || '').trim();
+                if (fs > 0 && t) {
+                    var lines = t.split(/\r?\n/);
+                    var maxLen = 0;
+                    for (var i2 = 0; i2 < lines.length; i2++) {
+                        if (lines[i2].length > maxLen)
+                            maxLen = lines[i2].length;
+                    }
+                    var w = Math.max(1, Math.round(maxLen * fs * 0.6));
+                    var h = Math.max(1, Math.round(lines.length * lh));
+                    var p = worldPt(0, 0);
+                    var ax2 = (n.anchorX != null ? n.anchorX : 0.5);
+                    var ay2 = (n.anchorY != null ? n.anchorY : 0.5);
+                    var wx = (p.x || 0) - w * ax2;
+                    var wy = (p.y || 0) - h * ay2;
+                    return rectFromWorld(wx, wy, wx + w, wy + h);
+                }
+            }
+        } catch (e) {}
+        return r;
+    }
+    function buildTextRects() {
+        var out = [];
+        walkNodes(function (n) {
+            if (!nodeInGame(n))
+                return;
+            var comps = (n._components || []);
+            for (var i = 0; i < comps.length; i++) {
+                var c = comps[i];
+                if (c && typeof c.string !== 'undefined') {
+                    var s = String(c.string == null ? '' : c.string).trim();
+                    if (!s)
+                        continue;
+                    var r = rectForTextMap(n, s);
+                    var x = Math.round(r.x),
+                    y = Math.round(r.y),
+                    w = Math.round(r.w),
+                    h = Math.round(r.h);
+                    var tail = fullPath(n, 80);
+                    var idx = out.length + 1;
+                    out.push({
+                        idx: idx,
+                        text: s,
+                        x: x,
+                        y: y,
+                        w: w,
+                        h: h,
+                        sx: r.sx,
+                        sy: r.sy,
+                        sw: r.sw,
+                        sh: r.sh,
+                        n: {
+                            x: x / innerWidth,
+                            y: y / innerHeight,
+                            w: w / innerWidth,
+                            h: h / innerHeight
+                        },
+                        tail: tail,
+                        tl: String(tail || '').toLowerCase()
+                    });
+                }
+            }
+        });
         return out;
     }
 
@@ -867,7 +1175,14 @@
         '<button id="bBetC">Bet CHẴN</button>' +
         '<button id="bBetL">Bet LẺ</button>' +
         '</div>' +
-        '<div id="cwInfo" style="white-space:pre;color:#9f9;line-height:1.45"></div>';
+        '<div id="cwInfo" style="white-space:pre;color:#9f9;line-height:1.45"></div>' +
+        '<div style="display:flex;gap:6px;align-items:center;margin-top:6px">' +
+        '<b style="color:#9f9">Log</b>' +
+        '<button id="bCopyLog">CopyLog</button>' +
+        '<button id="bClearLog">ClearLog</button>' +
+        '<span id="cwLogHint" style="color:#7aa"></span>' +
+        '</div>' +
+        '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
     //root.style.display='none';
     var btns = panel.querySelectorAll('button');
@@ -886,6 +1201,60 @@
         })(b);
     }
     root.appendChild(panel);
+    var cwLogEl = panel.querySelector('#cwLog');
+    function setLogHint(s) {
+        var h = panel.querySelector('#cwLogHint');
+        if (!h)
+            return;
+        h.textContent = s || '';
+        if (s) {
+            setTimeout(function () {
+                if (h.textContent === s)
+                    h.textContent = '';
+            }, 1200);
+        }
+    }
+    function setCwLog(text) {
+        var t = text || '';
+        if (cwLogEl)
+            cwLogEl.textContent = t;
+        window.__cw_lastLog = t;
+    }
+    function clearCwLog() {
+        setCwLog('');
+        setLogHint('cleared');
+    }
+    function copyCwLog() {
+        var t = (cwLogEl && cwLogEl.textContent) || '';
+        if (!t) {
+            setLogHint('empty');
+            return;
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(t).then(function () {
+                setLogHint('copied');
+            }, function () {
+                fallbackCopy(t);
+            });
+            return;
+        }
+        fallbackCopy(t);
+    }
+    function fallbackCopy(t) {
+        try {
+            var ta = document.createElement('textarea');
+            ta.value = t;
+            ta.setAttribute('readonly', 'readonly');
+            ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            setLogHint('copied');
+        } catch (e) {
+            setLogHint('copy-fail');
+        }
+    }
 
     // Drag
     try {
@@ -946,7 +1315,7 @@
     root.appendChild(layerText);
 
     var focusBox = document.createElement('div');
-    focusBox.style.cssText = 'position:fixed;border:2px dashed #ffd866;background:#ffd80022;display:none;pointer-events:none;z-index:2147483647;';
+    focusBox.style.cssText = 'position:fixed;border:2px solid #f00;background:#ff000015;display:none;pointer-events:none;z-index:2147483647;';
     root.appendChild(focusBox);
     function showFocus(r) {
         if (!r) {
@@ -1063,16 +1432,21 @@
         });
         for (var i = 0; i < ordered.length; i++) {
             var t = ordered[i];
+            var idx = (t.idx != null ? t.idx : (i + 1));
+            if (t.idx == null)
+                t.idx = idx;
             var d = document.createElement('div');
-            d.style.cssText = 'position:fixed;outline:1px dashed #88f;background:#8888ff22;';
+            d.style.cssText = 'position:fixed;outline:1px dashed #88f;background:#8888ff22;color:#ffd866;font:11px/1.2 Consolas,monospace;padding:1px 3px;box-sizing:border-box;text-shadow:0 0 2px #000;';
             var st = cssRect(t);
             for (var k in st) {
                 d.style[k] = st[k];
             }
             d.title = '"' + t.text + '"\n' + t.tail;
-            d.onmouseup = (function (t) {
+            d.textContent = String(idx);
+            d.onmousedown = (function (t) {
                 return function (ev) {
-                    ev.stopPropagation();
+                    if (ev)
+                        ev.stopPropagation();
                     S.focus = {
                         rect: {
                             x: t.x,
@@ -1084,6 +1458,7 @@
                             sw: t.sw,
                             sh: t.sh
                         },
+                        idx: t.idx,
                         tail: t.tail,
                         txt: t.text,
                         val: moneyOf(t.text),
@@ -1093,9 +1468,13 @@
                     updatePanel();
                 };
             })(t);
+            d.onmouseup = function (ev) {
+                if (ev)
+                    ev.stopPropagation();
+            };
             layerText.appendChild(d);
         }
-        layerText.onmouseup = function () {
+        layerText.onmousedown = function () {
             S.focus = null;
             showFocus(null);
             updatePanel();
@@ -1113,13 +1492,16 @@
             rawA: null
         };
         var f = S.focus;
+        var progText = (S.prog == null ? '--' : (S._progIsSec ? (S.prog + 's') : (((S.prog * 100) | 0) + '%')));
         var base =
-            '• Trạng thái: ' + S.status + ' | Prog: ' + (S.prog == null ? '--' : (((S.prog * 100) | 0) + '%')) + '\n' +
+            ' Trạng thái: ' + S.status + ' | Prog: ' + progText + '\n' +
             '• TK : ' + fmt(t.A) + '|CHẴN: ' + fmt(t.C) + '|SẤP ĐÔI: ' + fmt(t.SD) + '|LẺ :' + fmt(t.L) + '|TỨ TRẮNG: ' + fmt(t.TT) + '|3 TRẮNG: ' + fmt(t.T3T) + '|3 ĐỎ: ' + fmt(t.T3D) + '|TỨ ĐỎ: ' + fmt(t.TD) + '\n' +
 
             '• Focus: ' + (f ? f.kind : '-') + '\n' +
+            '  idx : ' + (f && f.idx != null ? f.idx : '-') + '\n' +
             '  tail: ' + (f ? f.tail : '-') + '\n' +
-            '  txt : ' + (f ? (f.txt != null ? f.txt : '-') : '-') + '\n' +
+            '  text: ' + (f ? (f.txt != null ? f.txt : '-') : '-') + '\n' +
+            '  x,y,w,h: ' + (f && f.rect ? (Math.round(f.rect.x) + ',' + Math.round(f.rect.y) + ',' + Math.round(f.rect.w) + ',' + Math.round(f.rect.h)) : '-') + '\n' +
             '  val : ' + (f && f.val != null ? fmt(f.val) : '-');
 
         var tk = readTKSeq();
@@ -1179,32 +1561,39 @@
         }
         console.log(btns);
     }
-    function scan200Text() {
-        var texts = buildTextRects().sort(function (a, b) {
-            return a.y - b.y;
-        }).slice(0, 200)
-            .map(function (t) {
-                return {
-                    text: t.text,
-                    x: t.x,
-                    y: t.y,
-                    w: t.w,
-                    h: t.h,
-                    tail: t.tail
-                };
-            });
-        console.log('(Text index x200)\ttext\tx\ty\tw\th\ttail');
-        for (var i = 0; i < texts.length; i++) {
-            var r = texts[i];
-            console.log(i + "\t'" + r.text + "'\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
-        }
-        try {
-            console.table(texts);
-        } catch (e) {
-            console.log(texts);
-        }
-        return texts;
-    }
+     function scan200Text() {
+         var texts = buildTextRects().slice(0, 200)
+             .map(function (t) {
+                 return {
+                     text: t.text,
+                     tail: t.tail,
+                     x: Math.round(t.x),
+                     y: Math.round(t.y),
+                     w: Math.round(t.w),
+                     h: Math.round(t.h)
+                 };
+             });
+         console.log('(Text index x200)	text	x	y	w	h	tail');
+         for (var j = 0; j < texts.length; j++) {
+             var r = texts[j];
+             console.log(j + "	'" + r.text + "'	" + r.x + "	" + r.y + "	" + r.w + "	" + r.h + "	'" + r.tail + "'");
+         }
+         var lines = ['(Text index x200)	text	x	y	w	h	tail'];
+         for (var k = 0; k < texts.length; k++) {
+             var r2 = texts[k];
+             lines.push(k + "	'" + r2.text + "'	" + r2.x + "	" + r2.y + "	" + r2.w + "	" + r2.h + "	'" + r2.tail + "'");
+         }
+         if (!texts.length)
+             lines.push('(empty)');
+        setCwLog(lines.join('\n'));
+         window.__cw_lastTextScan = texts;
+         try {
+             console.table(texts);
+         } catch (e) {
+             console.log(texts);
+         }
+         return texts;
+     }
 
     /* =====================================================
     CHIP BETTING CORE (compat)
@@ -1606,19 +1995,21 @@
         (function walk(n) {
             if (hit || !active(n))
                 return;
-            var lb = getComp(n, cc.Label) || getComp(n, cc.RichText);
             var ok = false;
-            if (lb && typeof lb.string !== 'undefined') {
-                var s = NORM(lb.string);
-                ok = rx ? rx.test(s) : false;
-            }
-            if (!ok) {
-                var names = [],
-                p;
-                for (p = n; p; p = p.parent)
-                    names.push(p.name || '');
-                var path = names.reverse().join('/').toLowerCase();
-                ok = rx ? rx.test(path) : false;
+            if (nodeInGame(n)) {
+                var lb = getComp(n, cc.Label) || getComp(n, cc.RichText);
+                if (lb && typeof lb.string !== 'undefined') {
+                    var s = NORM(lb.string);
+                    ok = rx ? rx.test(s) : false;
+                }
+                if (!ok) {
+                    var names = [],
+                    p;
+                    for (p = n; p; p = p.parent)
+                        names.push(p.name || '');
+                    var path = names.reverse().join('/').toLowerCase();
+                    ok = rx ? rx.test(path) : false;
+                }
             }
             if (ok) {
                 var c = clickableOf(n, 8);
@@ -1659,15 +2050,17 @@
         (function walk(n) {
             if (cand || !active(n))
                 return;
-            var l = (getComp(n, cc.Label) && getComp(n, cc.Label).string) || (getComp(n, cc.RichText) && getComp(n, cc.RichText).string) || '';
-            var names = [],
-            p;
-            for (p = n; p; p = p.parent)
-                names.push(p.name || '');
-            var path = names.reverse().join('/');
-            if (key.test(l) || key.test(path))
-                if (clickable(n))
-                    cand = n;
+            if (nodeInGame(n)) {
+                var l = (getComp(n, cc.Label) && getComp(n, cc.Label).string) || (getComp(n, cc.RichText) && getComp(n, cc.RichText).string) || '';
+                var names = [],
+                p;
+                for (p = n; p; p = p.parent)
+                    names.push(p.name || '');
+                var path = names.reverse().join('/');
+                if (key.test(l) || key.test(path))
+                    if (clickable(n))
+                        cand = n;
+            }
             var kids = n.children || [];
             for (var i = 0; i < kids.length; i++)
                 walk(kids[i]);
@@ -1691,44 +2084,46 @@
             var n = q.shift();
             if (!active(n))
                 continue;
-            var texts = [];
-            var lb = getComp(n, cc.Label);
-            if (lb && typeof lb.string !== 'undefined')
-                texts.push(lb.string);
-            var rt = getComp(n, cc.RichText);
-            if (rt && typeof rt.string !== 'undefined')
-                texts.push(rt.string);
-            var sp = getComp(n, cc.Sprite);
-            var sfn = sp && sp.spriteFrame ? sp.spriteFrame.name : '';
-            if (sfn)
-                texts.push(sfn);
-            texts.push(n.name || '');
-            for (var ti = 0; ti < texts.length; ti++) {
-                var t = texts[ti];
-                var val = parseAmountLoose(t);
-                if (!val)
-                    continue;
-                var score = 0;
-                if (clickable(n))
-                    score += 6;
-                var names = [],
-                p;
-                for (p = n; p; p = p.parent)
-                    names.push(p.name || '');
-                var path = names.reverse().join('/').toLowerCase();
-                if (/chip|coin|bet|chon|choose|phinh|menh/.test(path))
-                    score += 3;
-                if (NORM(t).indexOf(String(val)) !== -1)
-                    score += 2;
-                var hit = clickableOf(n);
-                if (hit !== n)
-                    score += 1;
-                var old = getBest(val);
-                if (!old || score > old.score)
-                    setBest(val, {
-                        node: hit,
-                        score: score
-                    });
+            if (nodeInGame(n)) {
+                var texts = [];
+                var lb = getComp(n, cc.Label);
+                if (lb && typeof lb.string !== 'undefined')
+                    texts.push(lb.string);
+                var rt = getComp(n, cc.RichText);
+                if (rt && typeof rt.string !== 'undefined')
+                    texts.push(rt.string);
+                var sp = getComp(n, cc.Sprite);
+                var sfn = sp && sp.spriteFrame ? sp.spriteFrame.name : '';
+                if (sfn)
+                    texts.push(sfn);
+                texts.push(n.name || '');
+                for (var ti = 0; ti < texts.length; ti++) {
+                    var t = texts[ti];
+                    var val = parseAmountLoose(t);
+                    if (!val)
+                        continue;
+                    var score = 0;
+                    if (clickable(n))
+                        score += 6;
+                    var names = [],
+                    p;
+                    for (p = n; p; p = p.parent)
+                        names.push(p.name || '');
+                    var path = names.reverse().join('/').toLowerCase();
+                    if (/chip|coin|bet|chon|choose|phinh|menh/.test(path))
+                        score += 3;
+                    if (NORM(t).indexOf(String(val)) !== -1)
+                        score += 2;
+                    var hit = clickableOf(n);
+                    if (hit !== n)
+                        score += 1;
+                    var old = getBest(val);
+                    if (!old || score > old.score)
+                        setBest(val, {
+                            node: hit,
+                            score: score
+                        });
+                }
             }
             var kids = n.children || [];
             for (var i = 0; i < kids.length; i++)
@@ -1784,33 +2179,35 @@
             await sleep(180);
             map = wideScan();
         }
-        if (!map[String(val)]) {
-            var hit = null;
-            (function walk(n) {
-                if (hit || !active(n))
-                    return;
-                var texts = [];
-                var lb = getComp(n, cc.Label);
-                if (lb && typeof lb.string !== 'undefined')
-                    texts.push(lb.string);
-                var rt = getComp(n, cc.RichText);
-                if (rt && typeof rt.string !== 'undefined')
-                    texts.push(rt.string);
-                var sp = getComp(n, cc.Sprite);
-                var sfn = sp && sp.spriteFrame ? sp.spriteFrame.name : '';
-                if (sfn)
-                    texts.push(sfn);
-                texts.push(n.name || '');
-                for (var i = 0; i < texts.length; i++) {
-                    if (parseAmountLoose(texts[i]) === val) {
-                        hit = clickableOf(n);
+            if (!map[String(val)]) {
+                var hit = null;
+                (function walk(n) {
+                    if (hit || !active(n))
                         return;
+                    if (nodeInGame(n)) {
+                        var texts = [];
+                        var lb = getComp(n, cc.Label);
+                        if (lb && typeof lb.string !== 'undefined')
+                            texts.push(lb.string);
+                        var rt = getComp(n, cc.RichText);
+                        if (rt && typeof rt.string !== 'undefined')
+                            texts.push(rt.string);
+                        var sp = getComp(n, cc.Sprite);
+                        var sfn = sp && sp.spriteFrame ? sp.spriteFrame.name : '';
+                        if (sfn)
+                            texts.push(sfn);
+                        texts.push(n.name || '');
+                        for (var i = 0; i < texts.length; i++) {
+                            if (parseAmountLoose(texts[i]) === val) {
+                                hit = clickableOf(n);
+                                return;
+                            }
+                        }
                     }
-                }
-                var kids = n.children || [];
-                for (var k = 0; k < kids.length; k++)
-                    walk(kids[k]);
-            })(cc.director.getScene());
+                    var kids = n.children || [];
+                    for (var k = 0; k < kids.length; k++)
+                        walk(kids[k]);
+                })(cc.director.getScene());
             if (hit) {
                 emitClick(hit);
                 await sleep(140);
@@ -2068,9 +2465,18 @@
 
         // keep focus
         if (S.focus) {
-            var all = collectLabels().filter(function (l) {
+            var list = (S.focus.kind === 'text') ? buildTextRects() : collectLabels();
+            var all = list.filter(function (l) {
                 return l.tail === S.focus.tail;
             });
+            if (S.focus.kind === 'text' && S.focus.txt != null) {
+                var ttxt = String(S.focus.txt).trim();
+                var exact = all.filter(function (l) {
+                    return String(l.text || '').trim() === ttxt;
+                });
+                if (exact.length)
+                    all = exact;
+            }
             if (all.length) {
                 var prev = S.focus.rect || {
                     x: 0,
@@ -2084,20 +2490,22 @@
                     return da - db;
                 });
                 var r = all[0];
-                S.focus.rect = {
-                    x: r.x,
-                    y: r.y,
-                    w: r.w,
-                    h: r.h,
-                    sx: r.sx,
-                    sy: r.sy,
-                    sw: r.sw,
-                    sh: r.sh
-                };
-                var txt = String(r.text || '');
-                S.focus.txt = txt;
-                S.focus.val = (moneyOf(txt) != null ? moneyOf(txt) : (/^\d$/.test(txt) ? +txt : null));
-                showFocus(S.focus.rect);
+                if (r && (r.w || r.h || r.sw || r.sh)) {
+                    S.focus.rect = {
+                        x: r.x,
+                        y: r.y,
+                        w: r.w,
+                        h: r.h,
+                        sx: r.sx,
+                        sy: r.sy,
+                        sw: r.sw,
+                        sh: r.sh
+                    };
+                    var txt = String(r.text || '');
+                    S.focus.txt = txt;
+                    S.focus.val = (moneyOf(txt) != null ? moneyOf(txt) : (/^\d$/.test(txt) ? +txt : null));
+                    showFocus(S.focus.rect);
+                }
             }
         }
 
@@ -2179,6 +2587,12 @@
     };
     panel.querySelector('#bScanText').onclick = function () {
         scan200Text();
+    };
+    panel.querySelector('#bCopyLog').onclick = function () {
+        copyCwLog();
+    };
+    panel.querySelector('#bClearLog').onclick = function () {
+        clearCwLog();
     };
 
     panel.querySelector('#bBetC').addEventListener('click', async function () {

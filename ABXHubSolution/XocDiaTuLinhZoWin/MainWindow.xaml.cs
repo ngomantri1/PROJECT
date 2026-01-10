@@ -1335,12 +1335,20 @@ Ví dụ không hợp lệ:
                                         {
                                             try
                                             {
-                                                // Progress / % thời gian
+                                                // Progress / thời gian đếm ngược (giây)
                                                 if (snap.prog.HasValue)
                                                 {
-                                                    var p = Math.Max(0, Math.Min(1, snap.prog.Value));
-                                                    if (PrgBet != null) PrgBet.Value = p;
-                                                    if (LblProg != null) LblProg.Text = $"{(int)Math.Round(p * 100)}%";
+                                                    const double progMaxSec = 20;
+                                                    var sec = Math.Max(0, Math.Min(progMaxSec, snap.prog.Value));
+                                                    var secInt = (int)Math.Round(sec, MidpointRounding.AwayFromZero);
+                                                    var ratio = (progMaxSec > 0) ? (sec / progMaxSec) : 0;
+                                                    if (PrgBet != null)
+                                                    {
+                                                        PrgBet.Minimum = 0;
+                                                        PrgBet.Maximum = 1;
+                                                        PrgBet.Value = ratio;
+                                                    }
+                                                    if (LblProg != null) LblProg.Text = $"{secInt}s";
                                                 }
                                                 else
                                                 {
