@@ -422,24 +422,27 @@
                     var text = (typeof c.string !== 'undefined' && c.string != null ? c.string : '');
                     text = String(text);
                     var r = wRect(n);
-                    var tail = tailOf(n, 12);
-                    out.push({
-                        text: text,
-                        x: r.x,
-                        y: r.y,
-                        w: r.w,
-                        h: r.h,
-                        sx: r.sx,
-                        sy: r.sy,
-                        sw: r.sw,
-                        sh: r.sh,
-                        tail: tail,
-                        tl: tail.toLowerCase(),
-                        n: {
-                            x: r.x / innerWidth,
-                            y: r.y / innerHeight,
-                            w: r.w / innerWidth,
-                            h: r.h / innerHeight
+                var tail = tailOf(n, 12);
+                var fullTail = fullPath(n, 200);
+                out.push({
+                    text: text,
+                    x: r.x,
+                    y: r.y,
+                    w: r.w,
+                    h: r.h,
+                    sx: r.sx,
+                    sy: r.sy,
+                    sw: r.sw,
+                    sh: r.sh,
+                    tail: tail,
+                    tl: tail.toLowerCase(),
+                    fullTail: fullTail,
+                    fullTl: String(fullTail || '').toLowerCase(),
+                    n: {
+                        x: r.x / innerWidth,
+                        y: r.y / innerHeight,
+                        w: r.w / innerWidth,
+                        h: r.h / innerHeight
                         },
                         val: moneyOf(text)
                     });
@@ -532,6 +535,8 @@
                 val: moneyOf(L.text),
                 x: x,
                 y: y,
+                xRaw: L.x,
+                yRaw: L.y,
                 w: w,
                 h: h,
                 sx: L.sx,
@@ -545,7 +550,9 @@
                     h: h / innerHeight
                 },
                 tail: L.tail,
-                tl: L.tl
+                tl: L.tl,
+                tailFull: L.fullTail,
+                tlFull: L.fullTl
             });
         }
         return out;
@@ -814,7 +821,12 @@
                 cells.push({
                     v: +s,
                     x: L.x + L.w / 2,
-                    y: L.y + L.h / 2
+                    y: L.y + L.h / 2,
+                    w: L.w,
+                    h: L.h,
+                    tail: L.tail,
+                    fullTail: L.fullTail,
+                    txt: s
                 });
         }
         if (cells.length >= 20)
@@ -832,7 +844,12 @@
                 cells.push({
                     v: +s2,
                     x: L2.x + L2.w / 2,
-                    y: L2.y + L2.h / 2
+                    y: L2.y + L2.h / 2,
+                    w: L2.w,
+                    h: L2.h,
+                    tail: L2.tail,
+                    fullTail: L2.fullTail,
+                    txt: s2
                 });
         }
         return {
@@ -932,6 +949,381 @@
         };
     }
 
+
+        /* ---------------- helpers for totals by (y, tail) ---------------- */
+
+        var TAIL_TOTAL_BET = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/lbl_total_bet';
+
+        var TAIL_TUDO = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_4th/lbl_total_bet';
+
+        var TAIL_TUTRANG = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_4tr/lbl_total_bet';
+
+        var TAIL_3TRANG = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_3tr/lbl_total_bet';
+
+        var TAIL_3DO = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_3th/lbl_total_bet';
+
+        var TAIL_ACC = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/playersview/lbl_user_money';
+
+        var X_ACC = 314;
+
+        var Y_CHAN = 641;
+
+        var Y_LE = 643;
+
+
+        function tailEquals(t, exact) {
+
+            if (t == null)
+
+                return false;
+
+            var s1 = String(t),
+
+            s2 = String(exact);
+
+            return s1 === s2 || s1.toLowerCase() === s2.toLowerCase();
+
+        }
+
+        function tailOfMoney(it) {
+
+            return it && (it.tailFull || it.tail);
+
+        }
+
+        function yOf(it) {
+
+            return it && (it.yRaw != null ? it.yRaw : it.y);
+
+        }
+
+        function xOf(it) {
+
+            return it && (it.xRaw != null ? it.xRaw : it.x);
+
+        }
+
+        /** return full list (not truncated) filtered by tail */
+
+        function moneyTailList(tailExact) {
+
+            var list = buildMoneyRects();
+
+            var out = [];
+
+            for (var i = 0; i < list.length; i++) {
+
+                var it = list[i];
+
+                if (tailEquals(tailOfMoney(it), tailExact))
+
+                    out.push(it);
+
+            }
+
+            return out.sort(function (a, b) {
+
+                return a.y - b.y || a.x - b.x;
+
+            });
+
+        }
+
+        /** pick by exact x (falling back to closest x if exact not found) under the given tail */
+
+        function pickByXTail(list, xTarget, tailExact) {
+
+            var arr = [];
+
+            for (var i = 0; i < list.length; i++) {
+
+                var it = list[i];
+
+                if (tailEquals(tailOfMoney(it), tailExact))
+
+                    arr.push(it);
+
+            }
+
+            // prefer exact x match
+
+            for (var j = 0; j < arr.length; j++) {
+
+                if (arr[j].x === xTarget)
+
+                    return arr[j];
+
+            }
+
+            // fallback: nearest by |x-xTarget|
+
+            var best = null,
+
+            bestDx = 1e9;
+
+            for (var k = 0; k < arr.length; k++) {
+
+                var dx = Math.abs(arr[k].x - xTarget);
+
+                if (dx < bestDx) {
+
+                    best = arr[k];
+
+                    bestDx = dx;
+
+                }
+
+            }
+
+            return best;
+
+        }
+
+        /** pick by exact x under the given tail (no nearest fallback) */
+
+        function pickByXTailExact(list, xTarget, tailExact) {
+
+            for (var i = 0; i < list.length; i++) {
+
+                var it = list[i];
+
+                if (!tailEquals(tailOfMoney(it), tailExact))
+
+                    continue;
+
+                if (Math.round(xOf(it)) === xTarget)
+
+                    return it;
+
+            }
+
+            return null;
+
+        }
+
+                /** pick by exact y under the given tail (no nearest fallback) */
+        function pickByYTail(list, yTarget, tailExact, tol) {
+            tol = (tol == null ? 0 : tol);
+            var arr = [];
+            for (var i = 0; i < list.length; i++) {
+                var it = list[i];
+                if (tailEquals(tailOfMoney(it), tailExact))
+                    arr.push(it);
+            }
+            for (var j = 0; j < arr.length; j++) {
+                if (Math.abs(Math.round(yOf(arr[j])) - yTarget) <= tol)
+                    return arr[j];
+            }
+            return null;
+        }
+
+        function pickByYTailExclude(list, yTarget, tailExact, exclude, tol) {
+            tol = (tol == null ? 0 : tol);
+            var arr = [];
+            for (var i = 0; i < list.length; i++) {
+                var it = list[i];
+                if (exclude && it === exclude)
+                    continue;
+                if (tailEquals(tailOfMoney(it), tailExact))
+                    arr.push(it);
+            }
+            for (var j = 0; j < arr.length; j++) {
+                if (Math.abs(Math.round(yOf(arr[j])) - yTarget) <= tol)
+                    return arr[j];
+            }
+            return null;
+        }
+
+/** pick first item by tail (sorted by y,x) */
+
+        function pickByTail(list, tailExact) {
+
+            var arr = [];
+
+            for (var i = 0; i < list.length; i++) {
+
+                var it = list[i];
+
+                if (tailEquals(tailOfMoney(it), tailExact))
+
+                    arr.push(it);
+
+            }
+
+            if (!arr.length)
+
+                return null;
+
+            arr.sort(function (a, b) {
+
+                return a.y - b.y || a.x - b.x;
+
+            });
+
+            return arr[0];
+
+        }
+
+        /** pick by left/right (min/max x) under the given tail */
+
+        function pickByXOrderTail(list, tailExact, which) {
+
+            var arr = [];
+
+            for (var i = 0; i < list.length; i++) {
+
+                var it = list[i];
+
+                if (tailEquals(tailOfMoney(it), tailExact))
+
+                    arr.push(it);
+
+            }
+
+            if (!arr.length)
+
+                return null;
+
+            arr.sort(function (a, b) {
+
+                return xOf(a) - xOf(b) || yOf(a) - yOf(b);
+
+            });
+
+            return (which === 'max') ? arr[arr.length - 1] : arr[0];
+
+        }
+
+        function buildMoneyFromTextRects() {
+
+            var texts = buildTextRects();
+
+            var out = [];
+
+            for (var i = 0; i < texts.length; i++) {
+
+                var t = texts[i];
+
+                if (!isMoneyText(t.text))
+
+                    continue;
+
+                out.push({
+                    txt: t.text,
+                    val: moneyOf(t.text),
+                    x: t.x,
+                    y: t.y,
+                    xRaw: t.x,
+                    yRaw: t.y,
+                    w: t.w,
+                    h: t.h,
+                    sx: t.sx,
+                    sy: t.sy,
+                    sw: t.sw,
+                    sh: t.sh,
+                    n: {
+                        x: t.x / innerWidth,
+                        y: t.y / innerHeight,
+                        w: t.w / innerWidth,
+                        h: t.h / innerHeight
+                    },
+                    tail: t.tail,
+                    tl: String(t.tail || '').toLowerCase(),
+                    tailFull: t.tail,
+                    tlFull: String(t.tail || '').toLowerCase()
+                });
+
+            }
+
+            return out;
+
+        }
+
+        function chanLeDebugLines(list, title) {
+
+            var arr = [];
+
+            for (var i = 0; i < list.length; i++) {
+
+                var it = list[i];
+
+                if (tailEquals(tailOfMoney(it), TAIL_TOTAL_BET))
+
+                    arr.push({
+                        idx: i,
+                        it: it
+                    });
+
+            }
+
+            arr.sort(function (A, B) {
+
+                return xOf(A.it) - xOf(B.it) || yOf(A.it) - yOf(B.it);
+
+            });
+
+            var lines = ['(' + (title || 'Chan/Le candidates by tail') + ') idx\ttxt\tval\tx\ty\tsx\tsy\tsw\tsh'];
+
+            for (var j = 0; j < arr.length; j++) {
+
+                var r = arr[j].it;
+
+                lines.push((j + 1) + ':' + arr[j].idx + "\t'" + r.txt + "'\t" + r.val + "\t" +
+                    Math.round(xOf(r)) + "\t" + Math.round(yOf(r)) + "\t" +
+                    Math.round(r.sx || 0) + "\t" + Math.round(r.sy || 0) + "\t" +
+                    Math.round(r.sw || 0) + "\t" + Math.round(r.sh || 0));
+
+            }
+
+            if (!arr.length) {
+
+                lines.push('(empty)');
+
+            } else {
+
+                var min = arr[0].it;
+
+                var max = arr[arr.length - 1].it;
+
+                lines.push('pick CHAN(minX): ' + Math.round(xOf(min)) + " -> '" + min.txt + "'");
+
+                lines.push('pick LE(maxX): ' + Math.round(xOf(max)) + " -> '" + max.txt + "'");
+
+            }
+
+            return lines;
+
+        }
+
+        function debugChanLeLog(list, title) {
+
+            setCwLog(chanLeDebugLines(list, title).join('\n'));
+
+        }
+
+        // Export standardized helpers
+
+        window.moneyTailList = moneyTailList;
+
+        window.pickByXTail = pickByXTail;
+
+        window.pickByYTail = pickByYTail;
+
+        window.pickByTail = pickByTail;
+
+        window.cwPickChan = function () {
+
+            return pickByXOrderTail(buildMoneyFromTextRects(), TAIL_TOTAL_BET, 'min');
+
+        };
+
+        window.cwPickLe = function () {
+
+            return pickByXOrderTail(buildMoneyFromTextRects(), TAIL_TOTAL_BET, 'max');
+
+        };
+
+
     /* ---------------- resolver/auto ---------------- */
     function resolve(poolSig, sig) {
         if (!sig)
@@ -964,123 +1356,58 @@
         });
         return cands[0];
     }
+    
+
     function autoBindAcc(S) {
-        if (S.selAcc)
-            return;
-        var list = S.money && S.money.length ? S.money : buildMoneyRects();
-        var cand = list.filter(function (m) {
-            var t = m.tl;
-            return (t.indexOf('/footer/khungmoney/moneylb') !== -1);
-        });
-        cand = cand.filter(function (m) {
-            var t = m.tl;
-            return (t.indexOf('jackpot') === -1 && t.indexOf('/footer/totalbetlb') !== t.length - ('/footer/totalbetlb'.length));
-        });
-        if (!cand.length)
-            return;
-        cand.sort(function (a, b) {
-            return (a.n.y - b.n.y) || (area(b) - area(a));
-        });
-        var acc = cand[cand.length - 1];
-        S.selAcc = {
-            tail: acc.tail,
-            anchorN: {
-                x: acc.n.x,
-                y: acc.n.y,
-                w: acc.n.w,
-                h: acc.n.h
-            }
-        };
-    }
-
-    /* ---------------- helpers for totals by (x, tail) ---------------- */
-    var TAIL_TOTAL_EXACT = 'XDLive/Canvas/Bg/footer/listLabel/totalBet';
-    var X_CHAN = 591; // CHẴN
-    var X_LE = 973; // LẺ
-    // --- NEW extra totals (by x under same tail) ---
-    var X_SAPDOI = 783; // SẤP ĐÔI
-    var X_TUTRANG = 561; // TỨ TRẮNG
-    var X_TUDO = 1004; // TỨ ĐỎ
-    var X_3DO = 856; // 3 ĐỎ
-    var X_3TRANG = 709; // 3 TRẮNG
-
-    function tailEquals(t, exact) {
-        if (t == null)
-            return false;
-        var s1 = String(t),
-        s2 = String(exact);
-        return s1 === s2 || s1.toLowerCase() === s2.toLowerCase();
-    }
-    /** return full list (not truncated) filtered by tail */
-    function moneyTailList(tailExact) {
-        var list = buildMoneyRects();
-        var out = [];
+        var list = buildMoneyFromTextRects();
+        var accByTail = null;
         for (var i = 0; i < list.length; i++) {
             var it = list[i];
-            if (tailEquals(it.tail, tailExact))
-                out.push(it);
-        }
-        return out.sort(function (a, b) {
-            return a.y - b.y || a.x - b.x;
-        });
-    }
-    /** pick by exact x (falling back to closest x if exact not found) under the given tail */
-    function pickByXTail(list, xTarget, tailExact) {
-        var arr = [];
-        for (var i = 0; i < list.length; i++) {
-            var it = list[i];
-            if (tailEquals(it.tail, tailExact))
-                arr.push(it);
-        }
-        // prefer exact x match
-        for (var j = 0; j < arr.length; j++) {
-            if (arr[j].x === xTarget)
-                return arr[j];
-        }
-        // fallback: nearest by |x-xTarget|
-        var best = null,
-        bestDx = 1e9;
-        for (var k = 0; k < arr.length; k++) {
-            var dx = Math.abs(arr[k].x - xTarget);
-            if (dx < bestDx) {
-                best = arr[k];
-                bestDx = dx;
+            if (!tailEquals(tailOfMoney(it), TAIL_ACC))
+                continue;
+            var xr = (it.xRaw != null ? Math.round(it.xRaw) : Math.round(it.x));
+            if (xr === X_ACC) {
+                accByTail = it;
+                break;
             }
         }
-        return best;
+        if (accByTail) {
+            S.selAcc = {
+                tail: accByTail.tailFull || accByTail.tail,
+                anchorN: {
+                    x: accByTail.n.x,
+                    y: accByTail.n.y,
+                    w: accByTail.n.w,
+                    h: accByTail.n.h
+                }
+            };
+        } else {
+            S.selAcc = null;
+        }
+        return;
     }
-    // Export standardized helpers
-    window.moneyTailList = moneyTailList;
-    window.pickByXTail = pickByXTail;
-    window.cwPickChan = function () {
-        return pickByXTail(moneyTailList(TAIL_TOTAL_EXACT), X_CHAN, TAIL_TOTAL_EXACT);
-    };
-    window.cwPickLe = function () {
-        return pickByXTail(moneyTailList(TAIL_TOTAL_EXACT), X_LE, TAIL_TOTAL_EXACT);
-    };
 
-    /* ---------------- totals (using x & tail) ---------------- */
+    /* ---------------- totals (using y & tail) ---------------- */
     function totals(S) {
         S.money = buildMoneyRects(); // keep map for overlays & legacy helpers
 
-        var list = moneyTailList(TAIL_TOTAL_EXACT);
-        var mC = pickByXTail(list, X_CHAN, TAIL_TOTAL_EXACT); // CHẴN
-        var mL = pickByXTail(list, X_LE, TAIL_TOTAL_EXACT); // LẺ
-        var mSD = pickByXTail(list, X_SAPDOI, TAIL_TOTAL_EXACT); // SẤP ĐÔI
-        var mTT = pickByXTail(list, X_TUTRANG, TAIL_TOTAL_EXACT); // TỨ TRẮNG
-        var m3T = pickByXTail(list, X_3TRANG, TAIL_TOTAL_EXACT); // 3 TRẮNG
-        var m3D = pickByXTail(list, X_3DO, TAIL_TOTAL_EXACT); // 3 ĐỎ
-        var mTD = pickByXTail(list, X_TUDO, TAIL_TOTAL_EXACT); // TỨ ĐỎ
-
-        // Account (A) keeps old robust resolver
-        if (!S.selAcc)
-            autoBindAcc(S);
-        var rA = resolve(S.money, S.selAcc);
+        var list = S.money;
+        var listText = buildMoneyFromTextRects();
+        var mC = pickByXOrderTail(listText, TAIL_TOTAL_BET, 'min');
+        var mL = pickByXOrderTail(listText, TAIL_TOTAL_BET, 'max');
+        if (mC && mL && mC === mL)
+            mL = null;
+        var mSD = null;
+        var mTT = pickByTail(list, TAIL_TUTRANG);
+        var m3T = pickByTail(list, TAIL_3TRANG);
+        var m3D = pickByTail(list, TAIL_3DO);
+        var mTD = pickByTail(list, TAIL_TUDO);
+        var mA = pickByXTailExact(listText, X_ACC, TAIL_ACC);
 
         return {
             C: mC ? mC.val : null,
             L: mL ? mL.val : null,
-            A: rA ? rA.val : null,
+            A: mA ? mA.val : null,
             SD: mSD ? mSD.val : null,
             TT: mTT ? mTT.val : null,
             T3T: m3T ? m3T.val : null,
@@ -1088,7 +1415,7 @@
             TD: mTD ? mTD.val : null,
             rawC: mC ? mC.txt : null,
             rawL: mL ? mL.txt : null,
-            rawA: rA ? rA.txt : null,
+            rawA: mA ? mA.txt : null,
             rawSD: mSD ? mSD.txt : null,
             rawTT: mTT ? mTT.txt : null,
             rawT3T: m3T ? m3T.txt : null,
@@ -1096,6 +1423,7 @@
             rawTD: mTD ? mTD.txt : null
         };
     }
+
     function sampleTotalsNow() {
         try {
             return totals(S);
@@ -1168,6 +1496,7 @@
         '<button id="bScanMoney">Scan200Money</button>' +
         '<button id="bScanBet">Scan200Bet</button>' +
         '<button id="bScanText">Scan200Text</button>' +
+        '<button id="bScanTK">ScanTK</button>' +
         '</div>' +
         '<div style="display:flex;gap:10px;align-items:center;margin-bottom:6px">' +
         '<span>Tiền (×1K)</span>' +
@@ -1517,9 +1846,10 @@
 
     /* ---------------- scan tools ---------------- */
     function scan200Money() {
-        var money = buildMoneyRects().sort(function (a, b) {
-            return a.y - b.y;
-        }).slice(0, 200)
+        var moneyRaw = buildMoneyRects();
+        var money = moneyRaw.slice().sort(function (a, b) {
+                return a.y - b.y;
+            }).slice(0, 200)
             .map(function (m) {
                 return {
                     txt: m.txt,
@@ -1537,6 +1867,7 @@
             console.log(i + "\t'" + r.txt + "'\t" + r.val + "\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
         }
         console.log(money);
+        debugChanLeLog(moneyRaw, 'Chan/Le by MoneyMap');
     }
     function scan200Bet() {
         var btns = collectButtons().filter(function (b) {
@@ -1561,11 +1892,11 @@
         }
         console.log(btns);
     }
-     function scan200Text() {
-         var texts = buildTextRects().slice(0, 200)
-             .map(function (t) {
-                 return {
-                     text: t.text,
+    function scan200Text() {
+        var texts = buildTextRects().slice(0, 200)
+            .map(function (t) {
+                return {
+                    text: t.text,
                      tail: t.tail,
                      x: Math.round(t.x),
                      y: Math.round(t.y),
@@ -1585,6 +1916,8 @@
          }
          if (!texts.length)
              lines.push('(empty)');
+         lines.push('');
+         lines = lines.concat(chanLeDebugLines(buildMoneyFromTextRects(), 'Chan/Le by TextMap'));
         setCwLog(lines.join('\n'));
          window.__cw_lastTextScan = texts;
          try {
@@ -1594,6 +1927,45 @@
          }
          return texts;
      }
+
+    function scanTK() {
+        var r = readTKSeq();
+        var cells = (r && r.cells) ? r.cells.slice() : [];
+        cells.sort(function (a, b) {
+            return a.x - b.x || b.y - a.y;
+        });
+        var lines = [];
+        lines.push('(TK sequence) which=' + (r && r.which ? r.which : '-') + ' cells=' + cells.length + ' seq=' + (r && r.seq ? r.seq : ''));
+        lines.push('cells idx\tv\tx\ty\tw\th\ttail');
+        for (var i = 0; i < cells.length; i++) {
+            var c = cells[i];
+            var tail = c.fullTail || c.tail || '';
+            lines.push((i + 1) + "\t" + c.v + "\t" + Math.round(c.x) + "\t" + Math.round(c.y) + "\t" +
+                Math.round(c.w || 0) + "\t" + Math.round(c.h || 0) + "\t'" + tail + "'");
+        }
+        lines.push('');
+        lines.push('columns (left->right, zig-zag):');
+        if (r && r.cols && r.cols.length) {
+            for (var j = 0; j < r.cols.length; j++) {
+                var col = r.cols[j];
+                var topDown = (j % 2 === 0);
+                var arr = col.items.slice();
+                if (!topDown)
+                    arr.reverse();
+                var digits = arr.map(function (it) {
+                    return it.v;
+                }).join('');
+                var ys = arr.map(function (it) {
+                    return Math.round(it.y);
+                }).join(',');
+                lines.push((j + 1) + ": x~" + Math.round(col.cx) + " dir=" + (topDown ? 'top->bottom' : 'bottom->top') + " digits=" + digits + " y=" + ys);
+            }
+        } else {
+            lines.push('(no columns)');
+        }
+        setCwLog(lines.join('\n'));
+        return r;
+    }
 
     /* =====================================================
     CHIP BETTING CORE (compat)
@@ -2587,6 +2959,9 @@
     };
     panel.querySelector('#bScanText').onclick = function () {
         scan200Text();
+    };
+    panel.querySelector('#bScanTK').onclick = function () {
+        scanTK();
     };
     panel.querySelector('#bCopyLog').onclick = function () {
         copyCwLog();
