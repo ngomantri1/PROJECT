@@ -1,5 +1,4 @@
 using System;
-using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace BaccaratPPRR88.Tasks
@@ -9,20 +8,6 @@ namespace BaccaratPPRR88.Tasks
         public static Action<string>? Logger { get; set; }
         public static bool S7ResetOnProfit { get; set; } = true;
         private static long _globalResetVersion = 0;
-        private const int MultiChainHoldLosses = 2;
-
-        private sealed class MultiChainState
-        {
-            public int LossStreak;
-            public bool Hold;
-        }
-
-        private static readonly ConditionalWeakTable<long[][], MultiChainState> _multiChainStates = new();
-
-        private static MultiChainState GetMultiChainState(long[][] chains)
-        {
-            return _multiChainStates.GetValue(chains, _ => new MultiChainState());
-        }
 
         public static long GetGlobalResetVersion() => Interlocked.Read(ref _globalResetVersion);
         public static long RequestGlobalResetToLevel1() => Interlocked.Increment(ref _globalResetVersion);
@@ -199,9 +184,6 @@ namespace BaccaratPPRR88.Tasks
         {
             if (chains == null || chains.Length == 0)
                 return 1000L;
-            var state = GetMultiChainState(chains);
-            if (state.Hold)
-                return 0L;
 
             chainIndex = Math.Clamp(chainIndex, 0, chains.Length - 1);
             var chain = chains[chainIndex] ?? Array.Empty<long>();
@@ -237,30 +219,6 @@ namespace BaccaratPPRR88.Tasks
 
             if (win == null)
                 return;
-
-            var state = GetMultiChainState(chains);
-            if (state.Hold)
-            {
-                if (win == true)
-                {
-                    state.Hold = false;
-                    state.LossStreak = 0;
-                }
-                else if (win == false)
-                {
-                    state.LossStreak = Math.Max(state.LossStreak, MultiChainHoldLosses);
-                }
-                return;
-            }
-
-            if (win == true)
-                state.LossStreak = 0;
-            else if (win == false)
-            {
-                state.LossStreak++;
-                if (state.LossStreak >= MultiChainHoldLosses)
-                    state.Hold = true;
-            }
 
             if (win == true)
             {
