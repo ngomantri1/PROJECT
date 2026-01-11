@@ -286,7 +286,7 @@ namespace XocDiaTuLinhZoWin
         // Chỉ dùng cho hiển thị LblLevel: vị trí hiện tại trong _stakeSeq
         private int _stakeLevelIndexForUi = -1;
 
-        private double _decisionPercent = 0.15; // 15% (0.15)
+        private double _decisionPercent = 3; // 3s
 
         // Chống bắn trùng khi vừa cược
         private bool _cooldown = false;
@@ -1280,7 +1280,7 @@ Ví dụ không hợp lệ:
                                                 !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
                                             {
                                                 char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
-                                                bool winIsChan = (tail == '0' || tail == '2' || tail == '4');
+                                                bool winIsChan = (tail == 'C');
 
                                                 long prevC = _roundTotalsC, prevL = _roundTotalsL;
                                                 // Ni: nếu cửa THẮNG là cửa có tổng tiền lớn hơn trong ván đó => 'N', ngược lại 'I'
@@ -1739,10 +1739,10 @@ Ví dụ không hợp lệ:
                     settings.IsWebMessageEnabled = true;
                     // (tuỳ chọn khác, giữ nguyên nếu bạn không cần)
                     // settings.AreDefaultContextMenusEnabled = false;
-                    settings.AreDevToolsEnabled = true;
+                    // settings.AreDevToolsEnabled = true;
                 }
 
-                try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
+                // try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
                 // Điều hướng mọi window.open về cùng WebView2
@@ -3074,6 +3074,166 @@ Ví dụ không hợp lệ:
 
 
 
+        private async Task<bool> EnsureLicenseAsync()
+        {
+            if (!CheckLicense)
+                return true;
+
+            bool isTrial = (ChkTrial?.IsChecked == true);
+            var username = (T(TxtUser) ?? "").Trim().ToLowerInvariant();
+            var password = (P(TxtPass) ?? "").Trim();
+
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                MessageBox.Show("Chua nh?p tˆn dang nh?p.", "Automino",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            if (_licenseVerified && _runExpiresAt != null)
+            {
+                var now = DateTimeOffset.Now;
+                bool sameUser = string.Equals(_licenseUser ?? "", username, StringComparison.OrdinalIgnoreCase);
+                bool sameMode = (isTrial && _expireMode == "trial") || (!isTrial && _expireMode == "license");
+                if (sameUser && sameMode && _runExpiresAt.Value > now)
+                    return true;
+            }
+
+            _licenseUser = username;
+            _licensePass = password;
+
+            if (isTrial)
+            {
+                try
+                {
+                    if (DateTimeOffset.TryParse(_cfg.TrialUntil, out var trialUntilUtc) &&
+                        trialUntilUtc > DateTimeOffset.UtcNow)
+                    {
+                        Log("[Trial] resume existing session until " + trialUntilUtc.ToString("u"));
+
+                        try { await ReleaseLeaseAsync(username); } catch { }
+                        var okLeaseTrial = await AcquireLeaseOnceAsync(username);
+                        if (!okLeaseTrial) return false;
+
+                        StartExpiryCountdown(trialUntilUtc, "trial");
+                        SetLicenseUi(true);
+                        return true;
+                    }
+
+                    var clientId = _leaseClientId;
+
+                    using var http = new System.Net.Http.HttpClient(
+                        new System.Net.Http.HttpClientHandler
+                        {
+                            SslProtocols = System.Security.Authentication.SslProtocols.Tls12
+                        });
+
+                    var url = $"{LeaseBaseUrl}/trial/{Uri.EscapeDataString(username)}";
+                    var json = System.Text.Json.JsonSerializer.Serialize(new { clientId });
+                    var res = await http.PostAsync(
+                        url,
+                        new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json"));
+
+                    var payload = await res.Content.ReadAsStringAsync();
+                    if (res.IsSuccessStatusCode)
+                    {
+                        DateTimeOffset trialEndsAt;
+                        try
+                        {
+                            using var doc = System.Text.Json.JsonDocument.Parse(payload);
+                            trialEndsAt = DateTimeOffset.Parse(doc.RootElement.GetProperty("trialEndsAt").GetString());
+                        }
+                        catch { trialEndsAt = DateTimeOffset.UtcNow.AddMinutes(5); }
+
+                        _cfg.TrialUntil = trialEndsAt.ToString("o");
+                        _ = SaveConfigAsync();
+
+                        StartExpiryCountdown(trialEndsAt, "trial");
+                        SetLicenseUi(true);
+                        Log("[Trial] started until: " + trialEndsAt.ToString("u"));
+                        return true;
+                    }
+
+                    string error = null;
+                    try
+                    {
+                        using var doc = System.Text.Json.JsonDocument.Parse(payload);
+                        if (doc.RootElement.TryGetProperty("error", out var errEl))
+                            error = errEl.GetString();
+                    }
+                    catch { }
+
+                    if (string.Equals(error, "in-use", StringComparison.OrdinalIgnoreCase))
+                    {
+                        MessageBox.Show("T…i kho?n dang ch?y ? noi kh c. Vui l•ng d?ng ? m y kia tru?c.",
+                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                    else if (string.Equals(error, "trial-consumed", StringComparison.OrdinalIgnoreCase))
+                    {
+                        MessageBox.Show("H?t lu?t d—ng th?. Hay liˆn h? 0978.248.822 d? gia h?n/mua.",
+                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        MessageBox.Show("Kh“ng th? b?t d?u ch? d? d—ng th?. Vui l•ng th? l?i.",
+                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                    return false;
+                }
+                catch (Exception exTrial)
+                {
+                    Log("[Trial ERR] " + exTrial.Message);
+                    MessageBox.Show("Kh“ng th? k?t n?i ch? d? d—ng th?.", "Automino",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return false;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(password))
+            {
+                MessageBox.Show("Chua nh?p m?t kh?u.", "Automino",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            var lic = await FetchLicenseAsync(username);
+            if (lic == null)
+            {
+                MessageBox.Show("Kh“ng tm th?y license cho t…i kho?n n…y. Hay liˆn h? 0978.248.822 d? dang ky d—ng.",
+                    "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(lic.exp) || string.IsNullOrWhiteSpace(lic.pass) ||
+                !DateTimeOffset.TryParse(lic.exp, out var expUtc))
+            {
+                MessageBox.Show("License kh“ng h?p l? (exp/pass).", "Automino",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+            if (!string.Equals(lic.pass ?? "", password, StringComparison.Ordinal))
+            {
+                MessageBox.Show("M?t kh?u license kh“ng d£ng.", "Automino",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+            if (DateTimeOffset.UtcNow >= expUtc)
+            {
+                MessageBox.Show("Tool c?a b?n h?t h?n. Hay liˆn h? 0978.248.822 d? gia h?n",
+                    "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            var okLease = await AcquireLeaseOnceAsync(username);
+            if (!okLease) return false;
+
+            StartExpiryCountdown(expUtc, "license");
+            SetLicenseUi(true);
+            StartLicenseRecheckTimer(username);
+            Log("[License] valid until: " + expUtc.ToString("u"));
+            return true;
+        }
+
+
         private async void VaoXocDia_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -3081,155 +3241,8 @@ Ví dụ không hợp lệ:
                 await SaveConfigAsync();
                 await EnsureWebReadyAsync();
 
-                if (CheckLicense)
-                {
-                    bool isTrial = (ChkTrial?.IsChecked == true);
-                    var username = (T(TxtUser) ?? "").Trim().ToLowerInvariant();
-                    var password = (P(TxtPass) ?? "").Trim();
-
-                    if (string.IsNullOrWhiteSpace(username))
-                    {
-                        MessageBox.Show("Chưa nhập tên đăng nhập.", "Automino",
-                            MessageBoxButton.OK, MessageBoxImage.Warning);
-                        return;
-                    }
-
-                    _licenseUser = username;
-                    _licensePass = password;
-
-                    if (isTrial)
-                    {
-                        try
-                        {
-                            if (DateTimeOffset.TryParse(_cfg.TrialUntil, out var trialUntilUtc) &&
-                                trialUntilUtc > DateTimeOffset.UtcNow)
-                            {
-                                Log("[Trial] resume existing session until " + trialUntilUtc.ToString("u"));
-
-                                try { await ReleaseLeaseAsync(username); } catch { }
-                                var okLease = await AcquireLeaseOnceAsync(username);
-                                if (!okLease) return;
-
-                                StartExpiryCountdown(trialUntilUtc, "trial");
-                                SetLicenseUi(true);
-                            }
-                            else
-                            {
-                                var clientId = _leaseClientId;
-
-                                using var http = new System.Net.Http.HttpClient(
-                                    new System.Net.Http.HttpClientHandler
-                                    {
-                                        SslProtocols = System.Security.Authentication.SslProtocols.Tls12
-                                    });
-
-                                var url = $"{LeaseBaseUrl}/trial/{Uri.EscapeDataString(username)}";
-                                var json = System.Text.Json.JsonSerializer.Serialize(new { clientId });
-                                var res = await http.PostAsync(
-                                    url,
-                                    new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json"));
-
-                                var payload = await res.Content.ReadAsStringAsync();
-                                if (res.IsSuccessStatusCode)
-                                {
-                                    DateTimeOffset trialEndsAt;
-                                    try
-                                    {
-                                        using var doc = System.Text.Json.JsonDocument.Parse(payload);
-                                        trialEndsAt = DateTimeOffset.Parse(doc.RootElement.GetProperty("trialEndsAt").GetString());
-                                    }
-                                    catch { trialEndsAt = DateTimeOffset.UtcNow.AddMinutes(5); }
-
-                                    _cfg.TrialUntil = trialEndsAt.ToString("o");
-                                    _ = SaveConfigAsync();
-
-                                    StartExpiryCountdown(trialEndsAt, "trial");
-                                    SetLicenseUi(true);
-                                    Log("[Trial] started until: " + trialEndsAt.ToString("u"));
-                                }
-                                else
-                                {
-                                    string error = null;
-                                    try
-                                    {
-                                        using var doc = System.Text.Json.JsonDocument.Parse(payload);
-                                        if (doc.RootElement.TryGetProperty("error", out var errEl))
-                                            error = errEl.GetString();
-                                    }
-                                    catch { }
-
-                                    if (string.Equals(error, "in-use", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        MessageBox.Show("Tài khoản đang chạy ở nơi khác. Vui lòng dừng ở máy kia trước.",
-                                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
-                                    }
-                                    else if (string.Equals(error, "trial-consumed", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        MessageBox.Show("Hết lượt dùng thử. Hãy liên hệ 0978.248.822 để gia hạn/mua.",
-                                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
-                                    }
-                                    else
-                                    {
-                                        MessageBox.Show("Không thể bắt đầu chế độ dùng thử. Vui lòng thử lại.",
-                                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
-                                    }
-                                    return;
-                                }
-                            }
-                        }
-                        catch (Exception exTrial)
-                        {
-                            Log("[Trial ERR] " + exTrial.Message);
-                            MessageBox.Show("Không thể kết nối chế độ dùng thử.", "Automino",
-                                MessageBoxButton.OK, MessageBoxImage.Warning);
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        if (string.IsNullOrWhiteSpace(password))
-                        {
-                            MessageBox.Show("Chưa nhập mật khẩu.", "Automino",
-                                MessageBoxButton.OK, MessageBoxImage.Warning);
-                            return;
-                        }
-
-                        var lic = await FetchLicenseAsync(username);
-                        if (lic == null)
-                        {
-                            MessageBox.Show("Không tìm thấy license cho tài khoản này. Hãy liên hệ 0978.248.822 để đăng ký dùng.",
-                                "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
-                            return;
-                        }
-                        if (string.IsNullOrWhiteSpace(lic.exp) || string.IsNullOrWhiteSpace(lic.pass) ||
-                            !DateTimeOffset.TryParse(lic.exp, out var expUtc))
-                        {
-                            MessageBox.Show("License không hợp lệ (exp/pass).", "Automino",
-                                MessageBoxButton.OK, MessageBoxImage.Warning);
-                            return;
-                        }
-                        if (!string.Equals(lic.pass ?? "", password, StringComparison.Ordinal))
-                        {
-                            MessageBox.Show("Mật khẩu license không đúng.", "Automino",
-                                MessageBoxButton.OK, MessageBoxImage.Warning);
-                            return;
-                        }
-                        if (DateTimeOffset.UtcNow >= expUtc)
-                        {
-                            MessageBox.Show("Tool của bạn hết hạn. Hãy liên hệ 0978.248.822 để gia hạn",
-                                "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
-                            return;
-                        }
-
-                        var okLease = await AcquireLeaseOnceAsync(username);
-                        if (!okLease) return;
-
-                        StartExpiryCountdown(expUtc, "license");
-                        SetLicenseUi(true);
-                        StartLicenseRecheckTimer(username);
-                        Log("[License] valid until: " + expUtc.ToString("u"));
-                    }
-                }
+                if (!await EnsureLicenseAsync())
+                    return;
 
                 var rLogin = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickLogin?window.__abx_hw_clickLogin():'no-api');}catch(e){return 'err:'+e.message;}})();");
                 Log("[HOME] clickLogin via JS => " + rLogin);
@@ -3902,13 +3915,11 @@ Ví dụ không hợp lệ:
                 _winTotal = 0;            // tuỳ bạn: nếu muốn đếm lại từ 0 khi bắt đầu
                 if (LblWin != null) LblWin.Text = "0";
                 ResetBetMiniPanel();    // xoá THẮNG/THUA, CỬA ĐẶT, TIỀN CƯỢC, MỨC TIỀN
-                if (CheckLicense && _runExpiresAt == null)
+                if (CheckLicense && (!_licenseVerified || _runExpiresAt == null || _runExpiresAt <= DateTimeOffset.Now))
                 {
-                    MessageBox.Show("Vui lòng bấm \"Đăng Nhập & Xóc Đĩa Live\" để kiểm tra bản quyền trước khi bắt đầu.", "Automino",
-                        MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
+                    if (!await EnsureLicenseAsync())
+                        return;
                 }
-// Kiểm tra / tự vào bàn nếu chưa có bridge
                 var typeBetJson = await Web.ExecuteScriptAsync("typeof window.__cw_bet");
                 var typeBet = typeBetJson?.Trim('"');
                 if (!string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
@@ -4290,8 +4301,8 @@ Ví dụ không hợp lệ:
             {
                 // tail số từ chuỗi kết quả: 0/2/4 => CHẴN, 1/3 => LẺ
                 char d = s[0];
-                isChan = (d == '0' || d == '2' || d == '4');
-                isLe = (d == '1' || d == '3');
+                isChan = (d == 'C');
+                isLe = (d == 'L');
             }
             else
             {
@@ -6080,6 +6091,8 @@ Ví dụ không hợp lệ:
     }
 
 }
+
+
 
 
 

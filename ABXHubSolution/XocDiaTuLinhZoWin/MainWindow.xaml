@@ -502,7 +502,7 @@
                                             MinWidth="140"
                                             Padding="13"
                                             Click="VaoXocDia_Click"
-                                            Content="Đăng Nhập &amp; Xóc Đĩa Live"
+                                            Content="Đăng Nhập Tool"
                                             Style="{StaticResource PrimaryButton}"
                                             Visibility="Visible" />
 

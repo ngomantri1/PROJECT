@@ -20,18 +20,17 @@ namespace XocDiaTuLinhZoWin.Tasks
 
     internal static class SideRateParser
     {
-        public const string DefaultText =
+public const string DefaultText =
 @"4DO:1
 4TRANG:1
-1TRANG3DO:3
-1DO3TRANG:3
-2DO2TRANG:5
+1TRANG3DO:2
+1DO3TRANG:2
 CHAN:6
-LE:6";
+LE:4";
 
         private static readonly HashSet<string> AllowedSides = new(StringComparer.OrdinalIgnoreCase)
         {
-            "CHAN", "LE", "SAP_DOI", "TRANG3_DO1", "DO3_TRANG1", "TU_TRANG", "TU_DO"
+            "CHAN", "LE", "TRANG3_DO1", "DO3_TRANG1", "TU_TRANG", "TU_DO"
         };
 
         private static string NormalizeRaw(string raw)
@@ -48,7 +47,6 @@ LE:6";
 
             if (s == "CHAN" || s == "EVEN") return "CHAN";
             if (s == "LE" || s == "ODD") return "LE";
-            if (s == "SAP_DOI" || s == "SAPDOI" || s == "2DO2TRANG" || s == "2D2T" || s == "2R2W") return "SAP_DOI";
             if (s == "TRANG3_DO1" || s == "3TRANG1DO" || s == "3T1D" || s == "3W1R" || s == "1DO3TRANG" || s == "1D3T" || s == "1R3W") return "TRANG3_DO1";
             if (s == "DO3_TRANG1" || s == "3DO1TRANG" || s == "3D1T" || s == "3R1W" || s == "1TRANG3DO" || s == "1T3D" || s == "1W3R") return "DO3_TRANG1";
             if (s == "TU_TRANG" || s == "TUTRANG" || s == "4TRANG" || s == "4W") return "TU_TRANG";
@@ -127,7 +125,6 @@ LE:6";
             var res = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (digit == '0') res.Add("TU_TRANG");
             else if (digit == '4') res.Add("TU_DO");
-            else if (digit == '2') res.Add("SAP_DOI");
             else if (digit == '1') res.Add("DO3_TRANG1");
             else if (digit == '3') res.Add("TRANG3_DO1");
 

@@ -1189,7 +1189,7 @@
 
         var TAIL_ACC = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/playersview/lbl_user_money';
 
-        var X_ACC = 300;
+        var X_ACC = 303;
 
         var TAIL_USER_NAME = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/playersview/lbl_user_name';
 
@@ -1341,6 +1341,56 @@
                 return it;
             }
             return null;
+        }
+
+        function pickByTailNearestX(list, tailExact, xPrev) {
+            var cands = [];
+            for (var i = 0; i < list.length; i++) {
+                var it = list[i];
+                if (!tailEquals(tailOfMoney(it), tailExact))
+                    continue;
+                cands.push(it);
+            }
+            if (cands.length === 0)
+                return null;
+            if (xPrev != null && !isNaN(xPrev)) {
+                var best = null, bestD = 1e9;
+                for (var j = 0; j < cands.length; j++) {
+                    var it2 = cands[j];
+                    var d = Math.abs(Math.round(xOf(it2)) - xPrev);
+                    if (d < bestD) {
+                        bestD = d;
+                        best = it2;
+                    }
+                }
+                return best;
+            }
+            var pick = cands[0];
+            for (var k = 1; k < cands.length; k++) {
+                var it3 = cands[k];
+                var y1 = Math.round(yOf(pick)), y2 = Math.round(yOf(it3));
+                if (y2 < y1 || (y2 === y1 && Math.round(xOf(it3)) < Math.round(xOf(pick))))
+                    pick = it3;
+            }
+            return pick;
+        }
+
+        function pickByTailNearX(list, tailExact, xTarget, tolX) {
+            tolX = (tolX == null ? 3 : tolX);
+            var best = null, bestD = 1e9;
+            for (var i = 0; i < list.length; i++) {
+                var it = list[i];
+                if (!tailEquals(tailOfMoney(it), tailExact))
+                    continue;
+                var d = Math.abs(Math.round(xOf(it)) - xTarget);
+                if (d > tolX)
+                    continue;
+                if (d < bestD) {
+                    bestD = d;
+                    best = it;
+                }
+            }
+            return best;
         }
 
         function pickTextByXTailExact(xTarget, tailExact) {
@@ -1614,17 +1664,7 @@
 
     function autoBindAcc(S) {
         var list = buildMoneyFromTextRects();
-        var accByTail = null;
-        for (var i = 0; i < list.length; i++) {
-            var it = list[i];
-            if (!tailEquals(tailOfMoney(it), TAIL_ACC))
-                continue;
-            var xr = (it.xRaw != null ? Math.round(it.xRaw) : Math.round(it.x));
-            if (xr === X_ACC) {
-                accByTail = it;
-                break;
-            }
-        }
+        var accByTail = pickByTailNearX(list, TAIL_ACC, X_ACC, 3);
         if (accByTail) {
             S.selAcc = {
                 tail: accByTail.tailFull || accByTail.tail,
@@ -1646,9 +1686,10 @@
         S.money = buildMoneyRects(); // keep map for overlays & legacy helpers
 
         var list = S.money;
-        var listText = buildMoneyFromTextRects();
-        var mC = pickByXOrderTail(listText, TAIL_TOTAL_BET, 'min');
-        var mL = pickByXOrderTail(listText, TAIL_TOTAL_BET, 'max');
+        var listTextMoney = buildMoneyFromTextRects();
+        var listTextAll = buildTextRects();
+        var mC = pickByXOrderTail(listTextMoney, TAIL_TOTAL_BET, 'min');
+        var mL = pickByXOrderTail(listTextMoney, TAIL_TOTAL_BET, 'max');
         if (mC && mL && mC === mL)
             mL = null;
         var mSD = null;
@@ -1656,8 +1697,8 @@
         var m3T = pickByTail(list, TAIL_3TRANG);
         var m3D = pickByTail(list, TAIL_3DO);
         var mTD = pickByTail(list, TAIL_TUDO);
-        var mA = pickByXTailNear(listText, X_ACC, TAIL_ACC, 2);
-        var mN = pickTextByXTailNear(X_USER_NAME, TAIL_USER_NAME, 2);
+        var mA = pickByTailNearX(listTextMoney, TAIL_ACC, X_ACC, 3);
+        var mN = pickByTailNearX(listTextAll, TAIL_USER_NAME, X_USER_NAME, 3);
 
         return {
             C: mC ? mC.val : null,
@@ -1771,7 +1812,7 @@
         '</div>' +
         '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
+    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];

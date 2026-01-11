@@ -18,7 +18,7 @@ namespace XocDiaTuLinhZoWin.Tasks
         public static void ClearBetCooldown() => Volatile.Write(ref _lastBetOkMs, 0);
 
         public static string ParityCharToSide(char ch) => (ch == 'C') ? "CHAN" : "LE";
-        public static char DigitToParity(char d) => (d == '0' || d == '2' || d == '4') ? 'C' : 'L';
+        public static char DigitToParity(char d) => (d == 'C') ? 'C' : 'L';
         // TaskUtil.cs (trong class TaskUtil)
         private static readonly object _betLock = new object();
         private static string _lastBetSeq = "";
@@ -35,7 +35,7 @@ namespace XocDiaTuLinhZoWin.Tasks
 
         public static bool IsWin(string betSide, char lastDigit)
         {
-            var lastSide = (lastDigit == '0' || lastDigit == '2' || lastDigit == '4') ? "CHAN" : "LE";
+            var lastSide = (lastDigit == 'C') ? "CHAN" : "LE";
             return string.Equals(betSide, lastSide, StringComparison.OrdinalIgnoreCase);
         }
 
