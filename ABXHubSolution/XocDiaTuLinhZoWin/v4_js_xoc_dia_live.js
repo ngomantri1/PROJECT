@@ -914,7 +914,16 @@
             }); // TRÊN → DƯỚI
         return cols;
     }
-    function readTKSeq() {
+
+    function limitSeq52(seq) {
+        if (!seq)
+            return '';
+        if (seq.length <= 52)
+            return seq;
+        return seq.slice(-52);
+    }
+
+    function readTKSeqDigits() {
         var res = tkCellsPrefer('thongke2');
         var cells = res.cells,
         which = res.which;
@@ -925,14 +934,14 @@
                 cols: [],
                 cells: []
             };
-        var cols = clusterByX(cells); // TRÁI→PHẢI
+        var cols = clusterByX(cells); // TRA?I?+'PH???I
         var parts = [],
         i;
         for (i = 0; i < cols.length; i++) {
             var c = cols[i];
-            var topDown = (i % 2 === 0); // cột 1 T↓, cột 2 B↑, ...
+            var topDown = (i % 2 === 0); // c??Tt 1 T?+", c??Tt 2 B?+`, ...
             var arr = c.items.slice();
-            if (!topDown) {
+            if (topDown) {
                 arr.reverse();
             }
             var s = '',
@@ -941,13 +950,229 @@
                 s += String(arr[k].v);
             parts.push(s);
         }
+        var seq = limitSeq52(parts.join(''));
         return {
-            seq: parts.join(''),
+            seq: seq,
             which: which,
             cols: cols,
             cells: cells
         };
     }
+
+    var TAIL_SOICAU_NORMAL_MULTI = 'prefab_game_14/root/node_in_multimode/HUD/soicau_popup_multi/root/soicau_normal/ig_soicau_xocdia/content';
+    var TAIL_SOICAU_NORMAL_FULL = 'prefab_game_14/root/node_in_fullmode/HUD/soicau_popup_fullmode/root/soicau_normal/ig_soicau_xocdia/content';
+
+    function beadVal(name, nodeName) {
+        var s = (String(name || '') + ' ' + String(nodeName || '')).toLowerCase();
+        if (s.indexOf('chan') !== -1)
+            return 'C';
+        if (s.indexOf('le') !== -1)
+            return 'L';
+        return '?';
+    }
+
+    function isNodeActive(n) {
+        if (!n)
+            return false;
+        if (typeof n.activeInHierarchy !== 'undefined')
+            return !!n.activeInHierarchy;
+        if (typeof n._activeInHierarchy !== 'undefined')
+            return !!n._activeInHierarchy;
+        if (typeof n.active !== 'undefined')
+            return !!n.active;
+        return true;
+    }
+
+    function pickCoord(scr, world) {
+        return (scr != null && !isNaN(scr)) ? scr : world;
+    }
+
+    function beadRectFallback(n, r) {
+        if (!r)
+            r = {
+                x: 0,
+                y: 0,
+                w: 0,
+                h: 0,
+                sx: 0,
+                sy: 0,
+                sw: 0,
+                sh: 0
+            };
+        var zero = (!r.x && !r.y && !r.w && !r.h && !r.sx && !r.sy && !r.sw && !r.sh);
+        if (!zero)
+            return r;
+        try {
+            if (n && n.getBoundingBoxToWorld) {
+                var bb = n.getBoundingBoxToWorld();
+                if (bb && (bb.width || bb.height || bb.x || bb.y)) {
+                    var bw = bb.width || 0,
+                    bh = bb.height || 0;
+                    var cx = (bb.x || 0) + bw / 2;
+                    var cy = (bb.y || 0) + bh / 2;
+                    var spc = toScreenPt(n, new V2(cx, cy));
+                    var sp1 = toScreenPt(n, new V2(bb.x || 0, bb.y || 0));
+                    var sp2 = toScreenPt(n, new V2((bb.x || 0) + bw, (bb.y || 0) + bh));
+                    return {
+                        x: cx,
+                        y: cy,
+                        w: bw,
+                        h: bh,
+                        sx: spc.x,
+                        sy: spc.y,
+                        sw: Math.abs(sp2.x - sp1.x),
+                        sh: Math.abs(sp2.y - sp1.y)
+                    };
+                }
+            }
+        } catch (e) {}
+        try {
+            if (n && n.getPosition) {
+                var p = n.getPosition();
+                var sp = toScreenPt(n, p);
+                return {
+                    x: p.x || 0,
+                    y: p.y || 0,
+                    w: r.w || 0,
+                    h: r.h || 0,
+                    sx: sp.x,
+                    sy: sp.y,
+                    sw: r.sw || 0,
+                    sh: r.sh || 0
+                };
+            }
+        } catch (e) {}
+        return r;
+    }
+
+    function collectBeadsByTail(tailNeedle) {
+        var out = [];
+        var needle = String(tailNeedle || '').toLowerCase();
+        walkNodes(function (n) {
+            if (!nodeInGame(n))
+                return;
+            if (!isNodeActive(n))
+                return;
+            var full = fullPath(n, 140);
+            if (!full)
+                return;
+            if (String(full).toLowerCase().indexOf(needle) === -1)
+                return;
+            var comps = (n._components || []);
+            for (var i = 0; i < comps.length; i++) {
+                var c = comps[i];
+                var sf = c && (c.spriteFrame || c._spriteFrame);
+                if (!sf)
+                    continue;
+                var name = sf.name || sf._name || (sf._texture && sf._texture.name) || '';
+                var v = beadVal(name, n.name || '');
+                if (v === '?')
+                    continue;
+                var r = beadRectFallback(n, wRect(n));
+                var bx = pickCoord(r.sx, r.x);
+                var by = pickCoord(r.sy, r.y);
+                var inView = (bx >= -10 && bx <= innerWidth + 10 && by >= -10 && by <= innerHeight + 10);
+                out.push({
+                    v: v,
+                    x: bx,
+                    y: by,
+                    xRaw: r.x,
+                    yRaw: r.y,
+                    w: r.w,
+                    h: r.h,
+                    sx: r.sx,
+                    sy: r.sy,
+                    sw: r.sw,
+                    sh: r.sh,
+                    inView: inView,
+                    tail: full,
+                    fullTail: full,
+                    name: name,
+                    node: (n && n.name) || ''
+                });
+            }
+        });
+        return out;
+    }
+
+    function visibleBeadCount(list) {
+        var c = 0;
+        for (var i = 0; i < list.length; i++) {
+            var it = list[i];
+            if (it && it.inView)
+                c++;
+        }
+        return c;
+    }
+
+    function readTKSeqBeads() {
+        var cellsMulti = collectBeadsByTail(TAIL_SOICAU_NORMAL_MULTI);
+        var cellsFull = collectBeadsByTail(TAIL_SOICAU_NORMAL_FULL);
+        var cells = [];
+        var which = null;
+        if (cellsMulti.length || cellsFull.length) {
+            var visM = visibleBeadCount(cellsMulti);
+            var visF = visibleBeadCount(cellsFull);
+            if (visM || visF) {
+                if (visM >= visF) {
+                    cells = cellsMulti;
+                    which = 'soicau_normal_multi';
+                } else {
+                    cells = cellsFull;
+                    which = 'soicau_normal_full';
+                }
+                var onlyView = [];
+                for (var i = 0; i < cells.length; i++) {
+                    if (cells[i].inView)
+                        onlyView.push(cells[i]);
+                }
+                if (onlyView.length)
+                    cells = onlyView;
+            } else if (cellsMulti.length >= cellsFull.length) {
+                cells = cellsMulti;
+                which = 'soicau_normal_multi';
+            } else {
+                cells = cellsFull;
+                which = 'soicau_normal_full';
+            }
+        }
+        if (!cells.length)
+            return {
+                seq: '',
+                which: null,
+                cols: [],
+                cells: []
+            };
+        var cols = clusterByX(cells); // x asc
+        var parts = [],
+        i;
+        for (i = 0; i < cols.length; i++) {
+            var c = cols[i];
+            var arr = c.items.slice().sort(function (a, b) {
+                return (i % 2 === 0) ? (a.y - b.y) : (b.y - a.y);
+            });
+            var s = '',
+            k;
+            for (k = 0; k < arr.length; k++)
+                s += String(arr[k].v);
+            parts.push(s);
+        }
+        var seq = limitSeq52(parts.join(''));
+        return {
+            seq: seq,
+            which: which,
+            cols: cols,
+            cells: cells
+        };
+    }
+
+    function readTKSeq() {
+        var r = readTKSeqBeads();
+        if (r && r.seq && r.seq.length)
+            return r;
+        return readTKSeqDigits();
+    }
+
 
 
         /* ---------------- helpers for totals by (y, tail) ---------------- */
@@ -1948,9 +2173,9 @@
         if (r && r.cols && r.cols.length) {
             for (var j = 0; j < r.cols.length; j++) {
                 var col = r.cols[j];
-                var topDown = (j % 2 === 0);
+                var bottomUp = (j % 2 === 0);
                 var arr = col.items.slice();
-                if (!topDown)
+                if (bottomUp)
                     arr.reverse();
                 var digits = arr.map(function (it) {
                     return it.v;
@@ -1958,7 +2183,7 @@
                 var ys = arr.map(function (it) {
                     return Math.round(it.y);
                 }).join(',');
-                lines.push((j + 1) + ": x~" + Math.round(col.cx) + " dir=" + (topDown ? 'top->bottom' : 'bottom->top') + " digits=" + digits + " y=" + ys);
+                lines.push((j + 1) + ": x~" + Math.round(col.cx) + " dir=" + (bottomUp ? 'bottom->top' : 'top->bottom') + " digits=" + digits + " y=" + ys);
             }
         } else {
             lines.push('(no columns)');
