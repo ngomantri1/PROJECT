@@ -2480,9 +2480,14 @@
         '100000': 1,
         '500000': 1,
         '1000000': 1,
-        '5000000': 1
+        '5000000': 1,
+        '10000000': 1,
+        '20000000': 1,
+        '50000000': 1,
+        '100000000': 1,
+        '500000000': 1
     };
-    var DENOMS = [5000000, 1000000, 500000, 100000, 50000, 10000, 5000, 1000];
+    var DENOMS = [500000000, 100000000, 50000000, 20000000, 10000000, 5000000, 1000000, 500000, 100000, 50000, 10000, 5000, 1000];
 
     function active(n) {
         return !n || n.activeInHierarchy !== false;
@@ -2583,8 +2588,70 @@
         TU_TRANG: /(TU\s*TRANG|4\s*TRANG|4W|TUTRANG)/i,
         TU_DO: /(TU\s*DO|4\s*DO|4R|TUDO)/i
     };
+    var BET_TAILS = {
+        CHAN: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/ig_xocdia_chan',
+        LE: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/ig_xocdia_le',
+        TU_DO: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_4th',
+        TU_TRANG: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_4tr',
+        DO3_TRANG1: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_3th',
+        TRANG3_DO1: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_3tr'
+    };
+    var CHIP_TAILS = {
+        '500000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value7',
+        '100000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value6',
+        '50000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value10',
+        '20000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value9',
+        '10000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value8',
+        '5000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value7',
+        '1000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value6',
+        '500000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value5',
+        '100000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value4',
+        '50000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value3',
+        '10000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value2',
+        '5000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value1',
+        '1000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value0'
+    };
+    function tailMatch(full, tail) {
+        if (!full || !tail)
+            return false;
+        var f = String(full || '').toLowerCase();
+        var t = String(tail || '').toLowerCase();
+        return f === t || f.indexOf(t, Math.max(0, f.length - t.length)) !== -1;
+    }
+    function findNodeByTail(tail) {
+        if (!tail)
+            return null;
+        var hit = null;
+        var bestArea = -1;
+        walkNodes(function (n) {
+            if (!n || !active(n) || !nodeInGame(n))
+                return;
+            var p = fullPath(n, 200);
+            if (!tailMatch(p, tail))
+                return;
+            var r = wRect(n);
+            var ar = (r.sw || r.w || 0) * (r.sh || r.h || 0);
+            if (ar <= 0)
+                ar = (r.w || 0) * (r.h || 0);
+            if (ar >= bestArea) {
+                bestArea = ar;
+                hit = n;
+            }
+        });
+        return hit;
+    }
     function findSide(side) {
         var WANT = normalizeSide(side);
+        var tail = BET_TAILS[WANT];
+        if (tail) {
+            var byTail = findNodeByTail(tail);
+            if (byTail) {
+                var cTail = clickableOf(byTail, 8);
+                if (clickable(cTail))
+                    return cTail;
+                return byTail;
+            }
+        }
         var rx = SIDE_REGEX[WANT];
         if (!rx)
             return null; // không nhận diện được cửa -> bỏ qua, tránh click nhầm
@@ -2736,9 +2803,165 @@
         return map;
     }
 
+    function rectFromNodeScreen(n) {
+        var r = wRect(n);
+        var x = (r && r.sx != null) ? r.sx : r.x;
+        var y = (r && r.sy != null) ? r.sy : r.y;
+        var w = (r && r.sw != null) ? r.sw : r.w;
+        var h = (r && r.sh != null) ? r.sh : r.h;
+        if (!w)
+            w = 1;
+        if (!h)
+            h = 1;
+        return {
+            x: x || 0,
+            y: y || 0,
+            w: w,
+            h: h
+        };
+    }
+    function nodeWorldPos(n) {
+        try {
+            if (n && n.getWorldPosition)
+                return n.getWorldPosition();
+        } catch (e) {}
+        try {
+            if (n && n.convertToWorldSpaceAR)
+                return n.convertToWorldSpaceAR(new V2(0, 0));
+        } catch (e2) {}
+        return {
+            x: 0,
+            y: 0
+        };
+    }
+    function hasCompName(n, name) {
+        try {
+            var comps = n && n._components ? n._components : [];
+            for (var i = 0; i < comps.length; i++) {
+                var c = comps[i];
+                var cn = (c && (c.__classname__ || c.name || (c.constructor && c.constructor.name))) || '';
+                if (cn === name)
+                    return true;
+            }
+        } catch (e) {}
+        return false;
+    }
+    function findChipNodeFromLabel(labelNode) {
+        if (!labelNode)
+            return null;
+        var p = labelNode.parent || labelNode._parent || null;
+        if (!p || !(p.children || p._children))
+            return null;
+        var kids = p.children || p._children;
+        var nm = String(labelNode.name || '');
+        var m = nm.match(/lbl_chip_value(\d+)/i);
+        if (m) {
+            var idx = parseInt(m[1], 10);
+            var direct = 'chip' + idx;
+            for (var i = 0; i < kids.length; i++) {
+                if (kids[i] && kids[i].name === direct)
+                    return kids[i];
+            }
+        }
+        var lp = nodeWorldPos(labelNode);
+        var best = null;
+        var bestD = null;
+        for (var j = 0; j < kids.length; j++) {
+            var k = kids[j];
+            if (!k)
+                continue;
+            var kn = String(k.name || '');
+            if (kn.indexOf('chip') === 0 || hasCompName(k, 'ChipItem')) {
+                var kp = nodeWorldPos(k);
+                var d = dist2(lp.x || 0, lp.y || 0, kp.x || 0, kp.y || 0);
+                if (bestD == null || d < bestD) {
+                    best = k;
+                    bestD = d;
+                }
+            }
+        }
+        return best;
+    }
+    function resolveChipNode(n) {
+        if (!n)
+            return null;
+        var nm = String(n.name || '');
+        if (nm.indexOf('lbl_chip_value') !== -1) {
+            var c = findChipNodeFromLabel(n);
+            if (c)
+                return c;
+        }
+        return n;
+    }
+    function emitTouchOnNode(n) {
+        if (!n)
+            return false;
+        var p = nodeWorldPos(n);
+        var ok = false;
+        try {
+            if (cc && cc.Touch && cc.Event && cc.Event.EventTouch && n.emit) {
+                var t = new cc.Touch(p.x || 0, p.y || 0);
+                var ev = new cc.Event.EventTouch([t], true);
+                ev.touch = t;
+                ev.getLocation = function () {
+                    return {
+                        x: p.x || 0,
+                        y: p.y || 0
+                    };
+                };
+                var ts = (cc.Node && cc.Node.EventType && cc.Node.EventType.TOUCH_START) ? cc.Node.EventType.TOUCH_START : 'touchstart';
+                var te = (cc.Node && cc.Node.EventType && cc.Node.EventType.TOUCH_END) ? cc.Node.EventType.TOUCH_END : 'touchend';
+                n.emit(ts, ev);
+                n.emit(te, ev);
+                ok = true;
+            }
+        } catch (e) {}
+        if (!ok && n.emit) {
+            try {
+                var ev2 = {
+                    getLocation: function () {
+                        return {
+                            x: p.x || 0,
+                            y: p.y || 0
+                        };
+                    }
+                };
+                var ts2 = (cc.Node && cc.Node.EventType && cc.Node.EventType.TOUCH_START) ? cc.Node.EventType.TOUCH_START : 'touchstart';
+                var te2 = (cc.Node && cc.Node.EventType && cc.Node.EventType.TOUCH_END) ? cc.Node.EventType.TOUCH_END : 'touchend';
+                n.emit(ts2, ev2);
+                n.emit(te2, ev2);
+                ok = true;
+            } catch (e2) {}
+        }
+        return ok;
+    }
+    function scanChipsByTail() {
+        var out = {};
+        var keys = Object.keys(CHIP_TAILS || {});
+        for (var i = 0; i < keys.length; i++) {
+            var val = keys[i];
+            var tail = CHIP_TAILS[val];
+            var labelNode = findNodeByTail(tail);
+            if (!labelNode)
+                continue;
+            var hit = clickableOf(labelNode, 10);
+            var chip = findChipNodeFromLabel(labelNode);
+            var target = chip || hit || labelNode;
+            out[val] = {
+                entry: target,
+                node: target,
+                rect: rectFromNodeScreen(labelNode)
+            };
+        }
+        return out;
+    }
+
     var prevScan = window.cwScanChips;
     window.cwScanChips = function () {
-        var m = prevScan ? (prevScan() || {}) : {};
+        var m = scanChipsByTail();
+        if (m && Object.keys(m).length)
+            return m;
+        m = prevScan ? (prevScan() || {}) : {};
         if (m && Object.keys(m).length)
             return m;
         m = wideScan();
@@ -2769,46 +2992,55 @@
     window.cwFocusChip = async function (amount) {
         var val = Math.max(0, Math.floor(+amount || 0));
         if (!ALLOWED_SET[String(val)])
-            throw new Error('Mệnh giá không hợp lệ: ' + amount);
+            throw new Error('M?nh gi  kh?ng h?p l?: ' + amount);
         var map = window.cwScanChips() || {};
         if (!map[String(val)]) {
             await tryOpenChipPanel();
             await sleep(180);
-            map = wideScan();
+            map = scanChipsByTail();
+            if (!Object.keys(map).length)
+                map = wideScan();
         }
-            if (!map[String(val)]) {
-                var hit = null;
-                (function walk(n) {
-                    if (hit || !active(n))
-                        return;
-                    if (nodeInGame(n)) {
-                        var texts = [];
-                        var lb = getComp(n, cc.Label);
-                        if (lb && typeof lb.string !== 'undefined')
-                            texts.push(lb.string);
-                        var rt = getComp(n, cc.RichText);
-                        if (rt && typeof rt.string !== 'undefined')
-                            texts.push(rt.string);
-                        var sp = getComp(n, cc.Sprite);
-                        var sfn = sp && sp.spriteFrame ? sp.spriteFrame.name : '';
-                        if (sfn)
-                            texts.push(sfn);
-                        texts.push(n.name || '');
-                        for (var i = 0; i < texts.length; i++) {
-                            if (parseAmountLoose(texts[i]) === val) {
-                                hit = clickableOf(n);
-                                return;
-                            }
+        if (!map[String(val)]) {
+            var hit = null;
+            (function walk(n) {
+                if (hit || !active(n))
+                    return;
+                if (nodeInGame(n)) {
+                    var texts = [];
+                    var lb = getComp(n, cc.Label);
+                    if (lb && typeof lb.string !== 'undefined')
+                        texts.push(lb.string);
+                    var rt = getComp(n, cc.RichText);
+                    if (rt && typeof rt.string !== 'undefined')
+                        texts.push(rt.string);
+                    var sp = getComp(n, cc.Sprite);
+                    var sfn = sp && sp.spriteFrame ? sp.spriteFrame.name : '';
+                    if (sfn)
+                        texts.push(sfn);
+                    texts.push(n.name || '');
+                    for (var i = 0; i < texts.length; i++) {
+                        if (parseAmountLoose(texts[i]) === val) {
+                            hit = clickableOf(n);
+                            return;
                         }
                     }
-                    var kids = n.children || [];
-                    for (var k = 0; k < kids.length; k++)
-                        walk(kids[k]);
-                })(cc.director.getScene());
+                }
+                var kids = n.children || [];
+                for (var k = 0; k < kids.length; k++)
+                    walk(kids[k]);
+            })(cc.director.getScene());
             if (hit) {
-                emitClick(hit);
+                var target = resolveChipNode(hit) || hit;
+                var touched = emitTouchOnNode(target);
+                if (!touched) {
+                    if (clickable(target))
+                        emitClick(target);
+                    else
+                        clickRectCenter(rectFromNodeScreen(target));
+                }
                 await sleep(140);
-                var t = getComp(hit, cc.Toggle);
+                var t = getComp(target, cc.Toggle);
                 if (t && !t.isChecked) {
                     t.isChecked = true;
                     if (t._emitToggleEvents)
@@ -2816,17 +3048,23 @@
                 }
                 return true;
             }
-            console.warn('[cwFocusChip++] không tìm thấy phỉnh:', val);
             return false;
         }
         var info = map[String(val)];
-        if (!info || !info.node) {
-            console.warn('[cwFocusChip++] map thiếu node', val);
+        if (!info || !info.node)
             return false;
+        var target2 = resolveChipNode(info.node) || info.node;
+        var touched2 = emitTouchOnNode(target2);
+        if (!touched2) {
+            if (clickable(target2))
+                emitClick(target2);
+            else if (info.rect)
+                clickRectCenter(info.rect);
+            else
+                clickRectCenter(rectFromNodeScreen(target2));
         }
-        emitClick(info.node);
         await sleep(140);
-        var tg = getComp(info.node, cc.Toggle);
+        var tg = getComp(target2, cc.Toggle);
         if (tg && !tg.isChecked) {
             tg.isChecked = true;
             if (tg._emitToggleEvents)
