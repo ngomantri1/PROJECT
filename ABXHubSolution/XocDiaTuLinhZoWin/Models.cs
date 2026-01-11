@@ -9,6 +9,7 @@ namespace XocDiaTuLinhZoWin
         public long? C { get; set; }
         public long? L { get; set; }
         public long? A { get; set; }
+        public string N { get; set; }
         public long? SD { get; set; }
         public long? TT { get; set; }
         public long? T3T { get; set; }

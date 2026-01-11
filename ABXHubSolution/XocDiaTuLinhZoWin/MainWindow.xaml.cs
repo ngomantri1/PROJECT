@@ -1359,8 +1359,8 @@ Ví dụ không hợp lệ:
                                                 // Kết quả gần nhất từ chuỗi seq
                                                 var seqStrLocal = snap.seq ?? "";
                                                 char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
-                                                var kq = (last == '0' || last == '2' || last == '4') ? "CHAN"
-                                                         : (last == '1' || last == '3') ? "LE" : "";
+                                                var kq = (last == 'C') ? "CHAN"
+                                                         : (last == 'L') ? "LE" : "";
                                                 SetLastResultUI(kq);
 
                                                 // Tổng tiền
@@ -1368,6 +1368,11 @@ Ví dụ không hợp lệ:
                                                 if (LblAmount != null)
                                                     LblAmount.Text = amt.HasValue
                                                         ? amt.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) : "-";
+                                                if (LblUserName != null)
+                                                {
+                                                    var name = snap?.totals?.N ?? "";
+                                                    LblUserName.Text = !string.IsNullOrWhiteSpace(name) ? name : "-";
+                                                }
 
                                                 // Chuỗi kết quả
                                                 UpdateSeqUI(snap.seq ?? "");
@@ -4240,30 +4245,15 @@ Ví dụ không hợp lệ:
             string asm = GetType().Assembly.GetName().Name!;
 
             // mỗi cái cho 2-3 đường dẫn để chạy được cả khi làm plugin và khi chạy độc lập
-            _seqIconMap['0'] = FallbackIcons.LoadPackImage("Assets/Seq/ball0.png") ?? LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/ball0.png",
-                "pack://application:,,,/Assets/Seq/ball0.png",
-                "pack://application:,/Assets/Seq/ball0.png"
+            _seqIconMap['L'] = FallbackIcons.LoadPackImage("Assets/Seq/L.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/L.png",
+                "pack://application:,,,/Assets/Seq/L.png",
+                "pack://application:,/Assets/Seq/L.png"
             );
-            _seqIconMap['1'] = FallbackIcons.LoadPackImage("Assets/Seq/ball1.png") ?? LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/ball1.png",
-                "pack://application:,,,/Assets/Seq/ball1.png",
-                "pack://application:,/Assets/Seq/ball1.png"
-            );
-            _seqIconMap['2'] = FallbackIcons.LoadPackImage("Assets/Seq/ball2.png") ?? LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/ball2.png",
-                "pack://application:,,,/Assets/Seq/ball2.png",
-                "pack://application:,/Assets/Seq/ball2.png"
-            );
-            _seqIconMap['3'] = FallbackIcons.LoadPackImage("Assets/Seq/ball3.png") ?? LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/ball3.png",
-                "pack://application:,,,/Assets/Seq/ball3.png",
-                "pack://application:,/Assets/Seq/ball3.png"
-            );
-            _seqIconMap['4'] = FallbackIcons.LoadPackImage("Assets/Seq/ball4.png") ?? LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/ball4.png",
-                "pack://application:,,,/Assets/Seq/ball4.png",
-                "pack://application:,/Assets/Seq/ball4.png"
+            _seqIconMap['C'] = FallbackIcons.LoadPackImage("Assets/Seq/C.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/C.png",
+                "pack://application:,,,/Assets/Seq/C.png",
+                "pack://application:,/Assets/Seq/C.png"
             );
         }
 
@@ -4271,7 +4261,7 @@ Ví dụ không hợp lệ:
 
         void UpdateSeqUI(string fullSeq)
         {
-            var tail = (fullSeq.Length <= 15) ? fullSeq : fullSeq.Substring(fullSeq.Length - 15, 15);
+            var tail = (fullSeq.Length <= 20) ? fullSeq : fullSeq.Substring(fullSeq.Length - 20, 20);
             if (tail == _lastSeqTailShown) return; // QUAN TRỌNG: đừng reset animation
 
             var items = new List<SeqIconVM>(tail.Length);

@@ -6,7 +6,7 @@
     xmlns:local="clr-namespace:XocDiaTuLinhZoWin"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
-    Title="Xóc Đĩa Live HIT,GO88,NET88 (Automino 0978.248.822)"
+    Title="Xóc Đĩa Tứ Linh ZOWIN (Automino 0978.248.822)"
     Width="1366"
     Height="768"
     Background="#F0F2F5"
@@ -733,11 +733,11 @@
                                         Grid.Column="1"
                                         Margin="{StaticResource ValueFieldMargin}"
                                         VerticalAlignment="Center"
+                                        Checked="ChkS7ResetOnProfit_Changed"
                                         Content="Có lãi quay về mức đầu"
                                         Foreground="#222"
-                                        Visibility="Collapsed"
-                                        Checked="ChkS7ResetOnProfit_Changed"
-                                        Unchecked="ChkS7ResetOnProfit_Changed" />
+                                        Unchecked="ChkS7ResetOnProfit_Changed"
+                                        Visibility="Collapsed" />
 
                                     <!--  ĐẶT KHI CÒN (GIÂY)  -->
                                     <TextBlock
@@ -1371,8 +1371,8 @@
                                                     <DataTemplate DataType="{x:Type local:SeqIconVM}">
                                                         <Image
                                                             x:Name="Icon"
-                                                            Width="20"
-                                                            Height="20"
+                                                            Width="15"
+                                                            Height="15"
                                                             Opacity="1"
                                                             Source="{Binding Img}">
                                                             <Image.CacheMode>

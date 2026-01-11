@@ -1189,7 +1189,11 @@
 
         var TAIL_ACC = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/playersview/lbl_user_money';
 
-        var X_ACC = 314;
+        var X_ACC = 300;
+
+        var TAIL_USER_NAME = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/playersview/lbl_user_name';
+
+        var X_USER_NAME = 274;
 
         var Y_CHAN = 641;
 
@@ -1323,6 +1327,31 @@
             }
 
             return null;
+
+        }
+
+        function pickByXTailNear(list, xTarget, tailExact, tolX) {
+            tolX = (tolX == null ? 2 : tolX);
+            for (var i = 0; i < list.length; i++) {
+                var it = list[i];
+                if (!tailEquals(tailOfMoney(it), tailExact))
+                    continue;
+                if (Math.abs(Math.round(xOf(it)) - xTarget) > tolX)
+                    continue;
+                return it;
+            }
+            return null;
+        }
+
+        function pickTextByXTailExact(xTarget, tailExact) {
+
+            return pickByXTailExact(buildTextRects(), xTarget, tailExact);
+
+        }
+
+        function pickTextByXTailNear(xTarget, tailExact, tolX) {
+
+            return pickByXTailNear(buildTextRects(), xTarget, tailExact, tolX);
 
         }
 
@@ -1627,12 +1656,14 @@
         var m3T = pickByTail(list, TAIL_3TRANG);
         var m3D = pickByTail(list, TAIL_3DO);
         var mTD = pickByTail(list, TAIL_TUDO);
-        var mA = pickByXTailExact(listText, X_ACC, TAIL_ACC);
+        var mA = pickByXTailNear(listText, X_ACC, TAIL_ACC, 2);
+        var mN = pickTextByXTailNear(X_USER_NAME, TAIL_USER_NAME, 2);
 
         return {
             C: mC ? mC.val : null,
             L: mL ? mL.val : null,
             A: mA ? mA.val : null,
+            N: mN ? String(mN.text != null ? mN.text : '') : null,
             SD: mSD ? mSD.val : null,
             TT: mTT ? mTT.val : null,
             T3T: m3T ? m3T.val : null,
@@ -1641,6 +1672,7 @@
             rawC: mC ? mC.txt : null,
             rawL: mL ? mL.txt : null,
             rawA: mA ? mA.txt : null,
+            rawN: mN ? String(mN.text != null ? mN.text : '') : null,
             rawSD: mSD ? mSD.txt : null,
             rawTT: mTT ? mTT.txt : null,
             rawT3T: m3T ? m3T.txt : null,
@@ -1656,7 +1688,8 @@
             return {
                 C: null,
                 L: null,
-                A: null
+                A: null,
+                N: null
             };
         }
     }
@@ -2041,15 +2074,17 @@
             C: null,
             L: null,
             A: null,
+            N: null,
             rawC: null,
             rawL: null,
-            rawA: null
+            rawA: null,
+            rawN: null
         };
         var f = S.focus;
         var progText = (S.prog == null ? '--' : (S._progIsSec ? (S.prog + 's') : (((S.prog * 100) | 0) + '%')));
         var base =
             ' Trạng thái: ' + S.status + ' | Prog: ' + progText + '\n' +
-            '• TK : ' + fmt(t.A) + '|CHẴN: ' + fmt(t.C) + '|SẤP ĐÔI: ' + fmt(t.SD) + '|LẺ :' + fmt(t.L) + '|TỨ TRẮNG: ' + fmt(t.TT) + '|3 TRẮNG: ' + fmt(t.T3T) + '|3 ĐỎ: ' + fmt(t.T3D) + '|TỨ ĐỎ: ' + fmt(t.TD) + '\n' +
+            '• TÊN NHÂN VẬT : ' + (t.N != null && String(t.N).trim() ? String(t.N).trim() : '--') + '|TK : ' + fmt(t.A) + '|CHẴN: ' + fmt(t.C) + '|SẤP ĐÔI: ' + fmt(t.SD) + '|LẺ :' + fmt(t.L) + '|TỨ TRẮNG: ' + fmt(t.TT) + '|3 TRẮNG: ' + fmt(t.T3T) + '|3 ĐỎ: ' + fmt(t.T3D) + '|TỨ ĐỎ: ' + fmt(t.TD) + '\n' +
 
             '• Focus: ' + (f ? f.kind : '-') + '\n' +
             '  idx : ' + (f && f.idx != null ? f.idx : '-') + '\n' +
@@ -2543,6 +2578,201 @@
             return false;
         }
     }
+    function rectFromNodeCompat(n) {
+        if (!n)
+            return null;
+        var cs = null;
+        try {
+            if (n.getContentSize)
+                cs = n.getContentSize();
+        } catch (e) {}
+        if ((!cs || (!cs.width && !cs.height)) && cc.UITransform && n.getComponent) {
+            var ut = n.getComponent(cc.UITransform);
+            if (ut && ut.contentSize)
+                cs = ut.contentSize;
+        }
+        if (cs && (cs.width || cs.height)) {
+            var w = cs.width || 0,
+            h = cs.height || 0;
+            var p = null;
+            try {
+                if (n.convertToWorldSpaceAR)
+                    p = n.convertToWorldSpaceAR(new V2(0, 0));
+            } catch (e2) {}
+            if (!p) {
+                try {
+                    if (n.getWorldPosition)
+                        p = n.getWorldPosition();
+                } catch (e3) {}
+            }
+            p = p || {
+                x: 0,
+                y: 0
+            };
+            var ax = (n.anchorX != null ? n.anchorX : 0.5);
+            var ay = (n.anchorY != null ? n.anchorY : 0.5);
+            var blx = (p.x || 0) - w * ax;
+            var bly = (p.y || 0) - h * ay;
+            var sp1 = toScreenPt(n, new V2(blx, bly));
+            var sp2 = toScreenPt(n, new V2(blx + w, bly + h));
+            return {
+                sx: Math.min(sp1.x, sp2.x),
+                sy: Math.min(sp1.y, sp2.y),
+                sw: Math.abs(sp2.x - sp1.x),
+                sh: Math.abs(sp2.y - sp1.y)
+            };
+        }
+        try {
+            if (n.getBoundingBoxToWorld) {
+                var b = n.getBoundingBoxToWorld();
+                if (b && (b.width || b.height)) {
+                    var spb1 = toScreenPt(n, new V2(b.x, b.y));
+                    var spb2 = toScreenPt(n, new V2(b.x + b.width, b.y + b.height));
+                    return {
+                        sx: Math.min(spb1.x, spb2.x),
+                        sy: Math.min(spb1.y, spb2.y),
+                        sw: Math.abs(spb2.x - spb1.x),
+                        sh: Math.abs(spb2.y - spb1.y)
+                    };
+                }
+            }
+        } catch (e4) {}
+        return null;
+    }
+    function makeTouch(x, y) {
+        var touch = null;
+        try {
+            if (cc.Touch)
+                touch = new cc.Touch(x, y, 0);
+        } catch (e) {}
+        if (!touch) {
+            touch = {
+                getLocation: function () {
+                    return {
+                        x: x,
+                        y: y
+                    };
+                },
+                getID: function () {
+                    return 0;
+                }
+            };
+        }
+        var ev = null;
+        try {
+            if (cc.Event && cc.Event.EventTouch)
+                ev = new cc.Event.EventTouch([touch], true);
+        } catch (e2) {}
+        if (!ev)
+            ev = {
+                getTouches: function () {
+                    return [touch];
+                },
+                getTouch: function () {
+                    return touch;
+                }
+            };
+        ev.touch = touch;
+        return {
+            touch: touch,
+            event: ev
+        };
+    }
+    function emitTouchAtRect(node, rect) {
+        if (!node || !rect)
+            return false;
+        var cx = rect.sx + rect.sw / 2;
+        var cy = rect.sy + rect.sh / 2;
+        var te = makeTouch(cx, cy);
+        te.event.currentTarget = node;
+        te.event.target = node;
+        try {
+            node.emit(cc.Node.EventType.TOUCH_START, te.event);
+        } catch (e) {}
+        try {
+            node.emit('touchstart', te.event);
+        } catch (e2) {}
+        try {
+            node.emit(cc.Node.EventType.TOUCH_END, te.event);
+        } catch (e3) {}
+        try {
+            node.emit('touchend', te.event);
+        } catch (e4) {}
+        if (node._touchListener && node._touchListener.onTouchBegan) {
+            try {
+                node._touchListener.onTouchBegan(te.touch, te.event);
+            } catch (e5) {}
+            if (node._touchListener.onTouchEnded) {
+                try {
+                    node._touchListener.onTouchEnded(te.touch, te.event);
+                } catch (e6) {}
+            }
+        }
+        return true;
+    }
+    function clickCanvasXY(x, y, tryFlipY) {
+        var c = document.querySelector('canvas');
+        if (!c)
+            return false;
+        var br = c.getBoundingClientRect();
+        var scaleX = (c.width ? (br.width / c.width) : 1);
+        var scaleY = (c.height ? (br.height / c.height) : 1);
+        var clientX = Math.round(br.left + x * scaleX);
+        var clientY = Math.round(br.top + y * scaleY);
+        try {
+            c.dispatchEvent(new PointerEvent('pointerdown', {
+                    bubbles: true,
+                    cancelable: true,
+                    pointerType: 'mouse',
+                    isPrimary: true,
+                    clientX: clientX,
+                    clientY: clientY,
+                    buttons: 1
+                }));
+        } catch (e) {}
+        try {
+            c.dispatchEvent(new PointerEvent('pointerup', {
+                    bubbles: true,
+                    cancelable: true,
+                    pointerType: 'mouse',
+                    isPrimary: true,
+                    clientX: clientX,
+                    clientY: clientY
+                }));
+        } catch (e2) {}
+        try {
+            c.dispatchEvent(new MouseEvent('click', {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: clientX,
+                    clientY: clientY
+                }));
+        } catch (e3) {}
+        if (tryFlipY && c.height) {
+            try {
+                var fy = c.height - y;
+                var fClientY = Math.round(br.top + fy * scaleY);
+                c.dispatchEvent(new PointerEvent('pointerdown', {
+                        bubbles: true,
+                        cancelable: true,
+                        pointerType: 'mouse',
+                        isPrimary: true,
+                        clientX: clientX,
+                        clientY: fClientY,
+                        buttons: 1
+                    }));
+                c.dispatchEvent(new PointerEvent('pointerup', {
+                        bubbles: true,
+                        cancelable: true,
+                        pointerType: 'mouse',
+                        isPrimary: true,
+                        clientX: clientX,
+                        clientY: fClientY
+                    }));
+            } catch (e4) {}
+        }
+        return true;
+    }
     function clickableOf(node, depth) {
         depth = depth || 5;
         var cur = node,
@@ -2640,6 +2870,20 @@
         });
         return hit;
     }
+    function findNodesByTail(tail) {
+        if (!tail)
+            return [];
+        var hits = [];
+        walkNodes(function (n) {
+            if (!n || !active(n) || !nodeInGame(n))
+                return;
+            var p = fullPath(n, 200);
+            if (!tailMatch(p, tail))
+                return;
+            hits.push(n);
+        });
+        return hits;
+    }
     function findSide(side) {
         var WANT = normalizeSide(side);
         var tail = BET_TAILS[WANT];
@@ -2687,6 +2931,89 @@
                 walk(kids[i]);
         })(cc.director.getScene());
         return hit;
+    }
+    function listClickableTargets(root) {
+        var list = [];
+        (function walk(n) {
+            if (!n || !active(n))
+                return;
+            if (clickable(n)) {
+                var rect = rectFromNodeCompat(n);
+                var area = rect ? (rect.sw * rect.sh) : 0;
+                list.push({
+                    node: n,
+                    rect: rect,
+                    area: area
+                });
+            }
+            var kids = n.children || [];
+            for (var i = 0; i < kids.length; i++)
+                walk(kids[i]);
+        })(root);
+        list.sort(function (a, b) {
+            return (b.area || 0) - (a.area || 0);
+        });
+        return list;
+    }
+    function findBetTarget(side) {
+        var WANT = normalizeSide(side);
+        var tail = BET_TAILS[WANT];
+        if (tail) {
+            var roots = findNodesByTail(tail);
+            var best = null;
+            for (var i = 0; i < roots.length; i++) {
+                var list = listClickableTargets(roots[i]);
+                if (list.length && (!best || (list[0].area || 0) > (best.area || 0)))
+                    best = list[0];
+            }
+            if (best && best.node)
+                return best;
+        }
+        var btn = findSide(side);
+        if (!btn)
+            return null;
+        return {
+            node: btn,
+            rect: rectFromNodeCompat(btn),
+            area: 0
+        };
+    }
+    function emitBtnToggle(node) {
+        var b = getComp(node, cc.Button);
+        if (b && b.interactable !== false) {
+            try {
+                cc.Component.EventHandler.emitEvents(b.clickEvents, new cc.Event.EventCustom('click', true));
+                return true;
+            } catch (e) {}
+        }
+        var t = getComp(node, cc.Toggle);
+        if (t && t.interactable !== false) {
+            try {
+                t.isChecked = true;
+                if (t._emitToggleEvents)
+                    t._emitToggleEvents();
+                return true;
+            } catch (e2) {}
+        }
+        return false;
+    }
+    function clickBetTarget(tgt) {
+        if (!tgt || !tgt.node)
+            return false;
+        var node = tgt.node;
+        var rect = tgt.rect || rectFromNodeCompat(node);
+        var ok = false;
+        if (emitBtnToggle(node))
+            ok = true;
+        if (rect) {
+            if (emitTouchAtRect(node, rect))
+                ok = true;
+            if (clickCanvasXY(rect.sx + rect.sw / 2, rect.sy + rect.sh / 2, true))
+                ok = true;
+        }
+        if (!ok && clickable(node))
+            ok = emitClick(node) || ok;
+        return ok;
     }
 
     function parseAmountLoose(txt) {
@@ -3143,12 +3470,12 @@
         if (amount == null || isNaN(amount)) {
             if (old_cwBet)
                 return old_cwBet(side);
-            var btn = findSide(side);
-            if (!btn) {
+            var tgt0 = findBetTarget(side);
+            if (!tgt0 || !tgt0.node) {
                 console.warn('[cwBet++] không thấy nút cửa:', side);
                 return false;
             }
-            emitClick(btn);
+            clickBetTarget(tgt0);
             await sleep(80);
             return true;
         }
@@ -3161,8 +3488,8 @@
         var X = raw - (raw % 1000);
 
         return withLock(async function () {
-            var btn = findSide(side);
-            if (!btn) {
+            var tgt = findBetTarget(side);
+            if (!tgt || !tgt.node) {
                 console.warn('[cwBet++] không thấy nút cửa:', side);
                 return false;
             }
@@ -3184,7 +3511,7 @@
 
             if (availSet[String(X)]) {
                 await window.cwFocusChip(X);
-                emitClick(btn);
+                clickBetTarget(tgt);
                 await sleep(120);
                 return true;
             }
@@ -3220,7 +3547,7 @@
                     return false;
                 }
                 for (var i2 = 0; i2 < step.count; i2++) {
-                    if (!emitClick(btn))
+                    if (!clickBetTarget(tgt))
                         console.warn('[cwBet++] click cửa thất bại', {
                             side: side,
                             denom: step.val,
