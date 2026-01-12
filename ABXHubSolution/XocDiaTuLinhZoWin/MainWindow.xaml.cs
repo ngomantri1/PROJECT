@@ -314,7 +314,8 @@ namespace XocDiaTuLinhZoWin
         private System.Threading.Timer? _expireTimer;      // timer tick mỗi giây để cập nhật đếm ngược
         private DateTimeOffset? _runExpiresAt;             // mốc hết hạn của phiên đang chạy (trial hoặc license)
         private string _expireMode = "";                   // "trial" | "license"
-        private string _leaseClientId = "";
+        private string _leaseClientId = "";
+        private string _leaseSessionId = "";
         private string _licenseUser = "";
         private string _licensePass = "";
         public string TrialUntil { get; set; } = "";
@@ -756,7 +757,9 @@ Ví dụ không hợp lệ:
             Directory.CreateDirectory(_appDataDir);
 
             _cfgPath = Path.Combine(_appDataDir, "config.json");
+
 
+            _leaseSessionId = Guid.NewGuid().ToString("N");
             _logDir = Path.Combine(_appDataDir, "logs");
             Directory.CreateDirectory(_logDir);
             CleanupOldLogs();
@@ -960,7 +963,7 @@ Ví dụ không hợp lệ:
             if (CmbBetStrategy != null) CmbBetStrategy.IsEnabled = enabled;   // KHÓA khi đang chạy
             if (TxtChuoiCau != null) TxtChuoiCau.IsReadOnly = !enabled;   // KHÓA khi đang chạy
             if (TxtTheCau != null) TxtTheCau.IsReadOnly = !enabled;   // KHÓA khi đang chạy
-            if (TxtSideRatio != null) TxtSideRatio.IsReadOnly = !enabled;   // ��a ��t & t? l? (chi?n lu?c 17)
+            if (TxtSideRatio != null) TxtSideRatio.IsReadOnly = !enabled;   // Cửa đặt & tỷ lệ (chiến lược 17)
             if (BtnResetSideRatio != null) BtnResetSideRatio.IsEnabled = enabled;
 
             // Nhóm Quản lý vốn
@@ -3085,7 +3088,7 @@ Ví dụ không hợp lệ:
 
             if (string.IsNullOrWhiteSpace(username))
             {
-                MessageBox.Show("Chua nh?p tˆn dang nh?p.", "Automino",
+                MessageBox.Show("Chưa nhập tên đăng nhập.", "Automino",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
@@ -3117,10 +3120,12 @@ Ví dụ không hợp lệ:
 
                         StartExpiryCountdown(trialUntilUtc, "trial");
                         SetLicenseUi(true);
+                        StartLeaseHeartbeat(username);
                         return true;
                     }
 
                     var clientId = _leaseClientId;
+                    var sessionId = _leaseSessionId;
 
                     using var http = new System.Net.Http.HttpClient(
                         new System.Net.Http.HttpClientHandler
@@ -3129,7 +3134,7 @@ Ví dụ không hợp lệ:
                         });
 
                     var url = $"{LeaseBaseUrl}/trial/{Uri.EscapeDataString(username)}";
-                    var json = System.Text.Json.JsonSerializer.Serialize(new { clientId });
+                    var json = System.Text.Json.JsonSerializer.Serialize(new { clientId, sessionId });
                     var res = await http.PostAsync(
                         url,
                         new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json"));
@@ -3150,6 +3155,7 @@ Ví dụ không hợp lệ:
 
                         StartExpiryCountdown(trialEndsAt, "trial");
                         SetLicenseUi(true);
+                        StartLeaseHeartbeat(username);
                         Log("[Trial] started until: " + trialEndsAt.ToString("u"));
                         return true;
                     }
@@ -3165,17 +3171,17 @@ Ví dụ không hợp lệ:
 
                     if (string.Equals(error, "in-use", StringComparison.OrdinalIgnoreCase))
                     {
-                        MessageBox.Show("T…i kho?n dang ch?y ? noi kh c. Vui l•ng d?ng ? m y kia tru?c.",
+                        MessageBox.Show("Tài khoản đang chạy ở nơi khác. Vui lòng dừng ở máy kia trước.",
                                         "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                     }
                     else if (string.Equals(error, "trial-consumed", StringComparison.OrdinalIgnoreCase))
                     {
-                        MessageBox.Show("H?t lu?t d—ng th?. Hay liˆn h? 0978.248.822 d? gia h?n/mua.",
+                        MessageBox.Show("Hết lượt dùng thử. Hãy liên hệ 0978.248.822 để gia hạn/mua.",
                                         "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                     }
                     else
                     {
-                        MessageBox.Show("Kh“ng th? b?t d?u ch? d? d—ng th?. Vui l•ng th? l?i.",
+                        MessageBox.Show("Không thể bắt đầu chế độ dùng thử. Vui lòng thử lại.",
                                         "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                     }
                     return false;
@@ -3183,7 +3189,7 @@ Ví dụ không hợp lệ:
                 catch (Exception exTrial)
                 {
                     Log("[Trial ERR] " + exTrial.Message);
-                    MessageBox.Show("Kh“ng th? k?t n?i ch? d? d—ng th?.", "Automino",
+                    MessageBox.Show("Không thể kết nối chế độ dùng thử.", "Automino",
                         MessageBoxButton.OK, MessageBoxImage.Warning);
                     return false;
                 }
@@ -3191,7 +3197,7 @@ Ví dụ không hợp lệ:
 
             if (string.IsNullOrWhiteSpace(password))
             {
-                MessageBox.Show("Chua nh?p m?t kh?u.", "Automino",
+                MessageBox.Show("Chưa nhập mật khẩu.", "Automino",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
@@ -3199,26 +3205,26 @@ Ví dụ không hợp lệ:
             var lic = await FetchLicenseAsync(username);
             if (lic == null)
             {
-                MessageBox.Show("Kh“ng tm th?y license cho t…i kho?n n…y. Hay liˆn h? 0978.248.822 d? dang ky d—ng.",
+                MessageBox.Show("Không tìm thấy license cho tài khoản này. Hãy liên hệ 0978.248.822 để đăng ký sử dụng.",
                     "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             if (string.IsNullOrWhiteSpace(lic.exp) || string.IsNullOrWhiteSpace(lic.pass) ||
                 !DateTimeOffset.TryParse(lic.exp, out var expUtc))
             {
-                MessageBox.Show("License kh“ng h?p l? (exp/pass).", "Automino",
+                MessageBox.Show("License không hợp lệ (exp/pass).", "Automino",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             if (!string.Equals(lic.pass ?? "", password, StringComparison.Ordinal))
             {
-                MessageBox.Show("M?t kh?u license kh“ng d£ng.", "Automino",
+                MessageBox.Show("Mật khẩu license không đúng.", "Automino",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             if (DateTimeOffset.UtcNow >= expUtc)
             {
-                MessageBox.Show("Tool c?a b?n h?t h?n. Hay liˆn h? 0978.248.822 d? gia h?n",
+                MessageBox.Show("Tool của bạn hết hạn. Hãy liên hệ 0978.248.822 để gia hạn",
                     "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
@@ -3228,6 +3234,7 @@ Ví dụ không hợp lệ:
 
             StartExpiryCountdown(expUtc, "license");
             SetLicenseUi(true);
+            StartLeaseHeartbeat(username);
             StartLicenseRecheckTimer(username);
             Log("[License] valid until: " + expUtc.ToString("u"));
             return true;
@@ -4880,25 +4887,20 @@ Ví dụ không hợp lệ:
             {
                 using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(6) };
                 var uname = Uri.EscapeDataString(username);
-                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/acquire/{uname}", new { clientId = _leaseClientId });
+                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/acquire/{uname}", new { clientId = _leaseClientId, sessionId = _leaseSessionId });
                 var body = await resp.Content.ReadAsStringAsync();
                 Log($"[Lease] acquire -> {(int)resp.StatusCode} {resp.ReasonPhrase} | {body}");
-                if (!resp.IsSuccessStatusCode)
-                {
-                    MessageBox.Show($"Lease bị từ chối [{(int)resp.StatusCode}] — {body}", "Automino",
-                        MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return false;
-                }
-                if (resp.IsSuccessStatusCode) return true;
                 if ((int)resp.StatusCode == 409)
                 {
                     // tài khoản đang chạy nơi khác
-                    body = await resp.Content.ReadAsStringAsync();
                     Log("[Lease] 409 in-use: " + body);
                     MessageBox.Show("Tài khoản đang chạy nơi khác. Vui lòng thử lại sau.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return false;
                 }
-                MessageBox.Show("Không lấy được quyền chạy (lease).", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                if (resp.IsSuccessStatusCode) return true;
+                MessageBox.Show($"Lease bị từ chối [{(int)resp.StatusCode}] - {body}", "Automino",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
             }
             catch (Exception ex)
             {
@@ -4907,7 +4909,6 @@ Ví dụ không hợp lệ:
             }
             return false;
         }
-
         private async Task ReleaseLeaseAsync(string username)
         {
             if (string.IsNullOrWhiteSpace(LeaseBaseUrl)) return;
@@ -4915,7 +4916,7 @@ Ví dụ không hợp lệ:
             {
                 using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
                 var uname = Uri.EscapeDataString(username);
-                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/release/{uname}", new { clientId = _leaseClientId });
+                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/release/{uname}", new { clientId = _leaseClientId, sessionId = _leaseSessionId });
                 // không cần xử lý gì thêm; cứ fire-and-forget
                 Log("[Lease] release sent: " + (int)resp.StatusCode);
             }
@@ -5083,7 +5084,7 @@ Ví dụ không hợp lệ:
                     {
                         using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
                         var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/heartbeat/{uname}",
-                                                              new { clientId = _leaseClientId });
+                                                              new { clientId = _leaseClientId, sessionId = _leaseSessionId });
                         // chỉ log nhẹ cho debug
                         Log("[Lease] hb: " + (int)resp.StatusCode);
                     }
@@ -6091,6 +6092,9 @@ Ví dụ không hợp lệ:
     }
 
 }
+
+
+
 
 
 

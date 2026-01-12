@@ -1,4 +1,4 @@
-﻿export default {
+export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const seg = url.pathname.split('/').filter(Boolean); // ["lease",":tool",...]
@@ -28,7 +28,7 @@
     if (method !== 'POST') return J(405, { error: 'method-not-allowed' });
 
     const tool = seg[1].trim().toLowerCase();
-    const action = seg[2]; // "trial" | "acquire" | "heartbeat" | "release"
+    const action = seg[2]; // "trial" | "acquire" | "release"
     const username = decodeURIComponent(seg[3] || '').trim().toLowerCase();
     if (!tool || !username) return J(400, { error: 'bad-request' });
 
@@ -44,8 +44,6 @@
     try { body = await request.json(); } catch {}
     const clientId = String(body.clientId || '').trim();
     if (!clientId) return J(400, { error: 'bad-clientId' });
-    const sessionId = String(body.sessionId || '').trim();
-    if (!sessionId) return J(400, { error: 'bad-sessionId' });
 
     // TTL & key
     const now = Date.now();
@@ -73,7 +71,7 @@
       const active = await get(K_TACT);
       if (active) {
         // cùng client, cho resume
-        if (active.sessionId === sessionId) return J(200, { ok: true, trial: true, trialEndsAt: active.endsAt, reused: true });
+        if (active.clientId === clientId) return J(200, { ok: true, trial: true, trialEndsAt: active.endsAt, reused: true });
         // client khác nhưng còn “ấm”
         const last = active.lastSeenMs ?? now;
         if (now - last <= staleSec * 1000) return J(409, { error: 'in-use' });
@@ -81,7 +79,7 @@
 
       const secs = trialMinutes * 60;
       const endsAt = new Date(now + secs * 1000).toISOString();
-      await put(K_TACT, { clientId, sessionId, lastSeenMs: now, endsAt }, secs);
+      await put(K_TACT, { clientId, lastSeenMs: now, endsAt }, secs);
       await env.LEASE.put(K_TUSED, '1'); // đánh dấu đã dùng thử
       return J(200, { ok: true, trial: true, trialEndsAt: endsAt });
     }
@@ -90,7 +88,7 @@
     if (action === 'acquire') {
       const active = await get(K_LIC);
       if (active) {
-        if (active.sessionId === sessionId) {
+        if (active.clientId === clientId) {
           // cùng client gọi lại -> coi như OK (không gia hạn thêm)
           return J(200, { ok: true, reused: true });
         }
@@ -98,38 +96,15 @@
         const last = active.lastSeenMs ?? now;
         if (now - last <= staleSec * 1000) return J(409, { error: 'in-use' });
       }
-      await put(K_LIC, { clientId, sessionId, lastSeenMs: now }, ttlMinutes * 60);
+      await put(K_LIC, { clientId, lastSeenMs: now }, ttlMinutes * 60);
       return J(200, { ok: true, leased: true });
     }
 
-    // ---- HEARTBEAT ----
-    if (action === 'heartbeat') {
-      const active = await get(K_LIC);
-      if (active) {
-        if (active.sessionId !== sessionId) return J(409, { error: 'in-use' });
-        active.lastSeenMs = now;
-        await put(K_LIC, active, ttlMinutes * 60);
-        return J(200, { ok: true, leased: true });
-      }
-      const tAct = await get(K_TACT);
-      if (tAct) {
-        if (tAct.sessionId !== sessionId) return J(409, { error: 'in-use' });
-        tAct.lastSeenMs = now;
-        let remainSec = trialMinutes * 60;
-        if (tAct.endsAt) {
-          const endMs = Date.parse(tAct.endsAt);
-          if (!isNaN(endMs)) remainSec = Math.max(1, Math.floor((endMs - now) / 1000));
-        }
-        await put(K_TACT, tAct, remainSec);
-        return J(200, { ok: true, trial: true, trialEndsAt: tAct.endsAt });
-      }
-      return J(200, { ok: true, leased: false, reason: 'not-found' });
-    }
     // ---- RELEASE (tùy chọn) ----
     if (action === 'release') {
       const active = await get(K_LIC);
       if (!active) return J(200, { ok: true, released: false, reason: 'not-found' });
-      if (active.sessionId !== sessionId) return J(409, { error: 'in-use' });
+      if (active.clientId !== clientId) return J(409, { error: 'in-use' });
       await del(K_LIC);
       return J(200, { ok: true, released: true });
     }
@@ -137,7 +112,3 @@
     return J(404, { error: 'unknown-action' });
   }
 };
-
-
-
-
