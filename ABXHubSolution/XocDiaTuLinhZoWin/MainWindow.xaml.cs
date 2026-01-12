@@ -993,7 +993,7 @@ Ví dụ không hợp lệ:
             {
                 var desired = _homeLoggedIn
                     ? "Chơi Xóc Đĩa Live"
-                    : "Đăng Nhập & Xóc Đĩa Live";
+                    : "Đăng Nhập Tool";
 
                 // tránh set lại nếu không thay đổi gì
                 if (!Equals(BtnVaoXocDia.Content as string, desired))

@@ -1664,7 +1664,7 @@
 
     function autoBindAcc(S) {
         var list = buildMoneyFromTextRects();
-        var accByTail = pickByTailNearX(list, TAIL_ACC, X_ACC, 3);
+        var accByTail = pickByTailNearestX(list, TAIL_ACC, X_ACC);
         if (accByTail) {
             S.selAcc = {
                 tail: accByTail.tailFull || accByTail.tail,
@@ -1697,8 +1697,8 @@
         var m3T = pickByTail(list, TAIL_3TRANG);
         var m3D = pickByTail(list, TAIL_3DO);
         var mTD = pickByTail(list, TAIL_TUDO);
-        var mA = pickByTailNearX(listTextMoney, TAIL_ACC, X_ACC, 3);
-        var mN = pickByTailNearX(listTextAll, TAIL_USER_NAME, X_USER_NAME, 3);
+        var mA = pickByTailNearestX(listTextMoney, TAIL_ACC, X_ACC);
+        var mN = pickByTailNearestX(listTextAll, TAIL_USER_NAME, X_USER_NAME);
 
         return {
             C: mC ? mC.val : null,

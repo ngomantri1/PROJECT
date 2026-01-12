@@ -15,8 +15,8 @@ namespace XocDiaTuLinhZoWin
         private MainWindow? _window;
         private IGameHostContext? _host;   // giữ lại để báo ngược về Hub
 
-        public string Name => "Xóc Đĩa Live Hit";
-        public string Slug => "xoc-dia-live-hit";
+        public string Name => "Xóc Đĩa Tứ Linh ZoWin";
+        public string Slug => "xoc-dia-tu-linh-zowin";
 
         public UserControl CreateView(IGameHostContext host)
         {
