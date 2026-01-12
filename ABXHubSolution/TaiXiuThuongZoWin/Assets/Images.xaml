@@ -1,0 +1,7 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <BitmapImage x:Key="ImgTAI" UriSource="/TaiXiuThuongZoWin;component/Assets/side/TAI.png" />
+    <BitmapImage x:Key="ImgXIU" UriSource="/TaiXiuThuongZoWin;component/Assets/side/XIU.png" />
+    <BitmapImage x:Key="ImgTHANG" UriSource="/TaiXiuThuongZoWin;component/Assets/kq/THANG.png" />
+    <BitmapImage x:Key="ImgTHUA" UriSource="/TaiXiuThuongZoWin;component/Assets/kq/THUA.png" />
+    <!--  thêm các ảnh khác nếu có  -->
+</ResourceDictionary>

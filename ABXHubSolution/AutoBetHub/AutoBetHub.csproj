@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
-    <Version>26.01.12.1</Version>
+    <Version>26.01.12.4</Version>
     <!-- Mặc định: build FULL có kèm môi trường ThirdParty. IncludeThirdPartyRuntime=true
          Khi build gói update nhẹ, truyền IncludeThirdPartyRuntime=false-->
     <IncludeThirdPartyRuntime>true</IncludeThirdPartyRuntime>

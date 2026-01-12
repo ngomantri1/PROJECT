@@ -249,6 +249,7 @@ namespace BaccaratPPRR88
         private DateTimeOffset? _runExpiresAt;             // mốc hết hạn của phiên đang chạy (trial hoặc license)
         private string _expireMode = "";                   // "trial" | "license"
         private string _leaseClientId = "";
+        private string _leaseSessionId = "";
         public string TrialUntil { get; set; } = "";
         // === License periodic re-check (5 phút/lần) ===
         private System.Threading.Timer? _licenseCheckTimer;
@@ -896,6 +897,7 @@ Ví dụ không hợp lệ:
             Directory.CreateDirectory(_appDataDir);
 
             _cfgPath = Path.Combine(_appDataDir, "config.json");
+            _leaseSessionId = Guid.NewGuid().ToString("N");
             _tableSettingsPath = Path.Combine(_appDataDir, "tablesettings.json");
 
             _logDir = Path.Combine(_appDataDir, "logs");
@@ -6128,13 +6130,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     }
 
                     var clientId = _leaseClientId;
+
+                    var sessionId = _leaseSessionId;
                     using var http = new HttpClient(new HttpClientHandler
                     {
                         SslProtocols = System.Security.Authentication.SslProtocols.Tls12
                     });
 
                     var url = $"{LeaseBaseUrl}/trial/{Uri.EscapeDataString(username)}";
-                    var json = JsonSerializer.Serialize(new { clientId });
+                    var json = JsonSerializer.Serialize(new { clientId, sessionId });
                     var res = await http.PostAsync(
                         url,
                         new StringContent(json, Encoding.UTF8, "application/json"));
@@ -7563,33 +7567,34 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(6) };
                 var uname = Uri.EscapeDataString(username);
-                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/acquire/{uname}", new { clientId = _leaseClientId });
+                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/acquire/{uname}", new { clientId = _leaseClientId, sessionId = _leaseSessionId });
                 var body = await resp.Content.ReadAsStringAsync();
                 Log($"[Lease] acquire -> {(int)resp.StatusCode} {resp.ReasonPhrase} | {body}");
+                if ((int)resp.StatusCode == 409)
+                {
+                    Log("[Lease] 409 in-use: " + body);
+                    MessageBox.Show("Tài khoản đang chạy ở nơi khác. Vui lòng dừng ở máy kia trước.",
+                        "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return false;
+                }
                 if (!resp.IsSuccessStatusCode)
                 {
-                    MessageBox.Show($"Lease bị từ chối [{(int)resp.StatusCode}] — {body}", "Automino",
+                    MessageBox.Show($"Lease bị từ chối [{(int)resp.StatusCode}] - {body}", "Automino",
                         MessageBoxButton.OK, MessageBoxImage.Warning);
                     return false;
                 }
-                if (resp.IsSuccessStatusCode) return true;
-                if ((int)resp.StatusCode == 409)
-                {
-                    // tài khoản đang chạy nơi khác
-                    body = await resp.Content.ReadAsStringAsync();
-                    Log("[Lease] 409 in-use: " + body);
-                    MessageBox.Show("Tài khoản đang chạy nơi khác. Vui lòng thử lại sau.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return false;
-                }
-                MessageBox.Show("Không lấy được quyền chạy (lease).", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return true;
             }
             catch (Exception ex)
             {
                 Log("[Lease] acquire error: " + ex.Message);
-                MessageBox.Show("Không kết nối được trung tâm lease. Vui lòng kiểm tra mạng.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Không kết nối được trung tâm lease. Vui lòng kiểm tra mạng.", "Automino",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             return false;
         }
+
+
 
         private async Task ReleaseLeaseAsync(string username)
         {
@@ -7603,7 +7608,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
                 var uname = Uri.EscapeDataString(username);
-                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/release/{uname}", new { clientId = _leaseClientId });
+                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/release/{uname}", new { clientId = _leaseClientId, sessionId = _leaseSessionId });
                 // không cần xử lý gì thêm; cứ fire-and-forget
                 Log("[Lease] release sent: " + (int)resp.StatusCode);
             }
@@ -7761,7 +7766,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     {
                         using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
                         var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/heartbeat/{uname}",
-                                                              new { clientId = _leaseClientId });
+                                                              new { clientId = _leaseClientId, sessionId = _leaseSessionId });
                         // chỉ log nhẹ cho debug
                         Log("[Lease] hb: " + (int)resp.StatusCode);
                     }

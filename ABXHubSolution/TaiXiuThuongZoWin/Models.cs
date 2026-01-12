@@ -1,0 +1,49 @@
+﻿using System;
+using System.Windows.Media;
+using TaiXiuThuongZoWin;
+
+namespace TaiXiuThuongZoWin
+{
+    public sealed class CwTotals
+    {
+        public long? T { get; set; }
+        public long? X { get; set; }
+        public long? A { get; set; }
+        public long? SD { get; set; }
+        public long? TT { get; set; }
+        public long? T3T { get; set; }
+        public long? T3D { get; set; }
+        public long? TD { get; set; }
+    }
+
+    public sealed class CwSnapshot
+    {
+        public string abx { get; set; }
+        public double? prog { get; set; }
+        public CwTotals totals { get; set; }
+        public string seq { get; set; }
+        public string? niSeq { get; set; }
+        public long ts { get; set; }
+        public string side { get; set; }
+        public long? amount { get; set; }
+        public string error { get; set; }
+        public string session { get; set; }
+        public string username { get; set; }
+        public string status { get; set; }
+    }
+
+    public sealed class DecisionState
+    {
+        public int Step = 0;              // index chuỗi tiền (0-based)
+        public bool PreferLarger = true;  // true: chọn cửa tổng LỚN; false: tổng BÉ
+        public bool LastWin = false;
+        public string? PreviousBetSide = null; // "TAI"|"XIU"
+        public string? CurrentBetSide = null; // "TAI"|"XIU"
+        public string? CurrentOutcome = null; // "TAI"|"XIU"
+        public int MoneyChainIndex { get; set; }      // đang ở chuỗi thứ mấy (0-based)
+        public int MoneyChainStep { get; set; }       // đang ở mức thứ mấy trong chuỗi đó (0-based)
+        public long MoneyChainProfit { get; set; }    // tiền đã gom được ở chuỗi hiện tại
+
+    }
+
+}
