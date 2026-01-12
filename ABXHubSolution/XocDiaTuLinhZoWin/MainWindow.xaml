@@ -1198,7 +1198,7 @@
                                                 <Border Grid.Column="1" Style="{StaticResource GhostQMid}">
                                                     <Grid
                                                         x:Name="CellCuaDat"
-                                                        Margin="8,0,0,0"
+                                                        Margin="0,0,0,0"
                                                         HorizontalAlignment="Center"
                                                         VerticalAlignment="Center">
                                                         <Image

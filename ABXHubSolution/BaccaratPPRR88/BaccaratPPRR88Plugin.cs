@@ -16,7 +16,7 @@ namespace BaccaratPPRR88
         private IGameHostContext? _host;   // giữ lại để báo ngược về Hub
 
         public string Name => "Baccarat Sàn PP trang RR88";
-        public string Slug => "baccarat-pp-rr-88";
+        public string Slug => "baccarat-pp-rr88";
 
         public UserControl CreateView(IGameHostContext host)
         {
