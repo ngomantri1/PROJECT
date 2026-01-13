@@ -53,6 +53,12 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
   </ItemGroup>
 
+  <!-- Lo?i tr? th? m?c backup kh?i build -->
+  <ItemGroup>
+    <Compile Remove="bak\**\*.cs" />
+    <Page Remove="bak\**\*.xaml" />
+  </ItemGroup>
+
   <!-- Nhúng JS vào resource -->
   <ItemGroup>
     <None Remove="v4_js_xoc_dia_live.js" />

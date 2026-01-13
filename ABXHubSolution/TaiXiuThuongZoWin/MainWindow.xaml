@@ -144,6 +144,41 @@
             </Style.Triggers>
         </Style>
 
+        <!--  Secondary Button (neutral outline)  -->
+        <Style x:Key="SecondaryButton" TargetType="Button">
+            <Setter Property="Background" Value="White" />
+            <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="12,9" />
+            <Setter Property="MinWidth" Value="90" />
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#F5F6F7" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.6" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <!--  Console (light)  -->
         <Style x:Key="ConsoleBox" TargetType="TextBox">
             <Setter Property="Background" Value="White" />
@@ -226,11 +261,17 @@
             <Setter Property="AlternationCount" Value="2" />
             <Setter Property="AlternatingRowBackground" Value="{StaticResource Log_Alt}" />
             <Setter Property="GridLinesVisibility" Value="None" />
-            <Setter Property="RowHeight" Value="28" />
             <Setter Property="ColumnHeaderHeight" Value="30" />
             <Setter Property="HeadersVisibility" Value="All" />
             <Setter Property="SelectionMode" Value="Single" />
             <Setter Property="SelectionUnit" Value="FullRow" />
+            <Setter Property="RowStyle">
+                <Setter.Value>
+                    <Style TargetType="DataGridRow">
+                        <Setter Property="MinHeight" Value="28" />
+                    </Style>
+                </Setter.Value>
+            </Setter>
             <Setter Property="ColumnHeaderStyle">
                 <Setter.Value>
                     <Style TargetType="DataGridColumnHeader">
@@ -250,6 +291,7 @@
                         <Setter Property="Padding" Value="8,4" />
                         <Setter Property="BorderThickness" Value="0" />
                         <Setter Property="HorizontalContentAlignment" Value="Center" />
+                        <Setter Property="VerticalContentAlignment" Value="Center" />
                     </Style>
                 </Setter.Value>
             </Setter>
@@ -460,7 +502,7 @@
                                             MinWidth="140"
                                             Padding="13"
                                             Click="VaoXocDia_Click"
-                                            Content="Đăng Nhập &amp; Tài Xỉu Live"
+                                            Content="Đăng Nhập Tool"
                                             Style="{StaticResource PrimaryButton}"
                                             Visibility="Visible" />
 
@@ -496,6 +538,8 @@
                                         <!--  CÓ LÃI QUAY VỀ MỨC ĐẦU  -->
                                         <RowDefinition Height="Auto" />
                                         <!--  ĐẶT KHI CÒN (GIÂY)  -->
+                                        <RowDefinition Height="Auto" />
+                                        <!--  CỬA ĐẶT &amp; TỈ LỆ  -->
                                     </Grid.RowDefinitions>
 
                                     <Grid.ColumnDefinitions>
@@ -547,6 +591,7 @@
                                             <ComboBoxItem Content="14) AI học tại chỗ (n-gram)" />
                                             <ComboBoxItem Content="15) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime)" />
                                             <ComboBoxItem Content="16) Top10 tích lũy (khởi từ 50 T/X)" />
+                                            <ComboBoxItem Content="17) Đánh các cửa ăn nổ hũ" />
                                         </ComboBox>
                                     </Grid>
 
@@ -658,6 +703,7 @@
                                             <ComboBoxItem Content="3. Quản lý vốn Victor 2" Tag="Victor2" />
                                             <ComboBoxItem Content="4. Quản lý vốn Fibonaci ngược" Tag="ReverseFibo" />
                                             <ComboBoxItem Content="5. Quản lý vốn đa tầng" Tag="MultiChain" />
+                                            <ComboBoxItem Content="6. Thua thắng đều lên mức" Tag="IncreaseEveryRound" />
                                             <ComboBoxItem Content="7. Thắng đánh lên, thua giữ nguyên mức" Tag="WinUpLoseKeep" />
                                         </ComboBox>
                                     </Grid>
@@ -687,11 +733,11 @@
                                         Grid.Column="1"
                                         Margin="{StaticResource ValueFieldMargin}"
                                         VerticalAlignment="Center"
+                                        Checked="ChkS7ResetOnProfit_Changed"
                                         Content="Có lãi quay về mức đầu"
                                         Foreground="#222"
-                                        Visibility="Collapsed"
-                                        Checked="ChkS7ResetOnProfit_Changed"
-                                        Unchecked="ChkS7ResetOnProfit_Changed" />
+                                        Unchecked="ChkS7ResetOnProfit_Changed"
+                                        Visibility="Collapsed" />
 
                                     <!--  ĐẶT KHI CÒN (GIÂY)  -->
                                     <TextBlock
@@ -708,6 +754,54 @@
                                         Margin="{StaticResource ValueFieldMargin}"
                                         HorizontalAlignment="Stretch"
                                         Text="0" />
+                                    <!--  CỬA ĐẶT &amp; TỈ LỆ  -->
+                                    <Grid
+                                        x:Name="RowSideRatio"
+                                        Grid.Row="6"
+                                        Grid.ColumnSpan="2"
+                                        Visibility="Collapsed">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="130" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock
+                                            Grid.Column="0"
+                                            Style="{StaticResource CapsLabel}"
+                                            Text="CỬA ĐẶT &amp; TỈ LỆ" />
+                                        <StackPanel Grid.Column="1" Orientation="Vertical">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox
+                                                    x:Name="TxtSideRatio"
+                                                    Grid.Column="0"
+                                                    MinHeight="36"
+                                                    MaxHeight="120"
+                                                    Margin="{StaticResource ValueFieldMargin}"
+                                                    HorizontalAlignment="Stretch"
+                                                    AcceptsReturn="True"
+                                                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                    TextWrapping="Wrap" />
+                                                <Button
+                                                    x:Name="BtnResetSideRatio"
+                                                    Grid.Column="1"
+                                                    MinWidth="70"
+                                                    Margin="8,0,0,0"
+                                                    Padding="12,8"
+                                                    Content="Reset"
+                                                    Style="{StaticResource SecondaryButton}" />
+                                            </Grid>
+                                            <TextBlock
+                                                x:Name="LblSideRatioError"
+                                                Margin="0,2,0,0"
+                                                Foreground="Red"
+                                                TextWrapping="Wrap"
+                                                Visibility="Collapsed" />
+                                        </StackPanel>
+                                    </Grid>
                                 </Grid>
                                 <!--  HÀNG: CẮT LÃI / CẮT LỖ (đặt ngay sau hàng 'Đặt khi còn (giây)')  -->
                                 <Grid>
@@ -1038,13 +1132,12 @@
                                                 <Border Grid.Column="1" Style="{StaticResource GhostQMid}">
                                                     <Grid
                                                         x:Name="CellKetQua"
-                                                        Margin="8,0,0,0"
+                                                        Margin="0,0,0,0"
                                                         HorizontalAlignment="Center"
                                                         VerticalAlignment="Center">
                                                         <Image
                                                             x:Name="ImgKetQua"
-                                                            Width="32"
-                                                            Height="32"
+                                                            Height="25"
                                                             Stretch="Uniform"
                                                             Visibility="Collapsed" />
                                                         <TextBlock
@@ -1069,7 +1162,7 @@
                                                         VerticalAlignment="Center">
                                                         <Image
                                                             x:Name="ImgThangThua"
-                                                            Height="20"
+                                                            Height="25"
                                                             Stretch="Uniform"
                                                             Visibility="Collapsed" />
                                                         <TextBlock
@@ -1105,13 +1198,12 @@
                                                 <Border Grid.Column="1" Style="{StaticResource GhostQMid}">
                                                     <Grid
                                                         x:Name="CellCuaDat"
-                                                        Margin="8,0,0,0"
+                                                        Margin="0,0,0,0"
                                                         HorizontalAlignment="Center"
                                                         VerticalAlignment="Center">
                                                         <Image
                                                             x:Name="ImgSide"
-                                                            Width="32"
-                                                            Height="32"
+                                                            Height="25"
                                                             Stretch="Uniform"
                                                             Visibility="Collapsed" />
                                                         <TextBlock
@@ -1272,15 +1364,15 @@
                                                 </ItemsControl.ItemsPanel>
                                                 <ItemsControl.ItemContainerStyle>
                                                     <Style TargetType="ContentPresenter">
-                                                        <Setter Property="Margin" Value="0,0" />
+                                                        <Setter Property="Margin" Value="1,0" />
                                                     </Style>
                                                 </ItemsControl.ItemContainerStyle>
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate DataType="{x:Type local:SeqIconVM}">
                                                         <Image
                                                             x:Name="Icon"
-                                                            Width="25"
-                                                            Height="26"
+                                                            Width="15"
+                                                            Height="15"
                                                             Opacity="1"
                                                             Source="{Binding Img}">
                                                             <Image.CacheMode>
@@ -1364,6 +1456,7 @@
                                                 <DataGridTextColumn.ElementStyle>
                                                     <Style TargetType="TextBlock">
                                                         <Setter Property="TextAlignment" Value="Center" />
+                                                        <Setter Property="VerticalAlignment" Value="Center" />
                                                     </Style>
                                                 </DataGridTextColumn.ElementStyle>
                                             </DataGridTextColumn>
@@ -1376,6 +1469,7 @@
                                                 <DataGridTextColumn.ElementStyle>
                                                     <Style TargetType="TextBlock">
                                                         <Setter Property="TextAlignment" Value="Center" />
+                                                        <Setter Property="VerticalAlignment" Value="Center" />
                                                     </Style>
                                                 </DataGridTextColumn.ElementStyle>
                                             </DataGridTextColumn>
@@ -1387,8 +1481,7 @@
                                                         <Grid VerticalAlignment="Center">
                                                             <Image
                                                                 x:Name="ImgSide"
-                                                                Width="28"
-                                                                Height="28"
+                                                                Height="32"
                                                                 Source="{Binding Side, Converter={StaticResource SideToIcon}}"
                                                                 Visibility="Visible" />
                                                             <TextBlock
@@ -1415,8 +1508,7 @@
                                                         <Grid VerticalAlignment="Center">
                                                             <Image
                                                                 x:Name="ImgKq"
-                                                                Width="28"
-                                                                Height="28"
+                                                                Height="32"
                                                                 Source="{Binding Result, Converter={StaticResource KetQuaToIcon}}"
                                                                 Visibility="Visible" />
                                                             <TextBlock
@@ -1447,7 +1539,7 @@
                                                             <Grid VerticalAlignment="Center">
                                                                 <Image
                                                                     x:Name="ImgWL"
-                                                                    Height="18"
+                                                                    Height="32"
                                                                     Source="{Binding WinLose, Converter={StaticResource WinLossToIcon}}"
                                                                     Visibility="Visible" />
                                                                 <TextBlock
@@ -1482,6 +1574,7 @@
                                                 <DataGridTextColumn.ElementStyle>
                                                     <Style TargetType="TextBlock">
                                                         <Setter Property="TextAlignment" Value="Center" />
+                                                        <Setter Property="VerticalAlignment" Value="Center" />
                                                     </Style>
                                                 </DataGridTextColumn.ElementStyle>
                                             </DataGridTextColumn>
