@@ -5076,24 +5076,27 @@ Ví dụ không hợp lệ:
             var cts = _leaseHbCts;
             var uname = Uri.EscapeDataString(username);
 
-            Task.Run(async () =>
+            if (false) // đổi false để tắt heartbeat
             {
-                while (!cts.IsCancellationRequested)
+                Task.Run(async () =>
                 {
-                    try
+                    while (!cts.IsCancellationRequested)
                     {
-                        using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
-                        var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/heartbeat/{uname}",
-                                                              new { clientId = _leaseClientId, sessionId = _leaseSessionId });
-                        // chỉ log nhẹ cho debug
-                        Log("[Lease] hb: " + (int)resp.StatusCode);
-                    }
-                    catch (Exception ex) { Log("[Lease] hb err: " + ex.Message); }
+                        try
+                        {
+                            using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
+                            var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/heartbeat/{uname}",
+                                                                  new { clientId = _leaseClientId, sessionId = _leaseSessionId });
+                            // chỉ log nhẹ cho debug
+                            Log("[Lease] hb: " + (int)resp.StatusCode);
+                        }
+                        catch (Exception ex) { Log("[Lease] hb err: " + ex.Message); }
 
-                    await Task.Delay(TimeSpan.FromSeconds(60), cts.Token)
-                              .ContinueWith(_ => { }); // nuốt TaskCanceled
-                }
-            }, cts.Token);
+                        await Task.Delay(TimeSpan.FromSeconds(180), cts.Token)
+                                  .ContinueWith(_ => { }); // nuốt TaskCanceled
+                    }
+                }, cts.Token);
+            }
         }
 
         private void StopLeaseHeartbeat()

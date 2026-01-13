@@ -4895,7 +4895,7 @@ Ví dụ không hợp lệ:
                     }
                     catch (Exception ex) { Log("[Lease] hb err: " + ex.Message); }
 
-                    await Task.Delay(TimeSpan.FromSeconds(60), cts.Token)
+                    await Task.Delay(TimeSpan.FromSeconds(180), cts.Token)
                               .ContinueWith(_ => { }); // nuốt TaskCanceled
                 }
             }, cts.Token);

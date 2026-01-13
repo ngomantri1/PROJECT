@@ -369,6 +369,7 @@ namespace TaiXiuThuongZoWin
         const string LicenseBranch = "main";          // <- nhánh
         const string LicenseNameGame = "zowin";          // <- nhánh
         const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/zowin";
+        private const bool EnableLeaseCloudflare = false; // true=bật gọi Cloudflare
 
         // ===================== TOOLTIP TEXTS =====================
         const string TIP_SEQ_CL =
@@ -3238,6 +3239,16 @@ Ví dụ không hợp lệ:
                             SslProtocols = System.Security.Authentication.SslProtocols.Tls12
                         });
 
+                    if (!EnableLeaseCloudflare)
+
+                    {
+
+                        MessageBox.Show("Chế độ dùng thử cần Cloudflare. Vui lòng bật lại để dùng thử.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+                        return false;
+
+                    }
+
                     var url = $"{LeaseBaseUrl}/trial/{Uri.EscapeDataString(username)}";
                     var json = System.Text.Json.JsonSerializer.Serialize(new { clientId, sessionId });
                     var res = await http.PostAsync(
@@ -4980,6 +4991,7 @@ Ví dụ không hợp lệ:
         // Acquire lease 1 lần (KHÔNG renew theo yêu cầu)
         private async Task<bool> AcquireLeaseOnceAsync(string username)
         {
+            if (!EnableLeaseCloudflare) return true;
             if (string.IsNullOrWhiteSpace(LeaseBaseUrl)) return true; // chưa cấu hình -> bỏ qua
             try
             {
@@ -5009,6 +5021,7 @@ Ví dụ không hợp lệ:
         }
         private async Task ReleaseLeaseAsync(string username)
         {
+            if (!EnableLeaseCloudflare) return;
             if (string.IsNullOrWhiteSpace(LeaseBaseUrl)) return;
             try
             {
@@ -5170,28 +5183,32 @@ Ví dụ không hợp lệ:
         private void StartLeaseHeartbeat(string username)
         {
             StopLeaseHeartbeat();
+            if (!EnableLeaseCloudflare) return;
             _leaseHbCts = new CancellationTokenSource();
             var cts = _leaseHbCts;
             var uname = Uri.EscapeDataString(username);
 
-            Task.Run(async () =>
+            if (false) // đổi false để tắt heartbeat
             {
-                while (!cts.IsCancellationRequested)
+                Task.Run(async () =>
                 {
-                    try
+                    while (!cts.IsCancellationRequested)
                     {
-                        using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
-                        var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/heartbeat/{uname}",
-                                                              new { clientId = _leaseClientId, sessionId = _leaseSessionId });
-                        // chỉ log nhẹ cho debug
-                        Log("[Lease] hb: " + (int)resp.StatusCode);
-                    }
-                    catch (Exception ex) { Log("[Lease] hb err: " + ex.Message); }
+                        try
+                        {
+                            using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
+                            var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/heartbeat/{uname}",
+                                                                  new { clientId = _leaseClientId, sessionId = _leaseSessionId });
+                            // chỉ log nhẹ cho debug
+                            Log("[Lease] hb: " + (int)resp.StatusCode);
+                        }
+                        catch (Exception ex) { Log("[Lease] hb err: " + ex.Message); }
 
-                    await Task.Delay(TimeSpan.FromSeconds(60), cts.Token)
-                              .ContinueWith(_ => { }); // nuốt TaskCanceled
-                }
-            }, cts.Token);
+                        await Task.Delay(TimeSpan.FromSeconds(180), cts.Token)
+                                  .ContinueWith(_ => { }); // nuốt TaskCanceled
+                    }
+                }, cts.Token);
+            }
         }
 
         private void StopLeaseHeartbeat()
