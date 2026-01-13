@@ -1494,6 +1494,22 @@ Ví dụ không hợp lệ:
 
 
 
+                                // 2.a) tx_alert: alert Tài/Xỉu (ngoài prefab_game_14)
+                                if (abxStr == "tx_alert")
+                                {
+                                    try
+                                    {
+                                        var alert = root.TryGetProperty("alert", out var aEl) ? aEl : default;
+                                        bool visible = alert.ValueKind == JsonValueKind.Object
+                                            && alert.TryGetProperty("visible", out var vEl) && vEl.GetBoolean();
+                                        string center = alert.ValueKind == JsonValueKind.Object
+                                            && alert.TryGetProperty("center", out var cEl) ? (cEl.GetString() ?? "") : "";
+                                        Log($"[TX_ALERT] visible={visible} center={center}");
+                                    }
+                                    catch { /* ignore */ }
+                                    return;
+                                }
+
                                 // 2.b) game_hint: Home báo đã có game/iframe → chuyển UI tức thì
                                 if (abxStr == "game_hint")
                                 {

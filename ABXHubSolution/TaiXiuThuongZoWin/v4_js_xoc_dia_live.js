@@ -1829,7 +1829,7 @@
         '</div>' +
         '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    root.style.display='none';
+    //root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -1950,13 +1950,13 @@
     }
 
     var layerMoney = document.createElement('div');
-    layerMoney.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:auto;z-index:2147483645;';
+    layerMoney.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:none;z-index:2147483645;';
     root.appendChild(layerMoney);
     var layerBet = document.createElement('div');
-    layerBet.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:auto;z-index:2147483645;';
+    layerBet.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:none;z-index:2147483645;';
     root.appendChild(layerBet);
     var layerText = document.createElement('div');
-    layerText.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:auto;z-index:2147483645;';
+    layerText.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:none;z-index:2147483645;';
     root.appendChild(layerText);
 
     var focusBox = document.createElement('div');
@@ -3920,6 +3920,382 @@
             return false;
         }
 
+        function normKey(s) {
+            return NORM(s).replace(/[^A-Z0-9]+/g, '');
+        }
+        function rectCenter(r) {
+            var cx = (r.sx || 0) + (r.sw || 0) / 2;
+            var cy = (r.sy || 0) + (r.sh || 0) / 2;
+            return { x: cx, y: cy };
+        }
+        function sideFromKey(key) {
+            if (!key)
+                return '';
+            var hasTai = key.indexOf('TAI') !== -1;
+            var hasXiu = key.indexOf('XIU') !== -1;
+            if (hasTai && !hasXiu)
+                return 'TAI';
+            if (hasXiu && !hasTai)
+                return 'XIU';
+            return '';
+        }
+        function rectOk(r) {
+            if (!r)
+                return false;
+            var w = (r.sw || r.w || 0);
+            var h = (r.sh || r.h || 0);
+            return w >= 6 && h >= 6;
+        }
+        function getNodeRect(n, text) {
+            var r = null;
+            try {
+                r = rectForTextMap(n, text);
+            } catch (_) {}
+            if (!rectOk(r)) {
+                try {
+                    r = rectFromNodeCompat(n);
+                } catch (_) {}
+            }
+            if (!rectOk(r)) {
+                try {
+                    r = wRect(n);
+                } catch (_) {}
+            }
+            return r;
+        }
+        function addSide(list, side, text, r, tail, src, group) {
+            if (!list || !side || !rectOk(r))
+                return;
+            list.push({
+                text: text,
+                side: side,
+                sx: r.sx, sy: r.sy, sw: r.sw, sh: r.sh,
+                tail: tail || '',
+                src: src || '',
+                group: group || ''
+            });
+        }
+        function scanTaiXiuCocosCandidates() {
+            var tai = [];
+            var xiu = [];
+            var nums = [];
+            walkNodes(function (n) {
+                if (!active(n))
+                    return;
+                var comps = (n._components || []);
+                var labelText = '';
+                var labelKey = '';
+                var spriteName = '';
+                var spriteKey = '';
+                for (var i = 0; i < comps.length; i++) {
+                    var c = comps[i];
+                    if (!labelText && c && typeof c.string !== 'undefined') {
+                        var s = String(c.string == null ? '' : c.string).trim();
+                        if (s) {
+                            labelText = s;
+                            labelKey = normKey(s);
+                        }
+                    }
+                    if (!spriteName && c && c.spriteFrame && c.spriteFrame.name) {
+                        var sn = String(c.spriteFrame.name || '').trim();
+                        if (sn) {
+                            spriteName = sn;
+                            spriteKey = normKey(sn);
+                        }
+                    }
+                }
+                var name = String(n.name || '');
+                var nameKey = normKey(name);
+                var side = '';
+                var src = '';
+                if (labelKey) {
+                    side = sideFromKey(labelKey);
+                    if (side)
+                        src = 'label';
+                }
+                if (!side && nameKey) {
+                    side = sideFromKey(nameKey);
+                    if (side)
+                        src = 'name';
+                }
+                if (!side && spriteKey) {
+                    side = sideFromKey(spriteKey);
+                    if (side)
+                        src = 'sprite';
+                }
+                if (!side) {
+                    var p = '';
+                    try { p = fullPath(n, 80); } catch (_) {}
+                    var pKey = normKey(p);
+                    side = sideFromKey(pKey);
+                    if (side)
+                        src = 'path';
+                }
+                if (side) {
+                    var rr = getNodeRect(n, labelText || name || spriteName || side);
+                    var tail = '';
+                    var group = '';
+                    try {
+                        tail = fullPath(n, 80);
+                        group = tailOf(n, 6);
+                    } catch (_) {}
+                    if (side === 'TAI')
+                        addSide(tai, side, labelText || name || spriteName || side, rr, tail, src, group);
+                    else
+                        addSide(xiu, side, labelText || name || spriteName || side, rr, tail, src, group);
+                    return;
+                }
+                if (labelText && /^\d{1,2}$/.test(labelText)) {
+                    var rn = getNodeRect(n, labelText);
+                    if (rectOk(rn)) {
+                        nums.push({
+                            text: labelText,
+                            sx: rn.sx, sy: rn.sy, sw: rn.sw, sh: rn.sh
+                        });
+                    }
+                }
+            });
+            return { tai: tai, xiu: xiu, nums: nums };
+        }
+        function domTag(el) {
+            if (!el)
+                return '';
+            var tag = String(el.tagName || 'EL').toLowerCase();
+            var id = el.id ? ('#' + el.id) : '';
+            var cls = '';
+            if (el.className && typeof el.className === 'string') {
+                var c = el.className.trim().split(/\s+/)[0];
+                if (c)
+                    cls = '.' + c;
+            }
+            return tag + id + cls;
+        }
+        function domVisible(el) {
+            try {
+                var st = getComputedStyle(el);
+                if (!st)
+                    return true;
+                if (st.display === 'none' || st.visibility === 'hidden')
+                    return false;
+                if (Number(st.opacity || '1') <= 0)
+                    return false;
+            } catch (_) {}
+            return true;
+        }
+        function scanTaiXiuDomCandidates() {
+            var tai = [];
+            var xiu = [];
+            var nums = [];
+            try {
+                var els = document.querySelectorAll('button,div,span,p,a,td,li,label');
+                for (var i = 0; i < els.length; i++) {
+                    var el = els[i];
+                    if (!el || !domVisible(el))
+                        continue;
+                    if (el.closest && el.closest('#__cw_root_allin'))
+                        continue;
+                    var text = String(el.innerText || el.textContent || '').trim();
+                    if (!text || text.length > 80)
+                        continue;
+                    var key = normKey(text);
+                    if (!key)
+                        continue;
+                    var rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+                    if (!rect || rect.width < 8 || rect.height < 8)
+                        continue;
+                    if (rect.right < 0 || rect.bottom < 0 || rect.left > innerWidth || rect.top > innerHeight)
+                        continue;
+                    var side = sideFromKey(key);
+                    if (side) {
+                        var tail = 'DOM:' + domTag(el);
+                        var group = '';
+                        try { group = domTag(el.parentElement); } catch (_) {}
+                        addSide(side === 'TAI' ? tai : xiu, side, text, {
+                            sx: rect.left, sy: rect.top, sw: rect.width, sh: rect.height
+                        }, tail, 'dom', group);
+                        continue;
+                    }
+                    if (/^\d{1,2}$/.test(text)) {
+                        nums.push({
+                            text: text,
+                            sx: rect.left, sy: rect.top, sw: rect.width, sh: rect.height
+                        });
+                    }
+                }
+            } catch (_) {}
+            return { tai: tai, xiu: xiu, nums: nums };
+        }
+        function pickBestTaiXiu(tai, xiu) {
+            var best = null;
+            var bestScore = 1e18;
+            for (var i = 0; i < tai.length; i++) {
+                for (var j = 0; j < xiu.length; j++) {
+                    var t = tai[i], x = xiu[j];
+                    var tc = rectCenter(t);
+                    var xc = rectCenter(x);
+                    var dx = Math.abs(tc.x - xc.x);
+                    var dy = Math.abs(tc.y - xc.y);
+                    if (!isFinite(dx) || !isFinite(dy))
+                        continue;
+                    if (dx < 30)
+                        continue;
+                    var score = dy * 3 + dx;
+                    if (t.src && x.src && t.src !== x.src)
+                        score += 120;
+                    if (t.group && x.group && t.group === x.group)
+                        score -= 80;
+                    var sd = Math.abs((t.sw || 0) - (x.sw || 0)) + Math.abs((t.sh || 0) - (x.sh || 0));
+                    score += sd * 0.2;
+                    if (score < bestScore) {
+                        bestScore = score;
+                        best = { tai: t, xiu: x };
+                    }
+                }
+            }
+            return best;
+        }
+        function collectTxCandidates() {
+            var coco = scanTaiXiuCocosCandidates();
+            var tai = coco.tai || [];
+            var xiu = coco.xiu || [];
+            var nums = coco.nums || [];
+            var best = pickBestTaiXiu(tai, xiu);
+            if (!best) {
+                var dom = scanTaiXiuDomCandidates();
+                tai = tai.concat(dom.tai || []);
+                xiu = xiu.concat(dom.xiu || []);
+                nums = nums.concat(dom.nums || []);
+                best = pickBestTaiXiu(tai, xiu);
+            }
+            return { tai: tai, xiu: xiu, nums: nums, best: best };
+        }
+        function scanTaiXiuAlert() {
+            var c = collectTxCandidates();
+            var best = c.best;
+            if (!best)
+                return { visible: false };
+            var minX = Math.min(best.tai.sx, best.xiu.sx);
+            var minY = Math.min(best.tai.sy, best.xiu.sy);
+            var maxX = Math.max(best.tai.sx + best.tai.sw, best.xiu.sx + best.xiu.sw);
+            var maxY = Math.max(best.tai.sy + best.tai.sh, best.xiu.sy + best.xiu.sh);
+            var rect = { sx: minX, sy: minY, sw: maxX - minX, sh: maxY - minY };
+            var centerNum = null;
+            var nums = c.nums || [];
+            for (var k = 0; k < nums.length; k++) {
+                var n = nums[k];
+                var cx = n.sx + (n.sw || 0) / 2;
+                var cy = n.sy + (n.sh || 0) / 2;
+                if (cx >= minX - 20 && cx <= maxX + 20 && cy >= minY - 40 && cy <= maxY + 120) {
+                    centerNum = n.text;
+                    break;
+                }
+            }
+            return {
+                visible: true,
+                tai: best.tai,
+                xiu: best.xiu,
+                center: centerNum,
+                rect: rect
+            };
+        }
+
+        function setCwLogCompat(text) {
+            try {
+                if (typeof setCwLog === 'function') {
+                    setCwLog(text);
+                    return;
+                }
+            } catch (_) {}
+            try {
+                var el = document.querySelector('#cwLog');
+                if (el) el.textContent = text;
+            } catch (_) {}
+        }
+        function logTxAlertToCw(a) {
+            var lines = [];
+            lines.push('(TX alert)');
+            lines.push('visible=' + (a && a.visible ? 'true' : 'false') + ' center=' + (a && a.center ? a.center : '-'));
+            if (!a || !a.visible) {
+                lines.push('(not found)');
+                setCwLogCompat(lines.join('\n'));
+                return;
+            }
+            var t = a.tai || {};
+            var x = a.xiu || {};
+            var r = a.rect || {};
+            lines.push('TAI: ' + (t.text || '') + ' | x,y,w,h=' +
+                Math.round(t.sx || 0) + ',' + Math.round(t.sy || 0) + ',' + Math.round(t.sw || 0) + ',' + Math.round(t.sh || 0) +
+                ' | src=' + (t.src || '') + ' | tail=' + (t.tail || ''));
+            lines.push('XIU: ' + (x.text || '') + ' | x,y,w,h=' +
+                Math.round(x.sx || 0) + ',' + Math.round(x.sy || 0) + ',' + Math.round(x.sw || 0) + ',' + Math.round(x.sh || 0) +
+                ' | src=' + (x.src || '') + ' | tail=' + (x.tail || ''));
+            lines.push('RECT: x,y,w,h=' +
+                Math.round(r.sx || 0) + ',' + Math.round(r.sy || 0) + ',' + Math.round(r.sw || 0) + ',' + Math.round(r.sh || 0));
+            setCwLogCompat(lines.join('\n'));
+        }
+        function logTxCandidatesToCw() {
+            var c = collectTxCandidates();
+            var tai = c.tai || [];
+            var xiu = c.xiu || [];
+            var nums = c.nums || [];
+            var lines = [];
+            lines.push('(TX candidates)');
+            lines.push('tai=' + tai.length + ' xiu=' + xiu.length + ' nums=' + nums.length);
+            var list = tai.concat(xiu);
+            list.sort(function (a, b) {
+                var ay = (a.sy || 0), by = (b.sy || 0);
+                if (ay !== by)
+                    return ay - by;
+                return (a.sx || 0) - (b.sx || 0);
+            });
+            var max = Math.min(list.length, 12);
+            for (var i = 0; i < max; i++) {
+                var it = list[i];
+                var txt = String(it.text || '').replace(/\s+/g, ' ').trim();
+                lines.push((i + 1) + '. ' + it.side + ' | text=' + txt +
+                    ' | x,y,w,h=' + Math.round(it.sx || 0) + ',' + Math.round(it.sy || 0) + ',' +
+                    Math.round(it.sw || 0) + ',' + Math.round(it.sh || 0) +
+                    ' | src=' + (it.src || '') + ' | tail=' + (it.tail || ''));
+            }
+            setCwLogCompat(lines.join('\n'));
+        }
+
+        var _alertTimer = null;
+        var _lastAlert = '';
+        function startAlertWatch(ms, withLog) {
+            ms = Number(ms) || 300;
+            if (_alertTimer) {
+                clearInterval(_alertTimer);
+                _alertTimer = null;
+            }
+            _alertTimer = setInterval(function () {
+                var a = scanTaiXiuAlert();
+                var s = '';
+                try { s = JSON.stringify(a); } catch (_) {}
+                if (s && s !== _lastAlert) {
+                    _lastAlert = s;
+                    safePost({ abx: 'tx_alert', alert: a, ts: Date.now() });
+                    if (withLog)
+                        logTxAlertToCw(a);
+                }
+            }, ms);
+        }
+        function stopAlertWatch() {
+            if (_alertTimer) {
+                clearInterval(_alertTimer);
+                _alertTimer = null;
+            }
+        }
+        window.__cw_scan_tx_alert = scanTaiXiuAlert;
+        window.__cw_scan_tx_alert_log = function () {
+            var a = scanTaiXiuAlert();
+            logTxAlertToCw(a);
+            return a;
+        };
+        window.__cw_scan_tx_candidates_log = logTxCandidatesToCw;
+        window.__cw_startAlertWatch = startAlertWatch;
+        window.__cw_stopAlertWatch = stopAlertWatch;
+
         function readProgressVal() {
             try {
                 var cp = (typeof collectProgress === 'function') ? collectProgress() : null;
@@ -3954,6 +4330,10 @@
         // Bắt đầu bắn snapshot định kỳ {abx:'tick', prog, totals, seq, status}
         window.__cw_startPush = function (tickMs) {
             try {
+                if (!window.__cw_alert_watch_started) {
+                    window.__cw_alert_watch_started = 1;
+                    startAlertWatch(300);
+                }
                 tickMs = Number(tickMs) || 240;
                 if (tickMs < 120)
                     tickMs = 120;
