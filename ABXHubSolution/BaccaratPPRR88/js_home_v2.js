@@ -1708,6 +1708,8 @@
         },
         selected: null,
         username: '',
+        usernameDraft: '',
+        usernameDraftSource: '',
         balance: '',
         autoTimer: null,
         inflightProbe: false,
@@ -1719,6 +1721,8 @@
         authGateOpened: false,
         loginPopupTimer: null, // NEW: timer auto click login
         loginPostProbeStarted: false, // NEW: tránh start probe trùng
+        loginInputScanTid: 0,
+        loginInputObserver: null,
         overlayLog: ''
     };
 
@@ -1794,6 +1798,220 @@
         if (!/[A-Za-zÀ-ỹ0-9]/.test(t))
             return false;
         return true;
+    }
+
+    function getBestUsername() {
+        return S.username || S.usernameDraft || '';
+    }
+
+    function isLikelyLoginId(s) {
+        const t = String(s || '').trim();
+        if (!t)
+            return false;
+        if (t.length < 3 || t.length > 80)
+            return false;
+        if (isLikelyUsername(t))
+            return true;
+        if (/\s/.test(t))
+            return false;
+        const low = t.toLowerCase();
+        if (/^(?:username|user\s*name|user|account|email|e-?mail|phone|mobile|tel|tai\s*khoan|tai-khoan|dang\s*nhap|login|id)$/i.test(low))
+            return false;
+        if (/(password|mat\s*khau|captcha|otp|verify|code)/i.test(low))
+            return false;
+        if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t))
+            return true;
+        if (/^\+?\d[\d\s().-]{5,}$/.test(t))
+            return true;
+        if (/^[a-z0-9][a-z0-9_.-]{2,}$/i.test(t))
+            return true;
+        return false;
+    }
+
+    function readLoginInputValue(input) {
+        try {
+            if (!input)
+                return '';
+            if (input.disabled)
+                return '';
+            const type = (input.getAttribute && input.getAttribute('type')) || '';
+            if (/password|hidden/i.test(type))
+                return '';
+            let val = (input.value != null ? String(input.value) : '').trim();
+            if (!val)
+                return '';
+            const ph = (input.getAttribute && input.getAttribute('placeholder')) || '';
+            if (ph && val === String(ph).trim())
+                return '';
+            return val;
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function hasPasswordNear(input) {
+        try {
+            if (!input || !input.closest)
+                return false;
+            const modalSel = '.tcg_modal_wrap.loginPopupModal, .tcg_modal_wrap.publicModal, .tcg_modal_wrap, .loginPopupModal, .popup-login, .login-popup, .modal-login, .login__popup, .v--modal-box, .v--modal-overlay';
+            const form = input.closest('form');
+            if (form && form.querySelector('input[type="password"]'))
+                return true;
+            const modal = input.closest(modalSel);
+            if (modal && modal.querySelector('input[type="password"]'))
+                return true;
+            return false;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function isLoginIdInput(input, hasPassword) {
+        try {
+            if (!input || !input.getAttribute)
+                return false;
+            const type = (input.getAttribute('type') || '').toLowerCase();
+            if (type === 'password' || type === 'hidden')
+                return false;
+            if (input.disabled)
+                return false;
+            const hint = [
+                input.getAttribute('name'),
+                input.getAttribute('id'),
+                input.getAttribute('class'),
+                input.getAttribute('placeholder'),
+                input.getAttribute('aria-label'),
+                input.getAttribute('autocomplete')
+            ].join(' ').toLowerCase();
+            if (/(otp|captcha|verify|code|search|promo|gift|amount|balance|bet|money)/.test(hint))
+                return false;
+            if (/(user|username|account|login|email|phone|mobile|tel|member|nick|id|tai-khoan|taikhoan|dangnhap|dang-nhap)/.test(hint))
+                return true;
+            if (hasPassword)
+                return true;
+            return false;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function collectLoginInputs() {
+        const inputs = [];
+        const seen = new Set();
+        const modalSel = '.tcg_modal_wrap.loginPopupModal, .tcg_modal_wrap.publicModal, .tcg_modal_wrap, .loginPopupModal, .popup-login, .login-popup, .modal-login, .login__popup, .v--modal-box, .v--modal-overlay';
+        const roots = [];
+
+        try {
+            if (typeof TAIL_LOGIN_POPUP_ROOT === 'string' && TAIL_LOGIN_POPUP_ROOT) {
+                const r = findByTail(TAIL_LOGIN_POPUP_ROOT);
+                if (r)
+                    roots.push(r);
+            }
+        } catch (_) {}
+
+        try {
+            document.querySelectorAll(modalSel).forEach(r => {
+                if (r && r.isConnected)
+                    roots.push(r);
+            });
+        } catch (_) {}
+
+        try {
+            document.querySelectorAll('input[type="password"]').forEach(pwd => {
+                const root = pwd.closest(modalSel + ', form, .login, .signin, .sign-in, .login-form, .signin-form, .auth, .auth-form') || pwd.parentElement;
+                if (root)
+                    roots.push(root);
+            });
+        } catch (_) {}
+
+        try {
+            document.querySelectorAll('.hd_login, .user-not-login').forEach(r => {
+                if (r && r.isConnected)
+                    roots.push(r);
+            });
+        } catch (_) {}
+
+        try {
+            Array.from(document.querySelectorAll('form')).forEach(f => {
+                const hint = ((f.id || '') + ' ' + (f.className || '')).toLowerCase();
+                if (/login|signin|sign-in|dangnhap|dang-nhap/.test(hint))
+                    roots.push(f);
+            });
+        } catch (_) {}
+
+        const addInput = (input) => {
+            if (!input || seen.has(input))
+                return;
+            seen.add(input);
+            inputs.push(input);
+        };
+
+        const scanRoot = (root) => {
+            if (!root || !root.querySelectorAll)
+                return;
+            root.querySelectorAll('input, textarea').forEach(addInput);
+        };
+
+        if (roots.length) {
+            roots.forEach(scanRoot);
+        } else {
+            document.querySelectorAll('input, textarea').forEach(addInput);
+        }
+
+        return inputs;
+    }
+
+    function scanLoginInputsNow(reason) {
+        try {
+            const inputs = collectLoginInputs();
+            for (const input of inputs) {
+                const hasPwd = hasPasswordNear(input);
+                if (!isLoginIdInput(input, hasPwd))
+                    continue;
+                const val = readLoginInputValue(input);
+                if (val && isLikelyLoginId(val)) {
+                    updateUsernameDraft(val, reason || 'login-scan');
+                    return val;
+                }
+            }
+        } catch (_) {}
+        return '';
+    }
+
+    function handleLoginInputEvent(e) {
+        try {
+            const input = e && e.target;
+            if (!input || !input.tagName || input.tagName.toLowerCase() !== 'input')
+                return;
+            const hasPwd = hasPasswordNear(input);
+            if (!isLoginIdInput(input, hasPwd))
+                return;
+            const val = readLoginInputValue(input);
+            if (val && isLikelyLoginId(val))
+                updateUsernameDraft(val, 'login-input');
+        } catch (_) {}
+    }
+
+    function scheduleLoginInputScan(reason) {
+        if (S.loginInputScanTid)
+            return;
+        S.loginInputScanTid = setTimeout(() => {
+            S.loginInputScanTid = 0;
+            scanLoginInputsNow(reason);
+        }, 200);
+    }
+
+    function ensureLoginInputObserver() {
+        if (S.loginInputObserver)
+            return;
+        try {
+            const mo = new MutationObserver(() => scheduleLoginInputScan('login-mu'));
+            mo.observe(document.documentElement, {
+                subtree: true,
+                childList: true
+            });
+            S.loginInputObserver = mo;
+        } catch (_) {}
     }
 
     function cssTail(el) {
@@ -2108,6 +2326,9 @@
     }
 
     async function onAuthStateMaybeChanged(reason = '') {
+        try {
+            scheduleLoginInputScan('auth');
+        } catch (_) {}
         // Chỉ cho phép chạy khi cổng đã mở (đã nhìn thấy nút "Đăng nhập")
         if (typeof canRunAuthLoop === 'function' && !canRunAuthLoop()) {
                     return;
@@ -2829,7 +3050,7 @@
         const balText = S.balance ? S.balance : (loggedIn ? '0' : '(?)');
         const L = [
             '• URL : ' + location.href,
-            '• Tên nhân vật: ' + (S.username ? S.username : '(?)'),
+            '• Tên nhân vật: ' + (getBestUsername() ? getBestUsername() : '(?)'),
             '• Tài khoản: ' + balText,
             '• Title: ' + document.title,
             '• Has Xóc Đĩa: ' + String(live)
@@ -3392,7 +3613,7 @@
                         return '';
                 }
 
-                    const u = (typeof S !== 'undefined' && S.username) || quickPickUsername() || '';
+                    const u = (typeof S !== 'undefined' && (S.username || S.usernameDraft)) || quickPickUsername() || '';
                     const b = (typeof S !== 'undefined' && S.balance) || quickPickBalance() || '';
 
                     return {
@@ -4279,6 +4500,10 @@
             return; // ✨ thêm dòng này
 
         S.username = val;
+        if (S.usernameDraft) {
+            S.usernameDraft = '';
+            S.usernameDraftSource = '';
+        }
         updateInfo();
 
         // 🔔 NEW: đẩy ngay 1 gói lên C# (không chờ interval)
@@ -4290,7 +4515,7 @@
                 // Fallback: tự gửi JSON theo format mà C# đang parse
                 window.chrome.webview.postMessage(JSON.stringify({
                         abx: 'home_tick',
-                        username: S.username || '',
+                        username: getBestUsername() || '',
                         balance: String(S.balance ?? ''),
                         href: String(location.href || ''),
                         title: String(document.title || ''),
@@ -4300,6 +4525,37 @@
         } catch (_) { /* nuốt lại, không ảnh hưởng UI */
                         }
                         }
+
+    function updateUsernameDraft(u, source) {
+        if (u == null)
+            return;
+        const val = String(u).trim();
+        if (!isLikelyLoginId(val))
+            return;
+        if (S.username && isLikelyUsername(S.username))
+            return;
+        if (val === S.usernameDraft)
+            return;
+
+        S.usernameDraft = val;
+        S.usernameDraftSource = source || '';
+        updateInfo();
+
+        try {
+            if (typeof window.__abx_hw_pushNow === 'function') {
+                window.__abx_hw_pushNow();
+            } else if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
+                window.chrome.webview.postMessage(JSON.stringify({
+                        abx: 'home_tick',
+                        username: getBestUsername() || '',
+                        balance: String(S.balance ?? ''),
+                        href: String(location.href || ''),
+                        title: String(document.title || ''),
+                        ts: Date.now()
+                    }));
+            }
+        } catch (_) {}
+    }
 
     function updateBalance(b) {
         if (b == null)
@@ -4318,7 +4574,7 @@
             } else if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
                 window.chrome.webview.postMessage(JSON.stringify({
                         abx: 'home_tick',
-                        username: S.username || '',
+                        username: getBestUsername() || '',
                         balance: String(S.balance ?? ''),
                         href: String(location.href || ''),
                         title: String(document.title || ''),
@@ -11098,6 +11354,16 @@
             installPostMessageLogger();
             ensureOverlayHost();
             ensureAutoClosePopups(); // NEW: auto đóng popup/thông báo
+            try {
+                ensureLoginInputObserver();
+                if (!window.__abx_login_input_listener) {
+                    window.__abx_login_input_listener = true;
+                    document.addEventListener('input', handleLoginInputEvent, true);
+                    document.addEventListener('change', handleLoginInputEvent, true);
+                    document.addEventListener('blur', handleLoginInputEvent, true);
+                }
+                scheduleLoginInputScan('boot');
+            } catch (_) {}
             // Nếu đã nhận diện đang đăng nhập -> mở cổng ngay
             try {
                 if (isLoggedInFromDOM()) {
@@ -11193,3 +11459,7 @@
 }
     boot();
     })();
+
+
+
+
