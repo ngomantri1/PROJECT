@@ -1,4 +1,4 @@
-(() => {
+﻿(() => {
     'use strict';
     /* =========================================================
     CanvasWatch + MoneyMap + BetMap + TextMap + Scan200Text
@@ -4000,88 +4000,156 @@
 
         // LƯU Ý: Chỉ dùng cwBet, không fallback cwBetSmart
         // Hàng đợi đặt cược tuần tự: C# cứ đẩy xuống, JS tự xếp hàng và bắn cwBet lần lượt
+        // === BET QUEUE v2: C# đẩy intent, JS xếp hàng và bắn tuần tự ===
         var BET_QUEUE = window.__cwBetQueue = window.__cwBetQueue || [];
         var _processingBetQueue = false;
+
+        function getRoundIdSafe() {
+            try {
+                var seq = readSeqSafe();
+                return (seq && seq.length) ? seq.length : 0;
+            } catch (_) { return 0; }
+        }
+
+        function normalizeIntent(intent) {
+            try {
+                if (!intent) return null;
+                var side = normalizeSide(intent.side || intent.Side || intent.betSide || intent.bet_side);
+                var amt = Math.max(0, Math.floor(Number(intent.amount || intent.amt || intent.stake || 0)));
+                if (!side || !amt) return null;
+                var tabId = String(intent.tabId || intent.tab || "").trim();
+                var roundId = Number(intent.roundId || intent.round || intent.round_id || 0);
+                if (!roundId || isNaN(roundId)) roundId = getRoundIdSafe();
+                return {
+                    side: side,
+                    amt: amt,
+                    tabId: tabId,
+                    roundId: roundId,
+                    at: Date.now()
+                };
+            } catch (_) { return null; }
+        }
+
         async function processBetQueue() {
-            if (_processingBetQueue)
-                return;
+            if (_processingBetQueue) return;
             _processingBetQueue = true;
             while (BET_QUEUE.length) {
                 var job = BET_QUEUE.shift();
-                var side = job.side,
-                amt = job.amt;
-                var result = 'fail';
+                if (!job) continue;
+                var result = "fail";
                 try {
-                    if (typeof cwBet !== 'function') {
-                        throw new Error('cwBet not found');
+                    var currentRound = getRoundIdSafe();
+                    if (job.roundId && currentRound && job.roundId < currentRound) {
+                        safePost({
+                            abx: "bet_dropped",
+                            reason: "stale",
+                            tabId: job.tabId,
+                            roundId: job.roundId,
+                            side: job.side,
+                            amount: job.amt,
+                            ts: Date.now()
+                        });
+                        continue;
                     }
+                    if (typeof cwBet !== "function") throw new Error("cwBet not found");
+
                     var before = readTotalsSafe() || {};
-                    var rawResult = await cwBet(side, amt);
-                    var ok = rawResult === true || rawResult === 'ok' || (rawResult && rawResult.ok === true);
+                    var rawResult = await cwBet(job.side, job.amt);
+                    var ok = rawResult === true || rawResult === "ok" || (rawResult && rawResult.ok === true);
                     try {
-                        if (ok && typeof waitForTotalsChange === 'function') {
-                            await waitForTotalsChange(before, side, 1600);
+                        if (ok && typeof waitForTotalsChange === "function") {
+                            await waitForTotalsChange(before, job.side, 1600);
                         }
                     } catch (_) {}
                     if (ok) {
                         safePost({
-                            abx: 'bet',
-                            side: side,
-                            amount: amt,
+                            abx: "bet",
+                            side: job.side,
+                            amount: job.amt,
+                            tabId: job.tabId,
+                            roundId: job.roundId,
                             ts: Date.now()
                         });
-                        result = 'ok';
+                        result = "ok";
                     } else {
-                        var reason = (rawResult && rawResult.error) ? String(rawResult.error) : (rawResult === false ? 'cwBet returned false' : ('cwBet returned ' + String(rawResult)));
+                        var reason = (rawResult && rawResult.error) ? String(rawResult.error) : (rawResult === false ? "cwBet returned false" : ("cwBet returned " + String(rawResult)));
                         safePost({
-                            abx: 'bet_error',
-                            side: side,
-                            amount: amt,
+                            abx: "bet_error",
+                            side: job.side,
+                            amount: job.amt,
+                            tabId: job.tabId,
+                            roundId: job.roundId,
                             error: reason,
                             ts: Date.now()
                         });
-                        result = 'fail:' + reason;
+                        result = "fail:" + reason;
                     }
                 } catch (err) {
                     safePost({
-                        abx: 'bet_error',
-                        side: side,
-                        amount: amt,
+                        abx: "bet_error",
+                        side: job.side,
+                        amount: job.amt,
+                        tabId: job.tabId,
+                        roundId: job.roundId,
                         error: String(err && err.message || err),
                         ts: Date.now()
                     });
-                    result = 'fail:' + String(err && err.message || err);
+                    result = "fail:" + String(err && err.message || err);
                 }
-                if (typeof job.resolve === 'function') {
-                    try {
-                        job.resolve(result);
-                    } catch (_) {}
+                if (typeof job.resolve === "function") {
+                    try { job.resolve(result); } catch (_) {}
                 }
             }
             _processingBetQueue = false;
         }
 
-        window.__cw_bet = async function (side, amount) {
+        window.__cw_bet_enqueue = async function (intent) {
             try {
-                side = normalizeSide(side);
-                var amt = Math.max(0, Math.floor(Number(amount) || 0));
-                BET_QUEUE.push({
-                    side: side,
-                    amt: amt,
-                    resolve: null
-                });
+                var job = normalizeIntent(intent);
+                if (!job) return "bad";
+                BET_QUEUE.push(job);
                 processBetQueue();
-                // Báo OK ngay cho C#, không chờ kết quả thực tế
-                return 'ok';
+                safePost({
+                    abx: "bet_queued",
+                    tabId: job.tabId,
+                    roundId: job.roundId,
+                    side: job.side,
+                    amount: job.amt,
+                    ts: Date.now()
+                });
+                return "queued";
             } catch (err) {
                 safePost({
-                    abx: 'bet_error',
+                    abx: "bet_error",
+                    side: (intent && intent.side) ? intent.side : "?",
+                    amount: (intent && intent.amount) ? intent.amount : 0,
+                    error: String(err && err.message || err),
+                    ts: Date.now()
+                });
+                return "fail:" + String(err && err.message || err);
+            }
+        };
+
+        window.__cw_bet_queue_state = function () {
+            return {
+                len: BET_QUEUE.length,
+                processing: _processingBetQueue,
+                roundId: getRoundIdSafe()
+            };
+        };
+
+        window.__cw_bet = async function (side, amount) {
+            try {
+                return String(await window.__cw_bet_enqueue({ side: side, amount: amount }));
+            } catch (err) {
+                safePost({
+                    abx: "bet_error",
                     side: side,
                     amount: amount,
                     error: String(err && err.message || err),
                     ts: Date.now()
                 });
-                return 'fail:' + String(err && err.message || err);
+                return "fail:" + String(err && err.message || err);
             }
         };
 

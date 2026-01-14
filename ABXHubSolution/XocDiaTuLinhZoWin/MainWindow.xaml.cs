@@ -28,6 +28,7 @@ using System.Net.Http.Json;
 using System.ComponentModel;
 using System.Linq;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Windows.Data;
 using static XocDiaTuLinhZoWin.MainWindow;
 using System.Windows.Input;
@@ -211,7 +212,13 @@ namespace XocDiaTuLinhZoWin
 
             char digit = '\0';
             if (u.Length == 1 && char.IsDigit(u[0])) digit = u[0];
-            else if (u.StartsWith("BALL", StringComparison.OrdinalIgnoreCase) && u.Length >= 5 && char.IsDigit(u[4])) digit = u[4];
+            else if (u.StartsWith("BALL", StringComparison.OrdinalIgnoreCase) && u.Length >= 5)
+            {
+                var cBall = u[4];
+                if (cBall == 'C') return FallbackIcons.GetSideChan();
+                if (cBall == 'L') return FallbackIcons.GetSideLe();
+                if (char.IsDigit(cBall)) digit = cBall;
+            }
 
             if (digit >= '0' && digit <= '4')
             {
@@ -234,8 +241,80 @@ namespace XocDiaTuLinhZoWin
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
     }
+
+    public sealed class TabOverlapMarginConverter : IMultiValueConverter
+    {
+        public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+        {
+            int index = 0;
+            if (values != null && values.Length > 0)
+            {
+                if (values[0] is int i) index = i;
+                else if (values[0] != null && int.TryParse(values[0].ToString(), out var parsed)) index = parsed;
+            }
+
+            double overlap = 0;
+            if (values != null && values.Length > 1)
+            {
+                if (values[1] is double d) overlap = d;
+                else if (values[1] != null && double.TryParse(values[1].ToString(), out var od)) overlap = od;
+            }
+
+            int count = 0;
+            if (values != null && values.Length > 2)
+            {
+                if (values[2] is int c) count = c;
+                else if (values[2] != null && int.TryParse(values[2].ToString(), out var pc)) count = pc;
+            }
+
+            const double gap = 6;
+            double left = (index > 0 && overlap > 0) ? -overlap : 0;
+            double right = (count > 0 && index >= count - 1) ? 0 : gap;
+            return new Thickness(left, 0, right, 0);
+        }
+
+        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
+            => throw new NotSupportedException();
+    }
     public partial class MainWindow : Window
     {
+        public static readonly DependencyProperty TabHeaderWidthProperty =
+            DependencyProperty.Register(nameof(TabHeaderWidth), typeof(double), typeof(MainWindow), new PropertyMetadata(120d));
+
+        public static readonly DependencyProperty TabOverlapProperty =
+            DependencyProperty.Register(nameof(TabOverlap), typeof(double), typeof(MainWindow), new PropertyMetadata(0d));
+
+        public double TabHeaderWidth
+        {
+            get => (double)GetValue(TabHeaderWidthProperty);
+            set => SetValue(TabHeaderWidthProperty, value);
+        }
+
+        public double TabOverlap
+        {
+            get => (double)GetValue(TabOverlapProperty);
+            set => SetValue(TabOverlapProperty, value);
+        }
+
+        public static readonly DependencyProperty TabStripWidthProperty =
+            DependencyProperty.Register(nameof(TabStripWidth), typeof(double), typeof(MainWindow), new PropertyMetadata(0d));
+
+        public double TabStripWidth
+        {
+            get => (double)GetValue(TabStripWidthProperty);
+            set => SetValue(TabStripWidthProperty, value);
+        }
+
+        private const double TabMaxWidth = 160;
+        private const double TabMinWidth = 90;
+        private const double TabMinVisibleWidth = 50;
+        private const double TabGap = 6;
+        private const double TabAddButtonWidth = 32;
+        private const double TabAddButtonGap = 4;
+        private const double TabBaseOverlap = 8;
+        private const double TabStripRightInset = 16;
+
+
         private const string AppLocalDirName = "XocDiaTuLinhZoWin"; // đổi thành tên bạn muốn
         // ====== App paths ======
         private readonly string _appDataDir;
@@ -314,7 +393,8 @@ namespace XocDiaTuLinhZoWin
         private System.Threading.Timer? _expireTimer;      // timer tick mỗi giây để cập nhật đếm ngược
         private DateTimeOffset? _runExpiresAt;             // mốc hết hạn của phiên đang chạy (trial hoặc license)
         private string _expireMode = "";                   // "trial" | "license"
-        private string _leaseClientId = "";
+        private string _leaseClientId = "";
+
         private string _leaseSessionId = "";
         private string _licenseUser = "";
         private string _licensePass = "";
@@ -507,8 +587,16 @@ Ví dụ không hợp lệ:
 
 
         // ====== CONFIG ======
+        private record RootConfig
+        {
+            public List<AppConfig> Tabs { get; set; } = new();
+            public string SelectedTabId { get; set; } = "";
+        }
+
         private record AppConfig
         {
+            public string TabId { get; set; } = Guid.NewGuid().ToString("N");
+            public string TabName { get; set; } = "";
             public string Url { get; set; } = "";
             [Obsolete] public string Username { get; set; } = "";
             public string StakeCsv { get; set; } = "1000-3000-7000-15000-33000-69000-142000-291000-595000-1215000";
@@ -547,6 +635,78 @@ Ví dụ không hợp lệ:
 
         }
 
+        private sealed class StrategyTabState : INotifyPropertyChanged
+        {
+            private string _name;
+            private bool _isRunning;
+            private bool _isEditing;
+
+            public StrategyTabState(AppConfig config)
+            {
+                Config = config;
+                _name = string.IsNullOrWhiteSpace(config.TabName) ? "" : config.TabName.Trim();
+            }
+
+            public AppConfig Config { get; }
+            public string Id => Config.TabId;
+
+            public string Name
+            {
+                get => _name;
+                set
+                {
+                    if (_name == value) return;
+                    _name = value;
+                    Config.TabName = value;
+                    OnPropertyChanged(nameof(Name));
+                }
+            }
+
+            public bool IsRunning
+            {
+                get => _isRunning;
+                set
+                {
+                    if (_isRunning == value) return;
+                    _isRunning = value;
+                    OnPropertyChanged(nameof(IsRunning));
+                }
+            }
+
+            public bool IsEditing
+            {
+                get => _isEditing;
+                set
+                {
+                    if (_isEditing == value) return;
+                    _isEditing = value;
+                    OnPropertyChanged(nameof(IsEditing));
+                }
+            }
+
+            public string EditBackupName { get; set; } = "";
+
+            public double WinTotal { get; set; } = 0;
+            public string LastSide { get; set; } = "";
+            public bool? LastWinLoss { get; set; }
+            public long? LastStakeAmount { get; set; }
+            public string LastLevelText { get; set; } = "";
+            public long[] RunStakeSeq { get; set; } = Array.Empty<long>();
+            public List<long[]> RunStakeChains { get; set; } = new();
+            public long[] RunStakeChainTotals { get; set; } = Array.Empty<long>();
+            public double RunDecisionPercent { get; set; } = 0;
+            public bool CutStopTriggered { get; set; } = false;
+
+            public CancellationTokenSource? TaskCts { get; set; }
+            public Task? RunningTask { get; set; }
+            public XocDiaTuLinhZoWin.Tasks.IBetTask? ActiveTask { get; set; }
+            public DecisionState DecisionState { get; set; } = new DecisionState();
+            public bool Cooldown { get; set; } = false;
+
+            public event PropertyChangedEventHandler? PropertyChanged;
+            private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        }
+
         // 1) Model 1 dòng log đặt cược
         private sealed class BetRow
         {
@@ -567,8 +727,14 @@ Ví dụ không hợp lệ:
             public static ImageSource? TuTrang, TuDo, SapDoi, Trang3Do1, Do3Trang1;
         }
 
-
-
+        private const int MaxTabs = 5;
+        private RootConfig _rootCfg = new();
+        private readonly ObservableCollection<StrategyTabState> _strategyTabs = new();
+        private StrategyTabState? _activeTab;
+        private bool _tabSwitching = false;
+        private System.Windows.Threading.DispatcherTimer? _tabHintTimer;
+        private Point _tabDragStart;
+        private bool _tabDragArmed;
         private AppConfig _cfg = new();
 
         // ====== LOGGING (mới: batch, không đơ UI) ======
@@ -758,7 +924,8 @@ Ví dụ không hợp lệ:
             Directory.CreateDirectory(_appDataDir);
 
             _cfgPath = Path.Combine(_appDataDir, "config.json");
-
+
+
 
             _leaseSessionId = Guid.NewGuid().ToString("N");
             _logDir = Path.Combine(_appDataDir, "logs");
@@ -767,6 +934,7 @@ Ví dụ không hợp lệ:
 
             // 2) Sau đó mới dựng UI
             InitializeComponent();
+            _strategyTabs.CollectionChanged += StrategyTabs_CollectionChanged;
             this.ShowInTaskbar = true;                       // có icon riêng
             this.WindowStartupLocation = WindowStartupLocation.CenterScreen; // tuỳ, cho đẹp
             // đảm bảo về Home UI lúc khởi động
@@ -892,6 +1060,9 @@ Ví dụ không hợp lệ:
 
                     if (GroupLoginNav != null)
                         GroupLoginNav.Visibility = showPanels ? Visibility.Collapsed : Visibility.Visible;
+
+                    if (GroupStrategyTabs != null)
+                        GroupStrategyTabs.Visibility = showPanels ? Visibility.Visible : Visibility.Collapsed;
 
                     if (GroupStrategyMoney != null)
                         GroupStrategyMoney.Visibility = showPanels ? Visibility.Visible : Visibility.Collapsed;
@@ -1045,11 +1216,62 @@ Ví dụ không hợp lệ:
                 if (File.Exists(_cfgPath))
                 {
                     var json = File.ReadAllText(_cfgPath, Encoding.UTF8);
-                    _cfg = JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
+                    _rootCfg = JsonSerializer.Deserialize<RootConfig>(json) ?? new RootConfig();
+                    if (_rootCfg.Tabs == null || _rootCfg.Tabs.Count == 0)
+                    {
+                        var legacy = JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
+                        _rootCfg = new RootConfig
+                        {
+                            Tabs = new List<AppConfig> { legacy },
+                            SelectedTabId = legacy.TabId
+                        };
+                    }
                     Log("Loaded config: " + _cfgPath);
                 }
+
+                if (_rootCfg.Tabs == null) _rootCfg.Tabs = new List<AppConfig>();
+                if (_rootCfg.Tabs.Count == 0)
+                    _rootCfg.Tabs.Add(CreateDefaultTab(1));
+
+                if (_rootCfg.Tabs.Count > MaxTabs)
+                    _rootCfg.Tabs = _rootCfg.Tabs.Take(MaxTabs).ToList();
+
+                _strategyTabs.Clear();
+                for (int i = 0; i < _rootCfg.Tabs.Count; i++)
+                {
+                    var tabCfg = _rootCfg.Tabs[i] ?? new AppConfig();
+                    if (string.IsNullOrWhiteSpace(tabCfg.TabId))
+                        tabCfg.TabId = Guid.NewGuid().ToString("N");
+                    tabCfg.TabName = FixBrokenTabName(tabCfg.TabName, i + 1);
+                    var tab = new StrategyTabState(tabCfg) { Name = tabCfg.TabName };
+                    _strategyTabs.Add(tab);
+                }
+
+                _activeTab = _strategyTabs.FirstOrDefault(t => t.Id == _rootCfg.SelectedTabId)
+                             ?? _strategyTabs.FirstOrDefault();
+                if (_activeTab == null)
+                {
+                    var fallback = CreateDefaultTab(1);
+                    var tab = new StrategyTabState(fallback) { Name = fallback.TabName };
+                    _strategyTabs.Add(tab);
+                    _activeTab = tab;
+                }
+
+                _cfg = _activeTab.Config;
+                _rootCfg.SelectedTabId = _activeTab.Id;
+                SyncGlobalFieldsFromActive();
+
+                if (StrategyTabList != null)
+                {
+                    _tabSwitching = true;
+                    StrategyTabList.ItemsSource = _strategyTabs;
+                    StrategyTabList.SelectedItem = _activeTab;
+                    _tabSwitching = false;
+                }
+                UpdateAddTabUi();
+
                 _homeUsername = _cfg.LastHomeUsername;
-                // Sinh / nạp clientId cố định cho lease
+                // Sinh / n?p clientId c? ??nh cho lease
                 _leaseClientId = string.IsNullOrWhiteSpace(_cfg.LeaseClientId)
                     ? (_cfg.LeaseClientId = Guid.NewGuid().ToString("N"))
                     : _cfg.LeaseClientId;
@@ -1057,56 +1279,14 @@ Ví dụ không hợp lệ:
                 if (string.IsNullOrWhiteSpace(_cfg.Url))
                     _cfg.Url = DEFAULT_URL;
                 if (TxtUrl != null) TxtUrl.Text = _cfg.Url;
-                if (TxtStakeCsv != null)
-                {
-                    TxtStakeCsv.Text = _cfg.StakeCsv;
-                    RebuildStakeSeq(_cfg.StakeCsv);
-                    Log($"[StakeCsv] loaded: {_cfg.StakeCsv} -> {_stakeSeq.Length} mức");
 
-                }
-                if (CmbBetStrategy != null)
-                    CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 16) ? _cfg.BetStrategyIndex : 16;
-                SyncStrategyFieldsToUI();
-                UpdateTooltips();
-                UpdateBetStrategyUi();
-
-
-                if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString();
-                if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
-                LoadStakeCsvForCurrentMoneyStrategy();// NEW: nạp chuỗi tiền theo “Quản lý vốn” hiện tại
-                if (ChkS7ResetOnProfit != null) ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
-                MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
-                UpdateS7ResetOptionUI();
-
-                if (TxtSideRatio != null)
-                {
-                    var sideTxt = string.IsNullOrWhiteSpace(_cfg.SideRateText) ? XocDiaTuLinhZoWin.Tasks.SideRateParser.DefaultText : _cfg.SideRateText;
-                    TxtSideRatio.Text = sideTxt;
-                    _cfg.SideRateText = sideTxt;
-                }
-
-
-                if (ChkRemember != null) ChkRemember.IsChecked = _cfg.RememberCreds;
-
-                if (_cfg.RememberCreds)
-                {
-                    var user = UnprotectString(_cfg.EncUser);
-                    var pass = UnprotectString(_cfg.EncPass);
-                    if (TxtUser != null) TxtUser.Text = user;
-                    if (TxtPass != null) TxtPass.Password = pass;
-                }
-                else
-                {
-                    if (!string.IsNullOrEmpty(_cfg.Username) && TxtUser != null)
-                        TxtUser.Text = _cfg.Username;
-                }
-
-                if (ChkTrial != null) ChkTrial.IsChecked = _cfg.UseTrial;
-                ApplyCutUiFromConfig();
-
-
+                ApplyGlobalConfigToUi();
+                ApplyActiveTabToUi();
             }
-            catch (Exception ex) { Log("[LoadConfig] " + ex); }
+            catch (Exception ex)
+            {
+                Log("[LoadConfig] " + ex);
+            }
         }
 
         private async Task SaveConfigAsync()
@@ -1120,38 +1300,22 @@ Ví dụ không hợp lệ:
             await _cfgWriteGate.WaitAsync();
             try
             {
-                _cfg.Url = T(TxtUrl);
-                _cfg.StakeCsv = T(TxtStakeCsv, "1000,2000,4000,8000,16000");
-                _cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
-                _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? _cfg.BetStrategyIndex;
-                _cfg.BetSeq = T(TxtChuoiCau, _cfg.BetSeq);
-                _cfg.BetPatterns = T(TxtTheCau, _cfg.BetPatterns);
-                _cfg.SideRateText = T(TxtSideRatio, _cfg.SideRateText);
-
-                var remember = (ChkRemember?.IsChecked == true);
-                _cfg.RememberCreds = remember;
-                if (remember)
+                if (_activeTab != null)
                 {
-                    _cfg.EncUser = ProtectString(T(TxtUser));
-                    _cfg.EncPass = ProtectString(P(TxtPass));
-                    _cfg.Username = "";
+                    ApplyUiToConfig(_activeTab.Config);
+                    SyncGlobalFieldsFromActive();
                 }
-                else { _cfg.EncUser = ""; _cfg.EncPass = ""; _cfg.Username = ""; }
 
-                _cfg.LockMouse = (ChkLockMouse?.IsChecked == true);
-                _cfg.UseTrial = (ChkTrial?.IsChecked == true);
-                _cfg.LeaseClientId = _leaseClientId;
-                _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
-                if (ChkS7ResetOnProfit != null)
-                    _cfg.S7ResetOnProfit = (ChkS7ResetOnProfit.IsChecked == true);
-
+                if (_rootCfg.Tabs == null) _rootCfg.Tabs = new List<AppConfig>();
+                _rootCfg.Tabs = _strategyTabs.Select(t => t.Config).ToList();
+                _rootCfg.SelectedTabId = _activeTab?.Id ?? "";
 
                 var dir = Path.GetDirectoryName(_cfgPath);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-                var json = JsonSerializer.Serialize(_cfg, new JsonSerializerOptions { WriteIndented = true });
+                var json = JsonSerializer.Serialize(_rootCfg, new JsonSerializerOptions { WriteIndented = true });
 
-                // Ghi an toàn: file tạm -> move (atomic)
+                // Ghi an toan: file tam -> move (atomic)
                 var tmp = _cfgPath + ".tmp";
                 await File.WriteAllTextAsync(tmp, json, Encoding.UTF8);
                 File.Move(tmp, _cfgPath, true);
@@ -1160,6 +1324,551 @@ Ví dụ không hợp lệ:
             }
             catch (Exception ex) { Log("[SaveConfig] " + ex); }
             finally { _cfgWriteGate.Release(); }
+        }
+
+        private static AppConfig CreateDefaultTab(int index)
+        {
+            return new AppConfig
+            {
+                TabId = Guid.NewGuid().ToString("N"),
+                TabName = $"Chiến lược {index}"
+            };
+        }
+
+        private static void CopyGlobalFields(AppConfig src, AppConfig dest)
+        {
+            dest.Url = src.Url;
+            dest.RememberCreds = src.RememberCreds;
+            dest.EncUser = src.EncUser;
+            dest.EncPass = src.EncPass;
+            dest.Username = src.Username;
+            dest.LeaseClientId = src.LeaseClientId;
+            dest.LastHomeUsername = src.LastHomeUsername;
+            dest.TrialUntil = src.TrialUntil;
+            dest.AiNGramStatePath = src.AiNGramStatePath;
+        }
+
+        private void SyncGlobalFieldsFromActive()
+        {
+            if (_activeTab == null) return;
+            foreach (var tab in _strategyTabs)
+            {
+                if (ReferenceEquals(tab.Config, _activeTab.Config)) continue;
+                CopyGlobalFields(_activeTab.Config, tab.Config);
+            }
+        }
+
+        private void ApplyGlobalConfigToUi()
+        {
+            if (ChkRemember != null) ChkRemember.IsChecked = _cfg.RememberCreds;
+
+            if (_cfg.RememberCreds)
+            {
+                var user = UnprotectString(_cfg.EncUser);
+                var pass = UnprotectString(_cfg.EncPass);
+                if (TxtUser != null) TxtUser.Text = user;
+                if (TxtPass != null) TxtPass.Password = pass;
+            }
+            else
+            {
+                if (!string.IsNullOrEmpty(_cfg.Username) && TxtUser != null)
+                    TxtUser.Text = _cfg.Username;
+            }
+        }
+
+        private void ApplyActiveTabToUi()
+        {
+            if (_activeTab == null) return;
+            _tabSwitching = true;
+            try
+            {
+                if (TxtStakeCsv != null)
+                {
+                    TxtStakeCsv.Text = _cfg.StakeCsv;
+                    RebuildStakeSeq(_cfg.StakeCsv);
+                    Log($"[StakeCsv] loaded: {_cfg.StakeCsv} -> {_stakeSeq.Length} mức");
+                }
+                if (CmbBetStrategy != null)
+                    CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 16) ? _cfg.BetStrategyIndex : 16;
+                SyncStrategyFieldsToUI();
+                UpdateTooltips();
+                UpdateBetStrategyUi();
+
+                if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString();
+                if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
+                LoadStakeCsvForCurrentMoneyStrategy();
+                if (ChkS7ResetOnProfit != null) ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
+                if (!IsAnyTabRunning() || IsActiveTabRunning())
+                    MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
+                UpdateS7ResetOptionUI();
+
+                if (TxtSideRatio != null)
+                {
+                    var sideTxt = string.IsNullOrWhiteSpace(_cfg.SideRateText)
+                        ? XocDiaTuLinhZoWin.Tasks.SideRateParser.DefaultText
+                        : _cfg.SideRateText;
+                    TxtSideRatio.Text = sideTxt;
+                    _cfg.SideRateText = sideTxt;
+                }
+
+                if (ChkTrial != null) ChkTrial.IsChecked = _cfg.UseTrial;
+                if (ChkLockMouse != null) ChkLockMouse.IsChecked = _cfg.LockMouse;
+
+                ApplyCutUiFromConfig();
+                ApplyTabRuntimeToUi(_activeTab);
+                SetPlayButtonState(_activeTab.IsRunning);
+            }
+            finally { _tabSwitching = false; }
+        }
+
+        private void ApplyTabRuntimeToUi(StrategyTabState tab)
+        {
+            if (LblWin != null) LblWin.Text = tab.WinTotal.ToString("N0");
+            if (LblStake != null) LblStake.Text = tab.LastStakeAmount.HasValue ? tab.LastStakeAmount.Value.ToString("N0") : "";
+            if (LblLevel != null) LblLevel.Text = tab.LastLevelText ?? "";
+            SetLastSideUI(tab.LastSide);
+            SetWinLossUI(tab.LastWinLoss);
+        }
+
+        private void ApplyUiToConfig(AppConfig cfg)
+        {
+            cfg.Url = T(TxtUrl);
+            cfg.StakeCsv = T(TxtStakeCsv, "1000,2000,4000,8000,16000");
+            cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
+            cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? cfg.BetStrategyIndex;
+            cfg.BetSeq = T(TxtChuoiCau, cfg.BetSeq);
+            cfg.BetPatterns = T(TxtTheCau, cfg.BetPatterns);
+            cfg.SideRateText = T(TxtSideRatio, cfg.SideRateText);
+
+            var remember = (ChkRemember?.IsChecked == true);
+            cfg.RememberCreds = remember;
+            if (remember)
+            {
+                cfg.EncUser = ProtectString(T(TxtUser));
+                cfg.EncPass = ProtectString(P(TxtPass));
+                cfg.Username = "";
+            }
+            else { cfg.EncUser = ""; cfg.EncPass = ""; cfg.Username = ""; }
+
+            cfg.LockMouse = (ChkLockMouse?.IsChecked == true);
+            cfg.UseTrial = (ChkTrial?.IsChecked == true);
+            cfg.LeaseClientId = _leaseClientId;
+            cfg.MoneyStrategy = GetMoneyStrategyFromUI();
+            if (ChkS7ResetOnProfit != null)
+                cfg.S7ResetOnProfit = (ChkS7ResetOnProfit.IsChecked == true);
+        }
+
+        private void UpdateAddTabUi()
+        {
+            if (BtnAddStrategyTab == null) return;
+            var blocked = _strategyTabs.Count >= MaxTabs;
+            BtnAddStrategyTab.Opacity = blocked ? 0.5 : 1.0;
+            BtnAddStrategyTab.Cursor = blocked ? Cursors.Arrow : Cursors.Hand;
+        }
+
+        private void ShowTabHint(string message)
+        {
+            if (LblTabHint == null) return;
+            LblTabHint.Text = message;
+            LblTabHint.Visibility = Visibility.Visible;
+            _tabHintTimer?.Stop();
+            _tabHintTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(2)
+            };
+            _tabHintTimer.Tick += (_, __) =>
+            {
+                if (LblTabHint != null) LblTabHint.Visibility = Visibility.Collapsed;
+                _tabHintTimer?.Stop();
+            };
+            _tabHintTimer.Start();
+        }
+
+        private static string FixBrokenTabName(string? name, int index)
+        {
+            var trimmed = (name ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(trimmed))
+                return $"Chiến lược {index}";
+
+            if (trimmed.Equals($"Chi?n l??c {index}", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals($"Chi?n lu?c {index}", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals($"Chi?n l?c {index}", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"Chiến lược {index}";
+            }
+
+            return name ?? "";
+        }
+
+        private string NormalizeTabName(StrategyTabState tab)
+        {
+            var name = (tab.Name ?? "").Trim();
+            if (name.Length > 20) name = name.Substring(0, 20);
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                if (!string.IsNullOrWhiteSpace(tab.EditBackupName))
+                    name = tab.EditBackupName;
+                else
+                    name = $"Chiến lược {_strategyTabs.IndexOf(tab) + 1}";
+            }
+            return name;
+        }
+
+        private bool IsAnyTabRunning()
+        {
+            return _strategyTabs.Any(t => t.IsRunning);
+        }
+
+        private bool HasJackpotMultiSideRunning()
+        {
+            return _strategyTabs.Any(t => t.IsRunning && t.ActiveTask is XocDiaTuLinhZoWin.Tasks.JackpotMultiSideTask);
+        }
+
+        private bool IsActiveTabRunning()
+        {
+            return _activeTab != null && _activeTab.IsRunning;
+        }
+
+        private static bool TryGetStrategyIndex(string? name, out int index)
+        {
+            index = 0;
+            var trimmed = (name ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(trimmed)) return false;
+
+            var norm = TextNorm.RemoveDiacritics(trimmed).ToUpperInvariant();
+            var match = Regex.Match(norm, @"^CHIEN\s*LUOC\s*(\d+)$");
+            if (!match.Success)
+                match = Regex.Match(norm, @"^CHIENLUOC\s*(\d+)$");
+            if (!match.Success) return false;
+
+            return int.TryParse(match.Groups[1].Value, out index) && index > 0;
+        }
+
+        private int GetNextStrategyIndex()
+        {
+            var used = new HashSet<int>();
+            foreach (var tab in _strategyTabs)
+            {
+                if (TryGetStrategyIndex(tab.Name, out var idx))
+                    used.Add(idx);
+            }
+
+            for (int i = 1; i <= MaxTabs; i++)
+            {
+                if (!used.Contains(i))
+                    return i;
+            }
+
+            return Math.Min(_strategyTabs.Count + 1, MaxTabs);
+        }
+
+        private void SwitchTab(StrategyTabState tab)
+        {
+            if (_activeTab != null && ReferenceEquals(_activeTab, tab))
+                return;
+
+            if (_activeTab != null)
+            {
+                ApplyUiToConfig(_activeTab.Config);
+                SyncGlobalFieldsFromActive();
+            }
+
+            _activeTab = tab;
+            _cfg = tab.Config;
+            _rootCfg.SelectedTabId = tab.Id;
+            if (StrategyTabList != null && StrategyTabList.SelectedItem != tab)
+            {
+                _tabSwitching = true;
+                StrategyTabList.SelectedItem = tab;
+                _tabSwitching = false;
+            }
+            ApplyActiveTabToUi();
+            if (_uiReady) ApplyMouseShieldFromCheck();
+            _ = SaveConfigAsync();
+        }
+
+        private void StrategyTabList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_tabSwitching) return;
+            if (StrategyTabList?.SelectedItem is StrategyTabState tab)
+                SwitchTab(tab);
+        }
+
+        private void StrategyTabList_Loaded(object sender, RoutedEventArgs e)
+        {
+            UpdateTabHeaderLayout();
+            ScrollTabsToEnd();
+        }
+
+        private void StrategyTabList_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (!e.WidthChanged) return;
+            UpdateTabHeaderLayout();
+            ScrollTabsToEnd();
+        }
+
+        private void StrategyTabItem_RequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)
+        {
+            e.Handled = true;
+        }
+
+        private void StrategyTabHost_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (!e.WidthChanged) return;
+            UpdateTabHeaderLayout();
+        }
+
+        private void ScrollTabsToEnd()
+        {
+            if (StrategyTabList == null) return;
+            var sv = FindVisualChild<ScrollViewer>(StrategyTabList);
+            sv?.ScrollToLeftEnd();
+        }
+
+        private void UpdateTabHeaderLayout()
+        {
+            if (StrategyTabList == null) return;
+            int count = _strategyTabs.Count;
+            if (count <= 0)
+            {
+                TabHeaderWidth = TabMaxWidth;
+                TabOverlap = 0;
+                TabStripWidth = 0;
+                return;
+            }
+
+            double hostWidth = StrategyTabHost?.ActualWidth ?? 0;
+            double avail = Math.Max(0, hostWidth - TabAddButtonWidth - TabAddButtonGap);
+            double availInner = Math.Max(0, avail - TabStripRightInset);
+            if (avail <= 0) return;
+
+            double widthNoOverlap = (availInner - TabGap * (count - 1)) / count;
+            double width = Math.Min(TabMaxWidth, widthNoOverlap);
+            double overlap = 0;
+            if (width >= TabMinWidth)
+            {
+                overlap = Math.Min(TabBaseOverlap, Math.Max(0, width - TabMinVisibleWidth));
+            }
+            else
+            {
+                width = Math.Max(TabMinVisibleWidth, widthNoOverlap);
+                double total = width * count + TabGap * (count - 1);
+                if (total > availInner && count > 1)
+                {
+                    double requiredOverlap = (total - availInner) / (count - 1);
+                    double maxOverlap = Math.Max(0, width - TabMinVisibleWidth);
+                    overlap = Math.Min(requiredOverlap, maxOverlap);
+                }
+            }
+
+            TabHeaderWidth = Math.Round(width, 2);
+            TabOverlap = Math.Round(overlap, 2);
+            var strip = TabHeaderWidth * count + (TabGap - TabOverlap) * (count - 1);
+            TabStripWidth = Math.Min(availInner, strip) + TabGap;
+        }
+
+        private void StrategyTabList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is not ListBox) return;
+            if (FindAncestor<Button>(e.OriginalSource as DependencyObject) != null) { _tabDragArmed = false; return; }
+            if (FindAncestor<TextBox>(e.OriginalSource as DependencyObject) != null) { _tabDragArmed = false; return; }
+            var item = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject);
+            if (item == null)
+            {
+                _tabDragArmed = false;
+                return;
+            }
+            _tabDragStart = e.GetPosition(null);
+            _tabDragArmed = true;
+        }
+
+        private void StrategyTabList_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            if (e.LeftButton != MouseButtonState.Pressed || !_tabDragArmed) return;
+            var pos = e.GetPosition(null);
+            if (Math.Abs(pos.X - _tabDragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+                Math.Abs(pos.Y - _tabDragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
+                return;
+
+            _tabDragArmed = false;
+            var item = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject);
+            if (item?.DataContext is StrategyTabState tab)
+            {
+                DragDrop.DoDragDrop(item, tab, DragDropEffects.Move);
+            }
+        }
+
+        private void StrategyTabList_Drop(object sender, DragEventArgs e)
+        {
+            if (StrategyTabList == null) return;
+            if (!e.Data.GetDataPresent(typeof(StrategyTabState))) return;
+
+            var dropped = e.Data.GetData(typeof(StrategyTabState)) as StrategyTabState;
+            if (dropped == null) return;
+
+            var targetItem = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject);
+            var target = targetItem?.DataContext as StrategyTabState;
+            if (target == null || ReferenceEquals(dropped, target)) return;
+
+            var oldIndex = _strategyTabs.IndexOf(dropped);
+            var newIndex = _strategyTabs.IndexOf(target);
+            if (oldIndex < 0 || newIndex < 0) return;
+
+            _tabSwitching = true;
+            _strategyTabs.Move(oldIndex, newIndex);
+            if (_activeTab != null)
+                StrategyTabList.SelectedItem = _activeTab;
+            _tabSwitching = false;
+
+            _rootCfg.Tabs = _strategyTabs.Select(t => t.Config).ToList();
+            _rootCfg.SelectedTabId = _activeTab?.Id ?? "";
+            _ = SaveConfigAsync();
+        }
+
+        private void StrategyTabs_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                UpdateTabHeaderLayout();
+                ScrollTabsToEnd();
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+
+
+        private void AddStrategyTab_Click(object sender, RoutedEventArgs e)
+        {
+            if (_strategyTabs.Count >= MaxTabs)
+            {
+                ShowTabHint("Chỉ được mở tối đa 5 chiến lược");
+                return;
+            }
+
+            if (_activeTab != null)
+            {
+                ApplyUiToConfig(_activeTab.Config);
+                SyncGlobalFieldsFromActive();
+            }
+
+            var cfg = CreateDefaultTab(GetNextStrategyIndex());
+            if (_activeTab != null)
+                CopyGlobalFields(_activeTab.Config, cfg);
+
+            var tab = new StrategyTabState(cfg) { Name = cfg.TabName };
+            _strategyTabs.Add(tab);
+            UpdateAddTabUi();
+
+            if (StrategyTabList != null)
+                StrategyTabList.SelectedItem = tab;
+            Dispatcher.BeginInvoke(new Action(ScrollTabsToEnd), System.Windows.Threading.DispatcherPriority.Loaded);
+
+            _ = SaveConfigAsync();
+        }
+
+        private async void TabClose_Click(object sender, RoutedEventArgs e)
+        {
+            if ((sender as Button)?.Tag is not StrategyTabState tab)
+                return;
+
+            if (_strategyTabs.Count <= 1)
+            {
+                ShowTabHint("Cần tối thiểu 1 chiến lược");
+                return;
+            }
+
+            if (tab.IsRunning)
+            {
+                if (!ReferenceEquals(tab, _activeTab))
+                    SwitchTab(tab);
+                StopXocDia_Click(this, new RoutedEventArgs());
+            }
+
+            var idx = _strategyTabs.IndexOf(tab);
+            _strategyTabs.Remove(tab);
+            UpdateAddTabUi();
+
+            if (_strategyTabs.Count > 0 && StrategyTabList != null)
+            {
+                var next = _strategyTabs[Math.Min(idx, _strategyTabs.Count - 1)];
+                StrategyTabList.SelectedItem = next;
+            }
+
+            _rootCfg.Tabs = _strategyTabs.Select(t => t.Config).ToList();
+            _rootCfg.SelectedTabId = _activeTab?.Id ?? "";
+            await SaveConfigAsync();
+        }
+
+        private void TabHeader_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount != 2) return;
+            if (sender is Border border && border.DataContext is StrategyTabState tab)
+            {
+                tab.EditBackupName = tab.Name;
+                tab.IsEditing = true;
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    var tb = FindVisualChild<TextBox>(border);
+                    if (tb != null)
+                    {
+                        tb.Focus();
+                        tb.SelectAll();
+                    }
+                }), System.Windows.Threading.DispatcherPriority.Input);
+                e.Handled = true;
+            }
+        }
+
+        private void TabNameEdit_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (sender is not TextBox tb || tb.DataContext is not StrategyTabState tab) return;
+            if (e.Key == Key.Enter)
+            {
+                CommitTabName(tab);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape)
+            {
+                tab.Name = tab.EditBackupName;
+                tab.IsEditing = false;
+                e.Handled = true;
+            }
+        }
+
+        private void TabNameEdit_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (sender is TextBox tb && tb.DataContext is StrategyTabState tab)
+                CommitTabName(tab);
+        }
+
+        private void CommitTabName(StrategyTabState tab)
+        {
+            var name = NormalizeTabName(tab);
+            tab.Name = name;
+            tab.IsEditing = false;
+            _ = SaveConfigAsync();
+        }
+
+        private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+        {
+            if (parent == null) return null;
+            int count = VisualTreeHelper.GetChildrenCount(parent);
+            for (int i = 0; i < count; i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T found) return found;
+                var next = FindVisualChild<T>(child);
+                if (next != null) return next;
+            }
+            return null;
+        }
+
+        private static T? FindAncestor<T>(DependencyObject? child) where T : DependencyObject
+        {
+            while (child != null)
+            {
+                if (child is T match) return match;
+                child = VisualTreeHelper.GetParent(child);
+            }
+            return null;
         }
 
         // ====== WebView2 ======
@@ -1303,7 +2012,7 @@ Ví dụ không hợp lệ:
                                                 if (_pendingRows.Count > 0 && accNow2.HasValue)
                                                 {
                                                     // Chiến lược 17 tự finalize nhiều cửa theo winners
-                                                    if (_activeTask is not XocDiaTuLinhZoWin.Tasks.JackpotMultiSideTask)
+                                                    if (!HasJackpotMultiSideRunning())
                                                     {
                                         FinalizeLastBet(kqStr, accNow2.Value);
                                                     }
@@ -2139,7 +2848,7 @@ Ví dụ không hợp lệ:
                     await ApplyBackgroundForStateAsync(); // đúng hành vi cũ sau khi có URL
                 }
 
-                SetPlayButtonState(_taskCts != null); // (nếu trong SetPlayButtonState có SetConfigEditable thì sẽ khóa/mở các ô)
+                SetPlayButtonState(_activeTab?.IsRunning == true); // (nếu trong SetPlayButtonState có SetConfigEditable thì sẽ khóa/mở các ô)
                 ApplyMouseShieldFromCheck();
 
                 // --- BẮT ĐẦU GIÁM SÁT UI MODE ---
@@ -2236,7 +2945,7 @@ Ví dụ không hợp lệ:
 
         private async void TxtUrl_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (!_uiReady) return;
+            if (!_uiReady || _tabSwitching) return;
 
             _navCts = await DebounceAsync(_navCts, 300, async () =>
             {
@@ -2255,7 +2964,7 @@ Ví dụ không hợp lệ:
 
         private async void TxtUser_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (!_uiReady) return;
+            if (!_uiReady || _tabSwitching) return;
             _userCts = await DebounceAsync(_userCts, 150, async () =>
             {
                 await SaveConfigAsync();
@@ -2264,7 +2973,7 @@ Ví dụ không hợp lệ:
         }
         private async void TxtPass_PasswordChanged(object sender, RoutedEventArgs e)
         {
-            if (!_uiReady) return;
+            if (!_uiReady || _tabSwitching) return;
             _passCts = await DebounceAsync(_passCts, 150, async () =>
             {
                 await SaveConfigAsync();
@@ -2274,6 +2983,7 @@ Ví dụ không hợp lệ:
 
         private async void ChkTrial_Click(object sender, RoutedEventArgs e)
         {
+            if (_tabSwitching) return;
             try { await SaveConfigAsync(); }
             catch (Exception ex) { Log("[ChkTrial] " + ex.Message); }
         }
@@ -2312,25 +3022,31 @@ Ví dụ không hợp lệ:
                     if (isS7)
                         ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
                 }
-                MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
+                if (!IsAnyTabRunning() || IsActiveTabRunning())
+                    MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
             }
             catch { }
         }
 
         private async void ChkS7ResetOnProfit_Changed(object sender, RoutedEventArgs e)
         {
-            if (!_uiReady) return;
+            if (!_uiReady || _tabSwitching) return;
             _cfg.S7ResetOnProfit = (ChkS7ResetOnProfit?.IsChecked == true);
-            MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
-            MoneyHelper.ResetTempProfitForWinUpLoseKeep();
-            await SaveConfigAsync();
+            if (!IsAnyTabRunning() || IsActiveTabRunning())
+            {
+                MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
+                MoneyHelper.ResetTempProfitForWinUpLoseKeep();
+            }
+
+                await SaveConfigAsync();
         }
 
         async void CmbMoneyStrategy_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (!_uiReady) return;
+            if (!_uiReady || _tabSwitching) return;
             _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
-            XocDiaTuLinhZoWin.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
+            if (!IsAnyTabRunning() || IsActiveTabRunning())
+                XocDiaTuLinhZoWin.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             // NEW: mỗi “Quản lý vốn” có chuỗi tiền riêng → nạp lại ô StakeCsv
             LoadStakeCsvForCurrentMoneyStrategy();
             UpdateS7ResetOptionUI();
@@ -3699,7 +4415,7 @@ Ví dụ không hợp lệ:
 
         private async void TxtStakeCsv_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (!_uiReady) return;
+            if (!_uiReady || _tabSwitching) return;
 
             _stakeCts = await DebounceAsync(_stakeCts, 150, async () =>
             {
@@ -3720,7 +4436,7 @@ Ví dụ không hợp lệ:
 
         private async void TxtSideRatio_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (!_uiReady) return;
+            if (!_uiReady || _tabSwitching) return;
 
             _sideRateCts = await DebounceAsync(_sideRateCts, 150, async () =>
             {
@@ -3764,83 +4480,71 @@ Ví dụ không hợp lệ:
             UpdateTooltips();
             ShowErrorsForCurrentStrategy();   // <— thêm dòng này
 
-            if (!_uiReady) return;
+            if (!_uiReady || _tabSwitching) return;
             _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? 4;
             await SaveConfigAsync();
         }
-
-
-
-        private GameContext BuildContext(bool useRawWinAmount = false)
+        private GameContext BuildContext(StrategyTabState tab, bool useRawWinAmount = false)
         {
             var applyWinTax = !useRawWinAmount;
+            var cfg = tab?.Config ?? _cfg;
+            var stakeSeq = (tab?.RunStakeSeq != null && tab.RunStakeSeq.Length > 0)
+                ? tab.RunStakeSeq
+                : (_stakeSeq ?? Array.Empty<long>());
+            var stakeChains = (tab?.RunStakeChains != null && tab.RunStakeChains.Count > 0)
+                ? tab.RunStakeChains
+                : (_stakeChains ?? new List<long[]>());
+            var stakeChainTotals = (tab?.RunStakeChainTotals != null && tab.RunStakeChainTotals.Length > 0)
+                ? tab.RunStakeChainTotals
+                : _stakeChainTotals;
+            var decisionPercent = (tab != null && tab.RunDecisionPercent > 0) ? tab.RunDecisionPercent : _decisionPercent;
 
-            // NEW: đóng băng strategyId tại thời điểm tạo context để tránh bị đổi giữa chừng
-            var moneyStrategyId = _cfg.MoneyStrategy ?? "IncreaseWhenLose";
+            var stakeSeqArr = stakeSeq.ToArray();
+            var stakeChainsArr = stakeChains.Select(a => a.ToArray()).ToArray();
+            var stakeChainTotalsArr = stakeChainTotals?.ToArray() ?? Array.Empty<long>();
+
+            var moneyStrategyId = cfg.MoneyStrategy ?? "IncreaseWhenLose";
 
             return new GameContext
             {
                 GetSnap = () => { lock (_snapLock) return _lastSnap; },
+                TabId = tab.Id,
                 EvalJsAsync = (js) => Dispatcher.InvokeAsync(() => Web.ExecuteScriptAsync(js)).Task.Unwrap(),
                 Log = (s) => Log(s),
 
-                StakeSeq = _stakeSeq,
-                StakeChains = _stakeChains.Select(a => a.ToArray()).ToArray(),
-                StakeChainTotals = _stakeChainTotals,
+                StakeSeq = stakeSeqArr,
+                StakeChains = stakeChainsArr,
+                StakeChainTotals = stakeChainTotalsArr,
 
-                DecisionPercent = _decisionPercent,
-                State = _dec,
+                DecisionPercent = decisionPercent,
+                State = tab.DecisionState,
                 UiDispatcher = Dispatcher,
-                GetCooldown = () => _cooldown,
-                SetCooldown = (v) => _cooldown = v,
+                GetCooldown = () => tab.Cooldown,
+                SetCooldown = (v) => tab.Cooldown = v,
 
-                // NEW: dùng biến moneyStrategyId đã đóng băng
                 MoneyStrategyId = moneyStrategyId,
 
-                SideRateText = _cfg.SideRateText ?? XocDiaTuLinhZoWin.Tasks.SideRateParser.DefaultText,
+                SideRateText = cfg.SideRateText ?? XocDiaTuLinhZoWin.Tasks.SideRateParser.DefaultText,
                 UseRawWinAmount = useRawWinAmount,
-                BetSeq = _cfg.BetSeq ?? "",
-                BetPatterns = _cfg.BetPatterns ?? "",
+                BetSeq = cfg.BetSeq ?? "",
+                BetPatterns = cfg.BetPatterns ?? "",
                 UiFinalizeMultiBet = (winners, resultDisplay) => Dispatcher.Invoke(() =>
                 {
                     try { FinalizePendingBetsWithWinners(winners, resultDisplay); } catch { }
                 }),
                 UiSetChainLevel = (chain, level) => Dispatcher.Invoke(() =>
                 {
-                    try { SetLevelForMultiChain(chain, level); } catch { }
+                    try { SetLevelForMultiChain(tab, chain, level); } catch { }
                 }),
 
                 // ==== 3 callback UI ====
                 UiSetSide = s => Dispatcher.Invoke(() =>
                 {
-                    SetLastSideUI(s);
+                    UpdateTabSide(tab, s);
                 }),
                 UiSetStake = v => Dispatcher.Invoke(() =>
                 {
-                    // TIỀN CƯỢC
-                    if (LblStake != null)
-                        LblStake.Text = v.ToString("N0");
-
-                    // Với MultiChain, mức tiền sẽ được set qua UiSetChainLevel
-                    if (moneyStrategyId == "MultiChain") return;
-
-                    if (LblLevel != null)
-                    {
-                        try
-                        {
-                            var seq = _stakeSeq ?? Array.Empty<long>();
-                            var rounded = (long)Math.Round(v);
-                            var idx = Array.IndexOf(seq, rounded); // 0-based
-
-                            LblLevel.Text = (idx >= 0 && seq.Length > 0)
-                                ? $"{idx + 1}/{seq.Length}"
-                                : "";
-                        }
-                        catch
-                        {
-                            LblLevel.Text = "";
-                        }
-                    }
+                    UpdateTabStake(tab, v, stakeSeqArr, moneyStrategyId);
                 }),
 
                 UiAddWin = delta =>
@@ -3848,38 +4552,27 @@ Ví dụ không hợp lệ:
                     void Apply()
                     {
                         var net = (applyWinTax && delta > 0) ? Math.Round(delta * 0.98) : delta;
-                        _winTotal += net;
-
-                        // NEW: dùng moneyStrategyId đã đóng băng (không đọc _cfg.MoneyStrategy ở đây nữa)
-                        try
-                        {
-                            XocDiaTuLinhZoWin.Tasks.MoneyHelper.NotifyTempProfit(moneyStrategyId, net);
-                        }
-                        catch { /* ignore */ }
-
-                        if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
-                        CheckCutAndStopIfNeeded();
+                        UpdateTabWin(tab, net, moneyStrategyId);
                     }
 
-                    // QUAN TRỌNG: chạy đồng bộ để SmartPrevTask await xong là net/cờ reset đã cập nhật xong
                     if (Dispatcher.CheckAccess()) Apply();
                     else Dispatcher.Invoke(Apply);
                 },
 
                 UiWinLoss = s => Dispatcher.Invoke(() =>
                 {
-                    SetWinLossUI(s);
+                    UpdateTabWinLoss(tab, s);
                 }),
             };
         }
 
-
-        private async Task StartTaskAsync(IBetTask task, CancellationToken ct, bool useRawWinAmount = false)
+        private async Task StartTaskAsync(StrategyTabState tab, IBetTask task, CancellationToken ct, bool useRawWinAmount = false)
         {
-            _activeTask = task;
+            tab.ActiveTask = task;
             _dec = new DecisionState(); // reset trạng thái cho task mới
+            tab.DecisionState = new DecisionState();
             XocDiaTuLinhZoWin.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
-            var ctx = BuildContext(useRawWinAmount);
+            var ctx = BuildContext(tab, useRawWinAmount);
             // === Preflight: chờ __cw_bet sẵn sàng trước khi chạy chiến lược ===
             for (int i = 0; i < 25; i++) // 25 * 200ms ~= 5s
             {
@@ -3893,11 +4586,38 @@ Ví dụ không hợp lệ:
             await task.RunAsync(ctx, ct);
         }
 
-        private void StopTask()
+        private void StopTask(StrategyTabState tab)
         {
-            try { _taskCts?.Cancel(); } catch { }
-            _taskCts = null;
-            _activeTask = null;
+            if (tab == null) return;
+            try { tab.TaskCts?.Cancel(); } catch { }
+            tab.TaskCts = null;
+            tab.ActiveTask = null;
+            tab.RunningTask = null;
+            tab.IsRunning = false;
+        }
+
+        private void StopActiveTask()
+        {
+            if (_activeTab != null) StopTask(_activeTab);
+        }
+
+        private void StopAllTasks()
+        {
+            foreach (var tab in _strategyTabs.Where(t => t.IsRunning).ToList())
+                StopTask(tab);
+        }
+
+        private void StopAllTasksAndRelease()
+        {
+            StopAllTasks();
+            XocDiaTuLinhZoWin.Tasks.TaskUtil.ClearBetCooldown();
+            SetPlayButtonState(_activeTab?.IsRunning == true);
+            StopExpiryCountdown();
+            StopLeaseHeartbeat();
+            StopLicenseRecheckTimer();
+            var uname = ResolveLeaseUsername();
+            if (!string.IsNullOrWhiteSpace(uname))
+                _ = ReleaseLeaseAsync(uname);
         }
 
 
@@ -3912,10 +4632,20 @@ Ví dụ không hợp lệ:
             }
             // Ngăn double-click trong lúc còn await chuẩn bị
             if (BtnPlay != null) BtnPlay.IsEnabled = false;
+            var activeTab = _activeTab;
             try
             {
-                if (_taskCts != null) { Log("[DEC] a task is already running"); return; }
-
+                if (activeTab == null)
+                {
+                    MessageBox.Show("Chưa có chiến lược để chạy.", "Automino",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                if (activeTab.TaskCts != null || activeTab.IsRunning)
+                {
+                    Log($"[DEC] \"{activeTab.Name}\" is already running");
+                    return;
+                }
                 await SaveConfigAsync();
                 await EnsureWebReadyAsync();
                 // ✅ Validate trước khi bắt đầu
@@ -3925,11 +4655,15 @@ Ví dụ không hợp lệ:
                     return;
                 }
 
-
-                _cutStopTriggered = false;
-                _winTotal = 0;            // tuỳ bạn: nếu muốn đếm lại từ 0 khi bắt đầu
+                activeTab.CutStopTriggered = false;
+                activeTab.WinTotal = 0;
+                activeTab.LastSide = "";
+                activeTab.LastWinLoss = null;
+                activeTab.LastStakeAmount = null;
+                activeTab.LastLevelText = "";
+                _winTotal = 0;            // tu? b?n: n?u mu?n d?m l?i t? 0 khi b?t d?u
                 if (LblWin != null) LblWin.Text = "0";
-                ResetBetMiniPanel();    // xoá THẮNG/THUA, CỬA ĐẶT, TIỀN CƯỢC, MỨC TIỀN
+                ResetBetMiniPanel();    // xo? TH?NG/THUA, C?A D?T, TI?N CU?C, M?C TI?N
                 if (CheckLicense && (!_licenseVerified || _runExpiresAt == null || _runExpiresAt <= DateTimeOffset.Now))
                 {
                     if (!await EnsureLicenseAsync())
@@ -3984,9 +4718,14 @@ Ví dụ không hợp lệ:
 
                 // Chuẩn bị & chạy Task chiến lược (giữ nguyên)
                 RebuildStakeSeq((TxtStakeCsv?.Text ?? "1000,2000,4000,8000,16000").Trim());
-                _winTotal = 0;
-                if (LblWin != null) LblWin.Text = "0";
-
+                activeTab.RunStakeSeq = _stakeSeq.ToArray();
+                activeTab.RunStakeChains = _stakeChains.Select(a => a.ToArray()).ToList();
+                activeTab.RunStakeChainTotals = _stakeChainTotals.ToArray();
+                activeTab.RunDecisionPercent = _decisionPercent;
+                activeTab.IsRunning = true;
+                MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
+                _winTotal = activeTab.WinTotal;
+                if (LblWin != null) LblWin.Text = activeTab.WinTotal.ToString("N0");
                 _dec = new DecisionState();
                 _cooldown = false;
                 int __idx = CmbBetStrategy?.SelectedIndex ?? 4;
@@ -3995,7 +4734,7 @@ Ví dụ không hợp lệ:
 
 
                 // === Khởi động task theo lựa chọn CHIẾN LƯỢC ===
-                _taskCts = new CancellationTokenSource();
+                activeTab.TaskCts = new CancellationTokenSource();
 
                 bool useRawWinAmount = false;
                 XocDiaTuLinhZoWin.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
@@ -4022,16 +4761,25 @@ Ví dụ không hợp lệ:
 
                 if (_cfg.BetStrategyIndex == 16) useRawWinAmount = true;
 
-                var running = Task.Run(() => StartTaskAsync(task, _taskCts.Token, useRawWinAmount));
+                activeTab.ActiveTask = task;
+
+                var tabRef = activeTab;
+
+                var running = Task.Run(() => StartTaskAsync(tabRef, task, tabRef.TaskCts.Token, useRawWinAmount));
+                tabRef.RunningTask = running;
 
                 running.ContinueWith(t =>
                 {
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        SetPlayButtonState(false);
-                        _activeTask = null;
                         _cooldown = false;
-                        _taskCts = null;
+                        tabRef.TaskCts = null;
+                        tabRef.ActiveTask = null;
+                        tabRef.RunningTask = null;
+                        tabRef.IsRunning = false;
+
+                        if (ReferenceEquals(_activeTab, tabRef))
+                            SetPlayButtonState(false);
 
                         if (t.IsFaulted)
                             Log("[Task ERR] " + (t.Exception?.GetBaseException().Message ?? "Unknown error"));
@@ -4048,13 +4796,34 @@ Ví dụ không hợp lệ:
             catch (Exception ex)
             {
                 Log("[PlayXocDia_Click] " + ex);
-                // nếu lỗi trước khi start, trả lại nút
-                if (_taskCts == null && BtnPlay != null) BtnPlay.IsEnabled = true;
+                // n?u l?i tru?c khi start, tr? l?i n?t
+                if (activeTab == null)
+                {
+                    if (BtnPlay != null) BtnPlay.IsEnabled = true;
+                }
+                else if (activeTab.TaskCts == null && BtnPlay != null)
+                {
+                    BtnPlay.IsEnabled = true;
+                }
             }
             finally
             {
                 // nếu chưa start được task thì bật lại nút
-                if (_taskCts == null && BtnPlay != null) BtnPlay.IsEnabled = true;
+                if (activeTab == null)
+                {
+                    if (BtnPlay != null) BtnPlay.IsEnabled = true;
+                }
+                else if (activeTab.TaskCts == null && BtnPlay != null)
+                {
+                    BtnPlay.IsEnabled = true;
+                }
+                if (activeTab != null && activeTab.TaskCts == null)
+                {
+                    activeTab.IsRunning = false;
+                    activeTab.ActiveTask = null;
+                    activeTab.RunningTask = null;
+                    SetPlayButtonState(_activeTab?.IsRunning == true);
+                }
                 Interlocked.Exchange(ref _playStartInProgress, 0);
             }
         }
@@ -4068,17 +4837,29 @@ Ví dụ không hợp lệ:
             if (Interlocked.Exchange(ref _stopInProgress, 1) == 1) return;
             try
             {
-                StopTask();
-                XocDiaTuLinhZoWin.Tasks.TaskUtil.ClearBetCooldown();
+                var activeTab = _activeTab;
+                if (activeTab == null) return;
+
+                StopTask(activeTab);
                 _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
-                Log("[Loop] stopped");
-                SetPlayButtonState(false);
-                StopExpiryCountdown();
-                StopLeaseHeartbeat();
-                StopLicenseRecheckTimer();
-                var uname = ResolveLeaseUsername();
-                if (!string.IsNullOrWhiteSpace(uname))
-                    _ = ReleaseLeaseAsync(uname);
+
+                if (!IsAnyTabRunning())
+                {
+                    XocDiaTuLinhZoWin.Tasks.TaskUtil.ClearBetCooldown();
+                    Log("[Loop] stopped");
+                    StopExpiryCountdown();
+                    StopLeaseHeartbeat();
+                    StopLicenseRecheckTimer();
+                    var uname = ResolveLeaseUsername();
+                    if (!string.IsNullOrWhiteSpace(uname))
+                        _ = ReleaseLeaseAsync(uname);
+                }
+                else
+                {
+                    Log($"[Loop] stopped tab: {activeTab.Name}");
+                }
+
+                SetPlayButtonState(activeTab.IsRunning);
             }
             finally { Interlocked.Exchange(ref _stopInProgress, 0); }
         }
@@ -4122,6 +4903,8 @@ Ví dụ không hợp lệ:
         private async void ApplyMouseShieldFromCheck()
         {
             bool locked = (ChkLockMouse?.IsChecked == true);
+            if (IsAnyTabRunning())
+                locked = _strategyTabs.Any(t => t.IsRunning && t.Config.LockMouse);
 
             try
             {
@@ -4157,7 +4940,7 @@ Ví dụ không hợp lệ:
 
         private async void ChkLockMouse_Checked(object sender, RoutedEventArgs e)
         {
-            if (!_uiReady) return;               // ⬅️ chặn event khởi động sớm
+            if (!_uiReady || _tabSwitching) return;               // ⬅️ chặn event khởi động sớm
             ApplyMouseShieldFromCheck();
             _ = SaveConfigAsync();
             Log("[UI] Khoá chuột web: ON");
@@ -4165,7 +4948,7 @@ Ví dụ không hợp lệ:
 
         private async void ChkLockMouse_Unchecked(object sender, RoutedEventArgs e)
         {
-            if (!_uiReady) return;               // ⬅️ chặn event khởi động sớm
+            if (!_uiReady || _tabSwitching) return;               // ⬅️ chặn event khởi động sớm
             ApplyMouseShieldFromCheck();
             _ = SaveConfigAsync();
             Log("[UI] Khoá chuột web: OFF");
@@ -4403,11 +5186,77 @@ Ví dụ không hợp lệ:
             ShowText(s);
         }
 
+        private void UpdateTabSide(StrategyTabState tab, string? result)
+        {
+            if (tab == null) return;
+            tab.LastSide = result ?? "";
+            if (ReferenceEquals(_activeTab, tab))
+                SetLastSideUI(result);
+        }
+
+        private void UpdateTabStake(StrategyTabState tab, double amount, long[] stakeSeq, string moneyStrategyId)
+        {
+            if (tab == null) return;
+
+            long rounded = (long)Math.Round(amount);
+            tab.LastStakeAmount = rounded;
+            int levelIndex = Array.FindIndex(stakeSeq, s => s == rounded);
+            string levelText = (levelIndex >= 0) ? $"{levelIndex + 1}/{stakeSeq.Length}" : "";
+            tab.LastLevelText = levelText;
+
+            if (!ReferenceEquals(_activeTab, tab)) return;
+
+            if (LblStake != null) LblStake.Text = rounded.ToString("N0");
+            if (!string.Equals(moneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase))
+            {
+                if (LblLevel != null) LblLevel.Text = levelText;
+            }
+        }
+
+        private void UpdateTabWin(StrategyTabState tab, double net, string moneyStrategyId)
+        {
+            if (tab == null) return;
+
+            tab.WinTotal += net;
+            if (ReferenceEquals(_activeTab, tab))
+                _winTotal = tab.WinTotal;
+
+            try
+            {
+                XocDiaTuLinhZoWin.Tasks.MoneyHelper.NotifyTempProfit(moneyStrategyId, net);
+            }
+            catch { /* ignore */ }
+
+            if (ReferenceEquals(_activeTab, tab) && LblWin != null)
+                LblWin.Text = tab.WinTotal.ToString("N0");
+
+            CheckCutAndStopIfNeeded(tab);
+        }
+
+        private void UpdateTabWinLoss(StrategyTabState tab, bool? result)
+        {
+            if (tab == null) return;
+            tab.LastWinLoss = result;
+            if (ReferenceEquals(_activeTab, tab))
+                SetWinLossUI(result);
+        }
+
+        private void ResetTabMiniState(StrategyTabState tab)
+        {
+            tab.LastWinLoss = null;
+            tab.LastSide = "";
+            tab.LastStakeAmount = null;
+            tab.LastLevelText = "";
+        }
+
+
         // === RESET MINI PANEL: THẮNG/THUA, CỬA ĐẶT, TIỀN CƯỢC, MỨC TIỀN ===
         private void ResetBetMiniPanel()
         {
             try
             {
+                if (_activeTab != null)
+                    ResetTabMiniState(_activeTab);
                 // THẮNG/THUA: bool? -> null để xoá
                 SetWinLossUI(null);
 
@@ -4432,8 +5281,12 @@ Ví dụ không hợp lệ:
         // Cho code nền (TaskUtil) gọi đúng hàm reset gốc
         public void ResetBetMiniPanel_External()
         {
-            // GIỮ NGUYÊN NGHIỆP VỤ: gọi đúng hàm gốc
-            ResetBetMiniPanel();
+            var running = _strategyTabs.Where(t => t.IsRunning).ToList();
+            if (running.Count == 0) return;
+            foreach (var tab in running)
+                ResetTabMiniState(tab);
+            if (_activeTab != null && _activeTab.IsRunning)
+                ResetBetMiniPanel();
         }
 
 
@@ -4523,7 +5376,7 @@ Ví dụ không hợp lệ:
                         MessageBox.Show("Không xác thực được license. Dừng đặt cược.", "Automino",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
                         SetLicenseUi(false);
-                        StopXocDia_Click(this, new RoutedEventArgs());
+                        StopAllTasksAndRelease();
                     });
                     return;
                 }
@@ -4535,7 +5388,7 @@ Ví dụ không hợp lệ:
                         MessageBox.Show("Mật khẩu license không đúng. Dừng đặt cược.", "Automino",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
                         SetLicenseUi(false);
-                        StopXocDia_Click(this, new RoutedEventArgs());
+                        StopAllTasksAndRelease();
                     });
                     return;
                 }
@@ -4548,7 +5401,7 @@ Ví dụ không hợp lệ:
                         MessageBox.Show("License đã hết hạn. Dừng đặt cược.", "Automino",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
                         SetLicenseUi(false);
-                        StopXocDia_Click(this, new RoutedEventArgs());
+                        StopAllTasksAndRelease();
                     });
                     return;
                 }
@@ -4977,10 +5830,9 @@ Ví dụ không hợp lệ:
                         Dispatcher.BeginInvoke(new Action(() =>
                         {
                             // Tự dừng vòng chơi nếu còn đang chạy
-                            if (_taskCts != null)
+                            if (IsAnyTabRunning())
                             {
-                                StopTask();
-                                SetPlayButtonState(false);
+                                StopAllTasksAndRelease();
                             }
 
                             // Thông báo theo mode
@@ -5087,27 +5939,28 @@ Ví dụ không hợp lệ:
             var cts = _leaseHbCts;
             var uname = Uri.EscapeDataString(username);
 
-            if (false) // đổi false để tắt heartbeat
+            Log($"[Lease] hb start: user={username} clientId={_leaseClientId}");
+            Task.Run(async () =>
             {
-                Task.Run(async () =>
+                while (!cts.IsCancellationRequested)
                 {
-                    while (!cts.IsCancellationRequested)
+                    try
                     {
-                        try
-                        {
-                            using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
-                            var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/heartbeat/{uname}",
-                                                                  new { clientId = _leaseClientId, sessionId = _leaseSessionId });
-                            // chỉ log nhẹ cho debug
-                            Log("[Lease] hb: " + (int)resp.StatusCode);
-                        }
-                        catch (Exception ex) { Log("[Lease] hb err: " + ex.Message); }
-
-                        await Task.Delay(TimeSpan.FromSeconds(180), cts.Token)
-                                  .ContinueWith(_ => { }); // nuốt TaskCanceled
+                        using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
+                        var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/heartbeat/{uname}",
+                                                          new { clientId = _leaseClientId });
+                        var body = await resp.Content.ReadAsStringAsync();
+                        if (resp.IsSuccessStatusCode)
+                            Log("[Lease] hb -> " + (int)resp.StatusCode);
+                        else
+                            Log($"[Lease] hb -> {(int)resp.StatusCode} {resp.ReasonPhrase} | {body}");
                     }
-                }, cts.Token);
-            }
+                    catch (Exception ex) { Log("[Lease] hb err: " + ex.Message); }
+
+                    await Task.Delay(TimeSpan.FromSeconds(180), cts.Token)
+                              .ContinueWith(_ => { }); // nuốt TaskCanceled
+                }
+            }, cts.Token);
         }
 
         private void StopLeaseHeartbeat()
@@ -5231,7 +6084,6 @@ Ví dụ không hợp lệ:
 
 
         // Dùng lại cờ này nếu bạn đã có, hoặc thêm mới:
-        private bool _cutStopTriggered = false;
 
         // Parse tiền: cho phép số âm ở đầu, bỏ dấu chấm phẩy khoảng trắng
         private static double ParseMoney(string s)
@@ -5258,7 +6110,7 @@ Ví dụ không hợp lệ:
 
         private async void TxtCut_LostFocus(object sender, RoutedEventArgs e)
         {
-            if (!_uiReady) return;
+            if (!_uiReady || _tabSwitching) return;
 
             // Đọc & chuẩn hoá (chuỗi rỗng = 0 => tắt)
             var newCutProfit = ParseMoneyOrZero(T(TxtCutProfit));
@@ -5283,46 +6135,48 @@ Ví dụ không hợp lệ:
             // Nếu đang chạy thì kiểm tra & cắt ngay nếu đủ điều kiện
             CheckCutAndStopIfNeeded();
         }
-
-
         private void CheckCutAndStopIfNeeded()
         {
-            if (_cutStopTriggered) return;
+            foreach (var tab in _strategyTabs.Where(t => t.IsRunning).ToList())
+                CheckCutAndStopIfNeeded(tab);
+        }
+        private void CheckCutAndStopIfNeeded(StrategyTabState tab)
+        {
+            if (tab == null) return;
+            if (tab.CutStopTriggered) return;
 
-            double cutProfit = _cfg?.CutProfit ?? 0;   // dương ⇒ bật cắt lãi
-            double cutLoss = _cfg?.CutLoss ?? 0;   // dương ⇒ bật cắt lỗ (ngưỡng là -cutLoss)
+            double cutProfit = tab.Config?.CutProfit ?? 0;   // duong -> bat cat lai
+            double cutLoss = tab.Config?.CutLoss ?? 0;       // duong -> bat cat lo (nguong la -cutLoss)
 
-            // ⬇️ Không nhập (rỗng/0) ⇒ hoạt động bình thường (không cắt)
             if (cutProfit <= 0 && cutLoss <= 0) return;
 
-            // Ưu tiên cắt lãi
-            if (cutProfit > 0 && _winTotal >= cutProfit)
+            var winTotal = tab.WinTotal;
+            if (cutProfit > 0 && winTotal >= cutProfit)
             {
-                _cutStopTriggered = true;
-                StopTaskAndNotify($"Đạt CẮT LÃI: Tiền thắng = {_winTotal:N0} ≥ {cutProfit:N0}");
+                tab.CutStopTriggered = true;
+                StopTaskAndNotify(tab, $"??t C?T L?I: Ti?n th?ng = {winTotal:N0} ? {cutProfit:N0}");
                 return;
             }
 
-            // Cắt lỗ: hiểu cutLoss là số dương → ngưỡng thực tế = -cutLoss
             if (cutLoss > 0)
             {
                 var lossThreshold = -cutLoss;
-                if (_winTotal <= lossThreshold)
+                if (winTotal <= lossThreshold)
                 {
-                    _cutStopTriggered = true;
-                    StopTaskAndNotify($"Đạt CẮT LỖ: Tiền thắng = {_winTotal:N0} ≤ {lossThreshold:N0}");
+                    tab.CutStopTriggered = true;
+                    StopTaskAndNotify(tab, $"??t C?T L?: Ti?n th?ng = {winTotal:N0} ? {lossThreshold:N0}");
                     return;
                 }
             }
         }
 
-
-        private void StopTaskAndNotify(string reason)
+        private void StopTaskAndNotify(StrategyTabState tab, string reason)
         {
             try
             {
-                StopTask();
-                SetPlayButtonState(false);
+                StopTask(tab);
+                if (ReferenceEquals(_activeTab, tab))
+                    SetPlayButtonState(false);
                 MessageBox.Show(reason, "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                 Log("[CUT] " + reason);
             }
@@ -5372,30 +6226,45 @@ Ví dụ không hợp lệ:
                 : (winners != null && winners.Count > 0 ? string.Join("/", winners) : "-");
             FinalizeLastBet(resText, balance, winners, resText);
         }
-
-        private void SetLevelForMultiChain(int chainIndex, int levelIndex)
+        private void SetLevelForMultiChain(StrategyTabState tab, int chainIndex, int levelIndex)
         {
-            if (LblLevel == null) return;
             try
             {
-                var chains = _stakeChains ?? new List<long[]>();
+                if (tab == null) return;
+
+                var chains = (tab.RunStakeChains != null && tab.RunStakeChains.Count > 0)
+                    ? tab.RunStakeChains
+                    : (_stakeChains ?? new List<long[]>());
+
                 int total = chains.Sum(ch => ch?.Length ?? 0);
-                if (total == 0) { LblLevel.Text = ""; return; }
+                string levelText = "";
+                if (total > 0)
+                {
+                    chainIndex = Math.Clamp(chainIndex, 0, chains.Count - 1);
+                    var curChain = chains[chainIndex] ?? Array.Empty<long>();
+                    levelIndex = Math.Clamp(levelIndex, 0, curChain.Length - 1);
 
-                chainIndex = Math.Clamp(chainIndex, 0, chains.Count - 1);
-                var curChain = chains[chainIndex] ?? Array.Empty<long>();
-                levelIndex = Math.Clamp(levelIndex, 0, curChain.Length - 1);
+                    int offset = 0;
+                    for (int i = 0; i < chainIndex; i++)
+                        offset += chains[i]?.Length ?? 0;
 
-                int offset = 0;
-                for (int i = 0; i < chainIndex; i++)
-                    offset += chains[i]?.Length ?? 0;
+                    int pos = offset + levelIndex; // 0-based
+                    levelText = $"{pos + 1}/{total}";
+                }
 
-                int pos = offset + levelIndex; // 0-based
-                LblLevel.Text = $"{pos + 1}/{total}";
+                tab.LastLevelText = levelText;
+
+                if (ReferenceEquals(_activeTab, tab))
+                {
+                    if (LblLevel != null) LblLevel.Text = levelText;
+                }
             }
             catch
             {
-                LblLevel.Text = "";
+                if (ReferenceEquals(_activeTab, tab))
+                {
+                    if (LblLevel != null) LblLevel.Text = "";
+                }
             }
         }
 
@@ -5949,7 +6818,7 @@ Ví dụ không hợp lệ:
 
         private async void TxtChuoiCau_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (!_uiReady) return;
+            if (!_uiReady || _tabSwitching) return;
 
             var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 0: CL, 2: N/I
             var txt = (TxtChuoiCau?.Text ?? "").Trim();
@@ -5968,7 +6837,7 @@ Ví dụ không hợp lệ:
 
         private async void TxtTheCau_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (!_uiReady) return;
+            if (!_uiReady || _tabSwitching) return;
 
             var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 1: CL, 3: N/I
             var txt = (TxtTheCau?.Text ?? "").Trim();
