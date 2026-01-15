@@ -9804,12 +9804,18 @@
             };
             const playerPick = pickWinner('.ym_tS.ym_yp .ym_ys, .yI_uA.yI_yL .yI_yO');
             const bankerPick = pickWinner('.ym_tS.ym_yr .ym_ys, .yI_uA.yI_yN .yI_yO');
-            if (playerPick.text || bankerPick.text) {
-                if (!bankerPick.text)
+            const tiePick = pickWinner('.yI_uA.yI_yM .yI_yO');
+            if (playerPick.text || bankerPick.text || tiePick.text) {
+                if (!bankerPick.text && !tiePick.text)
                     return playerPick.text;
-                if (!playerPick.text)
+                if (!playerPick.text && !tiePick.text)
                     return bankerPick.text;
-                return (playerPick.score >= bankerPick.score) ? playerPick.text : bankerPick.text;
+                if (!playerPick.text && !bankerPick.text)
+                    return tiePick.text;
+                if (!tiePick.text)
+                    return (playerPick.score >= bankerPick.score) ? playerPick.text : bankerPick.text;
+                const bestPb = (playerPick.score >= bankerPick.score) ? playerPick : bankerPick;
+                return (tiePick.score >= bestPb.score) ? tiePick.text : bestPb.text;
             }
             try {
                 const el = root.querySelector('.yH_yN');
