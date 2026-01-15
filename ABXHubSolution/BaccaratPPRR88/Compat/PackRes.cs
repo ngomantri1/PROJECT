@@ -36,8 +36,10 @@ namespace BaccaratPPRR88
             // 2. fallback: tự tạo ảnh để dù Images.xaml không load được vẫn không vỡ XAML
             EnsureImage(app.Resources, "ImgBanker", "pack://application:,,,/BaccaratPPRR88;component/Assets/side/BANKER.png");
             EnsureImage(app.Resources, "ImgPlayer", "pack://application:,,,/BaccaratPPRR88;component/Assets/side/PLAYER.png");
+            EnsureImage(app.Resources, "ImgTie", "pack://application:,,,/BaccaratPPRR88;component/Assets/side/HOA.png");
             EnsureImage(app.Resources, "ImgTHANG", "pack://application:,,,/BaccaratPPRR88;component/Assets/kq/THANG.png");
             EnsureImage(app.Resources, "ImgTHUA", "pack://application:,,,/BaccaratPPRR88;component/Assets/kq/THUA.png");
+            EnsureImage(app.Resources, "ImgHOA", "pack://application:,,,/BaccaratPPRR88;component/Assets/kq/HOA.png");
 
             // 3. đăng ký converter (XAML của bạn đang dùng StaticResource mấy cái này)
             if (!app.Resources.Contains("SideToIconConverter"))

@@ -38,6 +38,9 @@ namespace BaccaratPPRR88.Tasks
         public double MoneyChainProfit { get; set; } = 0;
         public long MoneyResetVersion { get; set; } = 0;
 
+        // Virtual betting flag (wait cut loss before real bet)
+        public Func<bool>? IsVirtualBettingActive { get; init; }
+
         // Ngưỡng % còn lại để ra quyết định
         public double DecisionPercent { get; init; }
 

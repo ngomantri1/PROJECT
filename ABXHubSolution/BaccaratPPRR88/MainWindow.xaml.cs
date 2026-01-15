@@ -117,10 +117,12 @@ namespace BaccaratPPRR88
     {
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
-            var u = TextNorm.U(value?.ToString() ?? "");
+            var raw = value?.ToString() ?? "";
+            var u = TextNorm.U(raw);
+            var clean = new string(u.Where(char.IsLetterOrDigit).ToArray());
             if (u == "P" || u == "PLAYER") return FallbackIcons.GetResultPlayer();
             if (u == "B" || u == "BANKER") return FallbackIcons.GetResultBanker();
-            if (u == "T" || u == "TIE" || u.Contains("HOA")) return FallbackIcons.GetResultTie();
+            if (u == "T" || u == "TIE" || u.Contains("HOA") || clean == "HA") return FallbackIcons.GetResultTie();
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -130,10 +132,12 @@ namespace BaccaratPPRR88
     {
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
-            var u = TextNorm.U(value?.ToString() ?? "");
+            var raw = value?.ToString() ?? "";
+            var u = TextNorm.U(raw);
+            var clean = new string(u.Where(char.IsLetterOrDigit).ToArray());
             if (u.StartsWith("THANG")) return FallbackIcons.GetWin();
             if (u.StartsWith("THUA")) return FallbackIcons.GetLoss();
-            if (u.StartsWith("HOA") || u == "T" || u == "TIE") return FallbackIcons.GetTie();
+            if (u.StartsWith("HOA") || u == "T" || u == "TIE" || clean == "HA") return FallbackIcons.GetTie();
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -481,6 +485,7 @@ Ví dụ không hợp lệ:
             public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
             public bool AutoResetOnCut { get; set; } = false; // đủ cắt lãi/lỗ -> reset về mức đầu
             public bool AutoResetOnWinGeTotal { get; set; } = false; // tiền thắng >= tổng cược -> reset về mức đầu
+            public bool WaitCutLossBeforeBet { get; set; } = false; // wait cut loss before real bet
             public string BetSeqPB { get; set; } = "";        // cho Chiến lược 1
             public string BetSeqNI { get; set; } = "";        // cho Chiến lược 3
             public string BetPatternsPB { get; set; } = "";   // cho Chiến lược 2
@@ -1703,6 +1708,7 @@ Ví dụ không hợp lệ:
                 UpdateS7ResetOptionUI();
                 if (ChkAutoResetOnCut != null) ChkAutoResetOnCut.IsChecked = _cfg.AutoResetOnCut;
                 if (ChkAutoResetOnWinGeTotal != null) ChkAutoResetOnWinGeTotal.IsChecked = _cfg.AutoResetOnWinGeTotal;
+                if (ChkWaitCutLossBeforeBet != null) ChkWaitCutLossBeforeBet.IsChecked = _cfg.WaitCutLossBeforeBet;
 
 
                 if (ChkRemember != null) ChkRemember.IsChecked = _cfg.RememberCreds;
@@ -1781,6 +1787,8 @@ Ví dụ không hợp lệ:
                     _cfg.AutoResetOnCut = (ChkAutoResetOnCut.IsChecked == true);
                 if (ChkAutoResetOnWinGeTotal != null)
                     _cfg.AutoResetOnWinGeTotal = (ChkAutoResetOnWinGeTotal.IsChecked == true);
+                if (ChkWaitCutLossBeforeBet != null)
+                    _cfg.WaitCutLossBeforeBet = (ChkWaitCutLossBeforeBet.IsChecked == true);
                 _cfg.SelectedRooms = _selectedRooms.ToList();
 
 
@@ -1838,6 +1846,7 @@ Ví dụ không hợp lệ:
             }
             snapshot.AutoResetOnCut = _cfg?.AutoResetOnCut ?? false;
             snapshot.AutoResetOnWinGeTotal = _cfg?.AutoResetOnWinGeTotal ?? false;
+            snapshot.WaitCutLossBeforeBet = _cfg?.WaitCutLossBeforeBet ?? false;
             return snapshot;
         }
 
@@ -2132,6 +2141,7 @@ Ví dụ không hợp lệ:
                 _cfg.S7ResetOnProfit = _globalCfgSnapshot.S7ResetOnProfit;
                 _cfg.AutoResetOnCut = _globalCfgSnapshot.AutoResetOnCut;
                 _cfg.AutoResetOnWinGeTotal = _globalCfgSnapshot.AutoResetOnWinGeTotal;
+                _cfg.WaitCutLossBeforeBet = _globalCfgSnapshot.WaitCutLossBeforeBet;
 
                 if (CmbBetStrategy != null)
                 {
@@ -2154,6 +2164,8 @@ Ví dụ không hợp lệ:
                     ChkAutoResetOnCut.IsChecked = _cfg.AutoResetOnCut;
                 if (ChkAutoResetOnWinGeTotal != null)
                     ChkAutoResetOnWinGeTotal.IsChecked = _cfg.AutoResetOnWinGeTotal;
+                if (ChkWaitCutLossBeforeBet != null)
+                    ChkWaitCutLossBeforeBet.IsChecked = _cfg.WaitCutLossBeforeBet;
             }
             finally
             {
@@ -4499,6 +4511,29 @@ private async Task<CancellationTokenSource> DebounceAsync(
             CheckWinGeTotalBetResetIfNeeded();
         }
 
+        private async void ChkWaitCutLossBeforeBet_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!_uiReady || _suppressTableSync) return;
+            if (_cfg == null) return;
+            _cfg.WaitCutLossBeforeBet = (ChkWaitCutLossBeforeBet?.IsChecked == true);
+            if (_globalCfgSnapshot != null)
+                _globalCfgSnapshot.WaitCutLossBeforeBet = _cfg.WaitCutLossBeforeBet;
+            if (_cfg.WaitCutLossBeforeBet)
+            {
+                if (HasRunningTasks())
+                    EnterVirtualBettingMode();
+                else
+                    Log("[VIRTUAL] enabled: pending until tasks start");
+            }
+            else
+            {
+                _virtualBettingActive = false;
+                Log("[VIRTUAL] disabled: real bet mode");
+            }
+            await SaveConfigAsync();
+            CheckCutAndStopIfNeeded();
+        }
+
         async void CmbMoneyStrategy_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!_uiReady || _suppressTableSync) return;
@@ -5697,6 +5732,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private void CheckTableCutAndStopIfNeeded(TableSetting setting, TableTaskState state)
         {
             if (setting == null || state == null) return;
+            if (_virtualBettingActive) return;
 
             var cutProfit = setting.CutProfit;
             var cutLoss = setting.CutLoss;
@@ -5763,6 +5799,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 MoneyChainStep = state.MoneyChainStep,
                 MoneyChainProfit = state.MoneyChainProfit,
                 MoneyResetVersion = state.MoneyResetVersion,
+                IsVirtualBettingActive = () => _virtualBettingActive,
 
                 UiSetSide = s => Dispatcher.Invoke(() =>
                 {
@@ -5919,6 +5956,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 var state = GetOrCreateTableTaskState(tableId, tableName);
                 if (!IsTableRunning(state))
+                    return;
+                if (_virtualBettingActive)
                     return;
                 if (state.HoldWinTotalUntilLevel1 && state.StakeLevelIndexForUi != 0)
                 {
@@ -6367,6 +6406,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 {
                     _cutStopTriggered = false;
                     _winTotal = 0;
+                    _virtualBettingActive = _cfg?.WaitCutLossBeforeBet == true;
+                    if (_virtualBettingActive)
+                        Log("[VIRTUAL] start: wait cut loss before real bet");
                 }
 
                 if (IsActiveTable(tableId))
@@ -6495,6 +6537,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             if (!HasRunningTasks())
             {
+                _virtualBettingActive = false;
+                Log("[VIRTUAL] disabled: no running tasks");
                 if (_stopCleanupDone)
                     return;
                 _stopCleanupDone = true;
@@ -7918,6 +7962,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
         // Dùng lại cờ này nếu bạn đã có, hoặc thêm mới:
         private bool _cutStopTriggered = false;
         private int _cutAutoResetInProgress = 0;
+        private bool _virtualBettingActive = false;
+        private long _virtualStatusLogAtMs = 0;
 
         private bool TryEnterCutAutoReset()
         {
@@ -7927,6 +7973,36 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private void ExitCutAutoReset()
         {
             Interlocked.Exchange(ref _cutAutoResetInProgress, 0);
+        }
+
+        private void EnterVirtualBettingMode()
+        {
+            _virtualBettingActive = true;
+            Log("[VIRTUAL] enabled: wait cut loss before real bet");
+
+            lock (_tableTasksGate)
+            {
+                foreach (var state in _tableTasks.Values)
+                {
+                    if (state?.Cts == null) continue;
+                    if (state.Cts.IsCancellationRequested) continue;
+                    if (!state.HasJsProfit) continue;
+                    state.WinTotal = state.WinTotalFromJs;
+                    state.HasJsProfit = false;
+                }
+            }
+
+            RecomputeGlobalWinTotal();
+            if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
+        }
+
+        private void LogVirtualStatusThrottled(string message, int minIntervalMs = 10000)
+        {
+            var now = Environment.TickCount64;
+            if (now - _virtualStatusLogAtMs < minIntervalMs)
+                return;
+            _virtualStatusLogAtMs = now;
+            Log(message);
         }
 
         // Parse tiền: cho phép số âm ở đầu, bỏ dấu chấm phẩy khoảng trắng
@@ -7971,6 +8047,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (TxtCutLoss != null) TxtCutLoss.Text = (_cfg?.CutLoss ?? 0).ToString("N0");
             if (ChkAutoResetOnCut != null) ChkAutoResetOnCut.IsChecked = (_cfg?.AutoResetOnCut == true);
             if (ChkAutoResetOnWinGeTotal != null) ChkAutoResetOnWinGeTotal.IsChecked = (_cfg?.AutoResetOnWinGeTotal == true);
+            if (ChkWaitCutLossBeforeBet != null) ChkWaitCutLossBeforeBet.IsChecked = (_cfg?.WaitCutLossBeforeBet == true);
         }
 
         private static double ParseMoneyOrZero(string s)
@@ -8058,6 +8135,34 @@ private async Task<CancellationTokenSource> DebounceAsync(
             double cutProfit = _cfg?.CutProfit ?? 0;   // dương ⇒ bật cắt lãi
             double cutLoss = _cfg?.CutLoss ?? 0;   // dương ⇒ bật cắt lỗ (ngưỡng là -cutLoss)
 
+            if (_virtualBettingActive)
+            {
+                if (cutLoss <= 0)
+                {
+                    LogVirtualStatusThrottled("[VIRTUAL] cutLoss <= 0, will never switch to real bet");
+                    return;
+                }
+                if (cutLoss > 0)
+                {
+                    var lossThreshold = -cutLoss;
+                    if (_winTotal > lossThreshold)
+                    {
+                        LogVirtualStatusThrottled($"[VIRTUAL] waiting: win={_winTotal:N0} > {lossThreshold:N0}");
+                        return;
+                    }
+                    if (_winTotal <= lossThreshold)
+                    {
+                        if (TryEnterCutAutoReset())
+                        {
+                            Log("[VIRTUAL] cut loss reached, switch to real bet");
+                            _virtualBettingActive = false;
+                            ResetAllProfitAndStepsForCut($"WAIT CUT LOSS: win={_winTotal:N0} <= {lossThreshold:N0}", true);
+                        }
+                    }
+                }
+                return;
+            }
+
             // ⬇️ Không nhập (rỗng/0) ⇒ hoạt động bình thường (không cắt)
             if (cutProfit <= 0 && cutLoss <= 0) return;
 
@@ -8106,6 +8211,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             if (_cutStopTriggered) return;
             if (_cutAutoResetInProgress != 0) return;
+            if (_virtualBettingActive) return;
             if (_cfg?.AutoResetOnWinGeTotal != true) return;
 
             var totalBet = GetCurrentTotalBetValue();

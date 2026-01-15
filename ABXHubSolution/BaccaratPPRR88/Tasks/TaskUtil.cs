@@ -142,6 +142,10 @@ namespace BaccaratPPRR88.Tasks
                 return false;
             }
 
+            var isVirtual = ctx.IsVirtualBettingActive?.Invoke() == true;
+            if (isVirtual)
+                ctx.Log?.Invoke($"[BET-MODE] virtual table={tableId} side={side} amount={amount}");
+
             await _betQueue.WaitAsync(ct);
             try
             {
@@ -155,12 +159,13 @@ namespace BaccaratPPRR88.Tasks
 
                 var tableIdJson = JsonSerializer.Serialize(tableId);
                 var sideJson = JsonSerializer.Serialize(side ?? "");
+                var virtualJs = isVirtual ? "true" : "false";
 
             // GỌI __cw_bet AN TOÀN (giữ nguyên như code hiện tại)
             var js =
                 "(function(){try{" +
                 " if (typeof window.__cw_bet==='function'){" +
-                "   return window.__cw_bet(" + tableIdJson + ", " + sideJson + ", " + amount + ");" +
+                "   return window.__cw_bet(" + tableIdJson + ", " + sideJson + ", " + amount + ", " + virtualJs + ");" +
                 " } else { return 'no'; }" +
                 "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
