@@ -62,6 +62,18 @@ namespace BaccaratPPRR88
         public static ImageSource? GetLoss() => SharedIcons.Loss ?? (_loss ??= Load(LossPng));
         public static ImageSource? GetTie() => SharedIcons.Tie ?? (_tie ??= Load(TiePng));
 
+        public static ImageSource? TryGetResource(string key)
+        {
+            try
+            {
+                var res = Application.Current?.Resources;
+                if (res != null && res.Contains(key))
+                    return res[key] as ImageSource;
+            }
+            catch { }
+            return null;
+        }
+
         private static ImageSource? Load(string relativePath)
         {
             try
@@ -122,7 +134,10 @@ namespace BaccaratPPRR88
             var clean = new string(u.Where(char.IsLetterOrDigit).ToArray());
             if (u == "P" || u == "PLAYER") return FallbackIcons.GetResultPlayer();
             if (u == "B" || u == "BANKER") return FallbackIcons.GetResultBanker();
-            if (u == "T" || u == "TIE" || u.Contains("HOA") || clean == "HA") return FallbackIcons.GetResultTie();
+            if (u == "T" || u == "TIE" || u.Contains("HOA") || clean == "HA")
+                return FallbackIcons.GetResultTie()
+                    ?? FallbackIcons.TryGetResource("ImgTie")
+                    ?? FallbackIcons.TryGetResource("ImgHOA");
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -137,7 +152,10 @@ namespace BaccaratPPRR88
             var clean = new string(u.Where(char.IsLetterOrDigit).ToArray());
             if (u.StartsWith("THANG")) return FallbackIcons.GetWin();
             if (u.StartsWith("THUA")) return FallbackIcons.GetLoss();
-            if (u.StartsWith("HOA") || u == "T" || u == "TIE" || clean == "HA") return FallbackIcons.GetTie();
+            if (u.StartsWith("HOA") || u == "T" || u == "TIE" || clean == "HA")
+                return FallbackIcons.GetTie()
+                    ?? FallbackIcons.TryGetResource("ImgHOA")
+                    ?? FallbackIcons.TryGetResource("ImgTie");
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -7242,12 +7260,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (lic == null || !DateTimeOffset.TryParse(lic.exp, out var expUtc))
                 {
                     Log("[LicenseCheck] invalid license payload");
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        MessageBox.Show("Không xác thực được license. Dừng đặt cược.", "Automino",
-                            MessageBoxButton.OK, MessageBoxImage.Warning);
-                        StopAllTables("license-expired");
-                    });
                     return;
                 }
 
