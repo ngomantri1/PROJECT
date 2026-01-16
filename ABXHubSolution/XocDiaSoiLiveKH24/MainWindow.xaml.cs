@@ -259,7 +259,7 @@ namespace XocDiaSoiLiveKH24
         const string LicenseBranch = "main";          // <- nhánh
         const string LicenseNameGame = "kh24";          // <- nhánh
         const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/kh24";
-        private const bool EnableLeaseCloudflare = true; // true=bật gọi Cloudflare
+        private const bool EnableLeaseCloudflare = false; // true=bật gọi Cloudflare
 
         // ===================== TOOLTIP TEXTS =====================
         const string TIP_SEQ_CL =
