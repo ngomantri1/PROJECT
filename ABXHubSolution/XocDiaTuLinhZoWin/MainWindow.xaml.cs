@@ -1389,7 +1389,7 @@ Ví dụ không hợp lệ:
                     Log($"[StakeCsv] loaded: {_cfg.StakeCsv} -> {_stakeSeq.Length} mức");
                 }
                 if (CmbBetStrategy != null)
-                    CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 16) ? _cfg.BetStrategyIndex : 16;
+                    CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 17) ? _cfg.BetStrategyIndex : 16;
                 SyncStrategyFieldsToUI();
                 UpdateTooltips();
                 UpdateBetStrategyUi();
@@ -3099,6 +3099,7 @@ Ví dụ không hợp lệ:
                 14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
                 15 => "16) TOP10 TÍCH LŨY (khởi từ 50 C/L). Khởi tạo thống kê từ 50 kết quả đầu vào (C/L). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
                 16 => "17) Đánh các cửa ăn nổ hũ: Đọc cấu hình \"Cửa đặt & tỉ lệ\", nhân tỉ lệ với mức tiền hiện tại để đặt tối đa 7 cửa (CHAN/LE/SAPDOI/1TRANG3DO/1DO3TRANG/4DO/4TRANG); thắng nếu bất kỳ cửa nào trúng theo chuỗi kết quả 0/1/2/3/4.",
+                17 => "18) Chuỗi cầu C/L hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
                 _ => "Chiến lược chưa xác định."
             };
 
@@ -3137,6 +3138,7 @@ Ví dụ không hợp lệ:
                 14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
                 15 => "16) TOP10 TÍCH LŨY (khởi từ 50 C/L). Khởi tạo thống kê từ 50 kết quả đầu vào (C/L). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
                 16 => "17) Đánh các cửa ăn nổ hũ: Đọc cấu hình \"Cửa đặt & tỉ lệ\", nhân tỉ lệ với mức tiền hiện tại để đặt tối đa 7 cửa (CHAN/LE/SAPDOI/1TRANG3DO/1DO3TRANG/4DO/4TRANG); thắng nếu bất kỳ cửa nào trúng theo chuỗi kết quả 0/1/2/3/4.",
+                17 => "18) Chuỗi cầu C/L hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
                 _ => "Chiến lược chưa xác định."
             };
         }
@@ -4756,6 +4758,7 @@ Ví dụ không hợp lệ:
                     14 => new XocDiaTuLinhZoWin.Tasks.AiExpertPanelTask(), // 15
                     15 => new XocDiaTuLinhZoWin.Tasks.Top10PatternFollowTask(), // 16
                     16 => new XocDiaTuLinhZoWin.Tasks.JackpotMultiSideTask(), // 17
+                    17 => new XocDiaTuLinhZoWin.Tasks.SeqParityHotBackTask(), // 18
                     _ => new XocDiaTuLinhZoWin.Tasks.SmartPrevTask(),
                 };
 

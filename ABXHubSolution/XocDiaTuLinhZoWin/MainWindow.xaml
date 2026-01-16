@@ -803,7 +803,8 @@
                                             <ComboBoxItem Content="15) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime)" />
                                             <ComboBoxItem Content="16) Top10 tích lũy (khởi từ 50 C/L)" />
                                             <ComboBoxItem Content="17) Đánh các cửa ăn nổ hũ" />
-                                        </ComboBox>
+                                                                                    <ComboBoxItem Content="18) Chuỗi cầu C/L hay về" />
+</ComboBox>
                                     </Grid>
 
                                     <!--  HÀNG CHI TIẾT: CHUỖI CẦU (ẩn/hiện theo chọn 1 hoặc 3)  -->
