@@ -559,6 +559,8 @@ Ví dụ không hợp lệ:
             public long WinTotalOverlay;
             public bool HoldWinTotalUntilLevel1;
             public bool HoldWinTotalSkipLogged;
+            public bool ForceStakeLevel1;
+            public bool ForceStakeLevel1Applied;
         }
 
         private sealed class TableOverlayState
@@ -5688,6 +5690,38 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return "1000-3000-7000-15000-33000-69000-142000-291000-595000-1215000";
         }
 
+        private long ResolveLevel1StakeForSetting(TableSetting? setting)
+        {
+            var moneyStrategyId = setting?.MoneyStrategy ?? _cfg?.MoneyStrategy ?? "IncreaseWhenLose";
+            var csv = setting != null ? ResolveStakeCsvForSetting(setting) : (_cfg?.StakeCsv ?? "");
+            BuildStakeSeqFromCsv(csv, out var stakeSeq, out var stakeChains, out _);
+
+            if (string.Equals(moneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase))
+            {
+                if (stakeChains != null && stakeChains.Count > 0 && stakeChains[0].Length > 0)
+                    return stakeChains[0][0];
+            }
+
+            if (stakeSeq != null && stakeSeq.Length > 0)
+                return stakeSeq[0];
+
+            return 1000;
+        }
+
+        private void TryForceStakeLevel1OnJs(string tableId, long amount)
+        {
+            if (string.IsNullOrWhiteSpace(tableId) || amount <= 0)
+                return;
+
+            try
+            {
+                var idJson = JsonSerializer.Serialize(tableId);
+                var js = "(function(){try{if(window.__cw_forceStakeLevel1){return window.__cw_forceStakeLevel1(" + idJson + "," + amount + ");}}catch(_){}})();";
+                _ = EvalJsLockedAsync(js);
+            }
+            catch { }
+        }
+
         private static void NormalizeTableStrategy(TableSetting setting, out string betSeq, out string betPatterns)
         {
             betSeq = setting.BetSeq ?? "";
@@ -5761,6 +5795,16 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var moneyStrategyId = setting.MoneyStrategy ?? "IncreaseWhenLose";
             var stakeCsv = ResolveStakeCsvForSetting(setting);
             BuildStakeSeqFromCsv(stakeCsv, out var stakeSeq, out var stakeChains, out var stakeChainTotals);
+            var level1Stake = 1000L;
+            if (string.Equals(moneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase))
+            {
+                if (stakeChains != null && stakeChains.Count > 0 && stakeChains[0].Length > 0)
+                    level1Stake = stakeChains[0][0];
+            }
+            else if (stakeSeq.Length > 0)
+            {
+                level1Stake = stakeSeq[0];
+            }
             NormalizeTableStrategy(setting, out var betSeq, out var betPatterns);
             var tableId = setting.Id ?? "";
 
@@ -5810,14 +5854,25 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 }),
                 UiSetStake = v => Dispatcher.Invoke(() =>
                 {
-                    UpdateStakeIndexForTable(state, stakeSeq, v);
-                    if (state.HoldWinTotalUntilLevel1 && state.StakeLevelIndexForUi == 0 && v > 0)
+                    if (state.ForceStakeLevel1Applied && !state.ForceStakeLevel1)
+                        state.ForceStakeLevel1Applied = false;
+                    var stakeValue = v;
+                    if (state.ForceStakeLevel1 && v > 0)
+                    {
+                        state.ForceStakeLevel1 = false;
+                        state.ForceStakeLevel1Applied = true;
+                        stakeValue = level1Stake;
+                        TryForceStakeLevel1OnJs(tableId, level1Stake);
+                        Log($"[RESET-L1] table={tableId} amount={level1Stake:N0}");
+                    }
+                    UpdateStakeIndexForTable(state, stakeSeq, stakeValue);
+                    if (state.HoldWinTotalUntilLevel1 && state.StakeLevelIndexForUi == 0 && stakeValue > 0)
                     {
                         state.HoldWinTotalUntilLevel1 = false;
                         state.HoldWinTotalSkipLogged = false;
                         Log($"[WINHOLD] resume accumulate at level 1 ({tableId})");
                     }
-                    var rounded = (long)Math.Round(v);
+                    var rounded = (long)Math.Round(stakeValue);
                     state.LastBetAmount = rounded;
                     state.LastBetLevelText = (state.StakeLevelIndexForUi >= 0 && stakeSeq.Length > 0)
                         ? $"{state.StakeLevelIndexForUi + 1}/{stakeSeq.Length}"
@@ -5827,7 +5882,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         return;
 
                     if (LblStake != null)
-                        LblStake.Text = v.ToString("N0");
+                        LblStake.Text = stakeValue.ToString("N0");
                 }),
 
                 UiAddWin = delta => Dispatcher.InvokeAsync(() =>
@@ -5842,6 +5897,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         return;
                     }
                     var stake = Math.Abs(delta);
+                    if (state.ForceStakeLevel1Applied && state.LastBetAmount > 0)
+                    {
+                        stake = state.LastBetAmount;
+                        state.ForceStakeLevel1Applied = false;
+                    }
                     var isWin = delta > 0;
                     var side = (state.LastBetSide ?? "").Trim().ToUpperInvariant();
                     double net;
@@ -8255,10 +8315,16 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             state.StakeLevelIndexForUi = -1;
                             state.HoldWinTotalUntilLevel1 = holdWinUntilLevel1;
                             state.HoldWinTotalSkipLogged = false;
+                            state.ForceStakeLevel1 = true;
+                            state.ForceStakeLevel1Applied = false;
                             state.WinCount = 0;
                             state.LossCount = 0;
                             state.LastWinAmount = 0;
                             _ = PushBetStatsToOverlayAsync(state.TableId, 0, 0, 0);
+
+                            var tableSetting = FindTableSetting(state.TableId);
+                            var level1Stake = ResolveLevel1StakeForSetting(tableSetting);
+                            TryForceStakeLevel1OnJs(state.TableId, level1Stake);
                         }
                     }
                     if (holdWinUntilLevel1)

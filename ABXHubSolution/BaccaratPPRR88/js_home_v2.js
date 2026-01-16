@@ -1325,6 +1325,28 @@
         } catch (_) {}
     }
 
+    const FORCE_STAKE_LEVEL1_BY_TABLE = new Map();
+    window.__cw_forceStakeLevel1 = function (tableId, amount) {
+        try {
+            const id = String(tableId || '').trim();
+            const v = Number(amount) || 0;
+            if (!id || !Number.isFinite(v) || v <= 0)
+                return false;
+            FORCE_STAKE_LEVEL1_BY_TABLE.set(id, v);
+            return true;
+        } catch (_) {
+            return false;
+        }
+    };
+    function betConsumeForceStakeLevel1(id) {
+        if (!id)
+            return 0;
+        const v = FORCE_STAKE_LEVEL1_BY_TABLE.get(id) || 0;
+        if (v > 0)
+            FORCE_STAKE_LEVEL1_BY_TABLE.delete(id);
+        return v;
+    }
+
     window.__cw_bet = function (tableId, side, amount, isVirtual) {
         let sent = false;
         const sendOnce = (id, sideLabel, amountValue) => {
@@ -1359,7 +1381,10 @@
             const id = String(tableId || '').trim();
             const s = betNormalizeSide(side);
             const sideLabel = (s === 'player') ? 'P' : (s === 'banker' ? 'B' : '');
-            const amountValue = Number(amount) || 0;
+            let amountValue = Number(amount) || 0;
+            const forcedLevel1 = betConsumeForceStakeLevel1(id);
+            if (forcedLevel1 > 0)
+                amountValue = forcedLevel1;
 
             if (id && sideLabel) {
                 if (isVirtual === true) {
