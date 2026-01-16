@@ -66,7 +66,7 @@ namespace BaccaratPPRR88
         {
             try
             {
-                var res = Application.Current?.Resources;
+                var res = System.Windows.Application.Current?.Resources;
                 if (res != null && res.Contains(key))
                     return res[key] as ImageSource;
             }
