@@ -60,9 +60,9 @@ namespace XocDiaTuLinhZoWin.Tasks
             return string.Join("-", parts);
         }
 
-        private static HashSet<string> BuildAllPatterns()
+        private static Dictionary<string, int> BuildAllPatterns()
         {
-            var set = new HashSet<string>(StringComparer.Ordinal);
+            var set = new Dictionary<string, int>(StringComparer.Ordinal);
             for (int i = 0; i < (1 << PatternLen); i++)
             {
                 var p = new char[PatternLen];
@@ -71,7 +71,7 @@ namespace XocDiaTuLinhZoWin.Tasks
                     int bit = (i >> (PatternLen - 1 - b)) & 1;
                     p[b] = (bit == 0) ? 'C' : 'L';
                 }
-                set.Add(new string(p));
+                set[new string(p)] = 0;
             }
             return set;
         }
@@ -95,7 +95,7 @@ namespace XocDiaTuLinhZoWin.Tasks
             return true;
         }
 
-        private static void LogRemainSet(HashSet<string> candidates, Action<string>? log)
+        private static void LogRemainSet(Dictionary<string, int> candidates, Action<string>? log)
         {
             int remain = candidates.Count;
             if (remain <= 0)
@@ -103,12 +103,12 @@ namespace XocDiaTuLinhZoWin.Tasks
                 log?.Invoke("[SeqHotCL] remain=0");
                 return;
             }
-            var remainList = new List<string>(candidates);
+            var remainList = new List<string>(candidates.Keys);
             remainList.Sort(StringComparer.Ordinal);
             log?.Invoke($"[SeqHotCL] remain={remain} set={string.Join(",", remainList)}");
         }
 
-        private static HashSet<string> BuildRemainingSetFromSeq(string seq, Action<string>? log)
+        private static Dictionary<string, int> BuildRemainingSetFromSeq(string seq, Action<string>? log)
         {
             var candidates = BuildAllPatterns();
             var filtered = FilterSeqCL(seq);
@@ -132,6 +132,8 @@ namespace XocDiaTuLinhZoWin.Tasks
             {
                 string wBase = latestFirst.Substring(i, PatternLen);
                 string w = ReverseString(wBase);
+                if (candidates.TryGetValue(w, out var cnt))
+                    candidates[w] = cnt + 1;
                 string wRev = FlipCL(w);
                 bool removed = candidates.Remove(wRev);
                 log?.Invoke($"[SeqHotCL] win#{i + 1:00} {w} -> rev {wRev} {(removed ? "remove" : "skip")}");
@@ -141,25 +143,34 @@ namespace XocDiaTuLinhZoWin.Tasks
             return candidates;
         }
 
-        private static bool RemoveLatestWindowFromSet(HashSet<string> candidates, string w, string wRev, Action<string>? log, string tag)
+        private static bool RemoveLatestWindowFromSet(Dictionary<string, int> candidates, string w, string wRev, Action<string>? log, string tag)
         {
             bool removed = candidates.Remove(wRev);
             log?.Invoke($"[SeqHotCL]{tag} win#01 {w} -> rev {wRev} {(removed ? "remove" : "skip")}");
             return removed;
         }
 
-        private static string? PickPatternFromSet(HashSet<string> candidates)
+        private static string? PickPatternFromSet(Dictionary<string, int> candidates, out int maxCount)
         {
+            maxCount = -1;
             int remain = candidates.Count;
             if (remain <= 0) return null;
-            int pick = _rng.Value!.Next(remain);
-            int idx = 0;
-            foreach (var pat in candidates)
+            var best = new List<string>();
+            foreach (var kv in candidates)
             {
-                if (idx == pick) return pat;
-                idx++;
+                if (kv.Value > maxCount)
+                {
+                    maxCount = kv.Value;
+                    best.Clear();
+                    best.Add(kv.Key);
+                }
+                else if (kv.Value == maxCount)
+                {
+                    best.Add(kv.Key);
+                }
             }
-            return null;
+            if (best.Count == 0) return null;
+            return best[_rng.Value!.Next(best.Count)];
         }
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
@@ -167,7 +178,7 @@ namespace XocDiaTuLinhZoWin.Tasks
             var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
             string? pattern = null;
             int patternIndex = 0;
-            HashSet<string>? candidates = null;
+            Dictionary<string, int>? candidates = null;
             string lastWindow = "";
             string lastWindowRev = "";
             bool hasLastWindow = false;
@@ -191,17 +202,15 @@ namespace XocDiaTuLinhZoWin.Tasks
                     {
                         candidates = BuildAllPatterns();
                         ctx.Log?.Invoke("[SeqHotCL] tap A rong -> tao lai");
-                        if (hasLastWindow)
-                            RemoveLatestWindowFromSet(candidates, lastWindow, lastWindowRev, ctx.Log, " reapply");
                         LogRemainSet(candidates, ctx.Log);
                     }
 
-                    pattern = PickPatternFromSet(candidates);
+                    pattern = PickPatternFromSet(candidates, out int maxCount);
                     patternIndex = 0;
                     if (string.IsNullOrEmpty(pattern))
                         ctx.Log?.Invoke("[SeqHotCL] khong con chuoi phu hop, fallback ngau nhien");
                     else
-                        ctx.Log?.Invoke($"[SeqHotCL] chon_mau={pattern} -> {PatternToSideSeq(pattern)} (con={candidates?.Count ?? 0})");
+                        ctx.Log?.Invoke($"[SeqHotCL] chon_mau={pattern} -> {PatternToSideSeq(pattern)} (con={candidates?.Count ?? 0}, max={maxCount})");
                 }
 
                 string side = string.IsNullOrEmpty(pattern)
@@ -254,24 +263,18 @@ namespace XocDiaTuLinhZoWin.Tasks
                 if (hasLastWindow && candidates != null && candidates.Count > 0)
                 {
                     ctx.Log?.Invoke("[SeqHotCL] scan=latest");
+                    if (candidates.TryGetValue(lastWindow, out var cnt))
+                        candidates[lastWindow] = cnt + 1;
                     RemoveLatestWindowFromSet(candidates, lastWindow, lastWindowRev, ctx.Log, "");
                 }
 
                 if (!string.IsNullOrEmpty(pattern))
                 {
-                    if (win)
+                    patternIndex++;
+                    if (patternIndex >= PatternLen)
                     {
-                        pattern = null;
                         patternIndex = 0;
-                    }
-                    else
-                    {
-                        patternIndex++;
-                        if (patternIndex >= PatternLen)
-                        {
-                            patternIndex = 0;
-                            pattern = null;
-                        }
+                        pattern = null;
                     }
                 }
             }
