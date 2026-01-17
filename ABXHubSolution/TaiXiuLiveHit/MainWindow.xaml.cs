@@ -257,7 +257,7 @@ namespace TaiXiuLiveHit
         const string LicenseBranch = "main";          // <- nhánh
         const string LicenseNameGame = "net88";          // <- nhánh
         const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/net88";
-        private const bool EnableLeaseCloudflare = false; // true=bật gọi Cloudflare
+        private const bool EnableLeaseCloudflare = true; // true=bật gọi Cloudflare
 
         // ===================== TOOLTIP TEXTS =====================
         const string TIP_SEQ_TX =
