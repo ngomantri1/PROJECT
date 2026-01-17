@@ -319,6 +319,7 @@ namespace XocDiaTuLinhZoWin
         // ====== App paths ======
         private readonly string _appDataDir;
         private readonly string _cfgPath;
+        private readonly string _statsPath;
         private readonly string _logDir;
 
         // ====== State ======
@@ -413,6 +414,7 @@ namespace XocDiaTuLinhZoWin
         private int _playStartInProgress = 0;// Ngăn PlayXocDia_Click chạy song song
 
         private readonly SemaphoreSlim _cfgWriteGate = new(1, 1);// Khoá ghi config để không bao giờ ghi song song
+        private readonly SemaphoreSlim _statsWriteGate = new(1, 1);
                                                                  // --- UI mode monitor ---
         private DateTime _lastGameTickUtc = DateTime.MinValue;
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
@@ -635,6 +637,29 @@ Ví dụ không hợp lệ:
 
         }
 
+        private record StatsRoot
+        {
+            public List<StatsItem> Tabs { get; set; } = new();
+        }
+
+        private record StatsItem
+        {
+            public string TabId { get; set; } = "";
+            public TabStats Stats { get; set; } = new();
+        }
+
+        private sealed class TabStats
+        {
+            public int CurrentWinStreak { get; set; }
+            public int CurrentLossStreak { get; set; }
+            public int MaxWinStreak { get; set; }
+            public int MaxLossStreak { get; set; }
+            public int TotalWinCount { get; set; }
+            public int TotalLossCount { get; set; }
+            public long TotalBetAmount { get; set; }
+            public double TotalProfit { get; set; }
+        }
+
         private sealed class StrategyTabState : INotifyPropertyChanged
         {
             private string _name;
@@ -702,6 +727,7 @@ Ví dụ không hợp lệ:
             public XocDiaTuLinhZoWin.Tasks.IBetTask? ActiveTask { get; set; }
             public DecisionState DecisionState { get; set; } = new DecisionState();
             public bool Cooldown { get; set; } = false;
+            public TabStats Stats { get; set; } = new TabStats();
 
             public event PropertyChangedEventHandler? PropertyChanged;
             private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -729,6 +755,7 @@ Ví dụ không hợp lệ:
 
         private const int MaxTabs = 5;
         private RootConfig _rootCfg = new();
+        private StatsRoot _statsRoot = new();
         private readonly ObservableCollection<StrategyTabState> _strategyTabs = new();
         private StrategyTabState? _activeTab;
         private bool _tabSwitching = false;
@@ -924,6 +951,7 @@ Ví dụ không hợp lệ:
             Directory.CreateDirectory(_appDataDir);
 
             _cfgPath = Path.Combine(_appDataDir, "config.json");
+            _statsPath = Path.Combine(_appDataDir, "stats.json");
 
 
 
@@ -1069,6 +1097,9 @@ Ví dụ không hợp lệ:
 
                     if (GroupStatus != null)
                         GroupStatus.Visibility = showPanels ? Visibility.Visible : Visibility.Collapsed;
+
+                    if (GroupStats != null)
+                        GroupStats.Visibility = showPanels ? Visibility.Visible : Visibility.Collapsed;
 
                     if (GroupConsole != null)
                         GroupConsole.Visibility = showPanels ? Visibility.Visible : Visibility.Collapsed;
@@ -1270,6 +1301,8 @@ Ví dụ không hợp lệ:
                 }
                 UpdateAddTabUi();
 
+                LoadStats();
+
                 _homeUsername = _cfg.LastHomeUsername;
                 // Sinh / n?p clientId c? ??nh cho lease
                 _leaseClientId = string.IsNullOrWhiteSpace(_cfg.LeaseClientId)
@@ -1324,6 +1357,67 @@ Ví dụ không hợp lệ:
             }
             catch (Exception ex) { Log("[SaveConfig] " + ex); }
             finally { _cfgWriteGate.Release(); }
+        }
+
+        private void SyncStatsRootFromTabs()
+        {
+            if (_statsRoot.Tabs == null) _statsRoot.Tabs = new List<StatsItem>();
+            _statsRoot.Tabs = _strategyTabs
+                .Select(t => new StatsItem { TabId = t.Id, Stats = t.Stats ?? new TabStats() })
+                .ToList();
+        }
+
+        private void LoadStats()
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(_statsPath) && File.Exists(_statsPath))
+                {
+                    var json = File.ReadAllText(_statsPath, Encoding.UTF8);
+                    _statsRoot = JsonSerializer.Deserialize<StatsRoot>(json) ?? new StatsRoot();
+                    Log("Loaded stats: " + _statsPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[LoadStats] " + ex);
+            }
+
+            if (_statsRoot.Tabs == null) _statsRoot.Tabs = new List<StatsItem>();
+            var byId = _statsRoot.Tabs
+                .Where(t => !string.IsNullOrWhiteSpace(t.TabId))
+                .ToDictionary(t => t.TabId, t => t.Stats ?? new TabStats());
+
+            foreach (var tab in _strategyTabs)
+            {
+                if (byId.TryGetValue(tab.Id, out var stats))
+                    tab.Stats = stats;
+                else
+                    tab.Stats = new TabStats();
+            }
+
+            SyncStatsRootFromTabs();
+        }
+
+        private async Task SaveStatsAsync()
+        {
+            if (string.IsNullOrEmpty(_statsPath)) return;
+
+            await _statsWriteGate.WaitAsync();
+            try
+            {
+                SyncStatsRootFromTabs();
+
+                var dir = Path.GetDirectoryName(_statsPath);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+                var json = JsonSerializer.Serialize(_statsRoot, new JsonSerializerOptions { WriteIndented = true });
+                var tmp = _statsPath + ".tmp";
+                await File.WriteAllTextAsync(tmp, json, Encoding.UTF8);
+                File.Move(tmp, _statsPath, true);
+            }
+            catch (Exception ex) { Log("[SaveStats] " + ex); }
+            finally { _statsWriteGate.Release(); }
         }
 
         private static AppConfig CreateDefaultTab(int index)
@@ -1428,6 +1522,19 @@ Ví dụ không hợp lệ:
             if (LblLevel != null) LblLevel.Text = tab.LastLevelText ?? "";
             SetLastSideUI(tab.LastSide);
             SetWinLossUI(tab.LastWinLoss);
+            UpdateStatsUi(tab);
+        }
+
+        private void UpdateStatsUi(StrategyTabState tab)
+        {
+            if (tab == null) return;
+            if (!ReferenceEquals(_activeTab, tab)) return;
+
+            var s = tab.Stats ?? new TabStats();
+            if (LblStatStreak != null) LblStatStreak.Text = $"{s.MaxWinStreak}/{s.MaxLossStreak}";
+            if (LblStatTotalWinLoss != null) LblStatTotalWinLoss.Text = $"{s.TotalWinCount}/{s.TotalLossCount}";
+            if (LblStatTotalBet != null) LblStatTotalBet.Text = s.TotalBetAmount.ToString("N0");
+            if (LblStatTotalProfit != null) LblStatTotalProfit.Text = s.TotalProfit.ToString("N0");
         }
 
         private void ApplyUiToConfig(AppConfig cfg)
@@ -1585,6 +1692,7 @@ Ví dụ không hợp lệ:
             ApplyActiveTabToUi();
             if (_uiReady) ApplyMouseShieldFromCheck();
             _ = SaveConfigAsync();
+            _ = SaveStatsAsync();
         }
 
         private void StrategyTabList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1795,6 +1903,7 @@ Ví dụ không hợp lệ:
             _rootCfg.Tabs = _strategyTabs.Select(t => t.Config).ToList();
             _rootCfg.SelectedTabId = _activeTab?.Id ?? "";
             await SaveConfigAsync();
+            await SaveStatsAsync();
         }
 
         private void TabHeader_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -5203,17 +5312,22 @@ Ví dụ không hợp lệ:
 
             long rounded = (long)Math.Round(amount);
             tab.LastStakeAmount = rounded;
+            if (rounded > 0)
+                tab.Stats.TotalBetAmount += rounded;
             int levelIndex = Array.FindIndex(stakeSeq, s => s == rounded);
             string levelText = (levelIndex >= 0) ? $"{levelIndex + 1}/{stakeSeq.Length}" : "";
             tab.LastLevelText = levelText;
 
-            if (!ReferenceEquals(_activeTab, tab)) return;
-
-            if (LblStake != null) LblStake.Text = rounded.ToString("N0");
-            if (!string.Equals(moneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase))
+            if (ReferenceEquals(_activeTab, tab))
             {
-                if (LblLevel != null) LblLevel.Text = levelText;
+                if (LblStake != null) LblStake.Text = rounded.ToString("N0");
+                if (!string.Equals(moneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (LblLevel != null) LblLevel.Text = levelText;
+                }
+                UpdateStatsUi(tab);
             }
+            _ = SaveStatsAsync();
         }
 
         private void UpdateTabWin(StrategyTabState tab, double net, string moneyStrategyId)
@@ -5221,6 +5335,7 @@ Ví dụ không hợp lệ:
             if (tab == null) return;
 
             tab.WinTotal += net;
+            tab.Stats.TotalProfit += net;
             if (ReferenceEquals(_activeTab, tab))
                 _winTotal = tab.WinTotal;
 
@@ -5234,14 +5349,36 @@ Ví dụ không hợp lệ:
                 LblWin.Text = tab.WinTotal.ToString("N0");
 
             CheckCutAndStopIfNeeded(tab);
+            UpdateStatsUi(tab);
+            _ = SaveStatsAsync();
         }
 
         private void UpdateTabWinLoss(StrategyTabState tab, bool? result)
         {
             if (tab == null) return;
             tab.LastWinLoss = result;
+            if (result.HasValue)
+            {
+                if (result.Value)
+                {
+                    tab.Stats.TotalWinCount++;
+                    tab.Stats.CurrentWinStreak++;
+                    tab.Stats.CurrentLossStreak = 0;
+                    if (tab.Stats.CurrentWinStreak > tab.Stats.MaxWinStreak)
+                        tab.Stats.MaxWinStreak = tab.Stats.CurrentWinStreak;
+                }
+                else
+                {
+                    tab.Stats.TotalLossCount++;
+                    tab.Stats.CurrentLossStreak++;
+                    tab.Stats.CurrentWinStreak = 0;
+                    if (tab.Stats.CurrentLossStreak > tab.Stats.MaxLossStreak)
+                        tab.Stats.MaxLossStreak = tab.Stats.CurrentLossStreak;
+                }
+            }
             if (ReferenceEquals(_activeTab, tab))
                 SetWinLossUI(result);
+            UpdateStatsUi(tab);
         }
 
         private void ResetTabMiniState(StrategyTabState tab)
@@ -5250,6 +5387,13 @@ Ví dụ không hợp lệ:
             tab.LastSide = "";
             tab.LastStakeAmount = null;
             tab.LastLevelText = "";
+        }
+
+        private void ResetStatsForTab(StrategyTabState tab)
+        {
+            if (tab == null) return;
+            tab.Stats = new TabStats();
+            UpdateStatsUi(tab);
         }
 
 
@@ -5290,6 +5434,14 @@ Ví dụ không hợp lệ:
                 ResetTabMiniState(tab);
             if (_activeTab != null && _activeTab.IsRunning)
                 ResetBetMiniPanel();
+        }
+
+        private async void BtnStatsReset_Click(object sender, RoutedEventArgs e)
+        {
+            if (_activeTab == null) return;
+            ResetStatsForTab(_activeTab);
+            await SaveStatsAsync();
+            Log("[Stats] reset: " + _activeTab.Name);
         }
 
 
