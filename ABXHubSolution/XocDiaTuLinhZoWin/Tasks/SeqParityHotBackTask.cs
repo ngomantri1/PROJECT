@@ -150,7 +150,10 @@ namespace XocDiaTuLinhZoWin.Tasks
             return removed;
         }
 
-        private static string? PickPatternFromSet(Dictionary<string, int> candidates, out int maxCount)
+        private static string? PickPatternFromSet(
+            Dictionary<string, int> candidates,
+            HashSet<string> tempLocked,
+            out int maxCount)
         {
             maxCount = -1;
             int remain = candidates.Count;
@@ -158,6 +161,7 @@ namespace XocDiaTuLinhZoWin.Tasks
             var best = new List<string>();
             foreach (var kv in candidates)
             {
+                if (tempLocked.Contains(kv.Key)) continue;
                 if (kv.Value > maxCount)
                 {
                     maxCount = kv.Value;
@@ -179,6 +183,7 @@ namespace XocDiaTuLinhZoWin.Tasks
             string? pattern = null;
             int patternIndex = 0;
             Dictionary<string, int>? candidates = null;
+            var tempLocked = new HashSet<string>(StringComparer.Ordinal);
             string lastWindow = "";
             string lastWindowRev = "";
             bool hasLastWindow = false;
@@ -205,7 +210,7 @@ namespace XocDiaTuLinhZoWin.Tasks
                         LogRemainSet(candidates, ctx.Log);
                     }
 
-                    pattern = PickPatternFromSet(candidates, out int maxCount);
+                    pattern = PickPatternFromSet(candidates, tempLocked, out int maxCount);
                     patternIndex = 0;
                     if (string.IsNullOrEmpty(pattern))
                         ctx.Log?.Invoke("[SeqHotCL] khong con chuoi phu hop, fallback ngau nhien");
@@ -266,6 +271,19 @@ namespace XocDiaTuLinhZoWin.Tasks
                     if (candidates.TryGetValue(lastWindow, out var cnt))
                         candidates[lastWindow] = cnt + 1;
                     RemoveLatestWindowFromSet(candidates, lastWindow, lastWindowRev, ctx.Log, "");
+                }
+
+                if (!win && !string.IsNullOrEmpty(pattern))
+                {
+                    tempLocked.Add(pattern);
+                    ctx.Log?.Invoke($"[SeqHotCL] tam_khoa={pattern}");
+                    patternIndex = 0;
+                    pattern = null;
+                }
+                else if (win && tempLocked.Count > 0)
+                {
+                    tempLocked.Clear();
+                    ctx.Log?.Invoke("[SeqHotCL] mo_khoa_tam");
                 }
 
                 if (!string.IsNullOrEmpty(pattern))
