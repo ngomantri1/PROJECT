@@ -551,6 +551,29 @@ Ví dụ không hợp lệ:
             public double CutLoss { get; set; } = 0;
         }
 
+        private record StatsRoot
+        {
+            public List<StatsItem> Tables { get; set; } = new();
+        }
+
+        private record StatsItem
+        {
+            public string TableId { get; set; } = "";
+            public TabStats Stats { get; set; } = new();
+        }
+
+        private sealed class TabStats
+        {
+            public int CurrentWinStreak { get; set; }
+            public int CurrentLossStreak { get; set; }
+            public int MaxWinStreak { get; set; }
+            public int MaxLossStreak { get; set; }
+            public int TotalWinCount { get; set; }
+            public int TotalLossCount { get; set; }
+            public long TotalBetAmount { get; set; }
+            public double TotalProfit { get; set; }
+        }
+
         private sealed class TableTaskState
         {
             public string TableId { get; init; } = "";
@@ -579,6 +602,7 @@ Ví dụ không hợp lệ:
             public bool HoldWinTotalSkipLogged;
             public bool ForceStakeLevel1;
             public bool ForceStakeLevel1Applied;
+            public TabStats Stats { get; set; } = new TabStats();
         }
 
         private sealed class TableOverlayState
@@ -622,9 +646,13 @@ Ví dụ không hợp lệ:
         private AppConfig _cfg = new();
         private AppConfig _globalCfgSnapshot = new();
         private TableSettingsFile _tableSettings = new();
+        private StatsRoot _statsRoot = new();
+        private readonly Dictionary<string, TabStats> _statsByTable = new(StringComparer.OrdinalIgnoreCase);
 
         private readonly string _tableSettingsPath;
+        private readonly string _statsPath;
         private readonly SemaphoreSlim _tableSettingsWriteGate = new(1, 1);
+        private readonly SemaphoreSlim _statsWriteGate = new(1, 1);
         private CancellationTokenSource? _tableSettingsSaveCts;
         private string? _activeTableId;
         private bool _suppressTableSync = false;
@@ -925,6 +953,7 @@ Ví dụ không hợp lệ:
             _cfgPath = Path.Combine(_appDataDir, "config.json");
             _leaseSessionId = Guid.NewGuid().ToString("N");
             _tableSettingsPath = Path.Combine(_appDataDir, "tablesettings.json");
+            _statsPath = Path.Combine(_appDataDir, "stats.json");
 
             _logDir = Path.Combine(_appDataDir, "logs");
             Directory.CreateDirectory(_logDir);
@@ -1150,6 +1179,8 @@ Ví dụ không hợp lệ:
                         GroupConsole.Visibility = Visibility.Visible;
                     if (GroupStatus != null)
                         GroupStatus.Visibility = Visibility.Visible;
+                    if (GroupStats != null)
+                        GroupStats.Visibility = Visibility.Visible;
                     if (GroupRoomList != null)
                         GroupRoomList.Visibility = Visibility.Visible;
 
@@ -1172,6 +1203,8 @@ Ví dụ không hợp lệ:
                         GroupConsole.Visibility = Visibility.Collapsed;
                     if (GroupStatus != null)
                         GroupStatus.Visibility = Visibility.Collapsed;
+                    if (GroupStats != null)
+                        GroupStats.Visibility = Visibility.Collapsed;
                     if (GroupRoomList != null)
                         GroupRoomList.Visibility = Visibility.Collapsed;
                 }
@@ -1982,6 +2015,175 @@ Ví dụ không hợp lệ:
             }
         }
 
+        private TabStats GetOrCreateStatsForTable(string tableId)
+        {
+            if (string.IsNullOrWhiteSpace(tableId))
+                return new TabStats();
+            if (_statsByTable.TryGetValue(tableId, out var stats))
+                return stats;
+            stats = new TabStats();
+            _statsByTable[tableId] = stats;
+            return stats;
+        }
+
+        private void SyncStatsRootFromTables()
+        {
+            _statsRoot.Tables ??= new List<StatsItem>();
+            _statsRoot.Tables = _statsByTable
+                .Select(kv => new StatsItem { TableId = kv.Key, Stats = kv.Value ?? new TabStats() })
+                .ToList();
+        }
+
+        private void LoadStats()
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(_statsPath) && File.Exists(_statsPath))
+                {
+                    var json = File.ReadAllText(_statsPath, Encoding.UTF8);
+                    _statsRoot = JsonSerializer.Deserialize<StatsRoot>(json) ?? new StatsRoot();
+                    Log("Loaded stats: " + _statsPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[LoadStats] " + ex);
+            }
+
+            _statsRoot ??= new StatsRoot();
+            _statsRoot.Tables ??= new List<StatsItem>();
+            _statsByTable.Clear();
+            foreach (var item in _statsRoot.Tables)
+            {
+                if (string.IsNullOrWhiteSpace(item?.TableId)) continue;
+                _statsByTable[item.TableId] = item.Stats ?? new TabStats();
+            }
+
+            UpdateStatsUiForActiveTable();
+        }
+
+        private async Task SaveStatsAsync()
+        {
+            if (string.IsNullOrEmpty(_statsPath)) return;
+
+            await _statsWriteGate.WaitAsync();
+            try
+            {
+                SyncStatsRootFromTables();
+
+                var dir = Path.GetDirectoryName(_statsPath);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+                var json = JsonSerializer.Serialize(_statsRoot, new JsonSerializerOptions { WriteIndented = true });
+                var tmp = _statsPath + ".tmp";
+                await File.WriteAllTextAsync(tmp, json, Encoding.UTF8);
+                File.Move(tmp, _statsPath, true);
+            }
+            catch (Exception ex) { Log("[SaveStats] " + ex); }
+            finally { _statsWriteGate.Release(); }
+        }
+
+        private void UpdateStatsUiForActiveTable()
+        {
+            UpdateStatsUiAggregated();
+        }
+
+        private void UpdateStatsUi(TableTaskState state)
+        {
+            UpdateStatsUiAggregated();
+        }
+
+        private void UpdateStatsUi(TabStats s)
+        {
+            if (LblStatStreak != null)
+                LblStatStreak.Text = $"{s.MaxWinStreak}/{s.MaxLossStreak}";
+            if (LblStatTotalWinLoss != null)
+                LblStatTotalWinLoss.Text = $"{s.TotalWinCount}/{s.TotalLossCount}";
+            if (LblStatTotalBet != null)
+                LblStatTotalBet.Text = s.TotalBetAmount.ToString("N0");
+            if (LblStatTotalProfit != null)
+                LblStatTotalProfit.Text = _winTotal.ToString("N0");
+        }
+
+        private TabStats BuildAggregatedStats()
+        {
+            var agg = new TabStats();
+            foreach (var stats in _statsByTable.Values)
+            {
+                agg.TotalWinCount += stats.TotalWinCount;
+                agg.TotalLossCount += stats.TotalLossCount;
+                agg.TotalBetAmount += stats.TotalBetAmount;
+                if (stats.MaxWinStreak > agg.MaxWinStreak)
+                    agg.MaxWinStreak = stats.MaxWinStreak;
+                if (stats.MaxLossStreak > agg.MaxLossStreak)
+                    agg.MaxLossStreak = stats.MaxLossStreak;
+            }
+            return agg;
+        }
+
+        private void UpdateStatsUiAggregated()
+        {
+            var s = BuildAggregatedStats();
+            UpdateStatsUi(s);
+        }
+
+        private void UpdateTableStatsStake(TableTaskState state, double amount)
+        {
+            var rounded = (long)Math.Round(amount);
+            if (rounded > 0)
+                state.Stats.TotalBetAmount += rounded;
+            _statsByTable[state.TableId] = state.Stats;
+            UpdateStatsUiAggregated();
+            _ = SaveStatsAsync();
+        }
+
+        private void UpdateTableStatsWin(TableTaskState state, double net)
+        {
+            state.Stats.TotalProfit += net;
+            _statsByTable[state.TableId] = state.Stats;
+            UpdateStatsUiAggregated();
+            _ = SaveStatsAsync();
+        }
+
+        private void UpdateTableStatsWinLoss(TableTaskState state, bool? result)
+        {
+            if (!result.HasValue) return;
+            if (result.Value)
+            {
+                state.Stats.TotalWinCount++;
+                state.Stats.CurrentWinStreak++;
+                state.Stats.CurrentLossStreak = 0;
+                if (state.Stats.CurrentWinStreak > state.Stats.MaxWinStreak)
+                    state.Stats.MaxWinStreak = state.Stats.CurrentWinStreak;
+            }
+            else
+            {
+                state.Stats.TotalLossCount++;
+                state.Stats.CurrentLossStreak++;
+                state.Stats.CurrentWinStreak = 0;
+                if (state.Stats.CurrentLossStreak > state.Stats.MaxLossStreak)
+                    state.Stats.MaxLossStreak = state.Stats.CurrentLossStreak;
+            }
+            _statsByTable[state.TableId] = state.Stats;
+            UpdateStatsUiAggregated();
+        }
+
+        private void ResetStatsForActiveTable()
+        {
+            foreach (var state in _tableTasks.Values)
+                state.Stats = new TabStats();
+            _statsByTable.Clear();
+            _statsRoot.Tables = new List<StatsItem>();
+            UpdateStatsUiAggregated();
+        }
+
+        private async void BtnStatsReset_Click(object sender, RoutedEventArgs e)
+        {
+            ResetStatsForActiveTable();
+            await SaveStatsAsync();
+            Log("[Stats] reset: " + (_activeTableId ?? ""));
+        }
+
         private async Task SaveTableSettingsAsync()
         {
             if (string.IsNullOrEmpty(_tableSettingsPath))
@@ -2199,6 +2401,7 @@ Ví dụ không hợp lệ:
             UpdateTableSettingFromUi(_activeTableId);
             _activeTableId = "";
             ApplyGlobalConfigSnapshotToUi();
+            UpdateStatsUiForActiveTable();
         }
 
         private void ApplyUiConfigToTableSetting(TableSetting setting, bool resetCuts)
@@ -2447,6 +2650,7 @@ Ví dụ không hợp lệ:
             var setting = GetOrCreateTableSetting(tableId, tableName, out created);
             _activeTableId = setting.Id;
             ApplyTableSettingToUi(setting);
+            UpdateStatsUi(GetOrCreateTableTaskState(setting.Id, setting.Name));
             await PushTableCutValuesToOverlayAsync(setting.Id, setting.CutProfit, setting.CutLoss);
             if (created)
                 _ = TriggerTableSettingsSaveDebouncedAsync();
@@ -3706,6 +3910,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 MoneyHelper.Logger = Log;
                 LoadConfig();
                 LoadTableSettings();
+                LoadStats();
                 InitSeqIcons();
 
                 // NEW: đồng bộ nội dung theo chiến lược đang chọn + gắn tooltip ngay khi mở app
@@ -5895,6 +6100,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     state.LastBetLevelText = (state.StakeLevelIndexForUi >= 0 && stakeSeq.Length > 0)
                         ? $"{state.StakeLevelIndexForUi + 1}/{stakeSeq.Length}"
                         : "";
+                    UpdateTableStatsStake(state, state.LastBetAmount);
                     _ = PushBetPlanToOverlayAsync(tableId, state.LastBetSide, state.LastBetAmount, state.LastBetLevelText);
                     if (!IsActiveTable(tableId))
                         return;
@@ -5942,9 +6148,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     CheckTableCutAndStopIfNeeded(setting, state);
                     CheckCutAndStopIfNeeded();
                     CheckWinGeTotalBetResetIfNeeded();
+                    UpdateTableStatsWin(state, net);
                 }),
                 UiWinLoss = s => Dispatcher.Invoke(() =>
                 {
+                    UpdateTableStatsWinLoss(state, s);
                     if (!IsActiveTable(tableId)) return;
                     SetWinLossUI(s);
                 }),
@@ -5989,11 +6197,16 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         TableId = tableId,
                         TableName = !string.IsNullOrWhiteSpace(tableName) ? tableName : ResolveRoomName(tableId)
                     };
+                    state.Stats = GetOrCreateStatsForTable(tableId);
                     _tableTasks[tableId] = state;
                 }
                 else if (!string.IsNullOrWhiteSpace(tableName))
                 {
                     state.TableName = tableName;
+                }
+                else if (state.Stats == null)
+                {
+                    state.Stats = GetOrCreateStatsForTable(tableId);
                 }
 
                 return state;

@@ -420,6 +420,23 @@ Ví dụ không hợp lệ:
         }
 
         // 1) Model 1 dòng log đặt cược
+        private record StatsRoot
+        {
+            public TabStats Stats { get; set; } = new();
+        }
+
+        private sealed class TabStats
+        {
+            public int CurrentWinStreak { get; set; }
+            public int CurrentLossStreak { get; set; }
+            public int MaxWinStreak { get; set; }
+            public int MaxLossStreak { get; set; }
+            public int TotalWinCount { get; set; }
+            public int TotalLossCount { get; set; }
+            public long TotalBetAmount { get; set; }
+            public double TotalProfit { get; set; }
+        }
+
         private sealed class BetRow
         {
             public DateTime At { get; set; }                 // Thời gian đặt
@@ -441,6 +458,9 @@ Ví dụ không hợp lệ:
 
 
         private AppConfig _cfg = new();
+        private StatsRoot _statsRoot = new();
+        private string _statsPath = "";
+        private readonly SemaphoreSlim _statsWriteGate = new(1, 1);
 
         // ====== LOGGING (mới: batch, không đơ UI) ======
         // UI
@@ -629,6 +649,7 @@ Ví dụ không hợp lệ:
             Directory.CreateDirectory(_appDataDir);
 
             _cfgPath = Path.Combine(_appDataDir, "config.json");
+            _statsPath = Path.Combine(_appDataDir, "stats.json");
             _leaseSessionId = Guid.NewGuid().ToString("N");
 
             _logDir = Path.Combine(_appDataDir, "logs");
@@ -766,6 +787,9 @@ Ví dụ không hợp lệ:
 
                     if (GroupStatus != null)
                         GroupStatus.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
+
+                    if (GroupStats != null)
+                        GroupStats.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
 
                     if (GroupConsole != null)
                         GroupConsole.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
@@ -955,6 +979,7 @@ Ví dụ không hợp lệ:
 
                 if (ChkTrial != null) ChkTrial.IsChecked = _cfg.UseTrial;
                 ApplyCutUiFromConfig();
+                LoadStats();
 
 
             }
@@ -1011,6 +1036,110 @@ Ví dụ không hợp lệ:
             }
             catch (Exception ex) { Log("[SaveConfig] " + ex); }
             finally { _cfgWriteGate.Release(); }
+        }
+
+        private void LoadStats()
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(_statsPath) && File.Exists(_statsPath))
+                {
+                    var json = File.ReadAllText(_statsPath, Encoding.UTF8);
+                    _statsRoot = JsonSerializer.Deserialize<StatsRoot>(json) ?? new StatsRoot();
+                    Log("Loaded stats: " + _statsPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[LoadStats] " + ex);
+            }
+
+            _statsRoot ??= new StatsRoot();
+            _statsRoot.Stats ??= new TabStats();
+            UpdateStatsUi();
+        }
+
+        private async Task SaveStatsAsync()
+        {
+            if (string.IsNullOrEmpty(_statsPath)) return;
+
+            await _statsWriteGate.WaitAsync();
+            try
+            {
+                var dir = Path.GetDirectoryName(_statsPath);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+                var json = JsonSerializer.Serialize(_statsRoot, new JsonSerializerOptions { WriteIndented = true });
+                var tmp = _statsPath + ".tmp";
+                await File.WriteAllTextAsync(tmp, json, Encoding.UTF8);
+                File.Move(tmp, _statsPath, true);
+            }
+            catch (Exception ex) { Log("[SaveStats] " + ex); }
+            finally { _statsWriteGate.Release(); }
+        }
+
+        private void UpdateStatsUi()
+        {
+            var s = _statsRoot?.Stats ?? new TabStats();
+            if (LblStatStreak != null)
+                LblStatStreak.Text = $"{s.MaxWinStreak}/{s.MaxLossStreak}";
+            if (LblStatTotalWinLoss != null)
+                LblStatTotalWinLoss.Text = $"{s.TotalWinCount}/{s.TotalLossCount}";
+            if (LblStatTotalBet != null)
+                LblStatTotalBet.Text = s.TotalBetAmount.ToString("N0");
+            if (LblStatTotalProfit != null)
+                LblStatTotalProfit.Text = s.TotalProfit.ToString("N0");
+        }
+
+        private void UpdateStatsStake(double amount)
+        {
+            var rounded = (long)Math.Round(amount);
+            if (rounded > 0)
+                _statsRoot.Stats.TotalBetAmount += rounded;
+            UpdateStatsUi();
+            _ = SaveStatsAsync();
+        }
+
+        private void UpdateStatsWin(double net)
+        {
+            _statsRoot.Stats.TotalProfit += net;
+            UpdateStatsUi();
+            _ = SaveStatsAsync();
+        }
+
+        private void UpdateStatsWinLoss(bool? result)
+        {
+            if (!result.HasValue) return;
+            if (result.Value)
+            {
+                _statsRoot.Stats.TotalWinCount++;
+                _statsRoot.Stats.CurrentWinStreak++;
+                _statsRoot.Stats.CurrentLossStreak = 0;
+                if (_statsRoot.Stats.CurrentWinStreak > _statsRoot.Stats.MaxWinStreak)
+                    _statsRoot.Stats.MaxWinStreak = _statsRoot.Stats.CurrentWinStreak;
+            }
+            else
+            {
+                _statsRoot.Stats.TotalLossCount++;
+                _statsRoot.Stats.CurrentLossStreak++;
+                _statsRoot.Stats.CurrentWinStreak = 0;
+                if (_statsRoot.Stats.CurrentLossStreak > _statsRoot.Stats.MaxLossStreak)
+                    _statsRoot.Stats.MaxLossStreak = _statsRoot.Stats.CurrentLossStreak;
+            }
+            UpdateStatsUi();
+        }
+
+        private void ResetStats()
+        {
+            _statsRoot.Stats = new TabStats();
+            UpdateStatsUi();
+        }
+
+        private async void BtnStatsReset_Click(object sender, RoutedEventArgs e)
+        {
+            ResetStats();
+            await SaveStatsAsync();
+            Log("[Stats] reset");
         }
 
         // ====== WebView2 ======
@@ -3437,6 +3566,7 @@ Ví dụ không hợp lệ:
                     // TIỀN CƯỢC
                     if (LblStake != null)
                         LblStake.Text = v.ToString("N0");
+                    UpdateStatsStake(v);
 
                     // MỨC TIỀN = vị trí trong _stakeSeq (1-based)
                     // MỨC TIỀN = vị trí/độ dài (ví dụ 4/6)
@@ -3469,6 +3599,7 @@ Ví dụ không hợp lệ:
                         try { MoneyHelper.NotifyTempProfit(moneyStrategyId, net); } catch { }
                         if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
                         CheckCutAndStopIfNeeded();
+                        UpdateStatsWin(net);
                     }
 
                     if (Dispatcher.CheckAccess()) Apply();
@@ -3477,6 +3608,7 @@ Ví dụ không hợp lệ:
                 UiWinLoss = s => Dispatcher.Invoke(() =>
                 {
                     SetWinLossUI(s);
+                    UpdateStatsWinLoss(s);
                 }),
             };
         }

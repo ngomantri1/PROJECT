@@ -1324,6 +1324,192 @@
                             </StackPanel>
                         </Border>
 
+                        <!--  Thống kê  -->
+                        <Border
+                            x:Name="GroupStats"
+                            Style="{StaticResource Card}">
+                            <StackPanel>
+                                <StackPanel
+                                    VerticalAlignment="Center"
+                                    Orientation="Vertical"
+                                    Style="{StaticResource SectionHeader}">
+                                    <Grid HorizontalAlignment="Stretch">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="4*" />
+                                            <ColumnDefinition Width="6*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock
+                                            Grid.Column="0"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Center"
+                                            Style="{StaticResource SectionTitle}"
+                                            Text="Thống kê" />
+                                        <Button
+                                            x:Name="BtnStatsReset"
+                                            Grid.Column="1"
+                                            Width="28"
+                                            Height="28"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                            Padding="4"
+                                            Background="Transparent"
+                                            BorderBrush="Transparent"
+                                            BorderThickness="0"
+                                            FocusVisualStyle="{x:Null}"
+                                            Cursor="Hand"
+                                            Click="BtnStatsReset_Click"
+                                            ToolTip="Reset">
+                                            <Path
+                                                Width="16"
+                                                Height="16"
+                                                Stretch="Uniform"
+                                                Fill="{StaticResource Blue}"
+                                                Data="M12,3 A9,9 0 1 0 21,12 H18 A6,6 0 1 1 12,6 V9 L16,5 L12,1 Z" />
+                                        </Button>
+                                    </Grid>
+                                </StackPanel>
+
+                                <Border
+                                    Margin="0,8,0,0"
+                                    Padding="0"
+                                    Style="{StaticResource GhostFrame}">
+                                    <Border.Resources>
+                                        <Style x:Key="GhostCell" TargetType="Border">
+                                            <Setter Property="BorderBrush" Value="{StaticResource GhostStroke}" />
+                                            <Setter Property="BorderThickness" Value="0,0,1,1" />
+                                            <Setter Property="Padding" Value="6,4" />
+                                            <Setter Property="SnapsToDevicePixels" Value="True" />
+                                        </Style>
+                                        <Style x:Key="GhostQFirst" TargetType="Border">
+                                            <Setter Property="BorderBrush" Value="{StaticResource GhostStroke}" />
+                                            <Setter Property="BorderThickness" Value="0,0,1,0" />
+                                            <Setter Property="Padding" Value="6,4" />
+                                        </Style>
+                                        <Style x:Key="GhostQMid" TargetType="Border">
+                                            <Setter Property="BorderBrush" Value="{StaticResource GhostStroke}" />
+                                            <Setter Property="BorderThickness" Value="1,0,1,0" />
+                                            <Setter Property="Padding" Value="6,4" />
+                                        </Style>
+                                        <Style x:Key="GhostQLast" TargetType="Border">
+                                            <Setter Property="BorderBrush" Value="{StaticResource GhostStroke}" />
+                                            <Setter Property="BorderThickness" Value="1,0,0,0" />
+                                            <Setter Property="Padding" Value="6,4" />
+                                        </Style>
+                                    </Border.Resources>
+
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1*" />
+                                            <ColumnDefinition Width="3*" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <!--  Dòng 1  -->
+                                        <Border
+                                            Grid.Row="0"
+                                            Grid.ColumnSpan="2"
+                                            Padding="0"
+                                            Style="{StaticResource GhostCell}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <Border Grid.Column="0" Style="{StaticResource GhostQFirst}">
+                                                    <TextBlock
+                                                        VerticalAlignment="Center"
+                                                        Style="{StaticResource CapsLabel}"
+                                                        Text="THẮNG/THUA LIÊN TIẾP"
+                                                        TextWrapping="Wrap" />
+                                                </Border>
+                                                <Border Grid.Column="1" Style="{StaticResource GhostQMid}">
+                                                    <TextBlock
+                                                        x:Name="LblStatStreak"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        FontWeight="SemiBold"
+                                                        Style="{StaticResource ValueText}"
+                                                        Text="0/0" />
+                                                </Border>
+                                                <Border Grid.Column="2" Style="{StaticResource GhostQMid}">
+                                                    <TextBlock
+                                                        VerticalAlignment="Center"
+                                                        Style="{StaticResource CapsLabel}"
+                                                        Text="TỔNG THẮNG/THUA"
+                                                        TextWrapping="Wrap" />
+                                                </Border>
+                                                <Border Grid.Column="3" Style="{StaticResource GhostQLast}">
+                                                    <TextBlock
+                                                        x:Name="LblStatTotalWinLoss"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        FontWeight="SemiBold"
+                                                        Style="{StaticResource ValueText}"
+                                                        Text="0/0" />
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+
+                                        <!--  Dòng 2  -->
+                                        <Border
+                                            Grid.Row="1"
+                                            Grid.ColumnSpan="2"
+                                            Padding="0"
+                                            Style="{StaticResource GhostCell}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <Border Grid.Column="0" Style="{StaticResource GhostQFirst}">
+                                                    <TextBlock
+                                                        VerticalAlignment="Center"
+                                                        Style="{StaticResource CapsLabel}"
+                                                        Text="CƯỢC HỢP LỆ"
+                                                        TextWrapping="Wrap" />
+                                                </Border>
+                                                <Border Grid.Column="1" Style="{StaticResource GhostQMid}">
+                                                    <TextBlock
+                                                        x:Name="LblStatTotalBet"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        FontWeight="SemiBold"
+                                                        Style="{StaticResource ValueText}"
+                                                        Text="0" />
+                                                </Border>
+                                                <Border Grid.Column="2" Style="{StaticResource GhostQMid}">
+                                                    <TextBlock
+                                                        VerticalAlignment="Center"
+                                                        Style="{StaticResource CapsLabel}"
+                                                        Text="TIỀN THẮNG"
+                                                        TextWrapping="Wrap" />
+                                                </Border>
+                                                <Border Grid.Column="3" Style="{StaticResource GhostQLast}">
+                                                    <TextBlock
+                                                        x:Name="LblStatTotalProfit"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        FontWeight="SemiBold"
+                                                        Style="{StaticResource ValueText}"
+                                                        Text="0" />
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
                         <!--  Console  -->
                         <Border
                             x:Name="GroupConsole"

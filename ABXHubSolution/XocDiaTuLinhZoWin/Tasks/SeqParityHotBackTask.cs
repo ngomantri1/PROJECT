@@ -150,25 +150,21 @@ namespace XocDiaTuLinhZoWin.Tasks
             return removed;
         }
 
-        private static string? PickPatternFromSet(
-            Dictionary<string, int> candidates,
-            HashSet<string> tempLocked,
-            out int maxCount)
+        private static string? PickPatternFromSet(Dictionary<string, int> candidates, out int minCount)
         {
-            maxCount = -1;
+            minCount = int.MaxValue;
             int remain = candidates.Count;
             if (remain <= 0) return null;
             var best = new List<string>();
             foreach (var kv in candidates)
             {
-                if (tempLocked.Contains(kv.Key)) continue;
-                if (kv.Value > maxCount)
+                if (kv.Value < minCount)
                 {
-                    maxCount = kv.Value;
+                    minCount = kv.Value;
                     best.Clear();
                     best.Add(kv.Key);
                 }
-                else if (kv.Value == maxCount)
+                else if (kv.Value == minCount)
                 {
                     best.Add(kv.Key);
                 }
@@ -183,7 +179,6 @@ namespace XocDiaTuLinhZoWin.Tasks
             string? pattern = null;
             int patternIndex = 0;
             Dictionary<string, int>? candidates = null;
-            var tempLocked = new HashSet<string>(StringComparer.Ordinal);
             string lastWindow = "";
             string lastWindowRev = "";
             bool hasLastWindow = false;
@@ -210,12 +205,12 @@ namespace XocDiaTuLinhZoWin.Tasks
                         LogRemainSet(candidates, ctx.Log);
                     }
 
-                    pattern = PickPatternFromSet(candidates, tempLocked, out int maxCount);
+                    pattern = PickPatternFromSet(candidates, out int minCount);
                     patternIndex = 0;
                     if (string.IsNullOrEmpty(pattern))
                         ctx.Log?.Invoke("[SeqHotCL] khong con chuoi phu hop, fallback ngau nhien");
                     else
-                        ctx.Log?.Invoke($"[SeqHotCL] chon_mau={pattern} -> {PatternToSideSeq(pattern)} (con={candidates?.Count ?? 0}, max={maxCount})");
+                        ctx.Log?.Invoke($"[SeqHotCL] chon_mau={pattern} -> {PatternToSideSeq(pattern)} (con={candidates?.Count ?? 0}, min={minCount})");
                 }
 
                 string side = string.IsNullOrEmpty(pattern)
@@ -273,17 +268,10 @@ namespace XocDiaTuLinhZoWin.Tasks
                     RemoveLatestWindowFromSet(candidates, lastWindow, lastWindowRev, ctx.Log, "");
                 }
 
-                if (!win && !string.IsNullOrEmpty(pattern))
+                if (win && !string.IsNullOrEmpty(pattern))
                 {
-                    tempLocked.Add(pattern);
-                    ctx.Log?.Invoke($"[SeqHotCL] tam_khoa={pattern}");
                     patternIndex = 0;
                     pattern = null;
-                }
-                else if (win && tempLocked.Count > 0)
-                {
-                    tempLocked.Clear();
-                    ctx.Log?.Invoke("[SeqHotCL] mo_khoa_tam");
                 }
 
                 if (!string.IsNullOrEmpty(pattern))
