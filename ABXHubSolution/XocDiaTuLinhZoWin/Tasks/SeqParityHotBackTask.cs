@@ -150,21 +150,21 @@ namespace XocDiaTuLinhZoWin.Tasks
             return removed;
         }
 
-        private static string? PickPatternFromSet(Dictionary<string, int> candidates, out int minCount)
+        private static string? PickPatternFromSet(Dictionary<string, int> candidates, out int maxCount)
         {
-            minCount = int.MaxValue;
+            maxCount = -1;
             int remain = candidates.Count;
             if (remain <= 0) return null;
             var best = new List<string>();
             foreach (var kv in candidates)
             {
-                if (kv.Value < minCount)
+                if (kv.Value > maxCount)
                 {
-                    minCount = kv.Value;
+                    maxCount = kv.Value;
                     best.Clear();
                     best.Add(kv.Key);
                 }
-                else if (kv.Value == minCount)
+                else if (kv.Value == maxCount)
                 {
                     best.Add(kv.Key);
                 }
@@ -205,12 +205,12 @@ namespace XocDiaTuLinhZoWin.Tasks
                         LogRemainSet(candidates, ctx.Log);
                     }
 
-                    pattern = PickPatternFromSet(candidates, out int minCount);
+                    pattern = PickPatternFromSet(candidates, out int maxCount);
                     patternIndex = 0;
                     if (string.IsNullOrEmpty(pattern))
                         ctx.Log?.Invoke("[SeqHotCL] khong con chuoi phu hop, fallback ngau nhien");
                     else
-                        ctx.Log?.Invoke($"[SeqHotCL] chon_mau={pattern} -> {PatternToSideSeq(pattern)} (con={candidates?.Count ?? 0}, min={minCount})");
+                        ctx.Log?.Invoke($"[SeqHotCL] chon_mau={pattern} -> {PatternToSideSeq(pattern)} (con={candidates?.Count ?? 0}, max={maxCount})");
                 }
 
                 string side = string.IsNullOrEmpty(pattern)
@@ -268,7 +268,7 @@ namespace XocDiaTuLinhZoWin.Tasks
                     RemoveLatestWindowFromSet(candidates, lastWindow, lastWindowRev, ctx.Log, "");
                 }
 
-                if (win && !string.IsNullOrEmpty(pattern))
+                if (!win && !string.IsNullOrEmpty(pattern))
                 {
                     patternIndex = 0;
                     pattern = null;
