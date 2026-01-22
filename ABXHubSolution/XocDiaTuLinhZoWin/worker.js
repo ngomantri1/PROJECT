@@ -53,7 +53,7 @@
     const trialMinutes = parseInt(env.TRIAL_MINUTES ?? '120', 10) || 120;            // 2h mặc định
     const staleSec = parseInt(env.STALE_GRACE_SECONDS ?? '180', 10) || 180;
 
-    const trialKey = identity; // trial bám theo deviceId
+    const trialKey = identity; // trial bám theo deviceId + appId (gửi từ client)
     const K_TUSED = `trial_consumed:${tool}:${trialKey}`;
     const K_TACT  = `trial_active:${tool}:${trialKey}`;
     const K_LIC   = `license_active:${tool}:${identity}`;

@@ -399,6 +399,7 @@ namespace XocDiaTuLinhZoWin
         private string _expireMode = "";                   // "trial" | "license"
         private string _leaseClientId = "";
         private string _deviceId = "";
+        private string _trialKey = "";
 
         private string _leaseSessionId = "";
         private string _licenseUser = "";
@@ -1313,6 +1314,7 @@ Ví dụ không hợp lệ:
                     ? (_cfg.LeaseClientId = Guid.NewGuid().ToString("N"))
                     : _cfg.LeaseClientId;
                 EnsureDeviceId();
+                EnsureTrialKey();
 
                 if (string.IsNullOrWhiteSpace(_cfg.Url))
                     _cfg.Url = DEFAULT_URL;
@@ -3979,7 +3981,8 @@ Ví dụ không hợp lệ:
                 return true;
 
             EnsureDeviceId();
-            if (string.IsNullOrWhiteSpace(_deviceId))
+            EnsureTrialKey();
+            if (string.IsNullOrWhiteSpace(_trialKey))
             {
                 MessageBox.Show("Không xác định được DeviceId để dùng thử.", "Automino",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -4006,7 +4009,7 @@ Ví dụ không hợp lệ:
 
                     StartExpiryCountdown(trialUntilUtc, "trial");
                     SetLicenseUi(true);
-                    StartLeaseHeartbeat(_deviceId, _deviceId);
+                    StartLeaseHeartbeat(_trialKey, _trialKey);
                     return true;
                 }
 
@@ -4024,8 +4027,8 @@ Ví dụ không hợp lệ:
                     return false;
                 }
 
-                var url = $"{LeaseBaseUrl}/trial/{Uri.EscapeDataString(_deviceId)}";
-                var json = System.Text.Json.JsonSerializer.Serialize(new { clientId = _deviceId, sessionId, deviceId = _deviceId });
+                var url = $"{LeaseBaseUrl}/trial/{Uri.EscapeDataString(_trialKey)}";
+                var json = System.Text.Json.JsonSerializer.Serialize(new { clientId = _trialKey, sessionId, deviceId = _deviceId, appId = AppLocalDirName });
                 var res = await http.PostAsync(
                     url,
                     new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json"));
@@ -4046,7 +4049,7 @@ Ví dụ không hợp lệ:
 
                     StartExpiryCountdown(trialEndsAt, "trial");
                     SetLicenseUi(true);
-                    StartLeaseHeartbeat(_deviceId, _deviceId);
+                    StartLeaseHeartbeat(_trialKey, _trialKey);
                     Log("[Trial] started until: " + trialEndsAt.ToString("u"));
                     return true;
                 }
@@ -5644,6 +5647,20 @@ Ví dụ không hợp lệ:
             _deviceId = BuildDeviceId();
             if (!string.IsNullOrWhiteSpace(_deviceId))
                 Log("[DeviceId] ready");
+        }
+
+        private void EnsureTrialKey()
+        {
+            if (!string.IsNullOrWhiteSpace(_trialKey)) return;
+            EnsureDeviceId();
+            var appKey = (AppLocalDirName ?? "").Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(appKey))
+                appKey = "app";
+            var deviceKey = (_deviceId ?? "").Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(deviceKey))
+                return;
+            _trialKey = $"{deviceKey}:{appKey}";
+            Log("[TrialKey] " + _trialKey);
         }
 
         private static string BuildDeviceId()
