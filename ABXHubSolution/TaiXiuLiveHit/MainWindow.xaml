@@ -144,6 +144,41 @@
             </Style.Triggers>
         </Style>
 
+        <!--  Secondary Button (neutral outline)  -->
+        <Style x:Key="SecondaryButton" TargetType="Button">
+            <Setter Property="Background" Value="White" />
+            <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="12,9" />
+            <Setter Property="MinWidth" Value="90" />
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#F5F6F7" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.6" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <!--  Console (light)  -->
         <Style x:Key="ConsoleBox" TargetType="TextBox">
             <Setter Property="Background" Value="White" />
@@ -460,8 +495,18 @@
                                             MinWidth="140"
                                             Padding="13"
                                             Click="VaoXocDia_Click"
-                                            Content="Đăng Nhập &amp; Tài Xỉu Live"
+                                            Content="Đăng Nhập Tool"
                                             Style="{StaticResource PrimaryButton}"
+                                            Visibility="Visible" />
+
+                                        <Button
+                                            x:Name="BtnTrialTool"
+                                            Grid.Column="2"
+                                            MinWidth="140"
+                                            Padding="13"
+                                            Click="BtnTrialTool_Click"
+                                            Content="Dùng thử Tool"
+                                            Style="{StaticResource SecondaryButton}"
                                             Visibility="Visible" />
 
 
@@ -777,7 +822,7 @@
                                         Grid.Column="1"
                                         Margin="12,0,0,0"
                                         VerticalAlignment="Center"
-                                        Click="ChkTrial_Click"
+                                        IsEnabled="False"
                                         Content="Dùng thử">
                                         <CheckBox.Style>
                                             <Style TargetType="CheckBox">

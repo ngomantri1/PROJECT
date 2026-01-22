@@ -6,8 +6,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaiXiuThuongZoWin", "TaiXiu
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XocDiaTuLinhZoWin", "XocDiaTuLinhZoWin\XocDiaTuLinhZoWin.csproj", "{A09C5C23-AA99-4E74-B85C-5E3E0C69C227}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HitTaiXiuLive", "HitTaiXiuLive\HitTaiXiuLive.csproj", "{97C9DDD3-98A7-4978-BD81-7E4E06EC9763}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BaccaratPPRR88", "BaccaratPPRR88\BaccaratPPRR88.csproj", "{3AE8F698-9E01-462A-9CEA-03ABF4F524A2}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaiXiuLiveHit", "TaiXiuLiveHit\TaiXiuLiveHit.csproj", "{17EA496F-1303-4826-B1B0-EBB12568391F}"

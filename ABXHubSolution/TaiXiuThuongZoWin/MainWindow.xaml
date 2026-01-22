@@ -473,6 +473,7 @@
                                         <CheckBox
                                             x:Name="ChkRemember"
                                             Grid.Column="0"
+                                            Click="ChkRemember_Click"
                                             Style="{StaticResource LoginCheckStyle}">
                                             <TextBlock
                                                 Text="Lưu tài khoản &amp; mật khẩu"
@@ -504,6 +505,16 @@
                                             Click="VaoXocDia_Click"
                                             Content="Đăng Nhập Tool"
                                             Style="{StaticResource PrimaryButton}"
+                                            Visibility="Visible" />
+
+                                        <Button
+                                            x:Name="BtnTrialTool"
+                                            Grid.Column="2"
+                                            MinWidth="140"
+                                            Padding="13"
+                                            Click="BtnTrialTool_Click"
+                                            Content="Dùng thử Tool"
+                                            Style="{StaticResource SecondaryButton}"
                                             Visibility="Visible" />
 
 
@@ -871,7 +882,7 @@
                                         Grid.Column="1"
                                         Margin="12,0,0,0"
                                         VerticalAlignment="Center"
-                                        Click="ChkTrial_Click"
+                                        IsEnabled="False"
                                         Content="Dùng thử">
                                         <CheckBox.Style>
                                             <Style TargetType="CheckBox">

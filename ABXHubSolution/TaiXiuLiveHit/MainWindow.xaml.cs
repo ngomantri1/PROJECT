@@ -27,6 +27,9 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.ComponentModel;
 using System.Linq;
+using Microsoft.Win32;
+using System.Management;
+using System.Net.NetworkInformation;
 using System.Collections.ObjectModel;
 using System.Windows.Data;
 using static TaiXiuLiveHit.MainWindow;
@@ -211,6 +214,8 @@ namespace TaiXiuLiveHit
         private DateTimeOffset? _runExpiresAt;             // mốc hết hạn của phiên đang chạy (trial hoặc license)
         private string _expireMode = "";                   // "trial" | "license"
         private string _leaseClientId = "";
+        private string _deviceId = "";
+        private string _trialKey = "";
         private string _leaseSessionId = "";
         public string TrialUntil { get; set; } = "";
         // === License periodic re-check (5 phút/lần) ===
@@ -255,8 +260,8 @@ namespace TaiXiuLiveHit
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn
         const string LicenseBranch = "main";          // <- nhánh
-        const string LicenseNameGame = "net88";          // <- nhánh
-        const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/net88";
+        const string LicenseNameGame = "auto";          // <- nhánh
+        const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/auto";
         private const bool EnableLeaseCloudflare = true; // true=bật gọi Cloudflare
 
         // ===================== TOOLTIP TEXTS =====================
@@ -936,6 +941,8 @@ Ví dụ không hợp lệ:
                 _leaseClientId = string.IsNullOrWhiteSpace(_cfg.LeaseClientId)
                     ? (_cfg.LeaseClientId = Guid.NewGuid().ToString("N"))
                     : _cfg.LeaseClientId;
+                EnsureDeviceId();
+                EnsureTrialKey();
 
                 if (string.IsNullOrWhiteSpace(_cfg.Url))
                     _cfg.Url = DEFAULT_URL;
@@ -977,7 +984,7 @@ Ví dụ không hợp lệ:
                         TxtUser.Text = _cfg.Username;
                 }
 
-                if (ChkTrial != null) ChkTrial.IsChecked = _cfg.UseTrial;
+                if (ChkTrial != null) ChkTrial.IsChecked = false;
                 ApplyCutUiFromConfig();
                 LoadStats();
 
@@ -1015,7 +1022,7 @@ Ví dụ không hợp lệ:
                 else { _cfg.EncUser = ""; _cfg.EncPass = ""; _cfg.Username = ""; }
 
                 _cfg.LockMouse = (ChkLockMouse?.IsChecked == true);
-                _cfg.UseTrial = (ChkTrial?.IsChecked == true);
+            _cfg.UseTrial = false;
                 _cfg.LeaseClientId = _leaseClientId;
                 _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
                 if (ChkS7ResetOnProfit != null)
@@ -2265,14 +2272,6 @@ Ví dụ không hợp lệ:
             });
         }
 
-        private async void ChkTrial_Click(object sender, RoutedEventArgs e)
-        {
-            try { await SaveConfigAsync(); }
-            catch (Exception ex) { Log("[ChkTrial] " + ex.Message); }
-        }
-
-
-
         private void ApplyMoneyStrategyToUI(string id)
         {
             if (CmbMoneyStrategy == null) return;
@@ -3080,106 +3079,49 @@ Ví dụ không hợp lệ:
 
         private async void VaoXocDia_Click(object sender, RoutedEventArgs e)
         {
-            var t0 = DateTime.UtcNow;
-
             try
             {
-                Log("[PERF][VaoXocDia] === START ===");
-
+                if (ChkTrial != null) ChkTrial.IsChecked = false;
                 await SaveConfigAsync();
-                Log($"[PERF][VaoXocDia] After SaveConfigAsync: {(DateTime.UtcNow - t0).TotalMilliseconds:0} ms");
-
                 await EnsureWebReadyAsync();
-                Log($"[PERF][VaoXocDia] After EnsureWebReadyAsync: {(DateTime.UtcNow - t0).TotalMilliseconds:0} ms");
 
-                // 1) Ưu tiên gọi API JS: click Login trước
-                var tLogin = DateTime.UtcNow;
+                var start = string.IsNullOrWhiteSpace(_cfg.Url) ? (TxtUrl?.Text ?? "") : _cfg.Url;
+                if (!string.IsNullOrWhiteSpace(start))
+                    await NavigateIfNeededAsync(start.Trim());
+
+                if (!await EnsureLicenseAsync())
+                    return;
+
                 var rLogin = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickLogin?window.__abx_hw_clickLogin():'no-api');}catch(e){return 'err:'+e.message;}})();");
                 Log("[HOME] clickLogin via JS => " + rLogin);
-                Log($"[PERF][VaoXocDia] clickLogin JS: {(DateTime.UtcNow - tLogin).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
 
-                // đợi nhẹ để trang xử lý login (nếu có)
-                var tDelayBeforePlay = DateTime.UtcNow;
-                //await Task.Delay(900);
-                Log($"[PERF][VaoXocDia] Delay before clickPlay: {(DateTime.UtcNow - tDelayBeforePlay).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
-
-                // 2) Tiếp tục gọi API JS: click 'Chơi Tài Xỉu Live'
-                var tPlay = DateTime.UtcNow;
-                var rPlay = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickPlayXDL?window.__abx_hw_clickPlayXDL():'no-api');}catch(e){return 'err:'+e.message;}})();");
-                Log("[HOME] clickPlay via JS => " + rPlay);
-                Log($"[PERF][VaoXocDia] clickPlay JS: {(DateTime.UtcNow - tPlay).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
-
-                // 3) Fallback: nếu JS API không có/không ok, quay về hành vi cũ
-                var okByJs = (rPlay ?? "").IndexOf("ok", StringComparison.OrdinalIgnoreCase) >= 0;
-                if (!okByJs)
-                {
-                    var tHome = DateTime.UtcNow;
-                    var goHome = await ClickHomeLogoAsync(12000);
-                    Log("[VaoXocDia_Click -> home] " + goHome);
-                    Log($"[PERF][VaoXocDia] ClickHomeLogoAsync: {(DateTime.UtcNow - tHome).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
-
-                    var tDelayAfterHome = DateTime.UtcNow;
-                    await Task.Delay(300);
-                    Log($"[PERF][VaoXocDia] Delay after home: {(DateTime.UtcNow - tDelayAfterHome).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
-
-                    var tOpen = DateTime.UtcNow;
-                    var rOpen = await OpenLiveItemImmediatelyAsync(1, 25000);
-                    Log("[VaoXocDia_Click -> open-live(index=1)] " + rOpen);
-                    Log($"[PERF][VaoXocDia] OpenLiveItemImmediatelyAsync(1): {(DateTime.UtcNow - tOpen).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
-                }
-
-                // 4) Cầu nối: đồng bộ & autostart khi đã vào bàn
-                var tBridge = DateTime.UtcNow;
-                if (_bridge != null)
-                {
-                    // nếu bạn có sửa JS ngoài, nạp lại và re-register
-                    var latestJs = await LoadAppJsAsyncFallback();
-                    if (!string.IsNullOrEmpty(latestJs))
-                        await _bridge.UpdateAppJsAsync(latestJs);
-
-                    await _bridge.ForceRefreshAsync();
-                }
-                Log($"[PERF][VaoXocDia] Bridge refresh: {(DateTime.UtcNow - tBridge).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
-
-                // 5) Poll cocos sẵn sàng (giữ nguyên như cũ, nhưng log thêm thời gian + số vòng)
-                var tPoll = DateTime.UtcNow;
-                var ok = false;
-                int loopCount = 0;
-
-                for (int i = 0; i < 100; i++)
-                {
-                    loopCount = i + 1;
-
-                    var ready = await Web.ExecuteScriptAsync(@"
-                (function(){ try{ return !!(window.cc && cc.director && cc.director.getScene); }
-                             catch(e){ return false; } })()");
-                    Log("[VaoXocDia_Click -> load xoc dia live] " + ready);
-
-                    if (bool.TryParse(ready, out var b) && b)
-                    {
-                        ok = true;
-                        break;
-                    }
-
-                    await Task.Delay(300);
-                }
-
-                Log($"[PERF][VaoXocDia] Poll cocos: {(DateTime.UtcNow - tPoll).TotalMilliseconds:0} ms, loops={loopCount} (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
-                if (!ok) Log("[CW] Game not ready (Cocos scene not found)");
-
-                // 6) Bật push tick bên canvas (như cũ)
-                var tPush = DateTime.UtcNow;
-                await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
-                Log("[CW] start push 240ms");
-                Log($"[PERF][VaoXocDia] startPush JS: {(DateTime.UtcNow - tPush).TotalMilliseconds:0} ms (total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms)");
-
-                ApplyUiMode(true); // cho UI chuyển ngay sang nhóm 'Chiến lược/Trạng thái/Console'
-
-                Log($"[PERF][VaoXocDia] === END total={(DateTime.UtcNow - t0).TotalMilliseconds:0} ms ===");
+                await Task.Delay(900);
             }
             catch (Exception ex)
             {
                 Log("[VaoXocDia_Click] " + ex);
+            }
+        }
+
+        private async void BtnTrialTool_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (ChkTrial != null) ChkTrial.IsChecked = true;
+                await SaveConfigAsync();
+                await EnsureWebReadyAsync();
+
+                if (!await EnsureTrialAsync())
+                    return;
+
+                var rLogin = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickLogin?window.__abx_hw_clickLogin():'no-api');}catch(e){return 'err:'+e.message;}})();");
+                Log("[HOME] clickLogin via JS => " + rLogin);
+
+                await Task.Delay(900);
+            }
+            catch (Exception ex)
+            {
+                Log("[BtnTrialTool_Click] " + ex);
             }
         }
 
@@ -3730,153 +3672,16 @@ Ví dụ không hợp lệ:
                 _cooldown = false;
                 if (CheckLicense)
                 {
-                    // === PRE-CHECK: Trial hoặc License ===
-                    bool isTrial = (ChkTrial?.IsChecked == true);
-
-                    // Lấy username làm key (tài khoản game)
-                    // Ưu tiên username đã bắt từ Home; chỉ fallback sang ô nhập nếu vẫn chưa bắt được
-                    var username = (_homeUsername ?? "").Trim().ToLowerInvariant();
-                    if (string.IsNullOrWhiteSpace(username))
+                    if (ChkTrial?.IsChecked == true)
                     {
-                        MessageBox.Show("Chưa xác định được tài khoản game từ trang Home. Hãy vào Home để hệ thống tự nhận diện.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
-                        return;
-                    }
-
-                    if (isTrial)
-                    {
-                        try
-                        {
-                            // 1) Nếu còn vé trial chưa hết hạn -> RESUME (KHÔNG gọi /trial lần nữa)
-                            if (DateTimeOffset.TryParse(_cfg.TrialUntil, out var trialUntilUtc) &&
-                                trialUntilUtc > DateTimeOffset.UtcNow)
-                            {
-                                Log("[Trial] resume existing session until " + trialUntilUtc.ToString("u"));
-
-                                // đảm bảo lease sạch rồi acquire lại cho clientId hiện tại
-                                try { await ReleaseLeaseAsync(username); } catch { }
-                                var okLease = await AcquireLeaseOnceAsync(username);
-                                if (!okLease) return;
-
-                                StartExpiryCountdown(trialUntilUtc, "trial");
-                            }
-                            else
-                            {
-                                // 2) Chưa có hoặc đã hết -> gọi /trial để lấy mới (idempotent theo clientId)
-                                var clientId = _leaseClientId;
-                                var sessionId = _leaseSessionId;
-
-                                using var http = new System.Net.Http.HttpClient(
-                                    new System.Net.Http.HttpClientHandler
-                                    {
-                                        SslProtocols = System.Security.Authentication.SslProtocols.Tls12
-                                    });
-
-                                if (!EnableLeaseCloudflare)
-
-                                {
-
-                                    MessageBox.Show("Chế độ dùng thử cần Cloudflare. Vui lòng bật lại để dùng thử.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
-
-                                    return;
-
-                                }
-
-                                var url = $"{LeaseBaseUrl}/trial/{Uri.EscapeDataString(username)}";
-                                var json = System.Text.Json.JsonSerializer.Serialize(new { clientId, sessionId });
-                                var res = await http.PostAsync(
-                                    url,
-                                    new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json"));
-
-                                var payload = await res.Content.ReadAsStringAsync();
-                                if (res.IsSuccessStatusCode)
-                                {
-                                    // 200 -> parse trialEndsAt; nếu thiếu thì fallback 5'
-                                    DateTimeOffset trialEndsAt;
-                                    try
-                                    {
-                                        using var doc = System.Text.Json.JsonDocument.Parse(payload);
-                                        trialEndsAt = DateTimeOffset.Parse(doc.RootElement.GetProperty("trialEndsAt").GetString());
-                                    }
-                                    catch { trialEndsAt = DateTimeOffset.UtcNow.AddMinutes(5); }
-
-                                    // LƯU để các lần Start sau chỉ RESUME
-                                    _cfg.TrialUntil = trialEndsAt.ToString("o");
-                                    _ = SaveConfigAsync();
-
-                                    StartExpiryCountdown(trialEndsAt, "trial");
-                                    Log("[Trial] started until: " + trialEndsAt.ToString("u"));
-                                }
-                                else
-                                {
-                                    string error = null;
-                                    try
-                                    {
-                                        using var doc = System.Text.Json.JsonDocument.Parse(payload);
-                                        if (doc.RootElement.TryGetProperty("error", out var errEl))
-                                            error = errEl.GetString();
-                                    }
-                                    catch { }
-
-                                    if (string.Equals(error, "in-use", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        MessageBox.Show("Tài khoản đang chạy ở nơi khác. Vui lòng dừng ở máy kia trước.",
-                                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
-                                    }
-                                    else if (string.Equals(error, "trial-consumed", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        MessageBox.Show("Hết lượt dùng thử! Hãy liên hệ 0978.248.822 để gia hạn/mua.",
-                                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
-                                    }
-                                    else
-                                    {
-                                        MessageBox.Show("Không thể bắt đầu chế độ dùng thử. Vui lòng thử lại.",
-                                                        "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
-                                    }
-                                    return;
-                                }
-                            }
-                        }
-                        catch (Exception exTrial)
-                        {
-                            Log("[Trial ERR] " + exTrial.Message);
-                            MessageBox.Show("Không thể kết nối chế độ dùng thử.", "Automino",
-                                MessageBoxButton.OK, MessageBoxImage.Warning);
+                        if (!await EnsureTrialAsync())
                             return;
-                        }
                     }
-
                     else
                     {
-                        // —— NHÁNH LICENSE (GIỮ NGUYÊN HÀNH VI CŨ) ——
-                        // 1) Lấy license từ GitHub  (không ký số)
-                        var lic = await FetchLicenseAsync(username);
-                        if (lic == null)
-                        {
-                            MessageBox.Show("Không tìm thấy license trên cho tài khoản này. Hãy liên hệ 0978.248.822 để dùng", "Automino",
-                                MessageBoxButton.OK, MessageBoxImage.Warning);
+                        if (!await EnsureLicenseAsync())
                             return;
-                        }
-                        if (!DateTimeOffset.TryParse(lic.exp, out var expUtc))
-                        {
-                            MessageBox.Show("License không hợp lệ (exp).", "Automino",
-                                MessageBoxButton.OK, MessageBoxImage.Warning);
-                            return;
-                        }
-                        if (DateTimeOffset.UtcNow >= expUtc)
-                        {
-                            MessageBox.Show("Tool của bạn hết hạn ! Hãy liên hệ 0978.248.822 để gia hạn",
-                                "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
-                            return;
-                        }
-                        // 2) Acquire lease 1 lần (KHÔNG renew trong lúc chạy, theo yêu cầu)
-                        var okLease = await AcquireLeaseOnceAsync(username);
-                        if (!okLease) return;
-
-                        // 3) Bắt đầu đếm ngược đến exp
-                        StartExpiryCountdown(expUtc, "license");
-                        Log("[License] valid until: " + expUtc.ToString("u"));
                     }
-
                 }
 
                 // Đồng bộ ô hiện hành vào trường chung để Task đọc
@@ -3889,9 +3694,9 @@ Ví dụ không hợp lệ:
                 _taskCts = new CancellationTokenSource();
 
                 // 👉 Bắt đầu re-check license mỗi 5 phút, gắn với vòng đời _taskCts
-                if (CheckLicense)
+                if (CheckLicense && (ChkTrial?.IsChecked != true))
                 {
-                    var username = (_homeUsername ?? "").Trim().ToLowerInvariant(); // dùng lại
+                    var username = (T(TxtUser) ?? "").Trim().ToLowerInvariant();
                     var token = _taskCts.Token;
                     _ = Task.Run(async () =>
                     {
@@ -4536,6 +4341,104 @@ Ví dụ không hợp lệ:
             return (!string.IsNullOrEmpty(s) && s[0] == '\uFEFF') ? s.Substring(1) : s;
         }
 
+        private void EnsureDeviceId()
+        {
+            if (!string.IsNullOrWhiteSpace(_deviceId)) return;
+            _deviceId = BuildDeviceId();
+            if (!string.IsNullOrWhiteSpace(_deviceId))
+                Log("[DeviceId] ready");
+        }
+
+        private void EnsureTrialKey()
+        {
+            if (!string.IsNullOrWhiteSpace(_trialKey)) return;
+            EnsureDeviceId();
+            var appKey = (AppLocalDirName ?? "").Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(appKey))
+                appKey = "app";
+            var deviceKey = (_deviceId ?? "").Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(deviceKey))
+                return;
+            _trialKey = $"{deviceKey}:{appKey}";
+            Log("[TrialKey] " + _trialKey);
+        }
+
+        private static string BuildDeviceId()
+        {
+            var parts = new List<string>();
+            AddPart(parts, ReadMachineGuid());
+            AddPart(parts, ReadWmiValue("SELECT UUID FROM Win32_ComputerSystemProduct", "UUID"));
+            AddPart(parts, ReadWmiValue("SELECT ProcessorId FROM Win32_Processor", "ProcessorId"));
+            var disk = ReadWmiValue("SELECT SerialNumber FROM Win32_PhysicalMedia", "SerialNumber")
+                       ?? ReadWmiValue("SELECT SerialNumber FROM Win32_DiskDrive", "SerialNumber");
+            AddPart(parts, disk);
+            AddPart(parts, ReadMacAddress());
+
+            var raw = string.Join("|", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+            if (string.IsNullOrWhiteSpace(raw))
+                raw = Environment.MachineName;
+            return HashSha256(raw);
+        }
+
+        private static void AddPart(List<string> parts, string? value)
+        {
+            var v = (value ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(v))
+                parts.Add(v);
+        }
+
+        private static string HashSha256(string input)
+        {
+            using var sha = SHA256.Create();
+            var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(input));
+            return Convert.ToHexString(bytes).ToLowerInvariant();
+        }
+
+        private static string? ReadMachineGuid()
+        {
+            try
+            {
+                using var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Cryptography");
+                return key?.GetValue("MachineGuid")?.ToString();
+            }
+            catch { return null; }
+        }
+
+        private static string? ReadWmiValue(string query, string propName)
+        {
+            try
+            {
+                using var searcher = new ManagementObjectSearcher(query);
+                foreach (var obj in searcher.Get())
+                {
+                    var val = obj?[propName]?.ToString();
+                    if (!string.IsNullOrWhiteSpace(val))
+                        return val.Trim();
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static string? ReadMacAddress()
+        {
+            try
+            {
+                foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+                        continue;
+                    if (ni.OperationalStatus != OperationalStatus.Up)
+                        continue;
+                    var mac = ni.GetPhysicalAddress()?.ToString();
+                    if (!string.IsNullOrWhiteSpace(mac))
+                        return mac;
+                }
+            }
+            catch { }
+            return null;
+        }
+
         // Giữ nguyên tên để không phải sửa các callsite
         private async Task<string> LoadAppJsAsyncFallback()
         {
@@ -4806,6 +4709,157 @@ Ví dụ không hợp lệ:
             return false;
         }
 
+        private async Task<bool> EnsureLicenseAsync()
+        {
+            if (!CheckLicense) return true;
+
+            var username = (T(TxtUser) ?? "").Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                MessageBox.Show("Chưa nhập tên đăng nhập.", "Automino",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            if (_runExpiresAt != null)
+            {
+                var now = DateTimeOffset.Now;
+                if (string.Equals(_expireMode, "license", StringComparison.OrdinalIgnoreCase) && _runExpiresAt.Value > now)
+                    return true;
+            }
+
+            var lic = await FetchLicenseAsync(username);
+            if (lic == null)
+            {
+                MessageBox.Show("Không tìm thấy license trên cho tài khoản này. Hãy liên hệ 0978.248.822 để dùng", "Automino",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+            if (!DateTimeOffset.TryParse(lic.exp, out var expUtc))
+            {
+                MessageBox.Show("License không hợp lệ (exp).", "Automino",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+            if (DateTimeOffset.UtcNow >= expUtc)
+            {
+                MessageBox.Show("Tool của bạn hết hạn ! Hãy liên hệ 0978.248.822 để gia hạn",
+                    "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+            var okLease = await AcquireLeaseOnceAsync(username);
+            if (!okLease) return false;
+
+            StartExpiryCountdown(expUtc, "license");
+            Log("[License] valid until: " + expUtc.ToString("u"));
+            return true;
+        }
+
+        private async Task<bool> EnsureTrialAsync()
+        {
+            if (!CheckLicense) return true;
+
+            EnsureDeviceId();
+            EnsureTrialKey();
+            if (string.IsNullOrWhiteSpace(_trialKey))
+            {
+                MessageBox.Show("Không xác định được DeviceId để dùng thử.", "Automino",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            if (_runExpiresAt != null)
+            {
+                var now = DateTimeOffset.Now;
+                if (string.Equals(_expireMode, "trial", StringComparison.OrdinalIgnoreCase) && _runExpiresAt.Value > now)
+                    return true;
+            }
+
+            try
+            {
+                if (DateTimeOffset.TryParse(_cfg.TrialUntil, out var trialUntilUtc) &&
+                    trialUntilUtc > DateTimeOffset.UtcNow)
+                {
+                    Log("[Trial] resume existing session until " + trialUntilUtc.ToString("u"));
+                    StartExpiryCountdown(trialUntilUtc, "trial");
+                    StartLeaseHeartbeat(_trialKey, _trialKey);
+                    return true;
+                }
+
+                var sessionId = _leaseSessionId;
+                using var http = new System.Net.Http.HttpClient(
+                    new System.Net.Http.HttpClientHandler
+                    {
+                        SslProtocols = System.Security.Authentication.SslProtocols.Tls12
+                    });
+
+                if (!EnableLeaseCloudflare)
+                {
+                    MessageBox.Show("Chế độ dùng thử cần Cloudflare. Vui lòng bật lại để dùng thử.", "Automino",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return false;
+                }
+
+                var url = $"{LeaseBaseUrl}/trial/{Uri.EscapeDataString(_trialKey)}";
+                var json = System.Text.Json.JsonSerializer.Serialize(new { clientId = _trialKey, sessionId, deviceId = _deviceId, appId = AppLocalDirName });
+                var res = await http.PostAsync(
+                    url,
+                    new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json"));
+
+                var payload = await res.Content.ReadAsStringAsync();
+                if (res.IsSuccessStatusCode)
+                {
+                    DateTimeOffset trialEndsAt;
+                    try
+                    {
+                        using var doc = System.Text.Json.JsonDocument.Parse(payload);
+                        trialEndsAt = DateTimeOffset.Parse(doc.RootElement.GetProperty("trialEndsAt").GetString());
+                    }
+                    catch { trialEndsAt = DateTimeOffset.UtcNow.AddMinutes(5); }
+
+                    _cfg.TrialUntil = trialEndsAt.ToString("o");
+                    _ = SaveConfigAsync();
+
+                    StartExpiryCountdown(trialEndsAt, "trial");
+                    Log("[Trial] started until: " + trialEndsAt.ToString("u"));
+                    StartLeaseHeartbeat(_trialKey, _trialKey);
+                    return true;
+                }
+
+                string error = null;
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(payload);
+                    if (doc.RootElement.TryGetProperty("error", out var errEl))
+                        error = errEl.GetString();
+                }
+                catch { }
+
+                if (string.Equals(error, "in-use", StringComparison.OrdinalIgnoreCase))
+                {
+                    MessageBox.Show("Thiết bị đang chạy ở nơi khác. Vui lòng dừng ở máy kia trước.",
+                        "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                else if (string.Equals(error, "trial-consumed", StringComparison.OrdinalIgnoreCase))
+                {
+                    MessageBox.Show("Hết lượt dùng thử! Hãy liên hệ 0978.248.822 để gia hạn/mua.",
+                        "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show("Không thể bắt đầu chế độ dùng thử. Vui lòng thử lại.",
+                        "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                return false;
+            }
+            catch (Exception exTrial)
+            {
+                Log("[Trial ERR] " + exTrial.Message);
+                MessageBox.Show("Không thể kết nối chế độ dùng thử.", "Automino",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+        }
 
         // JSON license đơn giản trên GitHub
         private record LicenseDoc(string tool, string user, string exp, int maxConcurrent, string? note);
@@ -4928,6 +4982,7 @@ Ví dụ không hợp lệ:
                                 MessageBox.Show("Tool của bạn hết hạn ! Hãy liên hệ 0978.248.822 để gia hạn", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                             }
 
+                            if (ChkTrial != null) ChkTrial.IsChecked = false;
                             // Xoá nhãn
                             if (LblExpire != null) LblExpire.Text = "";
                             _runExpiresAt = null;
@@ -4958,6 +5013,7 @@ Ví dụ không hợp lệ:
             _runExpiresAt = null;
             _expireMode = "";
             if (LblExpire != null) LblExpire.Text = "";
+            if (ChkTrial != null) ChkTrial.IsChecked = false;
         }
 
         private void UpdateExpireLabelUI()
@@ -5013,13 +5069,15 @@ Ví dụ không hợp lệ:
             await HomeClickPlayAsync();
         }
 
-        private void StartLeaseHeartbeat(string username)
+        private void StartLeaseHeartbeat(string username, string? clientIdOverride = null)
         {
             StopLeaseHeartbeat();
             if (!EnableLeaseCloudflare) return;
             _leaseHbCts = new CancellationTokenSource();
             var cts = _leaseHbCts;
             var uname = Uri.EscapeDataString(username);
+            var clientId = string.IsNullOrWhiteSpace(clientIdOverride) ? _leaseClientId : clientIdOverride;
+            var sessionId = _leaseSessionId;
 
             if (false) // đổi false để tắt heartbeat
             {
@@ -5031,7 +5089,7 @@ Ví dụ không hợp lệ:
                         {
                             using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
                             var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/heartbeat/{uname}",
-                                                                  new { clientId = _leaseClientId, sessionId = _leaseSessionId });
+                                                                  new { clientId, sessionId });
                             // chỉ log nhẹ cho debug
                             Log("[Lease] hb: " + (int)resp.StatusCode);
                         }
