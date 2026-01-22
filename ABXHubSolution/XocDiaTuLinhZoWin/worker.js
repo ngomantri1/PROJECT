@@ -29,8 +29,8 @@
 
     const tool = seg[1].trim().toLowerCase();
     const action = seg[2]; // "trial" | "acquire" | "heartbeat" | "release"
-    const username = decodeURIComponent(seg[3] || '').trim().toLowerCase();
-    if (!tool || !username) return J(400, { error: 'bad-request' });
+    const identity = decodeURIComponent(seg[3] || '').trim().toLowerCase();
+    if (!tool || !identity) return J(400, { error: 'bad-request' });
 
     // Chỉ cho phép tool đã khai báo
     const allowed = String(env.ALLOWED_TOOLS || '')
@@ -42,10 +42,10 @@
     // Body
     let body = {};
     try { body = await request.json(); } catch {}
-    const clientId = String(body.clientId || '').trim();
-    if (!clientId) return J(400, { error: 'bad-clientId' });
+    let clientId = String(body.clientId || '').trim();
     const sessionId = String(body.sessionId || '').trim();
     if (!sessionId) return J(400, { error: 'bad-sessionId' });
+    if (action !== 'trial' && !clientId) return J(400, { error: 'bad-clientId' });
 
     // TTL & key
     const now = Date.now();
@@ -53,9 +53,10 @@
     const trialMinutes = parseInt(env.TRIAL_MINUTES ?? '120', 10) || 120;            // 2h mặc định
     const staleSec = parseInt(env.STALE_GRACE_SECONDS ?? '180', 10) || 180;
 
-    const K_TUSED = `trial_consumed:${tool}:${username}`;
-    const K_TACT  = `trial_active:${tool}:${username}`;
-    const K_LIC   = `license_active:${tool}:${username}`;
+    const trialKey = identity; // trial bám theo deviceId
+    const K_TUSED = `trial_consumed:${tool}:${trialKey}`;
+    const K_TACT  = `trial_active:${tool}:${trialKey}`;
+    const K_LIC   = `license_active:${tool}:${identity}`;
 
     const get = async k => {
       const r = await env.LEASE.get(k);
@@ -67,6 +68,7 @@
 
     // ---- TRIAL (tùy chọn) ----
     if (action === 'trial') {
+      if (!clientId) clientId = trialKey;
       const used = await env.LEASE.get(K_TUSED);
       if (used) return J(403, { error: 'trial-consumed' });
 

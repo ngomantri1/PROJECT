@@ -51,6 +51,7 @@
   <!-- ===== Packages & resources ===== -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
+    <PackageReference Include="System.Management" Version="8.0.0" />
   </ItemGroup>
 
 <!-- Nhúng JS vào resource -->
