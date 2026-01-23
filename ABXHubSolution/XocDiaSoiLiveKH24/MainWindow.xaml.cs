@@ -1634,8 +1634,6 @@ Ví dụ không hợp lệ:
                     Log("[Web] Navigate: " + target);
                     Web.Source = target;
                     await tcs.Task;
-
-                    await AutoFillLoginAsync();
                 }
             }
             catch (Exception ex) { Log("[NavigateIfNeededAsync] " + ex); }
@@ -1916,14 +1914,14 @@ Ví dụ không hợp lệ:
         // KHÔNG click nút Đăng nhập trong popup
         private async Task AutoFillLoginAsync()
         {
+            Log("[AutoFill] skipped (sync disabled)");
+            return;
+
             // 1. webview chưa sẵn sàng thì thôi
             if (!IsWebAlive)
             {
                 Log("[AutoFill] skipped (web not ready)");
-                return;
-            }
-
-            // 2. đảm bảo web đã init CoreWebView2
+                return;        }            // 2. đảm bảo web đã init CoreWebView2
             await EnsureWebReadyAsync();
             if (!IsWebAlive)
             {
@@ -2086,14 +2084,12 @@ Ví dụ không hợp lệ:
                 {
                     _didStartupNav = true;
                     await NavigateIfNeededAsync(start.Trim());
-                    await AutoFillLoginAsync();
 
                     await ApplyBackgroundForStateAsync(); // đúng hành vi cũ sau khi có URL
                 }
                 else
                 {
                     // Không điều hướng nhưng vẫn đồng bộ credential + checkbox vào web ở lần đầu
-                    await AutoFillLoginAsync();
                 }
 
                 // Retry đồng bộ muộn thêm một nhịp để chắc chắn JS listener đã sẵn sàng
@@ -2103,9 +2099,7 @@ Ví dụ không hợp lệ:
                     {
                         // gửi lại 2 lần (400ms, 800ms) để bắt kịp khi JS/popup sẵn sàng
                         await Task.Delay(400);
-                        await AutoFillLoginAsync();
                         await Task.Delay(400);
-                        await AutoFillLoginAsync();
                     }
                     catch { /* ignore */ }
                 });
@@ -2183,8 +2177,7 @@ Ví dụ không hợp lệ:
             try
             {
                 await SaveConfigAsync();
-                Log("[Remember] " + ((ChkRemember?.IsChecked == true) ? "ON" : "OFF"));
-                await AutoFillLoginAsync(); // đồng bộ ngay checkbox nhớ tài khoản với web
+                Log("[Remember] " + ((ChkRemember?.IsChecked == true) ? "ON" : "OFF")); // đồng bộ ngay checkbox nhớ tài khoản với web
             }
             catch (Exception ex) { Log("[Remember] " + ex); }
         }
@@ -2239,7 +2232,6 @@ Ví dụ không hợp lệ:
             _userCts = await DebounceAsync(_userCts, 150, async () =>
             {
                 await SaveConfigAsync();
-                await AutoFillLoginAsync();
             });
         }
         private async void TxtPass_PasswordChanged(object sender, RoutedEventArgs e)
@@ -2248,7 +2240,6 @@ Ví dụ không hợp lệ:
             _passCts = await DebounceAsync(_passCts, 150, async () =>
             {
                 await SaveConfigAsync();
-                await AutoFillLoginAsync();
             });
         }
 
@@ -3310,8 +3301,7 @@ Ví dụ không hợp lệ:
                                 _autoLoginBusy = true;
                                 try
                                 {
-                                    Log("[AutoLoginWatch] need-login → auto-fill + click");
-                                    await AutoFillLoginAsync(); // hàm này đã có fallback và tự gọi TryAutoLoginAsync
+                                    Log("[AutoLoginWatch] need-login → auto-fill + click"); // hàm này đã có fallback và tự gọi TryAutoLoginAsync
                                                                 // Trong trường hợp trang không mở form, ép Click thêm lần nữa:
                                     var res = await ClickLoginButtonAsync();
                                     Log("[AutoLoginWatch] " + res);

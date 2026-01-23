@@ -369,8 +369,8 @@ namespace XocDiaLiveHit
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn
         const string LicenseBranch = "main";          // <- nhánh
-        const string LicenseNameGame = "net88";          // <- nhánh
-        const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/net88";
+        const string LicenseNameGame = "auto";          // <- nhánh
+        const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/auto";
         private const bool EnableLeaseCloudflare = true; // true=bật gọi Cloudflare
 
         // ===================== TOOLTIP TEXTS =====================
@@ -1996,16 +1996,16 @@ Ví dụ không hợp lệ:
         {
             if (Web == null) return;
             await EnsureWebReadyAsync();
+            Log("[AutoFill] skipped (sync disabled)");
+            return;
+
 
             var u = T(TxtUser);
             var p = P(TxtPass);
             if (string.IsNullOrEmpty(u) && string.IsNullOrEmpty(p))
             {
                 Log("[AutoFill] skipped (empty creds)");
-                return;
-            }
-
-            // Fast pass: thử điền nhanh cả 2 trong 1 lần – đồng bộ
+                return;        }            // Fast pass: thử điền nhanh cả 2 trong 1 lần – đồng bộ
             string fastJs =
         @"(function(u,p){
   const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}};
@@ -2243,7 +2243,6 @@ Ví dụ không hợp lệ:
                 {
                     _didStartupNav = true;
                     await NavigateIfNeededAsync(start.Trim());
-                    await AutoFillLoginAsync();
 
                     await ApplyBackgroundForStateAsync(); // đúng hành vi cũ sau khi có URL
                 }
@@ -2368,7 +2367,6 @@ Ví dụ không hợp lệ:
             _userCts = await DebounceAsync(_userCts, 150, async () =>
             {
                 await SaveConfigAsync();
-                await SyncLoginFieldAsync("user", T(TxtUser));
             });
         }
         private async void TxtPass_PasswordChanged(object sender, RoutedEventArgs e)
@@ -2377,7 +2375,6 @@ Ví dụ không hợp lệ:
             _passCts = await DebounceAsync(_passCts, 150, async () =>
             {
                 await SaveConfigAsync();
-                await SyncLoginFieldAsync("pass", P(TxtPass));
             });
         }
 
@@ -3561,8 +3558,7 @@ Ví dụ không hợp lệ:
                                 _autoLoginBusy = true;
                                 try
                                 {
-                                    Log("[AutoLoginWatch] need-login → auto-fill + click");
-                                    await AutoFillLoginAsync(); // hàm này đã có fallback và tự gọi TryAutoLoginAsync
+                                    Log("[AutoLoginWatch] need-login → auto-fill + click"); // hàm này đã có fallback và tự gọi TryAutoLoginAsync
                                                                 // Trong trường hợp trang không mở form, ép Click thêm lần nữa:
                                     var res = await ClickLoginButtonAsync(18000);
                                     Log("[AutoLoginWatch] " + res);

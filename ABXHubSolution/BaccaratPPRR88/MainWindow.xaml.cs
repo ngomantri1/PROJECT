@@ -3449,8 +3449,6 @@ Ví dụ không hợp lệ:
                     Log("[Web] Navigate: " + target);
                     Web.Source = target;
                     await tcs.Task;
-
-                    await AutoFillLoginAsync();
                 }
                 }
             catch (Exception ex) { Log("[NavigateIfNeededAsync] " + ex); }
@@ -3721,14 +3719,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
         // KHÔNG click nút Đăng nhập trong popup
         private async Task AutoFillLoginAsync()
         {
+            Log("[AutoFill] skipped (sync disabled)");
+            return;
+
             // 1. webview chưa sẵn sàng thì thôi
             if (!IsWebAlive)
             {
                 Log("[AutoFill] skipped (web not ready)");
-                return;
-            }
-
-            // 2. đảm bảo web đã init CoreWebView2
+                return;        }            // 2. đảm bảo web đã init CoreWebView2
             await EnsureWebReadyAsync();
             if (!IsWebAlive)
             {
@@ -3974,7 +3972,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 {
                     _didStartupNav = true;
                     await NavigateIfNeededAsync(start.Trim());
-                    await AutoFillLoginAsync();
 
                     await ApplyBackgroundForStateAsync(); // đúng hành vi cũ sau khi có URL
                 }
@@ -4133,7 +4130,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
             _userCts = await DebounceAsync(_userCts, 150, async () =>
             {
                 await SaveConfigAsync();
-                await AutoFillLoginAsync();
             });
         }
         private async void TxtPass_PasswordChanged(object sender, RoutedEventArgs e)
@@ -4142,7 +4138,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
             _passCts = await DebounceAsync(_passCts, 150, async () =>
             {
                 await SaveConfigAsync();
-                await AutoFillLoginAsync();
             });
         }
 
@@ -4152,7 +4147,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
             _verifyCts = await DebounceAsync(_verifyCts, 150, async () =>
             {
                 // Mã xác minh không cần lưu config – chỉ sync sang web
-                await AutoFillLoginAsync();
             });
         }
 
@@ -5614,8 +5608,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                                 _autoLoginBusy = true;
                                 try
                                 {
-                                    Log("[AutoLoginWatch] need-login → auto-fill + click");
-                                    await AutoFillLoginAsync(); // hàm này đã có fallback và tự gọi TryAutoLoginAsync
+                                    Log("[AutoLoginWatch] need-login → auto-fill + click"); // hàm này đã có fallback và tự gọi TryAutoLoginAsync
                                                                 // Trong trường hợp trang không mở form, ép Click thêm lần nữa:
                                     var res = await ClickLoginButtonAsync();
                                     Log("[AutoLoginWatch] " + res);
