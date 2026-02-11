@@ -883,10 +883,7 @@ Ví dụ không hợp lệ:
             // DÙ mode không đổi, khi đang ở Home vẫn cần cập nhật nhãn theo username
             if (!isGame && BtnVaoXocDia != null)
             {
-                var desired = _homeLoggedIn
-                    ? "Chơi Tài Xỉu Live"
-                    : "Đăng Nhập & Tài Xỉu Live";
-
+                var desired = "Đăng Nhập Tool";
                 // tránh set lại nếu không thay đổi gì
                 if (!Equals(BtnVaoXocDia.Content as string, desired))
                     BtnVaoXocDia.Content = desired;

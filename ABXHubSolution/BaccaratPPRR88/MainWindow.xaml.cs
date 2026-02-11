@@ -5453,7 +5453,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     try
                     {
                         await Web.ExecuteScriptAsync(
-                            "alert('Không lấy được tên đăng nhập, hãy click vào nút \"Đăng nhập & Baccarat nhiều bàn\" lại');");
+                            "alert('Không lấy được tên đăng nhập, hãy click vào nút \"Đăng nhập Tool\" lại');");
                     }
                     catch { }
                     return;
@@ -5531,7 +5531,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     try
                     {
                         await Web.ExecuteScriptAsync(
-                            "alert('Không lấy được tên đăng nhập, hãy click vào nút \"Đăng nhập & Baccarat nhiều bàn\" lại');");
+                            "alert('Không lấy được tên đăng nhập, hãy click vào nút \"Đăng nhập Tool\" lại');");
                     }
                     catch { }
                     return;
