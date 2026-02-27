@@ -894,7 +894,6 @@
                     // ---- Fallback DOM: đọc nhanh trong header khi S.* đang rỗng ----
                     function quickPickUsername() {
                         try {
-                            ensureUserInfoExpanded();
                             if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
                                 try {
                                     const elAbs = findByTail(ABS_USERNAME_TAIL);
@@ -1481,7 +1480,6 @@
     }
     function findUserFromDOM() {
         try {
-            ensureUserInfoExpanded();
             if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
                 const abs = findByTail(ABS_USERNAME_TAIL);
                 const v = abs && (abs.value || abs.textContent || '').trim();

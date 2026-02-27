@@ -235,6 +235,7 @@ namespace TaiXiuLiveHit
         private DateTime _lastGameTickUtc = DateTime.MinValue;
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
         private bool _isGameUi = false;              // trạng thái UI hiện hành
+        private bool _forceGameUiFromLoginTool = false; // ép hiện vùng chiến lược sau khi bấm Đăng nhập Tool
         private System.Windows.Threading.DispatcherTimer? _uiModeTimer;
 
         private static readonly TimeSpan GameTickFresh = TimeSpan.FromSeconds(3);
@@ -826,6 +827,12 @@ Ví dụ không hợp lệ:
 
         private void RecomputeUiMode()
         {
+            if (_forceGameUiFromLoginTool)
+            {
+                ApplyUiMode(true);
+                return;
+            }
+
             // Ưu tiên URL: nếu KHÔNG ở games.* thì về Home ngay để tránh timer lôi về GAME
             if (!GetIsGameByUrlFallback())
             {
@@ -3077,17 +3084,11 @@ Ví dụ không hợp lệ:
                 await SaveConfigAsync();
                 await EnsureWebReadyAsync();
 
-                var start = string.IsNullOrWhiteSpace(_cfg.Url) ? (TxtUrl?.Text ?? "") : _cfg.Url;
-                if (!string.IsNullOrWhiteSpace(start))
-                    await NavigateIfNeededAsync(start.Trim());
-
                 if (!await EnsureLicenseAsync())
                     return;
 
-                var rLogin = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickLogin?window.__abx_hw_clickLogin():'no-api');}catch(e){return 'err:'+e.message;}})();");
-                Log("[HOME] clickLogin via JS => " + rLogin);
-
-                await Task.Delay(900);
+                _forceGameUiFromLoginTool = true;
+                ApplyUiMode(true);
             }
             catch (Exception ex)
             {

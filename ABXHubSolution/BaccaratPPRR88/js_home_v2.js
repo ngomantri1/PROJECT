@@ -1628,7 +1628,7 @@
         maxRetries: 6,
         watchdogMs: 1000,
         maxWatchdogMiss: 2,
-        showPanel: false,
+        showPanel: true,
         autoRetryOnBoot: false
     };
 
@@ -6476,6 +6476,7 @@
         const pinRetryState = new Map();
         const PIN_RETRY_MAX = 12;
         const PIN_RETRY_DELAY = 450;
+        const PIN_RETRY_RENEW_MS = 2200;
         let pinTimer = null;
         let desiredPinIds = new Set();
         let lastReportedPinSig = '';
@@ -7628,6 +7629,10 @@
             'div.qs_qt.qs_qx',
             'div.qs_qt.qs_qx svg',
             'div.qs_qt.qs_qx path',
+            'div.qf_qg.qf_qk',
+            'div.qf_qg.qf_qk svg',
+            'div.qf_qg.qf_qk path.qf_qj',
+            'div.qf_qg.qf_qk path',
             'div.gs_gt svg',
             'div.gs_gt path',
             'div.rJ_rK svg.ka_kb',
@@ -7679,6 +7684,9 @@
             const pinNew = root.querySelector('div.qs_qt.qs_qx');
             if (pinNew)
                 return pinNew;
+            const pinQf = root.querySelector('div.qf_qg.qf_qk');
+            if (pinQf)
+                return pinQf.querySelector('svg') || pinQf;
             const pins = Array.from(root.querySelectorAll('div.rO_rP'));
             if (pins.length)
                 return pickTopRight(pins) || pins[0];
@@ -7703,6 +7711,36 @@
             if (!btn)
                 return null;
             try {
+                const detectPathState = (pathEl) => {
+                    if (!pathEl)
+                        return null;
+                    const win = pathEl.ownerDocument && pathEl.ownerDocument.defaultView;
+                    const style = win && win.getComputedStyle ? win.getComputedStyle(pathEl) : null;
+                    const fill = (style && style.fill) || pathEl.getAttribute('fill') || '';
+                    const stroke = (style && style.stroke) || pathEl.getAttribute('stroke') || '';
+                    const fillNorm = String(fill || '').toLowerCase();
+                    const strokeNorm = String(stroke || '').toLowerCase();
+                    const isTransparent = (v) =>
+                        !v || v === 'none' || v === 'transparent' || v.includes('rgba(0, 0, 0, 0)');
+                    if (fillNorm && !isTransparent(fillNorm))
+                        return true;
+                    if (strokeNorm && (strokeNorm.includes('rgb(255, 255, 255)') || strokeNorm.includes('#fff') || strokeNorm.includes('white')))
+                        return false;
+                    return null;
+                };
+                const detectPathStateMany = (pathList) => {
+                    let sawFalse = false;
+                    for (const p of pathList || []) {
+                        const st = detectPathState(p);
+                        if (st === true)
+                            return true;
+                        if (st === false)
+                            sawFalse = true;
+                    }
+                    if (sawFalse)
+                        return false;
+                    return null;
+                };
                 const wrapNew = btn.closest && btn.closest('div.rj_rk');
                 if (wrapNew && wrapNew.classList && wrapNew.classList.contains('rj_ro'))
                         return true;
@@ -7712,38 +7750,34 @@
                     if (/\b(active|selected|on|checked)\b/i.test(String(cls)))
                         return true;
                 }
-                const pinRoot = wrapNew || btn;
+                const wrapNew3 = btn.closest && btn.closest('div.qf_qg.qf_qk');
+                if (wrapNew3 && wrapNew3.classList) {
+                    const cls = wrapNew3.className || '';
+                    if (/\b(active|selected|on|checked)\b/i.test(String(cls)))
+                        return true;
+                }
+                const pinRoot = wrapNew || wrapNew3 || btn;
                 const outline = pinRoot.querySelector && pinRoot.querySelector('path.rj_rm');
                 if (outline) {
-                    const win = outline.ownerDocument && outline.ownerDocument.defaultView;
-                    const style = win && win.getComputedStyle ? win.getComputedStyle(outline) : null;
-                    const fill = (style && style.fill) || outline.getAttribute('fill') || '';
-                    const stroke = (style && style.stroke) || outline.getAttribute('stroke') || '';
-                    const fillNorm = String(fill || '').toLowerCase();
-                    const strokeNorm = String(stroke || '').toLowerCase();
-                    const isTransparent = (v) =>
-                        !v || v === 'none' || v === 'transparent' || v.includes('rgba(0, 0, 0, 0)');
-                    if (fillNorm && !isTransparent(fillNorm))
-                        return true;
-                    if (strokeNorm && (strokeNorm.includes('rgb(255, 255, 255)') || strokeNorm.includes('#fff') || strokeNorm.includes('white')))
-                        return false;
+                    const st = detectPathState(outline);
+                    if (st != null)
+                        return st;
                 }
                 if (wrapNew2) {
-                    const anyPath = wrapNew2.querySelector && wrapNew2.querySelector('path');
-                    if (anyPath) {
-                        const win2 = anyPath.ownerDocument && anyPath.ownerDocument.defaultView;
-                        const style2 = win2 && win2.getComputedStyle ? win2.getComputedStyle(anyPath) : null;
-                        const fill2 = (style2 && style2.fill) || anyPath.getAttribute('fill') || '';
-                        const stroke2 = (style2 && style2.stroke) || anyPath.getAttribute('stroke') || '';
-                        const fillNorm2 = String(fill2 || '').toLowerCase();
-                        const strokeNorm2 = String(stroke2 || '').toLowerCase();
-                        const isTransparent2 = (v) =>
-                            !v || v === 'none' || v === 'transparent' || v.includes('rgba(0, 0, 0, 0)');
-                        if (fillNorm2 && !isTransparent2(fillNorm2))
-                            return true;
-                        if (strokeNorm2 && (strokeNorm2.includes('rgb(255, 255, 255)') || strokeNorm2.includes('#fff') || strokeNorm2.includes('white')))
-                            return false;
-                    }
+                    const st = detectPathStateMany(
+                        Array.from((wrapNew2.querySelectorAll && wrapNew2.querySelectorAll('path')) || [])
+                    );
+                    if (st != null)
+                        return st;
+                }
+                if (wrapNew3) {
+                    const qfPreferred = Array.from((wrapNew3.querySelectorAll && wrapNew3.querySelectorAll('path.qf_qj')) || []);
+                    const qfPaths = qfPreferred.length > 0
+                        ? qfPreferred
+                        : Array.from((wrapNew3.querySelectorAll && wrapNew3.querySelectorAll('path')) || []);
+                    const st = detectPathStateMany(qfPaths);
+                    if (st != null)
+                        return st;
                 }
                 if (btn.classList && btn.classList.contains('rO_rT'))
                         return true;
@@ -7757,7 +7791,8 @@
             const clsSources = [
                 btn.className || '',
                 btn.parentElement && btn.parentElement.className || '',
-                btn.closest && (btn.closest('.qC_qE, .qC_qF, .qC_qH, .qC_qQ')?.className || '')
+                btn.closest && (btn.closest('.qC_qE, .qC_qF, .qC_qH, .qC_qQ')?.className || ''),
+                btn.closest && (btn.closest('div.qf_qg.qf_qk')?.className || '')
             ].filter(Boolean).join(' ');
             if (!clsSources)
                 return null;
@@ -7840,17 +7875,36 @@
         function schedulePinRetry(roomId, shouldPin) {
             if (!roomId)
                 return;
-            const st = pinRetryState.get(roomId) || { tries: 0, timer: null };
-            if (st.tries >= PIN_RETRY_MAX)
-                return;
+            const st = pinRetryState.get(roomId) || { tries: 0, timer: null, lastRenewAt: 0 };
+            if (st.tries >= PIN_RETRY_MAX) {
+                const now = Date.now();
+                const lastRenew = Number(st.lastRenewAt || 0);
+                if ((now - lastRenew) < PIN_RETRY_RENEW_MS)
+                    return;
+                st.tries = 0;
+                st.lastRenewAt = now;
+            }
             st.tries++;
             if (st.timer)
                 clearTimeout(st.timer);
             st.timer = setTimeout(() => {
+                const cur = pinRetryState.get(roomId);
+                if (cur)
+                    cur.timer = null;
                 ensurePinState(roomId, shouldPin);
             }, PIN_RETRY_DELAY);
             pinRetryState.set(roomId, st);
             }
+
+        function hasPendingDesiredPinRetry(desiredSet) {
+            for (const [id, st] of pinRetryState.entries()) {
+                if (!desiredSet.has(id))
+                    continue;
+                if (st && st.timer)
+                    return true;
+            }
+            return false;
+        }
 
         function setPinSync(roomId, desired) {
             if (desired)
@@ -7864,11 +7918,15 @@
                 return;
             const root = findCardRootByName(roomId);
             if (!root) {
+                if (shouldPin)
+                    scrollCardIntoView(roomId, { behavior: 'auto', block: 'center', highlight: false });
                 schedulePinRetry(roomId, shouldPin);
                 return;
         }
             const btn = resolvePinButton(root);
             if (!btn) {
+                if (shouldPin)
+                    scrollCardIntoView(roomId, { behavior: 'auto', block: 'center', highlight: false });
                 schedulePinRetry(roomId, shouldPin);
                 return;
         }
@@ -7905,6 +7963,37 @@
                 .join('|');
         }
 
+        function canonicalizeRoomId(id) {
+            const raw = (id || '').trim();
+            if (!raw)
+                return '';
+            const root = findCardRootByName(raw);
+            if (!root)
+                return raw;
+            const rootId = (getCardId(root) || '').trim();
+            if (!rootId)
+                return raw;
+            if (!roomDomRegistry.has(rootId))
+                rememberRoomDom(rootId, root);
+            return rootId;
+        }
+
+        function canonicalizeRoomIds(ids) {
+            const seen = new Set();
+            const out = [];
+            (ids || []).forEach(id => {
+                const resolved = canonicalizeRoomId(id) || (id || '').trim();
+                if (!resolved)
+                    return;
+                const key = resolved.toLowerCase();
+                if (seen.has(key))
+                    return;
+                seen.add(key);
+                out.push(resolved);
+            });
+            return out;
+        }
+
         function getCardTitle(root) {
             if (!root) return '';
             for (const sel of TITLE_SELECTORS) {
@@ -7923,6 +8012,9 @@
             const pinNew = card.querySelector('div.qs_qt.qs_qx');
             if (pinNew)
                 return pinNew;
+            const pinQf = card.querySelector('div.qf_qg.qf_qk');
+            if (pinQf)
+                return pinQf.querySelector('svg') || pinQf;
             const pins = Array.from(card.querySelectorAll('div.rO_rP'));
             if (pins.length)
                 return pickTopRight(pins) || pins[0];
@@ -7995,7 +8087,10 @@
 
             const actualList = info.list;
             const actualSig = normalizeSig(actualList);
-            const desiredList = Array.from(desiredPinIds);
+            const desiredListRaw = Array.from(desiredPinIds);
+            const desiredList = canonicalizeRoomIds(desiredListRaw);
+            if (normalizeSig(desiredListRaw) !== normalizeSig(desiredList))
+                desiredPinIds = new Set(desiredList);
             const desiredSig = normalizeSig(desiredList);
 
             if (pendingDesiredSig && pendingDesiredSig === desiredSig) {
@@ -8006,8 +8101,11 @@
                 pendingDesiredSig = '';
                 lastReportedPinSig = desiredSig;
                 if (pendingScrollTop) {
-                    pendingScrollTop = false;
-                    scrollLobbyTop({ behavior: 'auto' });
+                    const desiredSet = new Set(desiredList);
+                    if (!hasPendingDesiredPinRetry(desiredSet)) {
+                        pendingScrollTop = false;
+                        scrollLobbyTop({ behavior: 'auto' });
+                    }
                 }
                 return;
                 }
@@ -8036,7 +8134,12 @@
 
         function setDesiredPinList(list) {
             const normalized = normalizeRooms(list);
-            desiredPinIds = new Set(normalized.map(r => r.id));
+            const desired = canonicalizeRoomIds(normalized.map(r => r.id));
+            desiredPinIds = new Set(desired);
+            Array.from(pinRetryState.keys()).forEach(id => {
+                if (!desiredPinIds.has(id))
+                    clearPinRetry(id);
+            });
             pendingDesiredSig = normalizeSig(Array.from(desiredPinIds));
             pendingScrollTop = true;
             syncPinStates(Array.from(desiredPinIds));
