@@ -515,7 +515,7 @@
                                             Click="BtnTrialTool_Click"
                                             Content="Dùng thử Tool"
                                             Style="{StaticResource SecondaryButton}"
-                                            Visibility="Visible" />
+                                            Visibility="Collapsed" />
 
                                     </Grid>
 
@@ -881,6 +881,7 @@
                                         Margin="12,0,0,0"
                                         VerticalAlignment="Center"
                                         IsEnabled="False"
+                                        Visibility="Collapsed"
                                         Content="Dùng thử">
                                         <CheckBox.Style>
                                             <Style TargetType="CheckBox">

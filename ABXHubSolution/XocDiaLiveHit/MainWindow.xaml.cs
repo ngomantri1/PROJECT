@@ -3338,11 +3338,11 @@ Ví dụ không hợp lệ:
         {
             try
             {
-                if (ChkTrial != null) ChkTrial.IsChecked = true;
+                if (ChkTrial != null) ChkTrial.IsChecked = false;
                 await SaveConfigAsync();
                 await EnsureWebReadyAsync();
 
-                if (!await EnsureTrialAsync())
+                if (!await EnsureLicenseAsync())
                     return;
 
                 _forceGameUiFromLoginTool = true;
@@ -4087,16 +4087,8 @@ Ví dụ không hợp lệ:
                 {
                     if (_runExpiresAt == null || _runExpiresAt <= DateTimeOffset.Now)
                     {
-                        if (ChkTrial?.IsChecked == true)
-                        {
-                            if (!await EnsureTrialAsync())
-                                return;
-                        }
-                        else
-                        {
-                            if (!await EnsureLicenseAsync())
-                                return;
-                        }
+                        if (!await EnsureLicenseAsync())
+                            return;
                     }
                 }
 
@@ -4110,7 +4102,7 @@ Ví dụ không hợp lệ:
                 _taskCts = new CancellationTokenSource();
 
                 // 👉 Bắt đầu re-check license mỗi 5 phút, gắn với vòng đời _taskCts
-                if (CheckLicense && (ChkTrial?.IsChecked != true))
+                if (CheckLicense)
                 {
                     var username = (T(TxtUser) ?? "").Trim().ToLowerInvariant();
                     if (!string.IsNullOrWhiteSpace(username))
