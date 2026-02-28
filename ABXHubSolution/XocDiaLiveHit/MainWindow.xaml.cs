@@ -340,6 +340,7 @@ namespace XocDiaLiveHit
         private DateTime _lastGameTickUtc = DateTime.MinValue;
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
         private bool _isGameUi = false;              // trạng thái UI hiện hành
+        private bool _forceGameUiFromLoginTool = false; // ép hiện vùng chiến lược sau khi bấm Đăng nhập Tool
         private System.Windows.Threading.DispatcherTimer? _uiModeTimer;
         private int _gameNavWatchdogGen = 0;         // phân thế hệ cho watchdog navigation
         private bool _wv2Resetting = false;
@@ -953,6 +954,12 @@ Ví dụ không hợp lệ:
 
         private void RecomputeUiMode()
         {
+            if (_forceGameUiFromLoginTool)
+            {
+                ApplyUiMode(true);
+                return;
+            }
+
             // Ưu tiên URL: nếu KHÔNG ở games.* thì về Home ngay để tránh timer lôi về GAME
             if (!GetIsGameByUrlFallback())
             {
@@ -1514,11 +1521,10 @@ Ví dụ không hợp lệ:
 
 
 
-                                // 2.b) game_hint: Home báo đã có game/iframe → chuyển UI tức thì
+                                // 2.b) game_hint: chỉ cập nhật tick, không tự đổi UI mode
                                 if (abxStr == "game_hint")
                                 {
                                     _lastGameTickUtc = DateTime.UtcNow; // synthetic tick
-                                    _ = Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(true)));
                                     return;
                                 }
 
@@ -1653,23 +1659,7 @@ Ví dụ không hợp lệ:
                     };
                 }
 
-                // 3) Hook NavigationCompleted để chuyển UI theo URL ngay khi điều hướng xong
-                if (!_navModeHooked && Web != null)
-                {
-                    _navModeHooked = true;
-                    Web.NavigationCompleted += async (_, __) =>
-                    {
-                        try
-                        {
-                            var src = Web?.Source?.ToString() ?? "";
-                            var host = string.IsNullOrWhiteSpace(src) ? "" : new Uri(src).Host;
-                            bool isGameHost = host.StartsWith("games.", StringComparison.OrdinalIgnoreCase);
-
-                            await Dispatcher.InvokeAsync(() => ApplyUiMode(isGameHost));
-                        }
-                        catch { /* ignore */ }
-                    };
-                }
+                // Không auto đổi UI mode theo URL/isGame.
             }
             catch (Exception ex)
             {
@@ -2247,20 +2237,7 @@ Ví dụ không hợp lệ:
                 SetPlayButtonState(_taskCts != null); // (nếu trong SetPlayButtonState có SetConfigEditable thì sẽ khóa/mở các ô)
                 ApplyMouseShieldFromCheck();
 
-                // --- BẮT ĐẦU GIÁM SÁT UI MODE ---
-                if (_uiModeTimer == null)
-                {
-                    _uiModeTimer = new System.Windows.Threading.DispatcherTimer
-                    {
-                        Interval = TimeSpan.FromMilliseconds(300)
-                    };
-                    _uiModeTimer.Tick += (_, __) =>
-                    {
-                        try { RecomputeUiMode(); } catch { /* ignore */ }
-                    };
-                    _uiModeTimer.Start();
-                    RecomputeUiMode();
-                }
+                // Không dùng timer phụ thuộc isGame/url để đổi UI.
 
             }
             catch (Exception ex)
@@ -3348,66 +3325,8 @@ Ví dụ không hợp lệ:
                 if (!await EnsureLicenseAsync())
                     return;
 
-                // 1) Ưu tiên gọi API JS: click Login trước
-                var rLogin = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickLogin?window.__abx_hw_clickLogin():'no-api');}catch(e){return 'err:'+e.message;}})();");
-                Log("[HOME] clickLogin via JS => " + rLogin);
-
-                // đợi nhẹ để trang xử lý login (nếu có)
-                await Task.Delay(900);
-
-                // 2) Tiếp tục gọi API JS: click 'Chơi Xóc Đĩa Live'
-                var rPlay = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickPlayXDL?window.__abx_hw_clickPlayXDL():'no-api');}catch(e){return 'err:'+e.message;}})();");
-                Log("[HOME] clickPlay via JS => " + rPlay);
-
-                // 3) Fallback: nếu JS API không có/không ok, quay về hành vi cũ
-                var okByJs = (rPlay ?? "").IndexOf("ok", StringComparison.OrdinalIgnoreCase) >= 0;
-                if (!okByJs)
-                {
-                    var goHome = await ClickHomeLogoAsync(12000);
-                    Log("[VaoXocDia_Click -> home] " + goHome);
-
-                    await Task.Delay(300);
-
-                    var rOpen = await OpenLiveItemImmediatelyAsync(1, 25000);
-                    Log("[VaoXocDia_Click -> open-live(index=1)] " + rOpen);
-                }
-
-                // 4) Chờ điều hướng sang host games.* trước khi poll Cocos
-                var gameNavOk = await WaitForGameNavigationAsync(TimeSpan.FromSeconds(20));
-                if (!gameNavOk)
-                {
-                    Log("[VaoXocDia_Click] Timeout: chưa điều hướng tới games.*");
-                    return;
-                }
-
-                // 4) Cầu nối: đồng bộ & autostart khi đã vào bàn
-                if (_bridge != null)
-                {
-                    // nếu bạn có sửa JS ngoài, nạp lại và re-register
-                    var latestJs = await LoadAppJsAsyncFallback();
-                    if (!string.IsNullOrEmpty(latestJs))
-                        await _bridge.UpdateAppJsAsync(latestJs);
-
-                    await _bridge.ForceRefreshAsync();
-                }
-
-                // 5) Poll cocos sẵn sàng (giữ nguyên như cũ)
-                var ok = false;
-                for (int i = 0; i < 100; i++)
-                {
-                    var ready = await Web.ExecuteScriptAsync(@"
-                (function(){ try{ return !!(window.cc && cc.director && cc.director.getScene); }
-                             catch(e){ return false; } })()");
-                    Log("[VaoXocDia_Click -> load xoc dia live] " + ready);
-                    if (bool.TryParse(ready, out var b) && b) { ok = true; break; }
-                    await Task.Delay(300);
-                }
-                if (!ok) Log("[CW] Game not ready (Cocos scene not found)");
-
-                // 6) Bật push tick bên canvas (như cũ)
-                await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
-                Log("[CW] start push 240ms");
-                ApplyUiMode(true); // cho UI chuyển ngay sang nhóm 'Chiến lược/Trạng thái/Console'
+                _forceGameUiFromLoginTool = true;
+                ApplyUiMode(true);
             }
             catch (Exception ex)
             {
@@ -3426,66 +3345,8 @@ Ví dụ không hợp lệ:
                 if (!await EnsureTrialAsync())
                     return;
 
-                // 1) Ưu tiên gọi API JS: click Login trước
-                var rLogin = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickLogin?window.__abx_hw_clickLogin():'no-api');}catch(e){return 'err:'+e.message;}})();");
-                Log("[HOME] clickLogin via JS => " + rLogin);
-
-                // đợi nhẹ để trang xử lý login (nếu có)
-                await Task.Delay(900);
-
-                // 2) Tiếp tục gọi API JS: click 'Chơi Xóc Đĩa Live'
-                var rPlay = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickPlayXDL?window.__abx_hw_clickPlayXDL():'no-api');}catch(e){return 'err:'+e.message;}})();");
-                Log("[HOME] clickPlay via JS => " + rPlay);
-
-                // 3) Fallback: nếu JS API không có/không ok, quay về hành vi cũ
-                var okByJs = (rPlay ?? "").IndexOf("ok", StringComparison.OrdinalIgnoreCase) >= 0;
-                if (!okByJs)
-                {
-                    var goHome = await ClickHomeLogoAsync(12000);
-                    Log("[VaoXocDia_Click -> home] " + goHome);
-
-                    await Task.Delay(300);
-
-                    var rOpen = await OpenLiveItemImmediatelyAsync(1, 25000);
-                    Log("[VaoXocDia_Click -> open-live(index=1)] " + rOpen);
-                }
-
-                // 4) Chờ điều hướng sang host games.* trước khi poll Cocos
-                var gameNavOk = await WaitForGameNavigationAsync(TimeSpan.FromSeconds(20));
-                if (!gameNavOk)
-                {
-                    Log("[VaoXocDia_Click] Timeout: chưa điều hướng tới games.*");
-                    return;
-                }
-
-                // 4) Cầu nối: đồng bộ & autostart khi đã vào bàn
-                if (_bridge != null)
-                {
-                    // nếu bạn có sửa JS ngoài, nạp lại và re-register
-                    var latestJs = await LoadAppJsAsyncFallback();
-                    if (!string.IsNullOrEmpty(latestJs))
-                        await _bridge.UpdateAppJsAsync(latestJs);
-
-                    await _bridge.ForceRefreshAsync();
-                }
-
-                // 5) Poll cocos sẵn sàng (giữ nguyên như cũ)
-                var ok = false;
-                for (int i = 0; i < 100; i++)
-                {
-                    var ready = await Web.ExecuteScriptAsync(@"
-                (function(){ try{ return !!(window.cc && cc.director && cc.director.getScene); }
-                             catch(e){ return false; } })()");
-                    Log("[VaoXocDia_Click -> load xoc dia live] " + ready);
-                    if (bool.TryParse(ready, out var b) && b) { ok = true; break; }
-                    await Task.Delay(300);
-                }
-                if (!ok) Log("[CW] Game not ready (Cocos scene not found)");
-
-                // 6) Bật push tick bên canvas (như cũ)
-                await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
-                Log("[CW] start push 240ms");
-                ApplyUiMode(true); // cho UI chuyển ngay sang nhóm 'Chiến lược/Trạng thái/Console'
+                _forceGameUiFromLoginTool = true;
+                ApplyUiMode(true);
             }
             catch (Exception ex)
             {
@@ -4165,7 +4026,15 @@ Ví dụ không hợp lệ:
                 if (!string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
                 {
                     Log("[DEC] Chưa thấy bridge JS (__cw_bet) → tự động 'Xóc Đĩa Live' và inject.");
-                    VaoXocDia_Click(sender, e);
+                    var opened = await TryPlayXocDiaFromHomeAsync();
+                    Log("[DEC] auto open live from Home: " + (opened ? "ok" : "fail"));
+
+                    try
+                    {
+                        if (_bridge != null)
+                            await _bridge.ForceRefreshAsync();
+                    }
+                    catch { }
 
                     // Poll chờ bridge sẵn sàng tối đa 30s
                     var t0 = DateTime.UtcNow;

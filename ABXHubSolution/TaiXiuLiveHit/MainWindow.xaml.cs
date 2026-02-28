@@ -3107,10 +3107,8 @@ Ví dụ không hợp lệ:
                 if (!await EnsureTrialAsync())
                     return;
 
-                var rLogin = await Web.ExecuteScriptAsync("(function(){try{return (window.__abx_hw_clickLogin?window.__abx_hw_clickLogin():'no-api');}catch(e){return 'err:'+e.message;}})();");
-                Log("[HOME] clickLogin via JS => " + rLogin);
-
-                await Task.Delay(900);
+                _forceGameUiFromLoginTool = true;
+                ApplyUiMode(true);
             }
             catch (Exception ex)
             {
