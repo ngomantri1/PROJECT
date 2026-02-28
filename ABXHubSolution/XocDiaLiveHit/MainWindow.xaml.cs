@@ -28,7 +28,6 @@ using System.Net.Http.Json;
 using System.ComponentModel;
 using System.Linq;
 using Microsoft.Win32;
-using System.Management;
 using System.Net.NetworkInformation;
 using System.Collections.ObjectModel;
 using System.Windows.Data;
@@ -4773,7 +4772,15 @@ Ví dụ không hợp lệ:
         private void EnsureDeviceId()
         {
             if (!string.IsNullOrWhiteSpace(_deviceId)) return;
-            _deviceId = BuildDeviceId();
+            try
+            {
+                _deviceId = BuildDeviceId();
+            }
+            catch
+            {
+                // Safe fallback to avoid blocking login flow
+                _deviceId = HashSha256(Environment.MachineName ?? "unknown-device");
+            }
             if (!string.IsNullOrWhiteSpace(_deviceId))
                 Log("[DeviceId] ready");
         }
@@ -4837,10 +4844,28 @@ Ví dụ không hợp lệ:
         {
             try
             {
-                using var searcher = new ManagementObjectSearcher(query);
-                foreach (var obj in searcher.Get())
+                // Use reflection so missing System.Management does not crash plugin runtime
+                var searcherType = Type.GetType("System.Management.ManagementObjectSearcher, System.Management", throwOnError: false);
+                if (searcherType == null)
+                    return null;
+
+                using var searcher = Activator.CreateInstance(searcherType, query) as IDisposable;
+                if (searcher == null)
+                    return null;
+
+                var getMethod = searcherType.GetMethod("Get", Type.EmptyTypes);
+                var results = getMethod?.Invoke(searcher, null) as System.Collections.IEnumerable;
+                if (results == null)
+                    return null;
+
+                foreach (var obj in results)
                 {
-                    var val = obj?[propName]?.ToString();
+                    var val = obj?.GetType().InvokeMember(
+                        propName,
+                        BindingFlags.GetProperty,
+                        binder: null,
+                        target: obj,
+                        args: null)?.ToString();
                     if (!string.IsNullOrWhiteSpace(val))
                         return val.Trim();
                 }
