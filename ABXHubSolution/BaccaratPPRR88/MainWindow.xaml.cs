@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -8048,13 +8048,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
         // Acquire lease 1 lần (KHÔNG renew theo yêu cầu)
         private async Task<bool> AcquireLeaseOnceAsync(string username)
         {
+            EnsureDeviceId();
             if (!EnableLeaseCloudflare) return true;
             if (string.IsNullOrWhiteSpace(LeaseBaseUrl)) return true; // chưa cấu hình -> bỏ qua
             try
             {
                 using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(6) };
                 var uname = Uri.EscapeDataString(username);
-                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/acquire/{uname}", new { clientId = _leaseClientId, sessionId = _leaseSessionId });
+                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/acquire/{uname}", new { clientId = _leaseClientId, sessionId = _leaseSessionId, deviceId = _deviceId, appId = AppLocalDirName });
                 var body = await resp.Content.ReadAsStringAsync();
                 Log($"[Lease] acquire -> {(int)resp.StatusCode} {resp.ReasonPhrase} | {body}");
                 if ((int)resp.StatusCode == 409)
@@ -8085,6 +8086,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private async Task ReleaseLeaseAsync(string username)
         {
+            EnsureDeviceId();
             if (!EnableLeaseCloudflare) return;
             if (string.IsNullOrWhiteSpace(LeaseBaseUrl)) return;
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -8096,7 +8098,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
                 var uname = Uri.EscapeDataString(username);
-                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/release/{uname}", new { clientId = _leaseClientId, sessionId = _leaseSessionId });
+                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/release/{uname}", new { clientId = _leaseClientId, sessionId = _leaseSessionId, deviceId = _deviceId, appId = AppLocalDirName });
                 // không cần xử lý gì thêm; cứ fire-and-forget
                 Log("[Lease] release sent: " + (int)resp.StatusCode);
             }
@@ -8243,6 +8245,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private void StartLeaseHeartbeat(string username, string? clientIdOverride = null)
         {
+            EnsureDeviceId();
             StopLeaseHeartbeat();
             if (!EnableLeaseCloudflare) return;
             _leaseHbCts = new CancellationTokenSource();
@@ -8250,10 +8253,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var uname = Uri.EscapeDataString(username);
             var clientId = string.IsNullOrWhiteSpace(clientIdOverride) ? _leaseClientId : clientIdOverride;
             var sessionId = _leaseSessionId;
-
-            if (false) // đổi false để tắt heartbeat
-            {
-                Task.Run(async () =>
+            Task.Run(async () =>
                 {
                     while (!cts.IsCancellationRequested)
                     {
@@ -8261,7 +8261,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         {
                             using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
                             var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/heartbeat/{uname}",
-                                                                  new { clientId, sessionId });
+                                                                  new { clientId, sessionId, deviceId = _deviceId, appId = AppLocalDirName });
                             // chỉ log nhẹ cho debug
                             Log("[Lease] hb: " + (int)resp.StatusCode);
                         }
@@ -8271,7 +8271,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
                                   .ContinueWith(_ => { }); // nuốt TaskCanceled
                     }
                 }, cts.Token);
-            }
         }
 
         private void StopLeaseHeartbeat()

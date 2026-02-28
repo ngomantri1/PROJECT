@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -5162,13 +5162,14 @@ Ví dụ không hợp lệ:
         // Acquire lease 1 lần (KHÔNG renew theo yêu cầu)
         private async Task<bool> AcquireLeaseOnceAsync(string username)
         {
+            EnsureDeviceId();
             if (!EnableLeaseCloudflare) return true;
             if (string.IsNullOrWhiteSpace(LeaseBaseUrl)) return true; // chưa cấu hình -> bỏ qua
             try
             {
                 using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(6) };
                 var uname = Uri.EscapeDataString(username);
-                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/acquire/{uname}", new { clientId = _leaseClientId, sessionId = _leaseSessionId });
+                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/acquire/{uname}", new { clientId = _leaseClientId, sessionId = _leaseSessionId, deviceId = _deviceId, appId = AppLocalDirName });
                 var body = await resp.Content.ReadAsStringAsync();
                 Log($"[Lease] acquire -> {(int)resp.StatusCode} {resp.ReasonPhrase} | {body}");
                 if ((int)resp.StatusCode == 409)
@@ -5199,13 +5200,14 @@ Ví dụ không hợp lệ:
 
         private async Task ReleaseLeaseAsync(string username)
         {
+            EnsureDeviceId();
             if (!EnableLeaseCloudflare) return;
             if (string.IsNullOrWhiteSpace(LeaseBaseUrl)) return;
             try
             {
                 using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
                 var uname = Uri.EscapeDataString(username);
-                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/release/{uname}", new { clientId = _leaseClientId, sessionId = _leaseSessionId });
+                var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/release/{uname}", new { clientId = _leaseClientId, sessionId = _leaseSessionId, deviceId = _deviceId, appId = AppLocalDirName });
                 // không cần xử lý gì thêm; cứ fire-and-forget
                 Log("[Lease] release sent: " + (int)resp.StatusCode);
             }
@@ -5358,6 +5360,7 @@ Ví dụ không hợp lệ:
 
         private void StartLeaseHeartbeat(string username, string? clientIdOverride = null)
         {
+            EnsureDeviceId();
             StopLeaseHeartbeat();
             if (!EnableLeaseCloudflare) return;
             _leaseHbCts = new CancellationTokenSource();
@@ -5375,7 +5378,7 @@ Ví dụ không hợp lệ:
                     {
                         using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
                         var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/heartbeat/{uname}",
-                                                          new { clientId, sessionId });
+                                                          new { clientId, sessionId, deviceId = _deviceId, appId = AppLocalDirName });
                         var body = await resp.Content.ReadAsStringAsync();
                         if (resp.IsSuccessStatusCode)
                             Log("[Lease] hb -> " + (int)resp.StatusCode);
