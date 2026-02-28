@@ -1426,11 +1426,10 @@ Ví dụ không hợp lệ:
 
 
 
-                                // 2.b) game_hint: Home báo đã có game/iframe → chuyển UI tức thì
+                                // 2.b) game_hint: chỉ cập nhật tick, không tự đổi UI mode
                                 if (abxStr == "game_hint")
                                 {
                                     _lastGameTickUtc = DateTime.UtcNow; // synthetic tick
-                                    _ = Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(true)));
                                     return;
                                 }
 
@@ -1575,24 +1574,7 @@ Ví dụ không hợp lệ:
                         }
                     };
                 }
-
-                // 3) Hook NavigationCompleted để chuyển UI theo URL ngay khi điều hướng xong
-                if (!_navModeHooked && Web != null)
-                {
-                    _navModeHooked = true;
-                    Web.NavigationCompleted += async (_, __) =>
-                    {
-                        try
-                        {
-                            var src = Web?.Source?.ToString() ?? "";
-                            var host = string.IsNullOrWhiteSpace(src) ? "" : new Uri(src).Host;
-                            bool isGameHost = host.StartsWith("games.", StringComparison.OrdinalIgnoreCase);
-
-                            await Dispatcher.InvokeAsync(() => ApplyUiMode(isGameHost));
-                        }
-                        catch { /* ignore */ }
-                    };
-                }
+                // Không auto đổi UI mode theo URL/isGame.
             }
             catch (Exception ex)
             {
@@ -2148,21 +2130,7 @@ Ví dụ không hợp lệ:
 
                 SetPlayButtonState(_taskCts != null); // (nếu trong SetPlayButtonState có SetConfigEditable thì sẽ khóa/mở các ô)
                 ApplyMouseShieldFromCheck();
-
-                // --- BẮT ĐẦU GIÁM SÁT UI MODE ---
-                if (_uiModeTimer == null)
-                {
-                    _uiModeTimer = new System.Windows.Threading.DispatcherTimer
-                    {
-                        Interval = TimeSpan.FromMilliseconds(300)
-                    };
-                    _uiModeTimer.Tick += (_, __) =>
-                    {
-                        try { RecomputeUiMode(); } catch { /* ignore */ }
-                    };
-                    _uiModeTimer.Start();
-                    RecomputeUiMode();
-                }
+                // Không dùng timer phụ thuộc isGame/url để đổi UI.
 
             }
             catch (Exception ex)
