@@ -15,7 +15,7 @@ namespace TaiXiuThuongZoWin
         private MainWindow? _window;
         private IGameHostContext? _host;   // giữ lại để báo ngược về Hub
 
-        public string Name => "Tài Xỉu Thường SunWi, ZoWin";
+        public string Name => "Tài Xỉu Thường ZoWin,SunWin,NhatVip,GemVip";
         public string Slug => "tai-xiu-thuong-zowin";
 
         public UserControl CreateView(IGameHostContext host)

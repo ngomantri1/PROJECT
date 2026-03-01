@@ -54,17 +54,13 @@
     <PackageReference Include="System.Management" Version="8.0.0" />
   </ItemGroup>
 
-  <!-- Lo?i tr? th? m?c backup kh?i build -->
-  <ItemGroup>
-    <Compile Remove="bak\**\*.cs" />
-    <Page Remove="bak\**\*.xaml" />
-  </ItemGroup>
-
   <!-- Nhúng JS vào resource -->
   <ItemGroup>
+    <None Remove="js_home_v2.js" />
     <None Remove="v4_js_xoc_dia_live.js" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="js_home_v2.js" />
     <EmbeddedResource Include="v4_js_xoc_dia_live.js" />
   </ItemGroup>
 

@@ -452,8 +452,8 @@ namespace XocDiaTuLinhZoWin
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn
         const string LicenseBranch = "main";          // <- nhánh
-        const string LicenseNameGame = "zowin";          // <- nhánh
-        const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/zowin";
+        const string LicenseNameGame = "auto";          // <- nhánh
+        const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/auto";
         private const bool EnableLeaseCloudflare = true; // true=bật gọi Cloudflare
 
         // ===================== TOOLTIP TEXTS =====================
