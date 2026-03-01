@@ -29,7 +29,6 @@ using System.Net.Http.Json;
 using System.ComponentModel;
 using System.Linq;
 using Microsoft.Win32;
-using System.Management;
 using System.Net.NetworkInformation;
 using System.Collections.ObjectModel;
 using System.Windows.Data;
@@ -7585,7 +7584,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private void EnsureDeviceId()
         {
             if (!string.IsNullOrWhiteSpace(_deviceId)) return;
-            _deviceId = BuildDeviceId();
+            try
+            {
+                _deviceId = BuildDeviceId();
+            }
+            catch
+            {
+                _deviceId = HashSha256(Environment.MachineName ?? "unknown-device");
+            }
             if (!string.IsNullOrWhiteSpace(_deviceId))
                 Log("[DeviceId] ready");
         }
@@ -7649,10 +7655,27 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             try
             {
-                using var searcher = new ManagementObjectSearcher(query);
-                foreach (var obj in searcher.Get())
+                var searcherType = Type.GetType("System.Management.ManagementObjectSearcher, System.Management", throwOnError: false);
+                if (searcherType == null)
+                    return null;
+
+                using var searcher = Activator.CreateInstance(searcherType, query) as IDisposable;
+                if (searcher == null)
+                    return null;
+
+                var getMethod = searcherType.GetMethod("Get", Type.EmptyTypes);
+                var results = getMethod?.Invoke(searcher, null) as System.Collections.IEnumerable;
+                if (results == null)
+                    return null;
+
+                foreach (var obj in results)
                 {
-                    var val = obj?[propName]?.ToString();
+                    var val = obj?.GetType().InvokeMember(
+                        propName,
+                        BindingFlags.GetProperty,
+                        binder: null,
+                        target: obj,
+                        args: null)?.ToString();
                     if (!string.IsNullOrWhiteSpace(val))
                         return val.Trim();
                 }
@@ -8267,7 +8290,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         }
                         catch (Exception ex) { Log("[Lease] hb err: " + ex.Message); }
 
-                        await Task.Delay(TimeSpan.FromSeconds(180), cts.Token)
+                        await Task.Delay(TimeSpan.FromSeconds(600), cts.Token)
                                   .ContinueWith(_ => { }); // nuốt TaskCanceled
                     }
                 }, cts.Token);
