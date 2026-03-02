@@ -1476,6 +1476,7 @@
         var s = d.summary || {};
         var st = d.stats || {};
         var rows = d.rows || [];
+        var logs = (window.__cw_scan_log || []).slice();
         var lines = [];
         lines.push('[CW_SCAN_EXPORT]');
         lines.push('time=' + scanTimeTag());
@@ -1495,8 +1496,36 @@
             lines.push('stats=' + JSON.stringify(st));
         if (s && typeof s === 'object')
             lines.push('summary=' + JSON.stringify(s));
-        lines.push('rows_preview=' + JSON.stringify(rows.slice(0, 30)));
-        lines.push('scan_log=' + JSON.stringify((window.__cw_scan_log || []).slice()));
+        lines.push('');
+        lines.push('rows_preview:');
+        try {
+            var preview = rows.slice(0, 30);
+            if (!preview.length) {
+                lines.push('0. (empty)');
+            } else {
+                for (var i = 0; i < preview.length; i++) {
+                    var r = preview[i] || {};
+                    var txt = String(r.text == null ? '' : r.text).replace(/\r?\n/g, ' / ');
+                    var tail = String(r.tail == null ? '' : r.tail);
+                    lines.push((i + 1) + '. text=' + JSON.stringify(txt) +
+                        ' | x=' + (Number(r.x) || 0) +
+                        ' y=' + (Number(r.y) || 0) +
+                        ' w=' + (Number(r.w) || 0) +
+                        ' h=' + (Number(r.h) || 0) +
+                        ' | tail=' + tail);
+                }
+            }
+        } catch (_) {
+            lines.push('0. (rows_preview format error)');
+        }
+        lines.push('');
+        lines.push('scan_log:');
+        if (!logs.length) {
+            lines.push('0. (empty)');
+        } else {
+            for (var j = 0; j < logs.length; j++)
+                lines.push((j + 1) + '. ' + String(logs[j]));
+        }
         return lines.join('\n');
     }
     function copyTextToClipboard(text) {

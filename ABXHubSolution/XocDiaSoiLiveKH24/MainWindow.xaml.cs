@@ -4843,12 +4843,6 @@ Ví dụ không hợp lệ:
 
         private string ResolveLeaseUsername()
         {
-            var uname = ResolveLeaseUsername();
-            if (!string.IsNullOrWhiteSpace(uname)) return uname;
-
-            uname = (_licenseUser ?? "").Trim().ToLowerInvariant();
-            if (!string.IsNullOrWhiteSpace(uname)) return uname;
-
             return T(TxtUser).Trim().ToLowerInvariant();
         }
 
