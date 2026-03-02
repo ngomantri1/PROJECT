@@ -1,4 +1,4 @@
-(() => {
+(async () => {
     'use strict';
     console.log('[CW] xoc-dia-live panel script init');
     /* =========================================================
@@ -9,15 +9,26 @@
     tail = 'XDLive/Canvas/Bg/footer/listLabel/totalBet'
     + STANDARDIZED EXPORTS: moneyTailList(), pickByXTail()
     ========================================================= */
-    //root.style.display='none';  //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
+    // Luu y: KHONG bo comment dong nay vi root chua duoc tao o dau file.
+    //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-
+    window.__cw_patch_ver = 'cw-r12-20260302';
     try {
-        if (window[NS] && window[NS].teardown) {
-            window[NS].teardown();
+        if (!window.__cw_last_scan_text)
+            window.__cw_last_scan_text = [];
+        if (!window.__cw_last_scan_summary) {
+            window.__cw_last_scan_summary = {
+                labels: 0,
+                candidates: 0,
+                invalidRect: 0,
+                adjusted: 0,
+                out: 0,
+                ts: 0,
+                status: 'idle'
+            };
         }
-    } catch (e) {}
+    } catch (e0) {}
 
     // === CW host/DOM command bridge (clear_autostart) =====================
     // CW host/DOM command bridge (clear_autostart)
@@ -62,9 +73,42 @@
 
     // SỬA: không được đụng trực tiếp biến global cc khi cc chưa tồn tại,
     // luôn đi qua window.cc để tránh ReferenceError khi inject sớm.
-    if (!window.cc || !window.cc.director || !window.cc.director.getScene) {
+    async function waitForBootReady(timeoutMs) {
+        timeoutMs = Number(timeoutMs) || 15000;
+        var t0 = Date.now();
+        while ((Date.now() - t0) < timeoutMs) {
+            try {
+                var hasBody = !!document.body;
+                var hasCc = !!(window.cc && window.cc.director && typeof window.cc.director.getScene === 'function');
+                var hasScene = false;
+                if (hasCc) {
+                    try {
+                        hasScene = !!window.cc.director.getScene();
+                    } catch (_) {
+                        hasScene = false;
+                    }
+                }
+                if (hasBody && hasCc && hasScene)
+                    return true;
+            } catch (_) {}
+            await new Promise(function (r) {
+                setTimeout(r, 120);
+            });
+        }
+        return false;
+    }
+
+    var _bootReady = await waitForBootReady(15000);
+    if (!_bootReady) {
+        console.warn('[CW] boot skipped: body/cc/scene not ready in time');
         return;
     }
+
+    try {
+        if (window[NS] && window[NS].teardown) {
+            window[NS].teardown();
+        }
+    } catch (e) {}
 
     /* ---------------- utils ---------------- */
     var V2 = (cc.v2 || cc.Vec2);
@@ -73,6 +117,51 @@
             setTimeout(r, ms);
         });
     };
+    function cwLog() {
+        try {
+            console.log.apply(console, arguments);
+        } catch (e) {}
+        // Mirror len top console de tranh mat log do khac context/frame.
+        try {
+            if (window.top && window.top !== window && window.top.console && typeof window.top.console.log === 'function')
+                window.top.console.log.apply(window.top.console, arguments);
+        } catch (e2) {}
+    }
+    function cwWarn() {
+        try {
+            console.warn.apply(console, arguments);
+        } catch (e) {}
+        try {
+            if (window.top && window.top !== window && window.top.console && typeof window.top.console.warn === 'function')
+                window.top.console.warn.apply(window.top.console, arguments);
+        } catch (e2) {}
+    }
+    function cwError() {
+        try {
+            console.error.apply(console, arguments);
+        } catch (e) {}
+        try {
+            if (window.top && window.top !== window && window.top.console && typeof window.top.console.error === 'function')
+                window.top.console.error.apply(window.top.console, arguments);
+        } catch (e2) {}
+    }
+    function cwTable(rows) {
+        try {
+            console.table(rows);
+        } catch (e) {
+            try {
+                console.log(rows);
+            } catch (e2) {}
+        }
+        try {
+            if (window.top && window.top !== window && window.top.console) {
+                if (typeof window.top.console.table === 'function')
+                    window.top.console.table(rows);
+                else if (typeof window.top.console.log === 'function')
+                    window.top.console.log(rows);
+            }
+        } catch (e3) {}
+    }
     var clamp01 = function (x) {
         x = Number(x) || 0;
         if (x < 0)
@@ -165,18 +254,170 @@
     }
 
     /* ---------------- scene helpers ---------------- */
+    function _mkV2(x, y) {
+        try {
+            if (window.cc && typeof cc.v2 === 'function')
+                return cc.v2(x, y);
+        } catch (e) {}
+        try {
+            if (window.cc && cc.Vec2)
+                return new cc.Vec2(x, y);
+        } catch (e2) {}
+        return {
+            x: x,
+            y: y
+        };
+    }
+    function _num(v, dft) {
+        v = Number(v);
+        return isFinite(v) ? v : (dft || 0);
+    }
+    function _rectOk(r) {
+        if (!r)
+            return false;
+        return isFinite(r.x) && isFinite(r.y) && isFinite(r.w) && isFinite(r.h) && r.w > 0.5 && r.h > 0.5;
+    }
+    function _nodeSize(node) {
+        var w = 0,
+        h = 0;
+        try {
+            var cs = node.getContentSize ? node.getContentSize() : (node._contentSize || null);
+            if (cs) {
+                w = _num(cs.width, 0);
+                h = _num(cs.height, 0);
+            }
+        } catch (e) {}
+        if (w <= 0 || h <= 0) {
+            try {
+                var ui = (window.cc && cc.UITransform) ? getComp(node, cc.UITransform) : null;
+                if (ui && ui.contentSize) {
+                    w = Math.max(w, _num(ui.contentSize.width, 0));
+                    h = Math.max(h, _num(ui.contentSize.height, 0));
+                }
+            } catch (e2) {}
+        }
+        return {
+            w: w,
+            h: h
+        };
+    }
+    function _nodeWorldAr(node) {
+        try {
+            return node.convertToWorldSpaceAR(_mkV2(0, 0));
+        } catch (e) {}
+        try {
+            if (window.cc && typeof cc.v3 === 'function')
+                return node.convertToWorldSpaceAR(cc.v3(0, 0, 0));
+        } catch (e2) {}
+        return null;
+    }
+    function _nodeToScreen(node) {
+        try {
+            if (!window.cc || !cc.Camera || !cc.Camera.findCamera || !cc.view)
+                return null;
+            var cam = cc.Camera.findCamera(node);
+            if (!cam)
+                return null;
+            var wp = _nodeWorldAr(node);
+            if (!wp)
+                return null;
+            var sp = cam.worldToScreen(wp);
+            var fs = cc.view.getFrameSize ? cc.view.getFrameSize() : null;
+            var vs = cc.view.getVisibleSize ? cc.view.getVisibleSize() : null;
+            if (!fs || !vs)
+                return null;
+            var sx = _num(fs.width, 1) / Math.max(1, _num(vs.width, 1));
+            var sy = _num(fs.height, 1) / Math.max(1, _num(vs.height, 1));
+            return {
+                x: _num(sp && sp.x, 0) * sx,
+                y: _num(sp && sp.y, 0) * sy
+            };
+        } catch (e) {}
+        return null;
+    }
     function wRect(node) {
         try {
-            var p = node.convertToWorldSpaceAR(new V2(0, 0));
-            var cs = node.getContentSize ? node.getContentSize() : (node._contentSize || {
-                width: 0,
-                height: 0
-            });
+            // 1) Preferred: world AABB when available (works best across Cocos variants).
+            var bb = null;
+            try {
+                if (node && typeof node.getBoundingBoxToWorld === 'function')
+                    bb = node.getBoundingBoxToWorld();
+            } catch (e0) {}
+            if (!bb) {
+                try {
+                    var ui = (window.cc && cc.UITransform) ? getComp(node, cc.UITransform) : null;
+                    if (ui && typeof ui.getBoundingBoxToWorld === 'function')
+                        bb = ui.getBoundingBoxToWorld();
+                } catch (e1) {}
+            }
+            if (bb) {
+                var r0 = {
+                    x: _num(bb.x, 0),
+                    y: _num(bb.y, 0),
+                    w: _num(bb.width, 0),
+                    h: _num(bb.height, 0)
+                };
+                if (_rectOk(r0))
+                    return r0;
+            }
+
+            // 2) Fallback: world anchor + content size.
+            var p = _nodeWorldAr(node);
+            var sz = _nodeSize(node);
+            var w = _num(sz.w, 0),
+            h = _num(sz.h, 0);
+            if (p && w > 0 && h > 0) {
+                var ax = 0.5,
+                ay = 0.5;
+                try {
+                    if (node && typeof node.getAnchorPoint === 'function') {
+                        var ap = node.getAnchorPoint();
+                        ax = _num(ap && ap.x, 0.5);
+                        ay = _num(ap && ap.y, 0.5);
+                    } else {
+                        ax = _num(node && node.anchorX, 0.5);
+                        ay = _num(node && node.anchorY, 0.5);
+                    }
+                } catch (e3) {}
+                var r1 = {
+                    x: _num(p.x, 0) - w * ax,
+                    y: _num(p.y, 0) - h * ay,
+                    w: w,
+                    h: h
+                };
+                if (_rectOk(r1))
+                    return r1;
+            }
+
+            // 3) Last fallback: project node center with camera to screen pixels.
+            try {
+                var cam = (window.cc && cc.Camera && cc.Camera.findCamera) ? cc.Camera.findCamera(node) : null;
+                var wp = p || _nodeWorldAr(node);
+                if (cam && wp && cc.view && cc.view.getFrameSize && cc.view.getVisibleSize) {
+                    var sp = cam.worldToScreen(wp);
+                    var fs = cc.view.getFrameSize(),
+                    vs = cc.view.getVisibleSize();
+                    var sx = _num(fs.width, 1) / Math.max(1, _num(vs.width, 1));
+                    var sy = _num(fs.height, 1) / Math.max(1, _num(vs.height, 1));
+                    var sz2 = _nodeSize(node);
+                    var w2 = _num(sz2.w, 0) * sx;
+                    var h2 = _num(sz2.h, 0) * sy;
+                    var r2 = {
+                        x: _num(sp && sp.x, 0) * sx - w2 * 0.5,
+                        y: _num(sp && sp.y, 0) * sy - h2 * 0.5,
+                        w: w2,
+                        h: h2
+                    };
+                    if (_rectOk(r2))
+                        return r2;
+                }
+            } catch (e4) {}
+
             return {
-                x: p.x || 0,
-                y: p.y || 0,
-                w: cs.width || 0,
-                h: cs.height || 0
+                x: 0,
+                y: 0,
+                w: 0,
+                h: 0
             };
         } catch (e) {
             return {
@@ -249,6 +490,7 @@
                         y: r.y,
                         w: r.w,
                         h: r.h,
+                        node: n,
                         tail: tail,
                         tl: tail.toLowerCase(),
                         n: {
@@ -432,18 +674,202 @@
             return true;
         return s.length >= 4;
     }
+    function isRenderableRect(r) {
+        if (!r)
+            return false;
+        if (!isFinite(r.x) || !isFinite(r.y) || !isFinite(r.w) || !isFinite(r.h))
+            return false;
+        if (r.w < 2 || r.h < 2)
+            return false;
+        if ((r.x + r.w) < -4 || (r.y + r.h) < -4)
+            return false;
+        if (r.x > innerWidth + 4 || r.y > innerHeight + 4)
+            return false;
+        return true;
+    }
+    function collectDomTextRects(limit) {
+        limit = Number(limit) || 200;
+        var out = [];
+        var seen = {};
+        try {
+            var all = document.querySelectorAll('body *');
+            for (var i = 0; i < all.length; i++) {
+                if (out.length >= limit)
+                    break;
+                var el = all[i];
+                if (!el || !el.getBoundingClientRect)
+                    continue;
+                // Bo qua panel CW de tranh tu-anh huong.
+                try {
+                    if (el.id === '__cw_root_allin')
+                        continue;
+                    if (el.closest && el.closest('#__cw_root_allin'))
+                        continue;
+                } catch (e0) {}
+                var cs = null;
+                try {
+                    cs = getComputedStyle(el);
+                } catch (e1) {}
+                if (cs) {
+                    if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0')
+                        continue;
+                }
+                var r = el.getBoundingClientRect();
+                if (!r)
+                    continue;
+                var x = Math.round(_num(r.left, 0));
+                var y = Math.round(_num(r.top, 0));
+                var w = Math.round(_num(r.width, 0));
+                var h = Math.round(_num(r.height, 0));
+                if (!isRenderableRect({
+                        x: x,
+                        y: y,
+                        w: w,
+                        h: h
+                    }))
+                    continue;
+                var txt = '';
+                try {
+                    txt = (el.innerText || el.textContent || '').trim();
+                } catch (e2) {
+                    txt = '';
+                }
+                if (!isTextCandidate(txt))
+                    continue;
+                if (txt.length > 140)
+                    txt = txt.slice(0, 140);
+                var key = txt + '|' + x + '|' + y + '|' + w + '|' + h;
+                if (seen[key])
+                    continue;
+                seen[key] = 1;
+                var tag = '';
+                try {
+                    tag = String((el.tagName || 'el')).toLowerCase();
+                } catch (e3) {
+                    tag = 'el';
+                }
+                var id = '';
+                try {
+                    id = el.id ? ('#' + el.id) : '';
+                } catch (e4) {}
+                out.push({
+                    text: txt,
+                    x: x,
+                    y: y,
+                    w: w,
+                    h: h,
+                    n: {
+                        x: x / innerWidth,
+                        y: y / innerHeight,
+                        w: w / innerWidth,
+                        h: h / innerHeight
+                    },
+                    tail: 'dom:' + tag + id,
+                    tl: 'dom:' + tag
+                });
+            }
+        } catch (e5) {}
+        return out;
+    }
     function buildTextRects() {
         var ls = collectLabels(),
         out = [];
+        var st = {
+            labels: ls.length,
+            textCandidate: 0,
+            rectInvalid: 0,
+            rectRecovered: 0,
+            rectProjected: 0,
+            rectAdjusted: 0,
+            rectClamped: 0,
+            domFallback: 0,
+            syntheticPlaced: 0,
+            out: 0
+        };
         for (var i = 0; i < ls.length; i++) {
             var L = ls[i];
             var s = (L.text || '').trim();
             if (!isTextCandidate(s))
                 continue;
+            st.textCandidate++;
             var x = Math.round(L.x),
             y = Math.round(L.y),
             w = Math.round(L.w),
             h = Math.round(L.h);
+            var rr = {
+                x: x,
+                y: y,
+                w: w,
+                h: h
+            };
+            if (!isRenderableRect(rr)) {
+                st.rectInvalid++;
+                // Thu tim rect hop le tu node cha gan nhat (nhieu Label co size 0 nhung parent co size dung).
+                var recovered = null;
+                try {
+                    var anc = L.node || null;
+                    var hop = 0;
+                    while (anc && hop < 10) {
+                        var ar = wRect(anc);
+                        if (isRenderableRect(ar)) {
+                            recovered = ar;
+                            break;
+                        }
+                        anc = anc.parent || anc._parent || null;
+                        hop++;
+                    }
+                } catch (eA) {}
+                if (recovered) {
+                    x = Math.round(recovered.x);
+                    y = Math.round(recovered.y);
+                    w = Math.round(recovered.w);
+                    h = Math.round(recovered.h);
+                    st.rectRecovered++;
+                } else {
+                // Giu hanh vi gan ban cu: khong bo item, thu fallback kich thuoc de van render duoc box debug.
+                if (!isFinite(x))
+                    x = 0;
+                if (!isFinite(y))
+                    y = 0;
+                if (!isFinite(w) || w < 2)
+                    w = Math.max(16, Math.min(360, s.length * 7));
+                if (!isFinite(h) || h < 2)
+                    h = 18;
+                // Thu project vi tri node len screen de co x/y that.
+                var projectedHit = false;
+                try {
+                    var sp2 = _nodeToScreen(L.node);
+                    if (sp2) {
+                        x = Math.round(sp2.x - w * 0.5);
+                        y = Math.round(sp2.y - h * 0.5);
+                        st.rectProjected++;
+                        projectedHit = true;
+                    }
+                } catch (eP) {}
+                // Neu van khong co toa do, xep theo luoi debug de khung khong chong len nhau.
+                if (!projectedHit && (x === 0 && y === 0)) {
+                    var idxDbg = st.rectAdjusted;
+                    var rowH = 22;
+                    var startY = 90;
+                    var rowsMax = Math.max(10, Math.floor((innerHeight - startY - 12) / rowH));
+                    var col = Math.floor(idxDbg / rowsMax);
+                    var row = idxDbg % rowsMax;
+                    x = 8 + col * 290;
+                    y = startY + row * rowH;
+                    st.syntheticPlaced++;
+                }
+                // Dua box vao trong viewport de TextMap chac chan nhin thay.
+                var maxX = Math.max(0, innerWidth - w - 2);
+                var maxY = Math.max(0, innerHeight - h - 2);
+                var x0 = x,
+                y0 = y;
+                x = Math.max(0, Math.min(maxX, x));
+                y = Math.max(0, Math.min(maxY, y));
+                if (x !== x0 || y !== y0)
+                    st.rectClamped++;
+                st.rectAdjusted++;
+                }
+            }
             out.push({
                 text: s,
                 x: x,
@@ -460,6 +886,18 @@
                 tl: L.tl
             });
         }
+        // Neu tat ca text Cocos deu vo toa do (0,0) thi fallback sang DOM text de van co box tren man hinh.
+        if ((st.textCandidate > 0 && st.rectInvalid === st.textCandidate && st.rectRecovered === 0 && st.rectProjected === 0) || out.length === 0) {
+            var domRows = collectDomTextRects(200);
+            if (domRows && domRows.length) {
+                out = domRows;
+                st.domFallback = domRows.length;
+            }
+        }
+        st.out = out.length;
+        try {
+            window.__cw_textStats = st;
+        } catch (e) {}
         return out;
     }
 
@@ -958,6 +1396,7 @@
         '<button id="bScanMoney">Scan200Money</button>' +
         '<button id="bScanBet">Scan200Bet</button>' +
         '<button id="bScanText">Scan200Text</button>' +
+        '<button id="bCopyScan">CopyScanLog</button>' +
         '</div>' +
         '<div style="display:flex;gap:10px;align-items:center;margin-bottom:6px">' +
         '<span>Tiền (×1K)</span>' +
@@ -965,9 +1404,11 @@
         '<button id="bBetC">Bet TÀI</button>' +
         '<button id="bBetL">Bet XỈU</button>' +
         '</div>' +
-        '<div id="cwInfo" style="white-space:pre;color:#9f9;line-height:1.45"></div>';
+        '<div id="cwInfo" style="white-space:pre;color:#9f9;line-height:1.45"></div>' +
+        '<div id="cwScanLog" style="margin-top:6px;max-height:110px;overflow:auto;white-space:pre;color:#7fe;border-top:1px dashed #184;padding-top:4px"></div>' +
+        '<div id="cwScanStatus" style="margin-top:6px;white-space:pre;color:#ffd37a;line-height:1.35"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display = 'none';
+    //root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -984,6 +1425,120 @@
         })(b);
     }
     root.appendChild(panel);
+    var SCAN_LOG_MAX = 12;
+    if (!Array.isArray(window.__cw_scan_log))
+        window.__cw_scan_log = [];
+    function pad2(n) {
+        n = Number(n) || 0;
+        return n < 10 ? ('0' + n) : String(n);
+    }
+    function scanTimeTag() {
+        var d = new Date();
+        return pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+    }
+    function pushScanLogLine(line) {
+        try {
+            var logs = window.__cw_scan_log;
+            logs.push(scanTimeTag() + ' ' + String(line || ''));
+            if (logs.length > SCAN_LOG_MAX)
+                logs.splice(0, logs.length - SCAN_LOG_MAX);
+            var box = panel.querySelector('#cwScanLog');
+            if (box) {
+                box.textContent = logs.join('\n');
+                box.scrollTop = box.scrollHeight;
+            }
+        } catch (e) {}
+    }
+    function setScanStatusLine(line) {
+        try {
+            var box = panel.querySelector('#cwScanStatus');
+            if (box)
+                box.textContent = String(line || '');
+        } catch (_) {}
+    }
+    function scanSummaryLine(source, d) {
+        source = source || 'UNK';
+        d = d || {};
+        var s = d.summary || {};
+        var rows = ((d.rows && d.rows.length) || 0);
+        return '[' + scanTimeTag() + '] ' + source +
+            ' rows=' + rows +
+            ' labels=' + (s.labels || 0) +
+            ' inv=' + (s.invalidRect || 0) +
+            ' dom=' + (s.domFallback || 0) +
+            ' syn=' + (s.syntheticPlaced || 0) +
+            ' adj=' + (s.adjusted || 0) +
+            ' status=' + (s.status || 'na');
+    }
+    function buildScanClipboardText(source, d, errMsg) {
+        source = source || 'UNK';
+        d = d || {};
+        var s = d.summary || {};
+        var st = d.stats || {};
+        var rows = d.rows || [];
+        var lines = [];
+        lines.push('[CW_SCAN_EXPORT]');
+        lines.push('time=' + scanTimeTag());
+        lines.push('source=' + source);
+        lines.push('patch=' + (d.patch || window.__cw_patch_ver || ''));
+        lines.push('rows=' + rows.length);
+        lines.push('status=' + (s.status || 'na'));
+        lines.push('labels=' + (s.labels || 0) +
+            ' candidates=' + (s.candidates || s.textCandidate || 0) +
+            ' invalid=' + (s.invalidRect || 0) +
+            ' dom=' + (s.domFallback || 0) +
+            ' syn=' + (s.syntheticPlaced || 0) +
+            ' adj=' + (s.adjusted || 0));
+        if (errMsg)
+            lines.push('error=' + errMsg);
+        if (st && typeof st === 'object')
+            lines.push('stats=' + JSON.stringify(st));
+        if (s && typeof s === 'object')
+            lines.push('summary=' + JSON.stringify(s));
+        lines.push('rows_preview=' + JSON.stringify(rows.slice(0, 30)));
+        lines.push('scan_log=' + JSON.stringify((window.__cw_scan_log || []).slice()));
+        return lines.join('\n');
+    }
+    function copyTextToClipboard(text) {
+        text = String(text || '');
+        try {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', 'readonly');
+            ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
+            document.body.appendChild(ta);
+            ta.select();
+            ta.setSelectionRange(0, ta.value.length);
+            var ok = false;
+            try {
+                ok = document.execCommand('copy');
+            } catch (_) {
+                ok = false;
+            }
+            ta.remove();
+            return !!ok;
+        } catch (_) {}
+        return false;
+    }
+    function showScanAlert(source, d, errMsg) {
+        source = source || 'UNK';
+        d = d || {};
+        var s = d.summary || {};
+        var rows = ((d.rows && d.rows.length) || 0);
+        var msg = '[CW Scan ' + source + ']\n' +
+            'rows=' + rows +
+            ' | status=' + (s.status || 'na') +
+            ' | invalid=' + (s.invalidRect || 0) +
+            ' | dom=' + (s.domFallback || 0) +
+            ' | syn=' + (s.syntheticPlaced || 0);
+        if (errMsg)
+            msg += '\nERR: ' + errMsg;
+        try {
+            alert(msg);
+        } catch (_) {}
+    }
+    pushScanLogLine('Ready: click Scan200Text to capture log here');
+    setScanStatusLine('Scan status: IDLE');
 
     // Drag
     try {
@@ -1317,30 +1872,84 @@
         console.log(btns);
     }
     function scan200Text() {
-        var texts = buildTextRects().sort(function (a, b) {
-            return a.y - b.y;
-        }).slice(0, 200)
-            .map(function (t) {
-                return {
-                    text: t.text,
-                    x: t.x,
-                    y: t.y,
-                    w: t.w,
-                    h: t.h,
-                    tail: t.tail
-                };
-            });
-        console.log('(Text index x200)\ttext\tx\ty\tw\th\ttail');
-        for (var i = 0; i < texts.length; i++) {
-            var r = texts[i];
-            console.log(i + "\t'" + r.text + "'\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
-        }
+        var texts = [];
+        var st = {};
         try {
-            console.table(texts);
-        } catch (e) {
-            console.log(texts);
+            texts = buildTextRects().sort(function (a, b) {
+                return a.y - b.y;
+            }).slice(0, 200)
+                .map(function (t) {
+                    return {
+                        text: t.text,
+                        x: t.x,
+                        y: t.y,
+                        w: t.w,
+                        h: t.h,
+                        tail: t.tail
+                    };
+                });
+            st = window.__cw_textStats || {};
+        console.log('[Scan200Text] labels=' + (st.labels || 0) +
+            ' candidates=' + (st.textCandidate || 0) +
+            ' invalidRect=' + (st.rectInvalid || 0) +
+            ' recovered=' + (st.rectRecovered || 0) +
+            ' projected=' + (st.rectProjected || 0) +
+            ' clamped=' + (st.rectClamped || 0) +
+            ' domFallback=' + (st.domFallback || 0) +
+            ' synthetic=' + (st.syntheticPlaced || 0) +
+            ' adjusted=' + (st.rectAdjusted || 0) +
+            ' out=' + (st.out || 0));
+            console.log('(Text index x200)\ttext\tx\ty\tw\th\ttail');
+            for (var i = 0; i < texts.length; i++) {
+                var r = texts[i];
+                console.log(i + "\t'" + r.text + "'\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
+            }
+            try {
+                console.table(texts);
+            } catch (e) {
+                console.log(texts);
+            }
+            try {
+                window.__cw_last_scan_text = texts;
+                window.__cw_last_scan_summary = {
+                labels: st.labels || 0,
+                candidates: st.textCandidate || 0,
+                invalidRect: st.rectInvalid || 0,
+                recovered: st.rectRecovered || 0,
+                projected: st.rectProjected || 0,
+                clamped: st.rectClamped || 0,
+                domFallback: st.domFallback || 0,
+                syntheticPlaced: st.syntheticPlaced || 0,
+                adjusted: st.rectAdjusted || 0,
+                out: st.out || 0,
+                ts: Date.now(),
+                    status: 'ok'
+                };
+            } catch (e2) {}
+            return texts;
+        } catch (err) {
+            try {
+                var msg = String((err && err.message) || err || 'scan-failed');
+                console.warn('[Scan200Text][ERR]', msg);
+                window.__cw_last_scan_text = [];
+                window.__cw_last_scan_summary = {
+                    labels: 0,
+                    candidates: 0,
+                    invalidRect: 0,
+                    recovered: 0,
+                    projected: 0,
+                    clamped: 0,
+                    domFallback: 0,
+                    syntheticPlaced: 0,
+                    adjusted: 0,
+                    out: 0,
+                    ts: Date.now(),
+                    status: 'err',
+                    err: msg
+                };
+            } catch (e3) {}
+            return [];
         }
-        return texts;
     }
 
     /* =====================================================
@@ -2292,9 +2901,25 @@
         if (S.showText) {
             S.text = buildTextRects();
             renderText();
+            try {
+                var st = window.__cw_textStats || {};
+                console.log('[TextMap] ON -> out=' + S.text.length +
+                    ' (labels=' + (st.labels || 0) +
+                    ', candidates=' + (st.textCandidate || 0) +
+                    ', invalidRect=' + (st.rectInvalid || 0) +
+                    ', recovered=' + (st.rectRecovered || 0) +
+                    ', projected=' + (st.rectProjected || 0) +
+                    ', clamped=' + (st.rectClamped || 0) +
+                    ', domFallback=' + (st.domFallback || 0) +
+                    ', synthetic=' + (st.syntheticPlaced || 0) +
+                    ', adjusted=' + (st.rectAdjusted || 0) + ')');
+            } catch (e) {}
         } else {
             S.focus = null;
             showFocus(null);
+            try {
+                console.log('[TextMap] OFF');
+            } catch (e2) {}
         }
         panel.style.zIndex = '2147483647';
     };
@@ -2305,8 +2930,170 @@
         scan200Bet();
     };
     panel.querySelector('#bScanText').onclick = function () {
-        scan200Text();
+        try {
+            pushScanLogLine('BTN Scan200Text clicked');
+            setScanStatusLine('[' + scanTimeTag() + '] BTN scanning...');
+            var d = null;
+            if (typeof window.__cw_scanAndDumpText === 'function')
+                d = window.__cw_scanAndDumpText('BTN');
+            else
+                d = {
+                    rows: scan200Text() || []
+                };
+            pushScanLogLine('BTN done rows=' + (((d && d.rows) || []).length));
+            setScanStatusLine(scanSummaryLine('BTN', d));
+            cwError('[CW_SCAN_BTN_DONE]', d);
+            showScanAlert('BTN', d, '');
+        } catch (e) {
+            try {
+                var em = String((e && e.message) || e || 'unknown');
+                pushScanLogLine('BTN err ' + em);
+                setScanStatusLine('[' + scanTimeTag() + '] BTN error: ' + em);
+                cwError('[CW_SCAN_BTN][ERR]', e);
+                showScanAlert('BTN', {}, em);
+            } catch (_) {}
+        }
     };
+    panel.querySelector('#bCopyScan').onclick = function () {
+        try {
+            var d = window.__cw_last_scan_dump || (window.__cw_getTextScan ? window.__cw_getTextScan() : {});
+            var txt = buildScanClipboardText('COPY_BTN', d, '');
+            var ok = copyTextToClipboard(txt);
+            pushScanLogLine('COPY scan log ' + (ok ? 'ok' : 'fail'));
+            setScanStatusLine('[' + scanTimeTag() + '] copy scan log: ' + (ok ? 'OK' : 'FAIL'));
+            try {
+                alert(ok ? 'Copy ScanLog: OK' : 'Copy ScanLog: FAIL');
+            } catch (_) {}
+        } catch (e) {
+            try {
+                var em = String((e && e.message) || e || 'copy-failed');
+                pushScanLogLine('COPY err ' + em);
+                setScanStatusLine('[' + scanTimeTag() + '] copy error: ' + em);
+                alert('Copy ScanLog error: ' + em);
+            } catch (_) {}
+        }
+    };
+    // Debug helpers: doc ket qua scan ma khong phu thuoc vao Console UI.
+    try {
+        window.__cw_scanAndDumpText = function (source) {
+            source = source || 'CMD';
+            var rows = [];
+            pushScanLogLine(source + ' start');
+            try {
+                rows = scan200Text() || [];
+            } catch (e1) {
+                try {
+                    cwWarn('[CW_SCAN_' + source + '][ERR scan200Text]', e1);
+                } catch (_) {}
+                rows = [];
+            }
+
+            var d = {};
+            try {
+                d = window.__cw_getTextScan ? window.__cw_getTextScan() : {};
+            } catch (e2) {
+                d = {};
+            }
+            if (!d || typeof d !== 'object')
+                d = {};
+            if (!d.rows)
+                d.rows = (window.__cw_last_scan_text || []).slice(0, 30);
+            if (!d.summary)
+                d.summary = window.__cw_last_scan_summary || null;
+            if (!d.stats)
+                d.stats = window.__cw_textStats || null;
+            if (!d.patch)
+                d.patch = window.__cw_patch_ver || '';
+            try {
+                window.__cw_last_scan_dump = d;
+            } catch (_) {}
+
+            try {
+                var st = d.summary || {};
+                var stateEl = panel && panel.querySelector ? panel.querySelector('#cwState') : null;
+                if (stateEl)
+                    stateEl.textContent = 'SCAN ' + rows.length + ' (dom ' + (st.domFallback || 0) + ', syn ' + (st.syntheticPlaced || 0) + ', adj ' + (st.adjusted || 0) + ')';
+            } catch (_) {}
+
+            try {
+                cwWarn('[CW_SCAN_' + source + '] patch=' + (d.patch || '') + ' rows=' + ((d.rows && d.rows.length) || 0));
+                if (d.summary)
+                    cwWarn('[CW_SCAN_SUMMARY]', d.summary);
+                if (d.stats)
+                    cwWarn('[CW_SCAN_STATS]', d.stats);
+                cwError('[CW_SCAN_' + source + '_HARD]', {
+                    patch: d.patch || '',
+                    rows: ((d.rows && d.rows.length) || 0),
+                    summary: d.summary || null
+                });
+                pushScanLogLine('SRC=' + source + ' rows=' + ((d.rows && d.rows.length) || 0) +
+                    ' inv=' + (((d.summary || {}).invalidRect) || 0) +
+                    ' syn=' + (((d.summary || {}).syntheticPlaced) || 0));
+                setScanStatusLine(scanSummaryLine(source, d));
+                cwTable((d.rows || []).slice(0, 30));
+            } catch (_) {}
+            return d;
+        };
+        window.__cw_scanTextNow = function () {
+            return window.__cw_scanAndDumpText ? window.__cw_scanAndDumpText('CMD') : scan200Text();
+        };
+        window.__cw_showTextMapNow = function () {
+            try {
+                if (!S.showText) {
+                    var b = panel && panel.querySelector ? panel.querySelector('#bText') : null;
+                    if (b && b.onclick)
+                        b.onclick();
+                    else
+                        S.showText = true;
+                } else {
+                    S.text = buildTextRects();
+                    renderText();
+                }
+            } catch (e) {}
+            return {
+                showText: !!S.showText,
+                rows: (S.text || []).length
+            };
+        };
+        window.__cw_getTextScan = function () {
+            return {
+                patch: window.__cw_patch_ver || '',
+                summary: window.__cw_last_scan_summary || null,
+                stats: window.__cw_textStats || null,
+                rows: (window.__cw_last_scan_text || []).slice(0, 30)
+            };
+        };
+        window.__cw_dumpTextScan = function () {
+            var d = window.__cw_getTextScan ? window.__cw_getTextScan() : {};
+            try {
+                cwWarn('[CW_SCAN_DUMP] patch=' + (d.patch || '') +
+                    ' rows=' + ((d.rows && d.rows.length) || 0));
+                if (d.summary)
+                    cwWarn('[CW_SCAN_SUMMARY]', d.summary);
+                if (d.stats)
+                    cwWarn('[CW_SCAN_STATS]', d.stats);
+                cwTable((d.rows || []).slice(0, 30));
+            } catch (e) {}
+            return d;
+        };
+        window.__cw_dumpScanLog = function () {
+            var logs = (window.__cw_scan_log || []).slice();
+            cwError('[CW_SCAN_LOG]', logs);
+            setScanStatusLine('[' + scanTimeTag() + '] dumped scan log: ' + logs.length + ' line(s)');
+            return logs;
+        };
+        window.__cw_copyScanLog = function () {
+            var d = window.__cw_last_scan_dump || (window.__cw_getTextScan ? window.__cw_getTextScan() : {});
+            var txt = buildScanClipboardText('CMD_COPY', d, '');
+            var ok = copyTextToClipboard(txt);
+            pushScanLogLine('CMD copy scan log ' + (ok ? 'ok' : 'fail'));
+            setScanStatusLine('[' + scanTimeTag() + '] cmd copy scan log: ' + (ok ? 'OK' : 'FAIL'));
+            return {
+                ok: !!ok,
+                len: txt.length
+            };
+        };
+    } catch (e4) {}
 
     panel.querySelector('#bBetC').addEventListener('click', async function () {
         var n = parseFloat(document.getElementById('iStake').value || '1');

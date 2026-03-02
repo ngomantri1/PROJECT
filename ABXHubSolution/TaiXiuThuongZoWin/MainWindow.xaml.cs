@@ -1750,10 +1750,14 @@ Ví dụ không hợp lệ:
                 if (settings != null)
                 {
                     settings.IsWebMessageEnabled = true;
-                    // (tuỳ chọn khác, giữ nguyên nếu bạn không cần)
-                    //settings.AreDefaultContextMenusEnabled = false;
-                    //settings.AreDevToolsEnabled = true;
+                    // Bật DevTools để hỗ trợ soi DOM/network khi debug game.
+                    settings.AreDevToolsEnabled = true;
+                    settings.AreDefaultContextMenusEnabled = true;
+                    settings.AreBrowserAcceleratorKeysEnabled = true;
                 }
+
+                // Mở DevTools ngay sau khi CoreWebView2 sẵn sàng.
+                try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
                 // Điều hướng mọi window.open về cùng WebView2
