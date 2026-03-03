@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r22-20260304';
+    window.__cw_patch_ver = 'cw-r25-20260304';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -1468,6 +1468,8 @@
     var X_3DO = 856; // 3 ĐỎ
     var X_3TRANG = 709; // 3 TRẮNG
     var TAIL_ACCOUNT_EXACT = 'game/Canvas/game/lobby/root/top/header/logged_in_node/khung_tien2/lb_tien';
+    var TAIL_CUR_BET_TAI_EXACT = 'game/persistent/mini_games/cc_mini_game_root/mini_game_node/minigame/prefab_taixiu/root/main/blur/textbox/text_current_bet_tai';
+    var TAIL_CUR_BET_XIU_EXACT = 'game/persistent/mini_games/cc_mini_game_root/mini_game_node/minigame/prefab_taixiu/root/main/blur/textbox/text_current_bet_xiu';
 
     function tailEquals(t, exact) {
         if (t == null)
@@ -1540,6 +1542,90 @@
         });
         return arr[0];
     }
+
+    // Đọc text theo tail exact, đặt trong cùng scope với totals() để tránh lỗi ReferenceError khác IIFE.
+    function readTextByTailExactLocal(tailExact) {
+        try {
+            tailExact = String(tailExact || '');
+            if (!tailExact)
+                return '';
+            var tailL = tailExact.toLowerCase();
+            var tailParts = tailL.split('/').filter(Boolean);
+            var tail12 = tailParts.slice(Math.max(0, tailParts.length - 12)).join('/');
+
+            // 1) Ưu tiên labels đã quét
+            try {
+                if (typeof collectLabels === 'function') {
+                    var labels = collectLabels();
+                    for (var i = 0; i < labels.length; i++) {
+                        var l = labels[i];
+                        var tl = String(l.tail || l.tl || '').toLowerCase();
+                        if (!tl)
+                            continue;
+                        if (tl !== tailL && tl !== tail12)
+                            continue;
+                        var txt = String(l.text || '').trim();
+                        if (txt)
+                            return txt;
+                    }
+                }
+            } catch (_) {}
+
+            // 2) Duyệt node theo suffix tail12
+            try {
+                if (typeof walkNodes === 'function' && typeof tailOf === 'function') {
+                    var hit = '';
+                    walkNodes(function (n) {
+                        if (hit || !n || !n.getComponent)
+                            return;
+                        var nt = String(tailOf(n, 12) || '').toLowerCase();
+                        if (!nt || nt !== tail12)
+                            return;
+                        var lbl = n.getComponent(cc.Label);
+                        if (lbl && lbl.string != null) {
+                            var s1 = String(lbl.string).trim();
+                            if (s1) {
+                                hit = s1;
+                                return;
+                            }
+                        }
+                        var rt = n.getComponent(cc.RichText);
+                        if (rt && rt.string != null) {
+                            var s2 = String(rt.string).trim();
+                            if (s2)
+                                hit = s2;
+                        }
+                    });
+                    if (hit)
+                        return hit;
+                }
+            } catch (_) {}
+
+            // 3) Fallback: đi theo full exact tail qua helper global
+            try {
+                var node = null;
+                if (window.findNodeByTailCompat)
+                    node = window.findNodeByTailCompat(tailExact);
+                else if (window.__abx_findNodeByTail)
+                    node = window.__abx_findNodeByTail(tailExact);
+                if (node && node.getComponent) {
+                    var l3 = node.getComponent(cc.Label);
+                    if (l3 && l3.string != null) {
+                        var s3 = String(l3.string).trim();
+                        if (s3)
+                            return s3;
+                    }
+                    var r3 = node.getComponent(cc.RichText);
+                    if (r3 && r3.string != null) {
+                        var s4 = String(r3.string).trim();
+                        if (s4)
+                            return s4;
+                    }
+                }
+            } catch (_) {}
+        } catch (_) {}
+        return '';
+    }
     // Export standardized helpers
     window.moneyTailList = moneyTailList;
     window.pickByXTail = pickByXTail;
@@ -1561,6 +1647,10 @@
         var m3T = pickByXTail(list, X_3TRANG, TAIL_TOTAL_EXACT); // 3 TRẮNG
         var m3D = pickByXTail(list, X_3DO, TAIL_TOTAL_EXACT); // 3 ĐỎ
         var mTD = pickByXTail(list, X_TUDO, TAIL_TOTAL_EXACT); // TỨ ĐỎ
+        var rawTaiCur = readTextByTailExactLocal(TAIL_CUR_BET_TAI_EXACT);
+        var rawXiuCur = readTextByTailExactLocal(TAIL_CUR_BET_XIU_EXACT);
+        var valTaiCur = moneyOf(rawTaiCur);
+        var valXiuCur = moneyOf(rawXiuCur);
 
         // Account (A): strict exact-tail only (no fallback)
         var rA = pickByTailExact(S.money, TAIL_ACCOUNT_EXACT);
@@ -1568,6 +1658,8 @@
         return {
             C: mC ? mC.val : null,
             L: mL ? mL.val : null,
+            T: (valTaiCur == null ? null : valTaiCur),
+            X: (valXiuCur == null ? null : valXiuCur),
             A: rA ? rA.val : null,
             SD: mSD ? mSD.val : null,
             TT: mTT ? mTT.val : null,
@@ -1576,6 +1668,8 @@
             TD: mTD ? mTD.val : null,
             rawC: mC ? mC.txt : null,
             rawL: mL ? mL.txt : null,
+            rawT: (rawTaiCur || null),
+            rawX: (rawXiuCur || null),
             rawA: rA ? rA.txt : null,
             rawSD: mSD ? mSD.txt : null,
             rawTT: mTT ? mTT.txt : null,
@@ -3749,8 +3843,120 @@
         return null;
     }
 
+    function readTextByTailExact(tailExact) {
+        try {
+            tailExact = String(tailExact || '');
+            if (!tailExact)
+                return '';
+            var tailL = tailExact.toLowerCase();
+            var tailParts = tailL.split('/').filter(Boolean);
+            var tail12 = tailParts.slice(Math.max(0, tailParts.length - 12)).join('/');
+
+            // 1) Ưu tiên labels đã quét
+            try {
+                if (typeof collectLabels === 'function') {
+                    var labels = collectLabels();
+                    for (var i = 0; i < labels.length; i++) {
+                        var l = labels[i];
+                        var tl = String(l.tail || l.tl || '').toLowerCase();
+                        if (!tl)
+                            continue;
+                        // collectLabels đang dùng tailOf(...,12), nên chấp nhận đúng full-tail hoặc đúng suffix-12 của tail đó.
+                        if (tl !== tailL && tl !== tail12)
+                            continue;
+                        var txt = String(l.text || '').trim();
+                        if (txt)
+                            return txt;
+                    }
+                }
+            } catch (_) {}
+
+            // 1.1) Duyệt node và so khớp strict theo tailOf(n,12) nếu labels chưa ra.
+            try {
+                if (typeof walkNodes === 'function' && typeof tailOf === 'function') {
+                    var hit = '';
+                    walkNodes(function (n) {
+                        if (hit || !n || !n.getComponent)
+                            return;
+                        var nt = String(tailOf(n, 12) || '').toLowerCase();
+                        if (!nt || nt !== tail12)
+                            return;
+                        var lbl = n.getComponent(cc.Label);
+                        if (lbl && lbl.string != null) {
+                            var s1 = String(lbl.string).trim();
+                            if (s1) {
+                                hit = s1;
+                                return;
+                            }
+                        }
+                        var rt = n.getComponent(cc.RichText);
+                        if (rt && rt.string != null) {
+                            var s2 = String(rt.string).trim();
+                            if (s2)
+                                hit = s2;
+                        }
+                    });
+                    if (hit)
+                        return hit;
+                }
+            } catch (_) {}
+
+            // 2) Fallback: đi thẳng theo exact tail tới node
+            function findByTail(tail) {
+                if (!tail)
+                    return null;
+                if (window.findNodeByTailCompat)
+                    return window.findNodeByTailCompat(tail);
+                if (window.__abx_findNodeByTail)
+                    return window.__abx_findNodeByTail(tail);
+                if (!(window.cc && cc.director && cc.director.getScene))
+                    return null;
+                var scene = cc.director.getScene();
+                if (!scene)
+                    return null;
+                var parts = String(tail).split('/').filter(Boolean);
+                if (parts[0] === scene.name)
+                    parts.shift();
+                var node = scene;
+                for (var i = 0; i < parts.length; i++) {
+                    var name = parts[i];
+                    var kids = node.children || node._children || [];
+                    var found = null;
+                    for (var j = 0; j < kids.length; j++) {
+                        var kid = kids[j];
+                        if (kid && kid.name === name) {
+                            found = kid;
+                            break;
+                        }
+                    }
+                    if (!found)
+                        return null;
+                    node = found;
+                }
+                return node;
+            }
+            function getNodeText(node) {
+                if (!node || !node.getComponent)
+                    return '';
+                var lbl = node.getComponent(cc.Label);
+                if (lbl && lbl.string != null)
+                    return String(lbl.string);
+                var rt = node.getComponent(cc.RichText);
+                if (rt && rt.string != null)
+                    return String(rt.string);
+                return '';
+            }
+
+            var node = findByTail(tailExact);
+            if (!node)
+                return '';
+            return String(getNodeText(node) || '').trim();
+        } catch (_) {}
+        return '';
+    }
+
     // Đọc tổng tiền an toàn: lấy nền từ totals() mới nhất (tick)
-    // và ghi đè TK + TÀI + XỈU bằng cách scan theo tail/x.
+    // và ghi đè TK + TÀI + XỈU.
     window.readTotalsSafe = function () {
         try {
             // 1) Nền: snapshot totals gần nhất do tick() chụp
@@ -3767,10 +3973,8 @@
 
             // 2) Ghi đè TK + Tài/Xỉu nếu lấy được qua moneyTailList()
             var ACC_TAIL_EXACT = 'MiniGameScene/Canvas/FootterRoomUi/Left/buttonMoney/moneyLabel';
-
-            var TX_TOTAL_TAIL = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbTotal';
-            var TX_TAI_X = 246; // TÀI
-            var TX_XIU_X = 785; // XỈU
+            var TX_TAI_TAIL_EXACT = 'game/persistent/mini_games/cc_mini_game_root/mini_game_node/minigame/prefab_taixiu/root/main/blur/textbox/text_current_bet_tai';
+            var TX_XIU_TAIL_EXACT = 'game/persistent/mini_games/cc_mini_game_root/mini_game_node/minigame/prefab_taixiu/root/main/blur/textbox/text_current_bet_xiu';
 
             var allMoney = [];
             try {
@@ -3798,51 +4002,17 @@
                     }
                 } catch (_) {}
 
-                // 2.2 Tổng TÀI / XỈU trong Tài Xỉu Live
+                // 2.2 Tổng TÀI / XỈU theo strict tail mới (không dùng tail/x cũ)
                 try {
-                    var txList = window.moneyTailList(TX_TOTAL_TAIL, allMoney) || [];
-                    if (txList.length) {
-                        var bestTai = null,
-                        bestXiu = null;
-                        var bestDxT = 1e9,
-                        bestDxX = 1e9;
-                        for (var i = 0; i < txList.length; i++) {
-                            var m = txList[i];
+                    var rawTai = readTextByTailExact(TX_TAI_TAIL_EXACT);
+                    var valTai = moneyOf(rawTai);
+                    t.T = (valTai == null ? null : valTai);
+                    t.rawT = (rawTai || null);
 
-                            // chọn label có |x - chuẩn| nhỏ nhất (chịu lệch zoom/resolution)
-                            var dxT = Math.abs(m.x - TX_TAI_X);
-                            if (dxT < bestDxT) {
-                                bestDxT = dxT;
-                                bestTai = m;
-                            }
-
-                            var dxX = Math.abs(m.x - TX_XIU_X);
-                            if (dxX < bestDxX) {
-                                bestDxX = dxX;
-                                bestXiu = m;
-                            }
-                        }
-
-                        if (bestTai) {
-                            var tval = (typeof bestTai.val === 'number')
-                             ? bestTai.val
-                             : Number(bestTai.val || 0) || null;
-                            if (tval != null)
-                                t.T = tval;
-                            if (!t.rawT)
-                                t.rawT = bestTai.txt || bestTai.raw || null;
-                        }
-
-                        if (bestXiu) {
-                            var xval = (typeof bestXiu.val === 'number')
-                             ? bestXiu.val
-                             : Number(bestXiu.val || 0) || null;
-                            if (xval != null)
-                                t.X = xval;
-                            if (!t.rawX)
-                                t.rawX = bestXiu.txt || bestXiu.raw || null;
-                        }
-                    }
+                    var rawXiu = readTextByTailExact(TX_XIU_TAIL_EXACT);
+                    var valXiu = moneyOf(rawXiu);
+                    t.X = (valXiu == null ? null : valXiu);
+                    t.rawX = (rawXiu || null);
                 } catch (_) {}
             }
 
