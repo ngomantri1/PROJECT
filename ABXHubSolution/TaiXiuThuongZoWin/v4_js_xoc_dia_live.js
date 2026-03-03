@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r14-20260303';
+    window.__cw_patch_ver = 'cw-r16-20260303';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -350,18 +350,33 @@
     }
     function wRect(node) {
         try {
-            // 1) Preferred: world AABB when available (works best across Cocos variants).
+            // Fast path: giong ban v2 de giam tai CPU khi scan label lien tuc.
+            var p = _nodeWorldAr(node);
+            var cs = null;
+            try {
+                cs = node && node.getContentSize ? node.getContentSize() : (node && node._contentSize ? node._contentSize : null);
+            } catch (e0) {}
+            var rFast = {
+                x: _num(p && p.x, 0),
+                y: _num(p && p.y, 0),
+                w: _num(cs && cs.width, 0),
+                h: _num(cs && cs.height, 0)
+            };
+            if (_rectOk(rFast))
+                return rFast;
+
+            // Fallback nhe: world AABB neu runtime ho tro.
             var bb = null;
             try {
                 if (node && typeof node.getBoundingBoxToWorld === 'function')
                     bb = node.getBoundingBoxToWorld();
-            } catch (e0) {}
+            } catch (e1) {}
             if (!bb) {
                 try {
                     var ui = (window.cc && cc.UITransform) ? getComp(node, cc.UITransform) : null;
                     if (ui && typeof ui.getBoundingBoxToWorld === 'function')
                         bb = ui.getBoundingBoxToWorld();
-                } catch (e1) {}
+                } catch (e2) {}
             }
             if (bb) {
                 var r0 = {
@@ -373,58 +388,6 @@
                 if (_rectOk(r0))
                     return r0;
             }
-
-            // 2) Fallback: world anchor + content size.
-            var p = _nodeWorldAr(node);
-            var sz = _nodeSize(node);
-            var w = _num(sz.w, 0),
-            h = _num(sz.h, 0);
-            if (p && w > 0 && h > 0) {
-                var ax = 0.5,
-                ay = 0.5;
-                try {
-                    if (node && typeof node.getAnchorPoint === 'function') {
-                        var ap = node.getAnchorPoint();
-                        ax = _num(ap && ap.x, 0.5);
-                        ay = _num(ap && ap.y, 0.5);
-                    } else {
-                        ax = _num(node && node.anchorX, 0.5);
-                        ay = _num(node && node.anchorY, 0.5);
-                    }
-                } catch (e3) {}
-                var r1 = {
-                    x: _num(p.x, 0) - w * ax,
-                    y: _num(p.y, 0) - h * ay,
-                    w: w,
-                    h: h
-                };
-                if (_rectOk(r1))
-                    return r1;
-            }
-
-            // 3) Last fallback: project node center with camera to screen pixels.
-            try {
-                var cam = (window.cc && cc.Camera && cc.Camera.findCamera) ? cc.Camera.findCamera(node) : null;
-                var wp = p || _nodeWorldAr(node);
-                if (cam && wp && cc.view && cc.view.getFrameSize && cc.view.getVisibleSize) {
-                    var sp = cam.worldToScreen(wp);
-                    var fs = cc.view.getFrameSize(),
-                    vs = cc.view.getVisibleSize();
-                    var sx = _num(fs.width, 1) / Math.max(1, _num(vs.width, 1));
-                    var sy = _num(fs.height, 1) / Math.max(1, _num(vs.height, 1));
-                    var sz2 = _nodeSize(node);
-                    var w2 = _num(sz2.w, 0) * sx;
-                    var h2 = _num(sz2.h, 0) * sy;
-                    var r2 = {
-                        x: _num(sp && sp.x, 0) * sx - w2 * 0.5,
-                        y: _num(sp && sp.y, 0) * sy - h2 * 0.5,
-                        w: w2,
-                        h: h2
-                    };
-                    if (_rectOk(r2))
-                        return r2;
-                }
-            } catch (e4) {}
 
             return {
                 x: 0,
@@ -486,7 +449,24 @@
             }
         }
     }
-    function collectLabels() {
+    var _labelsCache = {
+        ts: 0,
+        rows: null
+    };
+    var _moneyRectsCache = {
+        ts: 0,
+        rows: null
+    };
+    function collectLabels(opt) {
+        opt = opt || {};
+        var noCache = !!opt.noCache;
+        var ttlMs = Number(opt.ttlMs);
+        if (!isFinite(ttlMs) || ttlMs < 0)
+            ttlMs = 260;
+        var now = Date.now();
+        if (!noCache && _labelsCache.rows && (now - _labelsCache.ts) <= ttlMs) {
+            return _labelsCache.rows.slice();
+        }
         var out = [];
         walkNodes(function (n) {
             var comps = (n._components || []);
@@ -517,6 +497,10 @@
                 }
             }
         });
+        if (!noCache) {
+            _labelsCache.ts = Date.now();
+            _labelsCache.rows = out;
+        }
         return out;
     }
     function collectButtons() {
@@ -637,8 +621,17 @@
     }
 
     /* ---------------- MoneyMap ---------------- */
-    function buildMoneyRects() {
-        var ls = collectLabels(),
+    function buildMoneyRects(opt) {
+        opt = opt || {};
+        var noCache = !!opt.noCache;
+        var ttlMs = Number(opt.ttlMs);
+        if (!isFinite(ttlMs) || ttlMs < 0)
+            ttlMs = 220;
+        var now = Date.now();
+        if (!noCache && _moneyRectsCache.rows && (now - _moneyRectsCache.ts) <= ttlMs) {
+            return _moneyRectsCache.rows.slice();
+        }
+        var ls = (opt.labels && typeof opt.labels.length === 'number') ? opt.labels : collectLabels(opt.labelOpt || null),
         out = [];
         for (var i = 0; i < ls.length; i++) {
             var L = ls[i];
@@ -664,6 +657,10 @@
                 tail: L.tail,
                 tl: L.tl
             });
+        }
+        if (!noCache) {
+            _moneyRectsCache.ts = Date.now();
+            _moneyRectsCache.rows = out;
         }
         return out;
     }
@@ -816,36 +813,92 @@
             return false;
         return true;
     }
-    function collectDomTextRects(limit) {
+    function collectDomTextRects(limit, opt) {
         limit = Number(limit) || 200;
+        opt = opt || {};
         var out = [];
         var seen = {};
+        var maxNodes = Number(opt.domMaxNodes);
+        if (!isFinite(maxNodes) || maxNodes < 100)
+            maxNodes = 1200;
+        var rootEl = null;
         try {
-            var all = document.querySelectorAll('body *');
-            for (var i = 0; i < all.length; i++) {
+            if (opt.domRoot && opt.domRoot.nodeType === 1)
+                rootEl = opt.domRoot;
+        } catch (_) {}
+        if (!rootEl) {
+            try {
+                var cvs = document.querySelector('canvas');
+                if (cvs) {
+                    var p = cvs.parentElement || null;
+                    rootEl = (p && p !== document.body) ? p : cvs;
+                }
+            } catch (_) {}
+        }
+        if (!rootEl && opt.allowBodyScan) {
+            try {
+                rootEl = document.body;
+            } catch (_) {}
+        }
+        if (!rootEl)
+            return out;
+        try {
+            var scanned = 0;
+            var showText = (typeof NodeFilter !== 'undefined' && NodeFilter.SHOW_TEXT) ? NodeFilter.SHOW_TEXT : 4;
+            var walker = (document.createTreeWalker ? document.createTreeWalker(rootEl, showText, null, false) : null);
+            var tnode = walker ? walker.nextNode() : null;
+            while (tnode) {
                 if (out.length >= limit)
                     break;
-                var el = all[i];
-                if (!el || !el.getBoundingClientRect)
+                scanned++;
+                if (scanned > maxNodes)
+                    break;
+                var el = tnode.parentElement || tnode.parentNode;
+                if (!el || !el.getBoundingClientRect) {
+                    tnode = walker.nextNode();
                     continue;
-                // Bo qua panel CW de tranh tu-anh huong.
+                }
                 try {
-                    if (el.id === '__cw_root_allin')
+                    if (el.id === '__cw_root_allin') {
+                        tnode = walker.nextNode();
                         continue;
-                    if (el.closest && el.closest('#__cw_root_allin'))
+                    }
+                    if (el.closest && el.closest('#__cw_root_allin')) {
+                        tnode = walker.nextNode();
                         continue;
+                    }
                 } catch (e0) {}
-                var cs = null;
+                var tag = '';
                 try {
-                    cs = getComputedStyle(el);
-                } catch (e1) {}
-                if (cs) {
-                    if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0')
-                        continue;
+                    tag = String((el.tagName || 'el')).toLowerCase();
+                } catch (e1) {
+                    tag = 'el';
+                }
+                if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'canvas' || tag === 'svg') {
+                    tnode = walker.nextNode();
+                    continue;
+                }
+                var txt = '';
+                try {
+                    txt = String(tnode.nodeValue || '').trim();
+                } catch (e2) {
+                    txt = '';
+                }
+                if (!txt) {
+                    tnode = walker.nextNode();
+                    continue;
+                }
+                if (txt.length > 160)
+                    txt = txt.slice(0, 160);
+                if (!isTextCandidate(txt)) {
+                    tnode = walker.nextNode();
+                    continue;
                 }
                 var r = el.getBoundingClientRect();
-                if (!r)
+                if (!r) {
+                    tnode = walker.nextNode();
                     continue;
+                }
                 var x = Math.round(_num(r.left, 0));
                 var y = Math.round(_num(r.top, 0));
                 var w = Math.round(_num(r.width, 0));
@@ -855,32 +908,20 @@
                         y: y,
                         w: w,
                         h: h
-                    }))
+                    })) {
+                    tnode = walker.nextNode();
                     continue;
-                var txt = '';
-                try {
-                    txt = (el.innerText || el.textContent || '').trim();
-                } catch (e2) {
-                    txt = '';
                 }
-                if (!isTextCandidate(txt))
-                    continue;
-                if (txt.length > 140)
-                    txt = txt.slice(0, 140);
                 var key = txt + '|' + x + '|' + y + '|' + w + '|' + h;
-                if (seen[key])
+                if (seen[key]) {
+                    tnode = walker.nextNode();
                     continue;
-                seen[key] = 1;
-                var tag = '';
-                try {
-                    tag = String((el.tagName || 'el')).toLowerCase();
-                } catch (e3) {
-                    tag = 'el';
                 }
+                seen[key] = 1;
                 var id = '';
                 try {
                     id = el.id ? ('#' + el.id) : '';
-                } catch (e4) {}
+                } catch (e3) {}
                 out.push({
                     text: txt,
                     x: x,
@@ -896,6 +937,69 @@
                     tail: 'dom:' + tag + id,
                     tl: 'dom:' + tag
                 });
+                tnode = walker.nextNode();
+            }
+            if (!walker && rootEl.querySelectorAll) {
+                var all = rootEl.querySelectorAll('*');
+                for (var i = 0; i < all.length; i++) {
+                    if (out.length >= limit)
+                        break;
+                    scanned++;
+                    if (scanned > maxNodes)
+                        break;
+                    var el2 = all[i];
+                    if (!el2 || !el2.getBoundingClientRect)
+                        continue;
+                    try {
+                        if (el2.id === '__cw_root_allin')
+                            continue;
+                        if (el2.closest && el2.closest('#__cw_root_allin'))
+                            continue;
+                    } catch (_) {}
+                    var txt2 = '';
+                    try {
+                        txt2 = String(el2.textContent || '').trim();
+                    } catch (_) {
+                        txt2 = '';
+                    }
+                    if (!txt2 || txt2.length > 160)
+                        continue;
+                    if (!isTextCandidate(txt2))
+                        continue;
+                    var r2 = el2.getBoundingClientRect();
+                    if (!r2)
+                        continue;
+                    var x2 = Math.round(_num(r2.left, 0));
+                    var y2 = Math.round(_num(r2.top, 0));
+                    var w2 = Math.round(_num(r2.width, 0));
+                    var h2 = Math.round(_num(r2.height, 0));
+                    if (!isRenderableRect({
+                            x: x2,
+                            y: y2,
+                            w: w2,
+                            h: h2
+                        }))
+                        continue;
+                    var key2 = txt2 + '|' + x2 + '|' + y2 + '|' + w2 + '|' + h2;
+                    if (seen[key2])
+                        continue;
+                    seen[key2] = 1;
+                    out.push({
+                        text: txt2,
+                        x: x2,
+                        y: y2,
+                        w: w2,
+                        h: h2,
+                        n: {
+                            x: x2 / innerWidth,
+                            y: y2 / innerHeight,
+                            w: w2 / innerWidth,
+                            h: h2 / innerHeight
+                        },
+                        tail: 'dom:el',
+                        tl: 'dom:el'
+                    });
+                }
             }
         } catch (e5) {}
         return out;
@@ -1020,7 +1124,7 @@
         }
         // Neu tat ca text Cocos deu vo toa do (0,0) thi fallback sang DOM text de van co box tren man hinh.
         if (allowDomFallback && ((st.textCandidate > 0 && st.rectInvalid === st.textCandidate && st.rectRecovered === 0 && st.rectProjected === 0) || out.length === 0)) {
-            var domRows = collectDomTextRects(domLimit);
+            var domRows = collectDomTextRects(domLimit, opts);
             if (domRows && domRows.length) {
                 out = domRows;
                 st.domFallback = domRows.length;
@@ -1373,8 +1477,8 @@
         return s1 === s2 || s1.toLowerCase() === s2.toLowerCase();
     }
     /** return full list (not truncated) filtered by tail */
-    function moneyTailList(tailExact) {
-        var list = buildMoneyRects();
+    function moneyTailList(tailExact, sourceList) {
+        var list = (sourceList && typeof sourceList.length === 'number') ? sourceList : buildMoneyRects();
         var out = [];
         for (var i = 0; i < list.length; i++) {
             var it = list[i];
@@ -1449,8 +1553,7 @@
     /* ---------------- totals (using x & tail) ---------------- */
     function totals(S) {
         S.money = buildMoneyRects(); // keep map for overlays & legacy helpers
-
-        var list = moneyTailList(TAIL_TOTAL_EXACT);
+        var list = moneyTailList(TAIL_TOTAL_EXACT, S.money);
         var mC = pickByXTail(list, X_TAI, TAIL_TOTAL_EXACT); // TÀI
         var mL = pickByXTail(list, X_XIU, TAIL_TOTAL_EXACT); // XỈU
         var mSD = pickByXTail(list, X_SAPDOI, TAIL_TOTAL_EXACT); // SẤP ĐÔI
@@ -3700,11 +3803,20 @@
             var TX_TAI_X = 246; // TÀI
             var TX_XIU_X = 785; // XỈU
 
+            var allMoney = [];
+            try {
+                if (typeof buildMoneyRects === 'function') {
+                    allMoney = buildMoneyRects() || [];
+                }
+            } catch (_) {
+                allMoney = [];
+            }
+
             if (typeof window.moneyTailList === 'function') {
 
                 // 2.1 TK (tài khoản)
                 try {
-                    var accList = window.moneyTailList(ACC_TAIL_EXACT) || [];
+                    var accList = window.moneyTailList(ACC_TAIL_EXACT, allMoney) || [];
                     if (accList.length) {
                         var acc = accList[accList.length - 1]; // thường là label dưới cùng
                         var aval = (typeof acc.val === 'number')
@@ -3719,7 +3831,7 @@
 
                 // 2.2 Tổng TÀI / XỈU trong Tài Xỉu Live
                 try {
-                    var txList = window.moneyTailList(TX_TOTAL_TAIL) || [];
+                    var txList = window.moneyTailList(TX_TOTAL_TAIL, allMoney) || [];
                     if (txList.length) {
                         var bestTai = null,
                         bestXiu = null;
