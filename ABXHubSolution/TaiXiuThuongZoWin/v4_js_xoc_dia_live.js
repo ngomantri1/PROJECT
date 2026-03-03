@@ -3509,7 +3509,7 @@
             }
 
             // tail Username
-            var tail = 'MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/NameUser';
+            var tail = 'game/Canvas/game/lobby/root/top/header/logged_in_node/lb_khung_ten/lb_ten';
             var node = findByTail(tail);
             if (!node)
                 return '';

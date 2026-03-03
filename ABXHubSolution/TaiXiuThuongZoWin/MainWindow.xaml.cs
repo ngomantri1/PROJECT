@@ -4923,9 +4923,7 @@ Ví dụ không hợp lệ:
 
         private string ResolveLeaseUsername()
         {
-            var uname = (_homeUsername ?? "").Trim().ToLowerInvariant();
-            if (!string.IsNullOrWhiteSpace(uname)) return uname;
-            return (T(TxtUser) ?? "").Trim().ToLowerInvariant();
+            return T(TxtUser).Trim().ToLowerInvariant();
         }
 
 
@@ -6021,3 +6019,4 @@ Ví dụ không hợp lệ:
     }
 
 }
+

@@ -6886,8 +6886,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 StopLeaseHeartbeat();
                 _licenseCheckTask = null;
                 _licenseCheckUser = null;
-                var uname = (_homeUsername ?? "").Trim().ToLowerInvariant();
-                                // if (!string.IsNullOrWhiteSpace(uname))
+                var uname = ResolveLeaseUsername();
+                if (!string.IsNullOrWhiteSpace(uname))
                     _ = ReleaseLeaseAsync(uname);
                 Log("[STOP] cleanup done");
             }
@@ -8131,6 +8131,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
         }
 
+        private string ResolveLeaseUsername()
+        {
+            return T(TxtUser).Trim().ToLowerInvariant();
+        }
+
 
         // Khởi động đếm ngược hiển thị dưới nút và auto stop khi hết giờ
         // Khởi động đếm ngược hiển thị dưới nút và auto stop khi hết giờ
@@ -8187,8 +8192,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             // Ngắt heartbeat trước khi trả lease
                             StopLeaseHeartbeat();
                             // Thử trả lease luôn để nhường slot
-                            var uname = (_homeUsername ?? "").Trim().ToLowerInvariant();
-                                // if (!string.IsNullOrWhiteSpace(uname))
+                            var uname = ResolveLeaseUsername();
+                            if (!string.IsNullOrWhiteSpace(uname))
                                 _ = ReleaseLeaseAsync(uname);
 
                         }));
@@ -8314,8 +8319,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 // 🔴 thêm dòng này
                 CleanupWebStuff();
 
-                var uname = (_homeUsername ?? "").Trim().ToLowerInvariant();
-                                // if (!string.IsNullOrWhiteSpace(uname))
+                var uname = ResolveLeaseUsername();
+                if (!string.IsNullOrWhiteSpace(uname))
                     _ = ReleaseLeaseAsync(uname);
             }
             catch { }
