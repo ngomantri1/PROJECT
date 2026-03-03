@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r18-20260303';
+    window.__cw_patch_ver = 'cw-r22-20260304';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -3136,44 +3136,19 @@
         return _txStatusTextCached;
     }
     function statusByProg(p) {
-        // Đọc trực tiếp message từ PopupMessageUtilTaiXiu của Tài Xỉu Live.
-        // Dùng cache ngắn để tránh quét nặng mỗi tick.
+        // Rule mới: trạng thái chỉ dựa vào thời gian còn lại từ tail txt_remain_time_betting.
+        //  - sec > 0  => Cho phép đặt cược
+        //  - sec = 0  => Chờ kết quả
+        //  - không đọc được sec => --
+        var sec = null;
         try {
-            if (_cw_enable_status_label_scan) {
-                var raw = readTxStatusTextCached(450);
-                if (raw) {
-                    var u = NORM(raw);
-                    if (u.indexOf('BAT DAU CUOC') !== -1)
-                        return 'Cho phép đặt cược';
-                    if (u.indexOf('NGUNG NHAN CUOC') !== -1 || u.indexOf('NGUNG DAT CUOC') !== -1)
-                        return 'Ngừng đặt cược';
-                    if (u.indexOf('CHO KET QUA') !== -1 || u.indexOf('CHO KETQUA') !== -1)
-                        return 'Chờ kết quả';
-                }
-            }
-        } catch (e) {
-            console.log('statusByProg label-fallback error', e);
+            sec = readRemainSecSafe();
+        } catch (_) {
+            sec = null;
         }
-
-        // Fallback: suy theo THỜI GIAN (giây) chứ không theo %:
-        //  - 45s → 6s : Cho phép đặt cược
-        //  - 5s  → 1s : Ngừng đặt cược
-        //  - 0s       : Chờ kết quả
-        if (p == null)
+        if (sec == null)
             return '--';
-
-        p = clamp01(p);
-        var sec = Math.round(p * 45);
-        if (sec < 0)
-            sec = 0;
-        if (sec > 45)
-            sec = 45;
-
-        if (sec > 5)
-            return 'Cho phép đặt cược';
-        if (sec > 0)
-            return 'Ngừng đặt cược';
-        return 'Chờ kết quả';
+        return sec > 0 ? 'Cho phép đặt cược' : 'Chờ kết quả';
     }
 
     // Export ra global để bridge C# dùng được
@@ -3991,6 +3966,28 @@
         return '';
     }
 
+    function parseRemainSec(text) {
+        text = String(text || '').trim();
+        if (!text)
+            return null;
+        var m = text.match(/(-?\d{1,3})/);
+        if (!m)
+            return null;
+        var sec = parseInt(m[1], 10);
+        if (!isFinite(sec))
+            return null;
+        if (sec < 0)
+            sec = 0;
+        if (sec > 50)
+            sec = 50;
+        return sec;
+    }
+
+    function readRemainSecSafe() {
+        var txt = readRemainTimeSafe();
+        return parseRemainSec(txt);
+    }
+
     // NEW: đọc thời gian cược còn lại theo tail Cocos (strict tail mới, không fallback tail cũ)
     function readRemainTimeSafe() {
         try {
@@ -4077,15 +4074,18 @@
             if (!txt)
                 return '';
 
-            // Chuẩn hoá hiển thị: nếu là số thuần thì thêm 's'
-            if (/^\d+$/.test(txt))
-                txt = txt + 's';
+            // Chuẩn hoá theo 00..50s
+            var sec = parseRemainSec(txt);
+            if (sec == null)
+                return '';
+            txt = (sec < 10 ? ('0' + sec) : String(sec)) + 's';
 
             return txt;
         } catch (_) {}
         return '';
     }
 
+    window.readRemainSecSafe = readRemainSecSafe;
     window.readRemainTimeSafe = readRemainTimeSafe;
     window.readSessionSafe = readSessionSafe;
 
