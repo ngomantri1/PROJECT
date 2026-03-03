@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r16-20260303';
+    window.__cw_patch_ver = 'cw-r18-20260303';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -2087,15 +2087,9 @@
         }
 
         var f = S.focus;
-        var secLeft = null;
-        if (typeof S.prog === 'number') {
-            var s = Math.round(S.prog * 45);
-            if (s < 0)
-                s = 0;
-            if (s > 45)
-                s = 45;
-            secLeft = s;
-        }
+        var remainTime = (typeof readRemainTimeSafe === 'function') ? readRemainTimeSafe() : '';
+        if (!remainTime)
+            remainTime = '--';
         var session = (typeof readSessionSafe === 'function') ? readSessionSafe() : '';
         if (!session)
             session = '--';
@@ -2110,7 +2104,7 @@
         }
         var base =
             '• Trạng thái: ' + S.status +
-            ' | Thời gian: ' + (secLeft == null ? '--' : (secLeft + 's')) +
+            ' | Thời gian: ' + remainTime +
             ' | Phiên: ' + session + '\n' +
             '• Username : ' + (userName || '--') +
             ' | TK : ' + fmt(t.A) +
@@ -3904,7 +3898,7 @@
 
     function readSessionSafe() {
         try {
-            var TAIL = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbSesionId';
+            var TAIL = 'game/persistent/mini_games/cc_mini_game_root/mini_game_node/minigame/prefab_taixiu/root/main/blur/textbox/txt_session';
             var txt = '';
 
             // 1) Thử lấy qua collectLabels() nếu đã có sẵn label
@@ -3918,9 +3912,8 @@
                         if (!tl)
                             continue;
 
-                        // ưu tiên khớp đúng tail, hoặc chứa lbSesionId
-                        if (tl === tailLc ||
-                            (tl.indexOf('lbsesionid') !== -1 && tl.indexOf('borderTabble'.toLowerCase()) !== -1)) {
+                        // chỉ khớp đúng tail phiên mới (không fallback tail cũ)
+                        if (tl === tailLc) {
                             txt = String(l.text || '').trim();
                             if (txt)
                                 break;
@@ -3929,7 +3922,7 @@
                 }
             }
 
-            // 2) Fallback: đi trực tiếp theo tail như đoạn ông chủ test
+            // 2) Fallback cùng tail phiên mới: đi trực tiếp theo node
             if (!txt) {
                 function findByTail(tail) {
                     if (!tail)
@@ -3998,6 +3991,102 @@
         return '';
     }
 
+    // NEW: đọc thời gian cược còn lại theo tail Cocos (strict tail mới, không fallback tail cũ)
+    function readRemainTimeSafe() {
+        try {
+            var TAIL = 'game/persistent/mini_games/cc_mini_game_root/mini_game_node/minigame/prefab_taixiu/root/main/blur/textbox/txt_remain_time_betting';
+            var txt = '';
+
+            // 1) Thử lấy qua collectLabels() nếu đã có sẵn label
+            if (typeof collectLabels === 'function') {
+                var labels = collectLabels();
+                if (labels && labels.length) {
+                    var tailLc = TAIL.toLowerCase();
+                    for (var i = 0; i < labels.length; i++) {
+                        var l = labels[i];
+                        var tl = String(l.tail || l.tl || '').toLowerCase();
+                        if (!tl)
+                            continue;
+
+                        // chỉ khớp đúng tail thời gian mới
+                        if (tl === tailLc) {
+                            txt = String(l.text || '').trim();
+                            if (txt)
+                                break;
+                        }
+                    }
+                }
+            }
+
+            // 2) Fallback cùng tail thời gian mới: đi trực tiếp theo node
+            if (!txt) {
+                function findByTail(tail) {
+                    if (!tail)
+                        return null;
+
+                    if (window.findNodeByTailCompat)
+                        return window.findNodeByTailCompat(tail);
+                    if (window.__abx_findNodeByTail)
+                        return window.__abx_findNodeByTail(tail);
+
+                    if (!(window.cc && cc.director && cc.director.getScene))
+                        return null;
+                    var scene = cc.director.getScene();
+                    var parts = String(tail).split('/').filter(Boolean);
+                    if (parts[0] === scene.name)
+                        parts.shift();
+
+                    var node = scene;
+                    for (var i = 0; i < parts.length; i++) {
+                        var name = parts[i];
+                        var kids = node.children || node._children || [];
+                        var found = null;
+                        for (var j = 0; j < kids.length; j++) {
+                            var kid = kids[j];
+                            if (kid && kid.name === name) {
+                                found = kid;
+                                break;
+                            }
+                        }
+                        if (!found)
+                            return null;
+                        node = found;
+                    }
+                    return node;
+                }
+
+                function getNodeText(node) {
+                    if (!node || !node.getComponent)
+                        return '';
+                    var lbl = node.getComponent(cc.Label);
+                    if (lbl && lbl.string != null)
+                        return String(lbl.string);
+                    var rt = node.getComponent(cc.RichText);
+                    if (rt && rt.string != null)
+                        return String(rt.string);
+                    return '';
+                }
+
+                var node = findByTail(TAIL);
+                if (node) {
+                    txt = getNodeText(node);
+                }
+            }
+
+            txt = String(txt || '').trim();
+            if (!txt)
+                return '';
+
+            // Chuẩn hoá hiển thị: nếu là số thuần thì thêm 's'
+            if (/^\d+$/.test(txt))
+                txt = txt + 's';
+
+            return txt;
+        } catch (_) {}
+        return '';
+    }
+
+    window.readRemainTimeSafe = readRemainTimeSafe;
     window.readSessionSafe = readSessionSafe;
 
     // NEW: đọc Username an toàn theo tail Cocos
