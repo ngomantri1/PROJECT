@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r13-20260303';
+    window.__cw_patch_ver = 'cw-r14-20260303';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -900,7 +900,10 @@
         } catch (e5) {}
         return out;
     }
-    function buildTextRects() {
+    function buildTextRects(opts) {
+        opts = opts || {};
+        var allowDomFallback = !!opts.allowDomFallback;
+        var domLimit = Number(opts.domLimit) || 200;
         var ls = collectLabels(),
         out = [];
         var st = {
@@ -1016,8 +1019,8 @@
             });
         }
         // Neu tat ca text Cocos deu vo toa do (0,0) thi fallback sang DOM text de van co box tren man hinh.
-        if ((st.textCandidate > 0 && st.rectInvalid === st.textCandidate && st.rectRecovered === 0 && st.rectProjected === 0) || out.length === 0) {
-            var domRows = collectDomTextRects(200);
+        if (allowDomFallback && ((st.textCandidate > 0 && st.rectInvalid === st.textCandidate && st.rectRecovered === 0 && st.rectProjected === 0) || out.length === 0)) {
+            var domRows = collectDomTextRects(domLimit);
             if (domRows && domRows.length) {
                 out = domRows;
                 st.domFallback = domRows.length;
@@ -2140,7 +2143,10 @@
         var texts = [];
         var st = {};
         try {
-            texts = buildTextRects().sort(function (a, b) {
+            texts = buildTextRects({
+                allowDomFallback: true,
+                domLimit: 200
+            }).sort(function (a, b) {
                 return a.y - b.y;
             }).slice(0, MAX_SCAN_TEXT_ROWS)
                 .map(function (t) {
@@ -2994,24 +3000,51 @@
     console.log('[READY] CW merged (compat + TextMap + Scan200Text + TK sequence + Totals by (x,tail) + standardized exports).');
 
     /* ---------------- tick & controls ---------------- */
-    function statusByProg(p) {
-        // Đọc trực tiếp message từ PopupMessageUtilTaiXiu của Tài Xỉu Live
+    // PERF: tắt mặc định việc quét label trạng thái theo tail ở mỗi nhịp tick.
+    // Khi cần debug chính xác text trạng thái trong scene, có thể bật lại bằng:
+    // window.__cw_setStatusLabelScan(true)
+    var _cw_enable_status_label_scan = false;
+    var _txStatusTail = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/ChatController/PopupMessageUtilTaiXiu/ig_bg_thong_bao/textMessage';
+    var _txStatusTextCached = '';
+    var _txStatusTextCachedAt = 0;
+    window.__cw_setStatusLabelScan = function (enable) {
+        _cw_enable_status_label_scan = !!enable;
+        _txStatusTextCached = '';
+        _txStatusTextCachedAt = 0;
+        return _cw_enable_status_label_scan;
+    };
+    function readTxStatusTextCached(cacheMs) {
+        cacheMs = Number(cacheMs) || 450;
+        var now = Date.now();
+        if ((now - _txStatusTextCachedAt) <= cacheMs)
+            return _txStatusTextCached;
+
+        _txStatusTextCachedAt = now;
+        _txStatusTextCached = '';
         try {
-            var TAIL_TX_STATUS = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/ChatController/PopupMessageUtilTaiXiu/ig_bg_thong_bao/textMessage';
-            var tailL = TAIL_TX_STATUS.toLowerCase();
-
-            var texts = buildTextRects && buildTextRects();
-            if (texts && texts.length) {
-                for (var i = 0; i < texts.length; i++) {
-                    var r = texts[i];
-                    var tl = String(r.tail || '').toLowerCase();
-                    if (!tl.endsWith(tailL))
-                        continue;
-
-                    var raw = (r.text || '').trim();
-                    if (!raw)
-                        continue;
-
+            var tailL = _txStatusTail.toLowerCase();
+            var labs = collectLabels();
+            for (var i = 0; i < labs.length; i++) {
+                var r = labs[i];
+                var tl = String(r.tail || '').toLowerCase();
+                if (!tl.endsWith(tailL))
+                    continue;
+                var raw = String(r.text || '').trim();
+                if (raw) {
+                    _txStatusTextCached = raw;
+                    break;
+                }
+            }
+        } catch (_) {}
+        return _txStatusTextCached;
+    }
+    function statusByProg(p) {
+        // Đọc trực tiếp message từ PopupMessageUtilTaiXiu của Tài Xỉu Live.
+        // Dùng cache ngắn để tránh quét nặng mỗi tick.
+        try {
+            if (_cw_enable_status_label_scan) {
+                var raw = readTxStatusTextCached(450);
+                if (raw) {
                     var u = NORM(raw);
                     if (u.indexOf('BAT DAU CUOC') !== -1)
                         return 'Cho phép đặt cược';
@@ -3019,9 +3052,6 @@
                         return 'Ngừng đặt cược';
                     if (u.indexOf('CHO KET QUA') !== -1 || u.indexOf('CHO KETQUA') !== -1)
                         return 'Chờ kết quả';
-
-                    // nếu không match key thì bỏ qua để dùng fallback theo thời gian
-                    continue;
                 }
             }
         } catch (e) {
@@ -3107,7 +3137,9 @@
             renderMoney();
         }
         if (S.showText) {
-            S.text = buildTextRects();
+            S.text = buildTextRects({
+                allowDomFallback: false
+            });
             renderText();
         }
         updatePanel();
@@ -3179,7 +3211,10 @@
         S.showText = !S.showText;
         layerText.style.display = S.showText ? '' : 'none';
         if (S.showText) {
-            S.text = buildTextRects();
+            S.text = buildTextRects({
+                allowDomFallback: true,
+                domLimit: 200
+            });
             renderText();
             try {
                 var st = window.__cw_textStats || {};
@@ -3424,7 +3459,10 @@
                     else
                         S.showText = true;
                 } else {
-                    S.text = buildTextRects();
+                    S.text = buildTextRects({
+                        allowDomFallback: true,
+                        domLimit: 200
+                    });
                     renderText();
                 }
             } catch (e) {}
