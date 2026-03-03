@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r12-20260302';
+    window.__cw_patch_ver = 'cw-r13-20260303';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -21,6 +21,19 @@
             window.__cw_last_scan_summary = {
                 labels: 0,
                 candidates: 0,
+                invalidRect: 0,
+                adjusted: 0,
+                out: 0,
+                ts: 0,
+                status: 'idle'
+            };
+        }
+        if (!window.__cw_last_scan_money)
+            window.__cw_last_scan_money = [];
+        if (!window.__cw_last_scan_money_summary) {
+            window.__cw_last_scan_money_summary = {
+                labels: 0,
+                moneyCandidate: 0,
                 invalidRect: 0,
                 adjusted: 0,
                 out: 0,
@@ -654,6 +667,122 @@
         }
         return out;
     }
+    function buildMoneyRectsForMap() {
+        var ls = collectLabels(),
+        out = [];
+        var st = {
+            labels: ls.length,
+            moneyCandidate: 0,
+            rectInvalid: 0,
+            rectRecovered: 0,
+            rectProjected: 0,
+            rectAdjusted: 0,
+            rectClamped: 0,
+            syntheticPlaced: 0,
+            out: 0
+        };
+        for (var i = 0; i < ls.length; i++) {
+            var L = ls[i];
+            var s = (L.text || '').trim();
+            if (!isMoneyText(s))
+                continue;
+            st.moneyCandidate++;
+            var x = Math.round(L.x),
+            y = Math.round(L.y),
+            w = Math.round(L.w),
+            h = Math.round(L.h);
+            var rr = {
+                x: x,
+                y: y,
+                w: w,
+                h: h
+            };
+            if (!isRenderableRect(rr)) {
+                st.rectInvalid++;
+                var recovered = null;
+                try {
+                    var anc = L.node || null;
+                    var hop = 0;
+                    while (anc && hop < 10) {
+                        var ar = wRect(anc);
+                        if (isRenderableRect(ar)) {
+                            recovered = ar;
+                            break;
+                        }
+                        anc = anc.parent || anc._parent || null;
+                        hop++;
+                    }
+                } catch (eA) {}
+                if (recovered) {
+                    x = Math.round(recovered.x);
+                    y = Math.round(recovered.y);
+                    w = Math.round(recovered.w);
+                    h = Math.round(recovered.h);
+                    st.rectRecovered++;
+                } else {
+                    if (!isFinite(x))
+                        x = 0;
+                    if (!isFinite(y))
+                        y = 0;
+                    if (!isFinite(w) || w < 2)
+                        w = Math.max(16, Math.min(260, s.length * 9));
+                    if (!isFinite(h) || h < 2)
+                        h = 18;
+                    var projectedHit = false;
+                    try {
+                        var sp2 = _nodeToScreen(L.node);
+                        if (sp2) {
+                            x = Math.round(sp2.x - w * 0.5);
+                            y = Math.round(sp2.y - h * 0.5);
+                            st.rectProjected++;
+                            projectedHit = true;
+                        }
+                    } catch (eP) {}
+                    if (!projectedHit && (x === 0 && y === 0)) {
+                        var idxDbg = st.rectAdjusted;
+                        var rowH = 22;
+                        var startY = 90;
+                        var rowsMax = Math.max(10, Math.floor((innerHeight - startY - 12) / rowH));
+                        var col = Math.floor(idxDbg / rowsMax);
+                        var row = idxDbg % rowsMax;
+                        x = 8 + col * 290;
+                        y = startY + row * rowH;
+                        st.syntheticPlaced++;
+                    }
+                    var maxX = Math.max(0, innerWidth - w - 2);
+                    var maxY = Math.max(0, innerHeight - h - 2);
+                    var x0 = x,
+                    y0 = y;
+                    x = Math.max(0, Math.min(maxX, x));
+                    y = Math.max(0, Math.min(maxY, y));
+                    if (x !== x0 || y !== y0)
+                        st.rectClamped++;
+                    st.rectAdjusted++;
+                }
+            }
+            out.push({
+                txt: s,
+                val: moneyOf(s),
+                x: x,
+                y: y,
+                w: w,
+                h: h,
+                n: {
+                    x: x / innerWidth,
+                    y: y / innerHeight,
+                    w: w / innerWidth,
+                    h: h / innerHeight
+                },
+                tail: L.tail,
+                tl: L.tl
+            });
+        }
+        st.out = out.length;
+        try {
+            window.__cw_moneyStats = st;
+        } catch (_) {}
+        return out;
+    }
 
     /* ---------------- NEW: TextMap ---------------- */
     function isTextCandidate(txt) {
@@ -1231,6 +1360,7 @@
     var X_TUDO = 1004; // TỨ ĐỎ
     var X_3DO = 856; // 3 ĐỎ
     var X_3TRANG = 709; // 3 TRẮNG
+    var TAIL_ACCOUNT_EXACT = 'game/Canvas/game/lobby/root/top/header/logged_in_node/khung_tien2/lb_tien';
 
     function tailEquals(t, exact) {
         if (t == null)
@@ -1277,6 +1407,32 @@
         }
         return best;
     }
+    function pickByTailExact(pool, tailExact) {
+        var arr = [];
+        for (var i = 0; i < pool.length; i++) {
+            var it = pool[i];
+            if (tailEquals(it.tail, tailExact))
+                arr.push(it);
+        }
+        if (!arr.length)
+            return null;
+        arr.sort(function (a, b) {
+            var av = isRenderableRect({
+                    x: a.x,
+                    y: a.y,
+                    w: a.w,
+                    h: a.h
+                }) ? 1 : 0;
+            var bv = isRenderableRect({
+                    x: b.x,
+                    y: b.y,
+                    w: b.w,
+                    h: b.h
+                }) ? 1 : 0;
+            return (bv - av) || (area(b) - area(a)) || (a.y - b.y) || (a.x - b.x);
+        });
+        return arr[0];
+    }
     // Export standardized helpers
     window.moneyTailList = moneyTailList;
     window.pickByXTail = pickByXTail;
@@ -1300,10 +1456,8 @@
         var m3D = pickByXTail(list, X_3DO, TAIL_TOTAL_EXACT); // 3 ĐỎ
         var mTD = pickByXTail(list, X_TUDO, TAIL_TOTAL_EXACT); // TỨ ĐỎ
 
-        // Account (A) keeps old robust resolver
-        if (!S.selAcc)
-            autoBindAcc(S);
-        var rA = resolve(S.money, S.selAcc);
+        // Account (A): strict exact-tail only (no fallback)
+        var rA = pickByTailExact(S.money, TAIL_ACCOUNT_EXACT);
 
         return {
             C: mC ? mC.val : null,
@@ -1357,6 +1511,7 @@
         prog: null,
         status: 'ĐỢI MỞ BÁT',
         money: [],
+        moneyMap: [],
         text: [],
         selC: null,
         selL: null,
@@ -1461,15 +1616,19 @@
         d = d || {};
         var s = d.summary || {};
         var rows = ((d.rows && d.rows.length) || 0);
+        var cands = (s.candidates != null ? s.candidates : (s.textCandidate != null ? s.textCandidate : (s.moneyCandidate || 0)));
         return '[' + scanTimeTag() + '] ' + source +
             ' rows=' + rows +
             ' labels=' + (s.labels || 0) +
+            ' cands=' + cands +
             ' inv=' + (s.invalidRect || 0) +
             ' dom=' + (s.domFallback || 0) +
             ' syn=' + (s.syntheticPlaced || 0) +
             ' adj=' + (s.adjusted || 0) +
             ' status=' + (s.status || 'na');
     }
+    var MAX_SCAN_MONEY_ROWS = 500;
+    var MAX_SCAN_TEXT_ROWS = 500;
     function buildScanClipboardText(source, d, errMsg) {
         source = source || 'UNK';
         d = d || {};
@@ -1477,15 +1636,24 @@
         var st = d.stats || {};
         var rows = d.rows || [];
         var logs = (window.__cw_scan_log || []).slice();
+        var kind = String(d.kind || '').toLowerCase();
+        if (!kind) {
+            if (rows.length && rows[0] && typeof rows[0].txt !== 'undefined')
+                kind = 'money';
+            else
+                kind = 'text';
+        }
+        var candidates = (s.candidates != null ? s.candidates : (s.textCandidate != null ? s.textCandidate : (s.moneyCandidate || 0)));
         var lines = [];
         lines.push('[CW_SCAN_EXPORT]');
         lines.push('time=' + scanTimeTag());
         lines.push('source=' + source);
+        lines.push('kind=' + kind);
         lines.push('patch=' + (d.patch || window.__cw_patch_ver || ''));
         lines.push('rows=' + rows.length);
         lines.push('status=' + (s.status || 'na'));
         lines.push('labels=' + (s.labels || 0) +
-            ' candidates=' + (s.candidates || s.textCandidate || 0) +
+            ' candidates=' + candidates +
             ' invalid=' + (s.invalidRect || 0) +
             ' dom=' + (s.domFallback || 0) +
             ' syn=' + (s.syntheticPlaced || 0) +
@@ -1499,20 +1667,32 @@
         lines.push('');
         lines.push('rows_preview:');
         try {
-            var preview = rows.slice(0, 30);
+            var preview = rows.slice(0, MAX_SCAN_TEXT_ROWS);
             if (!preview.length) {
                 lines.push('0. (empty)');
             } else {
                 for (var i = 0; i < preview.length; i++) {
                     var r = preview[i] || {};
-                    var txt = String(r.text == null ? '' : r.text).replace(/\r?\n/g, ' / ');
                     var tail = String(r.tail == null ? '' : r.tail);
-                    lines.push((i + 1) + '. text=' + JSON.stringify(txt) +
-                        ' | x=' + (Number(r.x) || 0) +
-                        ' y=' + (Number(r.y) || 0) +
-                        ' w=' + (Number(r.w) || 0) +
-                        ' h=' + (Number(r.h) || 0) +
-                        ' | tail=' + tail);
+                    if (kind === 'money' || typeof r.txt !== 'undefined') {
+                        var mt = String(r.txt == null ? '' : r.txt).replace(/\r?\n/g, ' / ');
+                        var mv = (r.val == null ? 'null' : String(r.val));
+                        lines.push((i + 1) + '. txt=' + JSON.stringify(mt) +
+                            ' | val=' + mv +
+                            ' | x=' + (Number(r.x) || 0) +
+                            ' y=' + (Number(r.y) || 0) +
+                            ' w=' + (Number(r.w) || 0) +
+                            ' h=' + (Number(r.h) || 0) +
+                            ' | tail=' + tail);
+                    } else {
+                        var txt = String(r.text == null ? '' : r.text).replace(/\r?\n/g, ' / ');
+                        lines.push((i + 1) + '. text=' + JSON.stringify(txt) +
+                            ' | x=' + (Number(r.x) || 0) +
+                            ' y=' + (Number(r.y) || 0) +
+                            ' w=' + (Number(r.w) || 0) +
+                            ' h=' + (Number(r.h) || 0) +
+                            ' | tail=' + tail);
+                    }
                 }
             }
         } catch (_) {
@@ -1648,7 +1828,7 @@
         var bg = document.createElement('div');
         bg.style.cssText = 'position:absolute;inset:0;background:transparent;';
         layerMoney.appendChild(bg);
-        var list = S.money && S.money.length ? S.money : buildMoneyRects();
+        var list = S.moneyMap && S.moneyMap.length ? S.moneyMap : buildMoneyRectsForMap();
         for (var i = 0; i < list.length; i++) {
             var m = list[i];
             var d = document.createElement('div');
@@ -1856,26 +2036,82 @@
 
     /* ---------------- scan tools ---------------- */
     function scan200Money() {
-        var money = buildMoneyRects().sort(function (a, b) {
-            return a.y - b.y;
-        }).slice(0, 200)
-            .map(function (m) {
-                return {
-                    txt: m.txt,
-                    val: m.val,
-                    x: m.x,
-                    y: m.y,
-                    w: m.w,
-                    h: m.h,
-                    tail: m.tail
+        var money = [];
+        var st = {};
+        try {
+            money = buildMoneyRectsForMap().sort(function (a, b) {
+                return a.y - b.y;
+            }).slice(0, MAX_SCAN_MONEY_ROWS)
+                .map(function (m) {
+                    return {
+                        txt: m.txt,
+                        val: m.val,
+                        x: m.x,
+                        y: m.y,
+                        w: m.w,
+                        h: m.h,
+                        tail: m.tail
+                    };
+                });
+            st = window.__cw_moneyStats || {};
+            console.log('[Scan200Money] labels=' + (st.labels || 0) +
+                ' candidates=' + (st.moneyCandidate || 0) +
+                ' invalidRect=' + (st.rectInvalid || 0) +
+                ' recovered=' + (st.rectRecovered || 0) +
+                ' projected=' + (st.rectProjected || 0) +
+                ' clamped=' + (st.rectClamped || 0) +
+                ' synthetic=' + (st.syntheticPlaced || 0) +
+                ' adjusted=' + (st.rectAdjusted || 0) +
+                ' out=' + (st.out || 0));
+            console.log('(Money index x' + MAX_SCAN_MONEY_ROWS + ')\ttxt\tval\tx\ty\tw\th\ttail');
+            for (var i = 0; i < money.length; i++) {
+                var r = money[i];
+                console.log(i + "\t'" + r.txt + "'\t" + r.val + "\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
+            }
+            try {
+                console.table(money);
+            } catch (e) {
+                console.log(money);
+            }
+            try {
+                window.__cw_last_scan_money = money;
+                window.__cw_last_scan_money_summary = {
+                    labels: st.labels || 0,
+                    moneyCandidate: st.moneyCandidate || 0,
+                    invalidRect: st.rectInvalid || 0,
+                    recovered: st.rectRecovered || 0,
+                    projected: st.rectProjected || 0,
+                    clamped: st.rectClamped || 0,
+                    syntheticPlaced: st.syntheticPlaced || 0,
+                    adjusted: st.rectAdjusted || 0,
+                    out: st.out || 0,
+                    ts: Date.now(),
+                    status: 'ok'
                 };
-            });
-        console.log('(Money index x200)\ttxt\tval\tx\ty\tw\th\ttail');
-        for (var i = 0; i < money.length; i++) {
-            var r = money[i];
-            console.log(i + "\t'" + r.txt + "'\t" + r.val + "\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
+            } catch (_) {}
+            return money;
+        } catch (err) {
+            try {
+                var msg = String((err && err.message) || err || 'scan-money-failed');
+                console.warn('[Scan200Money][ERR]', msg);
+                window.__cw_last_scan_money = [];
+                window.__cw_last_scan_money_summary = {
+                    labels: 0,
+                    moneyCandidate: 0,
+                    invalidRect: 0,
+                    recovered: 0,
+                    projected: 0,
+                    clamped: 0,
+                    syntheticPlaced: 0,
+                    adjusted: 0,
+                    out: 0,
+                    ts: Date.now(),
+                    status: 'err',
+                    err: msg
+                };
+            } catch (_) {}
+            return [];
         }
-        console.log(money);
     }
     function scan200Bet() {
         var btns = collectButtons().filter(function (b) {
@@ -1906,7 +2142,7 @@
         try {
             texts = buildTextRects().sort(function (a, b) {
                 return a.y - b.y;
-            }).slice(0, 200)
+            }).slice(0, MAX_SCAN_TEXT_ROWS)
                 .map(function (t) {
                     return {
                         text: t.text,
@@ -1928,7 +2164,7 @@
             ' synthetic=' + (st.syntheticPlaced || 0) +
             ' adjusted=' + (st.rectAdjusted || 0) +
             ' out=' + (st.out || 0));
-            console.log('(Text index x200)\ttext\tx\ty\tw\th\ttail');
+            console.log('(Text index x' + MAX_SCAN_TEXT_ROWS + ')\ttext\tx\ty\tw\th\ttail');
             for (var i = 0; i < texts.length; i++) {
                 var r = texts[i];
                 console.log(i + "\t'" + r.text + "'\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
@@ -2867,7 +3103,7 @@
         }
 
         if (S.showMoney) {
-            S.money = buildMoneyRects();
+            S.moneyMap = buildMoneyRectsForMap();
             renderMoney();
         }
         if (S.showText) {
@@ -2905,11 +3141,26 @@
         S.showMoney = !S.showMoney;
         layerMoney.style.display = S.showMoney ? '' : 'none';
         if (S.showMoney) {
-            S.money = buildMoneyRects();
+            S.moneyMap = buildMoneyRectsForMap();
             renderMoney();
+            try {
+                var sm = window.__cw_moneyStats || {};
+                console.log('[MoneyMap] ON -> out=' + (S.moneyMap || []).length +
+                    ' (labels=' + (sm.labels || 0) +
+                    ', candidates=' + (sm.moneyCandidate || 0) +
+                    ', invalidRect=' + (sm.rectInvalid || 0) +
+                    ', recovered=' + (sm.rectRecovered || 0) +
+                    ', projected=' + (sm.rectProjected || 0) +
+                    ', clamped=' + (sm.rectClamped || 0) +
+                    ', synthetic=' + (sm.syntheticPlaced || 0) +
+                    ', adjusted=' + (sm.rectAdjusted || 0) + ')');
+            } catch (_) {}
         } else {
             S.focus = null;
             showFocus(null);
+            try {
+                console.log('[MoneyMap] OFF');
+            } catch (_) {}
         }
         panel.style.zIndex = '2147483647';
     };
@@ -2953,7 +3204,33 @@
         panel.style.zIndex = '2147483647';
     };
     panel.querySelector('#bScanMoney').onclick = function () {
-        scan200Money();
+        try {
+            pushScanLogLine('BTN Scan200Money clicked');
+            setScanStatusLine('[' + scanTimeTag() + '] BTN_MONEY scanning...');
+            var d = null;
+            if (typeof window.__cw_scanAndDumpMoney === 'function')
+                d = window.__cw_scanAndDumpMoney('BTN_MONEY');
+            else
+                d = {
+                    kind: 'money',
+                    rows: scan200Money() || [],
+                    summary: window.__cw_last_scan_money_summary || null,
+                    stats: window.__cw_moneyStats || null,
+                    patch: window.__cw_patch_ver || ''
+                };
+            pushScanLogLine('BTN_MONEY done rows=' + (((d && d.rows) || []).length));
+            setScanStatusLine(scanSummaryLine('BTN_MONEY', d));
+            cwError('[CW_SCAN_MONEY_BTN_DONE]', d);
+            showScanAlert('BTN_MONEY', d, '');
+        } catch (e) {
+            try {
+                var em = String((e && e.message) || e || 'unknown');
+                pushScanLogLine('BTN_MONEY err ' + em);
+                setScanStatusLine('[' + scanTimeTag() + '] BTN_MONEY error: ' + em);
+                cwError('[CW_SCAN_MONEY_BTN][ERR]', e);
+                showScanAlert('BTN_MONEY', {}, em);
+            } catch (_) {}
+        }
     };
     panel.querySelector('#bScanBet').onclick = function () {
         scan200Bet();
@@ -2985,7 +3262,15 @@
     };
     panel.querySelector('#bCopyScan').onclick = function () {
         try {
-            var d = window.__cw_last_scan_dump || (window.__cw_getTextScan ? window.__cw_getTextScan() : {});
+            var d = window.__cw_last_scan_dump;
+            if (!d || !d.rows) {
+                if (window.__cw_getMoneyScan)
+                    d = window.__cw_getMoneyScan();
+                else if (window.__cw_getTextScan)
+                    d = window.__cw_getTextScan();
+                else
+                    d = {};
+            }
             var txt = buildScanClipboardText('COPY_BTN', d, '');
             var ok = copyTextToClipboard(txt);
             pushScanLogLine('COPY scan log ' + (ok ? 'ok' : 'fail'));
@@ -3026,13 +3311,14 @@
             if (!d || typeof d !== 'object')
                 d = {};
             if (!d.rows)
-                d.rows = (window.__cw_last_scan_text || []).slice(0, 30);
+                d.rows = (window.__cw_last_scan_text || []).slice(0, MAX_SCAN_TEXT_ROWS);
             if (!d.summary)
                 d.summary = window.__cw_last_scan_summary || null;
             if (!d.stats)
                 d.stats = window.__cw_textStats || null;
             if (!d.patch)
                 d.patch = window.__cw_patch_ver || '';
+            d.kind = 'text';
             try {
                 window.__cw_last_scan_dump = d;
             } catch (_) {}
@@ -3059,12 +3345,75 @@
                     ' inv=' + (((d.summary || {}).invalidRect) || 0) +
                     ' syn=' + (((d.summary || {}).syntheticPlaced) || 0));
                 setScanStatusLine(scanSummaryLine(source, d));
-                cwTable((d.rows || []).slice(0, 30));
+                cwTable((d.rows || []).slice(0, MAX_SCAN_TEXT_ROWS));
+            } catch (_) {}
+            return d;
+        };
+        window.__cw_scanAndDumpMoney = function (source) {
+            source = source || 'CMD_MONEY';
+            var rows = [];
+            pushScanLogLine(source + ' start');
+            try {
+                rows = scan200Money() || [];
+            } catch (e1) {
+                try {
+                    cwWarn('[CW_SCAN_' + source + '][ERR scan200Money]', e1);
+                } catch (_) {}
+                rows = [];
+            }
+
+            var d = {};
+            try {
+                d = window.__cw_getMoneyScan ? window.__cw_getMoneyScan() : {};
+            } catch (e2) {
+                d = {};
+            }
+            if (!d || typeof d !== 'object')
+                d = {};
+            if (!d.rows)
+                d.rows = (window.__cw_last_scan_money || []).slice(0, MAX_SCAN_MONEY_ROWS);
+            if (!d.summary)
+                d.summary = window.__cw_last_scan_money_summary || null;
+            if (!d.stats)
+                d.stats = window.__cw_moneyStats || null;
+            if (!d.patch)
+                d.patch = window.__cw_patch_ver || '';
+            d.kind = 'money';
+            try {
+                window.__cw_last_scan_dump = d;
+            } catch (_) {}
+
+            try {
+                var st = d.summary || {};
+                var stateEl = panel && panel.querySelector ? panel.querySelector('#cwState') : null;
+                if (stateEl)
+                    stateEl.textContent = 'MONEY ' + rows.length + ' (inv ' + (st.invalidRect || 0) + ', syn ' + (st.syntheticPlaced || 0) + ', adj ' + (st.adjusted || 0) + ')';
+            } catch (_) {}
+
+            try {
+                cwWarn('[CW_SCAN_' + source + '] patch=' + (d.patch || '') + ' rows=' + ((d.rows && d.rows.length) || 0));
+                if (d.summary)
+                    cwWarn('[CW_SCAN_SUMMARY]', d.summary);
+                if (d.stats)
+                    cwWarn('[CW_SCAN_STATS]', d.stats);
+                cwError('[CW_SCAN_' + source + '_HARD]', {
+                    patch: d.patch || '',
+                    rows: ((d.rows && d.rows.length) || 0),
+                    summary: d.summary || null
+                });
+                pushScanLogLine('SRC=' + source + ' rows=' + ((d.rows && d.rows.length) || 0) +
+                    ' inv=' + (((d.summary || {}).invalidRect) || 0) +
+                    ' syn=' + (((d.summary || {}).syntheticPlaced) || 0));
+                setScanStatusLine(scanSummaryLine(source, d));
+                cwTable((d.rows || []).slice(0, MAX_SCAN_MONEY_ROWS));
             } catch (_) {}
             return d;
         };
         window.__cw_scanTextNow = function () {
             return window.__cw_scanAndDumpText ? window.__cw_scanAndDumpText('CMD') : scan200Text();
+        };
+        window.__cw_scanMoneyNow = function () {
+            return window.__cw_scanAndDumpMoney ? window.__cw_scanAndDumpMoney('CMD_MONEY') : scan200Money();
         };
         window.__cw_showTextMapNow = function () {
             try {
@@ -3084,12 +3433,40 @@
                 rows: (S.text || []).length
             };
         };
+        window.__cw_showMoneyMapNow = function () {
+            try {
+                if (!S.showMoney) {
+                    var b = panel && panel.querySelector ? panel.querySelector('#bMoney') : null;
+                    if (b && b.onclick)
+                        b.onclick();
+                    else
+                        S.showMoney = true;
+                } else {
+                    S.moneyMap = buildMoneyRectsForMap();
+                    renderMoney();
+                }
+            } catch (e) {}
+            return {
+                showMoney: !!S.showMoney,
+                rows: (S.moneyMap || []).length
+            };
+        };
         window.__cw_getTextScan = function () {
             return {
+                kind: 'text',
                 patch: window.__cw_patch_ver || '',
                 summary: window.__cw_last_scan_summary || null,
                 stats: window.__cw_textStats || null,
-                rows: (window.__cw_last_scan_text || []).slice(0, 30)
+                rows: (window.__cw_last_scan_text || []).slice(0, MAX_SCAN_TEXT_ROWS)
+            };
+        };
+        window.__cw_getMoneyScan = function () {
+            return {
+                kind: 'money',
+                patch: window.__cw_patch_ver || '',
+                summary: window.__cw_last_scan_money_summary || null,
+                stats: window.__cw_moneyStats || null,
+                rows: (window.__cw_last_scan_money || []).slice(0, MAX_SCAN_MONEY_ROWS)
             };
         };
         window.__cw_dumpTextScan = function () {
@@ -3101,7 +3478,20 @@
                     cwWarn('[CW_SCAN_SUMMARY]', d.summary);
                 if (d.stats)
                     cwWarn('[CW_SCAN_STATS]', d.stats);
-                cwTable((d.rows || []).slice(0, 30));
+                cwTable((d.rows || []).slice(0, MAX_SCAN_TEXT_ROWS));
+            } catch (e) {}
+            return d;
+        };
+        window.__cw_dumpMoneyScan = function () {
+            var d = window.__cw_getMoneyScan ? window.__cw_getMoneyScan() : {};
+            try {
+                cwWarn('[CW_SCAN_DUMP] patch=' + (d.patch || '') +
+                    ' rows=' + ((d.rows && d.rows.length) || 0));
+                if (d.summary)
+                    cwWarn('[CW_SCAN_SUMMARY]', d.summary);
+                if (d.stats)
+                    cwWarn('[CW_SCAN_STATS]', d.stats);
+                cwTable((d.rows || []).slice(0, MAX_SCAN_MONEY_ROWS));
             } catch (e) {}
             return d;
         };
@@ -3112,7 +3502,15 @@
             return logs;
         };
         window.__cw_copyScanLog = function () {
-            var d = window.__cw_last_scan_dump || (window.__cw_getTextScan ? window.__cw_getTextScan() : {});
+            var d = window.__cw_last_scan_dump;
+            if (!d || !d.rows) {
+                if (window.__cw_getMoneyScan)
+                    d = window.__cw_getMoneyScan();
+                else if (window.__cw_getTextScan)
+                    d = window.__cw_getTextScan();
+                else
+                    d = {};
+            }
             var txt = buildScanClipboardText('CMD_COPY', d, '');
             var ok = copyTextToClipboard(txt);
             pushScanLogLine('CMD copy scan log ' + (ok ? 'ok' : 'fail'));
