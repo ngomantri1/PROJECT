@@ -191,16 +191,12 @@ namespace TaiXiuThuongZoWin
 
         // Cache & cờ để không inject lặp lại
         private string? _appJs;
-        private string? _homeJs;  // nội dung js_home_v2.js
         private bool _webMsgHooked; // để gắn WebMessageReceived đúng 1 lần
 
 
 
 
         private string? _topForwardId, _appJsRegId;           // id script TOP_FORWARD
-                                                              // ID riêng cho autostart của trang Home (đừng dùng chung với _homeJsRegId)
-        private string? _homeAutoStartId;
-        private string? _homeJsRegId;
         private bool _frameHooked;               // đã gắn FrameCreated?
         private string? _lastDocKey;             // key document hiện tại (performance.timeOrigin)
                                                  // Bridge đăng ký toàn cục
@@ -571,63 +567,6 @@ Ví dụ không hợp lệ:
   }catch(_){}
 })();";
 
-        private const string HOME_AUTOSTART_TEMPLATE = @"
-(function(){
-  try{
-    var key = String((performance && performance.timeOrigin) || Date.now());
-    if (window.__hw_autostart_key === key) return;
-    window.__hw_autostart_key = key;
-    // MỚI: 1-shot báo hiệu đã ở trang game/đang có iframe game
-    if (!window.__abx_gameHintSent) window.__abx_gameHintSent = 0;
-    function sendGameHint(){
-      try{
-        if (window.__abx_gameHintSent) return;
-        window.__abx_gameHintSent = 1;
-        var msg = JSON.stringify({abx:'game_hint'});
-        if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage){
-          window.chrome.webview.postMessage(msg);
-        } else {
-          try { parent.postMessage({abx:'game_hint'}, '*'); } catch(_){}
-        }
-      }catch(_){}
-    }
-    // ⬇️ MỚI: phát hiện xem top-page có iframe games.* không
-    function hasGameFrame(){
-      try{
-        var ifs = Array.from(document.querySelectorAll('iframe'));
-        for (var i=0;i<ifs.length;i++){
-          var f = ifs[i];
-          try{
-            var u = new URL(f.src || '', location.href);
-            if (/^games\./i.test(u.hostname)) return true;
-          }catch(_){}
-        }
-      }catch(_){}
-      return false;
-    }
-
-    var delay=300, tries=0;
-    (function tick(){
-      try{
-        var h = String(location.hostname||'');
-        // Nếu bản thân đang ở games.* => bắn hint ngay (không cần home-push)
-        if (/^games\./i.test(h)) { sendGameHint(); return; }
-        // Nếu còn ở Home nhưng đã nhúng iframe game => bắn hint để C# chuyển UI tức thì
-        if (hasGameFrame()) { sendGameHint(); /* vẫn không start home_push */ }
-        // ⬇️ CHỈ start push khi KHÔNG phải games.* VÀ cũng KHÔNG có iframe games.*
-        if (!/^games\./i.test(h) && !hasGameFrame() && typeof window.__abx_hw_startPush==='function'){
-          try{ window.__abx_hw_startPush(__INTERVAL__); }catch(_){}
-          return;
-        }
-      }catch(_){}
-      tries++; delay = Math.min(5000, delay + (tries<10?100:500));
-      setTimeout(tick, delay);
-    })();
-  }catch(_){}
-})();";
-
-
-
         // Guard chống re-entrancy (đặt ở class level)
         private bool _ensuringWeb = false;
 
@@ -635,8 +574,6 @@ Ví dụ không hợp lệ:
 
         private WebView2LiveBridge? _bridge;
         private bool _inputEventsHooked;
-        // Interval push của Home (ms)
-        private int _homePushMs = 800;
         // Home-flow state flags (per-document)
         private bool _homeAutoLoginDone = false;
         private bool _homeAutoPlayDone = false;
@@ -4442,39 +4379,12 @@ Ví dụ không hợp lệ:
             return "";
         }
 
-        private async Task<string> LoadHomeJsAsync()
-        {
-            try
-            {
-                var resName = FindResourceName("js_home_v2.js")
-                              ?? "TaiXiuThuongZoWin.js_home_v2.js"; // fallback tên logic
-                var text = ReadEmbeddedText(resName);   // helper sẵn có
-                text = RemoveUtf8Bom(text);             // helper sẵn có
-
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    Log($"[Bridge] Loaded HOME JS from embedded: {resName} (len={text.Length})");
-                    return text;
-                }
-                Log("[Bridge] Embedded HOME JS empty: " + resName);
-            }
-            catch (Exception ex)
-            {
-                Log("[Bridge] Read embedded HOME JS failed: " + ex.Message);
-            }
-            return "";
-        }
-
-
-
-
         private async Task EnsureBridgeRegisteredAsync()
         {
             await EnsureWebReadyAsync();
             if (Web?.CoreWebView2 == null) return;
 
             _appJs ??= await LoadAppJsAsyncFallback();
-            _homeJs ??= await LoadHomeJsAsync();
 
             if (_topForwardId == null)
                 _topForwardId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(TOP_FORWARD);
@@ -4482,18 +4392,8 @@ Ví dụ không hợp lệ:
             if (_appJsRegId == null && !string.IsNullOrEmpty(_appJs))
                 _appJsRegId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(_appJs);
 
-            // NEW: đăng ký Home JS
-            if (_homeJsRegId == null && !string.IsNullOrEmpty(_homeJs))
-                _homeJsRegId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(_homeJs);
-
             if (_autoStartId == null)
                 _autoStartId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(FRAME_AUTOSTART);
-            if (_homeAutoStartId == null)
-            {
-                // Đăng ký autostart Home với interval mặc định (_homePushMs)
-                var homeAuto = BuildHomeAutostartJs(_homePushMs);
-                _homeAutoStartId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(homeAuto);
-            }
 
 
             if (!_frameHooked)
@@ -4542,14 +4442,8 @@ Ví dụ không hợp lệ:
                 if (!string.IsNullOrEmpty(_appJs))
                     await Web.CoreWebView2.ExecuteScriptAsync(_appJs);
 
-                // NEW: tiêm Home JS luôn (an toàn trên Game vì nó tự no-op)
-                if (!string.IsNullOrEmpty(_homeJs))
-                    await Web.CoreWebView2.ExecuteScriptAsync(_homeJs);
-
                 // Kích autostart trên top (idempotent – nếu không có __cw_startPush thì không sao)
                 await Web.CoreWebView2.ExecuteScriptAsync(FRAME_AUTOSTART);
-                // Nếu KHÔNG phải host games.* thì khởi động push của js_home_v2
-                await Web.CoreWebView2.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
 
 
                 _lastDocKey = key;
@@ -4570,9 +4464,6 @@ Ví dụ không hợp lệ:
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
-                // NEW: inject Home JS vào frame
-                if (!string.IsNullOrEmpty(_homeJs))
-                    _ = f.ExecuteScriptAsync(_homeJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
                 Log("[Bridge] Frame injected + autostart armed.");
 
@@ -5038,14 +4929,6 @@ Ví dụ không hợp lệ:
                 line = $"Còn lại: {left:hh\\:mm\\:ss}";
             }
             LblExpire.Text = line;
-        }
-
-
-        // Helper build script với tham số interval (ms)
-        private static string BuildHomeAutostartJs(int intervalMs)
-        {
-            var ms = Math.Max(300, intervalMs);
-            return HOME_AUTOSTART_TEMPLATE.Replace("__INTERVAL__", ms.ToString());
         }
 
         private async void BtnHomeLogin_Click(object sender, RoutedEventArgs e)
