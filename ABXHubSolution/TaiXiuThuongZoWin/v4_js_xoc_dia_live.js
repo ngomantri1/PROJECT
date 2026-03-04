@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r25-20260304';
+    window.__cw_patch_ver = 'cw-r31-20260304-iconseq-rolling50-sidefix';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -1396,6 +1396,437 @@
         return readTKSeqFromDigits();
     }
 
+    // Strict sequence source for Canvas Watch:
+    // use __cw_icon_seq.seq_oldest_to_latest only.
+    var _iconSeqBuildAt = 0;
+    var _iconSeqRolling = []; // oldest -> latest
+    var ICON_SEQ_MAX = 50;
+
+    function _normalizeTxSeq(seq) {
+        seq = String(seq || '').toUpperCase().replace(/[^TX]/g, '');
+        return seq;
+    }
+
+    function _seqFromWinStrict(w) {
+        try {
+            var iconSeq = w && w.__cw_icon_seq;
+            if (!iconSeq || typeof iconSeq !== 'object')
+                return '';
+            return _normalizeTxSeq(iconSeq.seq_oldest_to_latest || '');
+        } catch (_) {}
+        return '';
+    }
+
+    function _findSeqAcrossWindows() {
+        try {
+            var seen = [];
+            function walkWin(w) {
+                if (!w)
+                    return '';
+                try {
+                    if (seen.indexOf(w) !== -1)
+                        return '';
+                    seen.push(w);
+                } catch (_) {
+                    return '';
+                }
+
+                var seq = _seqFromWinStrict(w);
+                if (seq)
+                    return seq;
+
+                try {
+                    if (w.parent && w.parent !== w) {
+                        seq = walkWin(w.parent);
+                        if (seq)
+                            return seq;
+                    }
+                } catch (_) {}
+
+                try {
+                    if (w.top) {
+                        seq = walkWin(w.top);
+                        if (seq)
+                            return seq;
+                    }
+                } catch (_) {}
+
+                try {
+                    var len = w.frames ? w.frames.length : 0;
+                    for (var i = 0; i < len; i++) {
+                        seq = walkWin(w.frames[i]);
+                        if (seq)
+                            return seq;
+                    }
+                } catch (_) {}
+                return '';
+            }
+            return walkWin(window) || '';
+        } catch (_) {}
+        return '';
+    }
+
+    function _nodePathFullLocal(n) {
+        var arr = [];
+        var cur = n;
+        var guard = 0;
+        while (cur && guard++ < 200) {
+            arr.push(String(cur.name || ''));
+            cur = cur.parent || cur._parent || null;
+        }
+        return arr.reverse().join('/');
+    }
+
+    function _readNodeTextLocal(n) {
+        try {
+            var lb = getComp(n, cc.Label);
+            if (lb && lb.string != null)
+                return String(lb.string).trim();
+        } catch (_) {}
+        try {
+            var rt = getComp(n, cc.RichText);
+            if (rt && rt.string != null)
+                return String(rt.string).trim();
+        } catch (_) {}
+        return '';
+    }
+
+    function buildIconSeqFromSceneLocal(force) {
+        try {
+            var now = Date.now();
+            if (!force && (now - _iconSeqBuildAt) < 800)
+                return _seqFromWinStrict(window);
+            _iconSeqBuildAt = now;
+
+            var rows = [];
+            var dbg = {
+                labels_total: 0,
+                labels_matched: 0,
+                nodes_matched: 0,
+                side_from_tail: 0,
+                val_from_txt: 0,
+                val_from_dice: 0,
+                rolling_appended: 0,
+                rolling_updated: 0,
+                rolling_trimmed: 0,
+                rolling_reset: ''
+            };
+            function foldVi(s) {
+                s = String(s || '');
+                try {
+                    s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                } catch (_) {}
+                s = s.replace(/\u0111/g, 'd').replace(/\u0110/g, 'D');
+                return s.toLowerCase();
+            }
+            function pushRow(txt, path, src) {
+                txt = String(txt || '').trim();
+                path = String(path || '').trim();
+                if (!path)
+                    return;
+
+                // 1) Side uu tien tu tail: ...#id&Tài(...)/lbl_sum hoặc ...&Xỉu(...)/lbl_sum
+                var pathDecoded = path;
+                try {
+                    pathDecoded = decodeURIComponent(path);
+                } catch (_) {}
+                var pathFold = foldVi(pathDecoded);
+                var side = '';
+                // Parse side ben trong segment "&<side>(...)" de chiu duoc ca unicode/mojibake.
+                var mSide = pathFold.match(/&([^\/()]+)\(/);
+                if (mSide && mSide[1]) {
+                    var token = String(mSide[1]).replace(/[^a-z]/g, '');
+                    if (token.charAt(0) === 't')
+                        side = 'T';
+                    else if (token.charAt(0) === 'x')
+                        side = 'X';
+                }
+                if (!side) {
+                    if (pathFold.indexOf('&tai(') !== -1)
+                        side = 'T';
+                    else if (pathFold.indexOf('&xiu(') !== -1)
+                        side = 'X';
+                }
+                if (side) {
+                    dbg.side_from_tail++;
+                }
+
+                // 2) Val uu tien tu txt (chi lay so tong hop)
+                var val = NaN;
+                var txtNums = String(txt).match(/\d+/g) || [];
+                if (txtNums.length === 1) {
+                    val = Number(txtNums[0]);
+                    if (isFinite(val))
+                        dbg.val_from_txt++;
+                } else if (txtNums.length > 1) {
+                    // Neu txt co dang "2-6-5" thi tinh tong xuc xac
+                    var mDiceTxt = String(txt).match(/(\d+)\s*-\s*(\d+)\s*-\s*(\d+)/);
+                    if (mDiceTxt) {
+                        val = Number(mDiceTxt[1]) + Number(mDiceTxt[2]) + Number(mDiceTxt[3]);
+                        if (isFinite(val))
+                            dbg.val_from_dice++;
+                    }
+                }
+
+                // 3) Fallback val tu tail "(a-b-c)" neu txt khong ra so
+                if (!isFinite(val)) {
+                    var mDiceTail = pathDecoded.match(/\((\d+)\s*-\s*(\d+)\s*-\s*(\d+)\)/);
+                    if (mDiceTail) {
+                        val = Number(mDiceTail[1]) + Number(mDiceTail[2]) + Number(mDiceTail[3]);
+                        if (isFinite(val))
+                            dbg.val_from_dice++;
+                    }
+                }
+
+                // Neu khong co side va cung khong co val thi bo qua row loi
+                if (!side && !isFinite(val))
+                    return;
+
+                var tx = side || (val > 10 ? 'T' : 'X');
+                var mSess = pathDecoded.match(/#\s*(\d+)/);
+                if (!mSess)
+                    mSess = path.match(/(?:#|%23)(\d+)/i);
+                var session = mSess ? Number(mSess[1]) : NaN;
+                var score = (side ? 100 : 0) + (isFinite(val) ? 10 : 0) + (src === 'labels' ? 1 : 0);
+                rows.push({
+                    session: session,
+                    val: val,
+                    tx: tx,
+                    txt: txt,
+                    path: path,
+                    src: src || '',
+                    score: score
+                });
+            }
+
+            // 1) Uu tien nguon labels (giong logic scan text da tung lay duoc icon_results)
+            try {
+                if (typeof collectLabels === 'function') {
+                    var labs = collectLabels() || [];
+                    dbg.labels_total = labs.length;
+                    for (var li = 0; li < labs.length; li++) {
+                        var L = labs[li] || {};
+                        var tail = String(L.tail || L.tl || '');
+                        var tailL = tail.toLowerCase();
+                        if (tailL.indexOf('/buttons/icon_results/') === -1)
+                            continue;
+                        if (!/\/lbl_sum$/i.test(tailL))
+                            continue;
+                        dbg.labels_matched++;
+                        pushRow(L.text, tail, 'labels');
+                    }
+                }
+            } catch (_) {}
+
+            // 2) Fallback nguon node path neu labels khong co
+            if ((!rows || !rows.length) && window.cc && cc.director && cc.director.getScene && typeof walkNodes === 'function') {
+                walkNodes(function (n) {
+                    if (!n)
+                        return;
+                    try {
+                        if (typeof active === 'function' && !active(n))
+                            return;
+                    } catch (_) {}
+
+                    var path = _nodePathFullLocal(n);
+                    var pathL = String(path || '').toLowerCase();
+                    if (!/\/buttons\/icon_results\/[^/]+\/lbl_sum$/i.test(pathL))
+                        return;
+
+                    var txt = _readNodeTextLocal(n);
+                    dbg.nodes_matched++;
+                    pushRow(txt, path, 'nodes');
+                });
+            }
+
+            if (!rows.length) {
+                window.__cw_icon_seq_debug = {
+                    reason: 'no_rows',
+                    dbg: dbg,
+                    ts: Date.now()
+                };
+                return '';
+            }
+
+            var map = {};
+            var uniq = [];
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                var key = isFinite(r.session) ? ('s:' + r.session) : ('p:' + r.path);
+                if (map[key] == null) {
+                    map[key] = uniq.length;
+                    uniq.push(r);
+                    continue;
+                }
+                // Cung session thi giu row co do tin cay cao hon (uu tien side tu tail).
+                var idxKeep = map[key];
+                var old = uniq[idxKeep];
+                var oldScore = Number(old && old.score) || 0;
+                var newScore = Number(r && r.score) || 0;
+                if (newScore > oldScore)
+                    uniq[idxKeep] = r;
+            }
+
+            var withSession = uniq.filter(function (x) {
+                return isFinite(x.session);
+            }).sort(function (a, b) {
+                return a.session - b.session;
+            });
+
+            function cloneRow(x) {
+                return {
+                    session: x.session,
+                    val: x.val,
+                    tx: x.tx,
+                    txt: x.txt,
+                    path: x.path,
+                    src: x.src || '',
+                    score: x.score
+                };
+            }
+
+            // Neu tick hien tai chua doc duoc snapshot, giu nguyen rolling neu da co.
+            if (!withSession.length) {
+                if (_iconSeqRolling.length) {
+                    var keepDesc = _iconSeqRolling.slice().sort(function (a, b) {
+                        return b.session - a.session;
+                    });
+                    var keepSeqOldToNew = '';
+                    for (i = 0; i < _iconSeqRolling.length; i++)
+                        keepSeqOldToNew += _iconSeqRolling[i].tx;
+                    var keepSeqNewToOld = '';
+                    for (i = 0; i < keepDesc.length; i++)
+                        keepSeqNewToOld += keepDesc[i].tx;
+
+                    window.__cw_icon_seq = {
+                        source: 'auto_scene_icon_results',
+                        seq_oldest_to_latest: keepSeqOldToNew,
+                        seq_latest_to_oldest: keepSeqNewToOld,
+                        count: _iconSeqRolling.length,
+                        ts: Date.now(),
+                        rows_latest_to_oldest: keepDesc,
+                        dbg: dbg
+                    };
+                    window.__cw_icon_seq_debug = {
+                        reason: 'keep_rolling_no_snapshot',
+                        dbg: dbg,
+                        count: _iconSeqRolling.length,
+                        ts: Date.now()
+                    };
+                    return _normalizeTxSeq(keepSeqOldToNew);
+                }
+                return '';
+            }
+
+            // Merge rolling: append chi khi co session moi (lon hon session cuoi), toi da 50 phien.
+            if (!_iconSeqRolling.length) {
+                _iconSeqRolling = withSession.slice(-ICON_SEQ_MAX).map(cloneRow);
+                dbg.rolling_reset = 'seed';
+                dbg.rolling_appended = _iconSeqRolling.length;
+            } else {
+                _iconSeqRolling.sort(function (a, b) {
+                    return a.session - b.session;
+                });
+
+                var rollingMap = {};
+                for (i = 0; i < _iconSeqRolling.length; i++) {
+                    rollingMap[String(_iconSeqRolling[i].session)] = i;
+                }
+
+                var hasOverlap = false;
+                for (i = 0; i < withSession.length; i++) {
+                    if (Object.prototype.hasOwnProperty.call(rollingMap, String(withSession[i].session))) {
+                        hasOverlap = true;
+                        break;
+                    }
+                }
+
+                if (!hasOverlap) {
+                    _iconSeqRolling = withSession.slice(-ICON_SEQ_MAX).map(cloneRow);
+                    dbg.rolling_reset = 'no_overlap_seed';
+                    dbg.rolling_appended = _iconSeqRolling.length;
+                } else {
+                    var lastSession = _iconSeqRolling.length
+                         ? _iconSeqRolling[_iconSeqRolling.length - 1].session
+                         : -Infinity;
+
+                    for (i = 0; i < withSession.length; i++) {
+                        var cur = withSession[i];
+                        var sk = String(cur.session);
+                        if (Object.prototype.hasOwnProperty.call(rollingMap, sk)) {
+                            var idx = rollingMap[sk];
+                            var old = _iconSeqRolling[idx];
+                            if (old.tx !== cur.tx || old.val !== cur.val || old.txt !== cur.txt) {
+                                _iconSeqRolling[idx] = cloneRow(cur);
+                                dbg.rolling_updated++;
+                            }
+                            continue;
+                        }
+                        // Chi append ket qua moi hon session cuoi de chuoi phat trien lien mach sang ben phai.
+                        if (cur.session > lastSession) {
+                            _iconSeqRolling.push(cloneRow(cur));
+                            rollingMap[sk] = _iconSeqRolling.length - 1;
+                            lastSession = cur.session;
+                            dbg.rolling_appended++;
+                        }
+                    }
+                }
+            }
+
+            if (_iconSeqRolling.length > ICON_SEQ_MAX) {
+                dbg.rolling_trimmed = _iconSeqRolling.length - ICON_SEQ_MAX;
+                _iconSeqRolling = _iconSeqRolling.slice(-ICON_SEQ_MAX);
+            }
+
+            var seqOldToNew = '';
+            for (i = 0; i < _iconSeqRolling.length; i++)
+                seqOldToNew += _iconSeqRolling[i].tx;
+
+            var desc = _iconSeqRolling.slice().sort(function (a, b) {
+                return b.session - a.session;
+            });
+            var seqNewToOld = '';
+            for (i = 0; i < desc.length; i++)
+                seqNewToOld += desc[i].tx;
+
+            window.__cw_icon_seq = {
+                source: 'auto_scene_icon_results',
+                seq_oldest_to_latest: seqOldToNew,
+                seq_latest_to_oldest: seqNewToOld,
+                count: _iconSeqRolling.length,
+                ts: Date.now(),
+                rows_latest_to_oldest: desc,
+                dbg: dbg
+            };
+            window.__cw_icon_seq_debug = {
+                reason: 'ok',
+                dbg: dbg,
+                count: _iconSeqRolling.length,
+                ts: Date.now()
+            };
+
+            return _normalizeTxSeq(seqOldToNew);
+        } catch (_) {}
+        return '';
+    }
+
+    window.__cw_buildIconSeqAuto = buildIconSeqFromSceneLocal;
+
+    function readSeqSafeLocal() {
+        try {
+            var seq = _findSeqAcrossWindows();
+            if (seq)
+                return seq;
+
+            seq = buildIconSeqFromSceneLocal(false);
+            if (seq)
+                return seq;
+
+            return _findSeqAcrossWindows();
+        } catch (_) {}
+        return '';
+    }
+
     /* ---------------- resolver/auto ---------------- */
     function resolve(poolSig, sig) {
         if (!sig)
@@ -2216,8 +2647,7 @@
             '  val : ' + (f && f.val != null ? fmt(f.val) : '-');
 
         // Chuỗi kết quả hiển thị như cũ
-        var tk = readTKSeq();
-        S.seq = tk.seq || '';
+        S.seq = readSeqSafeLocal() || '';
         var seqHtml = 'Chuỗi kết quả : <i>--</i>';
         if (S.seq && S.seq.length) {
             var head = esc(S.seq.slice(0, -1));
@@ -3261,8 +3691,7 @@
         window.__cw_lastTotals = T;
 
         // TK sequence (export ra global để bridge dùng)
-        var tk = readTKSeq();
-        S.seq = tk.seq || '';
+        S.seq = readSeqSafeLocal() || '';
         try {
             window.__cw_lastSeq = S.seq;
         } catch (_) {}
@@ -4023,21 +4452,90 @@
     };
 
     function readSeqSafe() {
-        // Ưu tiên dùng cache đã export ra global từ tick()
+        // Strict: chi lay chuoi tu __cw_icon_seq.seq_oldest_to_latest.
+        // Khong fallback ve logic cu readTKSeq.
+        function seqFromWin(w) {
+            try {
+                var iconSeq = w && w.__cw_icon_seq;
+                if (!iconSeq || typeof iconSeq !== 'object')
+                    return '';
+                var s = String(iconSeq.seq_oldest_to_latest || '').toUpperCase();
+                if (!s)
+                    return '';
+                return s.replace(/[^TX]/g, '');
+            } catch (_) {}
+            return '';
+        }
         try {
-            if (typeof window.__cw_lastSeq === 'string' && window.__cw_lastSeq.length) {
-                return window.__cw_lastSeq;
-            }
-        } catch (_) {}
+            function findAcross() {
+                var seen = [];
+                function walkWin(w) {
+                    if (!w)
+                        return '';
+                    try {
+                        if (seen.indexOf(w) !== -1)
+                            return '';
+                        seen.push(w);
+                    } catch (_) {
+                        return '';
+                    }
 
-        // Fallback: gọi lại readTKSeq() trực tiếp
-        try {
-            if (typeof readTKSeq === 'function') {
-                var r = readTKSeq();
-                return (r && r.seq) ? r.seq : '';
-            }
-        } catch (_) {}
+                    var seq = seqFromWin(w);
+                    if (seq)
+                        return seq;
 
+                    try {
+                        if (w.parent && w.parent !== w) {
+                            seq = walkWin(w.parent);
+                            if (seq)
+                                return seq;
+                        }
+                    } catch (_) {}
+
+                    try {
+                        if (w.top) {
+                            seq = walkWin(w.top);
+                            if (seq)
+                                return seq;
+                        }
+                    } catch (_) {}
+
+                    try {
+                        var len = w.frames ? w.frames.length : 0;
+                        for (var i = 0; i < len; i++) {
+                            seq = walkWin(w.frames[i]);
+                            if (seq)
+                                return seq;
+                        }
+                    } catch (_) {}
+                    return '';
+                }
+                return walkWin(window) || '';
+            }
+
+            function triggerBuild(w) {
+                try {
+                    if (w && typeof w.__cw_buildIconSeqAuto === 'function')
+                        w.__cw_buildIconSeqAuto(false);
+                } catch (_) {}
+            }
+
+            var seq = findAcross();
+            if (seq)
+                return seq;
+
+            triggerBuild(window);
+            try {
+                if (window.parent && window.parent !== window)
+                    triggerBuild(window.parent);
+            } catch (_) {}
+            try {
+                if (window.top)
+                    triggerBuild(window.top);
+            } catch (_) {}
+
+            return findAcross();
+        } catch (_) {}
         return '';
     }
 
@@ -4873,3 +5371,4 @@
         });
     } catch (_) {}
 })();
+
