@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r39-20260304-bet-stable';
+    window.__cw_patch_ver = 'cw-r41-20260305-prog-from-remainsec';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -4393,15 +4393,6 @@
         return false;
     }
 
-    function readProgressVal() {
-        try {
-            if (typeof window.__cw_lastProg === 'number') {
-                return window.__cw_lastProg;
-            }
-        } catch (_) {}
-        return null;
-    }
-
     function readTextByTailExact(tailExact) {
         try {
             tailExact = String(tailExact || '');
@@ -4987,9 +4978,8 @@
             _lastJson = '';
 
             _pushTimer = setInterval(function () {
-                var p = readProgressVal();
                 var st = (typeof window.cwStatusByProg === 'function')
-                 ? window.cwStatusByProg(p)
+                 ? window.cwStatusByProg()
                  : '';
 
                 // Lấy chuỗi kết quả an toàn (ưu tiên cache __cw_lastSeq)
@@ -4998,26 +4988,25 @@
                 if (seq && seq.length)
                     last = seq.slice(-1);
 
-                // Mapping prog -> thời gian (giây)
+                // Mapping theo luồng mới: đọc trực tiếp giây còn lại từ tail thời gian.
                 var timeSec = null;
                 var timePercent = null;
                 var timeText = '';
-                if (typeof p === 'number' && !isNaN(p)) {
-                    var sec = Math.round(p * 45);
+                var sec = readRemainSecSafe();
+                if (typeof sec === 'number' && isFinite(sec)) {
                     if (sec < 0)
                         sec = 0;
-                    if (sec > 45)
-                        sec = 45;
-
-                    timeSec = sec; // 45 → 0
-                    timePercent = sec / 45; // 1 → 0
-                    timeText = sec + 's'; // "13s"...
+                    if (sec > 50)
+                        sec = 50;
+                    timeSec = sec;
+                    timePercent = sec / 50;
+                    timeText = sec + 's';
                 }
 
                 var snap = {
                     abx: 'tick',
-                    // prog: số giây còn lại 0..45 (theo tỉ lệ p)
-                    prog: p,
+                    // prog: số giây còn lại 0..50 (đồng nhất với timeSec)
+                    prog: timeSec,
                     timeSec: timeSec,
                     timePercent: timePercent,
                     timeText: timeText,

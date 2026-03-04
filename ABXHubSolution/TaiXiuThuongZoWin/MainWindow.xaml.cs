@@ -1209,12 +1209,12 @@ Ví dụ không hợp lệ:
                                             int secNow = 0;
                                             if (snap.prog.HasValue)
                                             {
-                                                secNow = (int)Math.Round(Math.Clamp(snap.prog.Value, 0.0, 45.0));
+                                                secNow = (int)Math.Round(Math.Clamp(snap.prog.Value, 0.0, 50.0));
                                             }
 
                                             // Log khi bắt đầu phiên (sec=45), khi gần hết (sec=0),
                                             // hoặc khi chuỗi kết quả thay đổi so với lần log trước
-                                            if (secNow == 0 || secNow == 45 ||
+                                            if (secNow == 0 || secNow == 50 ||
                                                 !string.Equals(seqValRaw, _lastSeqLogged, StringComparison.Ordinal))
                                             {
                                                 _lastSeqLogged = seqValRaw ?? "";
@@ -1288,7 +1288,7 @@ Ví dụ không hợp lệ:
                                             try
                                             {
                                                 // Progress / thời gian (giây)
-                                                const double MaxSec = 45.0;
+                                                const double MaxSec = 50.0;
                                                 var prog = snap.prog;
 
                                                 if (prog.HasValue)
@@ -1305,7 +1305,7 @@ Ví dụ không hợp lệ:
                                                     }
 
                                                     if (LblProg != null)
-                                                        LblProg.Text = $"{(int)Math.Round(MaxSec * prog.Value)}s";
+                                                        LblProg.Text = $"{(int)Math.Round(sec)}s";
                                                 }
                                                 else
                                                 {
