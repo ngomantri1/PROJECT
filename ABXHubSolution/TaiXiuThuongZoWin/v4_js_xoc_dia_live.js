@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r32-20260304-iconseq-rolling50-autorebuild';
+    window.__cw_patch_ver = 'cw-r37-20260304-bet-real-click';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -3187,6 +3187,93 @@
             return false;
         }
     }
+    function txClickAtPoint(x, y) {
+        var cvs = document.querySelector('canvas');
+        if (!cvs)
+            return false;
+        x = Math.round(Number(x) || 0);
+        y = Math.round(Number(y) || 0);
+        if (!x && !y)
+            return false;
+        var fired = false;
+        var o = {
+            bubbles: true,
+            cancelable: true,
+            clientX: x,
+            clientY: y,
+            buttons: 1
+        };
+        try {
+            cvs.dispatchEvent(new PointerEvent('pointerdown', {
+                    pointerType: 'mouse',
+                    isPrimary: true,
+                    clientX: x,
+                    clientY: y,
+                    buttons: 1,
+                    bubbles: true,
+                    cancelable: true
+                }));
+            fired = true;
+        } catch (_) {}
+        try {
+            cvs.dispatchEvent(new MouseEvent('mousedown', o));
+            fired = true;
+        } catch (_) {}
+        try {
+            cvs.dispatchEvent(new PointerEvent('pointerup', {
+                    pointerType: 'mouse',
+                    isPrimary: true,
+                    clientX: x,
+                    clientY: y,
+                    bubbles: true,
+                    cancelable: true
+                }));
+            fired = true;
+        } catch (_) {}
+        try {
+            cvs.dispatchEvent(new MouseEvent('mouseup', o));
+            fired = true;
+        } catch (_) {}
+        try {
+            cvs.dispatchEvent(new MouseEvent('click', o));
+            fired = true;
+        } catch (_) {}
+        try {
+            if (typeof Touch === 'function' && typeof TouchEvent === 'function') {
+                var touch = new Touch({
+                    identifier: Date.now() % 100000,
+                    target: cvs,
+                    clientX: x,
+                    clientY: y,
+                    screenX: x,
+                    screenY: y,
+                    pageX: x,
+                    pageY: y
+                });
+                var ts = [touch];
+                cvs.dispatchEvent(new TouchEvent('touchstart', {
+                        bubbles: true,
+                        cancelable: true,
+                        touches: ts,
+                        targetTouches: ts,
+                        changedTouches: ts
+                    }));
+                cvs.dispatchEvent(new TouchEvent('touchend', {
+                        bubbles: true,
+                        cancelable: true,
+                        touches: [],
+                        targetTouches: [],
+                        changedTouches: ts
+                    }));
+                fired = true;
+            }
+        } catch (_) {}
+        try {
+            window.dispatchEvent(new MouseEvent('click', o));
+            fired = true;
+        } catch (_) {}
+        return fired;
+    }
     function clickableOf(node, depth) {
         depth = depth || 5;
         var cur = node,
@@ -3198,6 +3285,52 @@
             d++;
         }
         return node;
+    }
+    function txNodeCenter(node) {
+        try {
+            if (!node || !window.cc || !cc.Camera || !cc.view)
+                return null;
+            var cam = cc.Camera.findCamera(node);
+            if (!cam)
+                return null;
+            var wp = node.convertToWorldSpaceAR(cc.v2 ? cc.v2(0, 0) : new cc.Vec2(0, 0));
+            var sp = cam.worldToScreen(wp);
+            var fs = cc.view.getFrameSize();
+            var vs = cc.view.getVisibleSize();
+            var sx = (Number(fs && fs.width) || 1) / Math.max(1, Number(vs && vs.width) || 1);
+            var sy = (Number(fs && fs.height) || 1) / Math.max(1, Number(vs && vs.height) || 1);
+            var gx = (Number(sp && sp.x) || 0) * sx;
+            var gy = (Number(sp && sp.y) || 0) * sy;
+            var cvs = document.querySelector('canvas');
+            if (cvs && typeof cvs.getBoundingClientRect === 'function') {
+                var rect = cvs.getBoundingClientRect();
+                var fw = Math.max(1, Number(fs && fs.width) || rect.width || 1);
+                var fh = Math.max(1, Number(fs && fs.height) || rect.height || 1);
+                var x = rect.left + (gx / fw) * Math.max(1, rect.width || 1);
+                // worldToScreen thường lấy gốc dưới-trái, clientY là gốc trên-trái.
+                var y = rect.top + ((fh - gy) / fh) * Math.max(1, rect.height || 1);
+                return {
+                    x: x,
+                    y: y
+                };
+            }
+            return {
+                x: gx,
+                y: gy
+            };
+        } catch (_) {}
+        return null;
+    }
+    function txNodeArea(node) {
+        try {
+            if (!node)
+                return 0;
+            var cs = node.getContentSize ? node.getContentSize() : (node._contentSize || null);
+            var w = Number(cs && cs.width) || 0;
+            var h = Number(cs && cs.height) || 0;
+            return w * h;
+        } catch (_) {}
+        return 0;
     }
     function NORM(s) {
         return String(s || '').normalize('NFD').replace(/[\u0300-\u036F]/g, '').toUpperCase();
@@ -4972,14 +5105,61 @@
     }
 
     function emitClick(node) {
+        if (!node)
+            return false;
+        var fired = false;
         var b = getComp(node, cc.Button);
         if (b && b.interactable !== false) {
             try {
-                cc.Component.EventHandler.emitEvents(
-                    b.clickEvents,
-                    new cc.Event.EventCustom('click', true));
+                var ce = b.clickEvents || [];
+                if (ce.length) {
+                    cc.Component.EventHandler.emitEvents(
+                        ce,
+                        new cc.Event.EventCustom('click', true));
+                    fired = true;
+                }
             } catch (e) {}
-            return true;
+            try {
+                if (typeof b._onTouchBegan === 'function' || typeof b._onTouchEnded === 'function') {
+                    var p = txNodeCenter(node) || {
+                        x: 0,
+                        y: 0
+                    };
+                    var evt = {
+                        type: 'touch',
+                        target: node,
+                        currentTarget: node,
+                        getLocation: function () {
+                            return cc.v2 ? cc.v2(p.x, p.y) : {
+                                x: p.x,
+                                y: p.y
+                            };
+                        },
+                        getLocationX: function () {
+                            return p.x;
+                        },
+                        getLocationY: function () {
+                            return p.y;
+                        },
+                        stopPropagation: function () {},
+                        preventDefault: function () {}
+                    };
+                    if (typeof b._onTouchBegan === 'function')
+                        b._onTouchBegan(evt);
+                    if (typeof b._onTouchEnded === 'function')
+                        b._onTouchEnded(evt);
+                    fired = true;
+                }
+            } catch (e2) {}
+            try {
+                if (node && typeof node.emit === 'function') {
+                    node.emit('touchstart');
+                    node.emit('touchend');
+                    node.emit('click');
+                }
+            } catch (e3) {}
+            if (fired)
+                return true;
         }
 
         var t = getComp(node, cc.Toggle);
@@ -4988,38 +5168,26 @@
                 t.isChecked = true;
                 if (t._emitToggleEvents)
                     t._emitToggleEvents();
+                fired = true;
             } catch (e) {}
-            return true;
+            try {
+                if (node && typeof node.emit === 'function') {
+                    node.emit('toggle');
+                    node.emit('click');
+                }
+            } catch (e2) {}
+            if (fired)
+                return true;
         }
 
         try {
-            var cam = cc.Camera.findCamera(node);
-            var sp = cam.worldToScreen(node.convertToWorldSpaceAR(cc.v2()));
-            var fs = cc.view.getFrameSize();
-            var vs = cc.view.getVisibleSize();
-            var x = sp.x * (fs.width / vs.width);
-            var y = sp.y * (fs.height / vs.height);
-            var cvs = document.querySelector('canvas');
-            if (!cvs)
-                return false;
-
-            cvs.dispatchEvent(new PointerEvent('pointerdown', {
-                    clientX: x,
-                    clientY: y,
-                    buttons: 1,
-                    bubbles: true
-                }));
-            cvs.dispatchEvent(new PointerEvent('pointerup', {
-                    clientX: x,
-                    clientY: y,
-                    buttons: 1,
-                    bubbles: true
-                }));
-            return true;
+            var c = txNodeCenter(node);
+            if (c && txClickAtPoint(c.x, c.y))
+                return true;
         } catch (e) {
             console.warn('[emitClick][bridge] error', e);
-            return false;
         }
+        return false;
     }
 
     function clickableOf(node, depth) {
@@ -5086,41 +5254,53 @@
         }
     }
 
-    // --- Bet TÀI/XỈU bằng chip menuMoney + nút ĐẶT CƯỢC ---
+    // --- Bet TÀI/XỈU bằng chip bet_panel + nút XÁC NHẬN (btn_ok) ---
 
-    // Nút cửa TÀI / XỈU trên bàn chính
-    var TX_TAIL_BTN_TAI = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocTai';
-    var TX_TAIL_BTN_XIU = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocXiu';
+    // Side button candidates: ưu tiên tail mới, giữ tail cũ làm fallback.
+    var TX_TAIL_BTN_TAI_CANDIDATES = [
+        'buttons/btn_cuoc_tai',
+        'buttons/btn_tai',
+        'buttons/btncuoctai',
+        'nodeSprite/btnCuocTai'
+    ];
+    var TX_TAIL_BTN_XIU_CANDIDATES = [
+        'buttons/btn_cuoc_xiu',
+        'buttons/btn_xiu',
+        'buttons/btncuocxiu',
+        'nodeSprite/btnCuocXiu'
+    ];
 
-    // Nút ĐẶT CƯỢC (menuMoney/btnFunctions/btnDatCuoc)
-    var TX_TAIL_BTN_DATCUOC =
-        'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/menuMoney/btnFunctions/btnDatCuoc';
+    // Nút xác nhận cược.
+    var TX_TAIL_BTN_DATCUOC_CANDIDATES = [
+        'buttons/bet_panel/btn_ok',
+        'menuMoney/btnFunctions/btnDatCuoc'
+    ];
 
-    // Chip ở hàng menuMoney/btnPrices (ở giữa màn hình, KHÔNG phải TipDealer)
+    // Chip ở hàng bet_panel/btn_chips
     var TX_MENU_CHIP_CONFIG = [{
             amount: 50000000,
-            tailEnd: 'menuMoney/btnPrices/Btn50M'
+            tailEnd: 'buttons/bet_panel/btn_chips/chip_50m'
         }, {
             amount: 10000000,
-            tailEnd: 'menuMoney/btnPrices/btn10M'
+            tailEnd: 'buttons/bet_panel/btn_chips/chip_10m'
         }, {
-            amount: 1000000,
-            tailEnd: 'menuMoney/btnPrices/btn1M'
+            amount: 5000000,
+            tailEnd: 'buttons/bet_panel/btn_chips/chip_5m'
         }, {
             amount: 500000,
-            tailEnd: 'menuMoney/btnPrices/btn500K'
+            tailEnd: 'buttons/bet_panel/btn_chips/chip_500k'
         }, {
             amount: 100000,
-            tailEnd: 'menuMoney/btnPrices/btn100K'
+            tailEnd: 'buttons/bet_panel/btn_chips/chip_100k'
         }, {
             amount: 50000,
-            tailEnd: 'menuMoney/btnPrices/btn50k'
+            tailEnd: 'buttons/bet_panel/btn_chips/chip_50k'
         }, {
             amount: 10000,
-            tailEnd: 'menuMoney/btnPrices/btn10k'
+            tailEnd: 'buttons/bet_panel/btn_chips/chip_10k'
         }, {
             amount: 1000,
-            tailEnd: 'menuMoney/btnPrices/btn1K'
+            tailEnd: 'buttons/bet_panel/btn_chips/chip_1k'
         }
     ];
     // NEW: delay cho chuỗi thao tác bet (tối ưu cho máy yếu/VPS)
@@ -5144,6 +5324,149 @@
         });
         return hit;
     }
+    function txFindNodeByTailEnds(cands) {
+        cands = cands || [];
+        for (var i = 0; i < cands.length; i++) {
+            var n = txFindNodeByTailEnd(cands[i]);
+            if (n)
+                return n;
+        }
+        return null;
+    }
+    function txFindNodeByTailContains(key) {
+        key = String(key || '').toLowerCase();
+        if (!key)
+            return null;
+        var hit = null;
+        walkNodes(function (n) {
+            if (hit)
+                return;
+            var t = String(tailOf(n, 32) || '').toLowerCase();
+            if (t.indexOf(key) !== -1)
+                hit = n;
+        });
+        return hit;
+    }
+    function txNorm(s) {
+        s = String(s || '');
+        try {
+            s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        } catch (_) {}
+        s = s.replace(/\u0111/g, 'd').replace(/\u0110/g, 'D');
+        return s.toLowerCase();
+    }
+    function txReadText(n) {
+        try {
+            var lb = getComp(n, cc.Label);
+            if (lb && lb.string != null)
+                return String(lb.string).trim();
+        } catch (_) {}
+        try {
+            var rt = getComp(n, cc.RichText);
+            if (rt && rt.string != null)
+                return String(rt.string).trim();
+        } catch (_) {}
+        return '';
+    }
+    function txGetCalibPoint(tag) {
+        try {
+            tag = String(tag || '').toLowerCase();
+            var p = (window.__cw_bet_points && window.__cw_bet_points[tag]) || null;
+            if (!p)
+                return null;
+            var x = Number(p.x);
+            var y = Number(p.y);
+            if (!isFinite(x) || !isFinite(y))
+                return null;
+            return {
+                x: x,
+                y: y
+            };
+        } catch (_) {}
+        return null;
+    }
+    function txSetCalibPoint(tag, x, y) {
+        try {
+            tag = String(tag || '').toLowerCase();
+            if (!tag)
+                return null;
+            if (!window.__cw_bet_points || typeof window.__cw_bet_points !== 'object')
+                window.__cw_bet_points = {};
+            var pt = {
+                x: Math.round(Number(x) || 0),
+                y: Math.round(Number(y) || 0),
+                ts: Date.now()
+            };
+            window.__cw_bet_points[tag] = pt;
+            return pt;
+        } catch (_) {}
+        return null;
+    }
+    window.__cw_setBetPoint = function (tag, x, y) {
+        return txSetCalibPoint(tag, x, y);
+    };
+    window.__cw_setBetPoints = function (obj) {
+        obj = obj || {};
+        var out = {};
+        var keys = ['tai', 'xiu', 'ok'];
+        for (var i = 0; i < keys.length; i++) {
+            var k = keys[i];
+            if (obj[k] && obj[k].x != null && obj[k].y != null) {
+                out[k] = txSetCalibPoint(k, obj[k].x, obj[k].y);
+            }
+        }
+        return out;
+    };
+    window.__cw_clickByTailContains = function (key) {
+        var n = txFindNodeByTailContains(key);
+        if (!n)
+            return {
+                ok: false,
+                reason: 'not_found',
+                key: key
+            };
+        var c = clickableOf(n, 12);
+        var ok = emitClick(c);
+        var out = {
+            ok: !!ok,
+            key: key,
+            tail_node: String(tailOf(n, 32) || ''),
+            tail_click: String(tailOf(c, 32) || '')
+        };
+        try {
+            window.__cw_click_by_tail_last = out;
+        } catch (_) {}
+        return out;
+    };
+    window.__cw_armBetPoint = function (tag) {
+        tag = String(tag || '').toLowerCase();
+        if (tag !== 'tai' && tag !== 'xiu' && tag !== 'ok')
+            return {
+                ok: false,
+                reason: 'invalid_tag'
+            };
+        try {
+            if (window.__cw_bet_point_pick_handler) {
+                document.removeEventListener('mousedown', window.__cw_bet_point_pick_handler, true);
+                window.__cw_bet_point_pick_handler = null;
+            }
+        } catch (_) {}
+        window.__cw_bet_point_pick_handler = function (e) {
+            if (e.button !== 0)
+                return;
+            var pt = txSetCalibPoint(tag, e.clientX, e.clientY);
+            try {
+                document.removeEventListener('mousedown', window.__cw_bet_point_pick_handler, true);
+                window.__cw_bet_point_pick_handler = null;
+            } catch (_) {}
+            console.log('[cwBetTx] calibrated point', tag, pt);
+        };
+        document.addEventListener('mousedown', window.__cw_bet_point_pick_handler, true);
+        return {
+            ok: true,
+            tag: tag
+        };
+    };
 
     // Scan xem chip nào ở menuMoney đang tồn tại
     function txScanMenuChips() {
@@ -5194,7 +5517,7 @@
             console.warn('[cwBetTx] chip node null', chip);
             return false;
         }
-        var node = clickableOf(chip.node, 5);
+        var node = clickableOf(chip.node, 10);
         var ok = emitClick(node);
         if (!ok) {
             console.warn('[cwBetTx] click chip thất bại', chip.amount);
@@ -5204,34 +5527,164 @@
     }
 
     function txClickSide(side) {
-        var tailEnd = (String(side || '').toUpperCase() === 'TAI')
-         ? TX_TAIL_BTN_TAI
-         : TX_TAIL_BTN_XIU;
-
-        var n = txFindNodeByTailEnd(tailEnd);
+        side = String(side || '').toUpperCase();
+        side = (side === 'TAI') ? 'TAI' : 'XIU';
+        var cands = (side === 'TAI') ? TX_TAIL_BTN_TAI_CANDIDATES : TX_TAIL_BTN_XIU_CANDIDATES;
+        var n = txFindNodeByTailEnds(cands);
+        var debugCandidates = [];
+        function pushDbg(node, score, why) {
+            try {
+                if (!node)
+                    return;
+                var t = String(tailOf(node, 24) || '');
+                var c = txNodeCenter(node);
+                debugCandidates.push({
+                    score: score,
+                    why: why,
+                    tail: t,
+                    x: c ? Math.round(c.x) : null,
+                    y: c ? Math.round(c.y) : null
+                });
+            } catch (_) {}
+        }
+        if (n)
+            pushDbg(n, 999, 'tail_candidates');
+        // Fallback mềm: scan node có text/path khớp tài/xỉu.
         if (!n) {
-            console.warn('[cwBetTx] Không tìm thấy nút cửa', side, 'tailEnd =', tailEnd);
+            var best = null;
+            var bestScore = -1;
+            walkNodes(function (node) {
+                if (!node)
+                    return;
+                var clickNode = clickableOf(node, 12);
+                if (!clickNode)
+                    return;
+                var p = String(tailOf(node, 24) || '').toLowerCase();
+                var pc = String(tailOf(clickNode, 24) || '').toLowerCase();
+                var mix = p + ' ' + pc;
+                var txt = txNorm(txReadText(node));
+                var score = 0;
+                if (mix.indexOf('/buttons/') !== -1)
+                    score += 2;
+                if (mix.indexOf('/bet_panel/btn_chips/') !== -1)
+                    score -= 4;
+                if (mix.indexOf('/btn_ok') !== -1 || mix.indexOf('/btn_huy') !== -1 || mix.indexOf('/btn_allin') !== -1)
+                    score -= 3;
+                if (mix.indexOf('/icon_results/') !== -1 || mix.indexOf('/history') !== -1)
+                    score -= 2;
+                if (side === 'TAI') {
+                    if (txt.indexOf('tai') !== -1)
+                        score += 8;
+                    if (mix.indexOf('tai') !== -1 || mix.indexOf('cuoctai') !== -1)
+                        score += 6;
+                } else {
+                    if (txt.indexOf('xiu') !== -1)
+                        score += 8;
+                    if (mix.indexOf('xiu') !== -1 || mix.indexOf('cuocxiu') !== -1)
+                        score += 6;
+                }
+                var ctr = txNodeCenter(clickNode);
+                if (ctr) {
+                    if (side === 'TAI' && ctr.x < (innerWidth * 0.62))
+                        score += 2;
+                    if (side === 'XIU' && ctr.x > (innerWidth * 0.38))
+                        score += 2;
+                }
+                var ar = txNodeArea(clickNode);
+                if (ar > 0)
+                    score += Math.min(4, Math.log(ar + 1) / Math.log(10));
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = clickNode;
+                }
+                if (score > 0)
+                    pushDbg(clickNode, Math.round(score * 100) / 100, 'heuristic');
+            });
+            if (bestScore >= 6)
+                n = best;
+        }
+        try {
+            debugCandidates.sort(function (a, b) {
+                return b.score - a.score;
+            });
+            window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+            window.__cw_bet_debug_last.side = side;
+            window.__cw_bet_debug_last.side_candidates = debugCandidates.slice(0, 20);
+        } catch (_) {}
+        if (!n) {
+            // Fallback cuối: click theo điểm đã calibrate (real user click).
+            var pCal = txGetCalibPoint(side === 'TAI' ? 'tai' : 'xiu');
+            if (pCal) {
+                var okCal = txClickAtPoint(pCal.x, pCal.y);
+                try {
+                    window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                    window.__cw_bet_debug_last.side_point = pCal;
+                    window.__cw_bet_debug_last.side_point_used = true;
+                } catch (_) {}
+                if (okCal)
+                    return true;
+            }
+            console.warn('[cwBetTx] Không tìm thấy nút cửa', side, 'cands =', cands);
+            try {
+                window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                window.__cw_bet_debug_last.error = 'side_not_found';
+                window.__cw_bet_debug_last.side = side;
+            } catch (_) {}
             return false;
         }
-        var node = clickableOf(n, 5);
+        var node = clickableOf(n, 12);
+        try {
+            window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+            window.__cw_bet_debug_last.side_node_tail = String(tailOf(node, 24) || '');
+        } catch (_) {}
         var ok = emitClick(node);
         if (!ok) {
             console.warn('[cwBetTx] click cửa thất bại', side);
+            try {
+                window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                window.__cw_bet_debug_last.error = 'side_click_failed';
+            } catch (_) {}
             return false;
         }
         return true;
     }
 
     async function txClickDatCuoc() {
-        var n = txFindNodeByTailEnd(TX_TAIL_BTN_DATCUOC);
+        var n = txFindNodeByTailEnds(TX_TAIL_BTN_DATCUOC_CANDIDATES);
         if (!n) {
-            console.warn('[cwBetTx] Không tìm thấy nút ĐẶT CƯỢC');
+            // Fallback cuối: click theo điểm OK đã calibrate.
+            var pOk = txGetCalibPoint('ok');
+            if (pOk) {
+                var okByPt = txClickAtPoint(pOk.x, pOk.y);
+                try {
+                    window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                    window.__cw_bet_debug_last.ok_point = pOk;
+                    window.__cw_bet_debug_last.ok_point_used = true;
+                } catch (_) {}
+                if (okByPt) {
+                    await sleep(180);
+                    return true;
+                }
+            }
+            console.warn('[cwBetTx] Không tìm thấy nút ĐẶT CƯỢC/btn_ok');
+            try {
+                window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                window.__cw_bet_debug_last.error = 'btn_ok_not_found';
+            } catch (_) {}
             return false;
         }
-        var node = clickableOf(n, 5);
+        var node = clickableOf(n, 12);
+        try {
+            window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+            window.__cw_bet_debug_last.btn_ok_tail = String(tailOf(node, 24) || '');
+        } catch (_) {}
         var ok = emitClick(node);
         if (!ok) {
             console.warn('[cwBetTx] click ĐẶT CƯỢC thất bại');
+            try {
+                window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                window.__cw_bet_debug_last.error = 'btn_ok_click_failed';
+            } catch (_) {}
             return false;
         }
         await sleep(180);
@@ -5313,6 +5766,12 @@
 
     window.__cw_bet = async function (side, amount) {
         try {
+            window.__cw_bet_debug_last = {
+                startedAt: Date.now(),
+                sideRaw: side,
+                amountRaw: amount,
+                patch: window.__cw_patch_ver || ''
+            };
             // chuẩn hoá tham số
             side = String(side || '').toUpperCase();
             side = (side === 'TAI') ? 'TAI' : 'XIU';
@@ -5330,6 +5789,11 @@
             // ĐẶT CƯỢC bằng click phỉnh TipDealer + cửa Tài/Xỉu
             var ok = await cwBetTxByChip(side, amt);
             if (!ok) {
+                try {
+                    window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                    if (!window.__cw_bet_debug_last.error)
+                        window.__cw_bet_debug_last.error = 'click_flow_failed';
+                } catch (_) {}
                 throw new Error('click_failed');
             }
 
@@ -5346,6 +5810,10 @@
 
             if (!changed) {
                 // Click đủ bước nhưng tổng không đổi → coi là bet thất bại (thường là do quá sớm/quá muộn)
+                try {
+                    window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                    window.__cw_bet_debug_last.error = 'totals_not_changed';
+                } catch (_) {}
                 throw new Error('totals_not_changed');
             }
 
@@ -5356,6 +5824,11 @@
                 amount: amt,
                 ts: Date.now()
             });
+            try {
+                window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                window.__cw_bet_debug_last.error = '';
+                window.__cw_bet_debug_last.result = 'ok';
+            } catch (_) {}
             return 'ok';
         } catch (err) {
             safePost({
@@ -5365,6 +5838,12 @@
                 error: String(err && err.message || err),
                 ts: Date.now()
             });
+            try {
+                window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                window.__cw_bet_debug_last.result = 'fail';
+                if (!window.__cw_bet_debug_last.error)
+                    window.__cw_bet_debug_last.error = String(err && err.message || err);
+            } catch (_) {}
             return 'fail';
         }
     };
