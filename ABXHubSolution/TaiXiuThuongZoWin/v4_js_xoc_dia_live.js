@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r37-20260304-bet-real-click';
+    window.__cw_patch_ver = 'cw-r38-20260304-bet-dispatch-multi';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -5107,7 +5107,11 @@
     function emitClick(node) {
         if (!node)
             return false;
-        var fired = false;
+        var dispatched = 0;
+        function mark() {
+            dispatched++;
+        }
+
         var b = getComp(node, cc.Button);
         if (b && b.interactable !== false) {
             try {
@@ -5116,7 +5120,7 @@
                     cc.Component.EventHandler.emitEvents(
                         ce,
                         new cc.Event.EventCustom('click', true));
-                    fired = true;
+                    mark();
                 }
             } catch (e) {}
             try {
@@ -5148,18 +5152,9 @@
                         b._onTouchBegan(evt);
                     if (typeof b._onTouchEnded === 'function')
                         b._onTouchEnded(evt);
-                    fired = true;
+                    mark();
                 }
             } catch (e2) {}
-            try {
-                if (node && typeof node.emit === 'function') {
-                    node.emit('touchstart');
-                    node.emit('touchend');
-                    node.emit('click');
-                }
-            } catch (e3) {}
-            if (fired)
-                return true;
         }
 
         var t = getComp(node, cc.Toggle);
@@ -5168,26 +5163,38 @@
                 t.isChecked = true;
                 if (t._emitToggleEvents)
                     t._emitToggleEvents();
-                fired = true;
-            } catch (e) {}
-            try {
-                if (node && typeof node.emit === 'function') {
-                    node.emit('toggle');
-                    node.emit('click');
-                }
-            } catch (e2) {}
-            if (fired)
-                return true;
+                mark();
+            } catch (e3) {}
         }
+
+        try {
+            if (node && typeof node.emit === 'function') {
+                node.emit('touchstart');
+                node.emit('touchend');
+                node.emit('click');
+                node.emit('toggle');
+                mark();
+            }
+        } catch (e4) {}
 
         try {
             var c = txNodeCenter(node);
             if (c && txClickAtPoint(c.x, c.y))
-                return true;
-        } catch (e) {
-            console.warn('[emitClick][bridge] error', e);
+                mark();
+        } catch (e5) {
+            console.warn('[emitClick][bridge] error', e5);
         }
-        return false;
+
+        if (!dispatched) {
+            try {
+                var pnode = node.parent || node._parent || null;
+                var c2 = pnode ? txNodeCenter(pnode) : null;
+                if (c2 && txClickAtPoint(c2.x, c2.y))
+                    mark();
+            } catch (_) {}
+        }
+
+        return dispatched > 0;
     }
 
     function clickableOf(node, depth) {
