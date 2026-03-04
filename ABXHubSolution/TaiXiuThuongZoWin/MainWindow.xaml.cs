@@ -184,7 +184,7 @@ namespace TaiXiuThuongZoWin
         private System.Collections.Generic.List<long[]> _stakeChains = new();
         private long[] _stakeChainTotals = Array.Empty<long>();
 
-        private double _decisionPercent = 0.25; // 11s (0.25)
+        private double _decisionPercent = 0.7; // 11s (0.25)
 
         // Chống bắn trùng khi vừa cược
         private bool _cooldown = false;
@@ -1209,7 +1209,8 @@ Ví dụ không hợp lệ:
                                             int secNow = 0;
                                             if (snap.prog.HasValue)
                                             {
-                                                secNow = (int)Math.Round(Math.Clamp(snap.prog.Value, 0.0, 50.0));
+                                                var pNow = Math.Clamp(snap.prog.Value, 0.0, 1.0);
+                                                secNow = (int)Math.Round(pNow * 50.0);
                                             }
 
                                             // Log khi bắt đầu phiên (sec=45), khi gần hết (sec=0),
@@ -1293,15 +1294,16 @@ Ví dụ không hợp lệ:
 
                                                 if (prog.HasValue)
                                                 {
-                                                    var sec = Math.Clamp(prog.Value, 0.0, MaxSec);
+                                                    var pNorm = Math.Clamp(prog.Value, 0.0, 1.0);
+                                                    var sec = pNorm * MaxSec;
 
                                                     if (PrgBet != null)
                                                     {
-                                                        // thanh progress chạy từ 0..45 giây
-                                                        if (PrgBet.Maximum != MaxSec)
-                                                            PrgBet.Maximum = MaxSec;
+                                                        // PrgBet.Value giữ dạng tỷ lệ 0..1 để FillWidthConv tính đúng độ rộng.
+                                                        if (PrgBet.Maximum != 1.0)
+                                                            PrgBet.Maximum = 1.0;
 
-                                                        PrgBet.Value = sec;
+                                                        PrgBet.Value = pNorm;
                                                     }
 
                                                     if (LblProg != null)
@@ -1694,7 +1696,7 @@ Ví dụ không hợp lệ:
                 }
 
                 // Mở DevTools ngay sau khi CoreWebView2 sẵn sàng.
-                try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
+                // try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
                 // Điều hướng mọi window.open về cùng WebView2

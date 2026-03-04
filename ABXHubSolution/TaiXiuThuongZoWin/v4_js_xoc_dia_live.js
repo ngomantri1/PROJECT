@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r41-20260305-prog-from-remainsec';
+    window.__cw_patch_ver = 'cw-r42-20260305-prog-ratio-from-remainsec';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -2191,7 +2191,7 @@
         '<div id="cwScanLog" style="margin-top:6px;max-height:110px;overflow:auto;white-space:pre;color:#7fe;border-top:1px dashed #184;padding-top:4px"></div>' +
         '<div id="cwScanStatus" style="margin-top:6px;white-space:pre;color:#ffd37a;line-height:1.35"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
+    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -4992,6 +4992,7 @@
                 var timeSec = null;
                 var timePercent = null;
                 var timeText = '';
+                var prog01 = null;
                 var sec = readRemainSecSafe();
                 if (typeof sec === 'number' && isFinite(sec)) {
                     if (sec < 0)
@@ -5000,13 +5001,14 @@
                         sec = 50;
                     timeSec = sec;
                     timePercent = sec / 50;
+                    prog01 = sec / 50;
                     timeText = sec + 's';
                 }
 
                 var snap = {
                     abx: 'tick',
-                    // prog: số giây còn lại 0..50 (đồng nhất với timeSec)
-                    prog: timeSec,
+                    // prog: tỷ lệ thời gian còn lại 0..1 (nguồn từ tail mới)
+                    prog: prog01,
                     timeSec: timeSec,
                     timePercent: timePercent,
                     timeText: timeText,
