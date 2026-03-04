@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r31-20260304-iconseq-rolling50-sidefix';
+    window.__cw_patch_ver = 'cw-r32-20260304-iconseq-rolling50-autorebuild';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -1814,11 +1814,8 @@
 
     function readSeqSafeLocal() {
         try {
-            var seq = _findSeqAcrossWindows();
-            if (seq)
-                return seq;
-
-            seq = buildIconSeqFromSceneLocal(false);
+            // Luon trigger build (co throttle noi bo) de rolling co co hoi append ket qua moi.
+            var seq = buildIconSeqFromSceneLocal(false);
             if (seq)
                 return seq;
 
@@ -4467,6 +4464,12 @@
             return '';
         }
         try {
+            function triggerBuildLocal() {
+                try {
+                    if (typeof window.__cw_buildIconSeqAuto === 'function')
+                        window.__cw_buildIconSeqAuto(false);
+                } catch (_) {}
+            }
             function findAcross() {
                 var seen = [];
                 function walkWin(w) {
@@ -4519,6 +4522,9 @@
                         w.__cw_buildIconSeqAuto(false);
                 } catch (_) {}
             }
+
+            // Luon trigger build truoc (co throttle), de rolling append ket qua moi theo thoi gian.
+            triggerBuildLocal();
 
             var seq = findAcross();
             if (seq)
