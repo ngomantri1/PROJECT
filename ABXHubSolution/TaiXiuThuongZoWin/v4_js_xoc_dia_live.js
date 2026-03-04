@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r38-20260304-bet-dispatch-multi';
+    window.__cw_patch_ver = 'cw-r39-20260304-bet-stable';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -5440,9 +5440,6 @@
             tail_node: String(tailOf(n, 32) || ''),
             tail_click: String(tailOf(c, 32) || '')
         };
-        try {
-            window.__cw_click_by_tail_last = out;
-        } catch (_) {}
         return out;
     };
     window.__cw_armBetPoint = function (tag) {
@@ -5466,7 +5463,6 @@
                 document.removeEventListener('mousedown', window.__cw_bet_point_pick_handler, true);
                 window.__cw_bet_point_pick_handler = null;
             } catch (_) {}
-            console.log('[cwBetTx] calibrated point', tag, pt);
         };
         document.addEventListener('mousedown', window.__cw_bet_point_pick_handler, true);
         return {
@@ -5616,7 +5612,6 @@
             });
             window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
             window.__cw_bet_debug_last.side = side;
-            window.__cw_bet_debug_last.side_candidates = debugCandidates.slice(0, 20);
         } catch (_) {}
         if (!n) {
             // Fallback cuối: click theo điểm đã calibrate (real user click).
