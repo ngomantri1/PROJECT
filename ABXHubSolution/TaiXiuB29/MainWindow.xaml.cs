@@ -13,8 +13,8 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using static System.Net.Mime.MediaTypeNames;
 using static System.Runtime.InteropServices.JavaScript.JSType;
-using TaiXiuThuongZoWin;
-using TaiXiuThuongZoWin.Tasks;
+using TaiXiuB29;
+using TaiXiuB29.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Globalization;
@@ -31,13 +31,13 @@ using Microsoft.Win32;
 using System.Net.NetworkInformation;
 using System.Collections.ObjectModel;
 using System.Windows.Data;
-using static TaiXiuThuongZoWin.MainWindow;
+using static TaiXiuB29.MainWindow;
 using System.Windows.Input;
 
 
 
 
-namespace TaiXiuThuongZoWin
+namespace TaiXiuB29
 {
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Assets (pack URI).
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Resources (pack URI).
@@ -135,7 +135,7 @@ namespace TaiXiuThuongZoWin
     }
     public partial class MainWindow : Window
     {
-        private const string AppLocalDirName = "TaiXiuThuongZoWin"; // đổi thành tên bạn muốn
+        private const string AppLocalDirName = "TaiXiuB29"; // đổi thành tên bạn muốn
         // ====== App paths ======
         private readonly string _appDataDir;
         private readonly string _cfgPath;
@@ -251,7 +251,7 @@ namespace TaiXiuThuongZoWin
 
 
 
-        private const string DEFAULT_URL = "https://web.zowin.sx"; // URL mặc định bạn muốn
+        private const string DEFAULT_URL = "https://b29.fm/"; // URL mặc định bạn muốn
         // === License repo/worker settings (CHỈNH LẠI CHO PHÙ HỢP) ===
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn
@@ -490,7 +490,7 @@ Ví dụ không hợp lệ:
         private double _winTotal = 0;
         private CoreWebView2Environment? _webEnv;
         private bool _webInitDone;
-        private const string Wv2ZipResNameX64 = "TaiXiuThuongZoWin.ThirdParty.WebView2Fixed_win-x64.zip";
+        private const string Wv2ZipResNameX64 = "TaiXiuB29.ThirdParty.WebView2Fixed_win-x64.zip";
         // Thư mục cache bền vững cho runtime (không bị dọn như %TEMP%)
         private static string Wv2BaseDir =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -742,7 +742,7 @@ Ví dụ không hợp lệ:
 
         private string GetAiNGramStatePath()
         {
-            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\TaiXiuThuongZoWin
+            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\TaiXiuB29
             var aiDir = System.IO.Path.Combine(_appDataDir, "ai");
             System.IO.Directory.CreateDirectory(aiDir);
             return System.IO.Path.Combine(aiDir, "ngram_state_v1.json");
@@ -1696,7 +1696,7 @@ Ví dụ không hợp lệ:
                 }
 
                 // Mở DevTools ngay sau khi CoreWebView2 sẵn sàng.
-                // try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
+                try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
                 // Điều hướng mọi window.open về cùng WebView2
@@ -3650,25 +3650,25 @@ Ví dụ không hợp lệ:
                 }
 
 
-                TaiXiuThuongZoWin.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
+                TaiXiuB29.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
                 {
-                    0 => new TaiXiuThuongZoWin.Tasks.SeqParityFollowTask(),     // 1
-                    1 => new TaiXiuThuongZoWin.Tasks.PatternParityTask(),       // 2
-                    2 => new TaiXiuThuongZoWin.Tasks.SeqMajorMinorTask(),       // 3
-                    3 => new TaiXiuThuongZoWin.Tasks.PatternMajorMinorTask(),   // 4
-                    4 => new TaiXiuThuongZoWin.Tasks.SmartPrevTask(),           // 5
-                    5 => new TaiXiuThuongZoWin.Tasks.RandomParityTask(),        // 6
-                    6 => new TaiXiuThuongZoWin.Tasks.AiStatParityTask(),        // 7
-                    7 => new TaiXiuThuongZoWin.Tasks.StateTransitionBiasTask(), // 8
-                    8 => new TaiXiuThuongZoWin.Tasks.RunLengthBiasTask(),       // 9
-                    9 => new TaiXiuThuongZoWin.Tasks.EnsembleMajorityTask(),    // 10
-                    10 => new TaiXiuThuongZoWin.Tasks.TimeSlicedHedgeTask(),    // 11
-                    11 => new TaiXiuThuongZoWin.Tasks.KnnSubsequenceTask(),     // 12
-                    12 => new TaiXiuThuongZoWin.Tasks.DualScheduleHedgeTask(),  // 13
-                    13 => new TaiXiuThuongZoWin.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
-                    14 => new TaiXiuThuongZoWin.Tasks.AiExpertPanelTask(), // 15
-                    15 => new TaiXiuThuongZoWin.Tasks.Top10PatternFollowTask(), // 16
-                    _ => new TaiXiuThuongZoWin.Tasks.SmartPrevTask(),
+                    0 => new TaiXiuB29.Tasks.SeqParityFollowTask(),     // 1
+                    1 => new TaiXiuB29.Tasks.PatternParityTask(),       // 2
+                    2 => new TaiXiuB29.Tasks.SeqMajorMinorTask(),       // 3
+                    3 => new TaiXiuB29.Tasks.PatternMajorMinorTask(),   // 4
+                    4 => new TaiXiuB29.Tasks.SmartPrevTask(),           // 5
+                    5 => new TaiXiuB29.Tasks.RandomParityTask(),        // 6
+                    6 => new TaiXiuB29.Tasks.AiStatParityTask(),        // 7
+                    7 => new TaiXiuB29.Tasks.StateTransitionBiasTask(), // 8
+                    8 => new TaiXiuB29.Tasks.RunLengthBiasTask(),       // 9
+                    9 => new TaiXiuB29.Tasks.EnsembleMajorityTask(),    // 10
+                    10 => new TaiXiuB29.Tasks.TimeSlicedHedgeTask(),    // 11
+                    11 => new TaiXiuB29.Tasks.KnnSubsequenceTask(),     // 12
+                    12 => new TaiXiuB29.Tasks.DualScheduleHedgeTask(),  // 13
+                    13 => new TaiXiuB29.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
+                    14 => new TaiXiuB29.Tasks.AiExpertPanelTask(), // 15
+                    15 => new TaiXiuB29.Tasks.Top10PatternFollowTask(), // 16
+                    _ => new TaiXiuB29.Tasks.SmartPrevTask(),
                 };
 
 
@@ -3719,7 +3719,7 @@ Ví dụ không hợp lệ:
             try
             {
                 StopTask();
-                TaiXiuThuongZoWin.Tasks.TaskUtil.ClearBetCooldown();
+                TaiXiuB29.Tasks.TaskUtil.ClearBetCooldown();
                 _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[Loop] stopped");
                 SetPlayButtonState(false);
@@ -3884,7 +3884,7 @@ Ví dụ không hợp lệ:
             return (s.Length <= take) ? s : s.Substring(s.Length - take, take);
         }
 
-        // đặt trong MainWindow.xaml.cs (project TaiXiuThuongZoWin)
+        // đặt trong MainWindow.xaml.cs (project TaiXiuB29)
 
         // load thử lần lượt các uri, cái nào được thì dùng, không được thì trả về null
         private static ImageSource? LoadImgSafe(params string[] uris)
@@ -4362,7 +4362,7 @@ Ví dụ không hợp lệ:
             {
                 // Đọc thẳng từ embedded (KHÔNG thử đọc từ đĩa)
                 var resName = FindResourceName("v4_js_xoc_dia_live.js")
-                              ?? "TaiXiuThuongZoWin.v4_js_xoc_dia_live.js";
+                              ?? "TaiXiuB29.v4_js_xoc_dia_live.js";
                 var text = ReadEmbeddedText(resName);
                 text = RemoveUtf8Bom(text);
 
