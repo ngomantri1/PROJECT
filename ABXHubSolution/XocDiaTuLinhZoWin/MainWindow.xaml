@@ -6,7 +6,7 @@
     xmlns:local="clr-namespace:XocDiaTuLinhZoWin"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
-    Title="Xóc Đĩa Tứ Linh ZoWin, SunWin (Automino 0978.248.822)"
+    Title="Xóc Đĩa Tứ Linh ZoWin, SunWin, NhatVip, GemVip (Automino 0978.248.822)"
     Width="1366"
     Height="768"
     Background="#F0F2F5"
@@ -205,10 +205,11 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="9">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="9">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                     </ControlTemplate>
@@ -527,25 +528,25 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
 
-                                    <Button
-                                        x:Name="BtnVaoXocDia"
-                                        Grid.Column="0"
-                                        MinWidth="140"
-                                        Padding="13"
-                                        Click="VaoXocDia_Click"
-                                        Content="Đăng Nhập Tool"
-                                        Style="{StaticResource PrimaryButton}"
-                                        Visibility="Visible" />
+                                        <Button
+                                            x:Name="BtnVaoXocDia"
+                                            Grid.Column="0"
+                                            MinWidth="140"
+                                            Padding="13"
+                                            Click="VaoXocDia_Click"
+                                            Content="Đăng Nhập Tool"
+                                            Style="{StaticResource PrimaryButton}"
+                                            Visibility="Visible" />
 
-                                    <Button
-                                        x:Name="BtnTrialTool"
-                                        Grid.Column="2"
-                                        MinWidth="140"
-                                        Padding="13"
-                                        Click="BtnTrialTool_Click"
-                                        Content="Dùng thử Tool"
-                                        Style="{StaticResource SecondaryButton}"
-                                        Visibility="Collapsed" />
+                                        <Button
+                                            x:Name="BtnTrialTool"
+                                            Grid.Column="2"
+                                            MinWidth="140"
+                                            Padding="13"
+                                            Click="BtnTrialTool_Click"
+                                            Content="Dùng thử Tool"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Visibility="Collapsed" />
 
 
 
@@ -561,7 +562,10 @@
                             Style="{StaticResource Card}"
                             Visibility="Collapsed">
                             <StackPanel>
-                                <Grid x:Name="StrategyTabHost" VerticalAlignment="Center" SizeChanged="StrategyTabHost_SizeChanged">
+                                <Grid
+                                    x:Name="StrategyTabHost"
+                                    VerticalAlignment="Center"
+                                    SizeChanged="StrategyTabHost_SizeChanged">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
@@ -569,25 +573,25 @@
                                     <ListBox
                                         x:Name="StrategyTabList"
                                         Grid.Column="0"
+                                        Width="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=TabStripWidth}"
                                         Height="40"
                                         MinWidth="0"
                                         Margin="0,0,10,0"
                                         HorizontalAlignment="Left"
-                                        Width="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=TabStripWidth}"
+                                        HorizontalContentAlignment="Stretch"
+                                        AllowDrop="True"
+                                        AlternationCount="999"
                                         Background="Transparent"
                                         BorderThickness="0"
-                                        HorizontalContentAlignment="Stretch"
-                                        ScrollViewer.HorizontalScrollBarVisibility="Hidden"
-                                        ScrollViewer.VerticalScrollBarVisibility="Disabled"
                                         ClipToBounds="False"
+                                        Drop="StrategyTabList_Drop"
                                         Loaded="StrategyTabList_Loaded"
-                                        SizeChanged="StrategyTabList_SizeChanged"
-                                        AlternationCount="999"
-                                        AllowDrop="True"
                                         PreviewMouseLeftButtonDown="StrategyTabList_PreviewMouseLeftButtonDown"
                                         PreviewMouseMove="StrategyTabList_PreviewMouseMove"
-                                        Drop="StrategyTabList_Drop"
-                                        SelectionChanged="StrategyTabList_SelectionChanged">
+                                        ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+                                        ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                        SelectionChanged="StrategyTabList_SelectionChanged"
+                                        SizeChanged="StrategyTabList_SizeChanged">
                                         <ListBox.ItemsPanel>
                                             <ItemsPanelTemplate>
                                                 <StackPanel Orientation="Horizontal" />
@@ -599,9 +603,9 @@
                                                 <Setter Property="Margin">
                                                     <Setter.Value>
                                                         <MultiBinding Converter="{StaticResource TabOverlapMarginConverter}">
-                                                            <Binding RelativeSource="{RelativeSource Self}" Path="(ItemsControl.AlternationIndex)" />
-                                                            <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="TabOverlap" />
-                                                            <Binding RelativeSource="{RelativeSource AncestorType=ItemsControl}" Path="Items.Count" />
+                                                            <Binding Path="(ItemsControl.AlternationIndex)" RelativeSource="{RelativeSource Self}" />
+                                                            <Binding Path="TabOverlap" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                            <Binding Path="Items.Count" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
                                                         </MultiBinding>
                                                     </Setter.Value>
                                                 </Setter>
@@ -629,25 +633,25 @@
                                                     Width="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=TabHeaderWidth}"
                                                     MinWidth="50"
                                                     Padding="0"
-                                                    ToolTip="{Binding Name}"
                                                     Background="White"
                                                     BorderBrush="{StaticResource CardBorder}"
                                                     BorderThickness="1"
-                                                    CornerRadius="8"
                                                     ClipToBounds="True"
-                                                    MouseLeftButtonDown="TabHeader_MouseDoubleClick">
+                                                    CornerRadius="8"
+                                                    MouseLeftButtonDown="TabHeader_MouseDoubleClick"
+                                                    ToolTip="{Binding Name}">
                                                     <Grid>
                                                         <Button
                                                             x:Name="TabCloseBtn"
+                                                            Margin="0,0,0,0"
                                                             HorizontalAlignment="Right"
                                                             VerticalAlignment="Top"
-                                                            Margin="0,0,0,0"
+                                                            Panel.ZIndex="8"
+                                                            Click="TabClose_Click"
                                                             Content="x"
                                                             Style="{StaticResource TabCloseButton}"
                                                             Tag="{Binding}"
-                                                            Click="TabClose_Click"
-                                                            Visibility="Collapsed"
-                                                            Panel.ZIndex="8" />
+                                                            Visibility="Collapsed" />
                                                         <Grid Margin="10,6,28,6">
                                                             <Grid.ColumnDefinitions>
                                                                 <ColumnDefinition Width="Auto" />
@@ -677,12 +681,12 @@
                                                                 VerticalAlignment="Center"
                                                                 Background="White"
                                                                 FontWeight="SemiBold"
-                                                                MaxLength="20"
                                                                 Foreground="{StaticResource TextMain}"
-                                                                Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
-                                                                Visibility="Collapsed"
                                                                 KeyDown="TabNameEdit_KeyDown"
-                                                                LostFocus="TabNameEdit_LostFocus" />
+                                                                LostFocus="TabNameEdit_LostFocus"
+                                                                MaxLength="20"
+                                                                Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                                                                Visibility="Collapsed" />
                                                         </Grid>
                                                     </Grid>
                                                 </Border>
@@ -717,11 +721,11 @@
                                         MinWidth="32"
                                         MinHeight="32"
                                         Margin="4,0,0,0"
+                                        Padding="0"
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center"
                                         Click="AddStrategyTab_Click"
                                         Content="+"
-                                        Padding="0"
                                         FontSize="18"
                                         FontWeight="SemiBold"
                                         Style="{StaticResource SecondaryButton}" />
@@ -813,8 +817,8 @@
                                             <ComboBoxItem Content="15) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime)" />
                                             <ComboBoxItem Content="16) Top10 tích lũy (khởi từ 50 C/L)" />
                                             <ComboBoxItem Content="17) Đánh các cửa ăn nổ hũ" />
-                                                                                    <ComboBoxItem Content="18) Chuỗi cầu C/L hay về" />
-</ComboBox>
+                                            <ComboBoxItem Content="18) Chuỗi cầu C/L hay về" />
+                                        </ComboBox>
                                     </Grid>
 
                                     <!--  HÀNG CHI TIẾT: CHUỖI CẦU (ẩn/hiện theo chọn 1 hoặc 3)  -->
@@ -1093,9 +1097,9 @@
                                         Grid.Column="1"
                                         Margin="12,0,0,0"
                                         VerticalAlignment="Center"
+                                        Content="Dùng thử"
                                         IsEnabled="False"
-                                        Visibility="Collapsed"
-                                        Content="Dùng thử">
+                                        Visibility="Collapsed">
                                         <CheckBox.Style>
                                             <Style TargetType="CheckBox">
                                                 <Setter Property="Foreground" Value="#222" />
@@ -1640,9 +1644,7 @@
                         </Border>
 
                         <!--  Thống kê  -->
-                        <Border
-                            x:Name="GroupStats"
-                            Style="{StaticResource Card}">
+                        <Border x:Name="GroupStats" Style="{StaticResource Card}">
                             <StackPanel>
                                 <StackPanel
                                     VerticalAlignment="Center"
@@ -1664,22 +1666,22 @@
                                             Grid.Column="1"
                                             Width="28"
                                             Height="28"
+                                            Padding="4"
                                             HorizontalAlignment="Right"
                                             VerticalAlignment="Center"
-                                            Padding="4"
                                             Background="Transparent"
                                             BorderBrush="Transparent"
                                             BorderThickness="0"
-                                            FocusVisualStyle="{x:Null}"
-                                            Cursor="Hand"
                                             Click="BtnStatsReset_Click"
+                                            Cursor="Hand"
+                                            FocusVisualStyle="{x:Null}"
                                             ToolTip="Reset">
                                             <Path
                                                 Width="16"
                                                 Height="16"
-                                                Stretch="Uniform"
+                                                Data="M12,3 A9,9 0 1 0 21,12 H18 A6,6 0 1 1 12,6 V9 L16,5 L12,1 Z"
                                                 Fill="{StaticResource Blue}"
-                                                Data="M12,3 A9,9 0 1 0 21,12 H18 A6,6 0 1 1 12,6 V9 L16,5 L12,1 Z" />
+                                                Stretch="Uniform" />
                                         </Button>
                                     </Grid>
                                 </StackPanel>
