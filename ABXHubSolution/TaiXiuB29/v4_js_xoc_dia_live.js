@@ -2610,8 +2610,16 @@
 
         var f = S.focus;
         var remainTime = (typeof readRemainTimeSafe === 'function') ? readRemainTimeSafe() : '';
-        if (!remainTime)
-            remainTime = '--';
+        if (!remainTime) {
+            try {
+                if (window.__cw_last_remain_probe && window.__cw_last_remain_probe.sec === 0)
+                    remainTime = '00s';
+                else
+                    remainTime = '--';
+            } catch (_) {
+                remainTime = '--';
+            }
+        }
         var session = (typeof readSessionSafe === 'function') ? readSessionSafe() : '';
         if (!session)
             session = '--';
@@ -3790,19 +3798,23 @@
         return _txStatusTextCached;
     }
     function statusByProg(p) {
-        // Rule mới: trạng thái chỉ dựa vào thời gian còn lại từ tail txt_remain_time_betting.
-        //  - sec > 0  => Cho phép đặt cược
-        //  - sec = 0  => Chờ kết quả
-        //  - không đọc được sec => --
+        // Rule mới: trạng thái chỉ dựa vào thời gian còn lại từ cặp tail lblTimeLeft/lblTimeRight.
+        //  - sec > 5          => Cho phép đặt cược
+        //  - 0 < sec <= 5     => Ngừng đặt cược
+        //  - còn lại           => Chờ kết quả
         var sec = null;
         try {
             sec = readRemainSecSafe();
         } catch (_) {
             sec = null;
         }
-        if (sec == null)
-            return '--';
-        return sec > 0 ? 'Cho phép đặt cược' : 'Chờ kết quả';
+        if (typeof sec !== 'number' || !isFinite(sec))
+            return 'Chờ kết quả';
+        if (sec > 5)
+            return 'Cho phép đặt cược';
+        if (sec > 0)
+            return 'Ngừng đặt cược';
+        return 'Chờ kết quả';
     }
 
     // Export ra global để bridge C# dùng được
@@ -4521,50 +4533,43 @@
                 } catch (_) {}
             }
 
-            // 2) Ghi đè TK + Tài/Xỉu nếu lấy được qua moneyTailList()
-            var ACC_TAIL_EXACT = 'MiniGameScene/Canvas/FootterRoomUi/Left/buttonMoney/moneyLabel';
+            // 2) Ghi đè TK + Tài/Xỉu theo strict tail exact
+            var ACC_TAIL_EXACT = 'HomeScene/Canvas/AccountLogin/Header/nodeInfoPlayer/gold/lblCoin';
             var TX_TAI_TAIL_EXACT = 'game/persistent/mini_games/cc_mini_game_root/mini_game_node/minigame/prefab_taixiu/root/main/blur/textbox/text_current_bet_tai';
             var TX_XIU_TAIL_EXACT = 'game/persistent/mini_games/cc_mini_game_root/mini_game_node/minigame/prefab_taixiu/root/main/blur/textbox/text_current_bet_xiu';
 
-            var allMoney = [];
+            // 2.1 TK (tai khoan) theo strict tail exact, khong fallback
             try {
-                if (typeof buildMoneyRects === 'function') {
-                    allMoney = buildMoneyRects() || [];
-                }
-            } catch (_) {
-                allMoney = [];
-            }
-
-            if (typeof window.moneyTailList === 'function') {
-
-                // 2.1 TK (tài khoản)
+                var rawAcc = (typeof window.readAccountSafe === 'function')
+                 ? window.readAccountSafe()
+                 : '';
+                // Parse truc tiep de tranh phu thuoc scope/closure khac khi inject.
+                var accDigits = String(rawAcc || '').replace(/\D/g, '');
+                var valAcc = accDigits ? parseInt(accDigits, 10) : null;
+                t.A = (valAcc == null ? null : valAcc);
+                t.rawA = (rawAcc || null);
                 try {
-                    var accList = window.moneyTailList(ACC_TAIL_EXACT, allMoney) || [];
-                    if (accList.length) {
-                        var acc = accList[accList.length - 1]; // thường là label dưới cùng
-                        var aval = (typeof acc.val === 'number')
-                         ? acc.val
-                         : Number(acc.val || 0) || null;
-                        if (aval != null)
-                            t.A = aval;
-                        if (!t.rawA)
-                            t.rawA = acc.txt || acc.raw || null;
-                    }
+                    window.__cw_last_acc_probe = {
+                        rawAcc: rawAcc || '',
+                        digits: accDigits || '',
+                        valAcc: (valAcc == null ? null : valAcc),
+                        ts: Date.now()
+                    };
                 } catch (_) {}
+            } catch (_) {}
 
-                // 2.2 Tổng TÀI / XỈU theo strict tail mới (không dùng tail/x cũ)
-                try {
-                    var rawTai = readTextByTailExact(TX_TAI_TAIL_EXACT);
-                    var valTai = moneyOf(rawTai);
-                    t.T = (valTai == null ? null : valTai);
-                    t.rawT = (rawTai || null);
+            // 2.2 Tong TAI / XIU theo strict tail moi (khong dung tail/x cu)
+            try {
+                var rawTai = readTextByTailExact(TX_TAI_TAIL_EXACT);
+                var valTai = moneyOf(rawTai);
+                t.T = (valTai == null ? null : valTai);
+                t.rawT = (rawTai || null);
 
-                    var rawXiu = readTextByTailExact(TX_XIU_TAIL_EXACT);
-                    var valXiu = moneyOf(rawXiu);
-                    t.X = (valXiu == null ? null : valXiu);
-                    t.rawX = (rawXiu || null);
-                } catch (_) {}
-            }
+                var rawXiu = readTextByTailExact(TX_XIU_TAIL_EXACT);
+                var valXiu = moneyOf(rawXiu);
+                t.X = (valXiu == null ? null : valXiu);
+                t.rawX = (rawXiu || null);
+            } catch (_) {}
 
             return t;
         } catch (_) {
@@ -4671,7 +4676,7 @@
 
     function readSessionSafe() {
         try {
-            var TAIL = 'game/persistent/mini_games/cc_mini_game_root/mini_game_node/minigame/prefab_taixiu/root/main/blur/textbox/txt_session';
+            var TAIL = 'HomeScene/MINI_GAME_18/bgTxBanChoi/lblMatchId';
             var txt = '';
 
             // 1) Thử lấy qua collectLabels() nếu đã có sẵn label
@@ -4754,12 +4759,11 @@
             if (!txt)
                 return '';
 
-            // Chuẩn hoá dạng "#501667"
-            if (txt.charAt(0) !== '#' && /^\d+$/.test(txt)) {
-                txt = '#' + txt;
-            }
-
-            return txt;
+            // Chuẩn hoá: chỉ trả về số phiên (không kèm "Phiên", "#", ...).
+            var m = txt.match(/\d+/);
+            if (!m)
+                return '';
+            return String(m[0] || '').trim();
         } catch (_) {}
         return '';
     }
@@ -4786,97 +4790,133 @@
         return parseRemainSec(txt);
     }
 
-    // NEW: đọc thời gian cược còn lại theo tail Cocos (strict tail mới, không fallback tail cũ)
+    // NEW: đọc thời gian cược còn lại theo 2 tail Cocos digit (strict tail mới, không fallback tail cũ)
     function readRemainTimeSafe() {
         try {
-            var TAIL = 'game/persistent/mini_games/cc_mini_game_root/mini_game_node/minigame/prefab_taixiu/root/main/blur/textbox/txt_remain_time_betting';
-            var txt = '';
+            var TAIL_LEFT = 'HomeScene/MINI_GAME_18/bgTxBanChoi/lblTimeLeft';
+            var TAIL_RIGHT = 'HomeScene/MINI_GAME_18/bgTxBanChoi/lblTimeRight';
 
-            // 1) Thử lấy qua collectLabels() nếu đã có sẵn label
-            if (typeof collectLabels === 'function') {
-                var labels = collectLabels();
-                if (labels && labels.length) {
-                    var tailLc = TAIL.toLowerCase();
-                    for (var i = 0; i < labels.length; i++) {
-                        var l = labels[i];
-                        var tl = String(l.tail || l.tl || '').toLowerCase();
-                        if (!tl)
-                            continue;
-
-                        // chỉ khớp đúng tail thời gian mới
-                        if (tl === tailLc) {
-                            txt = String(l.text || '').trim();
-                            if (txt)
-                                break;
+            function findByTail(tail) {
+                if (!tail)
+                    return null;
+                if (window.findNodeByTailCompat)
+                    return window.findNodeByTailCompat(tail);
+                if (window.__abx_findNodeByTail)
+                    return window.__abx_findNodeByTail(tail);
+                if (!(window.cc && cc.director && cc.director.getScene))
+                    return null;
+                var scene = cc.director.getScene();
+                if (!scene)
+                    return null;
+                var parts = String(tail).split('/').filter(Boolean);
+                if (parts[0] === scene.name)
+                    parts.shift();
+                var node = scene;
+                for (var i = 0; i < parts.length; i++) {
+                    var name = parts[i];
+                    var kids = node.children || node._children || [];
+                    var found = null;
+                    for (var j = 0; j < kids.length; j++) {
+                        var kid = kids[j];
+                        if (kid && kid.name === name) {
+                            found = kid;
+                            break;
                         }
                     }
+                    if (!found)
+                        return null;
+                    node = found;
                 }
+                return node;
             }
 
-            // 2) Fallback cùng tail thời gian mới: đi trực tiếp theo node
-            if (!txt) {
-                function findByTail(tail) {
-                    if (!tail)
-                        return null;
-
-                    if (window.findNodeByTailCompat)
-                        return window.findNodeByTailCompat(tail);
-                    if (window.__abx_findNodeByTail)
-                        return window.__abx_findNodeByTail(tail);
-
-                    if (!(window.cc && cc.director && cc.director.getScene))
-                        return null;
-                    var scene = cc.director.getScene();
-                    var parts = String(tail).split('/').filter(Boolean);
-                    if (parts[0] === scene.name)
-                        parts.shift();
-
-                    var node = scene;
-                    for (var i = 0; i < parts.length; i++) {
-                        var name = parts[i];
-                        var kids = node.children || node._children || [];
-                        var found = null;
-                        for (var j = 0; j < kids.length; j++) {
-                            var kid = kids[j];
-                            if (kid && kid.name === name) {
-                                found = kid;
-                                break;
-                            }
-                        }
-                        if (!found)
-                            return null;
-                        node = found;
-                    }
-                    return node;
-                }
-
-                function getNodeText(node) {
-                    if (!node || !node.getComponent)
-                        return '';
-                    var lbl = node.getComponent(cc.Label);
-                    if (lbl && lbl.string != null)
-                        return String(lbl.string);
-                    var rt = node.getComponent(cc.RichText);
-                    if (rt && rt.string != null)
-                        return String(rt.string);
+            function getNodeText(node) {
+                if (!node || !node.getComponent)
                     return '';
-                }
-
-                var node = findByTail(TAIL);
-                if (node) {
-                    txt = getNodeText(node);
-                }
+                var lbl = node.getComponent(cc.Label);
+                if (lbl && lbl.string != null)
+                    return String(lbl.string);
+                var rt = node.getComponent(cc.RichText);
+                if (rt && rt.string != null)
+                    return String(rt.string);
+                return '';
             }
 
-            txt = String(txt || '').trim();
-            if (!txt)
-                return '';
+            function pickDigit(raw) {
+                var s = String(raw || '').trim();
+                if (!s)
+                    return '';
+                var m = s.match(/\d/);
+                return m ? String(m[0]) : '';
+            }
+            function formatSec2(sec) {
+                sec = Number(sec);
+                if (!isFinite(sec))
+                    return '';
+                if (sec < 0)
+                    sec = 0;
+                if (sec > 50)
+                    sec = 50;
+                sec = Math.floor(sec);
+                return (sec < 10 ? ('0' + sec) : String(sec)) + 's';
+            }
 
-            // Chuẩn hoá theo 00..50s
-            var sec = parseRemainSec(txt);
-            if (sec == null)
+            var rawLeft = getNodeText(findByTail(TAIL_LEFT));
+            var rawRight = getNodeText(findByTail(TAIL_RIGHT));
+            var dLeft = pickDigit(rawLeft);
+            var dRight = pickDigit(rawRight);
+            if (!dLeft || !dRight) {
+                var lastSec = null;
+                try {
+                    lastSec = (window.__cw_last_remain_probe && typeof window.__cw_last_remain_probe.sec === 'number')
+                     ? window.__cw_last_remain_probe.sec
+                     : null;
+                } catch (_) {
+                    lastSec = null;
+                }
+                try {
+                    window.__cw_last_remain_probe = {
+                        leftRaw: String(rawLeft || ''),
+                        rightRaw: String(rawRight || ''),
+                        merged: '',
+                        sec: (lastSec == null ? null : lastSec),
+                        ts: Date.now()
+                    };
+                } catch (_) {}
+                // Tránh nhảy về '--' ở đoạn cuối countdown khi có frame đọc thiếu digit.
+                if (lastSec === 0 || lastSec === 1)
+                    return '00s';
                 return '';
-            txt = (sec < 10 ? ('0' + sec) : String(sec)) + 's';
+            }
+
+            var merged = dLeft + dRight;
+
+            // Chuẩn hoá theo 00..50s từ cặp digit AB
+            var sec = parseRemainSec(merged);
+            if (sec == null) {
+                var lastSec2 = null;
+                try {
+                    lastSec2 = (window.__cw_last_remain_probe && typeof window.__cw_last_remain_probe.sec === 'number')
+                     ? window.__cw_last_remain_probe.sec
+                     : null;
+                } catch (_) {
+                    lastSec2 = null;
+                }
+                if (lastSec2 === 0 || lastSec2 === 1)
+                    return '00s';
+                return '';
+            }
+            var txt = formatSec2(sec);
+
+            try {
+                window.__cw_last_remain_probe = {
+                    leftRaw: String(rawLeft || ''),
+                    rightRaw: String(rawRight || ''),
+                    merged: merged,
+                    sec: sec,
+                    ts: Date.now()
+                };
+            } catch (_) {}
 
             return txt;
         } catch (_) {}
@@ -4944,7 +4984,7 @@
             }
 
             // tail Username
-            var tail = 'game/Canvas/game/lobby/root/top/header/logged_in_node/lb_khung_ten/lb_ten';
+            var tail = 'HomeScene/Canvas/AccountLogin/Header/nodeInfoPlayer/info/lblAccName';
             var node = findByTail(tail);
             if (!node)
                 return '';
@@ -4962,6 +5002,76 @@
     }
 
     window.readUsernameSafe = readUsernameSafe;
+
+    // NEW: doc TK (so du) an toan theo tail Cocos strict, khong fallback
+    function readAccountSafe() {
+        try {
+            if (!window.cc || !window.cc.director || !window.cc.director.getScene)
+                return '';
+
+            function findByTail(tail) {
+                if (!tail)
+                    return null;
+                if (window.findNodeByTailCompat)
+                    return window.findNodeByTailCompat(tail);
+                if (window.__abx_findNodeByTail)
+                    return window.__abx_findNodeByTail(tail);
+
+                var scene = window.cc.director.getScene();
+                if (!scene)
+                    return null;
+
+                var parts = String(tail).split('/').filter(Boolean);
+                if (parts[0] === scene.name)
+                    parts.shift();
+
+                var node = scene;
+                for (var i = 0; i < parts.length; i++) {
+                    var name = parts[i];
+                    var kids = node.children || node._children || [];
+                    var found = null;
+                    for (var j = 0; j < kids.length; j++) {
+                        if (kids[j] && kids[j].name === name) {
+                            found = kids[j];
+                            break;
+                        }
+                    }
+                    if (!found)
+                        return null;
+                    node = found;
+                }
+                return node;
+            }
+
+            function getNodeText(node) {
+                if (!node || !node.getComponent)
+                    return '';
+                var lbl = node.getComponent(cc.Label);
+                if (lbl && lbl.string != null)
+                    return String(lbl.string);
+                var rt = node.getComponent(cc.RichText);
+                if (rt && rt.string != null)
+                    return String(rt.string);
+                return '';
+            }
+
+            var tail = 'HomeScene/Canvas/AccountLogin/Header/nodeInfoPlayer/gold/lblCoin';
+            var node = findByTail(tail);
+            if (!node)
+                return '';
+
+            var txt = getNodeText(node) || '';
+            txt = String(txt).trim();
+            if (!txt)
+                return '';
+
+            return txt.replace(/\s+/g, ' ');
+        } catch (_) {
+            return '';
+        }
+    }
+
+    window.readAccountSafe = readAccountSafe;
 
     window.__cw_startPush = function (tickMs) {
         try {

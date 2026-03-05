@@ -1338,21 +1338,9 @@ Ví dụ không hợp lệ:
                                                 // Chuỗi kết quả
                                                 UpdateSeqUI(snap.seq ?? "");
 
-                                                // 🔸 Trạng thái: "Phiên mới" / "Ngừng đặt cược" / "Đang chờ kết quả"
+                                                // 🔸 Trạng thái từ JS tick (đồng bộ hiển thị + màu ở host)
                                                 var statusUi = snap.status ?? "";
-                                                if (LblStatusText != null)
-                                                {
-                                                    if (!string.IsNullOrWhiteSpace(statusUi))
-                                                    {
-                                                        LblStatusText.Text = statusUi;
-                                                        LblStatusText.Visibility = Visibility.Visible;
-                                                    }
-                                                    else
-                                                    {
-                                                        LblStatusText.Text = "";
-                                                        LblStatusText.Visibility = Visibility.Collapsed;
-                                                    }
-                                                }
+                                                SetStatusText(statusUi);
                                             }
                                             catch { }
                                         }));
@@ -5091,6 +5079,24 @@ Ví dụ không hợp lệ:
                 {
                     LblStatusText.Text = status;
                     LblStatusText.Visibility = Visibility.Visible;
+
+                    // Màu trạng thái đồng bộ theo rule từ JS
+                    if (string.Equals(status, "Cho phép đặt cược", StringComparison.OrdinalIgnoreCase))
+                    {
+                        LblStatusText.Foreground = Brushes.ForestGreen;
+                    }
+                    else if (string.Equals(status, "Ngừng đặt cược", StringComparison.OrdinalIgnoreCase))
+                    {
+                        LblStatusText.Foreground = Brushes.Goldenrod;
+                    }
+                    else if (string.Equals(status, "Chờ kết quả", StringComparison.OrdinalIgnoreCase))
+                    {
+                        LblStatusText.Foreground = Brushes.Red;
+                    }
+                    else
+                    {
+                        LblStatusText.Foreground = Brushes.Black;
+                    }
                 }
             }
             catch { /* ignore */ }
