@@ -55,6 +55,10 @@ namespace TaiXiuB29.Tasks
         public Func<bool> GetCooldown { get; init; }
         public Action<bool> SetCooldown { get; init; }
 
+        // Arm side bằng click native từ host (trusted input).
+        // Trả false nếu không thể arm side an toàn.
+        public Func<string, Task<bool>>? NativeArmSideAsync { get; init; }
+
         // --- UI updaters (được gán từ MainWindow) ---
         public Action<string>? UiSetSide;     // "TAI"/"XIU"
         public Action<double>? UiSetStake;    // tiền đang đánh

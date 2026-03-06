@@ -130,6 +130,17 @@ namespace TaiXiuB29.Tasks
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke(side));
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
 
+            // Arm side bằng input native (trusted click) để tránh lệch cửa.
+            if (ctx.NativeArmSideAsync != null)
+            {
+                var armed = await ctx.NativeArmSideAsync(side);
+                if (!armed)
+                {
+                    ctx.Log?.Invoke($"[BET] native arm side failed -> skip ({side})");
+                    return false;
+                }
+            }
+
             // GỌI __cw_bet AN TOÀN (giữ nguyên như code hiện tại)
             var js =
                 "(async function(){try{" +

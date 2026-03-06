@@ -33,6 +33,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Data;
 using static TaiXiuB29.MainWindow;
 using System.Windows.Input;
+using System.Runtime.InteropServices;
 
 
 
@@ -228,6 +229,7 @@ namespace TaiXiuB29
         private readonly SemaphoreSlim _cfgWriteGate = new(1, 1);// Khoá ghi config để không bao giờ ghi song song
                                                                  // --- UI mode monitor ---
         private DateTime _lastGameTickUtc = DateTime.MinValue;
+        private string _lastBridgeReadyDiag = "";
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
         private bool _isGameUi = false;              // trạng thái UI hiện hành
         private bool _forceGameUiFromLoginTool = false; // ép hiện vùng chiến lược sau khi bấm Đăng nhập Tool
@@ -3361,6 +3363,194 @@ Ví dụ không hợp lệ:
             await SaveConfigAsync();
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct NativePoint
+        {
+            public int X;
+            public int Y;
+        }
+
+        private sealed class JsSidePoint
+        {
+            public bool ok { get; set; }
+            public string side { get; set; } = "";
+            public double x { get; set; }
+            public double y { get; set; }
+            public double vw { get; set; }
+            public double vh { get; set; }
+            public string tail { get; set; } = "";
+            public string reason { get; set; } = "";
+        }
+
+        [DllImport("user32.dll")]
+        private static extern bool SetCursorPos(int X, int Y);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out NativePoint pt);
+
+        [DllImport("user32.dll")]
+        private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+
+        private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+        private const uint MOUSEEVENTF_LEFTUP = 0x0004;
+
+        private static string NormTxSide(string side)
+        {
+            if (string.Equals(side, "TAI", StringComparison.OrdinalIgnoreCase))
+                return "TAI";
+            if (string.Equals(side, "XIU", StringComparison.OrdinalIgnoreCase))
+                return "XIU";
+            return "";
+        }
+
+        private async Task<JsSidePoint?> GetSideInputPointAsync(string side)
+        {
+            side = NormTxSide(side);
+            if (string.IsNullOrEmpty(side))
+                return null;
+            if (Web?.CoreWebView2 == null) return null;
+
+            var js =
+                "(function(){try{" +
+                " if(typeof window.__cw_getSideInputPoint==='function') return window.__cw_getSideInputPoint('" + side + "');" +
+                " return {ok:false,side:'" + side + "',reason:'no_fn'};" +
+                "}catch(e){return {ok:false,side:'" + side + "',reason:String(e&&e.message||e)};}})()";
+
+            try
+            {
+                var raw = await Web.ExecuteScriptAsync(js);
+                if (string.IsNullOrWhiteSpace(raw) || raw == "null")
+                    return null;
+                return JsonSerializer.Deserialize<JsSidePoint>(raw, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private async Task<string> ReadActiveSideFromJsAsync()
+        {
+            if (Web?.CoreWebView2 == null) return "";
+            var js =
+                "(function(){try{" +
+                " if(typeof window.__tx_dbg_mark!=='function') return '';" +
+                " var m=window.__tx_dbg_mark('native_arm_verify');" +
+                " if(m && m.disableTai===false && m.disableXiu===true) return 'TAI';" +
+                " if(m && m.disableTai===true && m.disableXiu===false) return 'XIU';" +
+                " return '';" +
+                "}catch(_){return '';}})()";
+
+            try
+            {
+                var raw = await Web.ExecuteScriptAsync(js);
+                var s = JsonSerializer.Deserialize<string>(raw) ?? "";
+                return NormTxSide(s);
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private bool NativeLeftClickScreen(int sx, int sy, bool restoreCursor = true)
+        {
+            NativePoint old = default;
+            var hasOld = GetCursorPos(out old);
+            try
+            {
+                SetCursorPos(sx, sy);
+                Thread.Sleep(18);
+                mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+                Thread.Sleep(18);
+                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                if (restoreCursor && hasOld)
+                {
+                    try { SetCursorPos(old.X, old.Y); } catch { }
+                }
+            }
+        }
+
+        private bool NativeClickByJsPoint(JsSidePoint p)
+        {
+            if (p == null || !p.ok) return false;
+            if (Web == null) return false;
+
+            var webW = Math.Max(1.0, Web.ActualWidth);
+            var webH = Math.Max(1.0, Web.ActualHeight);
+            var vw = (p.vw > 1) ? p.vw : webW;
+            var vh = (p.vh > 1) ? p.vh : webH;
+            if (vw <= 0 || vh <= 0) return false;
+
+            var localX = (p.x / vw) * webW;
+            var localY = (p.y / vh) * webH;
+            if (double.IsNaN(localX) || double.IsNaN(localY) ||
+                double.IsInfinity(localX) || double.IsInfinity(localY))
+                return false;
+
+            var sp = Web.PointToScreen(new System.Windows.Point(localX, localY));
+            var sx = (int)Math.Round(sp.X);
+            var sy = (int)Math.Round(sp.Y);
+            return NativeLeftClickScreen(sx, sy, restoreCursor: true);
+        }
+
+        private async Task<bool> NativeArmSideAsync(string side)
+        {
+            side = NormTxSide(side);
+            if (string.IsNullOrEmpty(side))
+            {
+                Log("[BET][NATIVE] invalid side for arm");
+                return false;
+            }
+            var opp = side == "TAI" ? "XIU" : "TAI";
+
+            var pTarget = await GetSideInputPointAsync(side);
+            if (pTarget == null || !pTarget.ok)
+            {
+                Log("[BET][NATIVE] side point not ready: " + side + " reason=" + (pTarget?.reason ?? "null"));
+                return false;
+            }
+            Log($"[BET][NATIVE] arm side={side} tail={pTarget.tail} p=({Math.Round(pTarget.x)},{Math.Round(pTarget.y)})");
+
+            // Lượt 1: click target 2 lần (tương tự thao tác tay).
+            NativeClickByJsPoint(pTarget);
+            await Task.Delay(85);
+            NativeClickByJsPoint(pTarget);
+            await Task.Delay(120);
+
+            var cur = await ReadActiveSideFromJsAsync();
+            if (string.Equals(cur, side, StringComparison.OrdinalIgnoreCase))
+            {
+                Log($"[BET][NATIVE] arm pass#1 side={side}");
+                return true;
+            }
+
+            // Lượt 2: flip opposite -> target để ép commit side.
+            var pOpp = await GetSideInputPointAsync(opp);
+            if (pOpp != null && pOpp.ok)
+            {
+                NativeClickByJsPoint(pOpp);
+                await Task.Delay(90);
+            }
+            NativeClickByJsPoint(pTarget);
+            await Task.Delay(140);
+
+            cur = await ReadActiveSideFromJsAsync();
+            var ok = string.Equals(cur, side, StringComparison.OrdinalIgnoreCase);
+            if (!ok)
+                Log($"[BET][NATIVE] arm verify failed side={side} active={cur}");
+            else
+                Log($"[BET][NATIVE] arm pass#2 side={side}");
+            return ok;
+        }
 
 
         private GameContext BuildContext()
@@ -3381,6 +3571,7 @@ Ví dụ không hợp lệ:
                 UiDispatcher = Dispatcher,
                 GetCooldown = () => _cooldown,
                 SetCooldown = (v) => _cooldown = v,
+                NativeArmSideAsync = (side) => Dispatcher.InvokeAsync(() => NativeArmSideAsync(side)).Task.Unwrap(),
                 MoneyStrategyId = moneyStrategyId,
                 BetSeq = _cfg.BetSeq ?? "",
                 BetPatterns = _cfg.BetPatterns ?? "",
@@ -3541,12 +3732,12 @@ Ví dụ không hợp lệ:
                 var ready = await WaitForBridgeAndGameDataAsync(15000);
                 if (!ready)
                 {
-                    Log("[DEC] Dữ liệu chưa sẵn sàng (bridge/cocos/tick). Thử gia hạn push & chờ thêm.");
+                    Log("[DEC] Dữ liệu chưa sẵn sàng (bridge/cocos/tick). Thử gia hạn push & chờ thêm. " + _lastBridgeReadyDiag);
                     await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
                     ready = await WaitForBridgeAndGameDataAsync(15000);
                     if (!ready)
                     {
-                        Log("[DEC] Vẫn chưa có dữ liệu, tạm hoãn khởi động chiến lược.");
+                        Log("[DEC] Vẫn chưa có dữ liệu, tạm hoãn khởi động chiến lược. " + _lastBridgeReadyDiag);
                         return;
                     }
                 }
@@ -4537,6 +4728,7 @@ Ví dụ không hợp lệ:
         private async Task<bool> WaitForBridgeAndGameDataAsync(int timeoutMs = 20000)
         {
             var t0 = DateTime.UtcNow;
+            _lastBridgeReadyDiag = "";
             while ((DateTime.UtcNow - t0).TotalMilliseconds < timeoutMs)
             {
                 try
@@ -4550,14 +4742,30 @@ Ví dụ không hợp lệ:
                         "(function(){try{return !!(window.cc && cc.director && cc.director.getScene);}catch(e){return false;}})()");
                     bool hasCocos = bool.TryParse(cocosJson, out var b) && b;
 
-                    // 3) Đã có tick chưa (ít nhất 1 ký tự seq)
+                    // 3) Đã có tick thực chưa.
                     bool hasTick = false;
+                    CwSnapshot? snap = null;
                     lock (_snapLock)
                     {
-                        hasTick = _lastSnap?.seq != null && _lastSnap.seq.Length > 0;
+                        snap = _lastSnap;
                     }
+                    var recentGameTick = (DateTime.UtcNow - _lastGameTickUtc) <= TimeSpan.FromSeconds(8);
+                    var hasTickFromSnap =
+                        snap != null &&
+                        (
+                            snap.ts > 0 ||
+                            snap.prog.HasValue ||
+                            snap.totals != null ||
+                            !string.IsNullOrWhiteSpace(snap.status) ||
+                            !string.IsNullOrWhiteSpace(snap.session)
+                        );
+                    hasTick = recentGameTick || hasTickFromSnap;
 
-                    if (hasBet && hasTick)
+                    _lastBridgeReadyDiag =
+                        $"[diag bet={hasBet}, cocos={hasCocos}, tick={hasTick}, recentTick={recentGameTick}, " +
+                        $"snapTs={(snap?.ts ?? 0)}, seqLen={(snap?.seq?.Length ?? 0)}, status='{snap?.status ?? ""}']";
+
+                    if (hasBet && hasCocos && hasTick)
                         return true;
                 }
                 catch { /* tiếp tục đợi */ }

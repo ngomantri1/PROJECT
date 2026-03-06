@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r42-20260305-prog-ratio-from-remainsec';
+    window.__cw_patch_ver = 'cw-r48-20260306-readseqsafe-fallback';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -1397,7 +1397,7 @@
     }
 
     // Strict sequence source for Canvas Watch:
-    // use __cw_icon_seq.seq_oldest_to_latest only.
+    // prefer MINI_GAME_18 history label tail, then fallback to icon-seq/legacy readers.
     var _iconSeqBuildAt = 0;
     var _iconSeqRolling = []; // oldest -> latest
     var ICON_SEQ_MAX = 50;
@@ -1812,14 +1812,155 @@
 
     window.__cw_buildIconSeqAuto = buildIconSeqFromSceneLocal;
 
+    function readTxHistorySeqStrictLocal() {
+        try {
+            function foldVi(s) {
+                s = String(s || '');
+                try {
+                    s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                } catch (_) {}
+                s = s.replace(/\u0111/g, 'd').replace(/\u0110/g, 'D');
+                return s.toLowerCase();
+            }
+            function toTx(txt) {
+                var f = foldVi(txt);
+                if (!f)
+                    return '';
+                if (f.indexOf('tai') !== -1 || /^t\b/.test(f) || f === 't')
+                    return 'T';
+                if (f.indexOf('xiu') !== -1 || /^x\b/.test(f) || f === 'x')
+                    return 'X';
+                return '';
+            }
+            var out = [];
+            var TAIL_END = 'homescene/mini_game_18/bgtxhistory/btnhistoryitem/bgtooltips/new label';
+            try {
+                if (typeof collectLabels === 'function') {
+                    var labs = collectLabels() || [];
+                    for (var i = 0; i < labs.length; i++) {
+                        var L = labs[i] || {};
+                        var tail = String(L.tail || L.tl || '').toLowerCase();
+                        if (!tail)
+                            continue;
+                        if (!tail.endsWith(TAIL_END))
+                            continue;
+                        var tx = toTx(L.text || '');
+                        if (!tx)
+                            continue;
+                        out.push({
+                            tx: tx,
+                            x: Number(L.x) || 0
+                        });
+                    }
+                }
+            } catch (_) {}
+            if (!out.length) {
+                try {
+                    if (typeof walkNodes === 'function') {
+                        walkNodes(function (n) {
+                            if (!n)
+                                return;
+                            var tail = String(tailOf(n, 32) || '').toLowerCase();
+                            if (!tail.endsWith(TAIL_END))
+                                return;
+                            var tx = toTx(_readNodeTextLocal(n));
+                            if (!tx)
+                                return;
+                            var r = wRect(n) || {
+                                x: 0
+                            };
+                            out.push({
+                                tx: tx,
+                                x: Number(r.x) || 0
+                            });
+                        });
+                    }
+                } catch (_) {}
+            }
+            if (!out.length)
+                return '';
+            out.sort(function (a, b) {
+                return a.x - b.x;
+            });
+            var seq = '';
+            for (var k = 0; k < out.length; k++)
+                seq += out[k].tx;
+            return _normalizeTxSeq(seq);
+        } catch (_) {}
+        return '';
+    }
+
+    function readTextByTailSuffixLocal(tailSuffix) {
+        try {
+            var suf = String(tailSuffix || '').toLowerCase().replace(/^\/+/, '');
+            if (!suf)
+                return '';
+
+            function isMatch(tl) {
+                tl = String(tl || '').toLowerCase();
+                if (!tl)
+                    return false;
+                return (tl === suf || tl.endsWith('/' + suf));
+            }
+
+            try {
+                if (typeof collectLabels === 'function') {
+                    var labs = collectLabels() || [];
+                    for (var i = 0; i < labs.length; i++) {
+                        var L = labs[i] || {};
+                        if (!isMatch(L.tail || L.tl))
+                            continue;
+                        var txt = String(L.text || '').trim();
+                        if (txt)
+                            return txt;
+                    }
+                }
+            } catch (_) {}
+
+            try {
+                if (typeof walkNodes === 'function') {
+                    var hit = '';
+                    walkNodes(function (n) {
+                        if (hit || !n)
+                            return;
+                        var tl = String(tailOf(n, 32) || '').toLowerCase();
+                        if (!isMatch(tl))
+                            return;
+                        var txt = _readNodeTextLocal(n);
+                        txt = String(txt || '').trim();
+                        if (txt)
+                            hit = txt;
+                    });
+                    if (hit)
+                        return hit;
+                }
+            } catch (_) {}
+        } catch (_) {}
+        return '';
+    }
+
     function readSeqSafeLocal() {
         try {
+            var strictSeq = readTxHistorySeqStrictLocal();
+            if (strictSeq)
+                return strictSeq;
+
             // Luon trigger build (co throttle noi bo) de rolling co co hoi append ket qua moi.
             var seq = buildIconSeqFromSceneLocal(false);
             if (seq)
                 return seq;
 
-            return _findSeqAcrossWindows();
+            seq = _findSeqAcrossWindows();
+            if (seq)
+                return seq;
+
+            var legacy = readTKSeq();
+            if (legacy && legacy.seq)
+                return _normalizeTxSeq(legacy.seq);
+
+            var cached = _normalizeTxSeq(window.__cw_lastSeq || '');
+            if (cached)
+                return cached;
         } catch (_) {}
         return '';
     }
@@ -2652,7 +2793,10 @@
             '  val : ' + (f && f.val != null ? fmt(f.val) : '-');
 
         // Chuỗi kết quả hiển thị như cũ
-        S.seq = readSeqSafeLocal() || '';
+        var __seqFn = (typeof readSeqSafe === 'function')
+             ? readSeqSafe
+             : ((typeof readSeqSafeLocal === 'function') ? readSeqSafeLocal : null);
+        S.seq = __seqFn ? (__seqFn() || '') : '';
         var seqHtml = 'Chuỗi kết quả : <i>--</i>';
         if (S.seq && S.seq.length) {
             var head = esc(S.seq.slice(0, -1));
@@ -3832,10 +3976,20 @@
         window.__cw_lastProg = S.prog;
         window.__cw_lastTotals = T;
 
-        // TK sequence (export ra global để bridge dùng)
-        S.seq = readSeqSafeLocal() || '';
+        // TK sequence (export ra global để bridge dùng).
+        // Giữ last-good để tránh tụt về rỗng khi strict source miss tạm thời.
+        var _seqNow = readSeqSafeLocal() || '';
+        if (!_seqNow) {
+            try {
+                _seqNow = _normalizeTxSeq(window.__cw_lastSeq || '');
+            } catch (_) {
+                _seqNow = '';
+            }
+        }
+        S.seq = _seqNow || '';
         try {
-            window.__cw_lastSeq = S.seq;
+            if (S.seq)
+                window.__cw_lastSeq = S.seq;
         } catch (_) {}
 
         // keep focus
@@ -4535,8 +4689,8 @@
 
             // 2) Ghi đè TK + Tài/Xỉu theo strict tail exact
             var ACC_TAIL_EXACT = 'HomeScene/Canvas/AccountLogin/Header/nodeInfoPlayer/gold/lblCoin';
-            var TX_TAI_TAIL_EXACT = 'game/persistent/mini_games/cc_mini_game_root/mini_game_node/minigame/prefab_taixiu/root/main/blur/textbox/text_current_bet_tai';
-            var TX_XIU_TAIL_EXACT = 'game/persistent/mini_games/cc_mini_game_root/mini_game_node/minigame/prefab_taixiu/root/main/blur/textbox/text_current_bet_xiu';
+            var TX_NUMBET_TAI_TAIL_EXACT = 'HomeScene/MINI_GAME_18/bgTxBanChoi/lblNumBetTai';
+            var TX_NUMBET_XIU_TAIL_EXACT = 'HomeScene/MINI_GAME_18/bgTxBanChoi/lblNumBetXiu';
 
             // 2.1 TK (tai khoan) theo strict tail exact, khong fallback
             try {
@@ -4558,17 +4712,52 @@
                 } catch (_) {}
             } catch (_) {}
 
-            // 2.2 Tong TAI / XIU theo strict tail moi (khong dung tail/x cu)
+            // 2.2 So nguoi dat TAI / XIU theo strict tail moi MINI_GAME_18.
+            // Neu strict tail chua co du lieu thi giu nguyen gia tri nen (fallback an toan).
             try {
-                var rawTai = readTextByTailExact(TX_TAI_TAIL_EXACT);
-                var valTai = moneyOf(rawTai);
-                t.T = (valTai == null ? null : valTai);
-                t.rawT = (rawTai || null);
+                var txCache = (window.__cw_last_tx_num && typeof window.__cw_last_tx_num === 'object')
+                 ? window.__cw_last_tx_num
+                 : {};
 
-                var rawXiu = readTextByTailExact(TX_XIU_TAIL_EXACT);
+                var rawTai = readTextByTailExact(TX_NUMBET_TAI_TAIL_EXACT);
+                if (!rawTai)
+                    rawTai = readTextByTailSuffixLocal('lblNumBetTai');
+                var valTai = moneyOf(rawTai);
+                if (valTai != null) {
+                    t.T = valTai;
+                    t.rawT = (rawTai || null);
+                    txCache.T = valTai;
+                    txCache.rawT = (rawTai || null);
+                } else if (t.rawT == null) {
+                    t.rawT = (rawTai || null);
+                }
+                if (t.T == null && txCache.T != null) {
+                    t.T = txCache.T;
+                    if (t.rawT == null)
+                        t.rawT = (txCache.rawT || null);
+                }
+
+                var rawXiu = readTextByTailExact(TX_NUMBET_XIU_TAIL_EXACT);
+                if (!rawXiu)
+                    rawXiu = readTextByTailSuffixLocal('lblNumBetXiu');
                 var valXiu = moneyOf(rawXiu);
-                t.X = (valXiu == null ? null : valXiu);
-                t.rawX = (rawXiu || null);
+                if (valXiu != null) {
+                    t.X = valXiu;
+                    t.rawX = (rawXiu || null);
+                    txCache.X = valXiu;
+                    txCache.rawX = (rawXiu || null);
+                } else if (t.rawX == null) {
+                    t.rawX = (rawXiu || null);
+                }
+                if (t.X == null && txCache.X != null) {
+                    t.X = txCache.X;
+                    if (t.rawX == null)
+                        t.rawX = (txCache.rawX || null);
+                }
+
+                try {
+                    window.__cw_last_tx_num = txCache;
+                } catch (_) {}
             } catch (_) {}
 
             return t;
@@ -4578,98 +4767,11 @@
     };
 
     function readSeqSafe() {
-        // Strict: chi lay chuoi tu __cw_icon_seq.seq_oldest_to_latest.
-        // Khong fallback ve logic cu readTKSeq.
-        function seqFromWin(w) {
-            try {
-                var iconSeq = w && w.__cw_icon_seq;
-                if (!iconSeq || typeof iconSeq !== 'object')
-                    return '';
-                var s = String(iconSeq.seq_oldest_to_latest || '').toUpperCase();
-                if (!s)
-                    return '';
-                return s.replace(/[^TX]/g, '');
-            } catch (_) {}
-            return '';
-        }
         try {
-            function triggerBuildLocal() {
-                try {
-                    if (typeof window.__cw_buildIconSeqAuto === 'function')
-                        window.__cw_buildIconSeqAuto(false);
-                } catch (_) {}
-            }
-            function findAcross() {
-                var seen = [];
-                function walkWin(w) {
-                    if (!w)
-                        return '';
-                    try {
-                        if (seen.indexOf(w) !== -1)
-                            return '';
-                        seen.push(w);
-                    } catch (_) {
-                        return '';
-                    }
-
-                    var seq = seqFromWin(w);
-                    if (seq)
-                        return seq;
-
-                    try {
-                        if (w.parent && w.parent !== w) {
-                            seq = walkWin(w.parent);
-                            if (seq)
-                                return seq;
-                        }
-                    } catch (_) {}
-
-                    try {
-                        if (w.top) {
-                            seq = walkWin(w.top);
-                            if (seq)
-                                return seq;
-                        }
-                    } catch (_) {}
-
-                    try {
-                        var len = w.frames ? w.frames.length : 0;
-                        for (var i = 0; i < len; i++) {
-                            seq = walkWin(w.frames[i]);
-                            if (seq)
-                                return seq;
-                        }
-                    } catch (_) {}
-                    return '';
-                }
-                return walkWin(window) || '';
-            }
-
-            function triggerBuild(w) {
-                try {
-                    if (w && typeof w.__cw_buildIconSeqAuto === 'function')
-                        w.__cw_buildIconSeqAuto(false);
-                } catch (_) {}
-            }
-
-            // Luon trigger build truoc (co throttle), de rolling append ket qua moi theo thoi gian.
-            triggerBuildLocal();
-
-            var seq = findAcross();
+            var seq = readSeqSafeLocal() || '';
             if (seq)
                 return seq;
-
-            triggerBuild(window);
-            try {
-                if (window.parent && window.parent !== window)
-                    triggerBuild(window.parent);
-            } catch (_) {}
-            try {
-                if (window.top)
-                    triggerBuild(window.top);
-            } catch (_) {}
-
-            return findAcross();
+            return _normalizeTxSeq(window.__cw_lastSeq || '');
         } catch (_) {}
         return '';
     }
@@ -5204,6 +5306,40 @@
     function clickable(n) {
         return hasBtn(n) || hasTgl(n) || n._touchListener;
     }
+    if (typeof txNodeCenter !== 'function') {
+        var txNodeCenter = function (node) {
+            try {
+                if (!node || !window.cc || !cc.Camera || !cc.view)
+                    return null;
+                var cam = cc.Camera.findCamera(node);
+                if (!cam)
+                    return null;
+                var wp = node.convertToWorldSpaceAR(cc.v2 ? cc.v2(0, 0) : new cc.Vec2(0, 0));
+                var sp = cam.worldToScreen(wp);
+                var fs = cc.view.getFrameSize();
+                var vs = cc.view.getVisibleSize();
+                var sx = (Number(fs && fs.width) || 1) / Math.max(1, Number(vs && vs.width) || 1);
+                var sy = (Number(fs && fs.height) || 1) / Math.max(1, Number(vs && vs.height) || 1);
+                var gx = (Number(sp && sp.x) || 0) * sx;
+                var gy = (Number(sp && sp.y) || 0) * sy;
+                var cvs = document.querySelector('canvas');
+                if (cvs && typeof cvs.getBoundingClientRect === 'function') {
+                    var rect = cvs.getBoundingClientRect();
+                    var fw = Math.max(1, Number(fs && fs.width) || rect.width || 1);
+                    var fh = Math.max(1, Number(fs && fs.height) || rect.height || 1);
+                    return {
+                        x: rect.left + (gx / fw) * Math.max(1, rect.width || 1),
+                        y: rect.top + ((fh - gy) / fh) * Math.max(1, rect.height || 1)
+                    };
+                }
+                return {
+                    x: gx,
+                    y: gy
+                };
+            } catch (_) {}
+            return null;
+        };
+    }
 
     function emitClick(node) {
         if (!node)
@@ -5413,11 +5549,22 @@
     ];
     // NEW: delay cho chuỗi thao tác bet (tối ưu cho máy yếu/VPS)
     var TX_BET_DELAY = {
-        sideToChip: 260, // sau khi click cửa → đợi rồi mới bấm phỉnh
-        chipToChip: 220, // giữa các lần click phỉnh liên tiếp
-        afterChipsBeforeConfirm: 260 // sau khi xong phỉnh → đợi rồi mới ấn ĐẶT CƯỢC
+        sideToChip: 260, // legacy: delay after side click
+        chipToChip: 220, // legacy: delay between chip clicks
+        afterChipsBeforeConfirm: 260 // legacy: delay before confirm
     };
-
+    TX_BET_DELAY.focusBeforeSet = 90;
+    TX_BET_DELAY.afterSetBeforeConfirm = 140;
+    TX_BET_DELAY.afterConfirm = 220;
+    var TX_STRICT_TAIL_INPUT_TAI = 'HomeScene/MINI_GAME_18/bgTxBanChoi/bgBetInputTai/txtBetTai';
+    var TX_STRICT_TAIL_INPUT_XIU = 'HomeScene/MINI_GAME_18/bgTxBanChoi/bgBetInputXiu/txtBetXiu';
+    var TX_STRICT_TAIL_INPUT_TAI_DISABLE = 'HomeScene/MINI_GAME_18/bgTxBanChoi/bgBetInputTai/txtBetTaiDisable';
+    var TX_STRICT_TAIL_INPUT_XIU_DISABLE = 'HomeScene/MINI_GAME_18/bgTxBanChoi/bgBetInputXiu/txtBetXiuDisable';
+    var TX_STRICT_TAIL_CONFIRM_BET = 'HomeScene/MINI_GAME_18/bgTxBanChoi/quickBet/layoutOption/betAction';
+    var TX_STRICT_TAIL_BTN_TAI = 'HomeScene/MINI_GAME_18/bgTxBanChoi/btnTaiBet';
+    var TX_STRICT_TAIL_BTN_XIU = 'HomeScene/MINI_GAME_18/bgTxBanChoi/btnXiuBet';
+    var TX_STRICT_TAIL_NUM_BET_TAI = 'HomeScene/MINI_GAME_18/bgTxBanChoi/lblNumBetTai';
+    var TX_STRICT_TAIL_NUM_BET_XIU = 'HomeScene/MINI_GAME_18/bgTxBanChoi/lblNumBetXiu';
     // Tìm node theo phần đuôi tail (dùng tailOf + walkNodes bên trên)
     function txFindNodeByTailEnd(tailEnd) {
         var tailLower = String(tailEnd || '').toLowerCase();
@@ -5573,6 +5720,844 @@
     };
 
     // Scan xem chip nào ở menuMoney đang tồn tại
+    // Flow moi: set input theo side + confirm quickBet (strict tails).
+    function txNormSide(side) {
+        side = String(side || '').toUpperCase();
+        return (side === 'TAI') ? 'TAI' : 'XIU';
+    }
+    function txStrictInputTail(side) {
+        side = txNormSide(side);
+        return side === 'TAI' ? TX_STRICT_TAIL_INPUT_TAI : TX_STRICT_TAIL_INPUT_XIU;
+    }
+    function txStrictDisableTail(side) {
+        side = txNormSide(side);
+        return side === 'TAI' ? TX_STRICT_TAIL_INPUT_TAI_DISABLE : TX_STRICT_TAIL_INPUT_XIU_DISABLE;
+    }
+    function txStrictSideTail(side) {
+        side = txNormSide(side);
+        return side === 'TAI' ? TX_STRICT_TAIL_BTN_TAI : TX_STRICT_TAIL_BTN_XIU;
+    }
+    function txStrictInputBoxTail(side) {
+        side = txNormSide(side);
+        return side === 'TAI'
+             ? 'HomeScene/MINI_GAME_18/bgTxBanChoi/bgBetInputTai'
+             : 'HomeScene/MINI_GAME_18/bgTxBanChoi/bgBetInputXiu';
+    }
+    function txViewportSize() {
+        var de = document.documentElement || {};
+        return {
+            w: Math.max(1, Number(window.innerWidth || de.clientWidth || 0) || 1),
+            h: Math.max(1, Number(window.innerHeight || de.clientHeight || 0) || 1)
+        };
+    }
+    function txNodePointForHost(node) {
+        var c = txNodeCenter(node);
+        if (!c)
+            return null;
+        var vp = txViewportSize();
+        var x = Number(c.x);
+        var y = Number(c.y);
+        if (!isFinite(x) || !isFinite(y))
+            return null;
+        x = Math.max(0, Math.min(vp.w - 1, x));
+        y = Math.max(0, Math.min(vp.h - 1, y));
+        return {
+            x: Math.round(x),
+            y: Math.round(y),
+            vw: vp.w,
+            vh: vp.h
+        };
+    }
+    window.__cw_getSideInputPoint = function (side) {
+        side = txNormSide(side);
+        var tails = [
+            txStrictInputBoxTail(side),
+            txStrictInputTail(side),
+            txStrictDisableTail(side),
+            txStrictSideTail(side)
+        ];
+        var node = null;
+        var pickedTail = '';
+        for (var i = 0; i < tails.length; i++) {
+            var n = txFindNodeByTailEnd(tails[i]);
+            if (n) {
+                node = n;
+                pickedTail = tails[i];
+                break;
+            }
+        }
+        if (!node) {
+            return {
+                ok: false,
+                side: side,
+                reason: 'side_input_not_found',
+                tail: tails[0],
+                candidates: tails
+            };
+        }
+        var p = txNodePointForHost(node);
+        if (!p) {
+            return {
+                ok: false,
+                side: side,
+                reason: 'center_not_found',
+                tail: pickedTail,
+                candidates: tails
+            };
+        }
+        return {
+            ok: true,
+            side: side,
+            x: p.x,
+            y: p.y,
+            vw: p.vw,
+            vh: p.vh,
+            tail: pickedTail
+        };
+    };
+    function txFindClickableInSubtree(root, maxDepth) {
+        if (!root)
+            return null;
+        maxDepth = (maxDepth == null) ? 6 : maxDepth;
+        if (clickable(root))
+            return root;
+        var q = [{
+                n: root,
+                d: 0
+            }
+        ];
+        var seen = [];
+        function seenHas(x) {
+            return seen.indexOf(x) !== -1;
+        }
+        function seenAdd(x) {
+            if (!seenHas(x))
+                seen.push(x);
+        }
+        while (q.length) {
+            var cur = q.shift();
+            var n = cur.n;
+            var d = cur.d;
+            if (!n || seenHas(n))
+                continue;
+            seenAdd(n);
+            if (d > 0 && clickable(n))
+                return n;
+            if (d >= maxDepth)
+                continue;
+            var kids = (n.children || n._children) || [];
+            for (var i = 0; i < kids.length; i++) {
+                var k = kids[i];
+                if (k && !seenHas(k))
+                    q.push({
+                        n: k,
+                        d: d + 1
+                    });
+            }
+        }
+        return null;
+    }
+    function txCollectButtonCandidates(root, maxDepth) {
+        var out = [];
+        if (!root)
+            return out;
+        maxDepth = (maxDepth == null) ? 8 : maxDepth;
+        var q = [{
+                n: root,
+                d: 0
+            }
+        ];
+        var seen = [];
+        function seenHas(x) {
+            return seen.indexOf(x) !== -1;
+        }
+        function seenAdd(x) {
+            if (!seenHas(x))
+                seen.push(x);
+        }
+        while (q.length) {
+            var cur = q.shift();
+            var n = cur.n;
+            var d = cur.d;
+            if (!n || seenHas(n))
+                continue;
+            seenAdd(n);
+            var b = getComp(n, cc.Button);
+            if (b) {
+                var ce = [];
+                try {
+                    var arr = b.clickEvents || [];
+                    for (var i = 0; i < arr.length; i++) {
+                        var e = arr[i] || {};
+                        ce.push({
+                            handler: String(e.handler || ''),
+                            component: String(e.component || ''),
+                            customEventData: String(e.customEventData || '')
+                        });
+                    }
+                } catch (_) {}
+                out.push({
+                    node: n,
+                    button: b,
+                    depth: d,
+                    tail: String(tailOf(n, 32) || ''),
+                    interactable: !!(b && b.interactable !== false),
+                    clickEvents: ce
+                });
+            }
+            if (d >= maxDepth)
+                continue;
+            var kids = (n.children || n._children) || [];
+            for (var k = 0; k < kids.length; k++) {
+                if (kids[k] && !seenHas(kids[k])) {
+                    q.push({
+                        n: kids[k],
+                        d: d + 1
+                    });
+                }
+            }
+        }
+        return out;
+    }
+    function txScoreSideButton(side, cand) {
+        side = txNormSide(side);
+        if (!cand)
+            return -999;
+        var score = 0;
+        var tail = String(cand.tail || '').toLowerCase();
+        if (cand.interactable)
+            score += 3;
+        if (tail.indexOf('tai') !== -1 && side === 'TAI')
+            score += 12;
+        if (tail.indexOf('xiu') !== -1 && side === 'XIU')
+            score += 12;
+        if (tail.indexOf('tai') !== -1 && side === 'XIU')
+            score -= 6;
+        if (tail.indexOf('xiu') !== -1 && side === 'TAI')
+            score -= 6;
+        if (tail.indexOf('/btntaibet') !== -1 && side === 'TAI')
+            score += 8;
+        if (tail.indexOf('/btnxiubet') !== -1 && side === 'XIU')
+            score += 8;
+        score -= Math.max(0, cand.depth || 0) * 0.3;
+        try {
+            var events = cand.clickEvents || [];
+            for (var i = 0; i < events.length; i++) {
+                var ev = events[i] || {};
+                var h = String(ev.handler || '').toLowerCase();
+                var ced = String(ev.customEventData || '').toLowerCase();
+                var mix = h + ' ' + ced;
+                if (mix.indexOf('tai') !== -1 && side === 'TAI')
+                    score += 10;
+                if (mix.indexOf('xiu') !== -1 && side === 'XIU')
+                    score += 10;
+                if (mix.indexOf('tai') !== -1 && side === 'XIU')
+                    score -= 6;
+                if (mix.indexOf('xiu') !== -1 && side === 'TAI')
+                    score -= 6;
+                if (h.indexOf('choose') !== -1 || h.indexOf('select') !== -1 || h.indexOf('bet') !== -1)
+                    score += 2;
+            }
+        } catch (_) {}
+        return score;
+    }
+    function txPickSideButtonCandidate(root, side) {
+        var sideNorm = txNormSide(side);
+        var cands = txCollectButtonCandidates(root, 8);
+        var best = null;
+        var dbg = [];
+        for (var i = 0; i < cands.length; i++) {
+            var c = cands[i];
+            var s = txScoreSideButton(sideNorm, c);
+            c.score = s;
+            dbg.push({
+                score: s,
+                depth: c.depth,
+                tail: c.tail,
+                interactable: c.interactable,
+                clickEvents: c.clickEvents
+            });
+            if (!best || s > best.score)
+                best = c;
+        }
+        dbg.sort(function (a, b) {
+            return b.score - a.score;
+        });
+        return {
+            side: sideNorm,
+            best: best,
+            dbg: dbg
+        };
+    }
+    function txEmitButtonEvents(cand) {
+        if (!cand || !cand.node)
+            return false;
+        var b = cand.button || getComp(cand.node, cc.Button);
+        if (!b || b.interactable === false)
+            return false;
+        var ok = false;
+        try {
+            var ce = b.clickEvents || [];
+            if (ce.length) {
+                cc.Component.EventHandler.emitEvents(ce, new cc.Event.EventCustom('click', true));
+                ok = true;
+            }
+        } catch (_) {}
+        try {
+            if (typeof b._onTouchBegan === 'function' || typeof b._onTouchEnded === 'function') {
+                var p = txNodeCenter(cand.node) || {
+                    x: 0,
+                    y: 0
+                };
+                var evt = {
+                    type: 'touch',
+                    target: cand.node,
+                    currentTarget: cand.node,
+                    getLocation: function () {
+                        return cc.v2 ? cc.v2(p.x, p.y) : {
+                            x: p.x,
+                            y: p.y
+                        };
+                    },
+                    getLocationX: function () {
+                        return p.x;
+                    },
+                    getLocationY: function () {
+                        return p.y;
+                    },
+                    stopPropagation: function () {},
+                    preventDefault: function () {}
+                };
+                if (typeof b._onTouchBegan === 'function')
+                    b._onTouchBegan(evt);
+                if (typeof b._onTouchEnded === 'function')
+                    b._onTouchEnded(evt);
+                ok = true;
+            }
+        } catch (_) {}
+        return !!ok;
+    }
+    function txForceOwnerSideFromCandidate(cand, side) {
+        side = txNormSide(side);
+        var touched = [];
+        if (!cand || !cand.button)
+            return touched;
+        var keys = ['chooseTypeToBet', '_currentTypeBet', 'selectedGuess', '_selectedGuess', 'guessType', '_guessType', 'betSide', '_betSide', '_isDaTai'];
+        try {
+            var ce = cand.button.clickEvents || [];
+            for (var i = 0; i < ce.length; i++) {
+                var e = ce[i] || {};
+                var target = e.target || null;
+                if (!target)
+                    continue;
+                var owner = null;
+                try {
+                    if (e.component && target.getComponent)
+                        owner = target.getComponent(e.component);
+                } catch (_) {}
+                if (!owner) {
+                    try {
+                        var comps = target._components || [];
+                        for (var j = 0; j < comps.length; j++) {
+                            var c = comps[j];
+                            if (c && e.handler && typeof c[e.handler] === 'function') {
+                                owner = c;
+                                break;
+                            }
+                        }
+                    } catch (_) {}
+                }
+                if (!owner)
+                    continue;
+                for (var k = 0; k < keys.length; k++) {
+                    var key = keys[k];
+                    if (!(key in owner))
+                        continue;
+                    try {
+                        var oldv = owner[key];
+                        var nv = oldv;
+                        if (typeof oldv === 'boolean')
+                            nv = (side === 'TAI');
+                        else if (typeof oldv === 'string' || oldv == null)
+                            nv = side;
+                        else
+                            continue;
+                        owner[key] = nv;
+                        touched.push({
+                            owner: String(owner.constructor && owner.constructor.name || ''),
+                            key: key,
+                            from: String(oldv),
+                            to: String(nv)
+                        });
+                    } catch (_) {}
+                }
+            }
+        } catch (_) {}
+        return touched;
+    }
+    function txForceOwnerSideFromNode(root, side, maxDepth) {
+        side = txNormSide(side);
+        var touched = [];
+        var candOut = [];
+        var cands = txCollectButtonCandidates(root, (maxDepth == null) ? 8 : maxDepth);
+        for (var i = 0; i < cands.length; i++) {
+            var c = cands[i];
+            var t = txForceOwnerSideFromCandidate(c, side) || [];
+            candOut.push({
+                tail: String(c.tail || ''),
+                depth: Number(c.depth || 0),
+                interactable: !!c.interactable,
+                clickEvents: c.clickEvents || [],
+                touched: t.length
+            });
+            if (t.length) {
+                for (var j = 0; j < t.length; j++) {
+                    var x = t[j] || {};
+                    x.tail = String(c.tail || '');
+                    touched.push(x);
+                }
+            }
+        }
+        return {
+            side: side,
+            touched: touched,
+            candidates: candOut
+        };
+    }
+    function txGuessSideByMark(mark) {
+        if (!mark)
+            return '';
+        if (mark.disableTai === false && mark.disableXiu === true)
+            return 'TAI';
+        if (mark.disableTai === true && mark.disableXiu === false)
+            return 'XIU';
+        if (!!mark.lightTai && !mark.lightXiu)
+            return 'TAI';
+        if (!mark.lightTai && !!mark.lightXiu)
+            return 'XIU';
+        return '';
+    }
+    function txClickNodePreferSelf(node) {
+        if (!node)
+            return false;
+        var ok = emitClick(node);
+        if (ok)
+            return true;
+        try {
+            var c = txNodeCenter(node);
+            if (c)
+                ok = txClickAtPoint(c.x, c.y);
+        } catch (_) {}
+        return !!ok;
+    }
+    async function txClickStrictSide(side) {
+        side = txNormSide(side);
+        var tail = txStrictSideTail(side);
+        var raw = txFindNodeByTailEnd(tail);
+        if (!raw) {
+            return {
+                ok: false,
+                side: side,
+                reason: 'strict_side_not_found',
+                tail: tail
+            };
+        }
+        var pick = txPickSideButtonCandidate(raw, side);
+        var targetCand = pick.best || null;
+        var target = (targetCand && targetCand.node) ? targetCand.node : (txFindClickableInSubtree(raw, 6) || raw);
+        var before = txDbgMark('before_side_' + side, 'side_select');
+        var used = '';
+        var ok = false;
+        var ownerTouched = [];
+        if (targetCand) {
+            ownerTouched = txForceOwnerSideFromCandidate(targetCand, side);
+            ok = txEmitButtonEvents(targetCand);
+            if (ok)
+                used = 'button_events';
+        }
+        if (!ok) {
+            ok = txClickNodePreferSelf(target);
+            if (ok)
+                used = 'emit_click_target';
+        }
+        if (!ok && target !== raw) {
+            ok = txClickNodePreferSelf(raw);
+            if (ok)
+                used = 'emit_click_raw';
+        }
+        await sleep(120);
+        var after = txDbgMark('after_side_' + side, 'side_select');
+        return {
+            ok: !!ok,
+            side: side,
+            tailRaw: String(tailOf(raw, 32) || ''),
+            tailTarget: String(tailOf(target, 32) || ''),
+            targetScore: targetCand ? Number(targetCand.score || 0) : null,
+            used: used,
+            ownerTouched: ownerTouched,
+            candidates: (pick && pick.dbg) ? pick.dbg.slice(0, 8) : [],
+            guessedBefore: txGuessSideByMark(before),
+            guessedAfter: txGuessSideByMark(after),
+            before: before,
+            after: after
+        };
+    }
+    async function txEnsureStrictSide(side, retries) {
+        side = txNormSide(side);
+        retries = Math.max(1, Math.floor(Number(retries) || 2));
+        var opposite = (side === 'TAI') ? 'XIU' : 'TAI';
+        var attempts = [];
+        for (var i = 0; i < retries; i++) {
+            var flip = await txClickStrictSide(opposite);
+            await sleep(70);
+            var hit = await txClickStrictSide(side);
+            var guessed = txGuessSideByMark(hit && hit.after);
+            var touchedSideState = !!(hit && hit.ownerTouched && hit.ownerTouched.length);
+            var accepted = (guessed === side) || touchedSideState;
+            attempts.push({
+                attempt: i + 1,
+                flip: flip,
+                hit: hit,
+                guessed: guessed,
+                touchedSideState: touchedSideState,
+                accepted: accepted
+            });
+            if (accepted) {
+                return {
+                    ok: true,
+                    side: side,
+                    attempts: attempts
+                };
+            }
+            await sleep(100);
+        }
+        return {
+            ok: false,
+            side: side,
+            attempts: attempts
+        };
+    }
+    function txFindEditComp(n) {
+        var c = getComp(n, cc.EditBox);
+        if (c)
+            return c;
+        try {
+            var comps = (n && n._components) || [];
+            for (var i = 0; i < comps.length; i++) {
+                var x = comps[i];
+                if (!x)
+                    continue;
+                var hasString = (typeof x.string !== 'undefined') || (typeof x._string !== 'undefined');
+                var looksLikeInput = !!(x.textLabel || x.placeholderLabel ||
+                    typeof x.setFocus === 'function' || typeof x.focus === 'function' ||
+                    typeof x._onInput === 'function');
+                if (hasString && looksLikeInput)
+                    return x;
+            }
+        } catch (_) {}
+        return null;
+    }
+    function txReadInputCompValue(comp) {
+        try {
+            if (comp && comp.string != null)
+                return String(comp.string).trim();
+        } catch (_) {}
+        try {
+            if (comp && comp._string != null)
+                return String(comp._string).trim();
+        } catch (_) {}
+        try {
+            if (comp && comp.textLabel && comp.textLabel.string != null)
+                return String(comp.textLabel.string).trim();
+        } catch (_) {}
+        return '';
+    }
+    function txApplyInputValue(comp, inputNode, value, fired) {
+        fired = fired || [];
+        // Do not call comp.setFocus()/focus(): Cocos may log Error 1400 noisily.
+        try {
+            if (comp) {
+                comp.string = value;
+                fired.push('comp.string');
+            }
+        } catch (_) {}
+        try {
+            if (comp && typeof comp._string !== 'undefined') {
+                comp._string = value;
+                fired.push('comp._string');
+            }
+        } catch (_) {}
+        try {
+            if (comp && comp.textLabel)
+                comp.textLabel.string = value;
+        } catch (_) {}
+        try {
+            if (comp && comp.placeholderLabel)
+                comp.placeholderLabel.string = '';
+        } catch (_) {}
+        try {
+            if (comp && typeof comp._onInput === 'function') {
+                comp._onInput(value);
+                fired.push('comp._onInput');
+            }
+        } catch (_) {}
+        try {
+            if (comp && typeof comp._updateString === 'function') {
+                comp._updateString(value);
+                fired.push('comp._updateString');
+            }
+        } catch (_) {}
+        try {
+            if (inputNode && typeof inputNode.emit === 'function') {
+                inputNode.emit('editing-did-began');
+                inputNode.emit('text-changed');
+                fired.push('node.emit');
+            }
+        } catch (_) {}
+    }
+    function txReadByTail(tail) {
+        var n = txFindNodeByTailEnd(tail);
+        return txReadText(n);
+    }
+    function txDbgMark(tag, mode) {
+        return {
+            tag: String(tag || ''),
+            mode: String(mode || ''),
+            inputTai: txReadByTail(TX_STRICT_TAIL_INPUT_TAI + '/TEXT_LABEL'),
+            inputXiu: txReadByTail(TX_STRICT_TAIL_INPUT_XIU + '/TEXT_LABEL'),
+            disableTai: !!(txFindNodeByTailEnd(TX_STRICT_TAIL_INPUT_TAI_DISABLE) && txFindNodeByTailEnd(TX_STRICT_TAIL_INPUT_TAI_DISABLE).activeInHierarchy),
+            disableXiu: !!(txFindNodeByTailEnd(TX_STRICT_TAIL_INPUT_XIU_DISABLE) && txFindNodeByTailEnd(TX_STRICT_TAIL_INPUT_XIU_DISABLE).activeInHierarchy),
+            lightTai: !!(txFindNodeByTailEnd('HomeScene/MINI_GAME_18/bgTxBanChoi/btnTaiBet/light_result_tai') && txFindNodeByTailEnd('HomeScene/MINI_GAME_18/bgTxBanChoi/btnTaiBet/light_result_tai').activeInHierarchy),
+            lightXiu: !!(txFindNodeByTailEnd('HomeScene/MINI_GAME_18/bgTxBanChoi/btnXiuBet/light_result_xiu') && txFindNodeByTailEnd('HomeScene/MINI_GAME_18/bgTxBanChoi/btnXiuBet/light_result_xiu').activeInHierarchy),
+            numBetTai: txReadByTail(TX_STRICT_TAIL_NUM_BET_TAI),
+            numBetXiu: txReadByTail(TX_STRICT_TAIL_NUM_BET_XIU),
+            moneyOnTai: txReadByTail('HomeScene/MINI_GAME_18/bgTxBanChoi/lblMoneyOnTai'),
+            moneyOnXiu: txReadByTail('HomeScene/MINI_GAME_18/bgTxBanChoi/lblMoneyOnXiu'),
+            alert: txReadByTail('HomeScene/MINI_GAME_18/bgTxBanChoi/bgAlert/lblAlert')
+        };
+    }
+    async function txPrepareSideByInput(side, amount) {
+        side = txNormSide(side);
+        try {
+            window.__tx_dbg_last_side = side;
+        } catch (_) {}
+        var value = String(Math.max(0, Math.floor(Number(amount) || 0)));
+        var inputTail = txStrictInputTail(side);
+        var disableTail = txStrictDisableTail(side);
+        var inputNode = txFindNodeByTailEnd(inputTail);
+        var disableNode = txFindNodeByTailEnd(disableTail);
+        if (!inputNode) {
+            return {
+                ok: false,
+                side: side,
+                reason: 'input_not_found',
+                inputTail: inputTail
+            };
+        }
+        var fired = [];
+        try {
+            var focusNode = clickableOf(inputNode, 8);
+            if (emitClick(focusNode))
+                fired.push('focus_click');
+        } catch (_) {}
+        await sleep(TX_BET_DELAY.focusBeforeSet);
+        var comp = txFindEditComp(inputNode);
+        var beforeVal = txReadInputCompValue(comp);
+        txApplyInputValue(comp, inputNode, value, fired);
+        var afterVal = txReadInputCompValue(comp);
+        await sleep(TX_BET_DELAY.afterSetBeforeConfirm);
+        return {
+            ok: (afterVal === value) || (value === '0' && afterVal === ''),
+            side: side,
+            value: value,
+            inputTail: inputTail,
+            disableTail: disableTail,
+            disableActive: !!(disableNode && disableNode.activeInHierarchy),
+            before: beforeVal,
+            after: afterVal,
+            fired: fired
+        };
+    }
+    async function txConfirmQuickBet(side) {
+        side = txNormSide(side || '');
+        var n = txFindNodeByTailEnd(TX_STRICT_TAIL_CONFIRM_BET);
+        if (!n) {
+            return {
+                ok: false,
+                reason: 'confirm_not_found',
+                tail: TX_STRICT_TAIL_CONFIRM_BET
+            };
+        }
+        var forceInfo = null;
+        if (side === 'TAI' || side === 'XIU') {
+            try {
+                forceInfo = txForceOwnerSideFromNode(n, side, 8);
+            } catch (_) {}
+        }
+        var node = clickableOf(n, 12);
+        var ok = emitClick(node);
+        if (!ok) {
+            try {
+                var c = txNodeCenter(node) || txNodeCenter(n);
+                if (c)
+                    ok = txClickAtPoint(c.x, c.y);
+            } catch (_) {}
+        }
+        await sleep(TX_BET_DELAY.afterConfirm);
+        return {
+            ok: !!ok,
+            tail: String(tailOf(node, 32) || ''),
+            active: !!(node && node.activeInHierarchy),
+            forceInfo: forceInfo
+        };
+    }
+    async function cwBetTxByInput(side, amount) {
+        side = txNormSide(side);
+        var amt = Math.max(0, Math.floor(Number(amount) || 0));
+        if (!amt)
+            return false;
+        var prepare = await txPrepareSideByInput(side, amt);
+        try {
+            window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+            window.__cw_bet_debug_last.prepare = prepare;
+        } catch (_) {}
+        if (!prepare.ok) {
+            try {
+                window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                window.__cw_bet_debug_last.error = 'set_input_failed';
+            } catch (_) {}
+            return false;
+        }
+        var sideSelect = await txEnsureStrictSide(side, 2);
+        try {
+            window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+            window.__cw_bet_debug_last.sideSelect = sideSelect;
+        } catch (_) {}
+        if (!sideSelect.ok) {
+            try {
+                window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                window.__cw_bet_debug_last.sideWarning = 'side_select_unconfirmed';
+            } catch (_) {}
+        }
+        var sideFinal = await txClickStrictSide(side);
+        try {
+            window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+            window.__cw_bet_debug_last.sideFinal = sideFinal;
+        } catch (_) {}
+        if (!sideFinal.ok && sideSelect.ok) {
+            try {
+                window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                window.__cw_bet_debug_last.error = 'side_final_failed';
+            } catch (_) {}
+            return false;
+        }
+        var confirm = await txConfirmQuickBet(side);
+        try {
+            window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+            window.__cw_bet_debug_last.confirm = confirm;
+        } catch (_) {}
+        if (!confirm.ok) {
+            try {
+                window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                window.__cw_bet_debug_last.error = 'confirm_failed';
+            } catch (_) {}
+            return false;
+        }
+        return true;
+    }
+    window.__tx_dbg_reset = function () {
+        window.__cw_bet_debug_last = {};
+        return 'ok';
+    };
+    window.__tx_dbg_mark = function (tag) {
+        return txDbgMark(tag || 'mark', 'idle');
+    };
+    window.__tx_dbg_prepare_only = async function (side, amount) {
+        var before = txDbgMark('before_prepare', 'prepare_only');
+        var setRes = await txPrepareSideByInput(side, amount == null ? 1000 : amount);
+        var after = txDbgMark('after_prepare', 'prepare_only');
+        return {
+            before: before,
+            setRes: setRes,
+            after: after
+        };
+    };
+    window.__tx_dbg_click_side = async function (side) {
+        try {
+            window.__tx_dbg_last_side = txNormSide(side);
+        } catch (_) {}
+        var before = txDbgMark('before_dbg_click_side', 'dbg_click_side');
+        var sideRes = await txEnsureStrictSide(side, 2);
+        var after = txDbgMark('after_dbg_click_side', 'dbg_click_side');
+        return {
+            side: txNormSide(side),
+            before: before,
+            sideRes: sideRes,
+            after: after
+        };
+    };
+    window.__tx_dbg_probe_side_candidates = function (side) {
+        side = txNormSide(side);
+        var tail = txStrictSideTail(side);
+        var raw = txFindNodeByTailEnd(tail);
+        if (!raw) {
+            return {
+                ok: false,
+                side: side,
+                reason: 'strict_side_not_found',
+                tail: tail
+            };
+        }
+        var pick = txPickSideButtonCandidate(raw, side);
+        return {
+            ok: true,
+            side: side,
+            tail: tail,
+            rawTail: String(tailOf(raw, 32) || ''),
+            best: (pick && pick.best) ? {
+                score: pick.best.score,
+                depth: pick.best.depth,
+                tail: pick.best.tail,
+                interactable: pick.best.interactable,
+                clickEvents: pick.best.clickEvents
+            }
+             : null,
+            candidates: (pick && pick.dbg) ? pick.dbg : []
+        };
+    };
+    window.__tx_dbg_confirm_script = async function () {
+        var s = 'XIU';
+        try {
+            s = txNormSide(window.__tx_dbg_last_side || ((window.__cw_bet_debug_last || {}).side) || ((window.__cw_bet_debug_last || {}).sideRaw) || 'XIU');
+        } catch (_) {}
+        var before = txDbgMark('before_script_confirm', 'script_confirm');
+        var confirmRes = await txConfirmQuickBet(s);
+        var after = txDbgMark('after_script_confirm', 'script_confirm');
+        return {
+            side: s,
+            confirmOk: !!(confirmRes && confirmRes.ok),
+            confirmPath: confirmRes ? confirmRes.tail : '',
+            before: before,
+            after: after
+        };
+    };
+    window.__tx_dbg_confirm_script_with_side = async function (side) {
+        var s = txNormSide(side || 'XIU');
+        var before = txDbgMark('before_script_confirm_' + s, 'script_confirm');
+        var confirmRes = await txConfirmQuickBet(s);
+        var after = txDbgMark('after_script_confirm_' + s, 'script_confirm');
+        return {
+            side: s,
+            confirmOk: !!(confirmRes && confirmRes.ok),
+            confirmPath: confirmRes ? confirmRes.tail : '',
+            forceInfo: confirmRes ? confirmRes.forceInfo : null,
+            before: before,
+            after: after
+        };
+    };
+    window.__tx_dbg_get_last_accept = function () {
+        return window.__cw_bet_debug_last || null;
+    };
     function txScanMenuChips() {
         var out = [];
         for (var i = 0; i < TX_MENU_CHIP_CONFIG.length; i++) {
@@ -5890,7 +6875,7 @@
                  : null) || {};
 
             // ĐẶT CƯỢC bằng click phỉnh TipDealer + cửa Tài/Xỉu
-            var ok = await cwBetTxByChip(side, amt);
+            var ok = await cwBetTxByInput(side, amt);
             if (!ok) {
                 try {
                     window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
