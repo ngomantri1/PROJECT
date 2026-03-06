@@ -1686,7 +1686,7 @@ Ví dụ không hợp lệ:
                 }
 
                 // Mở DevTools ngay sau khi CoreWebView2 sẵn sàng.
-                try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
+                //try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
                 // Điều hướng mọi window.open về cùng WebView2
@@ -3526,11 +3526,16 @@ Ví dụ không hợp lệ:
             }
             Log($"[BET][NATIVE] arm side={side} tail={pTarget.tail} p=({Math.Round(pTarget.x)},{Math.Round(pTarget.y)})");
 
+            const int ArmGap1Ms = 55;
+            const int ArmGap2Ms = 80;
+            const int ArmFlipGapMs = 60;
+            const int ArmFinalGapMs = 90;
+
             // Lượt 1: click target 2 lần (tương tự thao tác tay).
             NativeClickByJsPoint(pTarget);
-            await Task.Delay(85);
+            await Task.Delay(ArmGap1Ms);
             NativeClickByJsPoint(pTarget);
-            await Task.Delay(120);
+            await Task.Delay(ArmGap2Ms);
 
             var cur = await ReadActiveSideFromJsAsync();
             if (string.Equals(cur, side, StringComparison.OrdinalIgnoreCase))
@@ -3544,10 +3549,10 @@ Ví dụ không hợp lệ:
             if (pOpp != null && pOpp.ok)
             {
                 NativeClickByJsPoint(pOpp);
-                await Task.Delay(90);
+                await Task.Delay(ArmFlipGapMs);
             }
             NativeClickByJsPoint(pTarget);
-            await Task.Delay(140);
+            await Task.Delay(ArmFinalGapMs);
 
             cur = await ReadActiveSideFromJsAsync();
             var ok = string.Equals(cur, side, StringComparison.OrdinalIgnoreCase);
@@ -6135,4 +6140,5 @@ Ví dụ không hợp lệ:
     }
 
 }
+
 

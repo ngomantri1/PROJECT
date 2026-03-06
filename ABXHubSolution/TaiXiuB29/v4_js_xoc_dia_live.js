@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r62-20260307-side-point-robust';
+    window.__cw_patch_ver = 'cw-r63-20260307-bet-fast-safe';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -2628,7 +2628,7 @@
         '<div id="cwScanLog" style="margin-top:6px;max-height:110px;overflow:auto;white-space:pre;color:#7fe;border-top:1px dashed #184;padding-top:4px"></div>' +
         '<div id="cwScanStatus" style="margin-top:6px;white-space:pre;color:#ffd37a;line-height:1.35"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
+    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -6126,13 +6126,13 @@
     ];
     // NEW: delay cho chuỗi thao tác bet (tối ưu cho máy yếu/VPS)
     var TX_BET_DELAY = {
-        sideToChip: 260, // legacy: delay after side click
-        chipToChip: 220, // legacy: delay between chip clicks
-        afterChipsBeforeConfirm: 260 // legacy: delay before confirm
+        sideToChip: 180, // legacy: delay after side click
+        chipToChip: 150, // legacy: delay between chip clicks
+        afterChipsBeforeConfirm: 180 // legacy: delay before confirm
     };
-    TX_BET_DELAY.focusBeforeSet = 90;
-    TX_BET_DELAY.afterSetBeforeConfirm = 140;
-    TX_BET_DELAY.afterConfirm = 220;
+    TX_BET_DELAY.focusBeforeSet = 60;
+    TX_BET_DELAY.afterSetBeforeConfirm = 90;
+    TX_BET_DELAY.afterConfirm = 140;
     var TX_STRICT_TAIL_INPUT_TAI = 'HomeScene/MINI_GAME_18/bgTxBanChoi/bgBetInputTai/txtBetTai';
     var TX_STRICT_TAIL_INPUT_XIU = 'HomeScene/MINI_GAME_18/bgTxBanChoi/bgBetInputXiu/txtBetXiu';
     var TX_STRICT_TAIL_INPUT_TAI_DISABLE = 'HomeScene/MINI_GAME_18/bgTxBanChoi/bgBetInputTai/txtBetTaiDisable';
