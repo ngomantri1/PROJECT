@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r61-20260307-seq-shared-sync';
+    window.__cw_patch_ver = 'cw-r62-20260307-side-point-robust';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -6156,6 +6156,57 @@
         });
         return hit;
     }
+    function txNodeActive(n) {
+        try {
+            return !!n && n.activeInHierarchy !== false;
+        } catch (_) {}
+        return false;
+    }
+    function txFindNodesByTailEnd(tailEnd, limit) {
+        tailEnd = String(tailEnd || '');
+        var tailLower = tailEnd.toLowerCase();
+        var out = [];
+        limit = Math.max(1, Number(limit) || 64);
+        if (!tailLower)
+            return out;
+        walkNodes(function (n) {
+            if (!n || out.length >= limit)
+                return;
+            var t = tailOf(n, 16);
+            if (String(t || '').toLowerCase().endsWith(tailLower))
+                out.push(n);
+        });
+        return out;
+    }
+    function txPickNodeByTailForPoint(tailEnd) {
+        var rows = txFindNodesByTailEnd(tailEnd, 64);
+        if (!rows.length)
+            return null;
+        var best = null;
+        var bestScore = -1e9;
+        for (var i = 0; i < rows.length; i++) {
+            var n = rows[i];
+            var activeFlag = txNodeActive(n) ? 1 : 0;
+            var c = txNodeCenter(n);
+            var hasCenter = c ? 1 : 0;
+            var clickFlag = clickable(n) ? 1 : 0;
+            var area = 0;
+            try {
+                var cs = n && n.getContentSize ? n.getContentSize() : null;
+                area = Math.max(0, Number(cs && cs.width) || 0) * Math.max(0, Number(cs && cs.height) || 0);
+            } catch (_) {
+                area = 0;
+            }
+            var score = (hasCenter * 1000) + (activeFlag * 100) + (clickFlag * 20) + Math.min(area, 200000) / 1000;
+            if (score > bestScore) {
+                best = n;
+                bestScore = score;
+            }
+            if (hasCenter && activeFlag)
+                break;
+        }
+        return best;
+    }
     function txFindNodeByTailEnds(cands) {
         cands = cands || [];
         for (var i = 0; i < cands.length; i++) {
@@ -6328,7 +6379,66 @@
         };
     }
     function txNodePointForHost(node) {
-        var c = txNodeCenter(node);
+        function centerTry(n) {
+            try {
+                return txNodeCenter(n);
+            } catch (_) {}
+            return null;
+        }
+        function centerByParent(n, depth) {
+            depth = (depth == null) ? 6 : depth;
+            var cur = n;
+            var d = 0;
+            while (cur && d <= depth) {
+                var cp = centerTry(cur);
+                if (cp)
+                    return cp;
+                cur = cur.parent || cur._parent || null;
+                d++;
+            }
+            return null;
+        }
+        var c = centerTry(node);
+        if (!c) {
+            try {
+                var clickNode = clickableOf(node, 8);
+                c = centerTry(clickNode);
+            } catch (_) {}
+        }
+        if (!c)
+            c = centerByParent(node, 6);
+        if (!c) {
+            try {
+                if (node && typeof node.getBoundingBoxToWorld === 'function' && window.cc && cc.view) {
+                    var bb = node.getBoundingBoxToWorld();
+                    if (bb && isFinite(bb.x) && isFinite(bb.y) && isFinite(bb.width) && isFinite(bb.height)) {
+                        var cx = Number(bb.x) + Number(bb.width) / 2;
+                        var cy = Number(bb.y) + Number(bb.height) / 2;
+                        var fs = cc.view.getFrameSize ? cc.view.getFrameSize() : null;
+                        var vs = cc.view.getVisibleSize ? cc.view.getVisibleSize() : null;
+                        var sx = (Number(fs && fs.width) || 1) / Math.max(1, Number(vs && vs.width) || 1);
+                        var sy = (Number(fs && fs.height) || 1) / Math.max(1, Number(vs && vs.height) || 1);
+                        var gx = cx * sx;
+                        var gy = cy * sy;
+                        var cvs = document.querySelector('canvas');
+                        if (cvs && typeof cvs.getBoundingClientRect === 'function') {
+                            var rect = cvs.getBoundingClientRect();
+                            var fw = Math.max(1, Number(fs && fs.width) || rect.width || 1);
+                            var fh = Math.max(1, Number(fs && fs.height) || rect.height || 1);
+                            c = {
+                                x: rect.left + (gx / fw) * Math.max(1, rect.width || 1),
+                                y: rect.top + ((fh - gy) / fh) * Math.max(1, rect.height || 1)
+                            };
+                        } else {
+                            c = {
+                                x: gx,
+                                y: gy
+                            };
+                        }
+                    }
+                }
+            } catch (_) {}
+        }
         if (!c)
             return null;
         var vp = txViewportSize();
@@ -6355,31 +6465,77 @@
         ];
         var node = null;
         var pickedTail = '';
+        var tried = [];
         for (var i = 0; i < tails.length; i++) {
-            var n = txFindNodeByTailEnd(tails[i]);
+            var n = txPickNodeByTailForPoint(tails[i]) || txFindNodeByTailEnd(tails[i]);
+            var hasCenter = false;
+            try {
+                hasCenter = !!txNodePointForHost(n);
+            } catch (_) {}
+            tried.push({
+                tail: tails[i],
+                found: !!n,
+                active: !!(n && n.activeInHierarchy),
+                hasCenter: hasCenter
+            });
             if (n) {
                 node = n;
                 pickedTail = tails[i];
-                break;
+                if (hasCenter)
+                    break;
             }
         }
         if (!node) {
+            var pCalNone = txGetCalibPoint(side === 'TAI' ? 'tai' : 'xiu');
+            if (pCalNone) {
+                var vpCalNone = txViewportSize();
+                return {
+                    ok: true,
+                    side: side,
+                    x: Math.round(Math.max(0, Math.min(vpCalNone.w - 1, Number(pCalNone.x) || 0))),
+                    y: Math.round(Math.max(0, Math.min(vpCalNone.h - 1, Number(pCalNone.y) || 0))),
+                    vw: vpCalNone.w,
+                    vh: vpCalNone.h,
+                    tail: 'calib:' + side.toLowerCase(),
+                    source: 'calib',
+                    candidates: tails,
+                    tried: tried
+                };
+            }
             return {
                 ok: false,
                 side: side,
                 reason: 'side_input_not_found',
                 tail: tails[0],
-                candidates: tails
+                candidates: tails,
+                tried: tried
             };
         }
         var p = txNodePointForHost(node);
         if (!p) {
+            var pCal = txGetCalibPoint(side === 'TAI' ? 'tai' : 'xiu');
+            if (pCal) {
+                var vpCal = txViewportSize();
+                return {
+                    ok: true,
+                    side: side,
+                    x: Math.round(Math.max(0, Math.min(vpCal.w - 1, Number(pCal.x) || 0))),
+                    y: Math.round(Math.max(0, Math.min(vpCal.h - 1, Number(pCal.y) || 0))),
+                    vw: vpCal.w,
+                    vh: vpCal.h,
+                    tail: 'calib:' + side.toLowerCase(),
+                    source: 'calib',
+                    candidates: tails,
+                    tried: tried
+                };
+            }
             return {
                 ok: false,
                 side: side,
                 reason: 'center_not_found',
                 tail: pickedTail,
-                candidates: tails
+                candidates: tails,
+                tried: tried
             };
         }
         return {
@@ -6389,7 +6545,9 @@
             y: p.y,
             vw: p.vw,
             vh: p.vh,
-            tail: pickedTail
+            tail: pickedTail,
+            source: 'node',
+            tried: tried
         };
     };
     function txFindClickableInSubtree(root, maxDepth) {

@@ -3438,6 +3438,12 @@ Ví dụ không hợp lệ:
                 " var m=window.__tx_dbg_mark('native_arm_verify');" +
                 " if(m && m.disableTai===false && m.disableXiu===true) return 'TAI';" +
                 " if(m && m.disableTai===true && m.disableXiu===false) return 'XIU';" +
+                " if(m && m.lightTai===true && m.lightXiu!==true) return 'TAI';" +
+                " if(m && m.lightTai!==true && m.lightXiu===true) return 'XIU';" +
+                " var a=String((m&&m.inputTai)||'').trim();" +
+                " var b=String((m&&m.inputXiu)||'').trim();" +
+                " if(a && !b) return 'TAI';" +
+                " if(!a && b) return 'XIU';" +
                 " return '';" +
                 "}catch(_){return '';}})()";
 
@@ -3545,11 +3551,22 @@ Ví dụ không hợp lệ:
 
             cur = await ReadActiveSideFromJsAsync();
             var ok = string.Equals(cur, side, StringComparison.OrdinalIgnoreCase);
-            if (!ok)
-                Log($"[BET][NATIVE] arm verify failed side={side} active={cur}");
-            else
+            if (ok)
+            {
                 Log($"[BET][NATIVE] arm pass#2 side={side}");
-            return ok;
+                return true;
+            }
+
+            // Neu khong doc duoc side ro rang (cur='') thi khong block luong bet.
+            // __cw_bet phia JS van co lop side-guard rieng truoc khi confirm.
+            if (string.IsNullOrWhiteSpace(cur))
+            {
+                Log($"[BET][NATIVE] arm verify unknown side={side}, continue");
+                return true;
+            }
+
+            Log($"[BET][NATIVE] arm verify failed side={side} active={cur}");
+            return false;
         }
 
 
