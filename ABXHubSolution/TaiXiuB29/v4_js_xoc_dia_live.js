@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r48-20260306-readseqsafe-fallback';
+    window.__cw_patch_ver = 'cw-r61-20260307-seq-shared-sync';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -222,6 +222,7 @@
             return null;
         return parseInt(d, 10);
     }
+    window.__cw_moneyOf = moneyOf;
     var fmt = function (v) {
         if (v == null)
             return '--';
@@ -1406,6 +1407,14 @@
         seq = String(seq || '').toUpperCase().replace(/[^TX]/g, '');
         return seq;
     }
+    function txNormSeqCompat(seq) {
+        try {
+            if (typeof _normalizeTxSeq === 'function')
+                return _normalizeTxSeq(seq);
+        } catch (_) {}
+        return String(seq || '').toUpperCase().replace(/[^TX]/g, '');
+    }
+    window.__cw_normTxSeq = txNormSeqCompat;
 
     function _seqFromWinStrict(w) {
         try {
@@ -1832,8 +1841,38 @@
                     return 'X';
                 return '';
             }
+            function parseSession(txt) {
+                var f = foldVi(txt);
+                var m = f.match(/#\s*(\d{4,})/);
+                if (!m)
+                    return null;
+                var v = parseInt(m[1], 10);
+                return isFinite(v) ? v : null;
+            }
+            function isHistoryTail(tailRaw) {
+                var tailLc = String(tailRaw || '').toLowerCase().replace(/\\/g, '/');
+                if (!tailLc)
+                    return false;
+                if (tailLc.indexOf('mini_game_18') === -1)
+                    return false;
+                if (tailLc.indexOf('/bgtxhistory/') === -1)
+                    return false;
+                if (tailLc.indexOf('/new label') === -1)
+                    return false;
+                return true;
+            }
+            function addRow(out, text, x, tail) {
+                var tx = toTx(text || '');
+                if (!tx)
+                    return;
+                out.push({
+                    tx: tx,
+                    session: parseSession(text || ''),
+                    x: Number(x) || 0,
+                    tail: String(tail || '')
+                });
+            }
             var out = [];
-            var TAIL_END = 'homescene/mini_game_18/bgtxhistory/btnhistoryitem/bgtooltips/new label';
             try {
                 if (typeof collectLabels === 'function') {
                     var labs = collectLabels() || [];
@@ -1842,15 +1881,9 @@
                         var tail = String(L.tail || L.tl || '').toLowerCase();
                         if (!tail)
                             continue;
-                        if (!tail.endsWith(TAIL_END))
+                        if (!isHistoryTail(tail))
                             continue;
-                        var tx = toTx(L.text || '');
-                        if (!tx)
-                            continue;
-                        out.push({
-                            tx: tx,
-                            x: Number(L.x) || 0
-                        });
+                        addRow(out, L.text || '', Number(L.x) || 0, tail);
                     }
                 }
             } catch (_) {}
@@ -1861,27 +1894,62 @@
                             if (!n)
                                 return;
                             var tail = String(tailOf(n, 32) || '').toLowerCase();
-                            if (!tail.endsWith(TAIL_END))
-                                return;
-                            var tx = toTx(_readNodeTextLocal(n));
-                            if (!tx)
+                            if (!isHistoryTail(tail))
                                 return;
                             var r = wRect(n) || {
                                 x: 0
                             };
-                            out.push({
-                                tx: tx,
-                                x: Number(r.x) || 0
-                            });
+                            addRow(out, _readNodeTextLocal(n), Number(r.x) || 0, tail);
+                        });
+                    }
+                } catch (_) {}
+            }
+            if (!out.length) {
+                try {
+                    if (typeof walkNodes === 'function') {
+                        walkNodes(function (n) {
+                            if (!n || String(n.name || '') !== 'New Label')
+                                return;
+                            var tl = String(tailOf(n, 48) || '').toLowerCase();
+                            if (!isHistoryTail(tl))
+                                return;
+                            var r = wRect(n) || {
+                                x: 0
+                            };
+                            addRow(out, _readNodeTextLocal(n), Number(r.x) || 0, tl);
                         });
                     }
                 } catch (_) {}
             }
             if (!out.length)
                 return '';
-            out.sort(function (a, b) {
-                return a.x - b.x;
-            });
+
+            // Ưu tiên sắp theo session để ổn định khi layout thay đổi/x lệch.
+            var withSession = [];
+            for (var si = 0; si < out.length; si++) {
+                if (out[si] && out[si].session != null)
+                    withSession.push(out[si]);
+            }
+            if (withSession.length >= 3) {
+                var map = {};
+                for (var wi = 0; wi < withSession.length; wi++) {
+                    var row = withSession[wi];
+                    var key = String(row.session);
+                    map[key] = row;
+                }
+                out = [];
+                for (var kk in map) {
+                    if (Object.prototype.hasOwnProperty.call(map, kk))
+                        out.push(map[kk]);
+                }
+                out.sort(function (a, b) {
+                    return (a.session - b.session) || (a.x - b.x);
+                });
+            } else {
+                out.sort(function (a, b) {
+                    return a.x - b.x;
+                });
+            }
             var seq = '';
             for (var k = 0; k < out.length; k++)
                 seq += out[k].tx;
@@ -1889,6 +1957,147 @@
         } catch (_) {}
         return '';
     }
+    window.__cw_readTxHistorySeqStrict = readTxHistorySeqStrictLocal;
+
+    function readTxHistorySeqFromSceneLocal() {
+        try {
+            function foldVi(s) {
+                s = String(s || '');
+                try {
+                    s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                } catch (_) {}
+                s = s.replace(/\u0111/g, 'd').replace(/\u0110/g, 'D');
+                return s.toLowerCase();
+            }
+            function toTx(text) {
+                var f = foldVi(text);
+                if (f.indexOf('tai') !== -1)
+                    return 'T';
+                if (f.indexOf('xiu') !== -1)
+                    return 'X';
+                return '';
+            }
+            function parseSession(text) {
+                var m = foldVi(text).match(/#\s*(\d{4,})/);
+                if (!m)
+                    return null;
+                var v = parseInt(m[1], 10);
+                return isFinite(v) ? v : null;
+            }
+            function getScene() {
+                try {
+                    if (window.cc && cc.director && cc.director.getScene)
+                        return cc.director.getScene();
+                } catch (_) {}
+                return null;
+            }
+            function getNodeText(node) {
+                try {
+                    if (!node || !node.getComponent || !window.cc)
+                        return '';
+                    var lbl = node.getComponent(cc.Label);
+                    if (lbl && lbl.string != null)
+                        return String(lbl.string);
+                    var rt = node.getComponent(cc.RichText);
+                    if (rt && rt.string != null)
+                        return String(rt.string);
+                } catch (_) {}
+                return '';
+            }
+            function pathOf(node) {
+                var arr = [];
+                var n = node;
+                var c = 0;
+                while (n && c < 96) {
+                    arr.push(String(n.name || ''));
+                    n = n.parent || null;
+                    c++;
+                }
+                return arr.reverse().join('/');
+            }
+            function walkScene(root, cb) {
+                var st = [root];
+                while (st.length) {
+                    var n = st.pop();
+                    if (!n)
+                        continue;
+                    try {
+                        cb(n);
+                    } catch (_) {}
+                    var kids = n.children || n._children || [];
+                    for (var i = 0; i < kids.length; i++)
+                        st.push(kids[i]);
+                }
+            }
+
+            var scene = getScene();
+            if (!scene)
+                return '';
+
+            var rows = [];
+            walkScene(scene, function (n) {
+                if (String(n && n.name || '') !== 'New Label')
+                    return;
+                var p = pathOf(n).toLowerCase();
+                if (p.indexOf('mini_game_18') === -1)
+                    return;
+                if (p.indexOf('bgtxhistory') === -1)
+                    return;
+                if (p.indexOf('btnhistoryitem') === -1)
+                    return;
+
+                var text = getNodeText(n);
+                var tx = toTx(text);
+                if (!tx)
+                    return;
+                var x = 0;
+                try {
+                    if (typeof wRect === 'function')
+                        x = Number((wRect(n) || {}).x) || 0;
+                } catch (_) {}
+                rows.push({
+                    tx: tx,
+                    session: parseSession(text),
+                    x: x
+                });
+            });
+
+            if (!rows.length)
+                return '';
+
+            var withSession = [];
+            for (var wi = 0; wi < rows.length; wi++) {
+                if (rows[wi] && rows[wi].session != null)
+                    withSession.push(rows[wi]);
+            }
+            var used = [];
+            if (withSession.length >= 3) {
+                var map = {};
+                for (var mi = 0; mi < withSession.length; mi++) {
+                    var r = withSession[mi];
+                    map[String(r.session)] = r;
+                }
+                for (var k in map) {
+                    if (Object.prototype.hasOwnProperty.call(map, k))
+                        used.push(map[k]);
+                }
+                used.sort(function (a, b) {
+                    return (a.session - b.session) || (a.x - b.x);
+                });
+            } else {
+                used = rows.slice().sort(function (a, b) {
+                    return a.x - b.x;
+                });
+            }
+
+            var seq = '';
+            for (var si = 0; si < used.length; si++)
+                seq += used[si].tx;
+            return String(seq || '').toUpperCase().replace(/[^TX]/g, '');
+        } catch (_) {}
+        return '';
+    }
+    window.__cw_readTxHistorySeqScene = readTxHistorySeqFromSceneLocal;
 
     function readTextByTailSuffixLocal(tailSuffix) {
         try {
@@ -1939,31 +2148,118 @@
         return '';
     }
 
-    function readSeqSafeLocal() {
+    function seqNormSafeLocal(seq) {
         try {
-            var strictSeq = readTxHistorySeqStrictLocal();
-            if (strictSeq)
-                return strictSeq;
+            if (typeof txNormSeqCompat === 'function')
+                return txNormSeqCompat(seq);
+        } catch (_) {}
+        try {
+            if (typeof window.__cw_normTxSeq === 'function')
+                return window.__cw_normTxSeq(seq);
+        } catch (_) {}
+        try {
+            if (typeof _normalizeTxSeq === 'function')
+                return _normalizeTxSeq(seq);
+        } catch (_) {}
+        return String(seq || '').toUpperCase().replace(/[^TX]/g, '');
+    }
 
-            // Luon trigger build (co throttle noi bo) de rolling co co hoi append ket qua moi.
-            var seq = buildIconSeqFromSceneLocal(false);
+    function seqGetTopWinLocal() {
+        try {
+            if (window.top)
+                return window.top;
+        } catch (_) {}
+        return window;
+    }
+
+    function seqReadSharedLocal() {
+        var seq = '';
+        try {
+            seq = seqNormSafeLocal(window.__cw_lastSeq || '');
             if (seq)
                 return seq;
-
-            seq = _findSeqAcrossWindows();
-            if (seq)
-                return seq;
-
-            var legacy = readTKSeq();
-            if (legacy && legacy.seq)
-                return _normalizeTxSeq(legacy.seq);
-
-            var cached = _normalizeTxSeq(window.__cw_lastSeq || '');
-            if (cached)
-                return cached;
+        } catch (_) {}
+        try {
+            var topWin = seqGetTopWinLocal();
+            var sh = topWin && topWin.__cw_seq_shared;
+            if (sh && typeof sh === 'object') {
+                seq = seqNormSafeLocal(sh.seq || '');
+                if (seq)
+                    return seq;
+            }
         } catch (_) {}
         return '';
     }
+
+    function seqWriteSharedLocal(seq, source) {
+        seq = seqNormSafeLocal(seq);
+        if (!seq)
+            return '';
+        try {
+            window.__cw_lastSeq = seq;
+        } catch (_) {}
+        try {
+            var topWin = seqGetTopWinLocal();
+            if (!topWin)
+                topWin = window;
+            var sh = (topWin.__cw_seq_shared && typeof topWin.__cw_seq_shared === 'object')
+                 ? topWin.__cw_seq_shared
+                 : {};
+            sh.seq = seq;
+            sh.ts = Date.now();
+            sh.patch = String(window.__cw_patch_ver || '');
+            sh.source = String(source || '');
+            try {
+                sh.href = String((window.location && window.location.href) || '');
+            } catch (_) {}
+            topWin.__cw_seq_shared = sh;
+        } catch (_) {}
+        return seq;
+    }
+
+    function readSeqSafeLocal() {
+        try {
+            var seq = '';
+            var sceneFn = (typeof readTxHistorySeqFromSceneLocal === 'function')
+                 ? readTxHistorySeqFromSceneLocal
+                 : ((typeof window.__cw_readTxHistorySeqScene === 'function')
+                     ? window.__cw_readTxHistorySeqScene
+                     : null);
+            var sceneSeq = seqNormSafeLocal(sceneFn ? (sceneFn() || '') : '');
+            if (sceneSeq)
+                return seqWriteSharedLocal(sceneSeq, 'scene');
+
+            var strictFn = (typeof readTxHistorySeqStrictLocal === 'function')
+                 ? readTxHistorySeqStrictLocal
+                 : ((typeof window.__cw_readTxHistorySeqStrict === 'function')
+                     ? window.__cw_readTxHistorySeqStrict
+                     : null);
+            var strictSeq = seqNormSafeLocal(strictFn ? (strictFn() || '') : '');
+            if (strictSeq)
+                return seqWriteSharedLocal(strictSeq, 'strict');
+
+            // Luon trigger build (co throttle noi bo) de rolling co co hoi append ket qua moi.
+            seq = seqNormSafeLocal(buildIconSeqFromSceneLocal(false) || '');
+            if (seq)
+                return seqWriteSharedLocal(seq, 'icon');
+
+            seq = seqNormSafeLocal(_findSeqAcrossWindows() || '');
+            if (seq)
+                return seqWriteSharedLocal(seq, 'cross');
+
+            var legacy = readTKSeq();
+            if (legacy && legacy.seq)
+                return seqWriteSharedLocal(seqNormSafeLocal(legacy.seq), 'legacy');
+
+            var cached = seqReadSharedLocal();
+            if (cached)
+                return cached;
+        } catch (_) {}
+        return seqReadSharedLocal();
+    }
+    window.__cw_readSeqSafeLocal = readSeqSafeLocal;
+    window.__cw_seqSharedRead = seqReadSharedLocal;
+    window.__cw_seqSharedWrite = seqWriteSharedLocal;
 
     /* ---------------- resolver/auto ---------------- */
     function resolve(poolSig, sig) {
@@ -2793,14 +3089,28 @@
             '  val : ' + (f && f.val != null ? fmt(f.val) : '-');
 
         // Chuỗi kết quả hiển thị như cũ
-        var __seqFn = (typeof readSeqSafe === 'function')
-             ? readSeqSafe
-             : ((typeof readSeqSafeLocal === 'function') ? readSeqSafeLocal : null);
-        S.seq = __seqFn ? (__seqFn() || '') : '';
+        var seqView = seqNormSafeLocal(S.seq || '');
+        if (!seqView) {
+            try {
+                seqView = seqNormSafeLocal(readSeqSafeLocal() || '');
+            } catch (_) {
+                seqView = '';
+            }
+        }
+        if (!seqView) {
+            try {
+                if (typeof window.__cw_seqSharedRead === 'function')
+                    seqView = seqNormSafeLocal(window.__cw_seqSharedRead() || '');
+            } catch (_) {
+                seqView = '';
+            }
+        }
+        if (seqView)
+            S.seq = seqView;
         var seqHtml = 'Chuỗi kết quả : <i>--</i>';
-        if (S.seq && S.seq.length) {
-            var head = esc(S.seq.slice(0, -1));
-            var last = esc(S.seq.slice(-1));
+        if (seqView && seqView.length) {
+            var head = esc(seqView.slice(0, -1));
+            var last = esc(seqView.slice(-1));
             seqHtml = 'Chuỗi kết quả : <span>' + head +
                 '</span><span style="color:#f66">' + last + '</span>';
         }
@@ -3978,10 +4288,15 @@
 
         // TK sequence (export ra global để bridge dùng).
         // Giữ last-good để tránh tụt về rỗng khi strict source miss tạm thời.
-        var _seqNow = readSeqSafeLocal() || '';
+        var _seqNow = '';
+        try {
+            _seqNow = seqNormSafeLocal(readSeqSafeLocal() || '');
+        } catch (_) {
+            _seqNow = '';
+        }
         if (!_seqNow) {
             try {
-                _seqNow = _normalizeTxSeq(window.__cw_lastSeq || '');
+                _seqNow = seqNormSafeLocal(seqReadSharedLocal() || '');
             } catch (_) {
                 _seqNow = '';
             }
@@ -3989,7 +4304,7 @@
         S.seq = _seqNow || '';
         try {
             if (S.seq)
-                window.__cw_lastSeq = S.seq;
+                seqWriteSharedLocal(S.seq, 'tick');
         } catch (_) {}
 
         // keep focus
@@ -4671,10 +4986,74 @@
         return '';
     }
 
+    function readTextByTailSuffixCompatLocal(tailSuffix) {
+        try {
+            if (typeof readTextByTailSuffixLocal === 'function')
+                return readTextByTailSuffixLocal(tailSuffix);
+        } catch (_) {}
+        try {
+            var suf = String(tailSuffix || '').toLowerCase().replace(/^\/+/, '');
+            if (!suf)
+                return '';
+
+            function isMatch(tl) {
+                tl = String(tl || '').toLowerCase();
+                if (!tl)
+                    return false;
+                return (tl === suf || tl.endsWith('/' + suf));
+            }
+
+            try {
+                if (typeof collectLabels === 'function') {
+                    var labs = collectLabels() || [];
+                    for (var i = 0; i < labs.length; i++) {
+                        var L = labs[i] || {};
+                        if (!isMatch(L.tail || L.tl))
+                            continue;
+                        var txt = String(L.text || '').trim();
+                        if (txt)
+                            return txt;
+                    }
+                }
+            } catch (_) {}
+
+            try {
+                if (typeof walkNodes === 'function') {
+                    var hit = '';
+                    walkNodes(function (n) {
+                        if (hit || !n)
+                            return;
+                        var tl = String(tailOf(n, 32) || '').toLowerCase();
+                        if (!isMatch(tl))
+                            return;
+                        var txt = _readNodeTextLocal(n);
+                        txt = String(txt || '').trim();
+                        if (txt)
+                            hit = txt;
+                    });
+                    if (hit)
+                        return hit;
+                }
+            } catch (_) {}
+        } catch (_) {}
+        return '';
+    }
+    window.__cw_readTextByTailSuffix = readTextByTailSuffixCompatLocal;
+
     // Đọc tổng tiền an toàn: lấy nền từ totals() mới nhất (tick)
     // và ghi đè TK + TÀI + XỈU.
     window.readTotalsSafe = function () {
         try {
+            var parseMoney = (typeof moneyOf === 'function')
+                 ? moneyOf
+                 : ((typeof window.__cw_moneyOf === 'function')
+                     ? window.__cw_moneyOf
+                     : function (raw) {
+                         if (raw == null)
+                             return null;
+                         var d = String(raw).replace(/\D/g, '');
+                         return d ? parseInt(d, 10) : null;
+                     });
             // 1) Nền: snapshot totals gần nhất do tick() chụp
             var t = {};
             if (window.__cw_lastTotals && typeof window.__cw_lastTotals === 'object') {
@@ -4721,8 +5100,10 @@
 
                 var rawTai = readTextByTailExact(TX_NUMBET_TAI_TAIL_EXACT);
                 if (!rawTai)
-                    rawTai = readTextByTailSuffixLocal('lblNumBetTai');
-                var valTai = moneyOf(rawTai);
+                    rawTai = readTextByTailSuffixCompatLocal('lblNumBetTai');
+                if (!rawTai)
+                    rawTai = readTextByNodeNameLocal('lblNumBetTai', 'mini_game_18');
+                var valTai = parseMoney(rawTai);
                 if (valTai != null) {
                     t.T = valTai;
                     t.rawT = (rawTai || null);
@@ -4739,8 +5120,10 @@
 
                 var rawXiu = readTextByTailExact(TX_NUMBET_XIU_TAIL_EXACT);
                 if (!rawXiu)
-                    rawXiu = readTextByTailSuffixLocal('lblNumBetXiu');
-                var valXiu = moneyOf(rawXiu);
+                    rawXiu = readTextByTailSuffixCompatLocal('lblNumBetXiu');
+                if (!rawXiu)
+                    rawXiu = readTextByNodeNameLocal('lblNumBetXiu', 'mini_game_18');
+                var valXiu = parseMoney(rawXiu);
                 if (valXiu != null) {
                     t.X = valXiu;
                     t.rawX = (rawXiu || null);
@@ -4767,14 +5150,208 @@
     };
 
     function readSeqSafe() {
+        function norm(v) {
+            return String(v || '').toUpperCase().replace(/[^TX]/g, '');
+        }
+        function readShared() {
+            try {
+                if (typeof window.__cw_seqSharedRead === 'function') {
+                    var a = norm(window.__cw_seqSharedRead() || '');
+                    if (a)
+                        return a;
+                }
+            } catch (_) {}
+            try {
+                var topWin = window;
+                try {
+                    if (window.top)
+                        topWin = window.top;
+                } catch (_) {}
+                var sh = topWin && topWin.__cw_seq_shared;
+                if (sh && typeof sh === 'object') {
+                    var b = norm(sh.seq || '');
+                    if (b)
+                        return b;
+                }
+            } catch (_) {}
+            return norm(window.__cw_lastSeq || '');
+        }
         try {
-            var seq = readSeqSafeLocal() || '';
+            var localFn = (typeof window.__cw_readSeqSafeLocal === 'function')
+                 ? window.__cw_readSeqSafeLocal
+                 : null;
+            var seq = localFn ? norm(localFn() || '') : '';
             if (seq)
                 return seq;
-            return _normalizeTxSeq(window.__cw_lastSeq || '');
+        } catch (_) {}
+        try {
+            var sceneFn = (typeof window.__cw_readTxHistorySeqScene === 'function')
+                 ? window.__cw_readTxHistorySeqScene
+                 : null;
+            var scene = sceneFn ? norm(sceneFn() || '') : '';
+            if (scene) {
+                try {
+                    if (typeof window.__cw_seqSharedWrite === 'function')
+                        window.__cw_seqSharedWrite(scene, 'bridge_scene');
+                } catch (_) {}
+                return scene;
+            }
+        } catch (_) {}
+        try {
+            var strictFn = (typeof window.__cw_readTxHistorySeqStrict === 'function')
+                 ? window.__cw_readTxHistorySeqStrict
+                 : null;
+            var strict = strictFn ? norm(strictFn() || '') : '';
+            if (strict) {
+                try {
+                    if (typeof window.__cw_seqSharedWrite === 'function')
+                        window.__cw_seqSharedWrite(strict, 'bridge_strict');
+                } catch (_) {}
+                return strict;
+            }
+        } catch (_) {}
+        return readShared() || '';
+    }
+    window.__tx_dbg_probe_seq = function () {
+        try {
+            function norm(v) {
+                return String(v || '').toUpperCase().replace(/[^TX]/g, '');
+            }
+            var sceneFn = (typeof window.__cw_readTxHistorySeqScene === 'function')
+                 ? window.__cw_readTxHistorySeqScene
+                 : null;
+            var strictFn = (typeof window.__cw_readTxHistorySeqStrict === 'function')
+                 ? window.__cw_readTxHistorySeqStrict
+                 : null;
+            var localFn = (typeof window.__cw_readSeqSafeLocal === 'function')
+                 ? window.__cw_readSeqSafeLocal
+                 : null;
+            var scene = sceneFn ? norm(sceneFn() || '') : '';
+            var strict = strictFn ? norm(strictFn() || '') : '';
+            var local = localFn ? norm(localFn() || '') : '';
+            var icon = '';
+            try {
+                icon = (typeof window.__cw_buildIconSeqAuto === 'function')
+                     ? norm(window.__cw_buildIconSeqAuto(false) || '')
+                     : '';
+            } catch (_) {}
+            var shared = '';
+            var sharedTs = 0;
+            try {
+                var topWin = window;
+                try {
+                    if (window.top)
+                        topWin = window.top;
+                } catch (_) {}
+                var sh = topWin && topWin.__cw_seq_shared;
+                if (sh && typeof sh === 'object') {
+                    shared = norm(sh.seq || '');
+                    sharedTs = Number(sh.ts) || 0;
+                }
+            } catch (_) {}
+            return {
+                patch: window.__cw_patch_ver || '',
+                scene: scene || '',
+                strict: strict || '',
+                local: local || '',
+                icon: icon || '',
+                shared: shared || '',
+                sharedTs: sharedTs,
+                final: norm(readSeqSafe() || ''),
+                cached: norm(window.__cw_lastSeq || '')
+            };
+        } catch (e) {
+            return {
+                ok: false,
+                error: String(e && e.message || e)
+            };
+        }
+    };
+
+    function readTextByNodeNameLocal(nodeName, tailHintContains) {
+        try {
+            nodeName = String(nodeName || '');
+            var hint = String(tailHintContains || '').toLowerCase();
+            if (!nodeName || typeof walkNodes !== 'function')
+                return '';
+            var hit = '';
+            walkNodes(function (n) {
+                if (hit || !n)
+                    return;
+                if (String(n.name || '') !== nodeName)
+                    return;
+                try {
+                    if (n.activeInHierarchy === false)
+                        return;
+                } catch (_) {}
+                if (hint) {
+                    var tl = String(tailOf(n, 48) || '').toLowerCase();
+                    if (tl && tl.indexOf(hint) === -1)
+                        return;
+                }
+                var txt = _readNodeTextLocal(n);
+                txt = String(txt || '').trim();
+                if (txt)
+                    hit = txt;
+            });
+            return hit;
         } catch (_) {}
         return '';
     }
+    window.readSeqSafe = readSeqSafe;
+    window.__tx_dbg_probe_numbet = function () {
+        try {
+            var parseMoney = (typeof moneyOf === 'function')
+                 ? moneyOf
+                 : ((typeof window.__cw_moneyOf === 'function')
+                     ? window.__cw_moneyOf
+                     : function (raw) {
+                         if (raw == null)
+                             return null;
+                         var d = String(raw).replace(/\D/g, '');
+                         return d ? parseInt(d, 10) : null;
+                     });
+            var taiExact = readTextByTailExact('HomeScene/MINI_GAME_18/bgTxBanChoi/lblNumBetTai');
+            var xiuExact = readTextByTailExact('HomeScene/MINI_GAME_18/bgTxBanChoi/lblNumBetXiu');
+            var tailSuffixFn = (typeof readTextByTailSuffixCompatLocal === 'function')
+                 ? readTextByTailSuffixCompatLocal
+                 : ((typeof window.__cw_readTextByTailSuffix === 'function')
+                     ? window.__cw_readTextByTailSuffix
+                     : function () {
+                         return '';
+                     });
+            var taiSuffix = tailSuffixFn('lblNumBetTai');
+            var xiuSuffix = tailSuffixFn('lblNumBetXiu');
+            var taiName = readTextByNodeNameLocal('lblNumBetTai', 'mini_game_18');
+            var xiuName = readTextByNodeNameLocal('lblNumBetXiu', 'mini_game_18');
+            return {
+                patch: window.__cw_patch_ver || '',
+                scene: (window.cc && cc.director && cc.director.getScene && cc.director.getScene())
+                 ? cc.director.getScene().name
+                 : null,
+                tai: {
+                    exact: taiExact || '',
+                    suffix: taiSuffix || '',
+                    nodeName: taiName || '',
+                    parsed: parseMoney(taiExact || taiSuffix || taiName || '')
+                },
+                xiu: {
+                    exact: xiuExact || '',
+                    suffix: xiuSuffix || '',
+                    nodeName: xiuName || '',
+                    parsed: parseMoney(xiuExact || xiuSuffix || xiuName || '')
+                },
+                totalsSafe: (typeof window.readTotalsSafe === 'function')
+                 ? window.readTotalsSafe()
+                 : null
+            };
+        } catch (e) {
+            return {
+                ok: false,
+                error: String(e && e.message || e)
+            };
+        }
+    };
 
     function readSessionSafe() {
         try {
@@ -6944,4 +7521,6 @@
         });
     } catch (_) {}
 })();
+
+
 
