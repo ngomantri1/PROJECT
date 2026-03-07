@@ -185,7 +185,10 @@ namespace TaiXiuB29
         private System.Collections.Generic.List<long[]> _stakeChains = new();
         private long[] _stakeChainTotals = Array.Empty<long>();
 
-        private double _decisionPercent = 0.7; // 11s (0.25)
+        private const int DecisionSecondsDefault = 10;
+        private const int DecisionSecondsMin = 1;
+        private const int DecisionSecondsMax = 50;
+        private double _decisionPercent = 0.2; // derived from DecisionSeconds / 50.0
 
         // Chống bắn trùng khi vừa cược
         private bool _cooldown = false;
@@ -843,6 +846,84 @@ Ví dụ không hợp lệ:
         private static string P(PasswordBox? pb, string def = "") => pb?.Password ?? def;
         private static int I(string? s, int def = 0) => int.TryParse(s, out var n) ? n : def;
 
+        private static bool IsDecisionSecondsInRange(int seconds)
+            => seconds >= DecisionSecondsMin && seconds <= DecisionSecondsMax;
+
+        private int GetSafeDecisionSecondsFallback()
+        {
+            var cfgSeconds = _cfg?.DecisionSeconds ?? DecisionSecondsDefault;
+            return IsDecisionSecondsInRange(cfgSeconds) ? cfgSeconds : DecisionSecondsDefault;
+        }
+
+        private bool TryParseDecisionSecondsFromUi(out int seconds, out string error)
+        {
+            seconds = 0;
+            error = "";
+
+            var raw = T(TxtDecisionSecond);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                error = "Ô 'Đặt khi còn (giây)' không được để trống.";
+                return false;
+            }
+
+            if (!int.TryParse(raw, out seconds))
+            {
+                error = "Ô 'Đặt khi còn (giây)' chỉ được nhập số nguyên.";
+                return false;
+            }
+
+            if (seconds < DecisionSecondsMin)
+            {
+                error = $"Ô 'Đặt khi còn (giây)' phải >= {DecisionSecondsMin}.";
+                return false;
+            }
+
+            if (seconds > DecisionSecondsMax)
+            {
+                error = $"Ô 'Đặt khi còn (giây)' phải <= {DecisionSecondsMax} để _decisionPercent nằm trong 0..1.";
+                return false;
+            }
+
+            return true;
+        }
+
+        private void ApplyDecisionSeconds(int seconds, bool normalizeUi = false, bool updateConfig = true, bool log = false)
+        {
+            var safeSeconds = IsDecisionSecondsInRange(seconds) ? seconds : DecisionSecondsDefault;
+            _decisionPercent = Math.Clamp(safeSeconds / 50.0, 0d, 1d);
+
+            if (updateConfig)
+                _cfg.DecisionSeconds = safeSeconds;
+
+            if (normalizeUi && TxtDecisionSecond != null)
+            {
+                var text = safeSeconds.ToString(CultureInfo.InvariantCulture);
+                if (!string.Equals(TxtDecisionSecond.Text, text, StringComparison.Ordinal))
+                    TxtDecisionSecond.Text = text;
+            }
+
+            if (log)
+                Log($"[Decision] seconds={safeSeconds} => percent={_decisionPercent:0.00}");
+        }
+
+        private bool ValidateAndApplyDecisionSeconds(bool normalizeUi, bool logError)
+        {
+            if (!TryParseDecisionSecondsFromUi(out var seconds, out var error))
+            {
+                if (logError)
+                    Log("[Decision] " + error);
+
+                if (normalizeUi)
+                    ApplyDecisionSeconds(GetSafeDecisionSecondsFallback(), normalizeUi: true, updateConfig: true);
+
+                return false;
+            }
+
+            ApplyDecisionSeconds(seconds, normalizeUi: normalizeUi, updateConfig: true);
+            return true;
+        }
+
         // DPAPI
         private static string ProtectString(string? s)
         {
@@ -903,7 +984,7 @@ Ví dụ không hợp lệ:
                 UpdateBetStrategyUi();
 
 
-                if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString();
+                ApplyDecisionSeconds(_cfg.DecisionSeconds, normalizeUi: true, updateConfig: true);
                 if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
                 LoadStakeCsvForCurrentMoneyStrategy();// NEW: nạp chuỗi tiền theo “Quản lý vốn” hiện tại
                 if (ChkS7ResetOnProfit != null) ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
@@ -948,7 +1029,10 @@ Ví dụ không hợp lệ:
             {
                 _cfg.Url = T(TxtUrl);
                 _cfg.StakeCsv = T(TxtStakeCsv, "1000,2000,4000,8000,16000");
-                _cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
+                var decisionSeconds = GetSafeDecisionSecondsFallback();
+                if (TryParseDecisionSecondsFromUi(out var parsedDecisionSeconds, out _))
+                    decisionSeconds = parsedDecisionSeconds;
+                _cfg.DecisionSeconds = decisionSeconds;
                 _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? _cfg.BetStrategyIndex;
                 _cfg.BetSeq = T(TxtChuoiCau, _cfg.BetSeq);
                 _cfg.BetPatterns = T(TxtTheCau, _cfg.BetPatterns);
@@ -2019,6 +2103,13 @@ Ví dụ không hợp lệ:
                     if (TxtUser != null) TxtUser.TextChanged += TxtUser_TextChanged;
                     if (TxtPass != null) TxtPass.PasswordChanged += TxtPass_PasswordChanged;
                     if (TxtStakeCsv != null) TxtStakeCsv.TextChanged += TxtStakeCsv_TextChanged;
+                    if (TxtDecisionSecond != null)
+                    {
+                        TxtDecisionSecond.PreviewTextInput += TxtDecisionSecond_PreviewTextInput;
+                        TxtDecisionSecond.TextChanged += TxtDecisionSecond_TextChanged;
+                        TxtDecisionSecond.LostFocus += TxtDecisionSecond_LostFocus;
+                        DataObject.AddPastingHandler(TxtDecisionSecond, TxtDecisionSecond_Paste);
+                    }
                     if (CmbBetStrategy != null) CmbBetStrategy.SelectionChanged += CmbBetStrategy_SelectionChanged;
                     if (TxtChuoiCau != null) TxtChuoiCau.TextChanged += TxtChuoiCau_TextChanged;
                     if (TxtTheCau != null) TxtTheCau.TextChanged += TxtTheCau_TextChanged;
@@ -3701,6 +3792,14 @@ Ví dụ không hợp lệ:
             {
                 if (_taskCts != null) { Log("[DEC] a task is already running"); return; }
 
+                if (!ValidateAndApplyDecisionSeconds(normalizeUi: true, logError: true))
+                {
+                    if (TxtDecisionSecond != null)
+                        BringBelow(TxtDecisionSecond);
+                    if (BtnPlay != null) BtnPlay.IsEnabled = true;
+                    return;
+                }
+
                 await SaveConfigAsync();
                 await EnsureWebReadyAsync();
                 // ✅ Validate trước khi bắt đầu
@@ -5359,6 +5458,50 @@ Ví dụ không hợp lệ:
             return double.TryParse(cleaned, out var v) ? v : 0;
         }
 
+        private void TxtDecisionSecond_PreviewTextInput(object sender, TextCompositionEventArgs e)
+        {
+            e.Handled = e.Text.Any(c => !char.IsDigit(c));
+        }
+
+        private void TxtDecisionSecond_Paste(object sender, DataObjectPastingEventArgs e)
+        {
+            try
+            {
+                if (!e.DataObject.GetDataPresent(DataFormats.Text))
+                {
+                    e.CancelCommand();
+                    return;
+                }
+
+                var text = (e.DataObject.GetData(DataFormats.Text) as string) ?? "";
+                if (string.IsNullOrWhiteSpace(text) || !Regex.IsMatch(text, @"^\d+$"))
+                    e.CancelCommand();
+            }
+            catch
+            {
+                e.CancelCommand();
+            }
+        }
+
+        private void TxtDecisionSecond_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (!_uiReady) return;
+
+            if (TryParseDecisionSecondsFromUi(out var seconds, out _))
+                ApplyDecisionSeconds(seconds, normalizeUi: false, updateConfig: true);
+        }
+
+        private async void TxtDecisionSecond_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (!_uiReady) return;
+
+            var ok = ValidateAndApplyDecisionSeconds(normalizeUi: true, logError: true);
+            if (!ok)
+                BringBelow(TxtDecisionSecond);
+
+            await SaveConfigAsync();
+        }
+
         private async void TxtCut_LostFocus(object sender, RoutedEventArgs e)
         {
             if (!_uiReady) return;
@@ -5917,6 +6060,12 @@ Ví dụ không hợp lệ:
         private bool ValidateInputsForCurrentStrategy()
         {
             ShowErrorsForCurrentStrategy(); // cập nhật UI trước
+
+            if (!ValidateAndApplyDecisionSeconds(normalizeUi: true, logError: true))
+            {
+                BringBelow(TxtDecisionSecond);
+                return false;
+            }
 
             int idx = CmbBetStrategy?.SelectedIndex ?? 4;
             if (idx == 0) // 1. Chuỗi T/X

@@ -100,7 +100,7 @@ namespace TaiXiuB29.Tasks
                 var s = ctx.GetSnap?.Invoke();
                 var p = s?.prog ?? 1.0;   // prog = 0..1 (thời gian còn lại)
                 // Sau khi đã thấy prog thấp rồi, lần đầu prog nhảy cao trở lại => phiên mới
-                if (p >= 0.11 && p <= 0.98)
+                if (p >= 0.11 && p <= ctx.DecisionPercent)
                     break;
                 await Task.Delay(120, ct);
             }

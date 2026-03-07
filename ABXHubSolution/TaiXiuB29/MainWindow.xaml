@@ -750,9 +750,10 @@
                                         Grid.Column="1"
                                         MinHeight="36"
                                         MaxHeight="120"
+                                        MaxLength="2"
                                         Margin="{StaticResource ValueFieldMargin}"
                                         HorizontalAlignment="Stretch"
-                                        Text="0" />
+                                        Text="10" />
                                 </Grid>
                                 <!--  HÀNG: CẮT LÃI / CẮT LỖ (đặt ngay sau hàng 'Đặt khi còn (giây)')  -->
                                 <Grid>
