@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r63-20260307-bet-fast-safe';
+    window.__cw_patch_ver = 'cw-r64-20260307-seq-diceend-tail';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -1500,7 +1500,7 @@
         return '';
     }
 
-    function buildIconSeqFromSceneLocal(force) {
+    function buildIconSeqFromSceneLocal(force, seedRows) {
         try {
             var now = Date.now();
             if (!force && (now - _iconSeqBuildAt) < 800)
@@ -1646,6 +1646,51 @@
                     dbg.nodes_matched++;
                     pushRow(txt, path, 'nodes');
                 });
+            }
+
+            if ((!rows || !rows.length) && Array.isArray(seedRows) && seedRows.length) {
+                rows = seedRows.slice();
+                dbg.rolling_reset = 'seed_rows';
+            }
+
+            var diceRt = _readDiceEndResultLocal();
+            try {
+                window.__cw_last_result_realtime = diceRt;
+            } catch (_) {}
+            if (diceRt && diceRt.ok && diceRt.session != null && diceRt.tx) {
+                var merged = false;
+                for (i = 0; i < rows.length; i++) {
+                    if (!rows[i] || rows[i].session == null)
+                        continue;
+                    if (Number(rows[i].session) !== Number(diceRt.session))
+                        continue;
+                    merged = true;
+                    rows[i] = {
+                        session: diceRt.session,
+                        val: diceRt.sum,
+                        tx: diceRt.tx,
+                        txt: [diceRt.d1, diceRt.d2, diceRt.d3].join('-'),
+                        path: 'HomeScene/MINI_GAME_18/bgTxBanChoi/diceEnd',
+                        src: 'diceEnd',
+                        score: 1000,
+                        x: isFinite(rows[i].x) ? rows[i].x : 999999
+                    };
+                    dbg.rolling_updated++;
+                    break;
+                }
+                if (!merged) {
+                    rows.push({
+                        session: diceRt.session,
+                        val: diceRt.sum,
+                        tx: diceRt.tx,
+                        txt: [diceRt.d1, diceRt.d2, diceRt.d3].join('-'),
+                        path: 'HomeScene/MINI_GAME_18/bgTxBanChoi/diceEnd',
+                        src: 'diceEnd',
+                        score: 1000,
+                        x: 999999
+                    });
+                    dbg.rolling_appended++;
+                }
             }
 
             if (!rows.length) {
@@ -1957,6 +2002,261 @@
         } catch (_) {}
         return '';
     }
+
+    function _findNodeByTailEndLocal(tailEnd) {
+        try {
+            var want = String(tailEnd || '').toLowerCase().replace(/\\/g, '/');
+            if (!want)
+                return null;
+            if (window.findNodeByTailCompat) {
+                var byCompat = window.findNodeByTailCompat(tailEnd);
+                if (byCompat)
+                    return byCompat;
+            }
+            if (window.__abx_findNodeByTail) {
+                var byAbx = window.__abx_findNodeByTail(tailEnd);
+                if (byAbx)
+                    return byAbx;
+            }
+            if (typeof walkNodes === 'function') {
+                var found = null;
+                walkNodes(function (n) {
+                    if (found || !n)
+                        return;
+                    var p = _nodePathFullLocal(n).toLowerCase().replace(/\\/g, '/');
+                    if (p === want || p.indexOf(want, Math.max(0, p.length - want.length)) !== -1)
+                        found = n;
+                });
+                return found;
+            }
+        } catch (_) {}
+        return null;
+    }
+
+    function _parseDiceValueFromSpriteNameLocal(name) {
+        name = String(name || '').toLowerCase();
+        if (!name)
+            return null;
+        var m = name.match(/(?:^|[^a-z])dice[_-]?([1-6])(?:[^0-9]|$)/i);
+        if (m)
+            return Number(m[1]);
+        m = name.match(/(?:^|[^a-z])mat[_-]?([1-6])(?:[^0-9]|$)/i);
+        if (m)
+            return Number(m[1]);
+        m = name.match(/(?:^|[^a-z])xx[_-]?([1-6])(?:[^0-9]|$)/i);
+        if (m)
+            return Number(m[1]);
+        return null;
+    }
+
+    function _readDiceEndResultLocal() {
+        try {
+            function getSpriteFrameName(n) {
+                try {
+                    var sp = getComp(n, cc.Sprite);
+                    var sf = sp && sp.spriteFrame;
+                    if (!sf)
+                        return '';
+                    if (sf.name)
+                        return String(sf.name);
+                    if (sf._name)
+                        return String(sf._name);
+                    if (sf.texture && sf.texture.url)
+                        return String(sf.texture.url);
+                } catch (_) {}
+                return '';
+            }
+            var tails = [
+                'HomeScene/MINI_GAME_18/bgTxBanChoi/diceEnd/dice1',
+                'HomeScene/MINI_GAME_18/bgTxBanChoi/diceEnd/dice2',
+                'HomeScene/MINI_GAME_18/bgTxBanChoi/diceEnd/dice3'
+            ];
+            var dice = [];
+            for (var i = 0; i < tails.length; i++) {
+                var node = _findNodeByTailEndLocal(tails[i]);
+                var sprite = getSpriteFrameName(node);
+                var value = _parseDiceValueFromSpriteNameLocal(sprite);
+                dice.push({
+                    tail: tails[i],
+                    found: !!node,
+                    active: !!(node && active(node)),
+                    sprite: sprite,
+                    value: value
+                });
+            }
+            var ok = true;
+            for (i = 0; i < dice.length; i++) {
+                if (!dice[i].found || !dice[i].active || !isFinite(dice[i].value)) {
+                    ok = false;
+                    break;
+                }
+            }
+            var session = null;
+            try {
+                session = (typeof readSessionSafe === 'function') ? readSessionSafe() : null;
+            } catch (_) {
+                session = null;
+            }
+            if (session != null) {
+                var sv = parseInt(String(session).replace(/[^\d]/g, ''), 10);
+                session = isFinite(sv) ? sv : null;
+            }
+            var sum = ok ? (Number(dice[0].value) + Number(dice[1].value) + Number(dice[2].value)) : null;
+            return {
+                ok: !!ok,
+                session: session,
+                d1: dice[0] && dice[0].value,
+                d2: dice[1] && dice[1].value,
+                d3: dice[2] && dice[2].value,
+                sum: sum,
+                tx: (sum == null) ? '' : (sum > 10 ? 'T' : 'X'),
+                source: 'diceEnd'
+            };
+        } catch (_) {}
+        return {
+            ok: false,
+            session: null,
+            sum: null,
+            tx: '',
+            source: 'diceEnd'
+        };
+    }
+
+    function _seqRowsToSeqLocal(rows) {
+        rows = Array.isArray(rows) ? rows.slice() : [];
+        if (!rows.length)
+            return '';
+        var withSession = [];
+        for (var si = 0; si < rows.length; si++) {
+            if (rows[si] && rows[si].session != null)
+                withSession.push(rows[si]);
+        }
+        if (withSession.length >= 3) {
+            var map = {};
+            for (var wi = 0; wi < withSession.length; wi++) {
+                map[String(withSession[wi].session)] = withSession[wi];
+            }
+            rows = [];
+            for (var kk in map) {
+                if (Object.prototype.hasOwnProperty.call(map, kk))
+                    rows.push(map[kk]);
+            }
+            rows.sort(function (a, b) {
+                return (a.session - b.session) || ((Number(a.x) || 0) - (Number(b.x) || 0));
+            });
+        } else {
+            rows.sort(function (a, b) {
+                return (Number(a.x) || 0) - (Number(b.x) || 0);
+            });
+        }
+        var seq = '';
+        for (var i = 0; i < rows.length; i++)
+            seq += String(rows[i].tx || '');
+        return _normalizeTxSeq(seq);
+    }
+
+    function _collectTxHistoryRowsStrictLocal() {
+        try {
+            function foldVi(s) {
+                s = String(s || '');
+                try {
+                    s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                } catch (_) {}
+                s = s.replace(/\u0111/g, 'd').replace(/\u0110/g, 'D');
+                return s.toLowerCase();
+            }
+            function toTx(txt) {
+                var f = foldVi(txt);
+                if (!f)
+                    return '';
+                if (f.indexOf('tai') !== -1 || /^t\b/.test(f) || f === 't')
+                    return 'T';
+                if (f.indexOf('xiu') !== -1 || /^x\b/.test(f) || f === 'x')
+                    return 'X';
+                return '';
+            }
+            function parseSession(txt) {
+                var f = foldVi(txt);
+                var m = f.match(/#\s*(\d{4,})/);
+                if (!m)
+                    return null;
+                var v = parseInt(m[1], 10);
+                return isFinite(v) ? v : null;
+            }
+            function isHistoryTail(tailRaw) {
+                var tailLc = String(tailRaw || '').toLowerCase().replace(/\\/g, '/');
+                if (!tailLc)
+                    return false;
+                if (tailLc.indexOf('mini_game_18') === -1)
+                    return false;
+                if (tailLc.indexOf('/bgtxhistory/') === -1)
+                    return false;
+                if (tailLc.indexOf('/new label') === -1)
+                    return false;
+                return true;
+            }
+            function addRow(out, text, x, tail) {
+                var tx = toTx(text || '');
+                if (!tx)
+                    return;
+                out.push({
+                    tx: tx,
+                    session: parseSession(text || ''),
+                    x: Number(x) || 0,
+                    tail: String(tail || '')
+                });
+            }
+            var out = [];
+            try {
+                if (typeof collectLabels === 'function') {
+                    var labs = collectLabels() || [];
+                    for (var i = 0; i < labs.length; i++) {
+                        var L = labs[i] || {};
+                        var tail = String(L.tail || L.tl || '').toLowerCase();
+                        if (!tail || !isHistoryTail(tail))
+                            continue;
+                        addRow(out, L.text || '', Number(L.x) || 0, tail);
+                    }
+                }
+            } catch (_) {}
+            if (!out.length) {
+                try {
+                    if (typeof walkNodes === 'function') {
+                        walkNodes(function (n) {
+                            if (!n)
+                                return;
+                            var tail = String(tailOf(n, 32) || '').toLowerCase();
+                            if (!isHistoryTail(tail))
+                                return;
+                            var r = wRect(n) || {
+                                x: 0
+                            };
+                            addRow(out, _readNodeTextLocal(n), Number(r.x) || 0, tail);
+                        });
+                    }
+                } catch (_) {}
+            }
+            if (!out.length) {
+                try {
+                    if (typeof walkNodes === 'function') {
+                        walkNodes(function (n) {
+                            if (!n || String(n.name || '') !== 'New Label')
+                                return;
+                            var tl = String(tailOf(n, 48) || '').toLowerCase();
+                            if (!isHistoryTail(tl))
+                                return;
+                            var r = wRect(n) || {
+                                x: 0
+                            };
+                            addRow(out, _readNodeTextLocal(n), Number(r.x) || 0, tl);
+                        });
+                    }
+                } catch (_) {}
+            }
+            return out;
+        } catch (_) {}
+        return [];
+    }
     window.__cw_readTxHistorySeqStrict = readTxHistorySeqStrictLocal;
 
     function readTxHistorySeqFromSceneLocal() {
@@ -2220,6 +2520,24 @@
     function readSeqSafeLocal() {
         try {
             var seq = '';
+            var strictRows = _collectTxHistoryRowsStrictLocal();
+            var strictFn = (typeof readTxHistorySeqStrictLocal === 'function')
+                 ? readTxHistorySeqStrictLocal
+                 : ((typeof window.__cw_readTxHistorySeqStrict === 'function')
+                     ? window.__cw_readTxHistorySeqStrict
+                     : null);
+            var strictSeq = seqNormSafeLocal((strictRows && strictRows.length)
+                    ? _seqRowsToSeqLocal(strictRows)
+                    : (strictFn ? (strictFn() || '') : ''));
+
+            // Luon trigger build de giu bootstrap tu history nhung append/update tail moi tu diceEnd theo session.
+            seq = seqNormSafeLocal(buildIconSeqFromSceneLocal(false, strictRows) || '');
+            if (seq)
+                return seqWriteSharedLocal(seq, 'diceend_merge');
+
+            if (strictSeq)
+                return seqWriteSharedLocal(strictSeq, 'strict');
+
             var sceneFn = (typeof readTxHistorySeqFromSceneLocal === 'function')
                  ? readTxHistorySeqFromSceneLocal
                  : ((typeof window.__cw_readTxHistorySeqScene === 'function')
@@ -2228,20 +2546,6 @@
             var sceneSeq = seqNormSafeLocal(sceneFn ? (sceneFn() || '') : '');
             if (sceneSeq)
                 return seqWriteSharedLocal(sceneSeq, 'scene');
-
-            var strictFn = (typeof readTxHistorySeqStrictLocal === 'function')
-                 ? readTxHistorySeqStrictLocal
-                 : ((typeof window.__cw_readTxHistorySeqStrict === 'function')
-                     ? window.__cw_readTxHistorySeqStrict
-                     : null);
-            var strictSeq = seqNormSafeLocal(strictFn ? (strictFn() || '') : '');
-            if (strictSeq)
-                return seqWriteSharedLocal(strictSeq, 'strict');
-
-            // Luon trigger build (co throttle noi bo) de rolling co co hoi append ket qua moi.
-            seq = seqNormSafeLocal(buildIconSeqFromSceneLocal(false) || '');
-            if (seq)
-                return seqWriteSharedLocal(seq, 'icon');
 
             seq = seqNormSafeLocal(_findSeqAcrossWindows() || '');
             if (seq)
