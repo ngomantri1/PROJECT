@@ -11,6 +11,7 @@
     //root.style.display='none';  //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
+    window.__cw_patch_ver = 'cw-xd-textmap-sync-20260308-7';
     try {
         if (window[NS] && window[NS].teardown) {
             window[NS].teardown();
@@ -318,13 +319,31 @@
             return false;
         }
     }
-    var COUNTDOWN_TAIL_RIGHT = 'node_in_multimode/top/right/xdtl_jackpot_anim_right/lbl_countdown';
-    var COUNTDOWN_TAIL_LEFT = 'node_in_multimode/top/left/xdtl_jackpot_anim_left/lbl_countdown';
+    var COUNTDOWN_TAIL_WAIT = 'sede/Canvas/mainPlay/midNode/waittingRoom/lblTimeWait';
     function readCountdownSec() {
-        var right = null,
-        left = null;
+        var found = null;
+        var tailNeed = String(COUNTDOWN_TAIL_WAIT || '').toLowerCase();
+        function parseSec(txt) {
+            var m = String(txt || '').match(/(\d{1,2})/);
+            if (!m)
+                return null;
+            var v = parseInt(m[1], 10);
+            if (!isFinite(v))
+                return null;
+            if (v < 0)
+                v = 0;
+            if (v > 99)
+                v = 99;
+            return v;
+        }
         walkNodes(function (n) {
-            if (!nodeInGame(n))
+            if (found)
+                return;
+            if (!n)
+                return;
+            var path = fullPath(n, 140);
+            var pathL = String(path || '').toLowerCase();
+            if (!(pathL === tailNeed || pathL.endsWith('/' + tailNeed) || pathL.endsWith(tailNeed)))
                 return;
             var comps = (n._components || []);
             for (var i = 0; i < comps.length; i++) {
@@ -333,52 +352,27 @@
                     var text = String(c.string == null ? '' : c.string).trim();
                     if (!text)
                         continue;
-                    var path = fullPath(n, 80);
-                    var pathL = String(path || '').toLowerCase();
-                    if (pathL.indexOf(COUNTDOWN_TAIL_RIGHT) !== -1) {
-                        right = {
-                            text: text,
-                            tail: path
-                        };
-                    } else if (pathL.indexOf(COUNTDOWN_TAIL_LEFT) !== -1) {
-                        left = {
-                            text: text,
-                            tail: path
-                        };
-                    }
+                    var sec = parseSec(text);
+                    if (sec == null)
+                        continue;
+                    found = {
+                        sec: sec,
+                        tail: path
+                    };
+                    break;
                 }
             }
         });
-        function parseSec(txt) {
-            var m = String(txt || '').match(/(\d+)/);
-            return m ? parseInt(m[1], 10) : null;
-        }
-        var secR = right ? parseSec(right.text) : null;
-        var secL = left ? parseSec(left.text) : null;
-        if (secR != null && secR > 0) {
-            S._progTail = right.tail || '';
+        if (found && found.sec != null) {
+            S._progTail = found.tail || '';
             S._progIsSec = true;
             window.__cw_prog_tail = S._progTail;
-            return secR;
+            return found.sec;
         }
-        if (secL != null && secL > 0) {
-            S._progTail = left.tail || '';
-            S._progIsSec = true;
-            window.__cw_prog_tail = S._progTail;
-            return secL;
-        }
-        if (secR != null) {
-            S._progTail = right.tail || '';
-            S._progIsSec = true;
-            window.__cw_prog_tail = S._progTail;
-            return secR;
-        }
-        if (secL != null) {
-            S._progTail = left.tail || '';
-            S._progIsSec = true;
-            window.__cw_prog_tail = S._progTail;
-            return secL;
-        }
+        S._progTail = '';
+        try {
+            window.__cw_prog_tail = '';
+        } catch (_) {}
         return null;
     }
     function walkNodes(cb) {
@@ -413,8 +407,6 @@
     function collectLabels() {
         var out = [];
         walkNodes(function (n) {
-            if (!nodeInGame(n))
-                return;
             var comps = (n._components || []);
             for (var i = 0; i < comps.length; i++) {
                 var c = comps[i];
@@ -434,6 +426,7 @@
                     sy: r.sy,
                     sw: r.sw,
                     sh: r.sh,
+                    node: n,
                     tail: tail,
                     tl: tail.toLowerCase(),
                     fullTail: fullTail,
@@ -480,42 +473,11 @@
         if (cd != null)
             return cd;
         S._progIsSec = false;
-        var bars = [];
-        walkNodes(function (n) {
-            if (!nodeInGame(n))
-                return;
-            var comps = getComps(n, cc.ProgressBar);
-            if (comps && comps.length) {
-                var r = wRect(n);
-                for (var i = 0; i < comps.length; i++) {
-                    bars.push({
-                        comp: comps[i],
-                        rect: r,
-                        tail: tailOf(n, 12)
-                    });
-                }
-            }
-        });
-        if (!bars.length) {
-            S._progTail = '';
+        S._progTail = '';
+        try {
             window.__cw_prog_tail = '';
-            return null;
-        }
-        var H = innerHeight,
-        cs = bars.filter(function (b) {
-            var r = b.rect;
-            return r.w > 300 && r.h >= 6 && r.h <= 60 && r.y < H * 0.75;
-        });
-        var barPick = (cs[0] || bars[0]);
-        var bar = barPick.comp;
-        try {
-            S._progTail = barPick.tail || '';
-        } catch (e) {}
-        try {
-            window.__cw_prog_tail = barPick.tail || '';
-        } catch (e) {}
-        var pr = (bar && typeof bar.progress !== 'undefined') ? bar.progress : 0;
-        return clamp01(Number(pr));
+        } catch (_) {}
+        return null;
     }
 
     /* ---------------- MoneyMap ---------------- */
@@ -557,6 +519,122 @@
         }
         return out;
     }
+    function buildMoneyRectsForMap() {
+        var ls = collectLabels(),
+        out = [];
+        var st = {
+            labels: ls.length,
+            moneyCandidate: 0,
+            rectInvalid: 0,
+            rectRecovered: 0,
+            rectProjected: 0,
+            rectAdjusted: 0,
+            rectClamped: 0,
+            syntheticPlaced: 0,
+            out: 0
+        };
+        for (var i = 0; i < ls.length; i++) {
+            var L = ls[i];
+            var s = (L.text || '').trim();
+            if (!isMoneyText(s))
+                continue;
+            st.moneyCandidate++;
+            var x = Math.round(L.x),
+            y = Math.round(L.y),
+            w = Math.round(L.w),
+            h = Math.round(L.h);
+            var rr = {
+                x: x,
+                y: y,
+                w: w,
+                h: h
+            };
+            if (!isRenderableRect(rr)) {
+                st.rectInvalid++;
+                var recovered = null;
+                try {
+                    var anc = L.node || null;
+                    var hop = 0;
+                    while (anc && hop < 10) {
+                        var ar = wRect(anc);
+                        if (isRenderableRect(ar)) {
+                            recovered = ar;
+                            break;
+                        }
+                        anc = anc.parent || anc._parent || null;
+                        hop++;
+                    }
+                } catch (eA) {}
+                if (recovered) {
+                    x = Math.round(recovered.x);
+                    y = Math.round(recovered.y);
+                    w = Math.round(recovered.w);
+                    h = Math.round(recovered.h);
+                    st.rectRecovered++;
+                } else {
+                    if (!isFinite(x))
+                        x = 0;
+                    if (!isFinite(y))
+                        y = 0;
+                    if (!isFinite(w) || w < 2)
+                        w = Math.max(16, Math.min(260, s.length * 9));
+                    if (!isFinite(h) || h < 2)
+                        h = 18;
+                    var projectedHit = false;
+                    try {
+                        var sp2 = _nodeToScreen(L.node);
+                        if (sp2) {
+                            x = Math.round(sp2.x - w * 0.5);
+                            y = Math.round(sp2.y - h * 0.5);
+                            st.rectProjected++;
+                            projectedHit = true;
+                        }
+                    } catch (eP) {}
+                    if (!projectedHit && (x === 0 && y === 0)) {
+                        var idxDbg = st.rectAdjusted;
+                        var rowH = 22;
+                        var startY = 90;
+                        var rowsMax = Math.max(10, Math.floor((innerHeight - startY - 12) / rowH));
+                        var col = Math.floor(idxDbg / rowsMax);
+                        var row = idxDbg % rowsMax;
+                        x = 8 + col * 290;
+                        y = startY + row * rowH;
+                        st.syntheticPlaced++;
+                    }
+                    var maxX = Math.max(0, innerWidth - w - 2);
+                    var maxY = Math.max(0, innerHeight - h - 2);
+                    var x0 = x,
+                    y0 = y;
+                    x = Math.max(0, Math.min(maxX, x));
+                    y = Math.max(0, Math.min(maxY, y));
+                    if (x !== x0 || y !== y0)
+                        st.rectClamped++;
+                    st.rectAdjusted++;
+                }
+            }
+            out.push({
+                txt: s,
+                val: moneyOf(s),
+                x: x,
+                y: y,
+                w: w,
+                h: h,
+                n: {
+                    x: x / innerWidth,
+                    y: y / innerHeight,
+                    w: w / innerWidth,
+                    h: h / innerHeight
+                },
+                tail: L.tail,
+                tl: L.tl
+            });
+        }
+        st.out = out.length;
+        try {
+            window.__cw_moneyStats = st;
+        } catch (_) {}
+        return out;
+    }
 
     /* ---------------- NEW: TextMap ---------------- */
     function isTextCandidate(txt) {
@@ -577,226 +655,368 @@
             return true;
         return s.length >= 4;
     }
-    function rectForTextMap(n, text) {
-        var r = wRect(n);
-        if ((r.x || r.y || r.w || r.h))
-            return r;
-        function worldPt(x, y) {
-            try {
-                if (n && n.convertToWorldSpaceAR)
-                    return n.convertToWorldSpaceAR(new V2(x, y));
-            } catch (e) {}
-            try {
-                if (cc.UITransform && n && n.getComponent) {
-                    var ut = n.getComponent(cc.UITransform);
-                    if (ut && ut.convertToWorldSpaceAR)
-                        return ut.convertToWorldSpaceAR(new V2(x, y));
-                }
-            } catch (e) {}
-            try {
-                if (n && n.getWorldPosition) {
-                    var wp = n.getWorldPosition();
-                    return {
-                        x: (wp.x || 0) + (x || 0),
-                        y: (wp.y || 0) + (y || 0)
-                    };
-                }
-            } catch (e) {}
-            try {
-                if (n && n.worldPosition) {
-                    return {
-                        x: (n.worldPosition.x || 0) + (x || 0),
-                        y: (n.worldPosition.y || 0) + (y || 0)
-                    };
-                }
-            } catch (e) {}
-            return {
-                x: 0,
-                y: 0
-            };
-        }
-        function sizeFromNode() {
-            try {
-                if (n.getContentSize)
-                    return n.getContentSize();
-            } catch (e) {}
-            try {
-                if (n._contentSize)
-                    return n._contentSize;
-            } catch (e) {}
-            try {
-                if (cc.UITransform && n.getComponent) {
-                    var ut = n.getComponent(cc.UITransform);
-                    if (ut) {
-                        if (ut.contentSize)
-                            return ut.contentSize;
-                        if (ut.width != null && ut.height != null)
-                            return {
-                                width: ut.width,
-                                height: ut.height
-                            };
-                    }
-                }
-            } catch (e) {}
-            return {
-                width: 0,
-                height: 0
-            };
-        }
-        function rectFromWorld(x1, y1, x2, y2) {
-            var minX = Math.min(x1, x2);
-            var minY = Math.min(y1, y2);
-            var maxX = Math.max(x1, x2);
-            var maxY = Math.max(y1, y2);
-            var sp1 = toScreenPt(n, new V2(minX, minY));
-            var sp2 = toScreenPt(n, new V2(maxX, maxY));
-            var sx = Math.min(sp1.x, sp2.x);
-            var sy = Math.min(sp1.y, sp2.y);
-            var sw = Math.abs(sp2.x - sp1.x);
-            var sh = Math.abs(sp2.y - sp1.y);
-            return {
-                x: minX,
-                y: minY,
-                w: Math.abs(maxX - minX),
-                h: Math.abs(maxY - minY),
-                sx: sx,
-                sy: sy,
-                sw: sw,
-                sh: sh
-            };
-        }
-        try {
-            var sz = sizeFromNode();
-            if (sz && (sz.width || sz.height)) {
-                var p0 = worldPt(0, 0);
-                var ax = (n.anchorX != null ? n.anchorX : 0.5);
-                var ay = (n.anchorY != null ? n.anchorY : 0.5);
-                var blx = (p0.x || 0) - (sz.width || 0) * ax;
-                var bly = (p0.y || 0) - (sz.height || 0) * ay;
-                return rectFromWorld(blx, bly, blx + (sz.width || 0), bly + (sz.height || 0));
-            }
-        } catch (e) {}
-        try {
-            var lb = getComp(n, cc.Label) || getComp(n, cc.RichText);
-            var rd = null;
-            if (lb && lb._assembler && lb._assembler._renderData)
-                rd = lb._assembler._renderData;
-            else if (lb && lb._renderData)
-                rd = lb._renderData;
-            if (rd && rd._data && rd._data.length >= 10) {
-                var data = rd._data;
-                var minX = 1e9,
-                minY = 1e9,
-                maxX = -1e9,
-                maxY = -1e9;
-                for (var i = 0; i + 1 < data.length; i += 5) {
-                    var dx = data[i],
-                    dy = data[i + 1];
-                    if (!isFinite(dx) || !isFinite(dy))
-                        continue;
-                    if (dx < minX)
-                        minX = dx;
-                    if (dy < minY)
-                        minY = dy;
-                    if (dx > maxX)
-                        maxX = dx;
-                    if (dy > maxY)
-                        maxY = dy;
-                }
-                if (minX <= maxX && minY <= maxY) {
-                    var p1 = worldPt(minX, minY);
-                    var p2 = worldPt(maxX, maxY);
-                    return rectFromWorld(p1.x || 0, p1.y || 0, p2.x || 0, p2.y || 0);
-                }
-            }
-        } catch (e) {}
-        try {
-            if (n.getBoundingBoxToWorld) {
-                var bb = n.getBoundingBoxToWorld();
-                if (bb && (bb.x || bb.y || bb.width || bb.height)) {
-                    return rectFromWorld(bb.x || 0, bb.y || 0, (bb.x || 0) + (bb.width || 0), (bb.y || 0) + (bb.height || 0));
-                }
-            }
-        } catch (e) {}
-        try {
-            if (cc.UITransform && n.getComponent) {
-                var ut = n.getComponent(cc.UITransform);
-                if (ut && ut.getBoundingBoxToWorld) {
-                    var bb2 = ut.getBoundingBoxToWorld();
-                    if (bb2 && (bb2.x || bb2.y || bb2.width || bb2.height)) {
-                        return rectFromWorld(bb2.x || 0, bb2.y || 0, (bb2.x || 0) + (bb2.width || 0), (bb2.y || 0) + (bb2.height || 0));
-                    }
-                }
-            }
-        } catch (e) {}
-        try {
-            var lb2 = getComp(n, cc.Label) || getComp(n, cc.RichText);
-            if (lb2) {
-                var fs = lb2.fontSize || lb2._fontSize || 0;
-                var lh = lb2.lineHeight || lb2._lineHeight || fs;
-                var t = String(text || '').trim();
-                if (fs > 0 && t) {
-                    var lines = t.split(/\r?\n/);
-                    var maxLen = 0;
-                    for (var i2 = 0; i2 < lines.length; i2++) {
-                        if (lines[i2].length > maxLen)
-                            maxLen = lines[i2].length;
-                    }
-                    var w = Math.max(1, Math.round(maxLen * fs * 0.6));
-                    var h = Math.max(1, Math.round(lines.length * lh));
-                    var p = worldPt(0, 0);
-                    var ax2 = (n.anchorX != null ? n.anchorX : 0.5);
-                    var ay2 = (n.anchorY != null ? n.anchorY : 0.5);
-                    var wx = (p.x || 0) - w * ax2;
-                    var wy = (p.y || 0) - h * ay2;
-                    return rectFromWorld(wx, wy, wx + w, wy + h);
-                }
-            }
-        } catch (e) {}
-        return r;
+    function _num(v, dft) {
+        v = Number(v);
+        return isFinite(v) ? v : (dft || 0);
     }
-    function buildTextRects() {
+    function _nodeWorldAr(node) {
+        try {
+            return node.convertToWorldSpaceAR(new V2(0, 0));
+        } catch (e) {}
+        return null;
+    }
+    function _nodeToScreen(node) {
+        try {
+            if (!window.cc || !cc.Camera || !cc.Camera.findCamera || !cc.view)
+                return null;
+            var cam = cc.Camera.findCamera(node);
+            if (!cam)
+                return null;
+            var wp = _nodeWorldAr(node);
+            if (!wp)
+                return null;
+            var sp = cam.worldToScreen(wp);
+            var fs = cc.view.getFrameSize ? cc.view.getFrameSize() : null;
+            var vs = cc.view.getVisibleSize ? cc.view.getVisibleSize() : null;
+            if (!fs || !vs)
+                return null;
+            var sx = _num(fs.width, 1) / Math.max(1, _num(vs.width, 1));
+            var sy = _num(fs.height, 1) / Math.max(1, _num(vs.height, 1));
+            return {
+                x: _num(sp && sp.x, 0) * sx,
+                y: _num(sp && sp.y, 0) * sy
+            };
+        } catch (e) {}
+        return null;
+    }
+    function isRenderableRect(r) {
+        if (!r)
+            return false;
+        if (!isFinite(r.x) || !isFinite(r.y) || !isFinite(r.w) || !isFinite(r.h))
+            return false;
+        if (r.w < 2 || r.h < 2)
+            return false;
+        if ((r.x + r.w) < -4 || (r.y + r.h) < -4)
+            return false;
+        if (r.x > innerWidth + 4 || r.y > innerHeight + 4)
+            return false;
+        return true;
+    }
+    function collectDomTextRects(limit, opt) {
+        limit = Number(limit) || 200;
+        opt = opt || {};
         var out = [];
-        walkNodes(function (n) {
-            if (!nodeInGame(n))
-                return;
-            var comps = (n._components || []);
-            for (var i = 0; i < comps.length; i++) {
-                var c = comps[i];
-                if (c && typeof c.string !== 'undefined') {
-                    var s = String(c.string == null ? '' : c.string).trim();
-                    if (!s)
+        var seen = {};
+        var maxNodes = Number(opt.domMaxNodes);
+        if (!isFinite(maxNodes) || maxNodes < 100)
+            maxNodes = 1200;
+        var rootEl = null;
+        try {
+            if (opt.domRoot && opt.domRoot.nodeType === 1)
+                rootEl = opt.domRoot;
+        } catch (_) {}
+        if (!rootEl) {
+            try {
+                var cvs = document.querySelector('canvas');
+                if (cvs) {
+                    var p = cvs.parentElement || null;
+                    rootEl = (p && p !== document.body) ? p : cvs;
+                }
+            } catch (_) {}
+        }
+        if (!rootEl && opt.allowBodyScan) {
+            try {
+                rootEl = document.body;
+            } catch (_) {}
+        }
+        if (!rootEl)
+            return out;
+        try {
+            var scanned = 0;
+            var showText = (typeof NodeFilter !== 'undefined' && NodeFilter.SHOW_TEXT) ? NodeFilter.SHOW_TEXT : 4;
+            var walker = (document.createTreeWalker ? document.createTreeWalker(rootEl, showText, null, false) : null);
+            var tnode = walker ? walker.nextNode() : null;
+            while (tnode) {
+                if (out.length >= limit)
+                    break;
+                scanned++;
+                if (scanned > maxNodes)
+                    break;
+                var el = tnode.parentElement || tnode.parentNode;
+                if (!el || !el.getBoundingClientRect) {
+                    tnode = walker.nextNode();
+                    continue;
+                }
+                try {
+                    if (el.id === '__cw_root_allin') {
+                        tnode = walker.nextNode();
                         continue;
-                    var r = rectForTextMap(n, s);
-                    var x = Math.round(r.x),
-                    y = Math.round(r.y),
-                    w = Math.round(r.w),
-                    h = Math.round(r.h);
-                    var tail = fullPath(n, 80);
-                    var idx = out.length + 1;
-                    out.push({
-                        idx: idx,
-                        text: s,
+                    }
+                    if (el.closest && el.closest('#__cw_root_allin')) {
+                        tnode = walker.nextNode();
+                        continue;
+                    }
+                } catch (e0) {}
+                var tag = '';
+                try {
+                    tag = String((el.tagName || 'el')).toLowerCase();
+                } catch (e1) {
+                    tag = 'el';
+                }
+                if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'canvas' || tag === 'svg') {
+                    tnode = walker.nextNode();
+                    continue;
+                }
+                var txt = '';
+                try {
+                    txt = String(tnode.nodeValue || '').trim();
+                } catch (e2) {
+                    txt = '';
+                }
+                if (!txt) {
+                    tnode = walker.nextNode();
+                    continue;
+                }
+                if (txt.length > 160)
+                    txt = txt.slice(0, 160);
+                if (!isTextCandidate(txt)) {
+                    tnode = walker.nextNode();
+                    continue;
+                }
+                var r = el.getBoundingClientRect();
+                if (!r) {
+                    tnode = walker.nextNode();
+                    continue;
+                }
+                var x = Math.round(_num(r.left, 0));
+                var y = Math.round(_num(r.top, 0));
+                var w = Math.round(_num(r.width, 0));
+                var h = Math.round(_num(r.height, 0));
+                if (!isRenderableRect({
                         x: x,
                         y: y,
                         w: w,
-                        h: h,
-                        sx: r.sx,
-                        sy: r.sy,
-                        sw: r.sw,
-                        sh: r.sh,
+                        h: h
+                    })) {
+                    tnode = walker.nextNode();
+                    continue;
+                }
+                var key = txt + '|' + x + '|' + y + '|' + w + '|' + h;
+                if (seen[key]) {
+                    tnode = walker.nextNode();
+                    continue;
+                }
+                seen[key] = 1;
+                var id = '';
+                try {
+                    id = el.id ? ('#' + el.id) : '';
+                } catch (e3) {}
+                out.push({
+                    text: txt,
+                    x: x,
+                    y: y,
+                    w: w,
+                    h: h,
+                    n: {
+                        x: x / innerWidth,
+                        y: y / innerHeight,
+                        w: w / innerWidth,
+                        h: h / innerHeight
+                    },
+                    tail: 'dom:' + tag + id,
+                    tl: 'dom:' + tag
+                });
+                tnode = walker.nextNode();
+            }
+            if (!walker && rootEl.querySelectorAll) {
+                var all = rootEl.querySelectorAll('*');
+                for (var i = 0; i < all.length; i++) {
+                    if (out.length >= limit)
+                        break;
+                    scanned++;
+                    if (scanned > maxNodes)
+                        break;
+                    var el2 = all[i];
+                    if (!el2 || !el2.getBoundingClientRect)
+                        continue;
+                    try {
+                        if (el2.id === '__cw_root_allin')
+                            continue;
+                        if (el2.closest && el2.closest('#__cw_root_allin'))
+                            continue;
+                    } catch (_) {}
+                    var txt2 = '';
+                    try {
+                        txt2 = String(el2.textContent || '').trim();
+                    } catch (_) {
+                        txt2 = '';
+                    }
+                    if (!txt2 || txt2.length > 160)
+                        continue;
+                    if (!isTextCandidate(txt2))
+                        continue;
+                    var r2 = el2.getBoundingClientRect();
+                    if (!r2)
+                        continue;
+                    var x2 = Math.round(_num(r2.left, 0));
+                    var y2 = Math.round(_num(r2.top, 0));
+                    var w2 = Math.round(_num(r2.width, 0));
+                    var h2 = Math.round(_num(r2.height, 0));
+                    if (!isRenderableRect({
+                            x: x2,
+                            y: y2,
+                            w: w2,
+                            h: h2
+                        }))
+                        continue;
+                    var key2 = txt2 + '|' + x2 + '|' + y2 + '|' + w2 + '|' + h2;
+                    if (seen[key2])
+                        continue;
+                    seen[key2] = 1;
+                    out.push({
+                        text: txt2,
+                        x: x2,
+                        y: y2,
+                        w: w2,
+                        h: h2,
                         n: {
-                            x: x / innerWidth,
-                            y: y / innerHeight,
-                            w: w / innerWidth,
-                            h: h / innerHeight
+                            x: x2 / innerWidth,
+                            y: y2 / innerHeight,
+                            w: w2 / innerWidth,
+                            h: h2 / innerHeight
                         },
-                        tail: tail,
-                        tl: String(tail || '').toLowerCase()
+                        tail: 'dom:el',
+                        tl: 'dom:el'
                     });
                 }
             }
-        });
+        } catch (e4) {}
+        return out;
+    }
+    function buildTextRects(opts) {
+        opts = opts || {};
+        var allowDomFallback = !!opts.allowDomFallback;
+        var domLimit = Number(opts.domLimit) || 200;
+        var ls = collectLabels();
+        var out = [];
+        var st = {
+            labels: ls.length,
+            textCandidate: 0,
+            rectInvalid: 0,
+            rectRecovered: 0,
+            rectProjected: 0,
+            rectAdjusted: 0,
+            rectClamped: 0,
+            domFallback: 0,
+            syntheticPlaced: 0,
+            out: 0
+        };
+        for (var i = 0; i < ls.length; i++) {
+            var L = ls[i];
+            var s = (L.text || '').trim();
+            if (!isTextCandidate(s))
+                continue;
+            st.textCandidate++;
+            var x = Math.round(L.x),
+            y = Math.round(L.y),
+            w = Math.round(L.w),
+            h = Math.round(L.h);
+            var rr = {
+                x: x,
+                y: y,
+                w: w,
+                h: h
+            };
+            if (!isRenderableRect(rr)) {
+                st.rectInvalid++;
+                var recovered = null;
+                try {
+                    var anc = L.node || null;
+                    var hop = 0;
+                    while (anc && hop < 10) {
+                        var ar = wRect(anc);
+                        if (isRenderableRect(ar)) {
+                            recovered = ar;
+                            break;
+                        }
+                        anc = anc.parent || anc._parent || null;
+                        hop++;
+                    }
+                } catch (eA) {}
+                if (recovered) {
+                    x = Math.round(recovered.x);
+                    y = Math.round(recovered.y);
+                    w = Math.round(recovered.w);
+                    h = Math.round(recovered.h);
+                    st.rectRecovered++;
+                } else {
+                    if (!isFinite(x))
+                        x = 0;
+                    if (!isFinite(y))
+                        y = 0;
+                    if (!isFinite(w) || w < 2)
+                        w = Math.max(16, Math.min(360, s.length * 7));
+                    if (!isFinite(h) || h < 2)
+                        h = 18;
+                    var projectedHit = false;
+                    try {
+                        var sp2 = _nodeToScreen(L.node);
+                        if (sp2) {
+                            x = Math.round(sp2.x - w * 0.5);
+                            y = Math.round(sp2.y - h * 0.5);
+                            st.rectProjected++;
+                            projectedHit = true;
+                        }
+                    } catch (eP) {}
+                    if (!projectedHit && (x === 0 && y === 0)) {
+                        var idxDbg = st.rectAdjusted;
+                        var rowH = 22;
+                        var startY = 90;
+                        var rowsMax = Math.max(10, Math.floor((innerHeight - startY - 12) / rowH));
+                        var col = Math.floor(idxDbg / rowsMax);
+                        var row = idxDbg % rowsMax;
+                        x = 8 + col * 290;
+                        y = startY + row * rowH;
+                        st.syntheticPlaced++;
+                    }
+                    var maxX = Math.max(0, innerWidth - w - 2);
+                    var maxY = Math.max(0, innerHeight - h - 2);
+                    var x0 = x,
+                    y0 = y;
+                    x = Math.max(0, Math.min(maxX, x));
+                    y = Math.max(0, Math.min(maxY, y));
+                    if (x !== x0 || y !== y0)
+                        st.rectClamped++;
+                    st.rectAdjusted++;
+                }
+            }
+            out.push({
+                text: s,
+                x: x,
+                y: y,
+                w: w,
+                h: h,
+                n: {
+                    x: x / innerWidth,
+                    y: y / innerHeight,
+                    w: w / innerWidth,
+                    h: h / innerHeight
+                },
+                tail: L.tail,
+                tl: L.tl
+            });
+        }
+        if (allowDomFallback && ((st.textCandidate > 0 && st.rectInvalid === st.textCandidate && st.rectRecovered === 0 && st.rectProjected === 0) || out.length === 0)) {
+            var domRows = collectDomTextRects(domLimit, opts);
+            if (domRows && domRows.length) {
+                out = domRows;
+                st.domFallback = domRows.length;
+            }
+        }
+        st.out = out.length;
+        try {
+            window.__cw_textStats = st;
+        } catch (e) {}
         return out;
     }
 
@@ -1192,6 +1412,22 @@
         var X_ACC = 303;
 
         var TAIL_USER_NAME = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/playersview/lbl_user_name';
+        var TAIL_PROFILE_USER_NAME = 'HomeScene/Canvas/AccountLogin/Header/nodeInfoPlayer/info/lblAccName';
+        var TAIL_PROFILE_ACCOUNT = 'HomeScene/Canvas/AccountLogin/Header/nodeInfoPlayer/gold/lblCoin';
+        var TAIL_PROFILE_USER_NAME_INGAME = 'sede/Canvas/GateHeaderInGame/info/lblAccName';
+        var TAIL_PROFILE_ACCOUNT_INGAME_1 = 'sede/Canvas/GateHeaderInGame/gold/lblCoin';
+        var TAIL_PROFILE_ACCOUNT_INGAME_2 = 'sede/Canvas/GateHeaderInGame/info/lblCoin';
+        var USERNAME_TAILS_EXACT = [
+            TAIL_PROFILE_USER_NAME,
+            TAIL_PROFILE_USER_NAME_INGAME,
+            TAIL_USER_NAME
+        ];
+        var ACCOUNT_TAILS_EXACT = [
+            TAIL_PROFILE_ACCOUNT,
+            TAIL_PROFILE_ACCOUNT_INGAME_1,
+            TAIL_PROFILE_ACCOUNT_INGAME_2,
+            TAIL_ACC
+        ];
 
         var X_USER_NAME = 274;
 
@@ -1199,6 +1435,141 @@
 
         var Y_LE = 643;
 
+
+        function findNodeByTailStrictLocal(tail) {
+            try {
+                tail = String(tail || '').trim();
+                if (!tail)
+                    return null;
+                if (window.findNodeByTailCompat)
+                    return window.findNodeByTailCompat(tail);
+                if (window.__abx_findNodeByTail)
+                    return window.__abx_findNodeByTail(tail);
+                if (!window.cc || !cc.director || !cc.director.getScene)
+                    return null;
+                var scene = cc.director.getScene();
+                if (!scene)
+                    return null;
+                var parts = tail.split('/').filter(Boolean);
+                if (parts[0] === scene.name)
+                    parts.shift();
+                var node = scene;
+                for (var i = 0; i < parts.length; i++) {
+                    var name = parts[i];
+                    var kids = node.children || node._children || [];
+                    var found = null;
+                    for (var j = 0; j < kids.length; j++) {
+                        if (kids[j] && kids[j].name === name) {
+                            found = kids[j];
+                            break;
+                        }
+                    }
+                    if (!found)
+                        return null;
+                    node = found;
+                }
+                return node;
+            } catch (_) {
+                return null;
+            }
+        }
+        function getNodeTextLocal(node) {
+            try {
+                if (!node || !node.getComponent)
+                    return '';
+                var lbl = node.getComponent(cc.Label);
+                if (lbl && lbl.string != null)
+                    return String(lbl.string);
+                var rt = node.getComponent(cc.RichText);
+                if (rt && rt.string != null)
+                    return String(rt.string);
+            } catch (_) {}
+            return '';
+        }
+        function readNodeTextByTailListExact(tails, opt) {
+            opt = opt || {};
+            tails = tails || [];
+            for (var i = 0; i < tails.length; i++) {
+                var tail = String(tails[i] || '').trim();
+                if (!tail)
+                    continue;
+                var node = findNodeByTailStrictLocal(tail);
+                var txt = String(getNodeTextLocal(node) || '').trim();
+                if (!txt)
+                    continue;
+                if (opt.moneyOnly && moneyOf(txt) == null)
+                    continue;
+                if (opt.nonMoneyOnly && moneyOf(txt) != null)
+                    continue;
+                return txt.replace(/\s+/g, ' ');
+            }
+            return '';
+        }
+        function readUsernameSafe() {
+            try {
+                return readNodeTextByTailListExact(USERNAME_TAILS_EXACT);
+            } catch (_) {
+                return '';
+            }
+        }
+        function readAccountSafe() {
+            try {
+                return readNodeTextByTailListExact(ACCOUNT_TAILS_EXACT, {
+                    moneyOnly: true
+                });
+            } catch (_) {
+                return '';
+            }
+        }
+        window.readUsernameSafe = readUsernameSafe;
+        window.readAccountSafe = readAccountSafe;
+        window.__cw_profile_probe = function () {
+            var username = '';
+            var accountRaw = '';
+            var byUserTail = [];
+            var byAccountTail = [];
+            try {
+                username = readUsernameSafe() || '';
+            } catch (_) {}
+            try {
+                accountRaw = readAccountSafe() || '';
+            } catch (_) {}
+            try {
+                for (var i = 0; i < USERNAME_TAILS_EXACT.length; i++) {
+                    var ut = String(USERNAME_TAILS_EXACT[i] || '');
+                    var un = findNodeByTailStrictLocal(ut);
+                    var uv = String(getNodeTextLocal(un) || '').trim();
+                    byUserTail.push({
+                        tail: ut,
+                        text: uv
+                    });
+                }
+            } catch (_) {}
+            try {
+                for (var j = 0; j < ACCOUNT_TAILS_EXACT.length; j++) {
+                    var at = String(ACCOUNT_TAILS_EXACT[j] || '');
+                    var an = findNodeByTailStrictLocal(at);
+                    var avRaw = String(getNodeTextLocal(an) || '').trim();
+                    byAccountTail.push({
+                        tail: at,
+                        text: avRaw,
+                        val: moneyOf(avRaw)
+                    });
+                }
+            } catch (_) {}
+            return {
+                username: username,
+                accountRaw: accountRaw,
+                accountVal: moneyOf(accountRaw),
+                byUserTail: byUserTail,
+                byAccountTail: byAccountTail,
+                tails: {
+                    username: USERNAME_TAILS_EXACT.slice(),
+                    account: ACCOUNT_TAILS_EXACT.slice()
+                },
+                ts: Date.now()
+            };
+        };
 
         function tailEquals(t, exact) {
 
@@ -1704,7 +2075,6 @@
 
         var list = S.money;
         var listTextMoney = buildMoneyFromTextRects();
-        var listTextAll = buildTextRects();
         var mC = pickByXOrderTail(listTextMoney, TAIL_TOTAL_BET, 'min');
         var mL = pickByXOrderTail(listTextMoney, TAIL_TOTAL_BET, 'max');
         if (mC && mL && mC === mL)
@@ -1714,14 +2084,25 @@
         var m3T = pickByTail(list, TAIL_3TRANG);
         var m3D = pickByTail(list, TAIL_3DO);
         var mTD = pickByTail(list, TAIL_TUDO);
-        var mA = pickByTailMinY(listTextMoney, TAIL_ACC);
-        var mN = pickByTailMinY(listTextAll, TAIL_USER_NAME);
+        var rawName = '';
+        var rawAcc = '';
+        try {
+            rawName = readUsernameSafe() || '';
+        } catch (_) {
+            rawName = '';
+        }
+        try {
+            rawAcc = readAccountSafe() || '';
+        } catch (_) {
+            rawAcc = '';
+        }
+        var valAcc = moneyOf(rawAcc);
 
         return {
             C: mC ? mC.val : null,
             L: mL ? mL.val : null,
-            A: mA ? mA.val : null,
-            N: mN ? String(mN.text != null ? mN.text : '') : null,
+            A: (valAcc == null ? null : valAcc),
+            N: (rawName ? String(rawName) : null),
             SD: mSD ? mSD.val : null,
             TT: mTT ? mTT.val : null,
             T3T: m3T ? m3T.val : null,
@@ -1729,8 +2110,8 @@
             TD: mTD ? mTD.val : null,
             rawC: mC ? mC.txt : null,
             rawL: mL ? mL.txt : null,
-            rawA: mA ? mA.txt : null,
-            rawN: mN ? String(mN.text != null ? mN.text : '') : null,
+            rawA: (rawAcc ? String(rawAcc) : null),
+            rawN: (rawName ? String(rawName) : null),
             rawSD: mSD ? mSD.txt : null,
             rawTT: mTT ? mTT.txt : null,
             rawT3T: m3T ? m3T.txt : null,
@@ -1773,6 +2154,7 @@
         prog: null,
         status: 'ĐỢI MỞ BÁT',
         money: [],
+        moneyMap: [],
         text: [],
         selC: null,
         selL: null,
@@ -1980,7 +2362,7 @@
         var bg = document.createElement('div');
         bg.style.cssText = 'position:absolute;inset:0;background:transparent;';
         layerMoney.appendChild(bg);
-        var list = S.money && S.money.length ? S.money : buildMoneyRects();
+        var list = S.moneyMap && S.moneyMap.length ? S.moneyMap : buildMoneyRectsForMap();
         for (var i = 0; i < list.length; i++) {
             var m = list[i];
             var d = document.createElement('div');
@@ -1998,11 +2380,7 @@
                             x: m.x,
                             y: m.y,
                             w: m.w,
-                            h: m.h,
-                            sx: m.sx,
-                            sy: m.sy,
-                            sw: m.sw,
-                            sh: m.sh
+                            h: m.h
                         },
                         tail: m.tail,
                         txt: m.txt,
@@ -2140,9 +2518,25 @@
         };
         var f = S.focus;
         var progText = (S.prog == null ? '--' : (S._progIsSec ? (S.prog + 's') : (((S.prog * 100) | 0) + '%')));
+        var userName = (t.N != null && String(t.N).trim()) ? String(t.N).trim() : '';
+        if (!userName && typeof window.readUsernameSafe === 'function') {
+            try {
+                userName = window.readUsernameSafe() || '';
+            } catch (_) {
+                userName = '';
+            }
+        }
+        var accVal = (t.A != null ? t.A : null);
+        if (accVal == null && typeof window.readAccountSafe === 'function') {
+            try {
+                accVal = moneyOf(window.readAccountSafe() || '');
+            } catch (_) {
+                accVal = null;
+            }
+        }
         var base =
             ' Trạng thái: ' + S.status + ' | Prog: ' + progText + '\n' +
-            '• TÊN NHÂN VẬT : ' + (t.N != null && String(t.N).trim() ? String(t.N).trim() : '--') + '|TK : ' + fmt(t.A) + '|CHẴN: ' + fmt(t.C) + '|SẤP ĐÔI: ' + fmt(t.SD) + '|LẺ :' + fmt(t.L) + '|TỨ TRẮNG: ' + fmt(t.TT) + '|3 TRẮNG: ' + fmt(t.T3T) + '|3 ĐỎ: ' + fmt(t.T3D) + '|TỨ ĐỎ: ' + fmt(t.TD) + '\n' +
+            '• TÊN NHÂN VẬT : ' + (userName || '--') + '|TK : ' + fmt(accVal) + '|CHẴN: ' + fmt(t.C) + '|SẤP ĐÔI: ' + fmt(t.SD) + '|LẺ :' + fmt(t.L) + '|TỨ TRẮNG: ' + fmt(t.TT) + '|3 TRẮNG: ' + fmt(t.T3T) + '|3 ĐỎ: ' + fmt(t.T3D) + '|TỨ ĐỎ: ' + fmt(t.TD) + '\n' +
 
             '• Focus: ' + (f ? f.kind : '-') + '\n' +
             '  idx : ' + (f && f.idx != null ? f.idx : '-') + '\n' +
@@ -2164,35 +2558,95 @@
 
     /* ---------------- scan tools ---------------- */
     function scan200Money() {
-        var moneyRaw = buildMoneyRects();
-        var money = moneyRaw.slice().sort(function (a, b) {
+        var MAX_SCAN_MONEY_ROWS = 200;
+        var money = [];
+        var st = {};
+        try {
+            money = buildMoneyRectsForMap().sort(function (a, b) {
                 return a.y - b.y;
-            }).slice(0, 200)
-            .map(function (m) {
-                return {
-                    txt: m.txt,
-                    val: m.val,
-                    x: m.x,
-                    y: m.y,
-                    w: m.w,
-                    h: m.h,
-                    tail: m.tail
+            })
+                .slice(0, MAX_SCAN_MONEY_ROWS)
+                .map(function (m) {
+                    return {
+                        txt: m.txt,
+                        val: m.val,
+                        x: m.x,
+                        y: m.y,
+                        w: m.w,
+                        h: m.h,
+                        tail: m.tail
+                    };
+                });
+            st = window.__cw_moneyStats || {};
+
+            console.log('[Scan200Money] labels=' + (st.labels || 0) +
+                ' candidates=' + (st.moneyCandidate || 0) +
+                ' invalidRect=' + (st.rectInvalid || 0) +
+                ' recovered=' + (st.rectRecovered || 0) +
+                ' projected=' + (st.rectProjected || 0) +
+                ' clamped=' + (st.rectClamped || 0) +
+                ' synthetic=' + (st.syntheticPlaced || 0) +
+                ' adjusted=' + (st.rectAdjusted || 0) +
+                ' out=' + (st.out || 0));
+
+            console.log('(Money index x' + MAX_SCAN_MONEY_ROWS + ')\ttxt\tval\tx\ty\tw\th\ttail');
+            for (var i = 0; i < money.length; i++) {
+                var r = money[i];
+                console.log(i + "\t'" + r.txt + "'\t" + r.val + "\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
+            }
+
+            try {
+                console.table(money);
+            } catch (e) {
+                console.log(money);
+            }
+
+            try {
+                window.__cw_last_scan_money = money;
+                window.__cw_last_scan_money_summary = {
+                    labels: st.labels || 0,
+                    moneyCandidate: st.moneyCandidate || 0,
+                    invalidRect: st.rectInvalid || 0,
+                    recovered: st.rectRecovered || 0,
+                    projected: st.rectProjected || 0,
+                    clamped: st.rectClamped || 0,
+                    syntheticPlaced: st.syntheticPlaced || 0,
+                    adjusted: st.rectAdjusted || 0,
+                    out: st.out || 0,
+                    ts: Date.now(),
+                    status: 'ok'
                 };
-            });
-        console.log('(Money index x200)\ttxt\tval\tx\ty\tw\th\ttail');
-        for (var i = 0; i < money.length; i++) {
-            var r = money[i];
-            console.log(i + "\t'" + r.txt + "'\t" + r.val + "\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
+            } catch (_) {}
+            return money;
+        } catch (err) {
+            try {
+                var msg = String((err && err.message) || err || 'scan-money-failed');
+                console.warn('[Scan200Money][ERR]', msg);
+                window.__cw_last_scan_money = [];
+                window.__cw_last_scan_money_summary = {
+                    labels: 0,
+                    moneyCandidate: 0,
+                    invalidRect: 0,
+                    recovered: 0,
+                    projected: 0,
+                    clamped: 0,
+                    syntheticPlaced: 0,
+                    adjusted: 0,
+                    out: 0,
+                    ts: Date.now(),
+                    status: 'err',
+                    err: msg
+                };
+            } catch (_) {}
+            return [];
         }
-        console.log(money);
-        debugChanLeLog(moneyRaw, 'Chan/Le by MoneyMap');
     }
     function scan200Bet() {
         var btns = collectButtons().filter(function (b) {
             return b.w >= 16 && b.h >= 12;
         })
             .sort(function (a, b) {
-                return a.y - b.y;
+                return a.y - b.y || a.x - b.x;
             }).slice(0, 200)
             .map(function (b) {
                 return {
@@ -2208,43 +2662,101 @@
             var r = btns[i];
             console.log(i + "\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
         }
-        console.log(btns);
+        try {
+            console.table(btns);
+        } catch (e) {
+            console.log(btns);
+        }
+        return btns;
     }
     function scan200Text() {
-        var texts = buildTextRects().slice(0, 200)
-            .map(function (t) {
-                return {
-                    text: t.text,
-                     tail: t.tail,
-                     x: Math.round(t.x),
-                     y: Math.round(t.y),
-                     w: Math.round(t.w),
-                     h: Math.round(t.h)
-                 };
-             });
-         console.log('(Text index x200)	text	x	y	w	h	tail');
-         for (var j = 0; j < texts.length; j++) {
-             var r = texts[j];
-             console.log(j + "	'" + r.text + "'	" + r.x + "	" + r.y + "	" + r.w + "	" + r.h + "	'" + r.tail + "'");
-         }
-         var lines = ['(Text index x200)	text	x	y	w	h	tail'];
-         for (var k = 0; k < texts.length; k++) {
-             var r2 = texts[k];
-             lines.push(k + "	'" + r2.text + "'	" + r2.x + "	" + r2.y + "	" + r2.w + "	" + r2.h + "	'" + r2.tail + "'");
-         }
-         if (!texts.length)
-             lines.push('(empty)');
-         lines.push('');
-         lines = lines.concat(chanLeDebugLines(buildMoneyFromTextRects(), 'Chan/Le by TextMap'));
-        setCwLog(lines.join('\n'));
-         window.__cw_lastTextScan = texts;
-         try {
-             console.table(texts);
-         } catch (e) {
-             console.log(texts);
-         }
-         return texts;
-     }
+        var MAX_SCAN_TEXT_ROWS = 200;
+        var texts = [];
+        var st = {};
+        try {
+            texts = buildTextRects({
+                allowDomFallback: true,
+                domLimit: 200
+            }).sort(function (a, b) {
+                return a.y - b.y;
+            }).slice(0, MAX_SCAN_TEXT_ROWS)
+                .map(function (t) {
+                    return {
+                        text: t.text,
+                        x: t.x,
+                        y: t.y,
+                        w: t.w,
+                        h: t.h,
+                        tail: t.tail
+                    };
+                });
+            st = window.__cw_textStats || {};
+
+            console.log('[Scan200Text] labels=' + (st.labels || 0) +
+                ' candidates=' + (st.textCandidate || 0) +
+                ' invalidRect=' + (st.rectInvalid || 0) +
+                ' recovered=' + (st.rectRecovered || 0) +
+                ' projected=' + (st.rectProjected || 0) +
+                ' clamped=' + (st.rectClamped || 0) +
+                ' domFallback=' + (st.domFallback || 0) +
+                ' synthetic=' + (st.syntheticPlaced || 0) +
+                ' adjusted=' + (st.rectAdjusted || 0) +
+                ' out=' + (st.out || 0));
+
+            console.log('(Text index x' + MAX_SCAN_TEXT_ROWS + ')\ttext\tx\ty\tw\th\ttail');
+            for (var i = 0; i < texts.length; i++) {
+                var r = texts[i];
+                console.log(i + "\t'" + r.text + "'\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
+            }
+
+            try {
+                console.table(texts);
+            } catch (e) {
+                console.log(texts);
+            }
+
+            try {
+                window.__cw_last_scan_text = texts;
+                window.__cw_last_scan_summary = {
+                    labels: st.labels || 0,
+                    candidates: st.textCandidate || 0,
+                    invalidRect: st.rectInvalid || 0,
+                    recovered: st.rectRecovered || 0,
+                    projected: st.rectProjected || 0,
+                    clamped: st.rectClamped || 0,
+                    domFallback: st.domFallback || 0,
+                    syntheticPlaced: st.syntheticPlaced || 0,
+                    adjusted: st.rectAdjusted || 0,
+                    out: st.out || 0,
+                    ts: Date.now(),
+                    status: 'ok'
+                };
+            } catch (_) {}
+            return texts;
+        } catch (err) {
+            try {
+                var msg = String((err && err.message) || err || 'scan-failed');
+                console.warn('[Scan200Text][ERR]', msg);
+                window.__cw_last_scan_text = [];
+                window.__cw_last_scan_summary = {
+                    labels: 0,
+                    candidates: 0,
+                    invalidRect: 0,
+                    recovered: 0,
+                    projected: 0,
+                    clamped: 0,
+                    domFallback: 0,
+                    syntheticPlaced: 0,
+                    adjusted: 0,
+                    out: 0,
+                    ts: Date.now(),
+                    status: 'err',
+                    err: msg
+                };
+            } catch (_) {}
+            return [];
+        }
+    }
 
     function scanTK() {
         var r = readTKSeq();
@@ -3622,53 +4134,19 @@
         });
     };
 
-    console.log('[READY] CW merged (compat + TextMap + Scan200Text + TK sequence + Totals by (x,tail) + standardized exports).');
+    console.log('[READY] CW merged (compat + TextMap + Scan200Text + TK sequence + Totals by (x,tail) + standardized exports). patch=' + (window.__cw_patch_ver || 'na'));
 
     /* ---------------- tick & controls ---------------- */
     function statusByProg(p) {
-        // Ngưỡng chống rung cho số thực gần 0
-        var EPS = 0.001;
-
-        // Quy tắc ông chủ yêu cầu:
-        // - p > 0      → lấy text tail 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage'
-        // - p = 0      → lấy text tail 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting'
-        var TAIL_MSG = 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage';
-        var TAIL_WAIT = 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting';
-
-        // Chọn text theo tail, so khớp theo kiểu "đuôi" để chống thay đổi prefix
-        function pickTextByTailEnd(tailEnd) {
-            try {
-                var texts = buildTextRects(); // [{text,x,y,w,h,tail}, ...]
-                var best = null,
-                bestArea = -1;
-                var tailEndL = String(tailEnd || '').toLowerCase();
-
-                for (var i = 0; i < texts.length; i++) {
-                    var t = texts[i];
-                    var tl = String(t.tail || '').toLowerCase();
-                    if (!tl.endsWith(tailEndL))
-                        continue;
-
-                    var ar = (t.w || 0) * (t.h || 0);
-                    if (ar > bestArea) {
-                        best = t;
-                        bestArea = ar;
-                    }
-                }
-                return best ? String(best.text || '').trim() : '';
-            } catch (e) {
-                return '';
-            }
-        }
-
-        p = +p || 0;
-        var tail = (p > EPS) ? TAIL_MSG : TAIL_WAIT;
-        var txt = pickTextByTailEnd(tail);
-
-        // Fallback nhẹ khi không tìm thấy text
-        if (txt)
-            return txt;
-        return "";
+        var TAIL_STATUS_ALERT = 'sede/Canvas/mainPlay/midNode/alertResult/lblalert';
+        try {
+            var txt = readNodeTextByTailListExact([TAIL_STATUS_ALERT], {
+                nonMoneyOnly: true
+            });
+            if (txt)
+                return txt;
+        } catch (_) {}
+        return '';
     }
 
     function tick() {
@@ -3730,7 +4208,7 @@
         }
 
         if (S.showMoney) {
-            S.money = buildMoneyRects();
+            S.moneyMap = buildMoneyRectsForMap();
             renderMoney();
         }
         if (S.showText) {
@@ -3768,11 +4246,26 @@
         S.showMoney = !S.showMoney;
         layerMoney.style.display = S.showMoney ? '' : 'none';
         if (S.showMoney) {
-            S.money = buildMoneyRects();
+            S.moneyMap = buildMoneyRectsForMap();
             renderMoney();
+            try {
+                var sm = window.__cw_moneyStats || {};
+                console.log('[MoneyMap] ON -> out=' + (S.moneyMap || []).length +
+                    ' (labels=' + (sm.labels || 0) +
+                    ', candidates=' + (sm.moneyCandidate || 0) +
+                    ', invalidRect=' + (sm.rectInvalid || 0) +
+                    ', recovered=' + (sm.rectRecovered || 0) +
+                    ', projected=' + (sm.rectProjected || 0) +
+                    ', clamped=' + (sm.rectClamped || 0) +
+                    ', synthetic=' + (sm.syntheticPlaced || 0) +
+                    ', adjusted=' + (sm.rectAdjusted || 0) + ')');
+            } catch (_) {}
         } else {
             S.focus = null;
             showFocus(null);
+            try {
+                console.log('[MoneyMap] OFF');
+            } catch (_) {}
         }
         panel.style.zIndex = '2147483647';
     };
@@ -3791,22 +4284,59 @@
         S.showText = !S.showText;
         layerText.style.display = S.showText ? '' : 'none';
         if (S.showText) {
-            S.text = buildTextRects();
+            S.text = buildTextRects({
+                allowDomFallback: true,
+                domLimit: 200
+            });
             renderText();
+            try {
+                var st = window.__cw_textStats || {};
+                console.log('[TextMap] ON -> out=' + S.text.length +
+                    ' (labels=' + (st.labels || 0) +
+                    ', candidates=' + (st.textCandidate || 0) +
+                    ', invalidRect=' + (st.rectInvalid || 0) +
+                    ', recovered=' + (st.rectRecovered || 0) +
+                    ', projected=' + (st.rectProjected || 0) +
+                    ', clamped=' + (st.rectClamped || 0) +
+                    ', domFallback=' + (st.domFallback || 0) +
+                    ', synthetic=' + (st.syntheticPlaced || 0) +
+                    ', adjusted=' + (st.rectAdjusted || 0) + ')');
+            } catch (e) {}
         } else {
             S.focus = null;
             showFocus(null);
+            try {
+                console.log('[TextMap] OFF');
+            } catch (e2) {}
         }
         panel.style.zIndex = '2147483647';
     };
     panel.querySelector('#bScanMoney').onclick = function () {
-        scan200Money();
+        try {
+            var d = null;
+            if (typeof window.__cw_scanAndDumpMoney === 'function')
+                d = window.__cw_scanAndDumpMoney('BTN_MONEY');
+            else
+                d = { rows: scan200Money() || [] };
+            try { console.log('[CW_SCAN_MONEY_BTN_DONE]', d); } catch (_) {}
+        } catch (e) {
+            try { console.warn('[CW_SCAN_MONEY_BTN][ERR]', e); } catch (_) {}
+        }
     };
     panel.querySelector('#bScanBet').onclick = function () {
         scan200Bet();
     };
     panel.querySelector('#bScanText').onclick = function () {
-        scan200Text();
+        try {
+            var d = null;
+            if (typeof window.__cw_scanAndDumpText === 'function')
+                d = window.__cw_scanAndDumpText('BTN');
+            else
+                d = { rows: scan200Text() || [] };
+            try { console.log('[CW_SCAN_BTN_DONE]', d); } catch (_) {}
+        } catch (e) {
+            try { console.warn('[CW_SCAN_BTN][ERR]', e); } catch (_) {}
+        }
     };
     panel.querySelector('#bScanTK').onclick = function () {
         scanTK();
@@ -3817,6 +4347,73 @@
     panel.querySelector('#bClearLog').onclick = function () {
         clearCwLog();
     };
+
+    try {
+        window.__cw_getMoneyScan = function () {
+            return {
+                kind: 'money',
+                summary: window.__cw_last_scan_money_summary || null,
+                stats: window.__cw_moneyStats || null,
+                rows: (window.__cw_last_scan_money || []).slice(0, 200)
+            };
+        };
+        window.__cw_scanAndDumpMoney = function (source) {
+            source = source || 'CMD_MONEY';
+            var rows = [];
+            try {
+                rows = scan200Money() || [];
+            } catch (_) {
+                rows = [];
+            }
+            var d = {};
+            try {
+                d = window.__cw_getMoneyScan ? window.__cw_getMoneyScan() : {};
+            } catch (_) {
+                d = {};
+            }
+            if (!d || typeof d !== 'object') d = {};
+            if (!d.rows) d.rows = rows;
+            d.kind = 'money';
+            try {
+                console.log('[CW_SCAN_' + source + ']', d);
+                if (d.summary) console.log('[CW_SCAN_SUMMARY]', d.summary);
+                if (d.stats) console.log('[CW_SCAN_STATS]', d.stats);
+            } catch (_) {}
+            return d;
+        };
+        window.__cw_getTextScan = function () {
+            return {
+                kind: 'text',
+                summary: window.__cw_last_scan_summary || null,
+                stats: window.__cw_textStats || null,
+                rows: (window.__cw_last_scan_text || []).slice(0, 200)
+            };
+        };
+        window.__cw_scanAndDumpText = function (source) {
+            source = source || 'CMD';
+            var rows = [];
+            try {
+                rows = scan200Text() || [];
+            } catch (_) {
+                rows = [];
+            }
+            var d = {};
+            try {
+                d = window.__cw_getTextScan ? window.__cw_getTextScan() : {};
+            } catch (_) {
+                d = {};
+            }
+            if (!d || typeof d !== 'object') d = {};
+            if (!d.rows) d.rows = rows;
+            d.kind = 'text';
+            try {
+                console.log('[CW_SCAN_' + source + ']', d);
+                if (d.summary) console.log('[CW_SCAN_SUMMARY]', d.summary);
+                if (d.stats) console.log('[CW_SCAN_STATS]', d.stats);
+            } catch (_) {}
+            return d;
+        };
+    } catch (_) {}
 
     panel.querySelector('#bBetC').addEventListener('click', async function () {
         var n = parseFloat(document.getElementById('iStake').value || '1');
@@ -3973,6 +4570,8 @@
                         prog: p,
                         totals: readTotalsSafe(),
                         seq: readSeqSafe(),
+                        username: (typeof readUsernameSafe === 'function') ? readUsernameSafe() : '',
+                        accountRaw: (typeof readAccountSafe === 'function') ? readAccountSafe() : '',
                         status: String(st || ''), // <-- THÊM TRƯỜNG status
                         ts: Date.now()
                     };
