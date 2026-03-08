@@ -13,7 +13,7 @@
     //root.style.display='none';
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-r64-20260307-seq-diceend-tail';
+    window.__cw_patch_ver = 'cw-r65-20260308-hidden-sideforce-v4';
     try {
         if (!window.__cw_last_scan_text)
             window.__cw_last_scan_text = [];
@@ -2860,11 +2860,28 @@
     }
     async function waitForTotalsChange(before, side, timeout) {
         timeout = timeout || 1400;
+        side = txNormSide(side || '');
+        var sideKey = (side === 'TAI') ? 'T' : 'X';
+        var oppKey = (side === 'TAI') ? 'X' : 'T';
+        function hasNum(v) {
+            return typeof v === 'number' && isFinite(v);
+        }
+        function sameNum(a, b) {
+            return hasNum(a) && hasNum(b) && a === b;
+        }
         var t0 = (performance && performance.now ? performance.now() : Date.now());
         var last = before;
         while (((performance && performance.now ? performance.now() : Date.now()) - t0) < timeout) {
             await sleep(90);
             var cur = sampleTotalsNow();
+            var lastSide = last ? last[sideKey] : null;
+            var lastOpp = last ? last[oppKey] : null;
+            var curSide = cur ? cur[sideKey] : null;
+            var curOpp = cur ? cur[oppKey] : null;
+            if (hasNum(lastSide) && hasNum(curSide) && curSide !== lastSide) {
+                if (!hasNum(lastOpp) || !hasNum(curOpp) || sameNum(lastOpp, curOpp))
+                    return true;
+            }
             if ((side === 'TAI' && cur.C !== last.C) || (side === 'XIU' && cur.L !== last.L) || (cur.A !== last.A))
                 return true;
             last = cur;
@@ -6555,6 +6572,48 @@
         } catch (_) {}
         return '';
     }
+    function txFindNodeByTextContains(normNeedle) {
+        normNeedle = String(normNeedle || '');
+        if (!normNeedle)
+            return null;
+        var hit = null;
+        walkNodes(function (n) {
+            if (hit)
+                return;
+            var t = txNorm(txReadText(n));
+            if (!t)
+                return;
+            if (t.indexOf(normNeedle) >= 0)
+                hit = n;
+        });
+        return hit;
+    }
+    function txTryCloseFormatErrorPopup() {
+        var msgNode = txFindNodeByTextContains('dinh dang du lieu loi');
+        if (!msgNode)
+            return {
+                seen: false,
+                closed: false
+            };
+        var okNode = txFindNodeByTextContains('dong y');
+        var clicked = false;
+        try {
+            if (okNode) {
+                clicked = txClickNodePreferSelf(clickableOf(okNode, 8));
+            }
+        } catch (_) {}
+        if (!clicked) {
+            try {
+                clicked = txClickNodePreferSelf(clickableOf(msgNode, 6));
+            } catch (_) {}
+        }
+        return {
+            seen: true,
+            closed: !!clicked,
+            msgTail: String(tailOf(msgNode, 32) || ''),
+            okTail: String(tailOf(okNode, 32) || '')
+        };
+    }
     function txGetCalibPoint(tag) {
         try {
             tag = String(tag || '').toLowerCase();
@@ -6660,6 +6719,10 @@
     function txStrictInputTail(side) {
         side = txNormSide(side);
         return side === 'TAI' ? TX_STRICT_TAIL_INPUT_TAI : TX_STRICT_TAIL_INPUT_XIU;
+    }
+    function txStrictOppositeInputTail(side) {
+        side = txNormSide(side);
+        return side === 'TAI' ? TX_STRICT_TAIL_INPUT_XIU : TX_STRICT_TAIL_INPUT_TAI;
     }
     function txStrictDisableTail(side) {
         side = txNormSide(side);
@@ -7081,7 +7144,85 @@
         var touched = [];
         if (!cand || !cand.button)
             return touched;
-        var keys = ['chooseTypeToBet', '_currentTypeBet', 'selectedGuess', '_selectedGuess', 'guessType', '_guessType', 'betSide', '_betSide', '_isDaTai'];
+        var keys = ['chooseTypeToBet', 'choseTypeToBet', '_currentTypeBet', 'selectedGuess', '_selectedGuess', 'guessType', '_guessType', 'betSide', '_betSide', '_isDaTai', '_isDatTai', 'isDatTai', '_isTai', 'isTai', '_isXiu', 'isXiu', 'currentSide', '_currentSide', 'selectedSide', '_selectedSide', 'typeBet', '_typeBet', 'betType', '_betType'];
+        function isBlacklistedKey(lk) {
+            return lk.indexOf('default') >= 0 || lk.indexOf('anim') >= 0 || lk.indexOf('roll') >= 0 ||
+            lk.indexOf('effect') >= 0 || lk.indexOf('sprite') >= 0 || lk.indexOf('label') >= 0 ||
+            lk.indexOf('text') >= 0 || lk.indexOf('node') >= 0 || lk.indexOf('money') >= 0;
+        }
+        function isSafeStateKey(lk) {
+            if (isBlacklistedKey(lk))
+                return false;
+            if (lk.indexOf('choosetype') >= 0 || lk.indexOf('chosetype') >= 0 || lk.indexOf('currenttype') >= 0)
+                return true;
+            if (lk.indexOf('selectedguess') >= 0 || lk.indexOf('guess') >= 0)
+                return true;
+            if (lk.indexOf('betside') >= 0 || lk.indexOf('currentside') >= 0 || lk.indexOf('selectedside') >= 0)
+                return true;
+            if (lk.indexOf('typebet') >= 0 || lk.indexOf('bettype') >= 0)
+                return true;
+            if (lk === '_isdattai' || lk === 'isdattai' || lk === '_isdaxiu' || lk === 'isdaxiu')
+                return true;
+            if (lk === '_istai' || lk === 'istai' || lk === '_isxiu' || lk === 'isxiu')
+                return true;
+            if (lk === '_isdatai')
+                return true;
+            return false;
+        }
+        function mapBySide(key, oldv, sideNorm) {
+            var lk = String(key || '').toLowerCase();
+            if (!isSafeStateKey(lk))
+                return undefined;
+            function asIntLike(v) {
+                if (typeof v === 'number' && isFinite(v) && Math.floor(v) === v)
+                    return v;
+                if (typeof v === 'string' && /^\s*-?\d+\s*$/.test(v))
+                    return parseInt(v, 10);
+                return null;
+            }
+            if (typeof oldv === 'boolean') {
+                if (lk.indexOf('xiu') >= 0)
+                    return sideNorm === 'XIU';
+                if (lk.indexOf('tai') >= 0)
+                    return sideNorm === 'TAI';
+                return sideNorm === 'TAI';
+            }
+            var numLike = asIntLike(oldv);
+            if (numLike != null) {
+                if (lk === '_currenttypebet') {
+                    if (numLike === 1 || numLike === 2)
+                        return sideNorm === 'TAI' ? 2 : 1;
+                    if (numLike === 0 || numLike === 1)
+                        return sideNorm === 'TAI' ? 1 : 0;
+                    return sideNorm === 'TAI' ? 2 : 1;
+                }
+                if (lk === 'choosetypetobet' || lk === 'chosetypetobet') {
+                    if (numLike === 1 || numLike === 2)
+                        return sideNorm === 'TAI' ? 2 : 1;
+                    if (numLike === 0 || numLike === 1)
+                        return sideNorm === 'TAI' ? 1 : 0;
+                    return sideNorm === 'TAI' ? 2 : 1;
+                }
+                if (lk === '_isdattai' || lk === 'isdattai' || lk === '_isdatai')
+                    return sideNorm === 'TAI' ? 1 : 0;
+                if (lk === '_istai' || lk === 'istai')
+                    return sideNorm === 'TAI' ? 1 : 0;
+                if (lk === '_isxiu' || lk === 'isxiu')
+                    return sideNorm === 'XIU' ? 1 : 0;
+            }
+            if (typeof oldv === 'string' || oldv == null) {
+                if (lk.indexOf('tai') >= 0 || lk.indexOf('xiu') >= 0)
+                    return undefined;
+                if (lk.indexOf('side') >= 0 || lk.indexOf('guess') >= 0 || lk.indexOf('type') >= 0 || lk.indexOf('choose') >= 0 || lk.indexOf('bet') >= 0)
+                    return sideNorm;
+                return undefined;
+            }
+            if (typeof oldv === 'number' && isFinite(oldv) && Math.floor(oldv) === oldv) {
+                // Other numeric keys are too risky to mutate (can corrupt side flow).
+                return undefined;
+            }
+            return undefined;
+        }
         try {
             var ce = cand.button.clickEvents || [];
             for (var i = 0; i < ce.length; i++) {
@@ -7114,25 +7255,116 @@
                         continue;
                     try {
                         var oldv = owner[key];
-                        var nv = oldv;
-                        if (typeof oldv === 'boolean')
-                            nv = (side === 'TAI');
-                        else if (typeof oldv === 'string' || oldv == null)
-                            nv = side;
-                        else
+                        var nv = mapBySide(key, oldv, side);
+                        if (typeof nv === 'undefined')
                             continue;
-                        owner[key] = nv;
+                        var same = false;
+                        if (typeof oldv === 'number' || typeof oldv === 'boolean')
+                            same = (oldv === nv);
+                        else
+                            same = (String(oldv) === String(nv));
                         touched.push({
                             owner: String(owner.constructor && owner.constructor.name || ''),
                             key: key,
                             from: String(oldv),
-                            to: String(nv)
+                            to: String(nv),
+                            same: !!same
                         });
+                        if (!same)
+                            owner[key] = nv;
                     } catch (_) {}
                 }
+                // Do not mutate dynamic keys outside whitelist: high risk of corrupting UI state.
             }
         } catch (_) {}
         return touched;
+    }
+    function txTrustedTouchedCount(touched) {
+        if (!Array.isArray(touched))
+            return 0;
+        function isBlacklistedKey(lk) {
+            return lk.indexOf('default') >= 0 || lk.indexOf('anim') >= 0 || lk.indexOf('roll') >= 0 ||
+            lk.indexOf('effect') >= 0 || lk.indexOf('sprite') >= 0 || lk.indexOf('label') >= 0 ||
+            lk.indexOf('text') >= 0 || lk.indexOf('node') >= 0 || lk.indexOf('money') >= 0;
+        }
+        function isTrustedKey(lk) {
+            if (!lk || isBlacklistedKey(lk))
+                return false;
+            return lk.indexOf('choosetype') >= 0 || lk.indexOf('chosetype') >= 0 || lk.indexOf('currenttype') >= 0 ||
+            lk.indexOf('guess') >= 0 || lk.indexOf('betside') >= 0 || lk.indexOf('currentside') >= 0 ||
+            lk.indexOf('selectedside') >= 0 || lk.indexOf('typebet') >= 0 || lk.indexOf('bettype') >= 0 ||
+            lk === '_isdattai' || lk === 'isdattai' || lk === '_isdaxiu' || lk === 'isdaxiu' ||
+            lk === '_istai' || lk === 'istai' || lk === '_isxiu' || lk === 'isxiu' || lk === '_isdatai';
+        }
+        var n = 0;
+        for (var i = 0; i < touched.length; i++) {
+            var x = touched[i] || {};
+            var lk = String(x.key || '').toLowerCase();
+            if (isTrustedKey(lk))
+                n++;
+        }
+        return n;
+    }
+    function txTrustedTouchConflictCount(touched, side) {
+        if (!Array.isArray(touched))
+            return 0;
+        side = txNormSide(side);
+        function toIntLike(v) {
+            if (typeof v === 'number' && isFinite(v) && Math.floor(v) === v)
+                return v;
+            if (typeof v === 'string' && /^\s*-?\d+\s*$/.test(v))
+                return parseInt(v, 10);
+            return null;
+        }
+        function toBoolLike(v) {
+            if (typeof v === 'boolean')
+                return v;
+            if (typeof v === 'number' && isFinite(v))
+                return v !== 0;
+            if (typeof v === 'string') {
+                var t = v.trim().toLowerCase();
+                if (t === 'true' || t === '1')
+                    return true;
+                if (t === 'false' || t === '0')
+                    return false;
+            }
+            return null;
+        }
+        var bad = 0;
+        for (var i = 0; i < touched.length; i++) {
+            var x = touched[i] || {};
+            var lk = String(x.key || '').toLowerCase();
+            var toNum = toIntLike(x.to);
+            var toBool = toBoolLike(x.to);
+            if (lk === 'choosetypetobet' || lk === 'chosetypetobet' || lk === '_currenttypebet') {
+                var fromNum = toIntLike(x.from);
+                var expected = null;
+                if (fromNum === 1 || fromNum === 2)
+                    expected = (side === 'TAI') ? 2 : 1;
+                else if (fromNum === 0 || fromNum === 1)
+                    expected = (side === 'TAI') ? 1 : 0;
+                if (expected != null && toNum != null && toNum !== expected)
+                    bad++;
+                continue;
+            }
+            if (lk === '_isdattai' || lk === 'isdattai' || lk === '_isdatai' || lk === '_istai' || lk === 'istai') {
+                var taiExpected = (side === 'TAI');
+                if (toNum != null && toNum !== (taiExpected ? 1 : 0))
+                    bad++;
+                else if (toBool != null && toBool !== taiExpected)
+                    bad++;
+                continue;
+            }
+            if (lk === '_isxiu' || lk === 'isxiu') {
+                var xiuExpected = (side === 'XIU');
+                if (toNum != null && toNum !== (xiuExpected ? 1 : 0))
+                    bad++;
+                else if (toBool != null && toBool !== xiuExpected)
+                    bad++;
+                continue;
+            }
+        }
+        return bad;
     }
     function txForceOwnerSideFromNode(root, side, maxDepth) {
         side = txNormSide(side);
@@ -7176,6 +7408,19 @@
             return 'XIU';
         return '';
     }
+    function txFoldText(s) {
+        try {
+            return String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        } catch (_) {
+            return String(s == null ? '' : s).toLowerCase();
+        }
+    }
+    function txIsNoMoneyAlert(s) {
+        var t = txFoldText(s);
+        if (!t)
+            return false;
+        return t.indexOf('chua nhap tien cuoc') >= 0 || t.indexOf('ban chua nhap tien cuoc') >= 0;
+    }
     function txClickNodePreferSelf(node) {
         if (!node)
             return false;
@@ -7189,7 +7434,7 @@
         } catch (_) {}
         return !!ok;
     }
-    async function txClickStrictSide(side) {
+    async function txClickStrictSide(side, opt) {
         side = txNormSide(side);
         var tail = txStrictSideTail(side);
         var raw = txFindNodeByTailEnd(tail);
@@ -7208,8 +7453,32 @@
         var used = '';
         var ok = false;
         var ownerTouched = [];
+        var ownerForceInfo = null;
+        if (opt && opt.forceSideState) {
+            try {
+                if (targetCand) {
+                    ownerTouched = txForceOwnerSideFromCandidate(targetCand, side) || [];
+                    ownerForceInfo = {
+                        side: side,
+                        touched: ownerTouched.slice(0),
+                        candidates: (pick && pick.dbg) ? pick.dbg.slice(0, 8) : []
+                    };
+                }
+                if (!(ownerTouched && ownerTouched.length)) {
+                    ownerForceInfo = txForceOwnerSideFromNode(raw, side, 10);
+                    ownerTouched = (ownerForceInfo && ownerForceInfo.touched) ? ownerForceInfo.touched.slice(0) : [];
+                }
+            } catch (_) {
+                ownerTouched = [];
+                ownerForceInfo = {
+                    side: side,
+                    touched: [],
+                    candidates: [],
+                    error: 'force_side_exception'
+                };
+            }
+        }
         if (targetCand) {
-            ownerTouched = txForceOwnerSideFromCandidate(targetCand, side);
             ok = txEmitButtonEvents(targetCand);
             if (ok)
                 used = 'button_events';
@@ -7234,6 +7503,7 @@
             targetScore: targetCand ? Number(targetCand.score || 0) : null,
             used: used,
             ownerTouched: ownerTouched,
+            ownerForceInfo: ownerForceInfo,
             candidates: (pick && pick.dbg) ? pick.dbg.slice(0, 8) : [],
             guessedBefore: txGuessSideByMark(before),
             guessedAfter: txGuessSideByMark(after),
@@ -7382,8 +7652,10 @@
         } catch (_) {}
         var value = String(Math.max(0, Math.floor(Number(amount) || 0)));
         var inputTail = txStrictInputTail(side);
+        var inputOppTail = txStrictOppositeInputTail(side);
         var disableTail = txStrictDisableTail(side);
         var inputNode = txFindNodeByTailEnd(inputTail);
+        var inputOppNode = txFindNodeByTailEnd(inputOppTail);
         var disableNode = txFindNodeByTailEnd(disableTail);
         if (!inputNode) {
             return {
@@ -7404,20 +7676,71 @@
         var beforeVal = txReadInputCompValue(comp);
         txApplyInputValue(comp, inputNode, value, fired);
         var afterVal = txReadInputCompValue(comp);
+        var oppComp = txFindEditComp(inputOppNode);
+        var beforeOpp = txReadInputCompValue(oppComp);
+        var afterOpp = beforeOpp;
+        var oppositeCleared = true;
+        var alertAfterSet = txReadByTail('HomeScene/MINI_GAME_18/bgTxBanChoi/bgAlert/lblAlert');
         await sleep(TX_BET_DELAY.afterSetBeforeConfirm);
         return {
             ok: (afterVal === value) || (value === '0' && afterVal === ''),
             side: side,
             value: value,
             inputTail: inputTail,
+            inputOppTail: inputOppTail,
             disableTail: disableTail,
             disableActive: !!(disableNode && disableNode.activeInHierarchy),
             before: beforeVal,
             after: afterVal,
+            beforeOpp: beforeOpp,
+            afterOpp: afterOpp,
+            oppositeCleared: oppositeCleared,
+            alertAfterSet: alertAfterSet,
             fired: fired
         };
     }
-    async function txConfirmQuickBet(side) {
+    async function txEnsureSideJsOnly(side, retries, opt) {
+        side = txNormSide(side);
+        retries = Math.max(1, Math.floor(Number(retries) || 2));
+        var attempts = [];
+        for (var i = 0; i < retries; i++) {
+            var hit = await txClickStrictSide(side, opt);
+            var strictTail = txStrictSideTail(side);
+            var tails = String((hit && hit.tailRaw) || '') + ' ' + String((hit && hit.tailTarget) || '');
+            var strictTailMatched = (tails.indexOf(strictTail) >= 0);
+            var accepted = !!(hit && hit.ok && strictTailMatched);
+            attempts.push({
+                attempt: i + 1,
+                hit: hit,
+                strictTailMatched: strictTailMatched,
+                accepted: accepted
+            });
+            if (accepted) {
+                return {
+                    ok: true,
+                    side: side,
+                    attempts: attempts
+                };
+            }
+            await sleep(80);
+        }
+        return {
+            ok: false,
+            side: side,
+            attempts: attempts
+        };
+    }
+    function txTrustedTouchedFromSideSelect(sideSelect) {
+        if (!sideSelect || !Array.isArray(sideSelect.attempts))
+            return 0;
+        var total = 0;
+        for (var i = 0; i < sideSelect.attempts.length; i++) {
+            var a = sideSelect.attempts[i] || {};
+            total += txTrustedTouchedCount(a.hit && a.hit.ownerTouched);
+        }
+        return total;
+    }
+    async function txConfirmQuickBet(side, opt) {
         side = txNormSide(side || '');
         var n = txFindNodeByTailEnd(TX_STRICT_TAIL_CONFIRM_BET);
         if (!n) {
@@ -7428,10 +7751,67 @@
             };
         }
         var forceInfo = null;
-        if (side === 'TAI' || side === 'XIU') {
+        if (opt && opt.forceSideState) {
             try {
-                forceInfo = txForceOwnerSideFromNode(n, side, 8);
-            } catch (_) {}
+                forceInfo = {
+                    side: side,
+                    touched: [],
+                    candidates: [],
+                    sources: []
+                };
+                var roots = [];
+                var seenRoots = [];
+                function addRoot(node, depth, source) {
+                    if (!node)
+                        return;
+                    if (seenRoots.indexOf(node) !== -1)
+                        return;
+                    seenRoots.push(node);
+                    roots.push({
+                        node: node,
+                        depth: depth,
+                        source: source
+                    });
+                }
+                addRoot(n, 14, 'confirm');
+                addRoot(txFindNodeByTailEnd(txStrictSideTail(side)), 10, 'strict_side');
+                for (var i = 0; i < roots.length; i++) {
+                    var r = roots[i];
+                    var one = txForceOwnerSideFromNode(r.node, side, r.depth) || {
+                        side: side,
+                        touched: [],
+                        candidates: []
+                    };
+                    forceInfo.sources.push({
+                        source: r.source,
+                        touched: (one.touched || []).length,
+                        candidates: (one.candidates || []).length
+                    });
+                    if (Array.isArray(one.touched)) {
+                        for (var j = 0; j < one.touched.length; j++) {
+                            var x = one.touched[j] || {};
+                            x.source = r.source;
+                            forceInfo.touched.push(x);
+                        }
+                    }
+                    if (Array.isArray(one.candidates)) {
+                        for (var k = 0; k < one.candidates.length; k++) {
+                            var c = one.candidates[k] || {};
+                            c.source = r.source;
+                            forceInfo.candidates.push(c);
+                        }
+                    }
+                }
+            } catch (e) {
+                forceInfo = {
+                    side: side,
+                    touched: [],
+                    candidates: [],
+                    sources: [],
+                    error: 'force_side_exception',
+                    errorDetail: String(e && e.message || e || '')
+                };
+            }
         }
         var node = clickableOf(n, 12);
         var ok = emitClick(node);
@@ -7450,15 +7830,38 @@
             forceInfo: forceInfo
         };
     }
-    async function cwBetTxByInput(side, amount) {
+    async function cwBetTxByInput(side, amount, opt) {
         side = txNormSide(side);
         var amt = Math.max(0, Math.floor(Number(amount) || 0));
         if (!amt)
+            return false;
+        var nativeArmTrusted = !!(opt && opt.nativeArmTrusted);
+        var nativeArmSideRaw = String((opt && opt.nativeArmSide) || '').toUpperCase();
+        var nativeArmSide = (nativeArmSideRaw === 'TAI' || nativeArmSideRaw === 'XIU') ? nativeArmSideRaw : '';
+        var forceSideState = !nativeArmTrusted;
+        function txGuardFormatPopup(stage) {
+            var p = txTryCloseFormatErrorPopup();
+            try {
+                window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                window.__cw_bet_debug_last['formatPopup_' + stage] = p;
+            } catch (_) {}
+            if (p && p.seen) {
+                try {
+                    window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                    window.__cw_bet_debug_last.error = 'format_data_error_popup_' + stage;
+                } catch (_) {}
+                return false;
+            }
+            return true;
+        }
+        if (!txGuardFormatPopup('pre'))
             return false;
         var prepare = await txPrepareSideByInput(side, amt);
         try {
             window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
             window.__cw_bet_debug_last.prepare = prepare;
+            window.__cw_bet_debug_last.nativeArmTrusted = nativeArmTrusted;
+            window.__cw_bet_debug_last.nativeArmSide = nativeArmSide;
         } catch (_) {}
         if (!prepare.ok) {
             try {
@@ -7467,30 +7870,58 @@
             } catch (_) {}
             return false;
         }
-        var sideSelect = await txEnsureStrictSide(side, 2);
+        if (!txGuardFormatPopup('after_prepare'))
+            return false;
+        var sideSelect = await txEnsureSideJsOnly(side, 2, {
+            forceSideState: forceSideState
+        });
         try {
             window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
             window.__cw_bet_debug_last.sideSelect = sideSelect;
         } catch (_) {}
+        if (txIsNoMoneyAlert(prepare.alertAfterSet)) {
+            try {
+                window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                window.__cw_bet_debug_last.error = 'no_money_alert_prepare';
+            } catch (_) {}
+            return false;
+        }
         if (!sideSelect.ok) {
             try {
                 window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
-                window.__cw_bet_debug_last.sideWarning = 'side_select_unconfirmed';
+                window.__cw_bet_debug_last.error = 'side_select_failed';
             } catch (_) {}
+            return false;
         }
-        var sideFinal = await txClickStrictSide(side);
+        if (!txGuardFormatPopup('after_side_select'))
+            return false;
+        var sideFinal = await txClickStrictSide(side, {
+            forceSideState: forceSideState
+        });
         try {
             window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
             window.__cw_bet_debug_last.sideFinal = sideFinal;
         } catch (_) {}
-        if (!sideFinal.ok && sideSelect.ok) {
+        if (!sideFinal.ok) {
             try {
                 window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
                 window.__cw_bet_debug_last.error = 'side_final_failed';
             } catch (_) {}
             return false;
         }
-        var confirm = await txConfirmQuickBet(side);
+        var sideFinalTails = String(sideFinal.tailRaw || '') + ' ' + String(sideFinal.tailTarget || '');
+        if (sideFinalTails.indexOf(txStrictSideTail(side)) === -1) {
+            try {
+                window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                window.__cw_bet_debug_last.error = 'side_final_mismatch';
+            } catch (_) {}
+            return false;
+        }
+        if (!txGuardFormatPopup('after_side_final'))
+            return false;
+        var confirm = await txConfirmQuickBet(side, {
+            forceSideState: forceSideState
+        });
         try {
             window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
             window.__cw_bet_debug_last.confirm = confirm;
@@ -7501,6 +7932,65 @@
                 window.__cw_bet_debug_last.error = 'confirm_failed';
             } catch (_) {}
             return false;
+        }
+        var markAfterConfirm = txDbgMark('after_confirm_' + side, 'confirm_check');
+        try {
+            window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+            window.__cw_bet_debug_last.afterConfirm = markAfterConfirm;
+        } catch (_) {}
+        if (txIsNoMoneyAlert(markAfterConfirm && markAfterConfirm.alert)) {
+            try {
+                window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                window.__cw_bet_debug_last.error = 'no_money_alert_confirm';
+            } catch (_) {}
+            return false;
+        }
+        if (!txGuardFormatPopup('after_confirm'))
+            return false;
+        if (forceSideState) {
+            var touched = 0;
+            var hiddenTouches = [];
+            var sideSelectTouches = [];
+            try {
+                if (sideSelect && Array.isArray(sideSelect.attempts)) {
+                    for (var i = 0; i < sideSelect.attempts.length; i++) {
+                        var h = sideSelect.attempts[i] && sideSelect.attempts[i].hit;
+                        if (h && Array.isArray(h.ownerTouched)) {
+                            for (var j = 0; j < h.ownerTouched.length; j++)
+                                sideSelectTouches.push(h.ownerTouched[j]);
+                        }
+                    }
+                }
+            } catch (_) {}
+            touched += txTrustedTouchedFromSideSelect(sideSelect);
+            touched += txTrustedTouchedCount(sideFinal && sideFinal.ownerTouched);
+            touched += txTrustedTouchedCount(confirm && confirm.forceInfo && confirm.forceInfo.touched);
+            if (sideSelectTouches.length)
+                hiddenTouches = hiddenTouches.concat(sideSelectTouches);
+            if (sideFinal && Array.isArray(sideFinal.ownerTouched))
+                hiddenTouches = hiddenTouches.concat(sideFinal.ownerTouched);
+            if (confirm && confirm.forceInfo && Array.isArray(confirm.forceInfo.touched))
+                hiddenTouches = hiddenTouches.concat(confirm.forceInfo.touched);
+            var sideConflict = txTrustedTouchConflictCount(hiddenTouches, side);
+            try {
+                window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                window.__cw_bet_debug_last.hiddenTrustedTouched = touched;
+                window.__cw_bet_debug_last.hiddenSideConflict = sideConflict;
+            } catch (_) {}
+            if (sideConflict > 0) {
+                try {
+                    window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                    window.__cw_bet_debug_last.error = 'hidden_side_conflict';
+                } catch (_) {}
+                return false;
+            }
+            if (!(touched > 0)) {
+                try {
+                    window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
+                    window.__cw_bet_debug_last.error = 'hidden_side_untrusted';
+                } catch (_) {}
+                return false;
+            }
         }
         return true;
     }
@@ -7891,12 +8381,14 @@
         return true;
     }
 
-    window.__cw_bet = async function (side, amount) {
+    window.__cw_bet = async function (side, amount, opt) {
         try {
             window.__cw_bet_debug_last = {
                 startedAt: Date.now(),
                 sideRaw: side,
                 amountRaw: amount,
+                nativeArmTrusted: !!(opt && opt.nativeArmTrusted),
+                nativeArmSide: (opt && opt.nativeArmSide) || '',
                 patch: window.__cw_patch_ver || ''
             };
             // chuẩn hoá tham số
@@ -7909,19 +8401,21 @@
             }
 
             // chụp tổng trước khi bet (nếu có)
-            var before = (typeof window.readTotalsSafe === 'function'
-                 ? window.readTotalsSafe()
-                 : null) || {};
+            var before = (typeof sampleTotalsNow === 'function' ? sampleTotalsNow() : null) || {};
 
             // ĐẶT CƯỢC bằng click phỉnh TipDealer + cửa Tài/Xỉu
-            var ok = await cwBetTxByInput(side, amt);
+            var ok = await cwBetTxByInput(side, amt, opt);
             if (!ok) {
                 try {
                     window.__cw_bet_debug_last = window.__cw_bet_debug_last || {};
                     if (!window.__cw_bet_debug_last.error)
                         window.__cw_bet_debug_last.error = 'click_flow_failed';
                 } catch (_) {}
-                throw new Error('click_failed');
+                var flowErr = '';
+                try {
+                    flowErr = String((window.__cw_bet_debug_last || {}).error || '');
+                } catch (_) {}
+                throw new Error(flowErr ? ('click_failed:' + flowErr) : 'click_failed');
             }
 
             // ✅ BẮT BUỘC kiểm tra tổng có thay đổi hay không
@@ -7958,11 +8452,16 @@
             } catch (_) {}
             return 'ok';
         } catch (err) {
+            var dbgDetail = '';
+            try {
+                dbgDetail = JSON.stringify(window.__cw_bet_debug_last || {});
+            } catch (_) {}
             safePost({
                 abx: 'bet_error',
                 side: side,
                 amount: amount,
                 error: String(err && err.message || err),
+                detail: dbgDetail,
                 ts: Date.now()
             });
             try {

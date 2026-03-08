@@ -58,6 +58,8 @@ namespace TaiXiuB29.Tasks
         // Arm side bằng click native từ host (trusted input).
         // Trả false nếu không thể arm side an toàn.
         public Func<string, Task<bool>>? NativeArmSideAsync { get; init; }
+        // Cho biết lệnh arm gần nhất có được xác nhận tin cậy không (pass#1/#2).
+        public Func<bool>? GetNativeArmTrusted { get; init; }
 
         // --- UI updaters (được gán từ MainWindow) ---
         public Action<string>? UiSetSide;     // "TAI"/"XIU"

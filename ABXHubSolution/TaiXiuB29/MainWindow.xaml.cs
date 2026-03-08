@@ -192,6 +192,8 @@ namespace TaiXiuB29
 
         // Chống bắn trùng khi vừa cược
         private bool _cooldown = false;
+        // Đánh dấu lần arm side gần nhất có được xác nhận tin cậy không.
+        private volatile bool _lastNativeArmTrusted = false;
 
         // Cache & cờ để không inject lặp lại
         private string? _appJs;
@@ -1461,6 +1463,11 @@ Ví dụ không hợp lệ:
 
                                     if (_pendingRow != null)
                                     {
+                                        if (!string.Equals(_pendingRow.Side, side, StringComparison.OrdinalIgnoreCase) ||
+                                            _pendingRow.Stake != amount)
+                                        {
+                                            Log($"[BET][WARN] overwrite pending: {_pendingRow.Side} {_pendingRow.Stake:N0} -> {side} {amount:N0}");
+                                        }
                                         // ĐÃ có 1 ván đang chờ kết quả → chỉ cập nhật, KHÔNG thêm dòng mới
                                         _pendingRow.Side = side;
                                         _pendingRow.Stake = amount;
@@ -1504,7 +1511,11 @@ Ví dụ không hợp lệ:
                                     string side = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "?") : "?";
                                     long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
                                     string error = root.TryGetProperty("error", out var ee) ? (ee.GetString() ?? "") : "";
-                                    Log($"[BET][ERR] {side} {amount} :: {error}");
+                                    string detail = root.TryGetProperty("detail", out var de) ? (de.GetString() ?? "") : "";
+                                    if (!string.IsNullOrWhiteSpace(detail))
+                                        Log($"[BET][ERR] {side} {amount} :: {error} | detail={detail}");
+                                    else
+                                        Log($"[BET][ERR] {side} {amount} :: {error}");
                                     return;
                                 }
 
@@ -3480,6 +3491,12 @@ Ví dụ không hợp lệ:
         private static extern bool GetCursorPos(out NativePoint pt);
 
         [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+        [DllImport("user32.dll")]
         private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
 
         private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
@@ -3492,6 +3509,34 @@ Ví dụ không hợp lệ:
             if (string.Equals(side, "XIU", StringComparison.OrdinalIgnoreCase))
                 return "XIU";
             return "";
+        }
+
+        private bool CanUseNativeMouseArm()
+        {
+            try
+            {
+                if (!IsLoaded || !IsVisible || WindowState == WindowState.Minimized)
+                    return false;
+                if (Web == null || !Web.IsVisible || Web.ActualWidth < 8 || Web.ActualHeight < 8)
+                    return false;
+
+                var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero)
+                    return false;
+
+                var fg = GetForegroundWindow();
+                if (fg == IntPtr.Zero)
+                    return false;
+                if (fg == hwnd)
+                    return true;
+
+                GetWindowThreadProcessId(fg, out var fgPid);
+                return fgPid == (uint)Environment.ProcessId;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private async Task<JsSidePoint?> GetSideInputPointAsync(string side)
@@ -3604,14 +3649,26 @@ Ví dụ không hợp lệ:
             side = NormTxSide(side);
             if (string.IsNullOrEmpty(side))
             {
+                _lastNativeArmTrusted = false;
                 Log("[BET][NATIVE] invalid side for arm");
                 return false;
             }
+
+            // Khi app bị ẩn/minimize/không foreground thì không được dùng native mouse
+            // để tránh click ra ngoài ứng dụng. Luồng JS __cw_bet vẫn tiếp tục xử lý bet.
+            if (!CanUseNativeMouseArm())
+            {
+                _lastNativeArmTrusted = false;
+                Log($"[BET][NATIVE] skip arm (window not foreground/visible) -> JS-only ({side})");
+                return true;
+            }
+
             var opp = side == "TAI" ? "XIU" : "TAI";
 
             var pTarget = await GetSideInputPointAsync(side);
             if (pTarget == null || !pTarget.ok)
             {
+                _lastNativeArmTrusted = false;
                 Log("[BET][NATIVE] side point not ready: " + side + " reason=" + (pTarget?.reason ?? "null"));
                 return false;
             }
@@ -3631,6 +3688,7 @@ Ví dụ không hợp lệ:
             var cur = await ReadActiveSideFromJsAsync();
             if (string.Equals(cur, side, StringComparison.OrdinalIgnoreCase))
             {
+                _lastNativeArmTrusted = true;
                 Log($"[BET][NATIVE] arm pass#1 side={side}");
                 return true;
             }
@@ -3649,6 +3707,7 @@ Ví dụ không hợp lệ:
             var ok = string.Equals(cur, side, StringComparison.OrdinalIgnoreCase);
             if (ok)
             {
+                _lastNativeArmTrusted = true;
                 Log($"[BET][NATIVE] arm pass#2 side={side}");
                 return true;
             }
@@ -3657,10 +3716,12 @@ Ví dụ không hợp lệ:
             // __cw_bet phia JS van co lop side-guard rieng truoc khi confirm.
             if (string.IsNullOrWhiteSpace(cur))
             {
+                _lastNativeArmTrusted = false;
                 Log($"[BET][NATIVE] arm verify unknown side={side}, continue");
                 return true;
             }
 
+            _lastNativeArmTrusted = false;
             Log($"[BET][NATIVE] arm verify failed side={side} active={cur}");
             return false;
         }
@@ -3685,6 +3746,7 @@ Ví dụ không hợp lệ:
                 GetCooldown = () => _cooldown,
                 SetCooldown = (v) => _cooldown = v,
                 NativeArmSideAsync = (side) => Dispatcher.InvokeAsync(() => NativeArmSideAsync(side)).Task.Unwrap(),
+                GetNativeArmTrusted = () => _lastNativeArmTrusted,
                 MoneyStrategyId = moneyStrategyId,
                 BetSeq = _cfg.BetSeq ?? "",
                 BetPatterns = _cfg.BetPatterns ?? "",

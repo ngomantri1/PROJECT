@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -106,6 +107,41 @@ namespace TaiXiuB29.Tasks
             }
         }
 
+        public static async Task WaitForSessionChange(GameContext ctx, string baseSession, CancellationToken ct, int maxWaitMs = 12000)
+        {
+            var started = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                var s = ctx.GetSnap?.Invoke();
+                var cur = s?.session ?? "";
+                if (!string.Equals(cur, baseSession ?? "", StringComparison.Ordinal))
+                    return;
+                if (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - started >= maxWaitMs)
+                    return;
+                await Task.Delay(120, ct);
+            }
+        }
+
+        private static string NormalizeJsReturn(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return "";
+
+            raw = raw.Trim();
+            try
+            {
+                if (raw.StartsWith("\"", StringComparison.Ordinal) && raw.EndsWith("\"", StringComparison.Ordinal))
+                {
+                    var s = JsonSerializer.Deserialize<string>(raw);
+                    return (s ?? "").Trim();
+                }
+            }
+            catch { }
+
+            return raw.Trim().Trim('"');
+        }
+
 
 
         public static async Task<bool> PlaceBet(GameContext ctx, string side, long amount, CancellationToken ct)
@@ -131,6 +167,7 @@ namespace TaiXiuB29.Tasks
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
 
             // Arm side bằng input native (trusted click) để tránh lệch cửa.
+            bool nativeArmTrusted = false;
             if (ctx.NativeArmSideAsync != null)
             {
                 var armed = await ctx.NativeArmSideAsync(side);
@@ -139,22 +176,89 @@ namespace TaiXiuB29.Tasks
                     ctx.Log?.Invoke($"[BET] native arm side failed -> skip ({side})");
                     return false;
                 }
+                nativeArmTrusted = ctx.GetNativeArmTrusted?.Invoke() == true;
             }
 
-            // GỌI __cw_bet AN TOÀN (giữ nguyên như code hiện tại)
-            var js =
-                "(async function(){try{" +
-                " if (typeof window.__cw_bet==='function'){" +
-                "   return await window.__cw_bet('" + side + "', " + amount + ");" +
-                " } else { return 'no'; }" +
+            // ExecuteScriptAsync không await Promise từ __cw_bet; dùng kick + poll để lấy kết quả thật.
+            var callId = Guid.NewGuid().ToString("N");
+            var jsNativeTrusted = nativeArmTrusted ? "true" : "false";
+            var jsNativeSide = nativeArmTrusted ? side : "";
+            var jsKick =
+                "(function(){try{" +
+                " window.__abx_bet_ret = window.__abx_bet_ret || {};" +
+                " var k='" + callId + "';" +
+                " window.__abx_bet_ret[k]='pending';" +
+                " if (typeof window.__cw_bet!=='function') { window.__abx_bet_ret[k]='no'; return 'no'; }" +
+                " Promise.resolve(window.__cw_bet('" + side + "', " + amount + ", { nativeArmTrusted: " + jsNativeTrusted + ", nativeArmSide: '" + jsNativeSide + "' }))" +
+                "   .then(function(v){ window.__abx_bet_ret[k]=String(v==null?'':v); })" +
+                "   .catch(function(e){ window.__abx_bet_ret[k]='err:' + (e && e.message ? e.message : e); });" +
+                " return 'started';" +
                 "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
-            var rRaw = await ctx.EvalJsAsync(js);
-            var r = (rRaw ?? "").Trim().Trim('"');
-            ctx.Log?.Invoke($"[BET-JS] result={rRaw}");
+            var startRaw = await ctx.EvalJsAsync(jsKick);
+            var start = NormalizeJsReturn(startRaw);
+            if (start.StartsWith("err:", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(start, "no", StringComparison.OrdinalIgnoreCase))
+            {
+                ctx.Log?.Invoke($"[BET-JS] start={startRaw}");
+                return false;
+            }
+
+            string r = "";
+            for (int i = 0; i < 45; i++) // ~3.6s
+            {
+                ct.ThrowIfCancellationRequested();
+                await Task.Delay(80, ct);
+
+                var jsPoll =
+                    "(function(){try{" +
+                    " var d=window.__abx_bet_ret||{};" +
+                    " var v=d['" + callId + "'];" +
+                    " return (v==null?'':String(v));" +
+                    "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
+
+                var pollRaw = await ctx.EvalJsAsync(jsPoll);
+                var poll = NormalizeJsReturn(pollRaw);
+                if (string.IsNullOrWhiteSpace(poll) ||
+                    string.Equals(poll, "pending", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                r = poll;
+                break;
+            }
+
+            try
+            {
+                await ctx.EvalJsAsync("(function(){try{if(window.__abx_bet_ret) delete window.__abx_bet_ret['" + callId + "'];}catch(_){}})();");
+            }
+            catch { }
+
+            ctx.Log?.Invoke($"[BET-JS] result={r}");
 
             // Chỉ coi là thành công khi JS trả về 'ok'
             bool ok = string.Equals(r, "ok", StringComparison.OrdinalIgnoreCase);
+
+            if (!ok)
+            {
+                try
+                {
+                    var dbgRaw = await ctx.EvalJsAsync("(function(){try{return JSON.stringify(window.__cw_bet_debug_last||{});}catch(_){return '';}})();");
+                    var dbg = NormalizeJsReturn(dbgRaw);
+                    if (!string.IsNullOrWhiteSpace(dbg))
+                        ctx.Log?.Invoke($"[BET-JS][DBG] {dbg}");
+                }
+                catch { }
+            }
+            else
+            {
+                try
+                {
+                    var dbgRaw = await ctx.EvalJsAsync("(function(){try{return JSON.stringify(window.__cw_bet_debug_last||{});}catch(_){return '';}})();");
+                    var dbg = NormalizeJsReturn(dbgRaw);
+                    if (!string.IsNullOrWhiteSpace(dbg))
+                        ctx.Log?.Invoke($"[BET-JS][OKDBG] {dbg}");
+                }
+                catch { }
+            }
 
             if (ok)
                 Volatile.Write(ref _lastBetOkMs, now); // kích hoạt khoá 3s
