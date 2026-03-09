@@ -11,7 +11,7 @@
     //root.style.display='none';  //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-xd-textmap-sync-20260308-7';
+    window.__cw_patch_ver = 'cw-xd-textmap-sync-20260309-8';
     try {
         if (window[NS] && window[NS].teardown) {
             window[NS].teardown();
@@ -1397,15 +1397,12 @@
 
         /* ---------------- helpers for totals by (y, tail) ---------------- */
 
-        var TAIL_TOTAL_BET = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/lbl_total_bet';
-
-        var TAIL_TUDO = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_4th/lbl_total_bet';
-
-        var TAIL_TUTRANG = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_4tr/lbl_total_bet';
-
-        var TAIL_3TRANG = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_3tr/lbl_total_bet';
-
-        var TAIL_3DO = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_3th/lbl_total_bet';
+        var TAIL_CHAN = 'sede/Canvas/mainPlay/midNode/betNode/gatebig/lblCashBet';
+        var TAIL_LE = 'sede/Canvas/mainPlay/midNode/betNode/gatesmall/lblCashBet';
+        var TAIL_TUTRANG = 'sede/Canvas/mainPlay/midNode/betNode/gate5/lblCashBet';
+        var TAIL_3TRANG = 'sede/Canvas/mainPlay/midNode/betNode/gate2/lblCashBet';
+        var TAIL_3DO = 'sede/Canvas/mainPlay/midNode/betNode/gate3/lblCashBet';
+        var TAIL_TUDO = 'sede/Canvas/mainPlay/midNode/betNode/gate6/lblCashBet';
 
         var TAIL_ACC = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/playersview/lbl_user_money';
 
@@ -1933,56 +1930,17 @@
 
         function chanLeDebugLines(list, title) {
 
-            var arr = [];
-
-            for (var i = 0; i < list.length; i++) {
-
-                var it = list[i];
-
-                if (tailEquals(tailOfMoney(it), TAIL_TOTAL_BET))
-
-                    arr.push({
-                        idx: i,
-                        it: it
-                    });
-
-            }
-
-            arr.sort(function (A, B) {
-
-                return xOf(A.it) - xOf(B.it) || yOf(A.it) - yOf(B.it);
-
+            var rawC = readNodeTextByTailListExact([TAIL_CHAN], {
+                moneyOnly: true
             });
-
-            var lines = ['(' + (title || 'Chan/Le candidates by tail') + ') idx\ttxt\tval\tx\ty\tsx\tsy\tsw\tsh'];
-
-            for (var j = 0; j < arr.length; j++) {
-
-                var r = arr[j].it;
-
-                lines.push((j + 1) + ':' + arr[j].idx + "\t'" + r.txt + "'\t" + r.val + "\t" +
-                    Math.round(xOf(r)) + "\t" + Math.round(yOf(r)) + "\t" +
-                    Math.round(r.sx || 0) + "\t" + Math.round(r.sy || 0) + "\t" +
-                    Math.round(r.sw || 0) + "\t" + Math.round(r.sh || 0));
-
-            }
-
-            if (!arr.length) {
-
-                lines.push('(empty)');
-
-            } else {
-
-                var min = arr[0].it;
-
-                var max = arr[arr.length - 1].it;
-
-                lines.push('pick CHAN(minX): ' + Math.round(xOf(min)) + " -> '" + min.txt + "'");
-
-                lines.push('pick LE(maxX): ' + Math.round(xOf(max)) + " -> '" + max.txt + "'");
-
-            }
-
+            var rawL = readNodeTextByTailListExact([TAIL_LE], {
+                moneyOnly: true
+            });
+            var lines = ['(' + (title || 'Chan/Le by exact tails') + ')'];
+            lines.push("CHAN\t'" + String(rawC || '') + "'\t" + String(moneyOf(rawC)));
+            lines.push("LE\t'" + String(rawL || '') + "'\t" + String(moneyOf(rawL)));
+            lines.push("tailCHAN\t'" + TAIL_CHAN + "'");
+            lines.push("tailLE\t'" + TAIL_LE + "'");
             return lines;
 
         }
@@ -2004,15 +1962,25 @@
         window.pickByTail = pickByTail;
 
         window.cwPickChan = function () {
-
-            return pickByXOrderTail(buildMoneyFromTextRects(), TAIL_TOTAL_BET, 'min');
-
+            var raw = readNodeTextByTailListExact([TAIL_CHAN], {
+                moneyOnly: true
+            });
+            return {
+                txt: raw || '',
+                val: moneyOf(raw),
+                tail: TAIL_CHAN
+            };
         };
 
         window.cwPickLe = function () {
-
-            return pickByXOrderTail(buildMoneyFromTextRects(), TAIL_TOTAL_BET, 'max');
-
+            var raw = readNodeTextByTailListExact([TAIL_LE], {
+                moneyOnly: true
+            });
+            return {
+                txt: raw || '',
+                val: moneyOf(raw),
+                tail: TAIL_LE
+            };
         };
 
 
@@ -2069,21 +2037,68 @@
         return;
     }
 
-    /* ---------------- totals (using y & tail) ---------------- */
+    /* ---------------- totals (using exact bet tails) ---------------- */
     function totals(S) {
         S.money = buildMoneyRects(); // keep map for overlays & legacy helpers
 
-        var list = S.money;
-        var listTextMoney = buildMoneyFromTextRects();
-        var mC = pickByXOrderTail(listTextMoney, TAIL_TOTAL_BET, 'min');
-        var mL = pickByXOrderTail(listTextMoney, TAIL_TOTAL_BET, 'max');
-        if (mC && mL && mC === mL)
-            mL = null;
         var mSD = null;
-        var mTT = pickByTail(list, TAIL_TUTRANG);
-        var m3T = pickByTail(list, TAIL_3TRANG);
-        var m3D = pickByTail(list, TAIL_3DO);
-        var mTD = pickByTail(list, TAIL_TUDO);
+
+        var rawC = '';
+        var rawL = '';
+        var rawTT = '';
+        var rawT3T = '';
+        var rawT3D = '';
+        var rawTD = '';
+        try {
+            rawC = readNodeTextByTailListExact([TAIL_CHAN], {
+                moneyOnly: true
+            });
+        } catch (_) {
+            rawC = '';
+        }
+        try {
+            rawL = readNodeTextByTailListExact([TAIL_LE], {
+                moneyOnly: true
+            });
+        } catch (_) {
+            rawL = '';
+        }
+        try {
+            rawTT = readNodeTextByTailListExact([TAIL_TUTRANG], {
+                moneyOnly: true
+            });
+        } catch (_) {
+            rawTT = '';
+        }
+        try {
+            rawT3T = readNodeTextByTailListExact([TAIL_3TRANG], {
+                moneyOnly: true
+            });
+        } catch (_) {
+            rawT3T = '';
+        }
+        try {
+            rawT3D = readNodeTextByTailListExact([TAIL_3DO], {
+                moneyOnly: true
+            });
+        } catch (_) {
+            rawT3D = '';
+        }
+        try {
+            rawTD = readNodeTextByTailListExact([TAIL_TUDO], {
+                moneyOnly: true
+            });
+        } catch (_) {
+            rawTD = '';
+        }
+
+        var valC = moneyOf(rawC);
+        var valL = moneyOf(rawL);
+        var valTT = moneyOf(rawTT);
+        var valT3T = moneyOf(rawT3T);
+        var valT3D = moneyOf(rawT3D);
+        var valTD = moneyOf(rawTD);
+
         var rawName = '';
         var rawAcc = '';
         try {
@@ -2099,24 +2114,24 @@
         var valAcc = moneyOf(rawAcc);
 
         return {
-            C: mC ? mC.val : null,
-            L: mL ? mL.val : null,
+            C: (valC == null ? null : valC),
+            L: (valL == null ? null : valL),
             A: (valAcc == null ? null : valAcc),
             N: (rawName ? String(rawName) : null),
             SD: mSD ? mSD.val : null,
-            TT: mTT ? mTT.val : null,
-            T3T: m3T ? m3T.val : null,
-            T3D: m3D ? m3D.val : null,
-            TD: mTD ? mTD.val : null,
-            rawC: mC ? mC.txt : null,
-            rawL: mL ? mL.txt : null,
+            TT: (valTT == null ? null : valTT),
+            T3T: (valT3T == null ? null : valT3T),
+            T3D: (valT3D == null ? null : valT3D),
+            TD: (valTD == null ? null : valTD),
+            rawC: (rawC ? String(rawC) : null),
+            rawL: (rawL ? String(rawL) : null),
             rawA: (rawAcc ? String(rawAcc) : null),
             rawN: (rawName ? String(rawName) : null),
             rawSD: mSD ? mSD.txt : null,
-            rawTT: mTT ? mTT.txt : null,
-            rawT3T: m3T ? m3T.txt : null,
-            rawT3D: m3D ? m3D.txt : null,
-            rawTD: mTD ? mTD.txt : null
+            rawTT: (rawTT ? String(rawTT) : null),
+            rawT3T: (rawT3T ? String(rawT3T) : null),
+            rawT3D: (rawT3D ? String(rawT3D) : null),
+            rawTD: (rawTD ? String(rawTD) : null)
         };
     }
 
