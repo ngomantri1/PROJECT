@@ -11,7 +11,7 @@
     //root.style.display='none';  //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    window.__cw_patch_ver = 'cw-xd-textmap-sync-20260309-8';
+    window.__cw_patch_ver = 'cw-xd-textmap-sync-20260310-23';
     try {
         if (window[NS] && window[NS].teardown) {
             window[NS].teardown();
@@ -284,6 +284,15 @@
         return a.slice(-limit).join('/');
     }
     var GAME_PREFAB_KEY = 'prefab_game_14';
+    var GAME_PATH_KEYS = [
+        'prefab_game_14',
+        'sede/canvas/mainplay',
+        'sede/canvas/gateheaderingame',
+        '/betnode/',
+        '/chipnode/',
+        '/waittingroom/',
+        '/soicau/'
+    ];
     function fullPath(n, limit) {
         limit = limit || 80;
         var a = [];
@@ -304,20 +313,22 @@
         try {
             var t = n,
             c = 0;
-            while (t && c < 200) {
-                var nm = t.name || '';
-                if (String(nm).toLowerCase().indexOf(GAME_PREFAB_KEY) !== -1)
+            while (t && c < 220) {
+                var nm = String(t.name || '').toLowerCase();
+                if (nm.indexOf(GAME_PREFAB_KEY) !== -1 || nm === 'mainplay' || nm === 'midnode' || nm === 'betnode' || nm === 'chipnode')
                     return true;
                 t = t.parent || t._parent || null;
                 c++;
             }
         } catch (e) {}
         try {
-            var p = fullPath(n, 200);
-            return String(p || '').toLowerCase().indexOf(GAME_PREFAB_KEY) !== -1;
-        } catch (e) {
-            return false;
-        }
+            var p = String(fullPath(n, 220) || '').toLowerCase();
+            for (var i = 0; i < GAME_PATH_KEYS.length; i++) {
+                if (p.indexOf(GAME_PATH_KEYS[i]) !== -1)
+                    return true;
+            }
+        } catch (e2) {}
+        return false;
     }
     var COUNTDOWN_TAIL_WAIT = 'sede/Canvas/mainPlay/midNode/waittingRoom/lblTimeWait';
     function readCountdownSec() {
@@ -444,14 +455,22 @@
         });
         return out;
     }
-    function collectButtons() {
+    function collectButtons(opt) {
+        opt = opt || {};
+        var allowOutsideGame = !!opt.allowOutsideGame;
+        var tailNeedle = String(opt.tailNeedle || '').toLowerCase();
         var out = [];
         walkNodes(function (n) {
-            if (!nodeInGame(n))
+            if (!allowOutsideGame && !nodeInGame(n))
+                return;
+            var full = fullPath(n, 200);
+            var fullL = String(full || '').toLowerCase();
+            if (tailNeedle && fullL.indexOf(tailNeedle) === -1)
                 return;
             var btns = getComps(n, cc.Button);
             if (btns && btns.length) {
                 var r = wRect(n);
+                var tail = tailOf(n, 12);
                 out.push({
                     x: r.x,
                     y: r.y,
@@ -461,11 +480,134 @@
                     sy: r.sy,
                     sw: r.sw,
                     sh: r.sh,
-                    tail: tailOf(n, 12),
-                    tl: tailOf(n, 12).toLowerCase()
+                    node: n,
+                    tail: tail,
+                    tl: String(tail || '').toLowerCase(),
+                    fullTail: full,
+                    fullTl: fullL,
+                    btnCount: btns.length
                 });
             }
         });
+        return out;
+    }
+    function buildBetRectsForMap() {
+        var raw = collectButtons({
+            allowOutsideGame: true,
+            tailNeedle: 'betnode'
+        });
+        var out = [];
+        var st = {
+            buttons: raw.length,
+            betCandidate: 0,
+            rectInvalid: 0,
+            rectRecovered: 0,
+            rectProjected: 0,
+            rectAdjusted: 0,
+            rectClamped: 0,
+            syntheticPlaced: 0,
+            out: 0
+        };
+        for (var i = 0; i < raw.length; i++) {
+            var B = raw[i];
+            var x = Math.round(B.x),
+            y = Math.round(B.y),
+            w = Math.round(B.w),
+            h = Math.round(B.h);
+            st.betCandidate++;
+            var rr = {
+                x: x,
+                y: y,
+                w: w,
+                h: h
+            };
+            if (!isRenderableRect(rr)) {
+                st.rectInvalid++;
+                var recovered = null;
+                try {
+                    var anc = B.node || null;
+                    var hop = 0;
+                    while (anc && hop < 10) {
+                        var ar = wRect(anc);
+                        if (isRenderableRect(ar)) {
+                            recovered = ar;
+                            break;
+                        }
+                        anc = anc.parent || anc._parent || null;
+                        hop++;
+                    }
+                } catch (eA) {}
+                if (recovered) {
+                    x = Math.round(recovered.x);
+                    y = Math.round(recovered.y);
+                    w = Math.round(recovered.w);
+                    h = Math.round(recovered.h);
+                    st.rectRecovered++;
+                } else {
+                    if (!isFinite(x))
+                        x = 0;
+                    if (!isFinite(y))
+                        y = 0;
+                    if (!isFinite(w) || w < 2)
+                        w = 26;
+                    if (!isFinite(h) || h < 2)
+                        h = 18;
+                    var projectedHit = false;
+                    try {
+                        var sp2 = _nodeToScreen(B.node);
+                        if (sp2) {
+                            x = Math.round(sp2.x - w * 0.5);
+                            y = Math.round(sp2.y - h * 0.5);
+                            st.rectProjected++;
+                            projectedHit = true;
+                        }
+                    } catch (eP) {}
+                    if (!projectedHit && (x === 0 && y === 0)) {
+                        var idxDbg = st.rectAdjusted;
+                        var rowH = 22;
+                        var startY = 90;
+                        var rowsMax = Math.max(10, Math.floor((innerHeight - startY - 12) / rowH));
+                        var col = Math.floor(idxDbg / rowsMax);
+                        var row = idxDbg % rowsMax;
+                        x = 8 + col * 290;
+                        y = startY + row * rowH;
+                        st.syntheticPlaced++;
+                    }
+                    var maxX = Math.max(0, innerWidth - w - 2);
+                    var maxY = Math.max(0, innerHeight - h - 2);
+                    var x0 = x,
+                    y0 = y;
+                    x = Math.max(0, Math.min(maxX, x));
+                    y = Math.max(0, Math.min(maxY, y));
+                    if (x !== x0 || y !== y0)
+                        st.rectClamped++;
+                    st.rectAdjusted++;
+                }
+            }
+            if (w < 16 || h < 12)
+                continue;
+            out.push({
+                x: x,
+                y: y,
+                w: w,
+                h: h,
+                n: {
+                    x: x / innerWidth,
+                    y: y / innerHeight,
+                    w: w / innerWidth,
+                    h: h / innerHeight
+                },
+                tail: B.tail,
+                tl: B.tl,
+                tailFull: B.fullTail,
+                tlFull: B.fullTl,
+                btnCount: B.btnCount
+            });
+        }
+        st.out = out.length;
+        try {
+            window.__cw_betStats = st;
+        } catch (_) {}
         return out;
     }
     function collectProgress() {
@@ -619,6 +761,10 @@
                 y: y,
                 w: w,
                 h: h,
+                sx: _num(L.sx, x),
+                sy: _num(L.sy, y),
+                sw: _num(L.sw, w),
+                sh: _num(L.sh, h),
                 n: {
                     x: x / innerWidth,
                     y: y / innerHeight,
@@ -626,7 +772,9 @@
                     h: h / innerHeight
                 },
                 tail: L.tail,
-                tl: L.tl
+                tl: L.tl,
+                tailFull: L.fullTail,
+                tlFull: L.fullTl
             });
         }
         st.out = out.length;
@@ -1135,14 +1283,28 @@
         return cols;
     }
 
-    function limitSeq52(seq) {
+    var TK_SEQ_MAX = 55;
+    function limitSeq55(seq) {
         if (!seq)
             return '';
-        if (seq.length <= 52)
+        if (seq.length <= TK_SEQ_MAX)
             return seq;
-        return seq.slice(-52);
+        return seq.slice(-TK_SEQ_MAX);
     }
-
+    function normalizeSeqCL(seq) {
+        seq = String(seq || '').toUpperCase();
+        var out = '';
+        for (var i = 0; i < seq.length; i++) {
+            var ch = seq.charAt(i);
+            if (ch === 'C' || ch === 'L')
+                out += ch;
+            else if (ch === '0')
+                out += 'C';
+            else if (ch === '1')
+                out += 'L';
+        }
+        return limitSeq55(out);
+    }
     function readTKSeqDigits() {
         var res = tkCellsPrefer('thongke2');
         var cells = res.cells,
@@ -1170,24 +1332,27 @@
                 s += String(arr[k].v);
             parts.push(s);
         }
-        var seq = limitSeq52(parts.join(''));
+        var seq = limitSeq55(parts.join(''));
         return {
-            seq: seq,
+            seq: normalizeSeqCL(seq),
             which: which,
             cols: cols,
             cells: cells
         };
     }
 
+    var TAIL_SOICAU_MIDNODE = 'sede/Canvas/mainPlay/midNode/soicau';
     var TAIL_SOICAU_NORMAL_MULTI = 'prefab_game_14/root/node_in_multimode/HUD/soicau_popup_multi/root/soicau_normal/ig_soicau_xocdia/content';
     var TAIL_SOICAU_NORMAL_FULL = 'prefab_game_14/root/node_in_fullmode/HUD/soicau_popup_fullmode/root/soicau_normal/ig_soicau_xocdia/content';
 
     function beadVal(name, nodeName) {
         var s = (String(name || '') + ' ' + String(nodeName || '')).toLowerCase();
-        if (s.indexOf('chan') !== -1)
-            return 'C';
-        if (s.indexOf('le') !== -1)
+        var hasLe = /(^|[^a-z])(le|odd|do|red)([^a-z]|$)/.test(s);
+        var hasChan = /(^|[^a-z])(chan|even|trang|white)([^a-z]|$)/.test(s);
+        if (hasLe && !hasChan)
             return 'L';
+        if (hasChan && !hasLe)
+            return 'C';
         return '?';
     }
 
@@ -1265,11 +1430,13 @@
         return r;
     }
 
-    function collectBeadsByTail(tailNeedle) {
+    function collectBeadsByTail(tailNeedle, opt) {
+        opt = opt || {};
+        var allowOutsideGame = !!opt.allowOutsideGame;
         var out = [];
         var needle = String(tailNeedle || '').toLowerCase();
         walkNodes(function (n) {
-            if (!nodeInGame(n))
+            if (!allowOutsideGame && !nodeInGame(n))
                 return;
             if (!isNodeActive(n))
                 return;
@@ -1326,35 +1493,47 @@
     }
 
     function readTKSeqBeads() {
-        var cellsMulti = collectBeadsByTail(TAIL_SOICAU_NORMAL_MULTI);
-        var cellsFull = collectBeadsByTail(TAIL_SOICAU_NORMAL_FULL);
-        var cells = [];
-        var which = null;
-        if (cellsMulti.length || cellsFull.length) {
-            var visM = visibleBeadCount(cellsMulti);
-            var visF = visibleBeadCount(cellsFull);
-            if (visM || visF) {
-                if (visM >= visF) {
-                    cells = cellsMulti;
-                    which = 'soicau_normal_multi';
-                } else {
-                    cells = cellsFull;
-                    which = 'soicau_normal_full';
-                }
-                var onlyView = [];
-                for (var i = 0; i < cells.length; i++) {
-                    if (cells[i].inView)
-                        onlyView.push(cells[i]);
-                }
-                if (onlyView.length)
-                    cells = onlyView;
-            } else if (cellsMulti.length >= cellsFull.length) {
-                cells = cellsMulti;
-                which = 'soicau_normal_multi';
-            } else {
-                cells = cellsFull;
-                which = 'soicau_normal_full';
+        var src = [{
+                which: 'soicau_midnode',
+                cells: collectBeadsByTail(TAIL_SOICAU_MIDNODE, {
+                    allowOutsideGame: true
+                })
+            }, {
+                which: 'soicau_normal_multi',
+                cells: collectBeadsByTail(TAIL_SOICAU_NORMAL_MULTI, {
+                    allowOutsideGame: true
+                })
+            }, {
+                which: 'soicau_normal_full',
+                cells: collectBeadsByTail(TAIL_SOICAU_NORMAL_FULL, {
+                    allowOutsideGame: true
+                })
             }
+        ];
+        var best = null;
+        for (var s = 0; s < src.length; s++) {
+            var it = src[s];
+            var vis = visibleBeadCount(it.cells);
+            var score = vis > 0 ? (100000 + vis) : it.cells.length;
+            if (!best || score > best.score) {
+                best = {
+                    which: it.which,
+                    cells: it.cells,
+                    vis: vis,
+                    score: score
+                };
+            }
+        }
+        var cells = (best && best.cells) ? best.cells.slice() : [];
+        var which = best ? best.which : null;
+        if (best && best.vis > 0) {
+            var onlyView = [];
+            for (var iV = 0; iV < cells.length; iV++) {
+                if (cells[iV].inView)
+                    onlyView.push(cells[iV]);
+            }
+            if (onlyView.length)
+                cells = onlyView;
         }
         if (!cells.length)
             return {
@@ -1377,9 +1556,9 @@
                 s += String(arr[k].v);
             parts.push(s);
         }
-        var seq = limitSeq52(parts.join(''));
+        var seq = limitSeq55(parts.join(''));
         return {
-            seq: seq,
+            seq: normalizeSeqCL(seq),
             which: which,
             cols: cols,
             cells: cells
@@ -1390,7 +1569,25 @@
         var r = readTKSeqBeads();
         if (r && r.seq && r.seq.length)
             return r;
-        return readTKSeqDigits();
+        var d = readTKSeqDigits();
+        d.seq = normalizeSeqCL(d.seq);
+        return d;
+    }
+    function refreshSeq55ByProg(p, forceScan) {
+        forceScan = !!forceScan;
+        var r = readTKSeq();
+        var curr = normalizeSeqCL(r && r.seq ? r.seq : '');
+        if (!curr) {
+            if (forceScan)
+                S.seq = '';
+            return S.seq || '';
+        }
+        S.seq = curr;
+        S._seqRaw = curr;
+        S._seqWhich = (r && r.which) ? r.which : '';
+        S._seqInit = true;
+        S._seqLastScanTs = Date.now();
+        return S.seq || '';
     }
 
 
@@ -2170,6 +2367,7 @@
         status: 'ĐỢI MỞ BÁT',
         money: [],
         moneyMap: [],
+        betMap: [],
         text: [],
         selC: null,
         selL: null,
@@ -2179,7 +2377,11 @@
         showBet: false,
         showText: false,
         stakeK: 1,
-        seq: ''
+        seq: '',
+        _seqRaw: '',
+        _seqWhich: '',
+        _seqInit: false,
+        _seqLastScanTs: 0
     };
 
     var ROOT = '__cw_root_allin';
@@ -2416,9 +2618,7 @@
     }
     function renderBet() {
         layerBet.innerHTML = '';
-        var btns = collectButtons().filter(function (b) {
-            return b.w >= 16 && b.h >= 12;
-        });
+        var btns = S.betMap && S.betMap.length ? S.betMap : buildBetRectsForMap();
         var ordered = btns.slice().sort(function (a, b) {
             return (b.w * b.h) - (a.w * a.h);
         });
@@ -2560,8 +2760,7 @@
             '  x,y,w,h: ' + (f && f.rect ? (Math.round(f.rect.x) + ',' + Math.round(f.rect.y) + ',' + Math.round(f.rect.w) + ',' + Math.round(f.rect.h)) : '-') + '\n' +
             '  val : ' + (f && f.val != null ? fmt(f.val) : '-');
 
-        var tk = readTKSeq();
-        S.seq = tk.seq || '';
+        S.seq = refreshSeq55ByProg(S.prog, false) || '';
         var seqHtml = 'Chuỗi kết quả : <i>--</i>';
         if (S.seq && S.seq.length) {
             var head = esc(S.seq.slice(0, -1));
@@ -2576,6 +2775,7 @@
         var MAX_SCAN_MONEY_ROWS = 200;
         var money = [];
         var st = {};
+        window.__cw_in_scan200money = 1;
         try {
             money = buildMoneyRectsForMap().sort(function (a, b) {
                 return a.y - b.y;
@@ -2589,9 +2789,65 @@
                         y: m.y,
                         w: m.w,
                         h: m.h,
-                        tail: m.tail
+                        sx: m.sx,
+                        sy: m.sy,
+                        sw: m.sw,
+                        sh: m.sh,
+                        tail: m.tail,
+                        tailFull: m.tailFull
                     };
                 });
+            try {
+                var hasVal = {};
+                for (var hv = 0; hv < money.length; hv++) {
+                    var vv = Math.floor(+money[hv].val || 0);
+                    if (vv > 0)
+                        hasVal[String(vv)] = 1;
+                }
+                var chipMap = null;
+                if (window.__cw_last_chip_map && typeof window.__cw_last_chip_map === 'object')
+                    chipMap = window.__cw_last_chip_map;
+                if ((!chipMap || !Object.keys(chipMap).length) && typeof window.cwScanChips === 'function')
+                    chipMap = window.cwScanChips() || {};
+                var order = (typeof CHIP_SCAN_ORDER !== 'undefined' && CHIP_SCAN_ORDER && CHIP_SCAN_ORDER.slice) ? CHIP_SCAN_ORDER.slice() : [1000, 5000, 10000, 50000, 200000, 1000000, 5000000];
+                var fromChipMap = 0;
+                for (var oi = 0; oi < order.length; oi++) {
+                    var dv = Math.floor(+order[oi] || 0);
+                    if (!dv || hasVal[String(dv)])
+                        continue;
+                    var info = chipMap ? chipMap[String(dv)] : null;
+                    if (!info)
+                        continue;
+                    var rr = screenRect(info.rect || rectFromNodeScreen(info.node));
+                    if (!rr)
+                        continue;
+                    if (!rectVisibleOnScreen(rr, 12, 12))
+                        continue;
+                    var p = '';
+                    try {
+                        p = String(fullPath(info.node, 180) || '');
+                    } catch (_) {}
+                    money.push({
+                        txt: String(dv),
+                        val: dv,
+                        x: Math.round(rr.sx),
+                        y: Math.round(rr.sy),
+                        w: Math.round(rr.sw),
+                        h: Math.round(rr.sh),
+                        tail: p || ('chipmap/' + dv),
+                        source: 'chipMap'
+                    });
+                    hasVal[String(dv)] = 1;
+                    fromChipMap++;
+                }
+                if (fromChipMap > 0) {
+                    money.sort(function (a, b) {
+                        return a.y - b.y || a.x - b.x;
+                    });
+                    if (money.length > MAX_SCAN_MONEY_ROWS)
+                        money = money.slice(0, MAX_SCAN_MONEY_ROWS);
+                }
+            } catch (_) {}
             st = window.__cw_moneyStats || {};
 
             console.log('[Scan200Money] labels=' + (st.labels || 0) +
@@ -2657,32 +2913,87 @@
         }
     }
     function scan200Bet() {
-        var btns = collectButtons().filter(function (b) {
-            return b.w >= 16 && b.h >= 12;
-        })
-            .sort(function (a, b) {
-                return a.y - b.y || a.x - b.x;
-            }).slice(0, 200)
-            .map(function (b) {
-                return {
-                    x: b.x,
-                    y: b.y,
-                    w: b.w,
-                    h: b.h,
-                    tail: b.tail
-                };
-            });
-        console.log('(Bet index x200)\tx\ty\tw\th\ttail');
-        for (var i = 0; i < btns.length; i++) {
-            var r = btns[i];
-            console.log(i + "\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
-        }
+        var MAX_SCAN_BET_ROWS = 200;
+        var btns = [];
+        var st = {};
         try {
-            console.table(btns);
-        } catch (e) {
-            console.log(btns);
+            btns = buildBetRectsForMap().sort(function (a, b) {
+                return a.y - b.y || a.x - b.x;
+            }).slice(0, MAX_SCAN_BET_ROWS)
+                .map(function (b) {
+                    return {
+                        x: b.x,
+                        y: b.y,
+                        w: b.w,
+                        h: b.h,
+                        tail: b.tail
+                    };
+                });
+            st = window.__cw_betStats || {};
+
+            console.log('[Scan200Bet] buttons=' + (st.buttons || 0) +
+                ' candidates=' + (st.betCandidate || 0) +
+                ' invalidRect=' + (st.rectInvalid || 0) +
+                ' recovered=' + (st.rectRecovered || 0) +
+                ' projected=' + (st.rectProjected || 0) +
+                ' clamped=' + (st.rectClamped || 0) +
+                ' synthetic=' + (st.syntheticPlaced || 0) +
+                ' adjusted=' + (st.rectAdjusted || 0) +
+                ' out=' + (st.out || 0));
+
+            console.log('(Bet index x' + MAX_SCAN_BET_ROWS + ')\tx\ty\tw\th\ttail');
+            for (var i = 0; i < btns.length; i++) {
+                var r = btns[i];
+                console.log(i + "\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
+            }
+            try {
+                console.table(btns);
+            } catch (e) {
+                console.log(btns);
+            }
+            try {
+                window.__cw_last_scan_bet = btns;
+                window.__cw_last_scan_bet_summary = {
+                    buttons: st.buttons || 0,
+                    betCandidate: st.betCandidate || 0,
+                    invalidRect: st.rectInvalid || 0,
+                    recovered: st.rectRecovered || 0,
+                    projected: st.rectProjected || 0,
+                    clamped: st.rectClamped || 0,
+                    syntheticPlaced: st.syntheticPlaced || 0,
+                    adjusted: st.rectAdjusted || 0,
+                    out: st.out || 0,
+                    ts: Date.now(),
+                    status: 'ok'
+                };
+            } catch (_) {}
+            return btns;
+        } catch (err) {
+            try {
+                var msg = String((err && err.message) || err || 'scan-bet-failed');
+                console.warn('[Scan200Bet][ERR]', msg);
+                window.__cw_last_scan_bet = [];
+                window.__cw_last_scan_bet_summary = {
+                    buttons: 0,
+                    betCandidate: 0,
+                    invalidRect: 0,
+                    recovered: 0,
+                    projected: 0,
+                    clamped: 0,
+                    syntheticPlaced: 0,
+                    adjusted: 0,
+                    out: 0,
+                    ts: Date.now(),
+                    status: 'err',
+                    err: msg
+                };
+            } catch (_) {}
+            return [];
+        } finally {
+            try {
+                window.__cw_in_scan200money = 0;
+            } catch (_) {}
         }
-        return btns;
     }
     function scan200Text() {
         var MAX_SCAN_TEXT_ROWS = 200;
@@ -2775,6 +3086,7 @@
 
     function scanTK() {
         var r = readTKSeq();
+        r.seq = normalizeSeqCL(r.seq || '');
         var cells = (r && r.cells) ? r.cells.slice() : [];
         cells.sort(function (a, b) {
             return a.x - b.x || b.y - a.y;
@@ -2811,6 +3123,30 @@
         setCwLog(lines.join('\n'));
         return r;
     }
+    try {
+        window.__cw_scan55CL = function (force) {
+            var seq = '';
+            try {
+                seq = refreshSeq55ByProg(S.prog, !!force) || '';
+            } catch (_) {
+                seq = S.seq || '';
+            }
+            var arr = [];
+            for (var i = 0; i < seq.length; i++)
+                arr.push(seq.charAt(i));
+            var out = {
+                which: S._seqWhich || '',
+                len: seq.length,
+                seqCL: seq,
+                arrCL: arr
+            };
+            window.__cw_scan55cl_last = out;
+            try {
+                console.log('[CW_SEQ55CL]', out);
+            } catch (_) {}
+            return out;
+        };
+    } catch (_) {}
 
     /* =====================================================
     CHIP BETTING CORE (compat)
@@ -2915,8 +3251,12 @@
         return true;
     }
     function clickRectCenter(r) {
-        var cx = r.x + r.w / 2,
-        cy = r.y + r.h / 2;
+        var x = (r && r.x != null) ? r.x : (r && r.sx != null ? r.sx : 0);
+        var y = (r && r.y != null) ? r.y : (r && r.sy != null ? r.sy : 0);
+        var w = (r && r.w != null) ? r.w : (r && r.sw != null ? r.sw : 0);
+        var h = (r && r.h != null) ? r.h : (r && r.sh != null ? r.sh : 0);
+        var cx = x + w / 2,
+        cy = y + h / 2;
         return clickAtWin(jitter(cx - 2, cx + 2), jitter(cy - 2, cy + 2));
     }
     function getChipRects() {
@@ -3098,6 +3438,7 @@
         '10000': 1,
         '50000': 1,
         '100000': 1,
+        '200000': 1,
         '500000': 1,
         '1000000': 1,
         '5000000': 1,
@@ -3107,7 +3448,17 @@
         '100000000': 1,
         '500000000': 1
     };
-    var DENOMS = [500000000, 100000000, 50000000, 20000000, 10000000, 5000000, 1000000, 500000, 100000, 50000, 10000, 5000, 1000];
+    var DENOMS = [500000000, 100000000, 50000000, 20000000, 10000000, 5000000, 1000000, 500000, 200000, 100000, 50000, 10000, 5000, 1000];
+    var CHIP_SCAN_ORDER = [1000, 5000, 10000, 50000, 200000, 1000000, 5000000];
+    var CHIP_SCAN_SET = {
+        '1000': 1,
+        '5000': 1,
+        '10000': 1,
+        '50000': 1,
+        '200000': 1,
+        '1000000': 1,
+        '5000000': 1
+    };
 
     function active(n) {
         return !n || n.activeInHierarchy !== false;
@@ -3404,12 +3755,22 @@
         TU_DO: /(TU\s*DO|4\s*DO|4R|TUDO)/i
     };
     var BET_TAILS = {
-        CHAN: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/ig_xocdia_chan',
-        LE: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/ig_xocdia_le',
-        TU_DO: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_4th',
-        TU_TRANG: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_4tr',
-        DO3_TRANG1: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_3th',
-        TRANG3_DO1: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_3tr'
+        CHAN: 'sede/Canvas/mainPlay/midNode/betNode/gatebig',
+        LE: 'sede/Canvas/mainPlay/midNode/betNode/gatesmall',
+        SAP_DOI: 'sede/Canvas/mainPlay/midNode/betNode/gate4',
+        TRANG3_DO1: 'sede/Canvas/mainPlay/midNode/betNode/gate2',
+        DO3_TRANG1: 'sede/Canvas/mainPlay/midNode/betNode/gate3',
+        TU_TRANG: 'sede/Canvas/mainPlay/midNode/betNode/gate5',
+        TU_DO: 'sede/Canvas/mainPlay/midNode/betNode/gate6'
+    };
+    var BET_LABEL_TAILS = {
+        CHAN: 'sede/Canvas/mainPlay/midNode/betNode/gatebig/lblCashBet',
+        LE: 'sede/Canvas/mainPlay/midNode/betNode/gatesmall/lblCashBet',
+        SAP_DOI: 'sede/Canvas/mainPlay/midNode/betNode/gate4/lblCashBet',
+        TRANG3_DO1: 'sede/Canvas/mainPlay/midNode/betNode/gate2/lblCashBet',
+        DO3_TRANG1: 'sede/Canvas/mainPlay/midNode/betNode/gate3/lblCashBet',
+        TU_TRANG: 'sede/Canvas/mainPlay/midNode/betNode/gate5/lblCashBet',
+        TU_DO: 'sede/Canvas/mainPlay/midNode/betNode/gate6/lblCashBet'
     };
     var CHIP_TAILS = {
         '500000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value7',
@@ -3429,8 +3790,8 @@
     function tailMatch(full, tail) {
         if (!full || !tail)
             return false;
-        var f = String(full || '').toLowerCase();
-        var t = String(tail || '').toLowerCase();
+        var f = String(full || '').replace(/[\u0000-\u001f]+/g, '').toLowerCase();
+        var t = String(tail || '').replace(/[\u0000-\u001f]+/g, '').toLowerCase();
         return f === t || f.indexOf(t, Math.max(0, f.length - t.length)) !== -1;
     }
     function findNodeByTail(tail) {
@@ -3439,7 +3800,7 @@
         var hit = null;
         var bestArea = -1;
         walkNodes(function (n) {
-            if (!n || !active(n) || !nodeInGame(n))
+            if (!n || !active(n))
                 return;
             var p = fullPath(n, 200);
             if (!tailMatch(p, tail))
@@ -3460,7 +3821,7 @@
             return [];
         var hits = [];
         walkNodes(function (n) {
-            if (!n || !active(n) || !nodeInGame(n))
+            if (!n || !active(n))
                 return;
             var p = fullPath(n, 200);
             if (!tailMatch(p, tail))
@@ -3540,6 +3901,63 @@
         });
         return list;
     }
+    function findBetRectFromMoneyRows(sideKey) {
+        var rows = (window.__cw_last_scan_money || []).slice(0, 260);
+        if (!rows.length && typeof scan200Money === 'function') {
+            try {
+                rows = (scan200Money() || []).slice(0, 260);
+            } catch (_) {}
+        }
+        if (!rows.length)
+            return null;
+        var base = BET_TAILS[sideKey] || '';
+        var prefer = BET_LABEL_TAILS[sideKey] || '';
+        var best = null;
+        var bestScore = -1e9;
+        for (var i = 0; i < rows.length; i++) {
+            var r = rows[i] || {};
+            var tail = cleanTailText(r.tail || r.tailFull || '');
+            if (!tail)
+                continue;
+            var ok = false;
+            if (prefer && tailMatch(tail, prefer))
+                ok = true;
+            if (!ok && base && (tailMatch(tail, base + '/lblCashBet') || tailMatch(tail, base + '/lblCountBet')))
+                ok = true;
+            if (!ok)
+                continue;
+            var sx = (r.sx != null) ? Number(r.sx) : Number(r.x || 0);
+            var sy = (r.sy != null) ? Number(r.sy) : Number(r.y || 0);
+            var sw = (r.sw != null) ? Number(r.sw) : Number(r.w || 0);
+            var sh = (r.sh != null) ? Number(r.sh) : Number(r.h || 0);
+            if (!isFinite(sx) || !isFinite(sy))
+                continue;
+            if (!isFinite(sw) || sw <= 0)
+                sw = Math.max(24, Number(r.w || 0) || 24);
+            if (!isFinite(sh) || sh <= 0)
+                sh = Math.max(18, Number(r.h || 0) || 18);
+            var rr = {
+                sx: sx,
+                sy: sy,
+                sw: sw,
+                sh: sh
+            };
+            var score = 0;
+            if (prefer && tailMatch(tail, prefer))
+                score += 8;
+            if (tailMatch(tail, base + '/lblCashBet'))
+                score += 4;
+            if (tailMatch(tail, base + '/lblCountBet'))
+                score += 2;
+            if (rectVisibleOnScreen(rr, 8, 8))
+                score += 2;
+            if (score > bestScore) {
+                bestScore = score;
+                best = rr;
+            }
+        }
+        return best;
+    }
     function findBetTarget(side) {
         var WANT = normalizeSide(side);
         var tail = BET_TAILS[WANT];
@@ -3553,6 +3971,15 @@
             }
             if (best && best.node)
                 return best;
+        }
+        var rr = findBetRectFromMoneyRows(WANT);
+        if (rr) {
+            return {
+                node: null,
+                rect: rr,
+                area: rr.sw * rr.sh,
+                source: 'money_rows'
+            };
         }
         var btn = findSide(side);
         if (!btn)
@@ -3583,35 +4010,46 @@
         return false;
     }
     function clickBetTarget(tgt) {
-        if (!tgt || !tgt.node)
+        if (!tgt || (!tgt.node && !tgt.rect))
             return false;
         var node = tgt.node;
         var rect = tgt.rect || rectFromNodeCompat(node);
-        var ok = false;
-        if (emitBtnToggle(node))
-            ok = true;
-        if (rect) {
-            if (emitTouchAtRect(node, rect))
-                ok = true;
-            if (clickCanvasXY(rect.sx + rect.sw / 2, rect.sy + rect.sh / 2, true))
-                ok = true;
+        if (!node && rect) {
+            var rr = screenRect(rect) || rect;
+            var cx0 = Number(rr.sx || rr.x || 0) + Number(rr.sw || rr.w || 0) * 0.5;
+            var cy0 = Number(rr.sy || rr.y || 0) + Number(rr.sh || rr.h || 0) * 0.5;
+            return clickCanvasXY(cx0, cy0, true) || clickRectCenter(rr);
         }
-        if (!ok && clickable(node))
-            ok = emitClick(node) || ok;
-        return ok;
+        // same style as file mẫu: 1 cú click chính để tránh nhân cược
+        if (clickable(node) && emitClick(node))
+            return true;
+        if (rect && emitTouchAtRect(node, rect))
+            return true;
+        if (rect)
+            return clickCanvasXY(rect.sx + rect.sw / 2, rect.sy + rect.sh / 2, true);
+        return false;
     }
 
     function parseAmountLoose(txt) {
         if (!txt)
             return null;
         var s = NORM(txt);
-        var m = s.match(/(\d+)\s*(K|M)\b/);
+        // Accept labels/sprite names such as: 50K, 1M, CHIP_50K_ICON, chip1m
+        var m = s.match(/(\d+(?:[.,]\d+)?)\s*([KMB])(?![A-Z0-9])/);
         if (m) {
-            var v = +m[1];
-            v *= (m[2] === 'K' ? 1e3 : 1e6);
+            var v = parseFloat(String(m[1]).replace(',', '.'));
+            if (!isFinite(v))
+                v = 0;
+            if (m[2] === 'K')
+                v *= 1e3;
+            else if (m[2] === 'M')
+                v *= 1e6;
+            else if (m[2] === 'B')
+                v *= 1e9;
+            v = Math.round(v);
             return ALLOWED_SET[String(v)] ? v : null;
         }
-        m = s.match(/(\d{1,3}(?:[.,\s]\d{3})+|\d{4,9})/);
+        m = s.match(/(?:^|[^0-9])(\d{1,3}(?:[.,\s]\d{3})+|\d{4,9})(?=$|[^0-9])/);
         if (m) {
             var v2 = parseInt(m[1].replace(/[^\d]/g, ''), 10);
             if (v2 % 1000 === 0 && ALLOWED_SET[String(v2)])
@@ -3660,46 +4098,48 @@
             var n = q.shift();
             if (!active(n))
                 continue;
-            if (nodeInGame(n)) {
-                var texts = [];
-                var lb = getComp(n, cc.Label);
-                if (lb && typeof lb.string !== 'undefined')
-                    texts.push(lb.string);
-                var rt = getComp(n, cc.RichText);
-                if (rt && typeof rt.string !== 'undefined')
-                    texts.push(rt.string);
-                var sp = getComp(n, cc.Sprite);
-                var sfn = sp && sp.spriteFrame ? sp.spriteFrame.name : '';
-                if (sfn)
-                    texts.push(sfn);
-                texts.push(n.name || '');
-                for (var ti = 0; ti < texts.length; ti++) {
-                    var t = texts[ti];
-                    var val = parseAmountLoose(t);
-                    if (!val)
-                        continue;
-                    var score = 0;
-                    if (clickable(n))
-                        score += 6;
-                    var names = [],
-                    p;
-                    for (p = n; p; p = p.parent)
-                        names.push(p.name || '');
-                    var path = names.reverse().join('/').toLowerCase();
-                    if (/chip|coin|bet|chon|choose|phinh|menh/.test(path))
-                        score += 3;
-                    if (NORM(t).indexOf(String(val)) !== -1)
-                        score += 2;
-                    var hit = clickableOf(n);
-                    if (hit !== n)
-                        score += 1;
-                    var old = getBest(val);
-                    if (!old || score > old.score)
-                        setBest(val, {
-                            node: hit,
-                            score: score
-                        });
-                }
+            var texts = [];
+            var lb = getComp(n, cc.Label);
+            if (lb && typeof lb.string !== 'undefined')
+                texts.push(lb.string);
+            var rt = getComp(n, cc.RichText);
+            if (rt && typeof rt.string !== 'undefined')
+                texts.push(rt.string);
+            var sp = getComp(n, cc.Sprite);
+            var sfn = sp && sp.spriteFrame ? sp.spriteFrame.name : '';
+            if (sfn)
+                texts.push(sfn);
+            texts.push(n.name || '');
+            var names = [],
+            p;
+            for (p = n; p; p = p.parent)
+                names.push(p.name || '');
+            var path = names.reverse().join('/').toLowerCase();
+            for (var ti = 0; ti < texts.length; ti++) {
+                var t = texts[ti];
+                var val = parseAmountLoose(t);
+                if (!val)
+                    continue;
+                var score = 0;
+                if (clickable(n))
+                    score += 6;
+                if (/sede\/canvas\/mainplay/.test(path))
+                    score += 4;
+                if (/chip|chips|chipnode|chip_panel|bet_panel|betnode|coin|chon|choose|phinh|menh/.test(path))
+                    score += 5;
+                if (/playernode|soicau|jackpot|tophu|notice|chat/.test(path))
+                    score -= 4;
+                if (NORM(t).indexOf(String(val)) !== -1)
+                    score += 2;
+                var hit = clickableOf(n, 10);
+                if (hit !== n)
+                    score += 1;
+                var old = getBest(val);
+                if (!old || score > old.score)
+                    setBest(val, {
+                        node: hit,
+                        score: score
+                    });
             }
             var kids = n.children || [];
             for (var i = 0; i < kids.length; i++)
@@ -3847,48 +4287,747 @@
         }
         return ok;
     }
-    function scanChipsByTail() {
-        var out = {};
-        var keys = Object.keys(CHIP_TAILS || {});
-        for (var i = 0; i < keys.length; i++) {
-            var val = keys[i];
-            var tail = CHIP_TAILS[val];
-            var labelNode = findNodeByTail(tail);
-            if (!labelNode)
+    function cleanTailText(t) {
+        return String(t || '').replace(/[\u0000-\u001f]+/g, '').trim();
+    }
+    function chipValueStrict(raw) {
+        var v = parseAmountLoose(raw);
+        if (v && CHIP_SCAN_SET[String(v)])
+            return v;
+        v = moneyOf(raw);
+        if (v && CHIP_SCAN_SET[String(v)])
+            return v;
+        return null;
+    }
+    function screenRect(r) {
+        if (!r)
+            return null;
+        var sx = Number((r.sx != null) ? r.sx : r.x);
+        var sy = Number((r.sy != null) ? r.sy : r.y);
+        var sw = Number((r.sw != null) ? r.sw : r.w);
+        var sh = Number((r.sh != null) ? r.sh : r.h);
+        if (!isFinite(sx) || !isFinite(sy) || !isFinite(sw) || !isFinite(sh))
+            return null;
+        return {
+            sx: sx,
+            sy: sy,
+            sw: sw,
+            sh: sh
+        };
+    }
+    function rectVisibleOnScreen(r, minW, minH) {
+        var rr = screenRect(r);
+        if (!rr)
+            return false;
+        minW = Number(minW || 1);
+        minH = Number(minH || 1);
+        if (rr.sw < minW || rr.sh < minH)
+            return false;
+        if (rr.sx + rr.sw < 0 || rr.sy + rr.sh < 0)
+            return false;
+        if (rr.sx > innerWidth || rr.sy > innerHeight)
+            return false;
+        return true;
+    }
+    function chipPathDenied(p) {
+        return /playernode|soicau|jackpot|chat|minigame|gift|waittingroom|lblcashbet|lblcountbet|gatebig|gatesmall|gate[0-9]/.test(p);
+    }
+    function chipPathPreferred(p) {
+        return /mainplay|midnode|nodetophu|tabs100110k|chip|coin|chipnode|bet_panel/.test(p);
+    }
+    function chipNodePathOk(p) {
+        var s = String(p || '').toLowerCase();
+        if (!chipPathPreferred(s))
+            return false;
+        if (/btnlist|btnexit|layoutlistgame|itemheader|gateheaderingame|scrlistgame/.test(s))
+            return false;
+        return true;
+    }
+    function chipButtonTailFromMoneyTail(tail) {
+        var t = cleanTailText(tail || '');
+        if (!t)
+            return '';
+        var parts = t.split('/').filter(function (x) {
+            return !!x;
+        });
+        if (!parts.length)
+            return '';
+        var last = String(parts[parts.length - 1] || '').toLowerCase();
+        if (/^(1k|5k|10k|50k|100|200k|1m|5m)$/.test(last) || /^lbl/i.test(last))
+            parts.pop();
+        if (!parts.length)
+            return '';
+        return parts.join('/');
+    }
+    function extractAmountFromNode(n) {
+        if (!n)
+            return null;
+        var texts = [];
+        try {
+            texts.push(n.name || '');
+            texts.push(fullPath(n, 180) || '');
+            var lb = getComp(n, cc.Label);
+            if (lb && typeof lb.string !== 'undefined')
+                texts.push(lb.string);
+            var rt = getComp(n, cc.RichText);
+            if (rt && typeof rt.string !== 'undefined')
+                texts.push(rt.string);
+            var sp = getComp(n, cc.Sprite);
+            if (sp && sp.spriteFrame && sp.spriteFrame.name)
+                texts.push(sp.spriteFrame.name);
+        } catch (_) {}
+        for (var i = 0; i < texts.length; i++) {
+            var val = chipValueStrict(texts[i]);
+            if (val)
+                return val;
+        }
+        return null;
+    }
+    function findClickableNearScreen(cx, cy, maxDist, tailHint) {
+        cx = Number(cx || 0);
+        cy = Number(cy || 0);
+        maxDist = Number(maxDist || 140);
+        var best = null;
+        var bestScore = -1e9;
+        var hint = String(tailHint || '').toLowerCase();
+        walkNodes(function (n) {
+            if (!n || !active(n) || !clickable(n))
+                return;
+            var r = screenRect(rectFromNodeCompat(n) || rectFromNodeScreen(n));
+            if (!r)
+                return;
+            var x = Number(r.sx || r.x || 0) + Number(r.sw || r.w || 0) * 0.5;
+            var y = Number(r.sy || r.y || 0) + Number(r.sh || r.h || 0) * 0.5;
+            var d2 = dist2(cx, cy, x, y);
+            if (d2 > maxDist * maxDist)
+                return;
+            var p = String(fullPath(n, 180) || '').toLowerCase();
+            var score = 0;
+            score -= Math.sqrt(Math.max(0, d2)) * 0.12;
+            if (chipPathPreferred(p))
+                score += 9;
+            if (chipPathDenied(p))
+                score -= 8;
+            if (!chipNodePathOk(p))
+                score -= 6;
+            if (hint && tailMatch(p, hint))
+                score += 6;
+            if (rectVisibleOnScreen(r, 8, 8))
+                score += 2;
+            if (score > bestScore) {
+                best = n;
+                bestScore = score;
+            }
+        });
+        return best;
+    }
+    function pickBestNodeByTailNear(tail, cx, cy) {
+        var list = findNodesByTail(tail) || [];
+        if (!list.length)
+            return null;
+        cx = Number(cx || 0);
+        cy = Number(cy || 0);
+        var best = null;
+        var bestScore = -1e9;
+        for (var i = 0; i < list.length; i++) {
+            var n = list[i];
+            if (!n || !active(n))
                 continue;
-            var hit = clickableOf(labelNode, 10);
-            var chip = findChipNodeFromLabel(labelNode);
-            var target = chip || hit || labelNode;
-            out[val] = {
-                entry: target,
-                node: target,
-                rect: rectFromNodeScreen(labelNode)
+            var hit = clickableOf(n, 10) || n;
+            var rr = screenRect(rectFromNodeCompat(hit) || rectFromNodeScreen(hit));
+            var score = 0;
+            var path = String(fullPath(hit, 180) || '').toLowerCase();
+            if (chipPathPreferred(path))
+                score += 6;
+            if (chipPathDenied(path))
+                score -= 7;
+            if (!chipNodePathOk(path))
+                score -= 8;
+            if (rr) {
+                if (rectVisibleOnScreen(rr, 8, 8))
+                    score += 10;
+                var rcx = rr.sx + rr.sw * 0.5;
+                var rcy = rr.sy + rr.sh * 0.5;
+                var d = Math.sqrt(dist2(cx, cy, rcx, rcy));
+                if (isFinite(d))
+                    score -= Math.min(300, d) * 0.05;
+            } else {
+                score -= 4;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = hit;
+            }
+        }
+        return best;
+    }
+    function scanChipsFromMoneyRowsStrict() {
+        var rows = (window.__cw_last_scan_money || []).slice(0, 250);
+        if (!rows.length && !window.__cw_in_scan200money) {
+            try {
+                if (typeof scan200Money === 'function')
+                    rows = (scan200Money() || []).slice(0, 250);
+            } catch (_) {}
+        }
+        var out = {};
+        for (var i = 0; i < rows.length; i++) {
+            var r = rows[i] || {};
+            var txt = String(r.txt || '');
+            var val = chipValueStrict(txt);
+            if (!val)
+                continue;
+            var tail = cleanTailText(r.tail || r.tailFull || '');
+            var tailL = tail.toLowerCase();
+            if (!tailL)
+                continue;
+            if (!/tabs100110k|btn|chip|coin|panel/.test(tailL))
+                continue;
+            var rx = (r.sx != null ? Number(r.sx) : Number(r.x || 0));
+            var ry = (r.sy != null ? Number(r.sy) : Number(r.y || 0));
+            var rw = (r.sw != null ? Number(r.sw) : Number(r.w || 0));
+            var rh = (r.sh != null ? Number(r.sh) : Number(r.h || 0));
+            if (!isFinite(rx))
+                rx = 0;
+            if (!isFinite(ry))
+                ry = 0;
+            if (!isFinite(rw) || rw <= 0)
+                rw = Math.max(16, Number(r.w || 0) || 16);
+            if (!isFinite(rh) || rh <= 0)
+                rh = Math.max(16, Number(r.h || 0) || 16);
+            var rowRect = {
+                sx: rx,
+                sy: ry,
+                sw: rw,
+                sh: rh
             };
+            var cx = rx + rw * 0.5;
+            var cy = ry + rh * 0.5;
+            var n = null;
+            var btnTail = chipButtonTailFromMoneyTail(tail);
+            if (btnTail) {
+                var byBtnTail = findNodeByTail(btnTail);
+                if (byBtnTail)
+                    n = clickableOf(byBtnTail, 4) || byBtnTail;
+            }
+            if (!n)
+                n = pickBestNodeByTailNear(tail, cx, cy);
+            if (!n) {
+                var parts = tail.split('/');
+                if (parts.length >= 3) {
+                    var end3 = parts.slice(-3).join('/');
+                    n = pickBestNodeByTailNear(end3, cx, cy);
+                }
+            }
+            if (!n)
+                n = findClickableNearScreen(cx, cy, Math.max(180, Number(r.w || 0) * 6), tail);
+            if (!n)
+                n = findClickableNearScreen(cx, cy, 260, 'tabs100110k');
+            var hit = n ? (clickableOf(n, 6) || n) : null;
+            var hitPath = hit ? String(fullPath(hit, 180) || '').toLowerCase() : '';
+            if (hit && !chipNodePathOk(hitPath))
+                hit = null;
+            var rr = hit ? screenRect(rectFromNodeScreen(hit)) : null;
+            if (!rr || !rectVisibleOnScreen(rr, 8, 8))
+                rr = rowRect;
+            var score = 0;
+            if (hit && clickable(hit))
+                score += 5;
+            if (chipPathPreferred(tailL))
+                score += 4;
+            if (chipPathDenied(tailL))
+                score -= 3;
+            if (!hit)
+                score -= 1;
+            var k = String(val);
+            var old = out[k];
+            if (!old || score >= (old.score || 0)) {
+                out[k] = {
+                    entry: hit,
+                    node: hit,
+                    rect: rr,
+                    source: 'money_rows',
+                    score: score,
+                    tail: tail
+                };
+            }
         }
         return out;
     }
-
-    var prevScan = window.cwScanChips;
-    window.cwScanChips = function () {
-        var m = scanChipsByTail();
-        if (m && Object.keys(m).length)
-            return m;
-        m = prevScan ? (prevScan() || {}) : {};
-        if (m && Object.keys(m).length)
-            return m;
-        m = wideScan();
-        if (!Object.keys(m).length)
-            console.warn('[cwScanChips++] chưa thấy chip.');
-        else {
-            var keys = Object.keys(m).map(function (x) {
-                return +x;
-            }).sort(function (a, b) {
-                return a - b;
+    function chipYHintFromMoneyRows() {
+        var rows = (window.__cw_last_scan_money || []).slice(0, 300);
+        var ys = [];
+        for (var i = 0; i < rows.length; i++) {
+            var r = rows[i] || {};
+            var tail = String(r.tail || '').toLowerCase();
+            if (!/tabs100110k|btn|chip|coin/.test(tail))
+                continue;
+            if (chipPathDenied(tail))
+                continue;
+            var y = Number(r.y || 0);
+            var h = Number(r.h || 0);
+            if (!isFinite(y) || !isFinite(h))
+                continue;
+            ys.push(y + h * 0.5);
+        }
+        if (!ys.length)
+            return null;
+        ys.sort(function (a, b) {
+            return a - b;
+        });
+        return ys[Math.floor(ys.length / 2)];
+    }
+    function scanChipRowByGeometryStrict() {
+        var raw = [];
+        var yHint = chipYHintFromMoneyRows();
+        walkNodes(function (n) {
+            if (!n || !active(n))
+                return;
+            var hit = clickableOf(n, 8);
+            if (!hit || !active(hit))
+                return;
+            if (!clickable(hit))
+                return;
+            var r = rectFromNodeCompat(hit);
+            if (!rectVisibleOnScreen(r, 24, 24))
+                return;
+            var rr = screenRect(r);
+            if (!rr)
+                return;
+            var sx = rr.sx,
+            sy = rr.sy,
+            sw = rr.sw,
+            sh = rr.sh;
+            if (sw > 300 || sh > 300)
+                return;
+            var cx = sx + sw * 0.5,
+            cy = sy + sh * 0.5;
+            if (cx < -10 || cx > innerWidth + 10)
+                return;
+            if (cy < innerHeight * 0.58)
+                return;
+            if (yHint != null && Math.abs(cy - yHint) > 220)
+                return;
+            var p = String(fullPath(hit, 180) || '').toLowerCase();
+            var score = 0;
+            if (/chip|chips|chipnode|bet_panel|coin|tabs100110k/.test(p))
+                score += 7;
+            if (/sede\/canvas\/mainplay|midnode|mainplay|nodetophu/.test(p))
+                score += 3;
+            if (chipPathPreferred(p))
+                score += 2;
+            if (chipPathDenied(p))
+                score -= 8;
+            var ratio = Math.abs(sw - sh) / Math.max(sw, sh, 1);
+            if (ratio <= 0.42)
+                score += 2;
+            if (cy > innerHeight * 0.72)
+                score += 2;
+            if (score < 0)
+                return;
+            raw.push({
+                node: hit,
+                rect: rr,
+                sx: sx,
+                sy: sy,
+                sw: sw,
+                sh: sh,
+                cx: cx,
+                cy: cy,
+                path: p,
+                score: score
             });
-            var rows = keys.map(function (v) {
+        });
+        if (!raw.length) {
+            try {
+                window.__cw_chip_scan_debug = {
+                    seedRows: (window.__cw_last_scan_money || []).length,
+                    cand: 0,
+                    uniq: 0,
+                    row: 0,
+                    keys: [],
+                    rows: [],
+                    yHint: yHint,
+                    note: 'no-geometry-candidates'
+                };
+                window.__cw_chip_geom_last = window.__cw_chip_scan_debug;
+            } catch (_) {}
+            return {};
+        }
+        raw.sort(function (a, b) {
+            var sa = (b.score - a.score);
+            if (sa)
+                return sa;
+            var aa = (b.sw * b.sh) - (a.sw * a.sh);
+            if (aa)
+                return aa;
+            return a.cx - b.cx;
+        });
+        var uniq = [];
+        for (var i = 0; i < raw.length; i++) {
+            var it = raw[i];
+            var dup = false;
+            for (var j = 0; j < uniq.length; j++) {
+                var u = uniq[j];
+                if (Math.abs(u.cx - it.cx) <= 18 && Math.abs(u.cy - it.cy) <= 18) {
+                    dup = true;
+                    break;
+                }
+            }
+            if (!dup)
+                uniq.push(it);
+        }
+        if (uniq.length < 4) {
+            try {
+                window.__cw_chip_scan_debug = {
+                    seedRows: (window.__cw_last_scan_money || []).length,
+                    cand: raw.length,
+                    uniq: uniq.length,
+                    row: 0,
+                    keys: [],
+                    rows: [],
+                    yHint: yHint,
+                    note: 'not-enough-uniq'
+                };
+                window.__cw_chip_geom_last = window.__cw_chip_scan_debug;
+            } catch (_) {}
+            return {};
+        }
+
+        // pick densest row near bottom
+        var bestRow = [];
+        var bestRowScore = -1;
+        for (var r0 = 0; r0 < uniq.length; r0++) {
+            var baseY = uniq[r0].cy;
+            var row = [];
+            for (var r1 = 0; r1 < uniq.length; r1++) {
+                if (Math.abs(uniq[r1].cy - baseY) <= 36)
+                    row.push(uniq[r1]);
+            }
+            row.sort(function (a, b) {
+                return a.cx - b.cx;
+            });
+            if (row.length < 4)
+                continue;
+            var span = row[row.length - 1].cx - row[0].cx;
+            if (span < innerWidth * 0.18)
+                continue;
+            var rs = row.length * 4;
+            for (var rsI = 0; rsI < row.length; rsI++)
+                rs += Math.max(0, row[rsI].score || 0);
+            rs += (baseY / Math.max(1, innerHeight)) * 2;
+            if (rs > bestRowScore || (rs === bestRowScore && row.length > bestRow.length)) {
+                bestRowScore = rs;
+                bestRow = row;
+            }
+        }
+        if (bestRow.length < 4) {
+            try {
+                window.__cw_chip_scan_debug = {
+                    seedRows: (window.__cw_last_scan_money || []).length,
+                    cand: raw.length,
+                    uniq: uniq.length,
+                    row: bestRow.length,
+                    keys: [],
+                    rows: [],
+                    yHint: yHint,
+                    note: 'no-valid-row'
+                };
+                window.__cw_chip_geom_last = window.__cw_chip_scan_debug;
+            } catch (_) {}
+            return {};
+        }
+
+        // keep at most 6 chips in horizontal order
+        if (bestRow.length > 6) {
+            var windows = [];
+            for (var s = 0; s + 6 <= bestRow.length; s++) {
+                var win = bestRow.slice(s, s + 6);
+                var spanW = win[5].cx - win[0].cx;
+                var sumScore = 0;
+                for (var z = 0; z < win.length; z++)
+                    sumScore += (win[z].score || 0);
+                windows.push({
+                    arr: win,
+                    span: spanW,
+                    sumScore: sumScore
+                });
+            }
+            windows.sort(function (a, b) {
+                if (b.sumScore !== a.sumScore)
+                    return b.sumScore - a.sumScore;
+                return a.span - b.span;
+            });
+            bestRow = windows[0].arr;
+        }
+
+        var order = CHIP_SCAN_ORDER.slice();
+        var detected = [];
+        for (var d0 = 0; d0 < bestRow.length; d0++) {
+            var dv = extractAmountFromNode(bestRow[d0].node);
+            detected.push(dv && CHIP_SCAN_SET[String(dv)] ? dv : null);
+        }
+        var out = {};
+        var used = {};
+        for (var k = 0; k < bestRow.length; k++) {
+            var valNum = detected[k];
+            if (!valNum || used[String(valNum)])
+                continue;
+            used[String(valNum)] = 1;
+            var n0 = bestRow[k].node;
+            out[String(valNum)] = {
+                entry: n0,
+                node: n0,
+                rect: rectFromNodeScreen(n0),
+                source: 'geom_detect'
+            };
+        }
+        var m = Math.min(order.length, bestRow.length);
+        for (var k2 = 0; k2 < m; k2++) {
+            var val2 = String(order[k2]);
+            if (out[val2])
+                continue;
+            var n2 = bestRow[k2].node;
+            out[val2] = {
+                entry: n2,
+                node: n2,
+                rect: rectFromNodeScreen(n2),
+                source: 'geom_order'
+            };
+        }
+        try {
+            window.__cw_chip_scan_debug = {
+                seedRows: (window.__cw_last_scan_money || []).length,
+                cand: raw.length,
+                uniq: uniq.length,
+                row: bestRow.length,
+                keys: Object.keys(out).map(function (x) {
+                    return +x;
+                }).sort(function (a, b) {
+                    return a - b;
+                }),
+                yHint: yHint,
+                rows: bestRow.map(function (x) {
+                    return {
+                        x: Math.round(x.cx),
+                        y: Math.round(x.cy),
+                        w: Math.round(x.sw),
+                        h: Math.round(x.sh),
+                        val: extractAmountFromNode(x.node) || null,
+                        path: x.path
+                    };
+                })
+            };
+            window.__cw_chip_geom_last = window.__cw_chip_scan_debug;
+        } catch (_) {}
+        return out;
+    }
+    function scanChipRowStandaloneHeuristic() {
+        var raw = [];
+        walkNodes(function (n) {
+            if (!n || !active(n))
+                return;
+            var hit = clickableOf(n, 10);
+            if (!hit)
+                return;
+            if (!clickable(hit))
+                return;
+            var rr = screenRect(rectFromNodeCompat(hit) || rectFromNodeScreen(hit));
+            if (!rr)
+                return;
+            if (!rectVisibleOnScreen(rr, 16, 16))
+                return;
+            var sw = Number(rr.sw || 0),
+            sh = Number(rr.sh || 0);
+            if (!isFinite(sw) || !isFinite(sh))
+                return;
+            if (sw < 24 || sh < 24 || sw > 320 || sh > 320)
+                return;
+            var cx = Number(rr.sx || 0) + sw * 0.5;
+            var cy = Number(rr.sy || 0) + sh * 0.5;
+            if (cx < -20 || cx > innerWidth + 20)
+                return;
+            if (cy < innerHeight * 0.56)
+                return;
+            var p = String(fullPath(hit, 180) || '').toLowerCase();
+            if (/gateheaderingame|layoutlistgame|itemheader/.test(p))
+                return;
+            var score = 0;
+            if (/chip|chips|chipnode|bet_panel|coin|tabs100110k|mainplay|midnode|nodetophu/.test(p))
+                score += 9;
+            if (/chat|minigame|gift|soicau|waitting|playernode|lblcashbet|lblcountbet/.test(p))
+                score -= 6;
+            var ratio = Math.abs(sw - sh) / Math.max(sw, sh, 1);
+            if (ratio <= 0.42)
+                score += 2;
+            raw.push({
+                node: hit,
+                rect: rr,
+                cx: cx,
+                cy: cy,
+                sw: sw,
+                sh: sh,
+                path: p,
+                score: score
+            });
+        });
+        if (!raw.length)
+            return {};
+        raw.sort(function (a, b) {
+            var s = (b.score - a.score);
+            if (s)
+                return s;
+            return a.cx - b.cx;
+        });
+        var uniq = [];
+        for (var i = 0; i < raw.length; i++) {
+            var it = raw[i];
+            var dup = false;
+            for (var j = 0; j < uniq.length; j++) {
+                var u = uniq[j];
+                if (Math.abs(u.cx - it.cx) <= 18 && Math.abs(u.cy - it.cy) <= 18) {
+                    dup = true;
+                    break;
+                }
+            }
+            if (!dup)
+                uniq.push(it);
+        }
+        if (uniq.length < 4)
+            return {};
+        var bestRow = [];
+        var bestScore = -1e9;
+        for (var r0 = 0; r0 < uniq.length; r0++) {
+            var y0 = uniq[r0].cy;
+            var row = [];
+            for (var r1 = 0; r1 < uniq.length; r1++) {
+                if (Math.abs(uniq[r1].cy - y0) <= 36)
+                    row.push(uniq[r1]);
+            }
+            row.sort(function (a, b) {
+                return a.cx - b.cx;
+            });
+            if (row.length < 4)
+                continue;
+            var span = row[row.length - 1].cx - row[0].cx;
+            if (span < innerWidth * 0.12)
+                continue;
+            var s2 = row.reduce(function (t, x) {
+                    return t + x.score;
+                }, 0) + row.length * 4;
+            if (s2 > bestScore) {
+                bestScore = s2;
+                bestRow = row;
+            }
+        }
+        if (bestRow.length < 4)
+            return {};
+        if (bestRow.length > 6) {
+            var bestWin = null;
+            for (var s = 0; s + 6 <= bestRow.length; s++) {
+                var w = bestRow.slice(s, s + 6);
+                var spanW = w[5].cx - w[0].cx;
+                var sumS = 0;
+                for (var z = 0; z < w.length; z++)
+                    sumS += (w[z].score || 0);
+                var key = sumS * 10000 - spanW;
+                if (!bestWin || key > bestWin.key)
+                    bestWin = {
+                        key: key,
+                        arr: w
+                    };
+            }
+            bestRow = bestWin ? bestWin.arr : bestRow.slice(0, 6);
+        }
+        bestRow = bestRow.sort(function (a, b) {
+                return a.cx - b.cx;
+            }).slice(0, 6);
+        var out = {};
+        for (var k = 0; k < Math.min(CHIP_SCAN_ORDER.length, bestRow.length); k++) {
+            var v = String(CHIP_SCAN_ORDER[k]);
+            out[v] = {
+                entry: bestRow[k].node,
+                node: bestRow[k].node,
+                rect: bestRow[k].rect,
+                source: 'standalone_geom'
+            };
+        }
+        try {
+            window.__cw_chip_scan_debug = {
+                seedRows: (window.__cw_last_scan_money || []).length,
+                cand: raw.length,
+                uniq: uniq.length,
+                row: bestRow.length,
+                keys: Object.keys(out).map(function (x) {
+                    return +x;
+                }).sort(function (a, b) {
+                    return a - b;
+                }),
+                note: 'standalone-heuristic',
+                rows: bestRow.map(function (x) {
+                    return {
+                        x: Math.round(x.cx),
+                        y: Math.round(x.cy),
+                        w: Math.round(x.sw),
+                        h: Math.round(x.sh),
+                        path: x.path
+                    };
+                })
+            };
+            window.__cw_chip_geom_last = window.__cw_chip_scan_debug;
+        } catch (_) {}
+        return out;
+    }
+    function mergeChipMapsStrict(seed, geo) {
+        var out = {};
+        var i;
+        for (i = 0; i < CHIP_SCAN_ORDER.length; i++) {
+            var v = String(CHIP_SCAN_ORDER[i]);
+            if (seed && seed[v])
+                out[v] = seed[v];
+        }
+        for (i = 0; i < CHIP_SCAN_ORDER.length; i++) {
+            var v2 = String(CHIP_SCAN_ORDER[i]);
+            if (!out[v2] && geo && geo[v2])
+                out[v2] = geo[v2];
+        }
+        return out;
+    }
+    window.cwScanChips = function () {
+        var seed = scanChipsFromMoneyRowsStrict();
+        var geo = scanChipRowByGeometryStrict();
+        var m = mergeChipMapsStrict(seed, geo);
+        if (!Object.keys(m).length) {
+            var geo2 = scanChipRowStandaloneHeuristic();
+            m = mergeChipMapsStrict(seed, geo2);
+            if (!Object.keys(m).length)
+                m = geo2 || {};
+        }
+        if (!Object.keys(m).length) {
+            console.warn('[cwScanChips] chưa thấy chip.');
+            try {
+                var dbg = window.__cw_chip_scan_debug || {};
+                dbg.seedKeys = Object.keys(seed || {}).map(function (x) {
+                    return +x;
+                }).sort(function (a, b) {
+                    return a - b;
+                });
+                dbg.geoKeys = Object.keys(geo || {}).map(function (x) {
+                    return +x;
+                }).sort(function (a, b) {
+                    return a - b;
+                });
+                window.__cw_chip_scan_debug = dbg;
+                window.__cw_chip_geom_last = dbg;
+            } catch (_) {}
+        }
+        else {
+            var rows = CHIP_SCAN_ORDER.filter(function (v) {
+                    return !!m[String(v)];
+                }).map(function (v) {
                 return {
                     amount: v,
-                    node: (m[v] && m[v].node ? m[v].node.name : '?')
+                    source: (m[String(v)] && m[String(v)].source) || '?',
+                    node: (m[String(v)] && m[String(v)].node ? m[String(v)].node.name : '?')
                 };
             });
             try {
@@ -3897,10 +5036,12 @@
                 console.log(rows);
             }
         }
+        try {
+            window.__cw_last_chip_map = m;
+        } catch (_) {}
         return m;
     };
 
-    var prevFocus = window.cwFocusChip;
     window.cwFocusChip = async function (amount) {
         var val = Math.max(0, Math.floor(+amount || 0));
         if (!ALLOWED_SET[String(val)])
@@ -3909,74 +5050,43 @@
         if (!map[String(val)]) {
             await tryOpenChipPanel();
             await sleep(180);
-            map = scanChipsByTail();
-            if (!Object.keys(map).length)
-                map = wideScan();
+            map = window.cwScanChips() || {};
         }
-        if (!map[String(val)]) {
-            var hit = null;
-            (function walk(n) {
-                if (hit || !active(n))
-                    return;
-                if (nodeInGame(n)) {
-                    var texts = [];
-                    var lb = getComp(n, cc.Label);
-                    if (lb && typeof lb.string !== 'undefined')
-                        texts.push(lb.string);
-                    var rt = getComp(n, cc.RichText);
-                    if (rt && typeof rt.string !== 'undefined')
-                        texts.push(rt.string);
-                    var sp = getComp(n, cc.Sprite);
-                    var sfn = sp && sp.spriteFrame ? sp.spriteFrame.name : '';
-                    if (sfn)
-                        texts.push(sfn);
-                    texts.push(n.name || '');
-                    for (var i = 0; i < texts.length; i++) {
-                        if (parseAmountLoose(texts[i]) === val) {
-                            hit = clickableOf(n);
-                            return;
-                        }
-                    }
-                }
-                var kids = n.children || [];
-                for (var k = 0; k < kids.length; k++)
-                    walk(kids[k]);
-            })(cc.director.getScene());
-            if (hit) {
-                var target = resolveChipNode(hit) || hit;
-                var touched = emitTouchOnNode(target);
-                if (!touched) {
-                    if (clickable(target))
-                        emitClick(target);
-                    else
-                        clickRectCenter(rectFromNodeScreen(target));
-                }
-                await sleep(140);
-                var t = getComp(target, cc.Toggle);
-                if (t && !t.isChecked) {
-                    t.isChecked = true;
-                    if (t._emitToggleEvents)
-                        t._emitToggleEvents();
-                }
-                return true;
-            }
+        if (!map[String(val)])
             return false;
-        }
         var info = map[String(val)];
-        if (!info || !info.node)
+        if (!info || (!info.node && !info.rect))
             return false;
-        var target2 = resolveChipNode(info.node) || info.node;
-        var touched2 = emitTouchOnNode(target2);
-        if (!touched2) {
-            if (clickable(target2))
-                emitClick(target2);
-            else if (info.rect)
-                clickRectCenter(info.rect);
-            else
-                clickRectCenter(rectFromNodeScreen(target2));
+        if (!info.node && info.rect) {
+            var rr0 = screenRect(info.rect) || info.rect;
+            var cx0 = Number(rr0.sx || rr0.x || 0) + Number(rr0.sw || rr0.w || 0) * 0.5;
+            var cy0 = Number(rr0.sy || rr0.y || 0) + Number(rr0.sh || rr0.h || 0) * 0.5;
+            var near0 = findClickableNearScreen(cx0, cy0, 220, info.tail || '');
+            if (near0)
+                info.node = resolveChipNode(near0) || near0;
         }
-        await sleep(140);
-        var tg = getComp(target2, cc.Toggle);
+        if (info.node) {
+            var p0 = String(fullPath(info.node, 180) || '').toLowerCase();
+            if (!chipNodePathOk(p0))
+                info.node = null;
+        }
+        var target2 = info.node ? (resolveChipNode(info.node) || info.node) : null;
+        var ok = false;
+        // same style as file mẫu: ưu tiên 1 cú emitClick vào node chip
+        if (target2 && clickable(target2))
+            ok = emitClick(target2) || ok;
+        if (!ok && target2)
+            ok = emitTouchOnNode(target2) || ok;
+        if (!ok && info.rect) {
+            var rr1 = screenRect(info.rect) || info.rect;
+            var cx1 = Number(rr1.sx || rr1.x || 0) + Number(rr1.sw || rr1.w || 0) * 0.5;
+            var cy1 = Number(rr1.sy || rr1.y || 0) + Number(rr1.sh || rr1.h || 0) * 0.5;
+            ok = clickCanvasXY(cx1, cy1, true) || clickRectCenter(rr1);
+        }
+        if (!ok)
+            return false;
+        await sleep(120);
+        var tg = target2 ? getComp(target2, cc.Toggle) : null;
         if (tg && !tg.isChecked) {
             tg.isChecked = true;
             if (tg._emitToggleEvents)
@@ -3986,7 +5096,7 @@
     };
 
     window.cwDumpChips = function () {
-        var m = wideScan();
+        var m = window.cwScanChips() || {};
         var keys = Object.keys(m).map(function (x) {
             return +x;
         }).sort(function (a, b) {
@@ -4056,7 +5166,7 @@
             if (old_cwBet)
                 return old_cwBet(side);
             var tgt0 = findBetTarget(side);
-            if (!tgt0 || !tgt0.node) {
+            if (!tgt0 || (!tgt0.node && !tgt0.rect)) {
                 console.warn('[cwBet++] không thấy nút cửa:', side);
                 return false;
             }
@@ -4074,7 +5184,7 @@
 
         return withLock(async function () {
             var tgt = findBetTarget(side);
-            if (!tgt || !tgt.node) {
+            if (!tgt || (!tgt.node && !tgt.rect)) {
                 console.warn('[cwBet++] không thấy nút cửa:', side);
                 return false;
             }
@@ -4083,7 +5193,7 @@
             if (!Object.keys(map).length) {
                 await tryOpenChipPanel();
                 await sleep(200);
-                map = wideScan();
+                map = window.cwScanChips() || {};
             }
             var availSet = {};
             var ks = Object.keys(map);
@@ -4172,9 +5282,8 @@
         var T = totals(S);
         S._lastTotals = T;
 
-        // TK sequence
-        var tk = readTKSeq();
-        S.seq = tk.seq || '';
+        // TK sequence (rolling 55; only rescan at round close)
+        S.seq = refreshSeq55ByProg(S.prog, false) || S.seq || '';
 
         // keep focus
         if (S.focus) {
@@ -4225,6 +5334,10 @@
         if (S.showMoney) {
             S.moneyMap = buildMoneyRectsForMap();
             renderMoney();
+        }
+        if (S.showBet) {
+            S.betMap = buildBetRectsForMap();
+            renderBet();
         }
         if (S.showText) {
             S.text = buildTextRects();
@@ -4288,10 +5401,26 @@
         S.showBet = !S.showBet;
         layerBet.style.display = S.showBet ? '' : 'none';
         if (S.showBet) {
+            S.betMap = buildBetRectsForMap();
             renderBet();
+            try {
+                var sb = window.__cw_betStats || {};
+                console.log('[BetMap] ON -> out=' + (S.betMap || []).length +
+                    ' (buttons=' + (sb.buttons || 0) +
+                    ', candidates=' + (sb.betCandidate || 0) +
+                    ', invalidRect=' + (sb.rectInvalid || 0) +
+                    ', recovered=' + (sb.rectRecovered || 0) +
+                    ', projected=' + (sb.rectProjected || 0) +
+                    ', clamped=' + (sb.rectClamped || 0) +
+                    ', synthetic=' + (sb.syntheticPlaced || 0) +
+                    ', adjusted=' + (sb.rectAdjusted || 0) + ')');
+            } catch (_) {}
         } else {
             S.focus = null;
             showFocus(null);
+            try {
+                console.log('[BetMap] OFF');
+            } catch (_) {}
         }
         panel.style.zIndex = '2147483647';
     };
@@ -4339,7 +5468,22 @@
         }
     };
     panel.querySelector('#bScanBet').onclick = function () {
-        scan200Bet();
+        try {
+            var d = null;
+            if (typeof window.__cw_scanAndDumpBet === 'function')
+                d = window.__cw_scanAndDumpBet('BTN_BET');
+            else
+                d = {
+                    rows: scan200Bet() || []
+                };
+            try {
+                console.log('[CW_SCAN_BET_BTN_DONE]', d);
+            } catch (_) {}
+        } catch (e) {
+            try {
+                console.warn('[CW_SCAN_BET_BTN][ERR]', e);
+            } catch (_) {}
+        }
     };
     panel.querySelector('#bScanText').onclick = function () {
         try {
@@ -4393,6 +5537,42 @@
                 console.log('[CW_SCAN_' + source + ']', d);
                 if (d.summary) console.log('[CW_SCAN_SUMMARY]', d.summary);
                 if (d.stats) console.log('[CW_SCAN_STATS]', d.stats);
+            } catch (_) {}
+            return d;
+        };
+        window.__cw_getBetScan = function () {
+            return {
+                kind: 'bet',
+                summary: window.__cw_last_scan_bet_summary || null,
+                stats: window.__cw_betStats || null,
+                rows: (window.__cw_last_scan_bet || []).slice(0, 200)
+            };
+        };
+        window.__cw_scanAndDumpBet = function (source) {
+            source = source || 'CMD_BET';
+            var rows = [];
+            try {
+                rows = scan200Bet() || [];
+            } catch (_) {
+                rows = [];
+            }
+            var d = {};
+            try {
+                d = window.__cw_getBetScan ? window.__cw_getBetScan() : {};
+            } catch (_) {
+                d = {};
+            }
+            if (!d || typeof d !== 'object')
+                d = {};
+            if (!d.rows)
+                d.rows = rows;
+            d.kind = 'bet';
+            try {
+                console.log('[CW_SCAN_' + source + ']', d);
+                if (d.summary)
+                    console.log('[CW_SCAN_SUMMARY]', d.summary);
+                if (d.stats)
+                    console.log('[CW_SCAN_STATS]', d.stats);
             } catch (_) {}
             return d;
         };
@@ -4553,12 +5733,12 @@
             }
         }
 
-        function readSeqSafe() {
+        function readSeqSafe(pNow) {
             try {
-                if (typeof readTKSeq === 'function') {
-                    var r = readTKSeq();
-                    return (r && r.seq) ? r.seq : '';
-                }
+                if (S && S.seq)
+                    return S.seq;
+                if (typeof refreshSeq55ByProg === 'function')
+                    return refreshSeq55ByProg(pNow, true) || '';
             } catch (_) {}
             return '';
         }
@@ -4584,7 +5764,7 @@
                         abx: 'tick',
                         prog: p,
                         totals: readTotalsSafe(),
-                        seq: readSeqSafe(),
+                        seq: readSeqSafe(p),
                         username: (typeof readUsernameSafe === 'function') ? readUsernameSafe() : '',
                         accountRaw: (typeof readAccountSafe === 'function') ? readAccountSafe() : '',
                         status: String(st || ''), // <-- THÊM TRƯỜNG status
