@@ -2569,7 +2569,7 @@ Ví dụ không hợp lệ:
                 }
 
                 // Mở DevTools ngay sau khi CoreWebView2 sẵn sàng.
-                try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
+                //try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
                 // Điều hướng mọi window.open về cùng WebView2

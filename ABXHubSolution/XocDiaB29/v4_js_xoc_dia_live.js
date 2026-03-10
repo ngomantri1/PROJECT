@@ -2428,7 +2428,7 @@
         '</div>' +
         '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
+    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -4299,6 +4299,139 @@
             return v;
         return null;
     }
+    var CASHBET_CHIP_LABEL_RE = /\/cashbetnode\/(c[1-6])\/textimg$/i;
+    function scanCashBetNodeExact() {
+        var out = {};
+        walkNodes(function (n) {
+            if (!n || !active(n))
+                return;
+            var path = String(fullPath(n, 180) || '');
+            var m = path.match(CASHBET_CHIP_LABEL_RE);
+            if (!m)
+                return;
+            var val = null;
+            try {
+                var texts = [];
+                texts.push(n.name || '');
+                var lb = getComp(n, cc.Label);
+                if (lb && typeof lb.string !== 'undefined')
+                    texts.push(lb.string);
+                var rt = getComp(n, cc.RichText);
+                if (rt && typeof rt.string !== 'undefined')
+                    texts.push(rt.string);
+                var sp = getComp(n, cc.Sprite);
+                if (sp && sp.spriteFrame && sp.spriteFrame.name)
+                    texts.push(sp.spriteFrame.name);
+                for (var i = 0; i < texts.length; i++) {
+                    val = chipValueStrict(texts[i]);
+                    if (val)
+                        break;
+                }
+            } catch (_) {}
+            if (!val)
+                return;
+            var root = n.parent || n._parent || null;
+            var owner = root || n;
+            var rr = screenRect(rectFromNodeCompat(owner) || rectFromNodeScreen(owner) || rectFromNodeCompat(n) || rectFromNodeScreen(n));
+            if (!rr)
+                return;
+            out[String(val)] = {
+                entry: owner,
+                node: owner,
+                owner: owner,
+                labelNode: n,
+                rect: rr,
+                source: 'cashbet_exact',
+                tail: path
+            };
+        });
+        return out;
+    }
+    function cashBetExactNodeState(n) {
+        if (!n)
+            return null;
+        var out = {
+            path: String(fullPath(n, 120) || ''),
+            active: n.activeInHierarchy !== false,
+            opacity: (typeof n.opacity !== 'undefined') ? Number(n.opacity) : null,
+            scaleX: (typeof n.scaleX !== 'undefined') ? Number(n.scaleX) : null,
+            scaleY: (typeof n.scaleY !== 'undefined') ? Number(n.scaleY) : null
+        };
+        try {
+            if (n.color)
+                out.color = [n.color.r, n.color.g, n.color.b, (typeof n.color.a !== 'undefined' ? n.color.a : '')].join(',');
+        } catch (_) {}
+        try {
+            var sp = getComp(n, cc.Sprite);
+            if (sp && sp.spriteFrame)
+                out.spriteFrame = String(sp.spriteFrame.name || '');
+        } catch (_) {}
+        try {
+            var lb = getComp(n, cc.Label);
+            if (lb && typeof lb.string !== 'undefined')
+                out.label = String(lb.string || '');
+        } catch (_) {}
+        try {
+            var rt = getComp(n, cc.RichText);
+            if (rt && typeof rt.string !== 'undefined')
+                out.rich = String(rt.string || '');
+        } catch (_) {}
+        try {
+            var tg = getComp(n, cc.Toggle);
+            if (tg)
+                out.toggle = !!tg.isChecked;
+        } catch (_) {}
+        return out;
+    }
+    async function tryFocusCashBetExact(info, fullMap) {
+        if (!info)
+            return false;
+        var owner = info.owner || info.node || info.entry || null;
+        var label = info.labelNode || null;
+        var parent = owner ? (owner.parent || owner._parent || null) : null;
+        var attempts = [
+            {
+                name: 'touch_owner',
+                run: function () {
+                    return owner ? emitTouchOnNode(owner) : false;
+                }
+            },
+            {
+                name: 'touch_parent',
+                run: function () {
+                    return parent ? emitTouchOnNode(parent) : false;
+                }
+            },
+            {
+                name: 'touch_owner_rect',
+                run: function () {
+                    return (owner && info.rect) ? emitTouchAtRect(owner, info.rect) : false;
+                }
+            },
+            {
+                name: 'touch_label',
+                run: function () {
+                    return label ? emitTouchOnNode(label) : false;
+                }
+            }
+        ];
+        for (var i = 0; i < attempts.length; i++) {
+            var dispatched = false;
+            try {
+                dispatched = attempts[i].run();
+            } catch (_) {
+                dispatched = false;
+            }
+            if (!dispatched)
+                continue;
+            await sleep(120);
+            try {
+                console.log('[cwFocusChip][cashbet_exact] success via', attempts[i].name, info && info.tail ? info.tail : '');
+            } catch (_) {}
+            return true;
+        }
+        return false;
+    }
     function screenRect(r) {
         if (!r)
             return null;
@@ -4333,7 +4466,7 @@
         return /playernode|soicau|jackpot|chat|minigame|gift|waittingroom|lblcashbet|lblcountbet|gatebig|gatesmall|gate[0-9]/.test(p);
     }
     function chipPathPreferred(p) {
-        return /mainplay|midnode|nodetophu|tabs100110k|chip|coin|chipnode|bet_panel/.test(p);
+        return /mainplay|midnode|nodetophu|tabs100110k|cashbetnode|chip|coin|chipnode|bet_panel/.test(p);
     }
     function chipNodePathOk(p) {
         var s = String(p || '').toLowerCase();
@@ -4992,20 +5125,46 @@
         }
         return out;
     }
+    function exactChipKeyCount(m) {
+        var n = 0;
+        var keys = Object.keys(m || {});
+        for (var i = 0; i < keys.length; i++) {
+            var info = m[keys[i]] || {};
+            if (info && info.source === 'cashbet_exact')
+                n++;
+        }
+        return n;
+    }
     window.cwScanChips = function () {
+        var exact = scanCashBetNodeExact();
         var seed = scanChipsFromMoneyRowsStrict();
         var geo = scanChipRowByGeometryStrict();
         var m = mergeChipMapsStrict(seed, geo);
+        for (var i0 = 0; i0 < CHIP_SCAN_ORDER.length; i0++) {
+            var vx = String(CHIP_SCAN_ORDER[i0]);
+            if (exact && exact[vx])
+                m[vx] = exact[vx];
+        }
         if (!Object.keys(m).length) {
             var geo2 = scanChipRowStandaloneHeuristic();
             m = mergeChipMapsStrict(seed, geo2);
             if (!Object.keys(m).length)
                 m = geo2 || {};
+            for (var i1 = 0; i1 < CHIP_SCAN_ORDER.length; i1++) {
+                var vx2 = String(CHIP_SCAN_ORDER[i1]);
+                if (exact && exact[vx2])
+                    m[vx2] = exact[vx2];
+            }
         }
         if (!Object.keys(m).length) {
             console.warn('[cwScanChips] chưa thấy chip.');
             try {
                 var dbg = window.__cw_chip_scan_debug || {};
+                dbg.exactKeys = Object.keys(exact || {}).map(function (x) {
+                    return +x;
+                }).sort(function (a, b) {
+                    return a - b;
+                });
                 dbg.seedKeys = Object.keys(seed || {}).map(function (x) {
                     return +x;
                 }).sort(function (a, b) {
@@ -5021,6 +5180,15 @@
             } catch (_) {}
         }
         else {
+            if (exactChipKeyCount(m) >= 4) {
+                var keys0 = Object.keys(m);
+                for (var d0 = 0; d0 < keys0.length; d0++) {
+                    var k0 = keys0[d0];
+                    var info0 = m[k0] || {};
+                    if (info0.source !== 'cashbet_exact' && (!info0.node || info0.node == null))
+                        delete m[k0];
+                }
+            }
             var rows = CHIP_SCAN_ORDER.filter(function (v) {
                     return !!m[String(v)];
                 }).map(function (v) {
@@ -5057,6 +5225,13 @@
         var info = map[String(val)];
         if (!info || (!info.node && !info.rect))
             return false;
+        if (info && info.source === 'cashbet_exact') {
+            var exactOk = await tryFocusCashBetExact(info, map);
+            if (!exactOk)
+                return false;
+            await sleep(120);
+            return true;
+        }
         if (!info.node && info.rect) {
             var rr0 = screenRect(info.rect) || info.rect;
             var cx0 = Number(rr0.sx || rr0.x || 0) + Number(rr0.sw || rr0.w || 0) * 0.5;
@@ -5205,7 +5380,13 @@
             }
 
             if (availSet[String(X)]) {
-                await window.cwFocusChip(X);
+                var ok0 = await window.cwFocusChip(X).catch(function () {
+                    return false;
+                });
+                if (!ok0) {
+                    console.warn('[cwBet++] không focus được chip', X);
+                    return false;
+                }
                 clickBetTarget(tgt);
                 await sleep(120);
                 return true;
