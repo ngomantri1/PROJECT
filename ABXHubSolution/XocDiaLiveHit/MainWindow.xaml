@@ -515,7 +515,7 @@
                                             Click="BtnTrialTool_Click"
                                             Content="Dùng thử Tool"
                                             Style="{StaticResource SecondaryButton}"
-                                            Visibility="Collapsed" />
+                                            Visibility="Visible" />
 
                                     </Grid>
 

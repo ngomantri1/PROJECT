@@ -372,6 +372,7 @@ namespace XocDiaLiveHit
         const string LicenseNameGame = "auto";          // <- nhánh
         const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/auto";
         private const bool EnableLeaseCloudflare = true; // true=bật gọi Cloudflare
+        private const string TrialConsumedTodayMessage = "Hết lượt dùng thử trong ngày. Hãy quay lại dùng thử vào ngày mai.";
 
         // ===================== TOOLTIP TEXTS =====================
         const string TIP_SEQ_CL =
@@ -526,6 +527,7 @@ Ví dụ không hợp lệ:
             public string LeaseClientId { get; set; } = "";
             public string LastHomeUsername { get; set; } = "";
             public string TrialUntil { get; set; } = "";
+            public string TrialSessionKey { get; set; } = "";
             public int BetStrategyIndex { get; set; } = 4; // mặc định "5. Theo cầu trước thông minh"
             public string BetSeq { get; set; } = "";       // giá trị ô "CHUỖI CẦU"
             public string BetPatterns { get; set; } = "";  // giá trị ô "CÁC THẾ CẦU"
@@ -1162,7 +1164,7 @@ Ví dụ không hợp lệ:
                 else { _cfg.EncUser = ""; _cfg.EncPass = ""; _cfg.Username = ""; }
 
                 _cfg.LockMouse = (ChkLockMouse?.IsChecked == true);
-                _cfg.UseTrial = false;
+                _cfg.UseTrial = (ChkTrial?.IsChecked == true) || string.Equals(_expireMode, "trial", StringComparison.OrdinalIgnoreCase);
                 _cfg.LeaseClientId = _leaseClientId;
                 _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
                 if (ChkS7ResetOnProfit != null)
@@ -3225,17 +3227,21 @@ Ví dụ không hợp lệ:
             }
 
             _licenseUser = "";
+            DateTimeOffset? localTrialUntil = null;
 
             try
             {
-                if (DateTimeOffset.TryParse(_cfg.TrialUntil, out var trialUntilUtc) &&
+                var savedTrialKey = (_cfg.TrialSessionKey ?? "").Trim();
+                if (string.Equals(savedTrialKey, _trialKey, StringComparison.OrdinalIgnoreCase) &&
+                    DateTimeOffset.TryParse(_cfg.TrialUntil, out var trialUntilUtc) &&
                     trialUntilUtc > DateTimeOffset.UtcNow)
                 {
-                    Log("[Trial] resume existing session until " + trialUntilUtc.ToString("u"));
-
-                    StartExpiryCountdown(trialUntilUtc, "trial");
-                    StartLeaseHeartbeat(_trialKey, _trialKey);
-                    return true;
+                    localTrialUntil = trialUntilUtc;
+                    Log("[Trial] found local session until " + trialUntilUtc.ToString("u"));
+                }
+                else if (!string.IsNullOrWhiteSpace(_cfg.TrialUntil) || !string.IsNullOrWhiteSpace(_cfg.TrialSessionKey))
+                {
+                    ClearLocalTrialState(saveAsync: false);
                 }
 
                 var sessionId = _leaseSessionId;
@@ -3267,9 +3273,11 @@ Ví dụ không hợp lệ:
                         using var doc = System.Text.Json.JsonDocument.Parse(payload);
                         trialEndsAt = DateTimeOffset.Parse(doc.RootElement.GetProperty("trialEndsAt").GetString());
                     }
-                    catch { trialEndsAt = DateTimeOffset.UtcNow.AddMinutes(5); }
+                    catch { trialEndsAt = DateTimeOffset.UtcNow.AddMinutes(30); }
 
                     _cfg.TrialUntil = trialEndsAt.ToString("o");
+                    _cfg.TrialSessionKey = _trialKey;
+                    _cfg.UseTrial = true;
                     _ = SaveConfigAsync();
 
                     StartExpiryCountdown(trialEndsAt, "trial");
@@ -3294,11 +3302,25 @@ Ví dụ không hợp lệ:
                 }
                 else if (string.Equals(error, "trial-consumed", StringComparison.OrdinalIgnoreCase))
                 {
-                    MessageBox.Show("Hết lượt dùng thử! Hãy liên hệ 0978.248.822 để gia hạn/mua.",
+                    ClearLocalTrialState(saveAsync: true);
+                    MessageBox.Show(TrialConsumedTodayMessage,
                                     "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 else
                 {
+                    if (localTrialUntil.HasValue)
+                    {
+                        _cfg.TrialUntil = localTrialUntil.Value.ToString("o");
+                        _cfg.TrialSessionKey = _trialKey;
+                        _cfg.UseTrial = true;
+                        _ = SaveConfigAsync();
+
+                        StartExpiryCountdown(localTrialUntil.Value, "trial");
+                        StartLeaseHeartbeat(_trialKey, _trialKey);
+                        Log("[Trial] fallback local session until " + localTrialUntil.Value.ToString("u"));
+                        return true;
+                    }
+
                     MessageBox.Show("Không thể bắt đầu chế độ dùng thử. Vui lòng thử lại.",
                                     "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
@@ -3307,6 +3329,19 @@ Ví dụ không hợp lệ:
             catch (Exception exTrial)
             {
                 Log("[Trial ERR] " + exTrial.Message);
+                if (localTrialUntil.HasValue)
+                {
+                    _cfg.TrialUntil = localTrialUntil.Value.ToString("o");
+                    _cfg.TrialSessionKey = _trialKey;
+                    _cfg.UseTrial = true;
+                    _ = SaveConfigAsync();
+
+                    StartExpiryCountdown(localTrialUntil.Value, "trial");
+                    StartLeaseHeartbeat(_trialKey, _trialKey);
+                    Log("[Trial] fallback local after error until " + localTrialUntil.Value.ToString("u"));
+                    return true;
+                }
+
                 MessageBox.Show("Không thể kết nối chế độ dùng thử.", "Automino",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
@@ -3337,18 +3372,22 @@ Ví dụ không hợp lệ:
         {
             try
             {
-                if (ChkTrial != null) ChkTrial.IsChecked = false;
+                if (ChkTrial != null) ChkTrial.IsChecked = true;
                 await SaveConfigAsync();
                 await EnsureWebReadyAsync();
 
-                if (!await EnsureLicenseAsync())
+                if (!await EnsureTrialAsync())
+                {
+                    if (ChkTrial != null) ChkTrial.IsChecked = false;
                     return;
+                }
 
                 _forceGameUiFromLoginTool = true;
                 ApplyUiMode(true);
             }
             catch (Exception ex)
             {
+                if (ChkTrial != null) ChkTrial.IsChecked = false;
                 Log("[BtnTrialTool_Click] " + ex);
             }
         }
@@ -4787,16 +4826,23 @@ Ví dụ không hợp lệ:
 
         private void EnsureTrialKey()
         {
-            if (!string.IsNullOrWhiteSpace(_trialKey)) return;
             EnsureDeviceId();
-            var appKey = (AppLocalDirName ?? "").Trim().ToLowerInvariant();
-            if (string.IsNullOrWhiteSpace(appKey))
-                appKey = "app";
             var deviceKey = (_deviceId ?? "").Trim().ToLowerInvariant();
             if (string.IsNullOrWhiteSpace(deviceKey))
                 return;
-            _trialKey = $"{deviceKey}:{appKey}";
+            if (string.Equals(_trialKey, deviceKey, StringComparison.OrdinalIgnoreCase))
+                return;
+            _trialKey = deviceKey;
             Log("[TrialKey] " + _trialKey);
+        }
+
+        private void ClearLocalTrialState(bool saveAsync = true)
+        {
+            _cfg.TrialUntil = "";
+            _cfg.TrialSessionKey = "";
+            _cfg.UseTrial = false;
+            if (saveAsync)
+                _ = SaveConfigAsync();
         }
 
         private static string BuildDeviceId()
@@ -5285,7 +5331,7 @@ Ví dụ không hợp lệ:
                             // Thông báo theo mode
                             if (_expireMode == "trial")
                             {
-                                MessageBox.Show("Bạn đang dùng tool dùng thử. Hãy liên hệ 0978.248.822", "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
+                                MessageBox.Show(TrialConsumedTodayMessage, "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                             }
                             else
                             {
@@ -5296,7 +5342,7 @@ Ví dụ không hợp lệ:
                             if (LblExpire != null) LblExpire.Text = "";
                             _runExpiresAt = null;
                             // nếu là trial thì huỷ vé local để lần sau không resume nữa
-                            try { if (_expireMode == "trial") { _cfg.TrialUntil = ""; _ = SaveConfigAsync(); } } catch { }
+                            try { if (_expireMode == "trial") { ClearLocalTrialState(saveAsync: true); } } catch { }
 
                             // Ngắt heartbeat trước khi trả lease
                             StopLeaseHeartbeat();

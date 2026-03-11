@@ -1628,7 +1628,7 @@
         maxRetries: 6,
         watchdogMs: 1000,
         maxWatchdogMiss: 2,
-        showPanel: true,
+        showPanel: false,
         autoRetryOnBoot: false
     };
 

@@ -4168,6 +4168,15 @@ Ví dụ không hợp lệ:
                     MessageBox.Show(TrialConsumedTodayMessage,
                                     "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
+                else if (localTrialUntil.HasValue)
+                {
+                    Log("[Trial] fallback local session until " + localTrialUntil.Value.ToString("u"));
+                    _cfg.UseTrial = true;
+                    StartExpiryCountdown(localTrialUntil.Value, "trial");
+                    SetLicenseUi(true);
+                    StartLeaseHeartbeat(_trialKey, _trialKey);
+                    return true;
+                }
                 else
                 {
                     MessageBox.Show("Không thể bắt đầu chế độ dùng thử. Vui lòng thử lại.",
@@ -4178,6 +4187,15 @@ Ví dụ không hợp lệ:
             catch (Exception exTrial)
             {
                 Log("[Trial ERR] " + exTrial.Message);
+                if (localTrialUntil.HasValue)
+                {
+                    Log("[Trial] fallback local after error until " + localTrialUntil.Value.ToString("u"));
+                    _cfg.UseTrial = true;
+                    StartExpiryCountdown(localTrialUntil.Value, "trial");
+                    SetLicenseUi(true);
+                    StartLeaseHeartbeat(_trialKey, _trialKey);
+                    return true;
+                }
                 MessageBox.Show("Không thể kết nối chế độ dùng thử.", "Automino",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
@@ -5752,9 +5770,6 @@ Ví dụ không hợp lệ:
                 Log("[DeviceId] ready");
         }
 
-        private static string GetTrialDayStampLocal()
-            => DateTime.Now.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
-
         private void EnsureTrialKey()
         {
             EnsureDeviceId();
@@ -5762,13 +5777,11 @@ Ví dụ không hợp lệ:
             if (string.IsNullOrWhiteSpace(deviceKey))
                 return;
 
-            var dayStamp = GetTrialDayStampLocal();
-            var nextKey = $"{deviceKey}:{dayStamp}";
-            if (string.Equals(_trialDayStamp, dayStamp, StringComparison.Ordinal) &&
-                string.Equals(_trialKey, nextKey, StringComparison.Ordinal))
+            var nextKey = deviceKey;
+            if (string.Equals(_trialKey, nextKey, StringComparison.Ordinal))
                 return;
 
-            _trialDayStamp = dayStamp;
+            _trialDayStamp = "";
             _trialKey = nextKey;
             Log("[TrialKey] " + _trialKey);
         }

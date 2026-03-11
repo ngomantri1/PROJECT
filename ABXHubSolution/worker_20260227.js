@@ -66,13 +66,14 @@ export default {
     const hasSession = !!sessionIdRaw;
 
     const now = Date.now();
+    const serverDay = new Date(now).toISOString().slice(0, 10).replace(/-/g, '');
     const ttlMinutes = parseInt(env.LEASE_TTL_MINUTES ?? '10', 10) || 10;
     const trialMinutes = parseInt(env.TRIAL_MINUTES ?? '30', 10) || 30;
     const staleSec = parseInt(env.STALE_GRACE_SECONDS ?? '180', 10) || 180;
 
-    // Trial keys stay per tool + trial identity sent by client
-    const K_TUSED = `trial_consumed:${tool}:${username}`;
-    const K_TACT = `trial_active:${tool}:${username}`;
+    // Trial keys are global per device + server day across all apps/tools.
+    const K_TUSED = `trial_consumed_global:${deviceId}:${serverDay}`;
+    const K_TACT = `trial_active_global:${deviceId}:${serverDay}`;
 
     // License key is global by username (shared across all tools)
     const K_LIC_GLOBAL = `license_active_global:${username}`;
@@ -115,7 +116,11 @@ export default {
     if (action === 'trial') {
       const active = await get(K_TACT);
       if (active) {
-        if (active.clientId === clientId) {
+        const ownerDevice = ownerDeviceOf(active);
+        if (!ownerDevice || ownerDevice === deviceId) {
+          active.clientId = clientId;
+          active.deviceId = deviceId;
+          active.appId = appId;
           active.lastSeenMs = now;
           if (hasSession) active.sessionId = sessionIdRaw;
 
@@ -140,7 +145,7 @@ export default {
 
       const trialSec = trialMinutes * 60;
       const endsAt = new Date(now + trialSec * 1000).toISOString();
-      await put(K_TACT, { clientId, sessionId: sessionIdRaw, lastSeenMs: now, endsAt }, trialSec);
+      await put(K_TACT, { clientId, deviceId, appId, sessionId: sessionIdRaw, lastSeenMs: now, endsAt }, trialSec);
       await env.LEASE.put(K_TUSED, '1', { expirationTtl: 3 * 24 * 60 * 60 });
       return J(200, { ok: true, trial: true, trialEndsAt: endsAt });
     }
@@ -187,8 +192,14 @@ export default {
       // Backward-compatible fallback for trial heartbeat
       const trialActive = await get(K_TACT);
       if (trialActive) {
-        if (trialActive.clientId !== clientId) return J(409, { error: 'in-use' });
+        const ownerDevice = ownerDeviceOf(trialActive);
+        if (ownerDevice && ownerDevice !== deviceId) {
+          return J(409, { error: 'in-use', ownerDeviceId: ownerDevice });
+        }
 
+        trialActive.clientId = clientId;
+        trialActive.deviceId = deviceId;
+        trialActive.appId = appId;
         trialActive.lastSeenMs = now;
         if (hasSession) trialActive.sessionId = sessionIdRaw;
 
