@@ -4090,6 +4090,7 @@ Ví dụ không hợp lệ:
             _licenseUser = "";
             _licensePass = "";
 
+            DateTimeOffset? localTrialUntil = null;
             try
             {
                 var savedTrialKey = (_cfg.TrialSessionKey ?? "").Trim();
@@ -4097,16 +4098,11 @@ Ví dụ không hợp lệ:
                     DateTimeOffset.TryParse(_cfg.TrialUntil, out var trialUntilUtc) &&
                     trialUntilUtc > DateTimeOffset.UtcNow)
                 {
-                    Log("[Trial] resume existing session until " + trialUntilUtc.ToString("u"));
-
-                    _cfg.UseTrial = true;
-                    StartExpiryCountdown(trialUntilUtc, "trial");
-                    SetLicenseUi(true);
-                    StartLeaseHeartbeat(_trialKey, _trialKey);
-                    return true;
+                    localTrialUntil = trialUntilUtc;
                 }
 
-                if (!string.IsNullOrWhiteSpace(_cfg.TrialUntil) || !string.IsNullOrWhiteSpace(_cfg.TrialSessionKey))
+                if (!localTrialUntil.HasValue &&
+                    (!string.IsNullOrWhiteSpace(_cfg.TrialUntil) || !string.IsNullOrWhiteSpace(_cfg.TrialSessionKey)))
                     ClearLocalTrialState(saveAsync: false);
 
                 var sessionId = _leaseSessionId;

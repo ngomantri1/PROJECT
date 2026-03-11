@@ -1,112 +1,234 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const seg = url.pathname.split('/').filter(Boolean); // ["lease",":tool",...]
+    const seg = url.pathname.split('/').filter(Boolean); // ["lease", ":tool", ":action", ":username"]
     const method = request.method.toUpperCase();
 
-    // CORS (cho tiện test)
     const cors = {
       'access-control-allow-origin': env.CORS_ORIGIN || '*',
       'access-control-allow-headers': 'content-type',
       'access-control-allow-methods': 'GET,POST,OPTIONS'
     };
-    if (method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
-    const J = (s, o) =>
-      new Response(JSON.stringify(o), { status: s, headers: { ...cors, 'content-type': 'application/json' } });
+    if (method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: cors });
+    }
 
-    // Debug: ?echo=1
-    if (url.searchParams.get('echo') === '1')
+    const J = (status, payload) =>
+      new Response(JSON.stringify(payload), {
+        status,
+        headers: { ...cors, 'content-type': 'application/json' }
+      });
+
+    // Debug: /lease?echo=1
+    if (url.searchParams.get('echo') === '1') {
       return J(200, { pathname: url.pathname, seg, method });
+    }
 
-    // Healthcheck
-    if (seg.length === 1 && seg[0] === 'lease' && method === 'GET')
+    // Healthcheck: GET /lease
+    if (seg.length === 1 && seg[0] === 'lease' && method === 'GET') {
       return J(200, { ok: true, time: new Date().toISOString() });
+    }
 
-    // Router
+    // Router: POST /lease/:tool/:action/:username
     if (seg.length !== 4 || seg[0] !== 'lease') return J(404, { error: 'not-found' });
     if (method !== 'POST') return J(405, { error: 'method-not-allowed' });
 
     const tool = seg[1].trim().toLowerCase();
-    const action = seg[2]; // "trial" | "acquire" | "release"
+    const action = seg[2].trim().toLowerCase(); // trial | acquire | heartbeat | release
     const username = decodeURIComponent(seg[3] || '').trim().toLowerCase();
     if (!tool || !username) return J(400, { error: 'bad-request' });
 
-    // Chỉ cho phép tool đã khai báo
+    // Optional allow-list by tool
     const allowed = String(env.ALLOWED_TOOLS || '')
       .split(',')
       .map(s => s.trim().toLowerCase())
       .filter(Boolean);
-    if (allowed.length && !allowed.includes(tool)) return J(403, { error: 'tool-not-allowed' });
+    if (allowed.length && !allowed.includes(tool)) {
+      return J(403, { error: 'tool-not-allowed' });
+    }
 
-    // Body
+    // Request body
     let body = {};
     try { body = await request.json(); } catch {}
+
     const clientId = String(body.clientId || '').trim();
     if (!clientId) return J(400, { error: 'bad-clientId' });
 
-    // TTL & key
+    // Device lock identity:
+    // prefer deviceId from client, fallback to clientId for backward compatibility.
+    const deviceId = String(body.deviceId || body.clientId || '').trim().toLowerCase();
+    if (!deviceId) return J(400, { error: 'bad-deviceId' });
+
+    const appId = String(body.appId || '').trim().toLowerCase();
+    const sessionIdRaw = String(body.sessionId || '').trim();
+    const sid = (sessionIdRaw || `client:${clientId}`).toLowerCase();
+    const hasSession = !!sessionIdRaw;
+
     const now = Date.now();
-    const ttlMinutes = parseInt(env.LEASE_TTL_MINUTES ?? '10', 10) || 10;            // <- KHÔNG renew
-    const trialMinutes = parseInt(env.TRIAL_MINUTES ?? '120', 10) || 120;            // 2h mặc định
+    const ttlMinutes = parseInt(env.LEASE_TTL_MINUTES ?? '10', 10) || 10;
+    const trialMinutes = parseInt(env.TRIAL_MINUTES ?? '120', 10) || 120;
     const staleSec = parseInt(env.STALE_GRACE_SECONDS ?? '180', 10) || 180;
 
+    // Trial keys stay per tool + username
     const K_TUSED = `trial_consumed:${tool}:${username}`;
-    const K_TACT  = `trial_active:${tool}:${username}`;
-    const K_LIC   = `license_active:${tool}:${username}`;
+    const K_TACT = `trial_active:${tool}:${username}`;
 
-    const get = async k => {
-      const r = await env.LEASE.get(k);
-      if (!r) return null;
-      try { return JSON.parse(r); } catch { return null; }
+    // License key is global by username (shared across all tools)
+    const K_LIC_GLOBAL = `license_active_global:${username}`;
+
+    const get = async (k) => {
+      const raw = await env.LEASE.get(k);
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch { return null; }
     };
-    const put = (k, v, ttl) => env.LEASE.put(k, JSON.stringify(v), { expirationTtl: ttl });
-    const del = k => env.LEASE.delete(k);
+    const put = (k, v, ttlSec) =>
+      env.LEASE.put(k, JSON.stringify(v), { expirationTtl: ttlSec });
+    const del = (k) => env.LEASE.delete(k);
 
-    // ---- TRIAL (tùy chọn) ----
+    const ownerDeviceOf = (rec) =>
+      String(rec?.deviceId || rec?.clientId || '').trim().toLowerCase();
+    const isFresh = (rec) => {
+      const lastSeen = rec?.lastSeenMs ?? 0;
+      return (now - lastSeen) <= staleSec * 1000;
+    };
+    const ensureSessions = (rec) => {
+      if (!rec.sessions || typeof rec.sessions !== 'object' || Array.isArray(rec.sessions)) {
+        rec.sessions = {};
+      }
+      return rec.sessions;
+    };
+    const upsertSession = (rec) => {
+      const sessions = ensureSessions(rec);
+      const prev = sessions[sid] || {};
+      sessions[sid] = {
+        clientId,
+        deviceId,
+        appId,
+        sessionId: sid,
+        createdAt: prev.createdAt || now,
+        lastSeenMs: now
+      };
+    };
+
+    // ===== TRIAL =====
     if (action === 'trial') {
       const used = await env.LEASE.get(K_TUSED);
       if (used) return J(403, { error: 'trial-consumed' });
 
       const active = await get(K_TACT);
       if (active) {
-        // cùng client, cho resume
-        if (active.clientId === clientId) return J(200, { ok: true, trial: true, trialEndsAt: active.endsAt, reused: true });
-        // client khác nhưng còn “ấm”
-        const last = active.lastSeenMs ?? now;
-        if (now - last <= staleSec * 1000) return J(409, { error: 'in-use' });
+        if (active.clientId === clientId) {
+          active.lastSeenMs = now;
+          if (hasSession) active.sessionId = sessionIdRaw;
+
+          let remainSec = trialMinutes * 60;
+          if (active.endsAt) {
+            const endMs = Date.parse(active.endsAt);
+            if (!Number.isNaN(endMs)) {
+              remainSec = Math.max(1, Math.floor((endMs - now) / 1000));
+            }
+          }
+
+          await put(K_TACT, active, remainSec);
+          return J(200, { ok: true, trial: true, trialEndsAt: active.endsAt, reused: true });
+        }
+
+        const lastSeen = active.lastSeenMs ?? now;
+        if (now - lastSeen <= staleSec * 1000) return J(409, { error: 'in-use' });
       }
 
-      const secs = trialMinutes * 60;
-      const endsAt = new Date(now + secs * 1000).toISOString();
-      await put(K_TACT, { clientId, lastSeenMs: now, endsAt }, secs);
-      await env.LEASE.put(K_TUSED, '1'); // đánh dấu đã dùng thử
+      const trialSec = trialMinutes * 60;
+      const endsAt = new Date(now + trialSec * 1000).toISOString();
+      await put(K_TACT, { clientId, sessionId: sessionIdRaw, lastSeenMs: now, endsAt }, trialSec);
+      await env.LEASE.put(K_TUSED, '1');
       return J(200, { ok: true, trial: true, trialEndsAt: endsAt });
     }
 
-    // ---- ACQUIRE 1 lần ----
+    // ===== ACQUIRE =====
     if (action === 'acquire') {
-      const active = await get(K_LIC);
-      if (active) {
-        if (active.clientId === clientId) {
-          // cùng client gọi lại -> coi như OK (không gia hạn thêm)
-          return J(200, { ok: true, reused: true });
-        }
-        // người khác vừa acquire
-        const last = active.lastSeenMs ?? now;
-        if (now - last <= staleSec * 1000) return J(409, { error: 'in-use' });
+      let active = await get(K_LIC_GLOBAL);
+      const ownerDevice = ownerDeviceOf(active);
+
+      if (active && ownerDevice && ownerDevice !== deviceId && isFresh(active)) {
+        return J(409, { error: 'in-use', ownerDeviceId: ownerDevice });
       }
-      await put(K_LIC, { clientId, lastSeenMs: now }, ttlMinutes * 60);
+
+      const sameDeviceReuse = !!(active && ownerDevice && ownerDevice === deviceId);
+      if (!active || !sameDeviceReuse) {
+        active = { deviceId, lastSeenMs: now, sessions: {} };
+      }
+
+      active.deviceId = deviceId;
+      active.lastSeenMs = now;
+      upsertSession(active);
+
+      await put(K_LIC_GLOBAL, active, ttlMinutes * 60);
+      if (sameDeviceReuse) return J(200, { ok: true, reused: true });
       return J(200, { ok: true, leased: true });
     }
 
-    // ---- RELEASE (tùy chọn) ----
+    // ===== HEARTBEAT =====
+    if (action === 'heartbeat') {
+      const active = await get(K_LIC_GLOBAL);
+      if (active) {
+        const ownerDevice = ownerDeviceOf(active);
+        if (ownerDevice && ownerDevice !== deviceId) {
+          return J(409, { error: 'in-use', ownerDeviceId: ownerDevice });
+        }
+
+        active.deviceId = deviceId;
+        active.lastSeenMs = now;
+        upsertSession(active);
+        await put(K_LIC_GLOBAL, active, ttlMinutes * 60);
+        return J(200, { ok: true, leased: true });
+      }
+
+      // Backward-compatible fallback for trial heartbeat
+      const trialActive = await get(K_TACT);
+      if (trialActive) {
+        if (trialActive.clientId !== clientId) return J(409, { error: 'in-use' });
+
+        trialActive.lastSeenMs = now;
+        if (hasSession) trialActive.sessionId = sessionIdRaw;
+
+        let remainSec = trialMinutes * 60;
+        if (trialActive.endsAt) {
+          const endMs = Date.parse(trialActive.endsAt);
+          if (!Number.isNaN(endMs)) {
+            remainSec = Math.max(1, Math.floor((endMs - now) / 1000));
+          }
+        }
+
+        await put(K_TACT, trialActive, remainSec);
+        return J(200, { ok: true, trial: true, trialEndsAt: trialActive.endsAt });
+      }
+
+      return J(200, { ok: true, leased: false, reason: 'not-found' });
+    }
+
+    // ===== RELEASE =====
     if (action === 'release') {
-      const active = await get(K_LIC);
+      const active = await get(K_LIC_GLOBAL);
       if (!active) return J(200, { ok: true, released: false, reason: 'not-found' });
-      if (active.clientId !== clientId) return J(409, { error: 'in-use' });
-      await del(K_LIC);
-      return J(200, { ok: true, released: true });
+
+      const ownerDevice = ownerDeviceOf(active);
+      if (ownerDevice && ownerDevice !== deviceId) {
+        return J(409, { error: 'in-use', ownerDeviceId: ownerDevice });
+      }
+
+      const sessions = ensureSessions(active);
+      delete sessions[sid];
+      const remain = Object.keys(sessions).length;
+
+      if (remain > 0) {
+        active.lastSeenMs = now;
+        await put(K_LIC_GLOBAL, active, ttlMinutes * 60);
+        return J(200, { ok: true, released: true, remainSessions: remain });
+      }
+
+      await del(K_LIC_GLOBAL);
+      return J(200, { ok: true, released: true, remainSessions: 0 });
     }
 
     return J(404, { error: 'unknown-action' });

@@ -69,17 +69,28 @@
     // ---- TRIAL (tùy chọn) ----
     if (action === 'trial') {
       if (!clientId) clientId = trialKey;
-      const used = await env.LEASE.get(K_TUSED);
-      if (used) return J(403, { error: 'trial-consumed' });
-
       const active = await get(K_TACT);
       if (active) {
-        // cùng client, cho resume
-        if (active.sessionId === sessionId) return J(200, { ok: true, trial: true, trialEndsAt: active.endsAt, reused: true });
+        // cùng máy/ngày, cho resume cùng một mốc trial
+        if (active.clientId === clientId) {
+          let remainSec = trialMinutes * 60;
+          if (active.endsAt) {
+            const endMs = Date.parse(active.endsAt);
+            if (!isNaN(endMs)) remainSec = Math.max(1, Math.floor((endMs - now) / 1000));
+          }
+          active.sessionId = sessionId;
+          active.clientId = clientId;
+          active.lastSeenMs = now;
+          await put(K_TACT, active, remainSec);
+          return J(200, { ok: true, trial: true, trialEndsAt: active.endsAt, reused: true });
+        }
         // client khác nhưng còn “ấm”
         const last = active.lastSeenMs ?? now;
         if (now - last <= staleSec * 1000) return J(409, { error: 'in-use' });
       }
+
+      const used = await env.LEASE.get(K_TUSED);
+      if (used) return J(403, { error: 'trial-consumed' });
 
       const secs = trialMinutes * 60;
       const endsAt = new Date(now + secs * 1000).toISOString();
@@ -115,7 +126,11 @@
       }
       const tAct = await get(K_TACT);
       if (tAct) {
-        if (tAct.sessionId !== sessionId) return J(409, { error: 'in-use' });
+        if (tAct.sessionId !== sessionId) {
+          if (!clientId || tAct.clientId !== clientId) return J(409, { error: 'in-use' });
+          tAct.sessionId = sessionId;
+        }
+        tAct.clientId = clientId || tAct.clientId;
         tAct.lastSeenMs = now;
         let remainSec = trialMinutes * 60;
         if (tAct.endsAt) {

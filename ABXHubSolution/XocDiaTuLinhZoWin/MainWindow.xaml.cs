@@ -368,7 +368,7 @@ namespace XocDiaTuLinhZoWin
         // Chỉ dùng cho hiển thị LblLevel: vị trí hiện tại trong _stakeSeq
         private int _stakeLevelIndexForUi = -1;
 
-        private double _decisionPercent = 3; // 3s
+        private double _decisionPercent = 5; // 5s
 
         // Chống bắn trùng khi vừa cược
         private bool _cooldown = false;
@@ -3997,6 +3997,7 @@ Ví dụ không hợp lệ:
             _licenseUser = "";
             _licensePass = "";
 
+            DateTimeOffset? localTrialUntil = null;
             try
             {
                 var savedTrialKey = (_cfg.TrialSessionKey ?? "").Trim();
@@ -4004,16 +4005,11 @@ Ví dụ không hợp lệ:
                     DateTimeOffset.TryParse(_cfg.TrialUntil, out var trialUntilUtc) &&
                     trialUntilUtc > DateTimeOffset.UtcNow)
                 {
-                    Log("[Trial] resume existing session until " + trialUntilUtc.ToString("u"));
-
-                    _cfg.UseTrial = true;
-                    StartExpiryCountdown(trialUntilUtc, "trial");
-                    SetLicenseUi(true);
-                    StartLeaseHeartbeat(_trialKey, _trialKey);
-                    return true;
+                    localTrialUntil = trialUntilUtc;
                 }
 
-                if (!string.IsNullOrWhiteSpace(_cfg.TrialUntil) || !string.IsNullOrWhiteSpace(_cfg.TrialSessionKey))
+                if (!localTrialUntil.HasValue &&
+                    (!string.IsNullOrWhiteSpace(_cfg.TrialUntil) || !string.IsNullOrWhiteSpace(_cfg.TrialSessionKey)))
                     ClearLocalTrialState(saveAsync: false);
 
                 var sessionId = _leaseSessionId;
