@@ -4249,12 +4249,13 @@
         if (!n)
             return false;
         var p = nodeWorldPos(n);
+        var touch = null;
         var ok = false;
         try {
             if (cc && cc.Touch && cc.Event && cc.Event.EventTouch && n.emit) {
-                var t = new cc.Touch(p.x || 0, p.y || 0);
-                var ev = new cc.Event.EventTouch([t], true);
-                ev.touch = t;
+                touch = new cc.Touch(p.x || 0, p.y || 0);
+                var ev = new cc.Event.EventTouch([touch], true);
+                ev.touch = touch;
                 ev.getLocation = function () {
                     return {
                         x: p.x || 0,
@@ -4284,6 +4285,37 @@
                 n.emit(te2, ev2);
                 ok = true;
             } catch (e2) {}
+        }
+        if (!ok && n._touchListener) {
+            try {
+                var touch2 = touch || {
+                    getLocation: function () {
+                        return {
+                            x: p.x || 0,
+                            y: p.y || 0
+                        };
+                    },
+                    getID: function () {
+                        return 0;
+                    }
+                };
+                var ev3 = {
+                    currentTarget: n,
+                    target: n,
+                    touch: touch2,
+                    getLocation: function () {
+                        return {
+                            x: p.x || 0,
+                            y: p.y || 0
+                        };
+                    }
+                };
+                if (n._touchListener.onTouchBegan)
+                    n._touchListener.onTouchBegan(touch2, ev3);
+                if (n._touchListener.onTouchEnded)
+                    n._touchListener.onTouchEnded(touch2, ev3);
+                ok = true;
+            } catch (e3) {}
         }
         return ok;
     }
@@ -4336,6 +4368,7 @@
             if (!rr)
                 return;
             out[String(val)] = {
+                amount: val,
                 entry: owner,
                 node: owner,
                 owner: owner,
@@ -4350,12 +4383,22 @@
     function cashBetExactNodeState(n) {
         if (!n)
             return null;
+        var rect = null;
+        try {
+            rect = rectFromNodeCompat(n) || rectFromNodeScreen(n) || null;
+        } catch (_) {
+            rect = null;
+        }
+        var labelText = '';
+        var richText = '';
         var out = {
             path: String(fullPath(n, 120) || ''),
             active: n.activeInHierarchy !== false,
             opacity: (typeof n.opacity !== 'undefined') ? Number(n.opacity) : null,
             scaleX: (typeof n.scaleX !== 'undefined') ? Number(n.scaleX) : null,
-            scaleY: (typeof n.scaleY !== 'undefined') ? Number(n.scaleY) : null
+            scaleY: (typeof n.scaleY !== 'undefined') ? Number(n.scaleY) : null,
+            rotation: (typeof n.angle !== 'undefined') ? Number(n.angle) : ((typeof n.rotation !== 'undefined') ? Number(n.rotation) : null),
+            rect: rect ? [Math.round(rect.x || rect.sx || 0), Math.round(rect.y || rect.sy || 0), Math.round(rect.w || rect.sw || 0), Math.round(rect.h || rect.sh || 0)].join(',') : ''
         };
         try {
             if (n.color)
@@ -4369,67 +4412,194 @@
         try {
             var lb = getComp(n, cc.Label);
             if (lb && typeof lb.string !== 'undefined')
-                out.label = String(lb.string || '');
+                labelText = String(lb.string || '');
         } catch (_) {}
         try {
             var rt = getComp(n, cc.RichText);
             if (rt && typeof rt.string !== 'undefined')
-                out.rich = String(rt.string || '');
+                richText = String(rt.string || '');
         } catch (_) {}
+        out.label = labelText;
+        out.rich = richText;
+        out.text = labelText || richText || '';
         try {
             var tg = getComp(n, cc.Toggle);
             if (tg)
-                out.toggle = !!tg.isChecked;
+                out.toggleChecked = !!tg.isChecked;
         } catch (_) {}
         return out;
+    }
+    var __cw_cashbet_focus_route_cache = window.__cw_cashbet_focus_route_cache || {};
+    window.__cw_cashbet_focus_route_cache = __cw_cashbet_focus_route_cache;
+    function buildCashBetExactChain(info) {
+        var chain = [];
+        var cur = info ? (info.labelNode || info.owner || info.node || info.entry || null) : null;
+        var hop = 0;
+        while (cur && hop <= 5) {
+            if (chain.indexOf(cur) === -1)
+                chain.push(cur);
+            cur = cur.parent || cur._parent || null;
+            hop++;
+        }
+        return chain;
+    }
+    function snapshotCashBetExactAll(map) {
+        map = map || scanCashBetNodeExact();
+        var out = {};
+        var keys = Object.keys(map || {});
+        for (var i = 0; i < keys.length; i++) {
+            var k = keys[i];
+            var info = map[k] || {};
+            if (!info || info.source !== 'cashbet_exact')
+                continue;
+            var chain = buildCashBetExactChain(info);
+            out[k] = [];
+            for (var j = 0; j < chain.length; j++) {
+                out[k].push(cashBetExactNodeState(chain[j]));
+            }
+        }
+        return out;
+    }
+    function diffCashBetExactSnapshots(before, after) {
+        var out = [];
+        var keys = Object.keys(after || {});
+        for (var i = 0; i < keys.length; i++) {
+            var amount = keys[i];
+            var bArr = (before && before[amount]) ? before[amount] : [];
+            var aArr = after[amount] || [];
+            var len = Math.max(bArr.length, aArr.length);
+            for (var j = 0; j < len; j++) {
+                var b = bArr[j] || null;
+                var a = aArr[j] || null;
+                try {
+                    if (JSON.stringify(b) !== JSON.stringify(a)) {
+                        out.push({
+                            amount: +amount,
+                            idx: j,
+                            path: a && a.path ? a.path : (b && b.path ? b.path : '')
+                        });
+                    }
+                } catch (_) {
+                    out.push({
+                        amount: +amount,
+                        idx: j,
+                        path: a && a.path ? a.path : (b && b.path ? b.path : '')
+                    });
+                }
+            }
+        }
+        return out;
+    }
+    function buildCashBetExactCandidates(info) {
+        var chain = buildCashBetExactChain(info);
+        var out = [];
+        for (var idx = 0; idx < chain.length; idx++) {
+            var n = chain[idx];
+            if (!n || !active(n))
+                continue;
+            if (hasBtn(n)) {
+                out.push({
+                    kind: 'button',
+                    idx: idx,
+                    node: n,
+                    path: String(fullPath(n, 120) || '')
+                });
+            }
+            if (hasTgl(n)) {
+                out.push({
+                    kind: 'toggle',
+                    idx: idx,
+                    node: n,
+                    path: String(fullPath(n, 120) || '')
+                });
+            }
+            if (clickable(n) || n._touchListener || n.emit) {
+                out.push({
+                    kind: 'touch',
+                    idx: idx,
+                    node: n,
+                    path: String(fullPath(n, 120) || '')
+                });
+            }
+        }
+        return out;
+    }
+    function fireCashBetExactCandidate(cand) {
+        if (!cand || !cand.node)
+            return false;
+        if (cand.kind === 'button')
+            return emitClick(cand.node);
+        if (cand.kind === 'toggle') {
+            var tg = getComp(cand.node, cc.Toggle);
+            if (!tg || tg.interactable === false)
+                return false;
+            try {
+                tg.isChecked = true;
+                if (tg._emitToggleEvents)
+                    tg._emitToggleEvents();
+                return true;
+            } catch (_) {
+                return false;
+            }
+        }
+        if (cand.kind === 'touch')
+            return emitTouchOnNode(cand.node);
+        return false;
     }
     async function tryFocusCashBetExact(info, fullMap) {
         if (!info)
             return false;
-        var owner = info.owner || info.node || info.entry || null;
-        var label = info.labelNode || null;
-        var parent = owner ? (owner.parent || owner._parent || null) : null;
-        var attempts = [
-            {
-                name: 'touch_owner',
-                run: function () {
-                    return owner ? emitTouchOnNode(owner) : false;
-                }
-            },
-            {
-                name: 'touch_parent',
-                run: function () {
-                    return parent ? emitTouchOnNode(parent) : false;
-                }
-            },
-            {
-                name: 'touch_owner_rect',
-                run: function () {
-                    return (owner && info.rect) ? emitTouchAtRect(owner, info.rect) : false;
-                }
-            },
-            {
-                name: 'touch_label',
-                run: function () {
-                    return label ? emitTouchOnNode(label) : false;
-                }
+        var amountKey = String(info.amount || extractAmountFromNode(info.labelNode || info.owner || info.node || null) || '');
+        var candidates = buildCashBetExactCandidates(info);
+        if (!candidates.length)
+            return false;
+        var ordered = [];
+        var cache = amountKey ? (__cw_cashbet_focus_route_cache[amountKey] || null) : null;
+        if (cache) {
+            for (var c0 = 0; c0 < candidates.length; c0++) {
+                var cand0 = candidates[c0];
+                if (cand0.kind === cache.kind && cand0.idx === cache.idx && cand0.path === cache.path)
+                    ordered.push(cand0);
             }
-        ];
-        for (var i = 0; i < attempts.length; i++) {
-            var dispatched = false;
+        }
+        for (var c1 = 0; c1 < candidates.length; c1++) {
+            if (ordered.indexOf(candidates[c1]) === -1)
+                ordered.push(candidates[c1]);
+        }
+        for (var i = 0; i < ordered.length; i++) {
+            var cand = ordered[i];
+            var before = snapshotCashBetExactAll();
+            var ok = false;
             try {
-                dispatched = attempts[i].run();
+                ok = fireCashBetExactCandidate(cand);
             } catch (_) {
-                dispatched = false;
+                ok = false;
             }
-            if (!dispatched)
+            if (!ok)
                 continue;
             await sleep(120);
+            var after = snapshotCashBetExactAll();
+            var diff = diffCashBetExactSnapshots(before, after);
             try {
-                console.log('[cwFocusChip][cashbet_exact] success via', attempts[i].name, info && info.tail ? info.tail : '');
+                console.log('[cwFocusChip][cashbet_exact] candidate', cand.kind + '@' + cand.path, 'diff=', diff.length);
             } catch (_) {}
-            return true;
+            if (diff.length) {
+                if (amountKey) {
+                    __cw_cashbet_focus_route_cache[amountKey] = {
+                        kind: cand.kind,
+                        idx: cand.idx,
+                        path: cand.path
+                    };
+                }
+                try {
+                    console.log('[cwFocusChip][cashbet_exact] verified', cand.kind + '@' + cand.path, diff);
+                } catch (_) {}
+                return true;
+            }
         }
+        try {
+            console.warn('[cwFocusChip][cashbet_exact] no verified route for', amountKey || '?');
+        } catch (_) {}
         return false;
     }
     function screenRect(r) {

@@ -410,3 +410,4 @@ FodyWeavers.xsd
 *.dll
 *.dll
 *.txt
+/ABXHubSolution/_tmp_build

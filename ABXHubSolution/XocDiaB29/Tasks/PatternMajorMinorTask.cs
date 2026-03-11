@@ -94,7 +94,7 @@ namespace XocDiaB29.Tasks
                     await Task.Delay(120, ct);
                     continue;
                 }
-                // Chờ tới “cửa vào muộn” (Task 4 phụ thuộc DecisionPercent)
+                // Chờ tới “cửa vào muộn” (Task 4 phụ thuộc DecisionSeconds)
                 await WaitUntilBetWindow(ctx, ct);
                 // ======= TÁI-KIỂM CẦU TRƯỚC KHI ĐẶT =======
                 var snapNow = ctx.GetSnap();
