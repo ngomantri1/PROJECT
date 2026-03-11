@@ -67,6 +67,15 @@
     }
 
     /* ---------------- utils ---------------- */
+    function getSceneSafe() {
+        try {
+            if (!(window.cc && cc.director && cc.director.getScene))
+                return null;
+            return cc.director.getScene();
+        } catch (e) {
+            return null;
+        }
+    }
     var V2 = (cc.v2 || cc.Vec2);
     var sleep = function (ms) {
         return new Promise(function (r) {
@@ -204,7 +213,7 @@
         return a.slice(-limit).join('/');
     }
     function walkNodes(cb) {
-        var scene = cc.director.getScene();
+        var scene = getSceneSafe();
         if (!scene)
             return;
         var st = [scene],
@@ -572,14 +581,6 @@
     // NEW: đọc chuỗi kết quả Tài/Xỉu từ dãy icLspThugonTai1..15
     function readTxLineSeq() {
         try {
-            if (!window.cc || !cc.director || !cc.director.getScene)
-                return {
-                    seq: '',
-                    which: null,
-                    cols: [],
-                    cells: []
-                };
-
             var cells = [];
             walkNodes(function (n) {
                 if (!n)
@@ -2576,9 +2577,9 @@
                     if (window.__abx_findNodeByTail)
                         return window.__abx_findNodeByTail(tail);
 
-                    if (!(window.cc && cc.director && cc.director.getScene))
+                    var scene = getSceneSafe();
+                    if (!scene)
                         return null;
-                    var scene = cc.director.getScene();
                     var parts = String(tail).split('/').filter(Boolean);
                     if (parts[0] === scene.name)
                         parts.shift();
@@ -2639,9 +2640,6 @@
     // NEW: đọc Username an toàn theo tail Cocos
     function readUsernameSafe() {
         try {
-            if (!window.cc || !window.cc.director || !window.cc.director.getScene)
-                return '';
-
             // helper: tìm node theo tail Cocos
             function findByTail(tail) {
                 if (!tail)
@@ -2654,7 +2652,7 @@
                     return window.__abx_findNodeByTail(tail);
 
                 // fallback: tự lần từ scene
-                var scene = window.cc.director.getScene();
+                var scene = getSceneSafe();
                 if (!scene)
                     return null;
 
@@ -2926,9 +2924,7 @@
     }
 
     function walkNodes(cb) {
-        if (!(window.cc && cc.director && cc.director.getScene))
-            return;
-        var scene = cc.director.getScene();
+        var scene = getSceneSafe();
         if (!scene)
             return;
 

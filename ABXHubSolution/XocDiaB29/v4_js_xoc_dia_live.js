@@ -4524,26 +4524,115 @@
         }
         return out;
     }
+    function emitCashBetExactButton(node) {
+        var b = getComp(node, cc.Button);
+        if (!b || b.interactable === false)
+            return false;
+        try {
+            cc.Component.EventHandler.emitEvents(b.clickEvents, new cc.Event.EventCustom('click', true));
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+    function emitCashBetExactToggle(node) {
+        var t = getComp(node, cc.Toggle);
+        if (!t || t.interactable === false)
+            return false;
+        try {
+            t.isChecked = true;
+            if (t._emitToggleEvents)
+                t._emitToggleEvents();
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+    function emitCashBetExactTouch(node) {
+        if (!node)
+            return false;
+        var p = nodeWorldPos(node);
+        var ok = false;
+        try {
+            if (cc && cc.Touch && cc.Event && cc.Event.EventTouch && node.emit) {
+                var t = new cc.Touch(p.x || 0, p.y || 0);
+                var ev = new cc.Event.EventTouch([t], true);
+                ev.touch = t;
+                ev.getLocation = function () {
+                    return {
+                        x: p.x || 0,
+                        y: p.y || 0
+                    };
+                };
+                var ts = (cc.Node && cc.Node.EventType && cc.Node.EventType.TOUCH_START) ? cc.Node.EventType.TOUCH_START : 'touchstart';
+                var te = (cc.Node && cc.Node.EventType && cc.Node.EventType.TOUCH_END) ? cc.Node.EventType.TOUCH_END : 'touchend';
+                node.emit(ts, ev);
+                node.emit(te, ev);
+                ok = true;
+            }
+        } catch (_) {}
+        if (!ok && node.emit) {
+            try {
+                var ev2 = {
+                    getLocation: function () {
+                        return {
+                            x: p.x || 0,
+                            y: p.y || 0
+                        };
+                    }
+                };
+                var ts2 = (cc.Node && cc.Node.EventType && cc.Node.EventType.TOUCH_START) ? cc.Node.EventType.TOUCH_START : 'touchstart';
+                var te2 = (cc.Node && cc.Node.EventType && cc.Node.EventType.TOUCH_END) ? cc.Node.EventType.TOUCH_END : 'touchend';
+                node.emit(ts2, ev2);
+                node.emit(te2, ev2);
+                ok = true;
+            } catch (_) {}
+        }
+        if (!ok && node._touchListener) {
+            try {
+                var te3 = makeTouch(p.x || 0, p.y || 0);
+                if (node._touchListener.onTouchBegan)
+                    node._touchListener.onTouchBegan(te3.touch, te3.event);
+                if (node._touchListener.onTouchEnded)
+                    node._touchListener.onTouchEnded(te3.touch, te3.event);
+                ok = true;
+            } catch (_) {}
+        }
+        return ok;
+    }
     function fireCashBetExactCandidate(cand) {
         if (!cand || !cand.node)
             return false;
         if (cand.kind === 'button')
-            return emitClick(cand.node);
-        if (cand.kind === 'toggle') {
-            var tg = getComp(cand.node, cc.Toggle);
-            if (!tg || tg.interactable === false)
-                return false;
-            try {
-                tg.isChecked = true;
-                if (tg._emitToggleEvents)
-                    tg._emitToggleEvents();
-                return true;
-            } catch (_) {
-                return false;
-            }
-        }
+            return emitCashBetExactButton(cand.node);
+        if (cand.kind === 'toggle')
+            return emitCashBetExactToggle(cand.node);
         if (cand.kind === 'touch')
-            return emitTouchOnNode(cand.node);
+            return emitCashBetExactTouch(cand.node);
+        return false;
+    }
+    async function fireCashBetExactAllLikeProbe(info) {
+        var candidates = buildCashBetExactCandidates(info);
+        var fired = [];
+        for (var i = 0; i < candidates.length; i++) {
+            var cand = candidates[i];
+            var ok = false;
+            try {
+                ok = fireCashBetExactCandidate(cand);
+            } catch (_) {
+                ok = false;
+            }
+            if (!ok)
+                continue;
+            fired.push(cand.kind + '@' + cand.path);
+            await sleep(120);
+        }
+        if (fired.length) {
+            try {
+                console.warn('[cwFocusChip][cashbet_exact] fallback fireAll-like', fired);
+            } catch (_) {}
+            return true;
+        }
         return false;
     }
     async function tryFocusCashBetExact(info, fullMap) {
@@ -4600,7 +4689,7 @@
         try {
             console.warn('[cwFocusChip][cashbet_exact] no verified route for', amountKey || '?');
         } catch (_) {}
-        return false;
+        return await fireCashBetExactAllLikeProbe(info);
     }
     function screenRect(r) {
         if (!r)

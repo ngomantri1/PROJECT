@@ -50,10 +50,10 @@
     // TTL & key
     const now = Date.now();
     const ttlMinutes = parseInt(env.LEASE_TTL_MINUTES ?? '10', 10) || 10;            // <- KHÔNG renew
-    const trialMinutes = parseInt(env.TRIAL_MINUTES ?? '120', 10) || 120;            // 2h mặc định
+    const trialMinutes = parseInt(env.TRIAL_MINUTES ?? '30', 10) || 30;              // 30 phút mặc định mỗi ngày
     const staleSec = parseInt(env.STALE_GRACE_SECONDS ?? '180', 10) || 180;
 
-    const trialKey = identity; // trial bám theo deviceId + appId (gửi từ client)
+    const trialKey = identity; // trial bám theo deviceId + yyyyMMdd (gửi từ client)
     const K_TUSED = `trial_consumed:${tool}:${trialKey}`;
     const K_TACT  = `trial_active:${tool}:${trialKey}`;
     const K_LIC   = `license_active:${tool}:${identity}`;
@@ -84,7 +84,7 @@
       const secs = trialMinutes * 60;
       const endsAt = new Date(now + secs * 1000).toISOString();
       await put(K_TACT, { clientId, sessionId, lastSeenMs: now, endsAt }, secs);
-      await env.LEASE.put(K_TUSED, '1'); // đánh dấu đã dùng thử
+      await env.LEASE.put(K_TUSED, '1', { expirationTtl: 3 * 24 * 60 * 60 }); // đánh dấu đã dùng thử trong ngày
       return J(200, { ok: true, trial: true, trialEndsAt: endsAt });
     }
 
