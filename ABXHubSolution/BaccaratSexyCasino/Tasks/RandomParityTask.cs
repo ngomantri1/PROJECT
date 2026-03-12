@@ -14,7 +14,7 @@ namespace BaccaratSexyCasino.Tasks
         private static readonly ThreadLocal<Random> _rng =
             new(() => new Random(unchecked(Environment.TickCount * 31 + Environment.CurrentManagedThreadId)));
 
-        private static string DecideRandomSide() => (_rng.Value!.Next(2) == 0) ? "CHAN" : "LE";
+        private static string DecideRandomSide() => (_rng.Value!.Next(2) == 0) ? "BANKER" : "PLAYER";
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
@@ -78,3 +78,5 @@ namespace BaccaratSexyCasino.Tasks
         }
     }
 }
+
+

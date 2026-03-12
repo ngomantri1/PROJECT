@@ -16,13 +16,13 @@ namespace BaccaratSexyCasino.Tasks
 
         private int _roundInBlock = 0;
 
-        private static char Opp(char c) => c == 'C' ? 'L' : 'C';
-        private static string ToSide(char c) => (c == 'C') ? "CHAN" : "LE";
+        private static char Opp(char c) => c == 'B' ? 'P' : 'B';
+        private static string ToSide(char c) => (c == 'B') ? "BANKER" : "PLAYER";
 
         // Mini predictor (giống bản AiStat rút gọn: exact-match; hòa->đảo; no-match->theo cuối)
         private static char AiStatMini(string p, int kmax = 6)
         {
-            int n = p.Length; if (n <= 1) return n == 0 ? 'C' : p[^1];
+            int n = p.Length; if (n <= 1) return n == 0 ? 'B' : p[^1];
             for (int k = System.Math.Min(kmax, n - 1); k >= 1; k--)
             {
                 int c = 0, l = 0;
@@ -30,12 +30,12 @@ namespace BaccaratSexyCasino.Tasks
                     if (p.AsSpan(i, k).SequenceEqual(p.AsSpan(n - k, k)))
                     {
                         char next = p[i + k];
-                        if (next == 'C') c++; else if (next == 'L') l++;
+                        if (next == 'B') c++; else if (next == 'P') l++;
                     }
                 if (c + l > 0)
                 {
-                    if (c > l) return 'C';
-                    if (l > c) return 'L';
+                    if (c > l) return 'B';
+                    if (l > c) return 'P';
                     return Opp(p[^1]); // hòa
                 }
             }
@@ -44,7 +44,7 @@ namespace BaccaratSexyCasino.Tasks
 
         private char Decide(string parity)
         {
-            char last = parity.Length == 0 ? 'C' : parity[^1];
+            char last = parity.Length == 0 ? 'B' : parity[^1];
             int i = _roundInBlock % 10; // 0..9
 
             if (i <= 2) return last;            // 1..3
@@ -118,3 +118,5 @@ namespace BaccaratSexyCasino.Tasks
         }
     }
 }
+
+

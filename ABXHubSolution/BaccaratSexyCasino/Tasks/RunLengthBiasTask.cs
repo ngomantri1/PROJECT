@@ -17,12 +17,12 @@ namespace BaccaratSexyCasino.Tasks
 
         private const int T = 3; // ngưỡng run-length
 
-        private static char Opp(char c) => c == 'C' ? 'L' : 'C';
-        private static string ToSide(char c) => (c == 'C') ? "CHAN" : "LE";
+        private static char Opp(char c) => c == 'B' ? 'P' : 'B';
+        private static string ToSide(char c) => (c == 'B') ? "BANKER" : "PLAYER";
 
         private static char DecideNext(string parity)
         {
-            if (string.IsNullOrEmpty(parity)) return 'C';
+            if (string.IsNullOrEmpty(parity)) return 'B';
             char last = parity[^1];
             // đếm run-length của last từ cuối ngược về
             int run = 1;
@@ -91,3 +91,5 @@ namespace BaccaratSexyCasino.Tasks
         }
     }
 }
+
+

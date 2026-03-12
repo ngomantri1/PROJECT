@@ -25,8 +25,8 @@ namespace BaccaratSexyCasino.Tasks
             _lastBetSideByTab.Clear();
         }
 
-        public static string ParityCharToSide(char ch) => (ch == 'C') ? "CHAN" : "LE";
-        public static char DigitToParity(char d) => (d == 'C') ? 'C' : 'L';
+        public static string ParityCharToSide(char ch) => (ch == 'B') ? "BANKER" : "PLAYER";
+        public static char DigitToParity(char d) => (d == 'B') ? 'B' : 'P';
         // TaskUtil.cs (trong class TaskUtil)
         private static readonly object _betLock = new object();
         private static string _lastBetSeq = "";
@@ -43,7 +43,7 @@ namespace BaccaratSexyCasino.Tasks
 
         public static bool IsWin(string betSide, char lastDigit)
         {
-            var lastSide = (lastDigit == 'C') ? "CHAN" : "LE";
+            var lastSide = (lastDigit == 'B') ? "BANKER" : "PLAYER";
             return string.Equals(betSide, lastSide, StringComparison.OrdinalIgnoreCase);
         }
 
@@ -118,7 +118,7 @@ namespace BaccaratSexyCasino.Tasks
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
 
-            // C?p nh?t UI ch? khi th?c s? du?c ph?p b?n
+            // Cập nhật UI chỉ khi thực sự được phép bắn
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke(side));
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
 
@@ -142,7 +142,7 @@ namespace BaccaratSexyCasino.Tasks
                 }
             }
 
-            // G?I intent xu?ng JS queue
+            // Gửi intent xuống JS queue
             var js =
                 "(async function(){try{" +
                 " var intent = { tabId: '" + tabKey + "', roundId: " + roundId + ", side: '" + side + "', amount: " + amount + " };" +
@@ -156,12 +156,12 @@ namespace BaccaratSexyCasino.Tasks
             var rRaw = await ctx.EvalJsAsync(js);
             ctx.Log?.Invoke($"[BET-JS] tab={tabKey} round={roundId} result={rRaw}");
 
-            // Kh?ng ki?m tra th?nh c?ng/th?t b?i d? tr?nh b?n l?p; ch? d?y l?nh m?t l?n
+            // Không kiểm tra thành công/thất bại để tránh bắn lặp; chỉ đẩy lệnh một lần
             bool ok = true;
 
             if (ok)
             {
-                _lastBetOkMsByTab[tabKey] = now; // k?ch ho?t kh?a 3s
+                _lastBetOkMsByTab[tabKey] = now; // kích hoạt khóa 3s
                 _lastBetRoundByTab[tabKey] = roundId;
                 _lastBetSideByTab[tabKey] = side ?? "";
             }
@@ -189,3 +189,5 @@ namespace BaccaratSexyCasino.Tasks
         }
     }
 }
+
+

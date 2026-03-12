@@ -93,7 +93,7 @@ namespace BaccaratSexyCasino.Tasks
             return Path.Combine(dir, "ngram_adaptive_state_v2.json");
         }
 
-        private static string ToSide(char c) => c == 'C' ? "CHAN" : "LE";
+        private static string ToSide(char c) => c == 'B' ? "BANKER" : "PLAYER";
 
         // ======================== RUN LOOP ========================
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
@@ -150,11 +150,11 @@ namespace BaccaratSexyCasino.Tasks
                 char finalPick;
                 if (undecidable)
                 {
-                    finalPick = _rng.NextDouble() < 0.5 ? 'C' : 'L';
+                    finalPick = _rng.NextDouble() < 0.5 ? 'B' : 'P';
                 }
                 else
                 {
-                    finalPick = (score >= 0) ? 'C' : 'L';
+                    finalPick = (score >= 0) ? 'B' : 'P';
                 }
 
                 string side = ToSide(finalPick);
@@ -476,7 +476,7 @@ namespace BaccaratSexyCasino.Tasks
                     var tab = _tables[k];
                     if (!tab.TryGetValue(key, out var cnt)) cnt = (0, 0);
 
-                    if (actual == 'C') cnt.c += 1.0; else cnt.l += 1.0;
+                    if (actual == 'B') cnt.c += 1.0; else cnt.l += 1.0;
 
                     double total = cnt.c + cnt.l;
                     if (total >= _rescaleThreshold) { cnt.c *= 0.5; cnt.l *= 0.5; }
@@ -559,7 +559,7 @@ namespace BaccaratSexyCasino.Tasks
             {
                 int bits = 0, n = parity.Length;
                 for (int i = Math.Max(0, n - k); i < n; i++)
-                    bits = (bits << 1) | (parity[i] == 'L' ? 1 : 0); // C=0, L=1
+                    bits = (bits << 1) | (parity[i] == 'P' ? 1 : 0); // C=0, L=1
                 return bits;
             }
         }
@@ -722,3 +722,5 @@ namespace BaccaratSexyCasino.Tasks
         }
     }
 }
+
+

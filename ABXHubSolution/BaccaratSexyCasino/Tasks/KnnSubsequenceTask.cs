@@ -20,8 +20,8 @@ namespace BaccaratSexyCasino.Tasks
         private const int KMax = 6;
         private const int KMin = 3;
 
-        private static char Opp(char c) => (c == 'C') ? 'L' : 'C';
-        private static string ToSide(char c) => (c == 'C') ? "CHAN" : "LE";
+        private static char Opp(char c) => (c == 'B') ? 'P' : 'B';
+        private static string ToSide(char c) => (c == 'B') ? "BANKER" : "PLAYER";
 
         private static int Hamming(ReadOnlySpan<char> a, ReadOnlySpan<char> b)
         {
@@ -33,7 +33,7 @@ namespace BaccaratSexyCasino.Tasks
         private static char Decide(string p)
         {
             int n = p.Length;
-            if (n <= 1) return (n == 0) ? 'C' : p[^1];
+            if (n <= 1) return (n == 0) ? 'B' : p[^1];
 
             for (int k = Math.Min(KMax, n - 1); k >= KMin; k--)
             {
@@ -48,14 +48,14 @@ namespace BaccaratSexyCasino.Tasks
                     {
                         char next = p[i + k];
                         int w = (d == 0) ? 2 : 1;
-                        if (next == 'C') scoreC += w; else if (next == 'L') scoreL += w;
+                        if (next == 'B') scoreC += w; else if (next == 'P') scoreL += w;
                     }
                 }
 
                 if (scoreC + scoreL > 0)
                 {
-                    if (scoreC > scoreL) return 'C';
-                    if (scoreL > scoreC) return 'L';
+                    if (scoreC > scoreL) return 'B';
+                    if (scoreL > scoreC) return 'P';
                     return Opp(p[^1]); // hòa
                 }
             }
@@ -124,3 +124,5 @@ namespace BaccaratSexyCasino.Tasks
         }
     }
 }
+
+

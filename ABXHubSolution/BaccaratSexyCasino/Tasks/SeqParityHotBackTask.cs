@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,7 +8,7 @@ namespace BaccaratSexyCasino.Tasks
 {
     public sealed class SeqParityHotBackTask : IBetTask
     {
-        public string DisplayName => "18) Chuỗi cầu C/L hay về";
+        public string DisplayName => "17) Chuỗi cầu B/P hay về";
         public string Id => "seq-cl-hotback";
 
         private const int PatternLen = 5;
@@ -17,7 +17,7 @@ namespace BaccaratSexyCasino.Tasks
         private static readonly ThreadLocal<Random> _rng =
             new(() => new Random(unchecked(Environment.TickCount * 31 + Environment.CurrentManagedThreadId)));
 
-        private static string DecideRandomSide() => (_rng.Value!.Next(2) == 0) ? "CHAN" : "LE";
+        private static string DecideRandomSide() => (_rng.Value!.Next(2) == 0) ? "BANKER" : "PLAYER";
 
         private static string FilterSeqCL(string seq)
         {
@@ -27,7 +27,7 @@ namespace BaccaratSexyCasino.Tasks
             foreach (var ch in seq)
             {
                 char u = char.ToUpperInvariant(ch);
-                if (u == 'C' || u == 'L') buf[n++] = u;
+                if (u == 'B' || u == 'P') buf[n++] = u;
             }
             return n == 0 ? string.Empty : new string(buf, 0, n);
         }
@@ -46,7 +46,7 @@ namespace BaccaratSexyCasino.Tasks
             var arr = s.ToCharArray();
             for (int i = 0; i < arr.Length; i++)
             {
-                arr[i] = arr[i] == 'C' ? 'L' : 'C';
+                arr[i] = arr[i] == 'B' ? 'P' : 'B';
             }
             return new string(arr);
         }
@@ -56,7 +56,7 @@ namespace BaccaratSexyCasino.Tasks
             if (string.IsNullOrEmpty(pattern)) return string.Empty;
             var parts = new string[pattern.Length];
             for (int i = 0; i < pattern.Length; i++)
-                parts[i] = (pattern[i] == 'C') ? "CHAN" : "LE";
+                parts[i] = (pattern[i] == 'B') ? "BANKER" : "PLAYER";
             return string.Join("-", parts);
         }
 
@@ -69,7 +69,7 @@ namespace BaccaratSexyCasino.Tasks
                 for (int b = 0; b < PatternLen; b++)
                 {
                     int bit = (i >> (PatternLen - 1 - b)) & 1;
-                    p[b] = (bit == 0) ? 'C' : 'L';
+                    p[b] = (bit == 0) ? 'B' : 'P';
                 }
                 set[new string(p)] = 0;
             }
@@ -287,3 +287,5 @@ namespace BaccaratSexyCasino.Tasks
         }
     }
 }
+
+

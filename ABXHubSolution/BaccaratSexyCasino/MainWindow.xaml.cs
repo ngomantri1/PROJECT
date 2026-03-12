@@ -44,10 +44,10 @@ namespace BaccaratSexyCasino
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Resources (pack URI).
     internal static class FallbackIcons
     {
-        private const string SideChanPng = "Assets/side/CHAN.png";
-        private const string SideLePng = "Assets/side/LE.png";
-        private const string ResultChanPng = "Assets/side/CHAN.png";
-        private const string ResultLePng = "Assets/side/LE.png";
+        private const string SideBankerPng = "Assets/side/BANKER.png";
+        private const string SidePlayerPng = "Assets/side/PLAYER.png";
+        private const string ResultBankerPng = "Assets/side/BANKER.png";
+        private const string ResultPlayerPng = "Assets/side/PLAYER.png";
         private const string WinPng = "Assets/kq/THANG.png";
         private const string LossPng = "Assets/kq/THUA.png";
         private const string TuTrangPng = "Assets/side/TU_TRANG.png";
@@ -59,10 +59,10 @@ namespace BaccaratSexyCasino
         private static ImageSource? _sideChan, _sideLe, _resultChan, _resultLe, _win, _loss;
         private static ImageSource? _tuTrang, _tuDo, _sapDoi, _trang3Do1, _do3Trang1;
 
-        public static ImageSource? GetSideChan() => SharedIcons.SideChan ?? (_sideChan ??= Load(SideChanPng));
-        public static ImageSource? GetSideLe() => SharedIcons.SideLe ?? (_sideLe ??= Load(SideLePng));
-        public static ImageSource? GetResultChan() => SharedIcons.ResultChan ?? (_resultChan ??= Load(ResultChanPng));
-        public static ImageSource? GetResultLe() => SharedIcons.ResultLe ?? (_resultLe ??= Load(ResultLePng));
+        public static ImageSource? GetSideBanker() => SharedIcons.SideBanker ?? (_sideChan ??= Load(SideBankerPng));
+        public static ImageSource? GetSidePlayer() => SharedIcons.SidePlayer ?? (_sideLe ??= Load(SidePlayerPng));
+        public static ImageSource? GetResultBanker() => SharedIcons.ResultBanker ?? (_resultChan ??= Load(ResultBankerPng));
+        public static ImageSource? GetResultPlayer() => SharedIcons.ResultPlayer ?? (_resultLe ??= Load(ResultPlayerPng));
         public static ImageSource? GetWin() => SharedIcons.Win ?? (_win ??= Load(WinPng));
         public static ImageSource? GetLoss() => SharedIcons.Loss ?? (_loss ??= Load(LossPng));
         public static ImageSource? GetTuTrang() => SharedIcons.TuTrang ?? (_tuTrang ??= Load(TuTrangPng));
@@ -153,14 +153,8 @@ namespace BaccaratSexyCasino
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
             var u = TextNorm.U(value?.ToString() ?? "");
-            var compact = u.Replace(" ", "").Replace("_", "").Replace("-", "");
-            if (u == "CHAN" || u == "C") return FallbackIcons.GetSideChan();
-            if (u == "LE" || u == "L") return FallbackIcons.GetSideLe();
-            if (u == "TU_TRANG") return FallbackIcons.GetTuTrang();
-            if (u == "TU_DO") return FallbackIcons.GetTuDo();
-            if (u == "SAP_DOI" || u == "SAPDOI" || compact == "SAPDOI" || u == "2D2T") return FallbackIcons.GetSapDoi();
-            if (u == "TRANG3_DO1" || compact == "TRANG3DO1" || compact == "1DO3TRANG") return FallbackIcons.GetTrang3Do1();
-            if (u == "DO3_TRANG1" || compact == "DO3TRANG1" || compact == "1TRANG3DO") return FallbackIcons.GetDo3Trang1();
+            if (u == "BANKER" || u == "B") return FallbackIcons.GetSideBanker();
+            if (u == "PLAYER" || u == "P") return FallbackIcons.GetSidePlayer();
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -203,28 +197,24 @@ namespace BaccaratSexyCasino
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
             var u = TextNorm.U(value?.ToString() ?? "");
-            var compact = u.Replace(" ", "").Replace("_", "").Replace("-", "");
-            if (u == "CHAN" || u == "C") return FallbackIcons.GetResultChan();
-            if (u == "LE" || u == "L") return FallbackIcons.GetResultLe();
-            if (u == "TU_TRANG") return FallbackIcons.GetTuTrang();
-            if (u == "TU_DO") return FallbackIcons.GetTuDo();
-            if (u == "SAP_DOI" || u == "SAPDOI" || compact == "SAPDOI" || u == "2D2T") return FallbackIcons.GetSapDoi();
-            if (u == "TRANG3_DO1" || compact == "TRANG3DO1" || compact == "1DO3TRANG") return FallbackIcons.GetTrang3Do1();
-            if (u == "DO3_TRANG1" || compact == "DO3TRANG1" || compact == "1TRANG3DO") return FallbackIcons.GetDo3Trang1();
+            if (u == "BANKER" || u == "B") return FallbackIcons.GetResultBanker();
+            if (u == "PLAYER" || u == "P") return FallbackIcons.GetResultPlayer();
 
             char digit = '\0';
             if (u.Length == 1 && char.IsDigit(u[0])) digit = u[0];
             else if (u.StartsWith("BALL", StringComparison.OrdinalIgnoreCase) && u.Length >= 5)
             {
                 var cBall = u[4];
-                if (cBall == 'C') return FallbackIcons.GetSideChan();
-                if (cBall == 'L') return FallbackIcons.GetSideLe();
+                if (cBall == 'B') return FallbackIcons.GetSideBanker();
+                if (cBall == 'P') return FallbackIcons.GetSidePlayer();
                 if (char.IsDigit(cBall)) digit = cBall;
             }
 
             if (digit >= '0' && digit <= '4')
             {
-                return LoadBall(digit);
+                return (digit == '1' || digit == '3')
+                    ? FallbackIcons.GetResultPlayer()
+                    : FallbackIcons.GetResultBanker();
             }
 
             return null;
@@ -354,9 +344,9 @@ namespace BaccaratSexyCasino
         private const int NiSeqMax = 50;
         private readonly System.Text.StringBuilder _niSeq = new(NiSeqMax);
 
-        // Tổng C/L của ván đang diễn ra (để dùng khi ván vừa khép lại)
-        private long _roundTotalsC = 0;
-        private long _roundTotalsL = 0;
+        // Tổng B/P của ván đang diễn ra (để dùng khi ván vừa khép lại)
+        private long _roundTotalsB = 0;
+        private long _roundTotalsP = 0;
         private int _lastSeqLenNi = 0;
         private bool _lockMajorMinorUpdates = false;
         private string _baseSeq = "";
@@ -460,19 +450,19 @@ namespace BaccaratSexyCasino
 
         // ===================== TOOLTIP TEXTS =====================
         const string TIP_SEQ_CL =
-        @"Chuỗi CẦU (C/L) — Chiến lược 1
-• Ý nghĩa: C = CHẴN, L = LẺ (không phân biệt hoa/thường).
-• Cú pháp: chỉ gồm ký tự C hoặc L; ký tự khác không hợp lệ.
+        @"Chuỗi CẦU (B/P) — Chiến lược 1
+• Ý nghĩa: B = BANKER, P = PLAYER (không phân biệt hoa/thường).
+• Cú pháp: chỉ gồm ký tự B hoặc P; ký tự khác không hợp lệ.
 • Khoảng trắng/tab/xuống dòng: được phép; hệ thống tự bỏ qua.
 • Thứ tự đọc: từ trái sang phải; hết chuỗi sẽ lặp lại từ đầu.
 • Độ dài khuyến nghị: 2–50 ký tự.
 Ví dụ hợp lệ:
-  - CLLC
-  - C L L C
+  - BPPB
+  - B P P B
 Ví dụ không hợp lệ:
-  - C,X,L     (có dấu phẩy)
-  - CL1C      (có số)
-  - C L _ C   (ký tự ngoài C/L).";
+  - B,X,P     (có dấu phẩy)
+  - BP1B      (có số)
+  - B P _ B   (ký tự ngoài B/P).";
 
         const string TIP_SEQ_NI =
         @"Chuỗi CẦU (Ít/Nhiều) — Chiến lược 3
@@ -490,23 +480,23 @@ Ví dụ không hợp lệ:
   - I _ N I   (ký tự ngoài I/N).";
 
         const string TIP_THE_CL =
-        @"Thế CẦU (C/L) — Chiến lược 2
-• Ý nghĩa: C = CHẴN, L = LẺ (không phân biệt hoa/thường).
+        @"Thế CẦU (B/P) — Chiến lược 2
+• Ý nghĩa: B = BANKER, P = PLAYER (không phân biệt hoa/thường).
 • Một quy tắc (mỗi dòng): <mẫu_quá_khứ> -> <cửa_kế_tiếp>  (hoặc dùng dấu - thay cho ->).
 • Phân tách nhiều quy tắc: bằng dấu ',', ';', '|', hoặc xuống dòng.
 • Khoảng trắng: được phép quanh ký hiệu và giữa các quy tắc; 
   Cho phép khoảng trắng BÊN TRONG <cửa_kế_tiếp>.
 • So khớp: xét K kết quả gần nhất với K = độ dài <mẫu_quá_khứ>; nếu khớp thì đặt theo <cửa_kế_tiếp>.
-• <cửa_kế_tiếp>: có thể là 1 ký tự (C/L) hoặc một chuỗi C/L (ví dụ: CLL).
+• <cửa_kế_tiếp>: có thể là 1 ký tự (B/P) hoặc một chuỗi B/P (ví dụ: BPP).
 • Độ dài khuyến nghị cho <mẫu_quá_khứ>: 1–10 ký tự.
 Ví dụ hợp lệ:
-  CCL -> C
-  LLL -> L C
-  CL  -> CLL
+  BBP -> B
+  PPP -> P B
+  BP  -> BPP
 Ví dụ không hợp lệ:
-  C, X, L -> C
-  CL -> C L
-  CL -> C1";
+  B, X, P -> B
+  BP -> B P
+  BP -> B1";
 
 
         const string TIP_THE_NI =
@@ -575,19 +565,9 @@ Ví dụ không hợp lệ:
 • Ví dụ: 15 = đặt khi còn ~15% thời gian phiên.";
 
         const string TIP_SIDE_RATIO =
-        @"CỬA ĐẶT & TỈ LỆ (Chiến lược 17)
-- Nhập mỗi dòng: <cửa>:<tỉ lệ>, không được để trống.
-- Cửa hợp lệ: 4DO, 4TRANG, 1TRANG3DO, 1DO3TRANG, 2DO2TRANG, CHAN, LE (chấp nhận viết tắt 1T3D/1D3T/SAPDOI/4R/4W giống normalizeSide).
-- Không dùng ký tự ';' hoặc dấu cách trong tên cửa; chỉ cho phép khoảng trắng quanh dấu ':'.
-- Dãy mặc định đầy đủ:
-  4DO:1
-  4TRANG:1
-  1TRANG3DO:3
-  1DO3TRANG:3
-  2DO2TRANG:5
-  CHAN:6
-  LE:6
-- Có thể nhập một phần danh sách (ví dụ chỉ 4DO/4TRANG hoặc SAPDOI/CHAN/LE).";
+        @"CỬA ĐẶT & TỈ LỆ
+- Logic nhiều cửa đã bị loại bỏ khỏi BaccaratSexyCasino.
+- Trường này chỉ còn để tương thích cấu hình cũ và hiện không dùng trong Baccarat.";
         // =========================================================
 
 
@@ -627,11 +607,11 @@ Ví dụ không hợp lệ:
             public bool S7ResetOnProfit { get; set; } = true;
             public double CutProfit { get; set; } = 0; // 0 = tắt cắt lãi
             public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
-            public string BetSeqCL { get; set; } = "";        // cho Chiến lược 1
+            public string BetSeqBP { get; set; } = "";        // cho Chiến lược 1
             public string BetSeqNI { get; set; } = "";        // cho Chiến lược 3
-            public string BetPatternsCL { get; set; } = "";   // cho Chiến lược 2
+            public string BetPatternsBP { get; set; } = "";   // cho Chiến lược 2
             public string BetPatternsNI { get; set; } = "";   // cho Chiến lược 4
-            public string SideRateText { get; set; } = BaccaratSexyCasino.Tasks.SideRateParser.DefaultText;
+            public string SideRateText { get; set; } = "";
 
             // Lưu chuỗi tiền theo từng MoneyStrategy
             public Dictionary<string, string> StakeCsvByMoney { get; set; } = new();
@@ -746,7 +726,7 @@ Ví dụ không hợp lệ:
             public DateTime At { get; set; }                 // Thời gian đặt
             public string Game { get; set; } = "Xóc đĩa live";
             public long Stake { get; set; }                  // Tiền cược
-            public string Side { get; set; } = "";           // CHAN/LE
+            public string Side { get; set; } = "";           // BANKER/PLAYER
             public string Result { get; set; } = "";         // Kết quả "CHAN"/"LE"
             public string WinLose { get; set; } = "";        // "Thắng"/"Thua"
             public long Account { get; set; }                // Số dư sau ván
@@ -754,8 +734,8 @@ Ví dụ không hợp lệ:
 
         public static class SharedIcons
         {
-            public static ImageSource? SideChan, SideLe;        // ảnh “Cửa đặt” CHẴN/LẺ
-            public static ImageSource? ResultChan, ResultLe;    // ảnh “Kết quả” CHẴN/LẺ
+            public static ImageSource? SideBanker, SidePlayer;        // ảnh “Cửa đặt” CHẴN/LẺ
+            public static ImageSource? ResultBanker, ResultPlayer;    // ảnh “Kết quả” CHẴN/LẺ
             public static ImageSource? Win, Loss;               // ảnh “Thắng/Thua”
             public static ImageSource? TuTrang, TuDo, SapDoi, Trang3Do1, Do3Trang1;
         }
@@ -1506,9 +1486,7 @@ Ví dụ không hợp lệ:
 
                 if (TxtSideRatio != null)
                 {
-                    var sideTxt = string.IsNullOrWhiteSpace(_cfg.SideRateText)
-                        ? BaccaratSexyCasino.Tasks.SideRateParser.DefaultText
-                        : _cfg.SideRateText;
+                    var sideTxt = _cfg.SideRateText ?? "";
                     TxtSideRatio.Text = sideTxt;
                     _cfg.SideRateText = sideTxt;
                 }
@@ -1634,10 +1612,7 @@ Ví dụ không hợp lệ:
             return _strategyTabs.Any(t => t.IsRunning);
         }
 
-        private bool HasJackpotMultiSideRunning()
-        {
-            return _strategyTabs.Any(t => t.IsRunning && t.ActiveTask is BaccaratSexyCasino.Tasks.JackpotMultiSideTask);
-        }
+        private bool HasJackpotMultiSideRunning() => false;
 
         private bool IsActiveTabRunning()
         {
@@ -2110,21 +2085,21 @@ Ví dụ không hợp lệ:
                                                 !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
                                             {
                                                 char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
-                                                bool winIsChan = (tail == 'C');
+                                                bool winIsBanker = (tail == 'B');
 
-                                                long prevC = _roundTotalsC, prevL = _roundTotalsL;
-                                                // Ni: nếu cửa THẮNG là cửa có tổng tiền lớn hơn trong ván đó => 'N', ngược lại 'I'
-                                                char ni = winIsChan ? ((prevC >= prevL) ? 'N' : 'I')
-                                                                    : ((prevL >= prevC) ? 'N' : 'I');
+                                                long prevB = _roundTotalsB, prevP = _roundTotalsP;
+                                                // Ni: nếu cửa thắng là cửa có tổng tiền lớn hơn trong ván đó => 'N', ngược lại 'I'
+                                                char ni = winIsBanker ? ((prevB >= prevP) ? 'N' : 'I')
+                                                                      : ((prevP >= prevB) ? 'N' : 'I');
 
                                                 _niSeq.Append(ni);
                                                 if (_niSeq.Length > NiSeqMax)
                                                     _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
 
-                                                Log($"[NI] add={ni} | seq={_niSeq} | tail={tail} | C={prevC} | L={prevL}");
+                                                Log($"[NI] add={ni} | seq={_niSeq} | tail={tail} | B={prevB} | P={prevP}");
 
                                                 // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
-                                                var kqStr = winIsChan ? "CHAN" : "LE";
+                                                var kqStr = winIsBanker ? "BANKER" : "PLAYER";
                                                 long? accNow2 = snap?.totals?.A;
                                                 if (_pendingRows.Count > 0 && accNow2.HasValue)
                                                 {
@@ -2144,9 +2119,9 @@ Ví dụ không hợp lệ:
                                                 if (progNow == 0)
                                                 {
                                                     _baseSeq = seqStr;
-                                                    _roundTotalsC = snap.totals?.C ?? 0;
-                                                    _roundTotalsL = snap.totals?.L ?? 0;
-                                                    if (_roundTotalsC != 0 && _roundTotalsL != 0)
+                                                    _roundTotalsB = snap.totals?.B ?? 0;
+                                                    _roundTotalsP = snap.totals?.P ?? 0;
+                                                    if (_roundTotalsB != 0 && _roundTotalsP != 0)
                                                         _lockMajorMinorUpdates = true;
                                                 }
                                             }
@@ -3189,13 +3164,13 @@ Ví dụ không hợp lệ:
             // ==== BẮT ĐẦU: Tooltip cho chiến lược đặt cược ====
             string tip = idx switch
             {
-                0 => "1) Chuỗi C/L tự nhập: So khớp chuỗi C/L cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
-                1 => "2) Thế cầu C/L tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
+                0 => "1) Chuỗi B/P tự nhập: So khớp chuỗi B/P cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
+                1 => "2) Thế cầu B/P tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
                 2 => "3) Chuỗi I/N: So khớp dãy Ít/Nhiều (I/N) cấu hình thủ công; khớp thì đặt theo chỉ định; không khớp dùng logic mặc định.",
                 3 => "4) Thế cầu I/N: Ánh xạ mẫu I/N → cửa kế tiếp; ưu tiên mẫu dài; cho phép nhiều luật trong cùng danh sách.",
                 4 => "5) Theo cầu trước (thông minh): Dựa vào ván gần nhất và heuristics nội bộ; đánh liên tục; quản lý vốn theo chuỗi tiền, cut_profit/cut_loss.",
-                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn CHẴN/LẺ ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
-                6 => "7) Bám cầu C/L (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất C/L sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
+                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn BANKER/PLAYER ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
+                6 => "7) Bám cầu B/P (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất B/P sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
                 7 => "8) Xu hướng chuyển trạng thái: Thống kê 6 chuyển gần nhất giữa các ván ('lặp' vs 'đảo'); nếu 'đảo' nhiều hơn → đánh ngược ván cuối; ngược lại → theo ván cuối; đánh liên tục.",
                 8 => "9) Run-length (dài chuỗi): Tính độ dài chuỗi ký tự cuối; nếu run ≥ T (mặc định T=3) → đảo để mean-revert; nếu run ngắn → theo đà (momentum); đánh liên tục.",
                 9 => "10) Chuyên gia bỏ phiếu: Kết hợp 5 chuyên gia (theo-last, đảo-last, run-length, transition, AI-stat); chọn phía đa số; hòa → đảo; đánh liên tục để phủ nhiều kịch bản.",
@@ -3204,9 +3179,9 @@ Ví dụ không hợp lệ:
                 12 => "13) Lịch hai lớp: Lịch pha trộn 10 bước (1–3 theo-last, 4 đảo, 5–7 AI-stat, 8 đảo, 9 theo, 10 AI-stat); lặp lại; cân bằng giữa momentum/mean-revert/thống kê; đánh liên tục.",
                 13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
                 14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
-                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 C/L). Khởi tạo thống kê từ 50 kết quả đầu vào (C/L). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
-                16 => "17) Đánh các cửa ăn nổ hũ: Đọc cấu hình \"Cửa đặt & tỉ lệ\", nhân tỉ lệ với mức tiền hiện tại để đặt tối đa 7 cửa (CHAN/LE/SAPDOI/1TRANG3DO/1DO3TRANG/4DO/4TRANG); thắng nếu bất kỳ cửa nào trúng theo chuỗi kết quả 0/1/2/3/4.",
-                17 => "18) Chuỗi cầu C/L hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
+                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 B/P). Khởi tạo thống kê từ 50 kết quả đầu vào (B/P). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 'mới về'. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm >= hiện tại.",
+                16 => "17) Logic nhiều cửa đã bị loại bỏ khỏi BaccaratSexyCasino.",
+                17 => "18) Chuỗi cầu B/P hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
                 _ => "Chiến lược chưa xác định."
             };
 
@@ -3228,13 +3203,13 @@ Ví dụ không hợp lệ:
         {
             return idx switch
             {
-                0 => "1) Chuỗi C/L tự nhập: So khớp chuỗi C/L cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
-                1 => "2) Thế cầu C/L tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
+                0 => "1) Chuỗi B/P tự nhập: So khớp chuỗi B/P cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
+                1 => "2) Thế cầu B/P tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
                 2 => "3) Chuỗi I/N: So khớp dãy Ít/Nhiều (I/N) cấu hình thủ công; khớp thì đặt theo chỉ định; không khớp dùng logic mặc định.",
                 3 => "4) Thế cầu I/N: Ánh xạ mẫu I/N → cửa kế tiếp; ưu tiên mẫu dài; cho phép nhiều luật trong cùng danh sách.",
                 4 => "5) Theo cầu trước (thông minh): Dựa vào ván gần nhất và heuristics nội bộ; đánh liên tục; quản lý vốn theo chuỗi tiền, cut_profit/cut_loss.",
-                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn CHẴN/LẺ ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
-                6 => "7) Bám cầu C/L (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất C/L sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
+                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn BANKER/PLAYER ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
+                6 => "7) Bám cầu B/P (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất B/P sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
                 7 => "8) Xu hướng chuyển trạng thái: Thống kê 6 chuyển gần nhất giữa các ván ('lặp' vs 'đảo'); nếu 'đảo' nhiều hơn → đánh ngược ván cuối; ngược lại → theo ván cuối; đánh liên tục.",
                 8 => "9) Run-length (dài chuỗi): Tính độ dài chuỗi ký tự cuối; nếu run ≥ T (mặc định T=3) → đảo để mean-revert; nếu run ngắn → theo đà (momentum); đánh liên tục.",
                 9 => "10) Chuyên gia bỏ phiếu: Kết hợp 5 chuyên gia (theo-last, đảo-last, run-length, transition, AI-stat); chọn phía đa số; hòa → đảo; đánh liên tục để phủ nhiều kịch bản.",
@@ -3243,9 +3218,9 @@ Ví dụ không hợp lệ:
                 12 => "13) Lịch hai lớp: Lịch pha trộn 10 bước (1–3 theo-last, 4 đảo, 5–7 AI-stat, 8 đảo, 9 theo, 10 AI-stat); lặp lại; cân bằng giữa momentum/mean-revert/thống kê; đánh liên tục.",
                 13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
                 14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
-                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 C/L). Khởi tạo thống kê từ 50 kết quả đầu vào (C/L). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
-                16 => "17) Đánh các cửa ăn nổ hũ: Đọc cấu hình \"Cửa đặt & tỉ lệ\", nhân tỉ lệ với mức tiền hiện tại để đặt tối đa 7 cửa (CHAN/LE/SAPDOI/1TRANG3DO/1DO3TRANG/4DO/4TRANG); thắng nếu bất kỳ cửa nào trúng theo chuỗi kết quả 0/1/2/3/4.",
-                17 => "18) Chuỗi cầu C/L hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
+                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 B/P). Khởi tạo thống kê từ 50 kết quả đầu vào (B/P). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 'mới về'. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm >= hiện tại.",
+                16 => "17) Logic nhiều cửa đã bị loại bỏ khỏi BaccaratSexyCasino.",
+                17 => "18) Chuỗi cầu B/P hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
                 _ => "Chiến lược chưa xác định."
             };
         }
@@ -4357,7 +4332,7 @@ Ví dụ không hợp lệ:
                             continue;
                         }
 
-                        // JS: phát hiện “cần login” (nút Đăng nhập visible hoặc ô user/pass visible trong bất kỳ iframe nào)
+                        // JS: phát hiện "cần login" (nút Đăng nhập visible hoặc ô user/pass visible trong bất kỳ iframe nào)
                         string needJs =
         @"(function(){
   const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}};
@@ -4749,7 +4724,7 @@ Ví dụ không hợp lệ:
             // nếu user chỉ nhập 1 dòng như cũ thì _stakeChains sẽ chỉ có 1 phần tử
             _stakeSeq = flat.Count > 0 ? flat.ToArray() : new long[] { 1000 };
 
-            // tính tổng từng chuỗi để dùng cho điều kiện “chuỗi sau thắng >= tổng chuỗi trước”
+            // tính tổng từng chuỗi để dùng cho điều kiện "chuỗi sau thắng >= tổng chuỗi trước"
             _stakeChainTotals = _stakeChains
                 .Select(ch => ch.Aggregate(0L, (s, x) => s + x))
                 .ToArray();
@@ -4797,11 +4772,10 @@ Ví dụ không hợp lệ:
 
         private async void BtnResetSideRatio_Click(object sender, RoutedEventArgs e)
         {
-            var def = BaccaratSexyCasino.Tasks.SideRateParser.DefaultText;
             if (TxtSideRatio != null)
-                TxtSideRatio.Text = def;
+                TxtSideRatio.Text = "";
 
-            _cfg.SideRateText = def;
+            _cfg.SideRateText = "";
             await SaveConfigAsync();
             ShowErrorsForCurrentStrategy();
         }
@@ -4816,7 +4790,7 @@ Ví dụ không hợp lệ:
                 if (RowTheCau != null)
                     RowTheCau.Visibility = (idx == 1 || idx == 3) ? Visibility.Visible : Visibility.Collapsed;   // 2 hoặc 4
                 if (RowSideRatio != null)
-                    RowSideRatio.Visibility = (idx == 16) ? Visibility.Visible : Visibility.Collapsed;
+                    RowSideRatio.Visibility = Visibility.Collapsed;
             }
             catch { }
         }
@@ -4872,7 +4846,7 @@ Ví dụ không hợp lệ:
 
                 MoneyStrategyId = moneyStrategyId,
 
-                SideRateText = cfg.SideRateText ?? BaccaratSexyCasino.Tasks.SideRateParser.DefaultText,
+                SideRateText = cfg.SideRateText ?? "",
                 UseRawWinAmount = useRawWinAmount,
                 BetSeq = cfg.BetSeq ?? "",
                 BetPatterns = cfg.BetPatterns ?? "",
@@ -5009,9 +4983,9 @@ Ví dụ không hợp lệ:
                 activeTab.LastWinLoss = null;
                 activeTab.LastStakeAmount = null;
                 activeTab.LastLevelText = "";
-                _winTotal = 0;            // tu? b?n: n?u mu?n d?m l?i t? 0 khi b?t d?u
+                _winTotal = 0;            // tùy bạn: nếu muốn đếm lại từ 0 khi bắt đầu
                 if (LblWin != null) LblWin.Text = "0";
-                ResetBetMiniPanel();    // xo? TH?NG/THUA, C?A D?T, TI?N CU?C, M?C TI?N
+                ResetBetMiniPanel();    // xóa THẮNG/THUA, CỬA ĐẶT, TIỀN CƯỢC, MỨC TIỀN
                 if (CheckLicense && (!_licenseVerified || _runExpiresAt == null || _runExpiresAt <= DateTimeOffset.Now))
                 {
                     if (!await EnsureLicenseAsync())
@@ -5080,8 +5054,8 @@ Ví dụ không hợp lệ:
                 _dec = new DecisionState();
                 _cooldown = false;
                 int __idx = CmbBetStrategy?.SelectedIndex ?? 4;
-                _cfg.BetSeq = (__idx == 0) ? (_cfg.BetSeqCL ?? "") : (__idx == 2 ? (_cfg.BetSeqNI ?? "") : "");
-                _cfg.BetPatterns = (__idx == 1) ? (_cfg.BetPatternsCL ?? "") : (__idx == 3 ? (_cfg.BetPatternsNI ?? "") : "");
+                _cfg.BetSeq = (__idx == 0) ? (_cfg.BetSeqBP ?? "") : (__idx == 2 ? (_cfg.BetSeqNI ?? "") : "");
+                _cfg.BetPatterns = (__idx == 1) ? (_cfg.BetPatternsBP ?? "") : (__idx == 3 ? (_cfg.BetPatternsNI ?? "") : "");
 
 
                 // === Khởi động task theo lựa chọn CHIẾN LƯỢC ===
@@ -5106,12 +5080,9 @@ Ví dụ không hợp lệ:
                     13 => new BaccaratSexyCasino.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
                     14 => new BaccaratSexyCasino.Tasks.AiExpertPanelTask(), // 15
                     15 => new BaccaratSexyCasino.Tasks.Top10PatternFollowTask(), // 16
-                    16 => new BaccaratSexyCasino.Tasks.JackpotMultiSideTask(), // 17
-                    17 => new BaccaratSexyCasino.Tasks.SeqParityHotBackTask(), // 18
+                    16 => new BaccaratSexyCasino.Tasks.SeqParityHotBackTask(), // 17
                     _ => new BaccaratSexyCasino.Tasks.SmartPrevTask(),
                 };
-
-                if (_cfg.BetStrategyIndex == 16) useRawWinAmount = true;
 
                 activeTab.ActiveTask = task;
 
@@ -5148,7 +5119,7 @@ Ví dụ không hợp lệ:
             catch (Exception ex)
             {
                 Log("[PlayXocDia_Click] " + ex);
-                // n?u l?i tru?c khi start, tr? l?i n?t
+                // nếu lỗi trước khi start, trả lại nút
                 if (activeTab == null)
                 {
                     if (BtnPlay != null) BtnPlay.IsEnabled = true;
@@ -5406,15 +5377,15 @@ Ví dụ không hợp lệ:
             string asm = GetType().Assembly.GetName().Name!;
 
             // mỗi cái cho 2-3 đường dẫn để chạy được cả khi làm plugin và khi chạy độc lập
-            _seqIconMap['L'] = FallbackIcons.LoadPackImage("Assets/Seq/L.png") ?? LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/L.png",
-                "pack://application:,,,/Assets/Seq/L.png",
-                "pack://application:,/Assets/Seq/L.png"
+            _seqIconMap['P'] = FallbackIcons.LoadPackImage("Assets/Seq/P.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/P.png",
+                "pack://application:,,,/Assets/Seq/P.png",
+                "pack://application:,/Assets/Seq/P.png"
             );
-            _seqIconMap['C'] = FallbackIcons.LoadPackImage("Assets/Seq/C.png") ?? LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/Seq/C.png",
-                "pack://application:,,,/Assets/Seq/C.png",
-                "pack://application:,/Assets/Seq/C.png"
+            _seqIconMap['B'] = FallbackIcons.LoadPackImage("Assets/Seq/B.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/B.png",
+                "pack://application:,,,/Assets/Seq/B.png",
+                "pack://application:,/Assets/Seq/B.png"
             );
         }
 
@@ -5441,23 +5412,14 @@ Ví dụ không hợp lệ:
 
         private void SetLastResultUI(string? result)
         {
-            // Chuẩn hoá & chấp nhận cả tail số '0'..'4'
-            string sRaw = result ?? string.Empty;
-            string s = sRaw.Trim().ToUpperInvariant();
+            string s = TextNorm.U(result ?? string.Empty);
+            bool isBanker = (s == "BANKER" || s == "B");
+            bool isPlayer = (s == "PLAYER" || s == "P");
 
-            bool isChan = false, isLe = false;
-
-            if (s.Length == 1 && char.IsDigit(s[0]))
+            if (!isBanker && !isPlayer && s.Length == 1 && char.IsDigit(s[0]))
             {
-                // tail số từ chuỗi kết quả: 0/2/4 => CHẴN, 1/3 => LẺ
-                char d = s[0];
-                isChan = (d == 'C');
-                isLe = (d == 'L');
-            }
-            else
-            {
-                isChan = (s == "CHAN" || s == "CHẴN" || s == "C");
-                isLe = (s == "LE" || s == "LẺ" || s == "L");
+                isPlayer = (s[0] == '1' || s[0] == '3');
+                isBanker = !isPlayer;
             }
 
             // Helper: fallback hiển thị chữ
@@ -5471,20 +5433,20 @@ Ví dụ không hợp lệ:
                 }
             }
 
-            if (!isChan && !isLe)
+            if (!isBanker && !isPlayer)
             {
                 ShowText("");
                 return;
             }
 
-            // Ưu tiên lấy ảnh trong Resource (ImgCHAN/ImgLE) -> nếu không có thì dùng SharedIcons
-            string resKey = isLe ? "ImgLE" : "ImgCHAN";
+            // Ưu tiên lấy ảnh trong Resource (ImgBANKER/ImgPLAYER) -> nếu không có thì dùng SharedIcons
+            string resKey = isPlayer ? "ImgPLAYER" : "ImgBANKER";
             var resImg = TryFindResource(resKey) as ImageSource;
 
             ImageSource? icon =
                 resImg
-                ?? (isChan ? (SharedIcons.ResultChan ?? SharedIcons.SideChan)
-                           : (SharedIcons.ResultLe ?? SharedIcons.SideLe));
+                ?? (isBanker ? (SharedIcons.ResultBanker ?? SharedIcons.SideBanker)
+                           : (SharedIcons.ResultPlayer ?? SharedIcons.SidePlayer));
 
             if (icon != null && ImgKetQua != null)
             {
@@ -5494,23 +5456,21 @@ Ví dụ không hợp lệ:
                 if (LblKetQua != null) LblKetQua.Visibility = Visibility.Collapsed;
 
                 // Cache lại để DataGrid (converters) có thể "kế thừa" từ trạng thái
-                if (isChan) SharedIcons.ResultChan = icon;
-                else SharedIcons.ResultLe = icon;
+                if (isBanker) SharedIcons.ResultBanker = icon;
+                else SharedIcons.ResultPlayer = icon;
             }
             else
             {
-                // Không có ảnh -> fallback chữ có dấu
-                ShowText(isChan ? "CHẴN" : "LẺ");
+                ShowText(isBanker ? "BANKER" : "PLAYER");
             }
         }
 
 
         private void SetLastSideUI(string? result)
         {
-            // Chuẩn hoá
-            var s = (result ?? "").Trim().ToUpperInvariant();
-            bool isLe = s == "LE" || s == "LẺ" || s == "L";
-            bool isChan = s == "CHAN" || s == "CHẴN" || s == "C";
+            var s = TextNorm.U(result ?? "");
+            bool isPlayer = s == "PLAYER" || s == "P";
+            bool isBanker = s == "BANKER" || s == "B";
 
             void ShowText(string text)
             {
@@ -5522,9 +5482,9 @@ Ví dụ không hợp lệ:
                 }
             }
 
-            if (isLe || isChan)
+            if (isPlayer || isBanker)
             {
-                var key = isLe ? "ImgLE" : "ImgCHAN";
+                var key = isPlayer ? "ImgPLAYER" : "ImgBANKER";
                 var img = TryFindResource(key) as ImageSource;
                 if (img != null && ImgSide != null)
                 {
@@ -5535,7 +5495,7 @@ Ví dụ không hợp lệ:
                 }
             }
 
-            ShowText(s);
+            ShowText(isBanker ? "BANKER" : isPlayer ? "PLAYER" : s);
         }
 
         private void UpdateTabSide(StrategyTabState tab, string? result)
@@ -5644,10 +5604,10 @@ Ví dụ không hợp lệ:
             {
                 if (_activeTab != null)
                     ResetTabMiniState(_activeTab);
-                // THẮNG/THUA: bool? -> null để xoá
+                // THẮNG/THUA: bool? -> null để xóa
                 SetWinLossUI(null);
 
-                // CỬA ĐẶT: string? -> null/"" đều xoá
+                // CỬA ĐẶT: string? -> null/"" đều xóa
                 SetLastSideUI(null);
 
                 // KẾT QUẢ (nếu có hiển thị)
@@ -6113,7 +6073,7 @@ Ví dụ không hợp lệ:
                 if (!string.IsNullOrEmpty(_homeJs))
                     await Web.CoreWebView2.ExecuteScriptAsync(_homeJs);
 
-                // Kích autostart trên top (idempotent – nếu không có __cw_startPush thì không sao)
+                // Kích autostart trên top (idempotent - nếu không có __cw_startPush thì không sao)
                 await Web.CoreWebView2.ExecuteScriptAsync(FRAME_AUTOSTART);
                 // Nếu KHÔNG phải host games.* thì khởi động push của js_home_v2
                 await Web.CoreWebView2.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
@@ -6430,7 +6390,7 @@ Ví dụ không hợp lệ:
                 return;
             }
 
-            // ❗ Dùng Now (local) để đồng bộ với _runExpiresAt (đã ToLocalTime ở trên)
+            // Dùng Now (local) để đồng bộ với _runExpiresAt (đã ToLocalTime ở trên)
             var now = DateTimeOffset.Now;
             var left = _runExpiresAt.Value - now;
 
@@ -6448,7 +6408,7 @@ Ví dụ không hợp lệ:
             }
             else
             {
-                // Dưới 1 ngày chỉ hiện giờ/phút/giây
+                // Dưới 1 ngày chỉ hiển thị giờ/phút/giây
                 line = $"Còn lại: {left:hh\\:mm\\:ss}";
             }
             LblExpire.Text = line;
@@ -6550,7 +6510,7 @@ Ví dụ không hợp lệ:
 
         private void CleanupWebStuff()
         {
-            // 1) hủy các CTS liên quan đến web / auto login
+            // 1) huỷ các CTS liên quan đến web / auto login
             try { _navCts?.Cancel(); } catch { }
             _navCts = null;
 
@@ -6688,8 +6648,8 @@ Ví dụ không hợp lệ:
             if (tab == null) return;
             if (tab.CutStopTriggered) return;
 
-            double cutProfit = tab.Config?.CutProfit ?? 0;   // duong -> bat cat lai
-            double cutLoss = tab.Config?.CutLoss ?? 0;       // duong -> bat cat lo (nguong la -cutLoss)
+            double cutProfit = tab.Config?.CutProfit ?? 0;   // dương -> bật cắt lãi
+            double cutLoss = tab.Config?.CutLoss ?? 0;       // dương -> bật cắt lỗ (ngưỡng là -cutLoss)
 
             if (cutProfit <= 0 && cutLoss <= 0) return;
 
@@ -6697,7 +6657,7 @@ Ví dụ không hợp lệ:
             if (cutProfit > 0 && winTotal >= cutProfit)
             {
                 tab.CutStopTriggered = true;
-                StopTaskAndNotify(tab, $"??t C?T L?I: Ti?n th?ng = {winTotal:N0} ? {cutProfit:N0}");
+                StopTaskAndNotify(tab, $"Đạt CẮT LÃI: Tiền thắng = {winTotal:N0} >= {cutProfit:N0}");
                 return;
             }
 
@@ -6707,7 +6667,7 @@ Ví dụ không hợp lệ:
                 if (winTotal <= lossThreshold)
                 {
                     tab.CutStopTriggered = true;
-                    StopTaskAndNotify(tab, $"??t C?T L?: Ti?n th?ng = {winTotal:N0} ? {lossThreshold:N0}");
+                    StopTaskAndNotify(tab, $"Đạt CẮT LỖ: Tiền thắng = {winTotal:N0} <= {lossThreshold:N0}");
                     return;
                 }
             }
@@ -6742,7 +6702,7 @@ Ví dụ không hợp lệ:
                 row.WinLose = win ? "Thắng" : "Thua";
                 row.Account = balanceAfter;
 
-                // ❗KHÔNG Add lại vào _betAll (đã chèn ở thời điểm BET)
+                // KHÔNG add lại vào _betAll (đã chèn ở thời điểm BET)
                 try { AppendBetCsv(row); } catch { /* ignore IO */ }
             }
 
@@ -6875,8 +6835,8 @@ Ví dụ không hợp lệ:
         private static string NormalizeSide(string s)
         {
             var u = TextNorm.U(s);
-            if (u == "C" || u == "CHAN") return "CHAN";
-            if (u == "L" || u == "LE") return "LE";
+            if (u == "B" || u == "BANKER") return "BANKER";
+            if (u == "P" || u == "PLAYER") return "PLAYER";
             return (s ?? "").Trim();
         }
         private static string NormalizeWL(string s)
@@ -6989,7 +6949,7 @@ Ví dụ không hợp lệ:
             RefreshBetPage();
         }
 
-        /// <summary>Dựng dãy số trang: 1 … 4 5 [6] 7 8 … 20</summary>
+        /// <summary>Dựng dãy số trang: 1 ... 4 5 [6] 7 8 ... 20</summary>
         private void BuildPager()
         {
             // chỉ còn dùng để cập nhật LblPage
@@ -7022,7 +6982,7 @@ Ví dụ không hợp lệ:
             catch { /* ignore */ }
         }
 
-        // ⟲ Mới nhất
+        // Mới nhất
         private void BtnGoNewest_Click(object sender, RoutedEventArgs e)
         {
             ShowFirstPage();   // trang 1 là mới nhất trong kiến trúc hiện tại
@@ -7041,7 +7001,7 @@ Ví dụ không hợp lệ:
             }
         }
 
-        // Ô "Tới trang …"
+        // Ô "Tới trang ..."
         private void BtnGoto_Click(object sender, RoutedEventArgs e)
         {
             if (int.TryParse(TxtGoto?.Text, out var userPage))
@@ -7060,38 +7020,38 @@ Ví dụ không hợp lệ:
 
 
         private static string NormalizeSeq(string raw) =>
-    TextNorm.U(Regex.Replace(raw ?? "", @"[,\s\-]+", "")); // bỏ , khoảng trắng, -
+            TextNorm.U(Regex.Replace(raw ?? "", @"[,\s\-]+", "")); // bỏ dấu phẩy, khoảng trắng, dấu gạch
 
-        // --- Chuỗi C/L: C,L; 2..50 ký tự sau khi bỏ phân tách ---
+        // --- Chuỗi B/P: B,P; 2..100 ký tự ---
         private static bool ValidateSeqCL(string s, out string err)
         {
             err = "";
             if (string.IsNullOrWhiteSpace(s))
             {
-                err = "Vui lòng nhập chuỗi C/L.";
+                err = "Vui lòng nhập chuỗi B/P.";
                 return false;
             }
 
             int count = 0;
             foreach (var ch in s)
             {
-                if (char.IsWhiteSpace(ch)) continue;          // chỉ cho phép khoảng trắng
+                if (char.IsWhiteSpace(ch)) continue;
                 char u = char.ToUpperInvariant(ch);
-                if (u == 'C' || u == 'L') { count++; continue; }  // và C/L
-                err = "Chỉ cho phép khoảng trắng và ký tự C hoặc L (không dùng dấu phẩy/gạch/chấm phẩy/gạch dưới, số, ký tự khác).";
+                if (u == 'B' || u == 'P') { count++; continue; }
+                err = "Chỉ cho phép khoảng trắng và ký tự B hoặc P.";
                 return false;
             }
 
             if (count < 2 || count > 100)
             {
-                err = "Độ dài 2–50 ký tự (tính theo C/L, bỏ qua khoảng trắng).";
+                err = "Độ dài 2-100 ký tự (tính theo B/P, bỏ qua khoảng trắng).";
                 return false;
             }
 
             return true;
         }
 
-        // --- Chuỗi I/N: I,N; 2..50 ký tự ---
+        // --- Chuỗi I/N: I,N; 2..100 ký tự ---
         private static bool ValidateSeqNI(string s, out string err)
         {
             err = "";
@@ -7104,33 +7064,32 @@ Ví dụ không hợp lệ:
             int count = 0;
             foreach (var ch in s)
             {
-                if (char.IsWhiteSpace(ch)) continue;          // chỉ cho phép khoảng trắng
+                if (char.IsWhiteSpace(ch)) continue;
                 char u = char.ToUpperInvariant(ch);
-                if (u == 'I' || u == 'N') { count++; continue; }  // và I/N
-                err = "Chỉ cho phép khoảng trắng và ký tự I hoặc N (không dùng dấu phẩy/gạch/chấm phẩy/gạch dưới, số, ký tự khác).";
+                if (u == 'I' || u == 'N') { count++; continue; }
+                err = "Chỉ cho phép khoảng trắng và ký tự I hoặc N.";
                 return false;
             }
 
             if (count < 2 || count > 100)
             {
-                err = "Độ dài 2–50 ký tự (tính theo I/N, bỏ qua khoảng trắng).";
+                err = "Độ dài 2-100 ký tự (tính theo I/N, bỏ qua khoảng trắng).";
                 return false;
             }
 
             return true;
         }
 
-        // --- Thế cầu C/L: từng dòng "<mẫu> - <đặt>", mẫu gồm C/L/?, đặt là C hoặc L ---
+        // --- Thế cầu B/P: từng dòng "<mẫu> -> <chuỗi cầu>", mẫu gồm B/P, chuỗi cầu gồm B/P ---
         private static bool ValidatePatternsCL(string s, out string err)
         {
             err = "";
             if (string.IsNullOrWhiteSpace(s))
             {
-                err = "Vui lòng nhập các thế cầu C/L.";
+                err = "Vui lòng nhập các thế cầu B/P.";
                 return false;
             }
 
-            // Tách nhiều quy tắc: ',', ';', '|', hoặc xuống dòng
             var rules = System.Text.RegularExpressions.Regex.Split(s.Replace("\r", ""), @"[,\;\|\n]+");
             int idx = 0;
 
@@ -7140,48 +7099,45 @@ Ví dụ không hợp lệ:
                 if (line.Length == 0) continue;
                 idx++;
 
-                // <mẫu> (C/L, cho phép khoảng trắng)  -> hoặc -  <chuỗi cầu> (C/L, CHO PHÉP khoảng trắng)
                 var m = System.Text.RegularExpressions.Regex.Match(
                     line,
-                    @"^\s*([CLcl\s]+)\s*(?:->|-)\s*([CLcl\s]+)\s*$",
+                    @"^\s*([BPbp\s]+)\s*(?:->|-)\s*([BPbp\s]+)\s*$",
                     System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
                 if (!m.Success)
                 {
-                    err = $"Quy tắc {idx} không hợp lệ: “{line}”. Dạng đúng: <mẫu> -> <chuỗi cầu> hoặc <mẫu>-<chuỗi cầu>; chỉ dùng C/L; <chuỗi cầu> có thể có khoảng trắng.";
+                    err = $"Quy tắc {idx} không hợp lệ: '{line}'. Dạng đúng: <mẫu> -> <chuỗi cầu> hoặc <mẫu>-<chuỗi cầu>; chỉ dùng B/P; <chuỗi cầu> có thể có khoảng trắng.";
                     return false;
                 }
 
-                // LHS: chỉ C/L + khoảng trắng; độ dài 1–10 sau khi bỏ khoảng trắng
                 var lhsRaw = m.Groups[1].Value;
                 var lhsBuf = new System.Text.StringBuilder(lhsRaw.Length);
                 foreach (char ch in lhsRaw)
                 {
                     if (char.IsWhiteSpace(ch)) continue;
                     char u = char.ToUpperInvariant(ch);
-                    if (u == 'C' || u == 'L') lhsBuf.Append(u);
-                    else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm C/L (cho phép khoảng trắng giữa các ký tự)."; return false; }
+                    if (u == 'B' || u == 'P') lhsBuf.Append(u);
+                    else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm B/P (cho phép khoảng trắng giữa các ký tự)."; return false; }
                 }
                 var lhs = lhsBuf.ToString();
                 if (lhs.Length < 1 || lhs.Length > 10)
                 {
-                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự (C/L).";
+                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải từ 1-10 ký tự (B/P).";
                     return false;
                 }
 
-                // RHS: chuỗi cầu C/L (>=1), CHO PHÉP khoảng trắng (bị bỏ qua khi kiểm tra)
                 var rhsRaw = m.Groups[2].Value;
                 var rhsBuf = new System.Text.StringBuilder(rhsRaw.Length);
                 foreach (char ch in rhsRaw)
                 {
                     if (char.IsWhiteSpace(ch)) continue;
                     char u = char.ToUpperInvariant(ch);
-                    if (u == 'C' || u == 'L') rhsBuf.Append(u);
-                    else { err = $"Quy tắc {idx}: <chuỗi cầu> chỉ gồm C/L (có thể nhiều ký tự), cho phép khoảng trắng."; return false; }
+                    if (u == 'B' || u == 'P') rhsBuf.Append(u);
+                    else { err = $"Quy tắc {idx}: <chuỗi cầu> chỉ gồm B/P (có thể nhiều ký tự), cho phép khoảng trắng."; return false; }
                 }
                 if (rhsBuf.Length < 1)
                 {
-                    err = $"Quy tắc {idx}: <chuỗi cầu> tối thiểu 1 ký tự C/L.";
+                    err = $"Quy tắc {idx}: <chuỗi cầu> tối thiểu 1 ký tự B/P.";
                     return false;
                 }
             }
@@ -7189,10 +7145,7 @@ Ví dụ không hợp lệ:
             return true;
         }
 
-
-
-
-        // --- Thế cầu I/N: từng dòng "<mẫu> - <đặt>", mẫu gồm I/N/?, đặt là I hoặc N ---
+        // --- Thế cầu I/N: từng dòng "<mẫu> -> <chuỗi>", mẫu gồm I/N, chuỗi là I hoặc N ---
         private static bool ValidatePatternsNI(string s, out string err)
         {
             err = "";
@@ -7212,7 +7165,7 @@ Ví dụ không hợp lệ:
                 if (line.Length == 0) continue;
                 idx++;
 
-                // <mẫu> (I/N, cho phép khoảng trắng)  -> hoặc -  <chuỗi cầu> (I/N, CHO PHÉP khoảng trắng)
+                // <mẫu> (I/N, cho phép khoảng trắng) -> hoặc - <chuỗi cầu> (I/N, cho phép khoảng trắng)
                 var m = System.Text.RegularExpressions.Regex.Match(
                     line,
                     @"^\s*([INin\s]+)\s*(?:->|-)\s*([INin\s]+)\s*$",
@@ -7220,11 +7173,11 @@ Ví dụ không hợp lệ:
 
                 if (!m.Success)
                 {
-                    err = $"Quy tắc {idx} không hợp lệ: “{line}”. Dạng đúng: <mẫu> -> <chuỗi cầu> hoặc <mẫu>-<chuỗi cầu>; chỉ dùng I/N; <chuỗi cầu> có thể có khoảng trắng.";
+                    err = $"Quy tắc {idx} không hợp lệ: '{line}'. Dạng đúng: <mẫu> -> <chuỗi cầu> hoặc <mẫu>-<chuỗi cầu>; chỉ dùng I/N; <chuỗi cầu> có thể có khoảng trắng.";
                     return false;
                 }
 
-                // LHS: chỉ I/N + khoảng trắng; độ dài 1–10 sau khi bỏ khoảng trắng
+                // LHS: chỉ I/N + khoảng trắng; độ dài 1-10 sau khi bỏ khoảng trắng
                 var lhsRaw = m.Groups[1].Value;
                 var lhsBuf = new System.Text.StringBuilder(lhsRaw.Length);
                 foreach (char ch in lhsRaw)
@@ -7237,11 +7190,11 @@ Ví dụ không hợp lệ:
                 var lhs = lhsBuf.ToString();
                 if (lhs.Length < 1 || lhs.Length > 10)
                 {
-                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự (I/N).";
+                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải từ 1-10 ký tự (I/N).";
                     return false;
                 }
 
-                // RHS: chuỗi cầu I/N (>=1), CHO PHÉP khoảng trắng (bị bỏ qua khi kiểm tra)
+                // RHS: chuỗi cầu I/N (>=1), cho phép khoảng trắng
                 var rhsRaw = m.Groups[2].Value;
                 var rhsBuf = new System.Text.StringBuilder(rhsRaw.Length);
                 foreach (char ch in rhsRaw)
@@ -7275,7 +7228,7 @@ Ví dụ không hợp lệ:
             ShowErrorsForCurrentStrategy(); // cập nhật UI trước
 
             int idx = CmbBetStrategy?.SelectedIndex ?? 4;
-            if (idx == 0) // 1. Chuỗi C/L
+            if (idx == 0) // 1. Chuỗi B/P
             {
                 if (!ValidateSeqCL(T(TxtChuoiCau), out var err))
                 {
@@ -7293,7 +7246,7 @@ Ví dụ không hợp lệ:
                     return false;
                 }
             }
-            else if (idx == 1) // 2. Thế C/L
+            else if (idx == 1) // 2. Thế B/P
             {
                 if (!ValidatePatternsCL(T(TxtTheCau), out var err))
                 {
@@ -7312,15 +7265,6 @@ Ví dụ không hợp lệ:
                 }
             }
 
-            else if (idx == 16) // 17. Cửa đặt & tỉ lệ
-            {
-                if (!BaccaratSexyCasino.Tasks.SideRateParser.TryParse(T(TxtSideRatio), out _, out var err))
-                {
-                    SetError(LblSideRatioError, err);
-                    BringBelow(TxtSideRatio);
-                    return false;
-                }
-            }
             // Các chiến lược còn lại không cần kiểm tra thêm
             return true;
         }
@@ -7328,12 +7272,11 @@ Ví dụ không hợp lệ:
         private void SyncStrategyFieldsToUI()
         {
             int idx = CmbBetStrategy?.SelectedIndex ?? 4;
-            if (idx == 0) { if (TxtChuoiCau != null) TxtChuoiCau.Text = _cfg.BetSeqCL ?? ""; }
+            if (idx == 0) { if (TxtChuoiCau != null) TxtChuoiCau.Text = _cfg.BetSeqBP ?? ""; }
             else if (idx == 2) { if (TxtChuoiCau != null) TxtChuoiCau.Text = _cfg.BetSeqNI ?? ""; }
 
-            if (idx == 1) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsCL ?? ""; }
+            if (idx == 1) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsBP ?? ""; }
             else if (idx == 3) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsNI ?? ""; }
-            if (idx == 16 && TxtSideRatio != null) TxtSideRatio.Text = _cfg.SideRateText ?? BaccaratSexyCasino.Tasks.SideRateParser.DefaultText;
         }
 
         private void LoadStakeCsvForCurrentMoneyStrategy()
@@ -7363,18 +7306,18 @@ Ví dụ không hợp lệ:
         {
             if (!_uiReady || _tabSwitching) return;
 
-            var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 0: CL, 2: N/I
+            var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 0: B/P, 2: N/I
             var txt = (TxtChuoiCau?.Text ?? "").Trim();
 
             // Lưu tách bạch cho từng chiến lược
-            if (idx == 0) _cfg.BetSeqCL = txt;    // Chiến lược 1: Chuỗi C/L
+            if (idx == 0) _cfg.BetSeqBP = txt;    // Chiến lược 1: Chuỗi B/P
             if (idx == 2) _cfg.BetSeqNI = txt;    // Chiến lược 3: Chuỗi N/I
 
-            // Bản “chung” để engine đọc khi chạy
+            // Bản "chung" để engine đọc khi chạy
             _cfg.BetSeq = txt;
 
-            await SaveConfigAsync();              // <— GHI config.json
-            ShowErrorsForCurrentStrategy();       // (nếu bạn có hiển thị lỗi dưới ô)
+            await SaveConfigAsync();              // ghi config.json
+            ShowErrorsForCurrentStrategy();       // nếu có hiển thị lỗi dưới ô
         }
 
 
@@ -7382,18 +7325,18 @@ Ví dụ không hợp lệ:
         {
             if (!_uiReady || _tabSwitching) return;
 
-            var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 1: CL, 3: N/I
+            var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 1: B/P, 3: N/I
             var txt = (TxtTheCau?.Text ?? "").Trim();
 
             // Lưu tách bạch cho từng chiến lược
-            if (idx == 1) _cfg.BetPatternsCL = txt;  // Chiến lược 2: Thế C/L
+            if (idx == 1) _cfg.BetPatternsBP = txt;  // Chiến lược 2: Thế B/P
             if (idx == 3) _cfg.BetPatternsNI = txt;  // Chiến lược 4: Thế N/I
 
-            // Bản “chung” để engine đọc khi chạy
+            // Bản "chung" để engine đọc khi chạy
             _cfg.BetPatterns = txt;
 
-            await SaveConfigAsync();                // <— GHI config.json
-            ShowErrorsForCurrentStrategy();         // (nếu có)
+            await SaveConfigAsync();                // ghi config.json
+            ShowErrorsForCurrentStrategy();         // nếu có
         }
 
 
@@ -7486,17 +7429,7 @@ Ví dụ không hợp lệ:
                 SetError(LblPatError, null);
             }
 
-            // Cửa đặt & tỉ lệ (chiến lược 17)
-            if (idx == 16)
-            {
-                string s = (TxtSideRatio?.Text ?? "");
-                bool ok = BaccaratSexyCasino.Tasks.SideRateParser.TryParse(s, out _, out var e3);
-                SetError(LblSideRatioError, ok ? null : e3);
-            }
-            else
-            {
-                SetError(LblSideRatioError, null);
-            }
+            SetError(LblSideRatioError, null);
         }
 
 
@@ -7518,6 +7451,8 @@ Ví dụ không hợp lệ:
     }
 
 }
+
+
 
 
 

@@ -1,6 +1,6 @@
-<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <BitmapImage x:Key="ImgCHAN" UriSource="/BaccaratSexyCasino;component/Assets/side/CHAN.png" />
-    <BitmapImage x:Key="ImgLE" UriSource="/BaccaratSexyCasino;component/Assets/side/LE.png" />
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <BitmapImage x:Key="ImgBANKER" UriSource="/BaccaratSexyCasino;component/Assets/side/BANKER.png" />
+    <BitmapImage x:Key="ImgPLAYER" UriSource="/BaccaratSexyCasino;component/Assets/side/PLAYER.png" />
     <BitmapImage x:Key="ImgTHANG" UriSource="/BaccaratSexyCasino;component/Assets/kq/THANG.png" />
     <BitmapImage x:Key="ImgTHUA" UriSource="/BaccaratSexyCasino;component/Assets/kq/THUA.png" />
     <BitmapImage x:Key="ImgBALL0" UriSource="/BaccaratSexyCasino;component/Assets/side/TU_TRANG.png" />
@@ -14,3 +14,4 @@
     <BitmapImage x:Key="ImgTRANG3_DO1" UriSource="/BaccaratSexyCasino;component/Assets/side/1DO_3TRANG.png" />
     <BitmapImage x:Key="ImgDO3_TRANG1" UriSource="/BaccaratSexyCasino;component/Assets/side/1TRANG_3DO.png" />
 </ResourceDictionary>
+

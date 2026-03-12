@@ -12,9 +12,9 @@ namespace BaccaratSexyCasino.Tasks
         private static string PickSideByNI(char ni, BaccaratSexyCasino.CwTotals t)
         {
             // N = đánh cửa có tổng tiền NHIỀU hơn; I = đánh cửa có tổng tiền ÍT hơn
-            long c = t?.C ?? 0, l = t?.L ?? 0;
-            if (ni == 'N') return (c >= l) ? "CHAN" : "LE";
-            return (c < l) ? "CHAN" : "LE";
+            long b = t?.B ?? 0, p = t?.P ?? 0;
+            if (ni == 'N') return (b >= p) ? "BANKER" : "PLAYER";
+            return (b < p) ? "BANKER" : "PLAYER";
         }
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
@@ -83,3 +83,5 @@ namespace BaccaratSexyCasino.Tasks
         }
     }
 }
+
+

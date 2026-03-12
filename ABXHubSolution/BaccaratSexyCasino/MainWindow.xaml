@@ -346,8 +346,8 @@
         <local:ProgressWidthConverter x:Key="FillWidthConv" />
 
         <!--  PACK URI CHO ẢNH  -->
-        <BitmapImage x:Key="ImgLE" UriSource="pack://application:,,,/Assets/side/LE.png" />
-        <BitmapImage x:Key="ImgCHAN" UriSource="pack://application:,,,/Assets/side/CHAN.png" />
+        <BitmapImage x:Key="ImgPLAYER" UriSource="pack://application:,,,/Assets/side/PLAYER.png" />
+        <BitmapImage x:Key="ImgBANKER" UriSource="pack://application:,,,/Assets/side/BANKER.png" />
         <BitmapImage x:Key="ImgTHANG" UriSource="pack://application:,,,/Assets/kq/THANG.png" />
         <BitmapImage x:Key="ImgTHUA" UriSource="pack://application:,,,/Assets/kq/THUA.png" />
     </Window.Resources>
@@ -894,13 +894,13 @@
                                             Padding="10,8"
                                             HorizontalAlignment="Stretch"
                                             SelectedIndex="4">
-                                            <ComboBoxItem Content="1) Chuỗi cầu C/L (chẵn/lẻ tự nhập)" />
-                                            <ComboBoxItem Content="2) Thế cầu C/L (chẵn/lẻ tự nhập)" />
+                                            <ComboBoxItem Content="1) Chuỗi cầu B/P (Banker/Player tự nhập)" />
+                                            <ComboBoxItem Content="2) Thế cầu B/P (Banker/Player tự nhập)" />
                                             <ComboBoxItem Content="3) Chuỗi cầu I/N (Ít/Nhiều, tự nhập)" />
                                             <ComboBoxItem Content="4) Thế cầu I/N (Ít/Nhiều, tự nhập)" />
                                             <ComboBoxItem Content="5) Bám cầu trước (thông minh)" />
                                             <ComboBoxItem Content="6) Cửa đặt ngẫu nhiên" />
-                                            <ComboBoxItem Content="7) Bám cầu C/L theo thống kê AI" />
+                                            <ComboBoxItem Content="7) Bám cầu B/P theo thống kê AI" />
                                             <ComboBoxItem Content="8) Xu hướng chuyển trạng thái" />
                                             <ComboBoxItem Content="9) Run-length (dài-chuỗi)" />
                                             <ComboBoxItem Content="10) Chuyên gia bỏ phiếu" />
@@ -909,9 +909,8 @@
                                             <ComboBoxItem Content="13) Lịch hai lớp" />
                                             <ComboBoxItem Content="14) AI học tại chỗ (n-gram)" />
                                             <ComboBoxItem Content="15) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime)" />
-                                            <ComboBoxItem Content="16) Top10 tích lũy (khởi từ 50 C/L)" />
-                                            <ComboBoxItem Content="17) Đánh các cửa ăn nổ hũ" />
-                                            <ComboBoxItem Content="18) Chuỗi cầu C/L hay về" />
+                                            <ComboBoxItem Content="16) Top10 tích lũy (khởi từ 50 B/P)" />
+                                            <ComboBoxItem Content="17) Chuỗi cầu B/P hay về" />
                                         </ComboBox>
                                     </Grid>
 

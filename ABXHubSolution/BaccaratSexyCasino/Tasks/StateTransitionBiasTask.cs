@@ -21,7 +21,7 @@ namespace BaccaratSexyCasino.Tasks
 
         private static char DecideNext(char last, string seq)
         {
-            // seq: chỉ 'C'/'L', cũ->mới
+            // seq: chỉ 'B'/'P', cũ->mới
             if (seq.Length < 2) return last;
 
             int consider = Math.Min(WindowK + 1, seq.Length);
@@ -34,8 +34,8 @@ namespace BaccaratSexyCasino.Tasks
             return (flip > same) ? Opp(last) : last;
         }
 
-        private static char Opp(char c) => c == 'C' ? 'L' : 'C';
-        private static string ToSide(char c) => (c == 'C') ? "CHAN" : "LE";
+        private static char Opp(char c) => c == 'B' ? 'P' : 'B';
+        private static string ToSide(char c) => (c == 'B') ? "BANKER" : "PLAYER";
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
@@ -49,7 +49,7 @@ namespace BaccaratSexyCasino.Tasks
 
                 var snap = ctx.GetSnap();
                 var parity = SeqToParityString(snap?.seq ?? "");
-                if (parity.Length == 0) parity = "C";
+                if (parity.Length == 0) parity = "B";
 
                 char last = parity[^1];
                 char next = DecideNext(last, parity);
@@ -101,3 +101,5 @@ namespace BaccaratSexyCasino.Tasks
         }
     }
 }
+
+

@@ -346,14 +346,16 @@ namespace BaccaratSexyCasino.Tasks
             int k = 0;
             foreach (var ch in s)
             {
-                if (ch == '0' || ch == '2' || ch == '4') arr[k++] = 'C';
-                else if (ch == '1' || ch == '3') arr[k++] = 'L';
+                if (ch == '0' || ch == '2' || ch == '4') arr[k++] = 'B';
+                else if (ch == '1' || ch == '3') arr[k++] = 'P';
                 // khác -> bỏ qua
             }
             return new string(arr, 0, k);
         }
 
-        public static string OppCL(string cl) => cl == "CHAN" ? "LE" : (cl == "LE" ? "CHAN" : cl);
-        public static string ClCharToSide(char cl) => (cl == 'C') ? "CHAN" : "LE";
+        public static string OppCL(string cl) => cl == "BANKER" ? "PLAYER" : (cl == "PLAYER" ? "BANKER" : cl);
+        public static string ClCharToSide(char cl) => (cl == 'B') ? "BANKER" : "PLAYER";
     }
 }
+
+

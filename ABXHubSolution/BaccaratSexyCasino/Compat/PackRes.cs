@@ -34,8 +34,8 @@ namespace BaccaratSexyCasino
             TryMerge(app.Resources, "pack://application:,,,/BaccaratSexyCasino;component/Assets/Images.xaml");
 
             // 2. fallback: tự tạo ảnh để dù Images.xaml không load được vẫn không vỡ XAML
-            EnsureImage(app.Resources, "ImgLE", "Assets/side/LE.png");
-            EnsureImage(app.Resources, "ImgCHAN", "Assets/side/CHAN.png");
+            EnsureImage(app.Resources, "ImgPLAYER", "Assets/side/PLAYER.png");
+            EnsureImage(app.Resources, "ImgBANKER", "Assets/side/BANKER.png");
             EnsureImage(app.Resources, "ImgTHANG", "Assets/kq/THANG.png");
             EnsureImage(app.Resources, "ImgTHUA", "Assets/kq/THUA.png");
             EnsureImage(app.Resources, "ImgBALL0", "Assets/side/TU_TRANG.png");
@@ -106,3 +106,4 @@ namespace BaccaratSexyCasino
         }
     }
 }
+

@@ -17,12 +17,12 @@ namespace BaccaratSexyCasino.Tasks
 
         private int _roundInBlock = 0; // 0..9
 
-        private static char Opp(char c) => c == 'C' ? 'L' : 'C';
-        private static string ToSide(char c) => (c == 'C') ? "CHAN" : "LE";
+        private static char Opp(char c) => c == 'B' ? 'P' : 'B';
+        private static string ToSide(char c) => (c == 'B') ? "BANKER" : "PLAYER";
 
         private char Decide(string parity)
         {
-            char last = (parity.Length == 0) ? 'C' : parity[^1];
+            char last = (parity.Length == 0) ? 'B' : parity[^1];
             int idx = (_roundInBlock % 10); // 0..9
             return (idx < 5) ? last : Opp(last);
         }
@@ -90,3 +90,5 @@ namespace BaccaratSexyCasino.Tasks
         }
     }
 }
+
+

@@ -6,8 +6,8 @@ namespace BaccaratSexyCasino
 {
     public sealed class CwTotals
     {
-        public long? C { get; set; }
-        public long? L { get; set; }
+        public long? B { get; set; }
+        public long? P { get; set; }
         public long? A { get; set; }
         public string N { get; set; }
         public long? SD { get; set; }
@@ -38,9 +38,9 @@ namespace BaccaratSexyCasino
         public int Step = 0;              // index chuỗi tiền (0-based)
         public bool PreferLarger = true;  // true: chọn cửa tổng LỚN; false: tổng BÉ
         public bool LastWin = false;
-        public string? PreviousBetSide = null; // "CHAN"|"LE"
-        public string? CurrentBetSide = null; // "CHAN"|"LE"
-        public string? CurrentOutcome = null; // "CHAN"|"LE"
+        public string? PreviousBetSide = null; // "BANKER"|"PLAYER"
+        public string? CurrentBetSide = null; // "BANKER"|"PLAYER"
+        public string? CurrentOutcome = null; // "BANKER"|"PLAYER"
         public int MoneyChainIndex { get; set; }      // đang ở chuỗi thứ mấy (0-based)
         public int MoneyChainStep { get; set; }       // đang ở mức thứ mấy trong chuỗi đó (0-based)
         public long MoneyChainProfit { get; set; }    // tiền đã gom được ở chuỗi hiện tại
@@ -48,3 +48,5 @@ namespace BaccaratSexyCasino
     }
 
 }
+
+

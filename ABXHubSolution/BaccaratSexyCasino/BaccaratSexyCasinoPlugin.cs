@@ -32,7 +32,7 @@ namespace BaccaratSexyCasino
             // 3) đè vào App trước
             InjectImagesTo(host, Application.Current?.Resources);
 
-            TryLog(host, "[XocDia] CreateView ENTER (window-mode)");
+            TryLog(host, "[BaccaratSexyCasino] CreateView ENTER (window-mode)");
 
             try
             {
@@ -46,7 +46,7 @@ namespace BaccaratSexyCasino
 
                     _window.Closed += (s, e) =>
                     {
-                        TryLog(host, "[XocDia] plugin window closed, reset.");
+                        TryLog(host, "[BaccaratSexyCasino] plugin window closed, reset.");
 
                         // dọn dẹp nội bộ cửa sổ (gọi code bạn đã viết trong MainWindow)
                         try { _window.ShutdownFromHost(); } catch { }
@@ -58,7 +58,7 @@ namespace BaccaratSexyCasino
                     };
 
                     _window.Show();
-                    TryLog(host, "[XocDia] plugin window shown from CreateView().");
+                    TryLog(host, "[BaccaratSexyCasino] plugin window shown from CreateView().");
 
                     // chạy đúng nghiệp vụ cũ trong MainWindow
                     _ = _window.RunStartupAsync(host);
@@ -80,12 +80,12 @@ namespace BaccaratSexyCasino
             }
             catch (Exception ex)
             {
-                TryLog(host, "[XocDia] CreateView ERROR: " + ex);
+                TryLog(host, "[BaccaratSexyCasino] CreateView ERROR: " + ex);
                 return BuildErrorStub("Xóc Đĩa Live: lỗi khởi tạo giao diện.\n" + ex.Message);
             }
             finally
             {
-                TryLog(host, "[XocDia] CreateView LEAVE");
+                TryLog(host, "[BaccaratSexyCasino] CreateView LEAVE");
             }
         }
 
@@ -124,16 +124,16 @@ namespace BaccaratSexyCasino
                 if (img != null)
                 {
                     dict[key] = img;
-                    TryLog(host, $"[XocDia] InjectImagesTo: set {key} from {rel}");
+                    TryLog(host, $"[BaccaratSexyCasino] InjectImagesTo: set {key} from {rel}");
                 }
                 else
                 {
-                    TryLog(host, $"[XocDia] InjectImagesTo: FAILED {key} (not found)");
+                    TryLog(host, $"[BaccaratSexyCasino] InjectImagesTo: FAILED {key} (not found)");
                 }
             }
 
-            SetImg("ImgCHAN", "Assets/side/CHAN.png");
-            SetImg("ImgLE", "Assets/side/LE.png");
+            SetImg("ImgBANKER", "Assets/side/BANKER.png");
+            SetImg("ImgPLAYER", "Assets/side/PLAYER.png");
             SetImg("ImgTHANG", "Assets/kq/THANG.png");
             SetImg("ImgTHUA", "Assets/kq/THUA.png");
             SetImg("ImgBALL0", "Assets/side/TU_TRANG.png");
@@ -150,10 +150,10 @@ namespace BaccaratSexyCasino
             // giữ lại để các converter trong MainWindow dùng chung
             try
             {
-                if (dict["ImgCHAN"] is ImageSource chan) BaccaratSexyCasino.MainWindow.SharedIcons.SideChan = chan;
-                if (dict["ImgLE"] is ImageSource le) BaccaratSexyCasino.MainWindow.SharedIcons.SideLe = le;
-                if (dict["ImgCHAN"] is ImageSource chan2) BaccaratSexyCasino.MainWindow.SharedIcons.ResultChan = chan2;
-                if (dict["ImgLE"] is ImageSource le2) BaccaratSexyCasino.MainWindow.SharedIcons.ResultLe = le2;
+                if (dict["ImgBANKER"] is ImageSource chan) BaccaratSexyCasino.MainWindow.SharedIcons.SideBanker = chan;
+                if (dict["ImgPLAYER"] is ImageSource le) BaccaratSexyCasino.MainWindow.SharedIcons.SidePlayer = le;
+                if (dict["ImgBANKER"] is ImageSource chan2) BaccaratSexyCasino.MainWindow.SharedIcons.ResultBanker = chan2;
+                if (dict["ImgPLAYER"] is ImageSource le2) BaccaratSexyCasino.MainWindow.SharedIcons.ResultPlayer = le2;
                 if (dict["ImgTHANG"] is ImageSource win) BaccaratSexyCasino.MainWindow.SharedIcons.Win = win;
                 if (dict["ImgTHUA"] is ImageSource loss) BaccaratSexyCasino.MainWindow.SharedIcons.Loss = loss;
                 // set thêm các icon mới cho converter
@@ -174,19 +174,19 @@ namespace BaccaratSexyCasino
                 var asmPath = asm.Location;
                 var asmDir = Path.GetDirectoryName(asmPath) ?? "";
 
-                TryLog(host, "[XocDia] Plugin asm path: " + asmPath);
+                TryLog(host, "[BaccaratSexyCasino] Plugin asm path: " + asmPath);
 
-                var probe1 = Path.Combine(asmDir, "Assets", "side", "CHAN.png");
-                var probe2 = Path.Combine(asmDir, "assets", "side", "CHAN.png");
+                var probe1 = Path.Combine(asmDir, "Assets", "side", "BANKER.png");
+                var probe2 = Path.Combine(asmDir, "assets", "side", "BANKER.png");
 
-                TryLog(host, "[XocDia] Probe file (Assets): " + probe1 + " exists=" + File.Exists(probe1));
-                TryLog(host, "[XocDia] Probe file (assets): " + probe2 + " exists=" + File.Exists(probe2));
+                TryLog(host, "[BaccaratSexyCasino] Probe file (Assets): " + probe1 + " exists=" + File.Exists(probe1));
+                TryLog(host, "[BaccaratSexyCasino] Probe file (assets): " + probe2 + " exists=" + File.Exists(probe2));
 
-                TryLog(host, "[XocDia] Expecting URI: /BaccaratSexyCasino;component/Assets/side/CHAN.png");
+                TryLog(host, "[BaccaratSexyCasino] Expecting URI: /BaccaratSexyCasino;component/Assets/side/BANKER.png");
             }
             catch (Exception ex)
             {
-                TryLog(host, "[XocDia] LogResourceProbe failed: " + ex.Message);
+                TryLog(host, "[BaccaratSexyCasino] LogResourceProbe failed: " + ex.Message);
             }
         }
 
@@ -215,3 +215,4 @@ namespace BaccaratSexyCasino
         }
     }
 }
+

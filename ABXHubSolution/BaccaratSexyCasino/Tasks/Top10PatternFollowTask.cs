@@ -8,8 +8,8 @@ using static BaccaratSexyCasino.Tasks.TaskUtil;
 namespace BaccaratSexyCasino.Tasks
 {
     /// <summary>
-    /// 16) Theo chuỗi Top10 từ cửa sổ 50 phiên (C/L)
-    /// - KHÔNG CHỜ tích lũy: 50 C/L đã có sẵn khi load → build đếm ban đầu ngay.
+    /// 16) Theo chuỗi Top10 từ cửa sổ 50 phiên (B/P)
+    /// - KHÔNG CHỜ tích lũy: 50 B/P đã có sẵn khi load → build đếm ban đầu ngay.
     /// - Quét ban đầu: lấy các đoạn độ dài 10 theo thứ tự (50..41), (49..40), ..., (10..1).
     ///   Nếu đã có trong list thì +1, chưa có thì thêm với count=1. (Ưu tiên độ tươi bằng lastTick)
     /// - Sau mỗi KẾT QUẢ (chuỗi 50 đổi — trượt sang phải), lấy “10 phiên mới về” (41..50) để +1.
@@ -19,13 +19,13 @@ namespace BaccaratSexyCasino.Tasks
     /// </summary>
     public sealed class Top10PatternFollowTask : IBetTask
     {
-        public string DisplayName => "16) Top10 tích lũy (khởi từ 50 C/L)";
+        public string DisplayName => "16) Top10 tích lũy (khởi từ 50 B/P)";
         public string Id => "top10-50-cl";
 
         private const int WindowLen = 10;
         private const int FrameLen = 50; // cửa sổ 50 phiên gần nhất
 
-        // key: chuỗi 10 ký tự 'C'/'L'
+        // key: chuỗi 10 ký tự 'B'/'P'
         // value: (count, lastTick) → tie-break theo độ tươi (tick lớn hơn = mới hơn)
         private static (int count, long lastTick) GetOrDefault(Dictionary<string, (int, long)> dict, string k)
             => dict.TryGetValue(k, out var v) ? v : (0, 0);
@@ -80,9 +80,9 @@ namespace BaccaratSexyCasino.Tasks
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
             var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
-            ctx.Log?.Invoke("[Top10-50] Khởi chạy (không chờ — dùng 50 C/L sẵn có)…");
+            ctx.Log?.Invoke("[Top10-50] Khởi chạy (không chờ — dùng 50 B/P sẵn có)…");
 
-            // === KHỞI TẠO NGAY từ 50 C/L sẵn có ===
+            // === KHỞI TẠO NGAY từ 50 B/P sẵn có ===
             var counts = new Dictionary<string, (int count, long lastTick)>(StringComparer.Ordinal);
             long tick = 0;
 
@@ -138,7 +138,7 @@ namespace BaccaratSexyCasino.Tasks
                     {
                         // fallback an toàn: theo ván gần nhất
                         char lastCl = SeqToParityString(baseSeq).LastOrDefault();
-                        string fallbackSide = (lastCl == 'C') ? "CHAN" : "LE";
+                        string fallbackSide = (lastCl == 'B') ? "BANKER" : "PLAYER";
                         var stake0 = money.GetStakeForThisBet();
                         await PlaceBet(ctx, fallbackSide, stake0, ct);
 
@@ -159,7 +159,7 @@ namespace BaccaratSexyCasino.Tasks
                     }
                 }
 
-                // Đặt theo ký tự hiện tại của "chuỗi top" (C/L)
+                // Đặt theo ký tự hiện tại của "chuỗi top" (B/P)
                 char ch = curPattern[curIdx];
                 string side = ParityCharToSide(ch);
                 long stake;
@@ -242,3 +242,5 @@ namespace BaccaratSexyCasino.Tasks
         }
     }
 }
+
+

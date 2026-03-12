@@ -12,7 +12,7 @@ namespace BaccaratSexyCasino.Tasks
     /// - Dùng chuỗi N/I thực tế lấy từ snapshot: snap.niSeq (N = bên nhiều tiền, I = bên ít tiền).
     /// - Ưu tiên dò các pattern có phần nhận diện (lhs) dài hơn trước.
     /// - Khi khớp lhs, xếp hàng các ký tự ở rhs (N/I) để đánh lần lượt.
-    /// - Tại thời điểm đặt, N/I được quy đổi thành CHAN/LE dựa theo totals hiện tại.
+    /// - Tại thời điểm đặt, N/I được quy đổi thành BANKER/PLAYER dựa theo totals hiện tại.
     /// </summary>
     public sealed class PatternMajorMinorTask : IBetTask
     {
@@ -50,10 +50,10 @@ namespace BaccaratSexyCasino.Tasks
 
         private static string NOrIToSide(char ch, BaccaratSexyCasino.CwTotals totals)
         {
-            // Chuyển N/I thành CHAN/LE theo tổng tiền "ngay thời điểm đặt"
-            long c = totals?.C ?? 0, l = totals?.L ?? 0;
-            if (ch == 'N') return (c >= l) ? "CHAN" : "LE"; // hòa coi như N
-            return (c < l) ? "CHAN" : "LE";                 // 'I'
+            // Chuyển N/I thành BANKER/PLAYER theo tổng tiền "ngay thời điểm đặt"
+            long b = totals?.B ?? 0, p = totals?.P ?? 0;
+            if (ch == 'N') return (b >= p) ? "BANKER" : "PLAYER"; // hòa coi như N
+            return (b < p) ? "BANKER" : "PLAYER";                 // 'I'
         }
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
@@ -110,7 +110,7 @@ namespace BaccaratSexyCasino.Tasks
                 }
                 // Lấy baseSeq NGAY TRƯỚC khi đặt (ảnh chụp mới nhất)
                 string baseSeq = snapNow?.seq ?? string.Empty;
-                // Lấy 1 ký tự N/I theo kế hoạch và quy đổi N/I -> CHAN/LE theo totals GIỜ NÀY
+                // Lấy 1 ký tự N/I theo kế hoạch và quy đổi N/I -> BANKER/PLAYER theo totals GIỜ NÀY
                 char planNI = planned.Dequeue();
                 string side = NOrIToSide(planNI, snapNow?.totals);
 
@@ -165,3 +165,5 @@ namespace BaccaratSexyCasino.Tasks
 
     }
 }
+
+

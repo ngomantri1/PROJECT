@@ -5,9 +5,9 @@
 // - CONTRARIAN: Đặt cửa đảo so với quyết định panel (ContrarianEnabled=true).
 // - FEEDBACK SIMULATED: AI học/guard/ewma cập nhật theo "thắng/thua GIẢ LẬP của panel gốc",
 //   không theo kết quả thực tế của cửa đã đặt (để tránh poison khi đánh ngược).
-// - SEQ: luôn lấy trực tiếp từ snap.seq mỗi vòng, chuyển về C/L theo quy tắc:
+// - SEQ: luôn lấy trực tiếp từ snap.seq mỗi vòng, chuyển về B/P theo quy tắc:
 //     + Số: 1,3 => L ; 0,2,4 => C
-//     + Chữ: 'L'/'l' => L ; 'C'/'c' => C
+//     + Chữ: 'P'/'l' => L ; 'B'/'c' => C
 //   Bỏ qua ký tự khác. Chỉ lấy TỐI ĐA 50 phần tử cuối. An toàn khi chuỗi < 50.
 // - Không còn tự "append" kết quả vào st.lastHands; thay vào đó mỗi vòng luôn refresh từ snap.
 // - Log rõ ràng: REFRESH from snap.seq, BEAUTY-SCAN, quyết định panel vs cửa đặt (đảo), ok thực,
@@ -116,7 +116,7 @@ namespace BaccaratSexyCasino.Tasks
 
         private sealed class PanelState
         {
-            // Đây là chuỗi kết quả CHAN/LE thực tế, luôn refresh từ snap.seq mỗi vòng
+            // Đây là chuỗi kết quả BANKER/PLAYER thực tế, luôn refresh từ snap.seq mỗi vòng
             public List<int> lastHands = new();
 
             // Các trạng thái học/guard/ewma dựa trên trainingWin (giả lập)
@@ -188,7 +188,7 @@ namespace BaccaratSexyCasino.Tasks
                 LogVotes(ctx, votes, panelPick, signer);
 
                 // Đặt cược theo placedPick
-                string side = (placedPick == 0) ? "CHAN" : "LE";
+                string side = (placedPick == 0) ? "BANKER" : "PLAYER";
                 long stake;
                 if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
                 {
@@ -201,7 +201,7 @@ namespace BaccaratSexyCasino.Tasks
                 {
                     stake = money.GetStakeForThisBet();
                 }
-                Log(ctx, $"[AI15] BET side={side} stake={stake:N0} (panelPick={(panelPick == 0 ? "C" : "L")}, contrarian={(Cfg.ContrarianEnabled ? "ON" : "OFF")})");
+                Log(ctx, $"[AI15] BET side={side} stake={stake:N0} (panelPick={(panelPick == 0 ? "B" : "P")}, contrarian={(Cfg.ContrarianEnabled ? "ON" : "OFF")})");
                 await PlaceBet(ctx, side, stake, ct);
 
                 // Chấm điểm thực tế theo cửa đã đặt
@@ -238,14 +238,14 @@ namespace BaccaratSexyCasino.Tasks
                 }
 
                 // TÍNH panelWin (giả lập) và trainingWin (cho học)
-                // trueWinSide: 0/1 là CHAN/LE thực tế thắng
+                // trueWinSide: 0/1 là BANKER/PLAYER thực tế thắng
                 int trueWinSide = ok ? placedPick : 1 - placedPick;
                 bool panelWin = (trueWinSide == panelPick);
 
                 bool trainingWin = panelWin;       // HỌC THEO PANEL GỐC (GIẢ LẬP)
                 int trainingPick = panelPick;     // pick dùng để học
 
-                Log(ctx, $"[AI15] RESULT ok={(ok ? "WIN" : "LOSE")} | trueWin={(trueWinSide == 0 ? "C" : "L")} | panelPick={(panelPick == 0 ? "C" : "L")} -> panelWin={(panelWin ? "WIN" : "LOSE")} | trainingWin={(trainingWin ? "WIN" : "LOSE")}");
+                Log(ctx, $"[AI15] RESULT ok={(ok ? "WIN" : "LOSE")} | trueWin={(trueWinSide == 0 ? "B" : "P")} | panelPick={(panelPick == 0 ? "B" : "P")} -> panelWin={(panelWin ? "WIN" : "LOSE")} | trainingWin={(trainingWin ? "WIN" : "LOSE")}");
 
                 // Cập nhật trạng thái học/guard/ewma theo trainingWin
                 UpdateAfterTraining(st, trainingWin, trainingPick);
@@ -276,7 +276,7 @@ namespace BaccaratSexyCasino.Tasks
             return Task.CompletedTask;
         }
 
-        // Đọc snap.seq -> chuẩn hoá về danh sách 0/1 (C/L) và chuỗi chữ 'C'/'L' để log
+        // Đọc snap.seq -> chuẩn hoá về danh sách 0/1 (B/P) và chuỗi chữ 'B'/'P' để log
         private static void SafeRefreshLastHandsFromSnap(GameContext ctx, PanelState st, bool firstLog = false)
         {
             try
@@ -284,7 +284,7 @@ namespace BaccaratSexyCasino.Tasks
                 var snap = ctx.GetSnap();
                 var raw = snap?.seq ?? string.Empty;
 
-                // Parse: nhận cả số (0..4) lẫn chữ (C/L), lọc ký tự khác
+                // Parse: nhận cả số (0..4) lẫn chữ (B/P), lọc ký tự khác
                 var tmp = new List<int>(50);
                 var sb = new System.Text.StringBuilder(60);
 
@@ -294,11 +294,11 @@ namespace BaccaratSexyCasino.Tasks
                     switch (ch)
                     {
                         // số
-                        case '0': case '2': case '4': bit = 0; break; // chẵn = C
-                        case '1': case '3': bit = 1; break; // lẻ   = L
+                        case '0': case '2': case '4': bit = 0; break; // banker = C
+                        case '1': case '3': bit = 1; break; // player   = L
                         // chữ
-                        case 'C': case 'c': bit = 0; break;
-                        case 'L': case 'l': bit = 1; break;
+                        case 'B': case 'c': bit = 0; break;
+                        case 'P': case 'l': bit = 1; break;
                         default: break; // bỏ qua
                     }
 
@@ -312,9 +312,9 @@ namespace BaccaratSexyCasino.Tasks
                 if (tmp.Count > 50)
                     tmp = tmp.Skip(tmp.Count - 50).ToList();
 
-                // Xây chuỗi C/L để log
+                // Xây chuỗi B/P để log
                 foreach (var b in tmp)
-                    sb.Append(b == 0 ? 'C' : 'L');
+                    sb.Append(b == 0 ? 'B' : 'P');
                 string seqCL = sb.ToString();
 
                 if (tmp.Count == 0)
@@ -394,7 +394,7 @@ namespace BaccaratSexyCasino.Tasks
             return (len, last);
         }
 
-        private static (int curLen, int curSide, int prevLen, int prevSide, int prev2Len, int prev2Side)
+        private static (int curLen, int curSide, int prevPen, int prevSide, int prev2Len, int prev2Side)
         GetTail3Blocks(List<int> seq)
         {
             int n = seq.Count;
@@ -405,20 +405,20 @@ namespace BaccaratSexyCasino.Tasks
             while (i >= 0 && seq[i] == curSide) { curLen++; i--; }
             if (i < 0) return (curLen, curSide, 0, -1, 0, -1);
 
-            int prevSide = seq[i], prevLen = 0;
-            while (i >= 0 && seq[i] == prevSide) { prevLen++; i--; }
-            if (i < 0) return (curLen, curSide, prevLen, prevSide, 0, -1);
+            int prevSide = seq[i], prevPen = 0;
+            while (i >= 0 && seq[i] == prevSide) { prevPen++; i--; }
+            if (i < 0) return (curLen, curSide, prevPen, prevSide, 0, -1);
 
             int prev2Side = seq[i], prev2Len = 0;
             while (i >= 0 && seq[i] == prev2Side) { prev2Len++; i--; }
 
-            return (curLen, curSide, prevLen, prevSide, prev2Len, prev2Side);
+            return (curLen, curSide, prevPen, prevSide, prev2Len, prev2Side);
         }
 
         private static string BitsCL(List<int> seq, int take = 24)
         {
             if (seq.Count == 0) return "-";
-            var tail = seq.Skip(Math.Max(0, seq.Count - take)).Select(x => x == 1 ? 'L' : 'C').ToArray();
+            var tail = seq.Skip(Math.Max(0, seq.Count - take)).Select(x => x == 1 ? 'P' : 'B').ToArray();
             return new string(tail);
         }
         private static string BlockSig(List<int> seq)
@@ -462,7 +462,7 @@ namespace BaccaratSexyCasino.Tasks
             }
 
             // Beauty scan trên chuỗi thực tế từ snap.seq
-            var (curLen, curSide, prevLen, prevSide, prev2Len, prev2Side) = GetTail3Blocks(st.lastHands);
+            var (curLen, curSide, prevPen, prevSide, prev2Len, prev2Side) = GetTail3Blocks(st.lastHands);
             var (streakLen, streakSide) = CurrentStreakLen(st.lastHands);
 
             bool guardOn = st.hardGuardOn || st.lossGuardOn;
@@ -476,9 +476,9 @@ namespace BaccaratSexyCasino.Tasks
 
             // X–Y–X (độ dài 1..4 bằng nhau 2 đầu) → theo block giữa (prevSide)
             string cand = null; int candSide = -1;
-            if (IsBeautyLen(prev2Len) && IsBeautyLen(prevLen) && IsBeautyLen(curLen) && prev2Len == curLen)
+            if (IsBeautyLen(prev2Len) && IsBeautyLen(prevPen) && IsBeautyLen(curLen) && prev2Len == curLen)
             {
-                cand = $"PAT{prev2Len}-{prevLen}-{curLen}";
+                cand = $"PAT{prev2Len}-{prevPen}-{curLen}";
                 candSide = prevSide;
             }
             else if (streakLen >= Cfg.BeautyStreakMin)
@@ -641,7 +641,7 @@ namespace BaccaratSexyCasino.Tasks
             string lgState = st.lossGuardOn ? "LG=ON" : "LG=OFF";
             string metrics = $"w20={w20:0.00} w50={w50:0.00} Lmax={st.maxLoseStreak} Lcurr={st.loseStreak}";
             string mode = "MODE=NORMAL";
-            string picks = $"panel={(panelPick == 0 ? "C" : "L")} placed={(placedPick == 0 ? "C" : "L")} contrarian={(Cfg.ContrarianEnabled ? "ON" : "OFF")}";
+            string picks = $"panel={(panelPick == 0 ? "B" : "P")} placed={(placedPick == 0 ? "B" : "P")} contrarian={(Cfg.ContrarianEnabled ? "ON" : "OFF")}";
             Log(ctx, $"[AI15] REG={regime} | dynTrig={dynLossTrig} | {lgState} | {lockState} | {mode} | {metrics} | {picks}");
         }
 
@@ -714,3 +714,5 @@ namespace BaccaratSexyCasino.Tasks
         private static void Log(GameContext ctx, string msg) => ctx.Log?.Invoke(msg);
     }
 }
+
+
