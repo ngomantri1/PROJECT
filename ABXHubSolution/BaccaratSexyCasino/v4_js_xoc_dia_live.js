@@ -11,6 +11,8 @@
     //root.style.display='none';  //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
+    var CW_ROOT_ID = '__cw_root_allin';
+    var CW_FALLBACK_PANEL_ID = '__cw_wait_panel';
     try {
         if (window[NS] && window[NS].teardown) {
             window[NS].teardown();
@@ -57,9 +59,46 @@
             } catch (_) {}
         } catch (_) {}
     })();
+    function __cw_ensureFallbackPanel(stateText, infoText) {
+        try {
+            var host = document.body || document.documentElement;
+            if (!host) return null;
+
+            var root = document.getElementById(CW_ROOT_ID);
+            if (!root) {
+                root = document.createElement('div');
+                root.id = CW_ROOT_ID;
+                root.setAttribute('data-cw-mode', 'fallback');
+                root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
+                host.appendChild(root);
+            }
+
+            var panel = document.getElementById(CW_FALLBACK_PANEL_ID);
+            if (!panel) {
+                panel = document.createElement('div');
+                panel.id = CW_FALLBACK_PANEL_ID;
+                panel.style.cssText = 'position:fixed;top:10px;right:10px;width:420px;background:#08130f;color:#bff;border:1px solid #0a0;border-radius:10px;padding:8px;font:12px/1.45 Consolas,monospace;pointer-events:auto;z-index:2147483647';
+                root.appendChild(panel);
+            }
+
+            panel.innerHTML = ''
+                + '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">'
+                + '<b style="color:#9f9">Canvas Watch</b>'
+                + '<span style="margin-left:auto;color:#ffd866">' + String(stateText || 'WAIT-ENGINE') + '</span>'
+                + '</div>'
+                + '<div style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;">'
+                + String(infoText || 'Dang cho runtime canvas/Cocos khoi tao...')
+                + '</div>';
+            return panel;
+        } catch (_) {
+            return null;
+        }
+    }
+
     function __cw_waitReady() {
         if (window.__cw_waiting_v4) return;
         window.__cw_waiting_v4 = 1;
+        __cw_ensureFallbackPanel('WAIT-ENGINE', 'Dang cho runtime canvas/Cocos khoi tao de mo day du Canvas Watch.');
         var tries = 0;
         var timer = setInterval(function () {
             try {
@@ -70,6 +109,7 @@
                 } else if (++tries > 120) {
                     clearInterval(timer);
                     window.__cw_waiting_v4 = 0;
+                    __cw_ensureFallbackPanel('NO-ENGINE', 'Khong phat hien window.cc / Cocos tren trang nay.\nCanvas Watch day du khong the boot, nhung panel da duoc hien de cho chan doan.');
                 }
             } catch (e) {}
         }, 500);
@@ -1785,7 +1825,7 @@
         seq: ''
     };
 
-    var ROOT = '__cw_root_allin';
+    var ROOT = CW_ROOT_ID;
     var _old = document.getElementById(ROOT);
     if (_old)
         try {
@@ -1793,6 +1833,7 @@
         } catch (e) {}
     var root = document.createElement('div');
     root.id = ROOT;
+    root.setAttribute('data-cw-mode', 'full');
     root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
     document.body.appendChild(root);
 

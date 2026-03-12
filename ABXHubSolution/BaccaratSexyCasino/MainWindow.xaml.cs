@@ -775,6 +775,8 @@ Ví dụ không hợp lệ:
         private CoreWebView2Environment? _webEnv;
         private bool _webInitDone;
         private bool _popupWebHooked;
+        private bool _popupBridgeRegistered;
+        private string? _popupLastDocKey;
         private WebView2? _popupWeb;
         private const string Wv2ZipResNameX64 = "BaccaratSexyCasino.ThirdParty.WebView2Fixed_win-x64.zip";
         // Thư mục cache bền vững cho runtime (không bị dọn như %TEMP%)
@@ -3189,12 +3191,80 @@ Ví dụ không hợp lệ:
                 settings.UserAgent = BuildDesktopEdgeUserAgent();
             }
 
+            _appJs ??= await LoadAppJsAsyncFallback();
+            if (!_popupBridgeRegistered)
+            {
+                await popupWeb.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(TOP_FORWARD);
+                if (!string.IsNullOrEmpty(_appJs))
+                    await popupWeb.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(_appJs);
+                await popupWeb.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(FRAME_AUTOSTART);
+                popupWeb.CoreWebView2.FrameCreated += PopupCore_FrameCreated_Bridge;
+                popupWeb.CoreWebView2.DOMContentLoaded += PopupCore_DOMContentLoaded_Bridge;
+                _popupBridgeRegistered = true;
+                Log("[PopupWeb] bridge registered");
+            }
+
             popupWeb.CoreWebView2.NewWindowRequested += PopupWeb_NewWindowRequested;
             popupWeb.CoreWebView2.WindowCloseRequested += PopupWeb_WindowCloseRequested;
             popupWeb.NavigationCompleted += PopupWeb_NavigationCompleted;
             _popupWebHooked = true;
             Log("[PopupWeb] ready");
             return popupWeb;
+        }
+
+        private async Task InjectOnPopupDocAsync()
+        {
+            if (_popupWeb?.CoreWebView2 == null) return;
+
+            string key = "";
+            try
+            {
+                var json = await _popupWeb.CoreWebView2.ExecuteScriptAsync(
+                    "(function(){try{return String(performance.timeOrigin)}catch(_){return String(Date.now())}})()");
+                key = JsonSerializer.Deserialize<string>(json) ?? "";
+            }
+            catch { }
+
+            if (!string.IsNullOrEmpty(key) && key != _popupLastDocKey)
+            {
+                await _popupWeb.CoreWebView2.ExecuteScriptAsync(TOP_FORWARD);
+                if (!string.IsNullOrEmpty(_appJs))
+                    await _popupWeb.CoreWebView2.ExecuteScriptAsync(_appJs);
+                await _popupWeb.CoreWebView2.ExecuteScriptAsync(FRAME_AUTOSTART);
+                _popupLastDocKey = key;
+                Log("[PopupWeb] bridge injected, key=" + key);
+            }
+        }
+
+        private void PopupCore_FrameCreated_Bridge(object? sender, CoreWebView2FrameCreatedEventArgs e)
+        {
+            try
+            {
+                var f = e.Frame;
+                _ = f.ExecuteScriptAsync(FRAME_SHIM);
+                if (!string.IsNullOrEmpty(_appJs))
+                    _ = f.ExecuteScriptAsync(_appJs);
+                _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
+                f.DOMContentLoaded += Frame_DOMContentLoaded_Bridge;
+                f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
+                Log("[PopupWeb] frame bridge armed.");
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb.FrameCreated] " + ex.Message);
+            }
+        }
+
+        private async void PopupCore_DOMContentLoaded_Bridge(object? sender, CoreWebView2DOMContentLoadedEventArgs e)
+        {
+            try
+            {
+                await InjectOnPopupDocAsync();
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb.DOMContentLoaded] " + ex.Message);
+            }
         }
 
         private void PopupWeb_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
@@ -3215,12 +3285,14 @@ Ví dụ không hợp lệ:
             }
         }
 
-        private void PopupWeb_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+        private async void PopupWeb_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
         {
             try
             {
                 var src = _popupWeb?.CoreWebView2?.Source ?? "";
                 Log("[PopupWeb] NavigationCompleted: " + (e.IsSuccess ? "OK" : ("Err " + e.WebErrorStatus)) + " | " + src);
+                if (e.IsSuccess)
+                    await InjectOnPopupDocAsync();
             }
             catch { }
         }
@@ -3284,6 +3356,8 @@ Ví dụ không hợp lệ:
             var popupWeb = _popupWeb;
             _popupWeb = null;
             _popupWebHooked = false;
+            _popupBridgeRegistered = false;
+            _popupLastDocKey = null;
 
             if (popupWeb == null)
                 return;
@@ -3294,6 +3368,8 @@ Ví dụ không hợp lệ:
                 {
                     popupWeb.CoreWebView2.NewWindowRequested -= PopupWeb_NewWindowRequested;
                     popupWeb.CoreWebView2.WindowCloseRequested -= PopupWeb_WindowCloseRequested;
+                    popupWeb.CoreWebView2.FrameCreated -= PopupCore_FrameCreated_Bridge;
+                    popupWeb.CoreWebView2.DOMContentLoaded -= PopupCore_DOMContentLoaded_Bridge;
                     try { popupWeb.CoreWebView2.Stop(); } catch { }
                 }
             }
