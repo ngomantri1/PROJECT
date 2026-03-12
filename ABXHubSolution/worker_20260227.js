@@ -66,7 +66,8 @@ export default {
     const hasSession = !!sessionIdRaw;
 
     const now = Date.now();
-    const serverDay = new Date(now).toISOString().slice(0, 10).replace(/-/g, '');
+    const tzOffsetMs = 7 * 60 * 60 * 1000;
+    const serverDay = new Date(now + tzOffsetMs).toISOString().slice(0, 10).replace(/-/g, '');
     const ttlMinutes = parseInt(env.LEASE_TTL_MINUTES ?? '10', 10) || 10;
     const trialMinutes = parseInt(env.TRIAL_MINUTES ?? '30', 10) || 30;
     const staleSec = parseInt(env.STALE_GRACE_SECONDS ?? '180', 10) || 180;

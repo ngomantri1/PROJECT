@@ -4030,7 +4030,7 @@ Ví dụ không hợp lệ:
             var lic = await FetchLicenseAsync(username);
             if (lic == null)
             {
-                MessageBox.Show("Không tìm thấy license cho tài khoản này. Hãy liên hệ 0978.248.822 để đăng ký sử dụng.",
+                MessageBox.Show("Không tìm thấy license cho tài khoản này. Hãy liên hệ Telegram: @minoauto để đăng ký sử dụng.",
                     "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
@@ -4049,7 +4049,7 @@ Ví dụ không hợp lệ:
             }
             if (DateTimeOffset.UtcNow >= expUtc)
             {
-                MessageBox.Show("Tool của bạn hết hạn. Hãy liên hệ 0978.248.822 để gia hạn",
+                MessageBox.Show("Tool của bạn hết hạn. Hãy liên hệ Telegram: @minoauto để gia hạn",
                     "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
@@ -6283,7 +6283,7 @@ Ví dụ không hợp lệ:
                               }
                               else
                               {
-                                  MessageBox.Show("Tool của bạn hết hạn ! Hãy liên hệ 0978.248.822 để gia hạn", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                  MessageBox.Show("Tool của bạn hết hạn ! Hãy liên hệ Telegram: @minoauto để gia hạn", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                               }
 
                               if (ChkTrial != null) ChkTrial.IsChecked = false;
