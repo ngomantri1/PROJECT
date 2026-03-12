@@ -44,18 +44,6 @@
                       { title: "Baccarat Sexy Casino",                                slug: "baccarat-sexy-casino",    tag: "Baccarat", gradient: "from-rose-500 to-fuchsia-500", img: "Assets/BaccaratSexyCasino.png" },
                     ];
 
-                    const SEARCH_ALIASES = {
-                      "xoc-dia-live-hit": ["xoc", "dia", "xoc dia", "xd", "xocdia"],
-                      "tai-xiu-live-hit": ["tai", "xiu", "tai xiu", "tx", "taixiu"],
-                      "xoc-dia-soi-live-kh24": ["xoc", "dia", "xoc dia", "xd", "xocdia", "soi"],
-                      "baccarat-pp-rr88": ["bac", "baccarat", "pp", "rr88"],
-                      "xoc-dia-tu-linh-zowin": ["xoc", "dia", "xoc dia", "xd", "xocdia", "tu linh"],
-                      "tai-xiu-thuong-zowin": ["tai", "xiu", "tai xiu", "tx", "taixiu", "thuong"],
-                      "tai-xiu-b29": ["tai", "xiu", "tai xiu", "tx", "taixiu", "b29"],
-                      "xoc-dia-b29": ["xoc", "dia", "xoc dia", "xd", "xocdia", "b29"],
-                      "baccarat-sexy-casino": ["bac", "baccarat", "sexy"],
-                    };
-
                     function normalizeSearchText(text) {
                       return (text || "")
                         .toLowerCase()
@@ -72,19 +60,55 @@
                       return normalized ? normalized.split(" ") : [];
                     }
 
-                    function buildSearchIndex(game) {
-                      const parts = [
-                        game.title,
-                        game.tag,
-                        game.slug,
-                        ...(SEARCH_ALIASES[game.slug] || []),
-                      ];
+                    function buildAcronymTokens(tokens) {
+                      if (!Array.isArray(tokens) || tokens.length === 0) return [];
 
-                      const normalizedParts = parts.map(normalizeSearchText).filter(Boolean);
+                      const acronym = tokens
+                        .filter(Boolean)
+                        .map((token) => token[0])
+                        .join("");
+
+                      if (!acronym) return [];
+
+                      const variants = [];
+                      for (let i = 1; i <= acronym.length; i++) {
+                        variants.push(acronym.slice(0, i));
+                      }
+
+                      return variants;
+                    }
+
+                    function buildSearchIndex(game) {
+                      const normalizedTitle = normalizeSearchText(game.title);
+                      const normalizedTag = normalizeSearchText(game.tag);
+                      const normalizedSlug = normalizeSearchText(game.slug);
+
+                      const titleTokens = splitSearchTokens(normalizedTitle);
+                      const tagTokens = splitSearchTokens(normalizedTag);
+                      const slugTokens = splitSearchTokens(normalizedSlug);
+
+                      const normalizedParts = [
+                        normalizedTitle,
+                        normalizedTag,
+                        normalizedSlug,
+                        normalizedTitle.replace(/\s+/g, ""),
+                        normalizedTag.replace(/\s+/g, ""),
+                        normalizedSlug.replace(/\s+/g, ""),
+                        ...buildAcronymTokens(titleTokens),
+                        ...buildAcronymTokens(tagTokens),
+                        ...buildAcronymTokens(slugTokens),
+                      ].filter(Boolean);
 
                       return {
-                        text: normalizedParts.join(" "),
-                        tokens: Array.from(new Set(normalizedParts.flatMap(splitSearchTokens))),
+                        text: Array.from(new Set(normalizedParts)).join(" "),
+                        tokens: Array.from(
+                          new Set([
+                            ...titleTokens,
+                            ...tagTokens,
+                            ...slugTokens,
+                            ...normalizedParts,
+                          ])
+                        ),
                       };
                     }
 
