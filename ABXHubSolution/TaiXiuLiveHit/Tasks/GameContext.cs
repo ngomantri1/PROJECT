@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 
@@ -45,8 +46,11 @@ namespace TaiXiuLiveHit.Tasks
         // "IncreaseWhenLose" | "IncreaseWhenWin" | "Victor2" | "ReverseFibo" | "MultiChain"
         public string MoneyStrategyId { get; init; }
 
+        public string SideRateText { get; init; } = "";
+        public bool UseRawWinAmount { get; init; } = false;
         public string BetSeq { get; init; }       // ô "CHUỖI CẦU" hoặc "Chuỗi N/I"
         public string BetPatterns { get; init; }  // ô "CÁC THẾ CẦU"
+        public Action<HashSet<string>, string>? UiFinalizeMultiBet { get; init; }
 
         // Tiện ích UI nếu cần
         public Dispatcher UiDispatcher { get; init; }
@@ -60,5 +64,6 @@ namespace TaiXiuLiveHit.Tasks
         public Action<double>? UiSetStake;    // tiền đang đánh
         public Action<double>? UiAddWin;      // cộng/trừ tiền thắng lũy kế
         public Action<bool>? UiWinLoss;       // true = win, false = loss
+        public Action<int, int>? UiSetChainLevel; // (chainIndex, levelIndex) cho MultiChain
     }
 }

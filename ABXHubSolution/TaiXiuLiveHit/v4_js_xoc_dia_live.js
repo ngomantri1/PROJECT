@@ -2577,7 +2577,7 @@
                     if (window.__abx_findNodeByTail)
                         return window.__abx_findNodeByTail(tail);
 
-                    var scene = getSceneSafe();
+                    var scene = getSceneSafeBridge();
                     if (!scene)
                         return null;
                     var parts = String(tail).split('/').filter(Boolean);
@@ -2652,7 +2652,7 @@
                     return window.__abx_findNodeByTail(tail);
 
                 // fallback: tự lần từ scene
-                var scene = getSceneSafe();
+                var scene = getSceneSafeBridge();
                 if (!scene)
                     return null;
 
@@ -2923,8 +2923,18 @@
         return a.slice(-limit).join('/');
     }
 
+    function getSceneSafeBridge() {
+        try {
+            if (!(window.cc && cc.director && cc.director.getScene))
+                return null;
+            return cc.director.getScene();
+        } catch (e) {
+            return null;
+        }
+    }
+
     function walkNodes(cb) {
-        var scene = getSceneSafe();
+        var scene = getSceneSafeBridge();
         if (!scene)
             return;
 

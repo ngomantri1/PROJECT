@@ -592,6 +592,7 @@
                                             <ComboBoxItem Content="14) AI học tại chỗ (n-gram)" />
                                             <ComboBoxItem Content="15) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime)" />
                                             <ComboBoxItem Content="16) Top10 tích lũy (khởi từ 50 T/X)" />
+                                            <ComboBoxItem Content="17) Đánh các cửa ăn nổ hũ" />
                                         </ComboBox>
                                     </Grid>
 
@@ -753,6 +754,53 @@
                                         Margin="{StaticResource ValueFieldMargin}"
                                         HorizontalAlignment="Stretch"
                                         Text="0" />
+                                    <Grid
+                                        x:Name="RowSideRatio"
+                                        Grid.Row="6"
+                                        Grid.ColumnSpan="2"
+                                        Visibility="Collapsed">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="130" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock
+                                            Grid.Column="0"
+                                            Style="{StaticResource CapsLabel}"
+                                            Text="CỬA ĐẶT &amp; TỈ LỆ" />
+                                        <StackPanel Grid.Column="1" Orientation="Vertical">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox
+                                                    x:Name="TxtSideRatio"
+                                                    Grid.Column="0"
+                                                    MinHeight="36"
+                                                    MaxHeight="120"
+                                                    Margin="{StaticResource ValueFieldMargin}"
+                                                    HorizontalAlignment="Stretch"
+                                                    AcceptsReturn="True"
+                                                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                    TextWrapping="Wrap" />
+                                                <Button
+                                                    x:Name="BtnResetSideRatio"
+                                                    Grid.Column="1"
+                                                    MinWidth="70"
+                                                    Margin="8,0,0,0"
+                                                    Padding="12,8"
+                                                    Content="Reset"
+                                                    Style="{StaticResource SecondaryButton}" />
+                                            </Grid>
+                                            <TextBlock
+                                                x:Name="LblSideRatioError"
+                                                Margin="0,2,0,0"
+                                                Foreground="Red"
+                                                TextWrapping="Wrap"
+                                                Visibility="Collapsed" />
+                                        </StackPanel>
+                                    </Grid>
                                 </Grid>
                                 <!--  HÀNG: CẮT LÃI / CẮT LỖ (đặt ngay sau hàng 'Đặt khi còn (giây)')  -->
                                 <Grid>

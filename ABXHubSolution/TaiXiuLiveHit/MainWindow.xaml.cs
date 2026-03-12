@@ -149,7 +149,7 @@ namespace TaiXiuLiveHit
         private bool _uiReady = false;
         private bool _didStartupNav = false;
         private bool _webHooked = false;
-        private CancellationTokenSource? _navCts, _userCts, _passCts, _stakeCts;
+        private CancellationTokenSource? _navCts, _userCts, _passCts, _stakeCts, _sideRateCts;
 
         // ====== JS Awaiters ======
         private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _jsAwaiters =
@@ -250,7 +250,7 @@ namespace TaiXiuLiveHit
         private bool _autoFollowNewest = true;// true = đang bám trang mới nhất (trang 1); false = đang xem trang cũ, KHÔNG auto nhảy
 
         // 3) Giữ pending bet để chờ kết quả
-        private BetRow? _pendingRow;
+        private readonly List<BetRow> _pendingRows = new();
         private const int MaxHistory = 1000;   // tổng số bản ghi giữ trong bộ nhớ & khi load
 
 
@@ -380,6 +380,15 @@ Ví dụ không hợp lệ:
 • Nhập phần trăm (0–100), KHÔNG phải giây.
 • Nên để khoảng 15% để bám sát dòng tiền hai cửa.
 • Ví dụ: 15 = đặt khi còn ~15% thời gian phiên.";
+
+        const string TIP_SIDE_RATIO =
+        @"CUA DAT & TI LE (Chien luoc 17)
+- Nhap moi dong: <cua>:<ti le>.
+- Cua hop le: TAI, XIU.
+- Ti le phai la so nguyen duong.
+- Cau hinh mac dinh:
+  TAI:1
+  XIU:1";
         // =========================================================
 
 
@@ -414,6 +423,7 @@ Ví dụ không hợp lệ:
             public string BetSeqNI { get; set; } = "";        // cho Chiến lược 3
             public string BetPatternsTX { get; set; } = "";   // cho Chiến lược 2
             public string BetPatternsNI { get; set; } = "";   // cho Chiến lược 4
+            public string SideRateText { get; set; } = TaiXiuLiveHit.Tasks.SideRateParser.DefaultText;
 
             // Lưu chuỗi tiền theo từng MoneyStrategy
             public Dictionary<string, string> StakeCsvByMoney { get; set; } = new();
@@ -862,6 +872,8 @@ Ví dụ không hợp lệ:
             if (CmbBetStrategy != null) CmbBetStrategy.IsEnabled = enabled;   // KHÓA khi đang chạy
             if (TxtChuoiCau != null) TxtChuoiCau.IsReadOnly = !enabled;   // KHÓA khi đang chạy
             if (TxtTheCau != null) TxtTheCau.IsReadOnly = !enabled;   // KHÓA khi đang chạy
+            if (TxtSideRatio != null) TxtSideRatio.IsReadOnly = !enabled;
+            if (BtnResetSideRatio != null) BtnResetSideRatio.IsEnabled = enabled;
 
             // Nhóm Quản lý vốn
             if (CmbMoneyStrategy != null) CmbMoneyStrategy.IsEnabled = enabled; // KHÓA khi đang chạy (chỉ khóa chọn chiến lược vốn)
@@ -960,7 +972,7 @@ Ví dụ không hợp lệ:
 
                 }
                 if (CmbBetStrategy != null)
-                    CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 15) ? _cfg.BetStrategyIndex : 15;
+                    CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 16) ? _cfg.BetStrategyIndex : 15;
                 SyncStrategyFieldsToUI();
                 UpdateTooltips();
                 UpdateBetStrategyUi();
@@ -972,6 +984,12 @@ Ví dụ không hợp lệ:
                 if (ChkS7ResetOnProfit != null) ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
                 MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
                 UpdateS7ResetOptionUI();
+                if (TxtSideRatio != null)
+                {
+                    var sideTxt = string.IsNullOrWhiteSpace(_cfg.SideRateText) ? TaiXiuLiveHit.Tasks.SideRateParser.DefaultText : _cfg.SideRateText;
+                    TxtSideRatio.Text = sideTxt;
+                    _cfg.SideRateText = sideTxt;
+                }
 
 
                 if (ChkRemember != null) ChkRemember.IsChecked = _cfg.RememberCreds;
@@ -1015,6 +1033,7 @@ Ví dụ không hợp lệ:
                 _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? _cfg.BetStrategyIndex;
                 _cfg.BetSeq = T(TxtChuoiCau, _cfg.BetSeq);
                 _cfg.BetPatterns = T(TxtTheCau, _cfg.BetPatterns);
+                _cfg.SideRateText = T(TxtSideRatio, _cfg.SideRateText);
 
                 var remember = (ChkRemember?.IsChecked == true);
                 _cfg.RememberCreds = remember;
@@ -1320,9 +1339,12 @@ Ví dụ không hợp lệ:
                                                 // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
                                                 var kqStr = winIsTai ? "TAI" : "XIU";
                                                 long? accNow2 = snap?.totals?.A;
-                                                if (_pendingRow != null && accNow2.HasValue)
+                                                if (_pendingRows.Count > 0 && accNow2.HasValue)
                                                 {
-                                                    FinalizeLastBet(kqStr, accNow2.Value);
+                                                    if (_activeTask is not TaiXiuLiveHit.Tasks.JackpotMultiSideTask)
+                                                    {
+                                                        FinalizeLastBet(kqStr, accNow2.Value);
+                                                    }
                                                 }
 
                                                 _lockMajorMinorUpdates = false; // xong chu kỳ này
@@ -1448,38 +1470,27 @@ Ví dụ không hợp lệ:
                                     long accNow = 0;
                                     try { accNow = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
 
-                                    if (_pendingRow != null)
+                                    var row = new BetRow
                                     {
-                                        // ĐÃ có 1 ván đang chờ kết quả → chỉ cập nhật, KHÔNG thêm dòng mới
-                                        _pendingRow.Side = side;
-                                        _pendingRow.Stake = amount;
-                                        _pendingRow.Account = accNow;
+                                        At = DateTime.Now,
+                                        Game = "Tài Xỉu live",
+                                        Stake = amount,
+                                        Side = side,
+                                        Result = "-",
+                                        WinLose = "-",
+                                        Account = accNow
+                                    };
+                                    _betAll.Insert(0, row);
+                                    if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
+                                    _pendingRows.Add(row);
+
+                                    if (_autoFollowNewest)
+                                    {
+                                        ShowFirstPage();
                                     }
                                     else
                                     {
-                                        _pendingRow = new BetRow
-                                        {
-                                            At = DateTime.Now,
-                                            Game = "Tài Xỉu live",
-                                            Stake = amount,
-                                            Side = side,
-                                            Result = "-",
-                                            WinLose = "-",
-                                            Account = accNow
-                                        };
-                                        // MỚI NHẤT Ở ĐẦU DANH SÁCH (trang 1)
-                                        _betAll.Insert(0, _pendingRow);
-                                        if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
-
-                                        // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
-                                        if (_autoFollowNewest)
-                                        {
-                                            ShowFirstPage();
-                                        }
-                                        else
-                                        {
-                                            RefreshCurrentPage();
-                                        }
+                                        RefreshCurrentPage();
                                     }
 
                                     return;
@@ -2091,7 +2102,9 @@ Ví dụ không hợp lệ:
                     if (CmbBetStrategy != null) CmbBetStrategy.SelectionChanged += CmbBetStrategy_SelectionChanged;
                     if (TxtChuoiCau != null) TxtChuoiCau.TextChanged += TxtChuoiCau_TextChanged;
                     if (TxtTheCau != null) TxtTheCau.TextChanged += TxtTheCau_TextChanged;
+                    if (TxtSideRatio != null) TxtSideRatio.TextChanged += TxtSideRatio_TextChanged;
                     if (CmbMoneyStrategy != null) CmbMoneyStrategy.SelectionChanged += CmbMoneyStrategy_SelectionChanged;
+                    if (BtnResetSideRatio != null) BtnResetSideRatio.Click += BtnResetSideRatio_Click;
 
                     _inputEventsHooked = true;
                 }
@@ -2322,6 +2335,8 @@ Ví dụ không hợp lệ:
                 (idx == 1) ? TIP_THE_TX :
                 (idx == 3) ? TIP_THE_NI :
                 "Chọn chiến lược 2 hoặc 4 để nhập Thế cầu.");
+            AttachTip(TxtSideRatio,
+                (idx == 16) ? TIP_SIDE_RATIO : "Chon chien luoc 17 de nhap Cua dat & ti le.");
             // ==== BẮT ĐẦU: Tooltip cho chiến lược đặt cược ====
             string tip = idx switch
             {
@@ -2341,6 +2356,7 @@ Ví dụ không hợp lệ:
                 13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
                 14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
                 15 => "16) TOP10 TÍCH LŨY (khởi từ 50 T/X). Khởi tạo thống kê từ 50 kết quả đầu vào (T/X). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
+                16 => "17) Danh cac cua an no hu: Doc cau hinh TAI/XIU va ti le, nhan voi muc tien hien tai de dat nhieu cua trong cung 1 van; ket qua tinh theo delta thuc cua tung cua.",
                 _ => "Chiến lược chưa xác định."
             };
 
@@ -2378,6 +2394,7 @@ Ví dụ không hợp lệ:
                 13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
                 14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
                 15 => "16) TOP10 TÍCH LŨY (khởi từ 50 T/X). Khởi tạo thống kê từ 50 kết quả đầu vào (T/X). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
+                16 => "17) Danh cac cua an no hu: Doc cau hinh TAI/XIU va ti le, nhan voi muc tien hien tai de dat nhieu cua trong cung 1 van; ket qua tinh theo delta thuc cua tung cua.",
                 _ => "Chiến lược chưa xác định."
             };
         }
@@ -3411,6 +3428,30 @@ Ví dụ không hợp lệ:
 
         }
 
+        private async void TxtSideRatio_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (!_uiReady) return;
+
+            _sideRateCts = await DebounceAsync(_sideRateCts, 150, async () =>
+            {
+                var txt = (TxtSideRatio?.Text ?? "").Trim();
+                _cfg.SideRateText = txt;
+                await SaveConfigAsync();
+                ShowErrorsForCurrentStrategy();
+            });
+        }
+
+        private async void BtnResetSideRatio_Click(object sender, RoutedEventArgs e)
+        {
+            var def = TaiXiuLiveHit.Tasks.SideRateParser.DefaultText;
+            if (TxtSideRatio != null)
+                TxtSideRatio.Text = def;
+
+            _cfg.SideRateText = def;
+            await SaveConfigAsync();
+            ShowErrorsForCurrentStrategy();
+        }
+
         private void UpdateBetStrategyUi()
         {
             try
@@ -3420,6 +3461,8 @@ Ví dụ không hợp lệ:
                     RowChuoiCau.Visibility = (idx == 0 || idx == 2) ? Visibility.Visible : Visibility.Collapsed; // 1 hoặc 3
                 if (RowTheCau != null)
                     RowTheCau.Visibility = (idx == 1 || idx == 3) ? Visibility.Visible : Visibility.Collapsed;   // 2 hoặc 4
+                if (RowSideRatio != null)
+                    RowSideRatio.Visibility = (idx == 16) ? Visibility.Visible : Visibility.Collapsed;
             }
             catch { }
         }
@@ -3438,8 +3481,9 @@ Ví dụ không hợp lệ:
 
 
 
-        private GameContext BuildContext()
+        private GameContext BuildContext(bool useRawWinAmount = false)
         {
+            var applyWinTax = !useRawWinAmount;
             var moneyStrategyId = _cfg.MoneyStrategy ?? "IncreaseWhenLose";
             return new GameContext
             {
@@ -3457,8 +3501,18 @@ Ví dụ không hợp lệ:
                 GetCooldown = () => _cooldown,
                 SetCooldown = (v) => _cooldown = v,
                 MoneyStrategyId = moneyStrategyId,
+                SideRateText = _cfg.SideRateText ?? TaiXiuLiveHit.Tasks.SideRateParser.DefaultText,
+                UseRawWinAmount = useRawWinAmount,
                 BetSeq = _cfg.BetSeq ?? "",
                 BetPatterns = _cfg.BetPatterns ?? "",
+                UiFinalizeMultiBet = (winners, resultDisplay) => Dispatcher.Invoke(() =>
+                {
+                    try { FinalizePendingBetsWithWinners(winners, resultDisplay); } catch { }
+                }),
+                UiSetChainLevel = (chain, level) => Dispatcher.Invoke(() =>
+                {
+                    try { SetLevelForMultiChain(chain, level); } catch { }
+                }),
 
 
                 // ==== 3 callback UI ====
@@ -3499,7 +3553,7 @@ Ví dụ không hợp lệ:
                 {
                     void Apply()
                     {
-                        var net = (delta > 0) ? Math.Round(delta * 0.98) : delta;
+                        var net = (applyWinTax && delta > 0) ? Math.Round(delta * 0.98) : delta;
                         _winTotal += net;
                         try { MoneyHelper.NotifyTempProfit(moneyStrategyId, net); } catch { }
                         if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
@@ -3520,13 +3574,12 @@ Ví dụ không hợp lệ:
 
 
 
-
-        private async Task StartTaskAsync(IBetTask task, CancellationToken ct)
+        private async Task StartTaskAsync(IBetTask task, CancellationToken ct, bool useRawWinAmount = false)
         {
             _activeTask = task;
             _dec = new DecisionState(); // reset trạng thái cho task mới
             MoneyHelper.ResetTempProfitForWinUpLoseKeep();
-            var ctx = BuildContext();
+            var ctx = BuildContext(useRawWinAmount);
             // === Preflight: chờ __cw_bet sẵn sàng trước khi chạy chiến lược ===
             for (int i = 0; i < 25; i++) // 25 * 200ms ~= 5s
             {
@@ -3647,6 +3700,7 @@ Ví dụ không hợp lệ:
 
                 // === Khởi động task theo lựa chọn CHIẾN LƯỢC ===
                 _taskCts = new CancellationTokenSource();
+                bool useRawWinAmount = false;
 
                 // 👉 Bắt đầu re-check license mỗi 5 phút, gắn với vòng đời _taskCts
                 if (CheckLicense)
@@ -3731,11 +3785,13 @@ Ví dụ không hợp lệ:
                     13 => new TaiXiuLiveHit.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
                     14 => new TaiXiuLiveHit.Tasks.AiExpertPanelTask(), // 15
                     15 => new TaiXiuLiveHit.Tasks.Top10PatternFollowTask(), // 16
+                    16 => new TaiXiuLiveHit.Tasks.JackpotMultiSideTask(), // 17
                     _ => new TaiXiuLiveHit.Tasks.SmartPrevTask(),
                 };
+                if (_cfg.BetStrategyIndex == 16) useRawWinAmount = true;
 
 
-                var running = Task.Run(() => StartTaskAsync(task, _taskCts.Token));
+                var running = Task.Run(() => StartTaskAsync(task, _taskCts.Token, useRawWinAmount));
 
                 running.ContinueWith(t =>
                 {
@@ -5355,17 +5411,24 @@ Ví dụ không hợp lệ:
             catch { /* ignore */ }
         }
 
-        private void FinalizeLastBet(string? result, long balanceAfter)
+        private void FinalizeLastBet(string? result, long balanceAfter, HashSet<string>? winners = null, string? displayResult = null)
         {
-            if (_pendingRow == null || string.IsNullOrWhiteSpace(result)) return;
+            if (_pendingRows.Count == 0 || string.IsNullOrWhiteSpace(result)) return;
 
-            _pendingRow.Result = result!.ToUpperInvariant();
-            bool win = string.Equals(_pendingRow.Side, _pendingRow.Result, StringComparison.OrdinalIgnoreCase);
-            _pendingRow.WinLose = win ? "Thắng" : "Thua";
-            _pendingRow.Account = balanceAfter;
+            var winSet = winners ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase) { result! };
+            var resultText = string.IsNullOrWhiteSpace(displayResult)
+                ? result!.ToUpperInvariant()
+                : displayResult!;
 
-            // ❗KHÔNG Add lại vào _betAll (đã chèn ở thời điểm BET)
-            try { AppendBetCsv(_pendingRow); } catch { /* ignore IO */ }
+            foreach (var row in _pendingRows)
+            {
+                row.Result = resultText;
+                bool win = winSet.Contains(row.Side);
+                row.WinLose = win ? "Thắng" : "Thua";
+                row.Account = balanceAfter;
+
+                try { AppendBetCsv(row); } catch { /* ignore IO */ }
+            }
 
             // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
             if (_autoFollowNewest)
@@ -5377,7 +5440,44 @@ Ví dụ không hợp lệ:
                 RefreshCurrentPage();   // (mục 3 bên dưới)
             }
 
-            _pendingRow = null; // sẵn sàng ván tiếp theo
+            _pendingRows.Clear(); // sẵn sàng ván tiếp theo
+        }
+
+        public void FinalizePendingBetsWithWinners(HashSet<string> winners, string? displayResult = null)
+        {
+            if (_pendingRows.Count == 0) return;
+            long balance = 0;
+            try { balance = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
+            var resText = !string.IsNullOrWhiteSpace(displayResult)
+                ? displayResult
+                : (winners != null && winners.Count > 0 ? string.Join("/", winners) : "-");
+            FinalizeLastBet(resText, balance, winners, resText);
+        }
+
+        private void SetLevelForMultiChain(int chainIndex, int levelIndex)
+        {
+            if (LblLevel == null) return;
+            try
+            {
+                var chains = _stakeChains ?? new List<long[]>();
+                int total = chains.Sum(ch => ch?.Length ?? 0);
+                if (total == 0) { LblLevel.Text = ""; return; }
+
+                chainIndex = Math.Clamp(chainIndex, 0, chains.Count - 1);
+                var curChain = chains[chainIndex] ?? Array.Empty<long>();
+                levelIndex = Math.Clamp(levelIndex, 0, curChain.Length - 1);
+
+                int offset = 0;
+                for (int i = 0; i < chainIndex; i++)
+                    offset += chains[i]?.Length ?? 0;
+
+                int pos = offset + levelIndex;
+                LblLevel.Text = $"{pos + 1}/{total}";
+            }
+            catch
+            {
+                LblLevel.Text = "";
+            }
         }
 
 
@@ -5878,6 +5978,15 @@ Ví dụ không hợp lệ:
                     return false;
                 }
             }
+            else if (idx == 16) // 17. Cửa đặt & tỉ lệ
+            {
+                if (!TaiXiuLiveHit.Tasks.SideRateParser.TryParse(T(TxtSideRatio), out _, out var err))
+                {
+                    SetError(LblSideRatioError, err);
+                    BringBelow(TxtSideRatio);
+                    return false;
+                }
+            }
 
             // Chiến lược 5 không cần input
             return true;
@@ -5891,6 +6000,7 @@ Ví dụ không hợp lệ:
 
             if (idx == 1) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsTX ?? ""; }
             else if (idx == 3) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsNI ?? ""; }
+            if (idx == 16 && TxtSideRatio != null) TxtSideRatio.Text = _cfg.SideRateText ?? TaiXiuLiveHit.Tasks.SideRateParser.DefaultText;
         }
 
         private void LoadStakeCsvForCurrentMoneyStrategy()
@@ -6041,6 +6151,17 @@ Ví dụ không hợp lệ:
             else
             {
                 SetError(LblPatError, null);
+            }
+
+            if (idx == 16)
+            {
+                string s = (TxtSideRatio?.Text ?? "");
+                bool ok = TaiXiuLiveHit.Tasks.SideRateParser.TryParse(s, out _, out var e3);
+                SetError(LblSideRatioError, ok ? null : e3);
+            }
+            else
+            {
+                SetError(LblSideRatioError, null);
             }
         }
 
