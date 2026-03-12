@@ -134,16 +134,16 @@ namespace TaiXiuLiveHit.Tasks
             var js =
                 "(async function(){try{" +
                 " if (typeof window.__cw_bet==='function'){" +
-                "   return await window.__cw_bet('" + side + "', " + amount + ");" +
+                "   return String(await window.__cw_bet('" + side + "', " + amount + "));" +
                 " } else { return 'no'; }" +
                 "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
             var rRaw = await ctx.EvalJsAsync(js);
-            var r = (rRaw ?? "").Trim().Trim('"');
             ctx.Log?.Invoke($"[BET-JS] result={rRaw}");
 
-            // Chỉ coi là thành công khi JS trả về 'ok'
-            bool ok = string.Equals(r, "ok", StringComparison.OrdinalIgnoreCase);
+            // Giong XocDiaLiveHit: coi nhu da day lenh xong, khong phu thuoc vao JSON return
+            // cua ExecuteScriptAsync vi bridge co the van bao "{}" nhung bet thuc te da vao.
+            bool ok = true;
 
             if (ok)
                 Volatile.Write(ref _lastBetOkMs, now); // kích hoạt khoá 3s

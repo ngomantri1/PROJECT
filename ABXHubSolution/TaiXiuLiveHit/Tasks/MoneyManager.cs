@@ -80,6 +80,11 @@ namespace TaiXiuLiveHit.Tasks
                     _i = win ? 0 : Math.Min(_i + 1, _seq.Length - 1);
                     break;
 
+                case "IncreaseEveryRound": // thua/thắng đều lên mức, hết chuỗi quay về đầu
+                    _needDoubleNext = false;
+                    _i = (_i + 1 < _seq.Length ? _i + 1 : 0);
+                    break;
+
                 case "WinUpLoseKeep":
                     {
                         _needDoubleNext = false; // kh“ng d—ng Victor2 ? strategy n…y

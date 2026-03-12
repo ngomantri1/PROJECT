@@ -160,6 +160,11 @@ namespace TaiXiuLiveHit.Tasks
                     v2DoublePhase = false;
                     break;
 
+                case "IncreaseEveryRound":
+                    step = (step + 1) % n;
+                    v2DoublePhase = false;
+                    break;
+
                 case "WinUpLoseKeep":
                     {
                         var beforeStep = step;
