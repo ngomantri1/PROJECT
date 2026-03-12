@@ -3002,11 +3002,12 @@
             tailEnd: 'menuMoney/btnPrices/btn1K'
         }
     ];
-    // NEW: delay cho chuỗi thao tác bet (tối ưu cho máy yếu/VPS)
+    // Giữ nhịp gần với hàm cũ: tổng delay mỗi vòng rải chip xấp xỉ mức trước đây.
     var TX_BET_DELAY = {
-        sideToChip: 260, // sau khi click cửa → đợi rồi mới bấm phỉnh
-        chipToChip: 220, // giữa các lần click phỉnh liên tiếp
-        afterChipsBeforeConfirm: 260 // sau khi xong phỉnh → đợi rồi mới ấn ĐẶT CƯỢC
+        chipToSide: 60, // sau khi chọn phỉnh -> đợi rất ngắn rồi click cửa
+        sideToChip: 80, // sau khi click cửa -> đợi ngắn trước vòng kế
+        chipToChip: 80, // giữa các vòng click liên tiếp
+        afterChipsBeforeConfirm: 260 // giữ nguyên nhịp xác nhận như trước
     };
 
     // Tìm node theo phần đuôi tail (dùng tailOf + walkNodes bên trên)
@@ -3073,8 +3074,11 @@
             console.warn('[cwBetTx] chip node null', chip);
             return false;
         }
-        var node = clickableOf(chip.node, 5);
-        var ok = emitClick(node);
+        var ok = emitClick(chip.node);
+        if (!ok) {
+            var node = clickableOf(chip.node, 5);
+            ok = emitClick(node);
+        }
         if (!ok) {
             console.warn('[cwBetTx] click chip thất bại', chip.amount);
             return false;
@@ -3092,8 +3096,11 @@
             console.warn('[cwBetTx] Không tìm thấy nút cửa', side, 'tailEnd =', tailEnd);
             return false;
         }
-        var node = clickableOf(n, 5);
-        var ok = emitClick(node);
+        var ok = emitClick(n);
+        if (!ok) {
+            var node = clickableOf(n, 5);
+            ok = emitClick(node);
+        }
         if (!ok) {
             console.warn('[cwBetTx] click cửa thất bại', side);
             return false;
@@ -3107,8 +3114,11 @@
             console.warn('[cwBetTx] Không tìm thấy nút ĐẶT CƯỢC');
             return false;
         }
-        var node = clickableOf(n, 5);
-        var ok = emitClick(node);
+        var ok = emitClick(n);
+        if (!ok) {
+            var node = clickableOf(n, 5);
+            ok = emitClick(node);
+        }
         if (!ok) {
             console.warn('[cwBetTx] click ĐẶT CƯỢC thất bại');
             return false;
@@ -3117,7 +3127,7 @@
         return true;
     }
 
-    // ĐẶT CƯỢC: dùng chip menuMoney + click cửa TÀI/XỈU + 1 lần ĐẶT CƯỢC
+    // ĐẶT CƯỢC: chọn phỉnh -> click cửa cho từng chip -> cuối cùng ấn ĐẶT CƯỢC 1 lần
     async function cwBetTxByChip(side, amount) {
         side = String(side || '').toUpperCase();
         side = (side === 'TAI') ? 'TAI' : 'XIU';
@@ -3154,16 +3164,8 @@
                 }).join(' + '));
         } catch (e) {}
 
-        // 3) CHỌN CỬA TRƯỚC (TÀI / XỈU)
-        var okSideOnce = txClickSide(side);
-        if (!okSideOnce) {
-            console.warn('[cwBetTx] click cửa lần đầu thất bại', side);
-            return false;
-        }
-        // ➜ Đợi một nhịp cho game highlight cửa xong rồi mới bấm phỉnh
-        await sleep(TX_BET_DELAY.sideToChip);
-
-        // 4) Sau khi đã chọn cửa, CHỈ bấm phỉnh theo plan (không bấm lại cửa)
+        // 3) Với mỗi chip: chọn phỉnh -> click cửa.
+        // Với bàn này, click cửa trước thường chỉ highlight, chưa gắn tiền vào cửa.
         for (var s = 0; s < steps.length; s++) {
             var step = steps[s];
             for (var i = 0; i < step.count; i++) {
@@ -3172,15 +3174,24 @@
                     console.warn('[cwBetTx] click chip thất bại', step.chip.amount);
                     return false;
                 }
-                // ➜ Delay giữa các lần click phỉnh liên tiếp
+                await sleep(TX_BET_DELAY.chipToSide);
+
+                var okSide = txClickSide(side);
+                if (!okSide) {
+                    console.warn('[cwBetTx] click cửa thất bại sau khi chọn chip', side, step.chip.amount);
+                    return false;
+                }
+
+                // ➜ Delay giữa các lần rải chip liên tiếp
+                await sleep(TX_BET_DELAY.sideToChip);
                 await sleep(TX_BET_DELAY.chipToChip);
             }
         }
 
-        // 5) Đợi thêm một nhịp để game gom hết phỉnh rồi mới nhấn ĐẶT CƯỢC
+        // 4) Đợi thêm một nhịp để game gom hết phỉnh rồi mới nhấn ĐẶT CƯỢC
         await sleep(TX_BET_DELAY.afterChipsBeforeConfirm);
 
-        // 6) Cuối cùng nhấn ĐẶT CƯỢC 1 lần để xác nhận, KHÔNG dùng tip
+        // 5) Cuối cùng nhấn ĐẶT CƯỢC 1 lần để xác nhận, KHÔNG dùng tip
         var okDat = await txClickDatCuoc();
         if (!okDat) {
             console.warn('[cwBetTx] click ĐẶT CƯỢC thất bại');
@@ -3190,9 +3201,68 @@
         return true;
     }
 
+    // Hàng đợi đặt cược tuần tự: C# cứ đẩy xuống, JS tự xếp hàng và bắn lần lượt
+    var BET_QUEUE = window.__cwBetQueue = window.__cwBetQueue || [];
+    var _processingBetQueue = false;
+
+    async function processBetQueue() {
+        if (_processingBetQueue)
+            return;
+
+        _processingBetQueue = true;
+        while (BET_QUEUE.length) {
+            var job = BET_QUEUE.shift();
+            var side = job.side,
+            amt = job.amt;
+            var result = 'fail';
+
+            try {
+                var before = (typeof window.readTotalsSafe === 'function'
+                     ? window.readTotalsSafe()
+                     : null) || {};
+
+                var ok = await cwBetTxByChip(side, amt);
+                if (!ok) {
+                    throw new Error('click_failed');
+                }
+
+                // Chỉ chờ thêm cho ổn định, không dùng kết quả để chặn thành công/thất bại
+                try {
+                    if (typeof waitForTotalsChange === 'function') {
+                        await waitForTotalsChange(before, side, 1600);
+                    }
+                } catch (_) {}
+
+                safePost({
+                    abx: 'bet',
+                    side: side,
+                    amount: amt,
+                    ts: Date.now()
+                });
+                result = 'ok';
+            } catch (err) {
+                safePost({
+                    abx: 'bet_error',
+                    side: side,
+                    amount: amt,
+                    error: String(err && err.message || err),
+                    ts: Date.now()
+                });
+                result = 'fail:' + String(err && err.message || err);
+            }
+
+            if (typeof job.resolve === 'function') {
+                try {
+                    job.resolve(result);
+                } catch (_) {}
+            }
+        }
+
+        _processingBetQueue = false;
+    }
+
     window.__cw_bet = async function (side, amount) {
         try {
-            // chuẩn hoá tham số
             side = String(side || '').toUpperCase();
             side = (side === 'TAI') ? 'TAI' : 'XIU';
 
@@ -3201,40 +3271,14 @@
                 throw new Error('amount_invalid');
             }
 
-            // chụp tổng trước khi bet (nếu có)
-            var before = (typeof window.readTotalsSafe === 'function'
-                 ? window.readTotalsSafe()
-                 : null) || {};
-
-            // ĐẶT CƯỢC bằng click phỉnh TipDealer + cửa Tài/Xỉu
-            var ok = await cwBetTxByChip(side, amt);
-            if (!ok) {
-                throw new Error('click_failed');
-            }
-
-            // ✅ BẮT BUỘC kiểm tra tổng có thay đổi hay không
-            var changed = true;
-            try {
-                if (typeof waitForTotalsChange === 'function') {
-                    changed = await waitForTotalsChange(before, side, 1600);
-                }
-            } catch (_) {
-                // nếu util lỗi thì coi như không chặn cược (tránh chặn nhầm)
-                changed = true;
-            }
-
-            if (!changed) {
-                // Click đủ bước nhưng tổng không đổi → coi là bet thất bại (thường là do quá sớm/quá muộn)
-                throw new Error('totals_not_changed');
-            }
-
-            // báo về C#
-            safePost({
-                abx: 'bet',
+            BET_QUEUE.push({
                 side: side,
-                amount: amt,
-                ts: Date.now()
+                amt: amt,
+                resolve: null
             });
+            processBetQueue();
+
+            // Báo OK ngay cho C#, không chờ kết quả thực tế
             return 'ok';
         } catch (err) {
             safePost({
