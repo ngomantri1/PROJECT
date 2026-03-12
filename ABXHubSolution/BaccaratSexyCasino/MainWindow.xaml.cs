@@ -2483,7 +2483,7 @@ Ví dụ không hợp lệ:
                     // settings.AreDevToolsEnabled = true;
                 }
 
-                // try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
+                try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
                 // Giữ nguyên hành vi popup/new window như trình duyệt thật để không làm hỏng flow mở game/provider
