@@ -387,18 +387,112 @@
                 CornerRadius="10"
                 Effect="{StaticResource SoftShadow}"
                 SnapsToDevicePixels="True">
-                <Grid>
+                <Grid x:Name="WebLayerRoot">
                     <!--  Trang web  -->
                     <wv2:WebView2 x:Name="Web">
                         <wv2:WebView2.CreationProperties>
-                            <wv2:CoreWebView2CreationProperties AdditionalBrowserArguments="--disable-gpu" UserDataFolder="{x:Static local:MainWindow.Wv2UserDataDir}" />
+                            <wv2:CoreWebView2CreationProperties UserDataFolder="{x:Static local:MainWindow.Wv2UserDataDir}" />
                         </wv2:WebView2.CreationProperties>
                     </wv2:WebView2>
+
+                    <Border
+                        x:Name="PopupHost"
+                        Panel.ZIndex="10"
+                        Background="#CC000000"
+                        Visibility="Collapsed">
+                        <Grid Margin="10">
+                            <Border
+                                Background="#111111"
+                                BorderBrush="#444444"
+                                BorderThickness="1"
+                                CornerRadius="8">
+                                <Grid>
+                                    <Grid x:Name="PopupWebHost" Margin="0,36,0,0" />
+                                    <Button
+                                        x:Name="BtnClosePopup"
+                                        Width="30"
+                                        Height="24"
+                                        Margin="0,8,8,0"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Top"
+                                        Padding="0"
+                                        MinWidth="0"
+                                        MinHeight="0"
+                                        FontSize="14"
+                                        FontWeight="Bold"
+                                        BorderThickness="1"
+                                        Cursor="Hand"
+                                        Click="BtnClosePopup_Click"
+                                        Content="">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="Background" Value="#FFFFFF" />
+                                                <Setter Property="Foreground" Value="#111111" />
+                                                <Setter Property="BorderBrush" Value="#D0D5DD" />
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border
+                                                                Background="{TemplateBinding Background}"
+                                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                                CornerRadius="3">
+                                                                <Grid
+                                                                    Width="12"
+                                                                    Height="12"
+                                                                    HorizontalAlignment="Center"
+                                                                    VerticalAlignment="Center">
+                                                                    <Rectangle
+                                                                        Width="1.8"
+                                                                        Height="12"
+                                                                        Fill="{TemplateBinding Foreground}"
+                                                                        RadiusX="0.9"
+                                                                        RadiusY="0.9"
+                                                                        RenderTransformOrigin="0.5,0.5">
+                                                                        <Rectangle.RenderTransform>
+                                                                            <RotateTransform Angle="45" />
+                                                                        </Rectangle.RenderTransform>
+                                                                    </Rectangle>
+                                                                    <Rectangle
+                                                                        Width="1.8"
+                                                                        Height="12"
+                                                                        Fill="{TemplateBinding Foreground}"
+                                                                        RadiusX="0.9"
+                                                                        RadiusY="0.9"
+                                                                        RenderTransformOrigin="0.5,0.5">
+                                                                        <Rectangle.RenderTransform>
+                                                                            <RotateTransform Angle="-45" />
+                                                                        </Rectangle.RenderTransform>
+                                                                    </Rectangle>
+                                                                </Grid>
+                                                            </Border>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="#C62828" />
+                                                        <Setter Property="Foreground" Value="#FFFFFF" />
+                                                        <Setter Property="BorderBrush" Value="#C62828" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter Property="Background" Value="#B71C1C" />
+                                                        <Setter Property="Foreground" Value="#FFFFFF" />
+                                                        <Setter Property="BorderBrush" Value="#B71C1C" />
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Border>
 
                     <!--  Lớp phủ chặn chuột  -->
                     <Border
                         x:Name="MouseShield"
-                        Panel.ZIndex="1"
+                        Panel.ZIndex="2"
                         Background="Transparent"
                         Cursor="No"
                         ToolTip="Đang khoá chuột. Bỏ tích 'Khoá chuột web' để thao tác."

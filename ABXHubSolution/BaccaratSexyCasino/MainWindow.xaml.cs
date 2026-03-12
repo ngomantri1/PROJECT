@@ -798,6 +798,8 @@ Ví dụ không hợp lệ:
         private double _winTotal = 0;
         private CoreWebView2Environment? _webEnv;
         private bool _webInitDone;
+        private bool _popupWebHooked;
+        private WebView2? _popupWeb;
         private const string Wv2ZipResNameX64 = "BaccaratSexyCasino.ThirdParty.WebView2Fixed_win-x64.zip";
         // Thư mục cache bền vững cho runtime (không bị dọn như %TEMP%)
         private static string Wv2BaseDir =>
@@ -937,7 +939,6 @@ Ví dụ không hợp lệ:
 
         private bool _frameHookedAlways;
 
-        private WebView2LiveBridge? _bridge;
         private bool _inputEventsHooked;
         // Interval push của Home (ms)
         private int _homePushMs = 800;
@@ -2522,7 +2523,7 @@ Ví dụ không hợp lệ:
                 _webEnv = await CoreWebView2Environment.CreateAsync(
                     browserExecutableFolder: fixedDir,
                     userDataFolder: Wv2UserDataDir,
-                    options: null /* tránh trùng "--disable-gpu" vì XAML đã set */
+                    options: null /* giữ environment sạch, browser args được cấu hình ở XAML nếu cần */
                 );
 
                 // Dùng overload có _webEnv để chắc chắn dùng fixed runtime
@@ -2566,6 +2567,8 @@ Ví dụ không hợp lệ:
                 if (settings != null)
                 {
                     settings.IsWebMessageEnabled = true;
+                    settings.UserAgent = BuildDesktopEdgeUserAgent();
+                    Log("[Web] UA=" + settings.UserAgent);
                     // (tuỳ chọn khác, giữ nguyên nếu bạn không cần)
                     // settings.AreDefaultContextMenusEnabled = false;
                     // settings.AreDevToolsEnabled = true;
@@ -2574,14 +2577,7 @@ Ví dụ không hợp lệ:
                 // try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
-                // Điều hướng mọi window.open về cùng WebView2
-                _ = Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(@"
-            (function(){
-                try { window.open = function(u){ try { location.href = u; } catch(e){} }; } catch(e){}
-            })();
-        ");
-
-                // Chặn mở cửa sổ mới → điều hướng trong cùng control
+                // Giữ nguyên hành vi popup/new window như trình duyệt thật để không làm hỏng flow mở game/provider
                 Web.CoreWebView2.NewWindowRequested += NewWindowRequested;
 
                 // Theo dõi điều hướng để đồng bộ nền/trạng thái
@@ -2688,6 +2684,27 @@ Ví dụ không hợp lệ:
                 return false;
             }
             return true;
+        }
+
+        private static string BuildDesktopEdgeUserAgent()
+        {
+            var version = "140.0.0.0";
+            try
+            {
+                var raw = CoreWebView2Environment.GetAvailableBrowserVersionString();
+                if (!string.IsNullOrWhiteSpace(raw))
+                {
+                    var token = raw.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0].Trim();
+                    if (!string.IsNullOrWhiteSpace(token))
+                        version = token;
+                }
+            }
+            catch
+            {
+                // giữ fallback cố định
+            }
+
+            return $"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36 Edg/{version}";
         }
 
 
@@ -2940,18 +2957,6 @@ Ví dụ không hợp lệ:
                 // WebView2 ready (giữ hook cũ của bạn)
                 await EnsureWebReadyAsync();
 
-                await EnsureBridgeRegisteredAsync();
-                await InjectOnNewDocAsync();
-
-                // Bridge dùng chung
-                if (_bridge == null)
-                {
-                    // Dùng lại _appJs đã nạp 1 lần (embedded)
-                    _bridge = new WebView2LiveBridge(Web, _appJs ?? "", msg => Log(msg));
-                    await _bridge.EnsureAsync();
-                    await _bridge.InjectIfNewDocAsync();
-                }
-
                 //StartAutoLoginWatcher();
 
                 var start = string.IsNullOrWhiteSpace(_cfg.Url) ? (TxtUrl?.Text ?? "") : _cfg.Url;
@@ -3042,8 +3047,6 @@ Ví dụ không hợp lệ:
                 if (!e.IsSuccess) return;
 
                 // BỔ SUNG: đảm bảo cầu nối và tiêm nếu doc mới
-                _ = EnsureBridgeRegisteredAsync();
-                _ = InjectOnNewDocAsync();
 
                 // HÀNH VI CŨ
                 _ = AutoFillLoginAsync();
@@ -3248,15 +3251,195 @@ Ví dụ không hợp lệ:
         }
 
 
-        private void NewWindowRequested(object? s, CoreWebView2NewWindowRequestedEventArgs e)
+        private async void NewWindowRequested(object? s, CoreWebView2NewWindowRequestedEventArgs e)
+        {
+            var deferral = e.GetDeferral();
+            try
+            {
+                var target = (e.Uri ?? "").Trim();
+                Log("[NewWindowRequested] " + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target));
+
+                var popupWeb = await EnsurePopupWebReadyAsync();
+                if (popupWeb?.CoreWebView2 != null)
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (Web != null)
+                            Web.Visibility = Visibility.Collapsed;
+                        if (PopupHost != null)
+                            PopupHost.Visibility = Visibility.Visible;
+                    });
+                    e.NewWindow = popupWeb.CoreWebView2;
+                    popupWeb.Focus();
+                }
+            }
+            catch (Exception ex) { Log("[NewWindowRequested] " + ex); }
+            finally
+            {
+                try { deferral.Complete(); } catch { }
+            }
+        }
+
+        private async Task<WebView2?> EnsurePopupWebReadyAsync()
+        {
+            if (PopupWebHost == null) return null;
+
+            WebView2? popupWeb = null;
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (_popupWeb == null)
+                {
+                    _popupWeb = new WebView2();
+                    PopupWebHost.Children.Clear();
+                    PopupWebHost.Children.Add(_popupWeb);
+                }
+
+                popupWeb = _popupWeb;
+            });
+
+            if (popupWeb == null) return null;
+
+            if (popupWeb.CoreWebView2 == null)
+            {
+                if (_webEnv == null)
+                    await EnsureWebReadyAsync();
+
+                if (_webEnv != null)
+                    await popupWeb.EnsureCoreWebView2Async(_webEnv);
+                else
+                    await popupWeb.EnsureCoreWebView2Async();
+            }
+
+            if (popupWeb.CoreWebView2 == null) return popupWeb;
+            if (_popupWebHooked) return popupWeb;
+
+            var settings = popupWeb.CoreWebView2.Settings;
+            if (settings != null)
+            {
+                settings.IsWebMessageEnabled = true;
+                settings.UserAgent = BuildDesktopEdgeUserAgent();
+            }
+
+            popupWeb.CoreWebView2.NewWindowRequested += PopupWeb_NewWindowRequested;
+            popupWeb.CoreWebView2.WindowCloseRequested += PopupWeb_WindowCloseRequested;
+            popupWeb.NavigationCompleted += PopupWeb_NavigationCompleted;
+            _popupWebHooked = true;
+            Log("[PopupWeb] ready");
+            return popupWeb;
+        }
+
+        private void PopupWeb_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
         {
             try
             {
-                e.Handled = true;
-                if (!string.IsNullOrWhiteSpace(e.Uri))
-                    Web.CoreWebView2.Navigate(e.Uri);
+                var target = (e.Uri ?? "").Trim();
+                Log("[PopupWeb.NewWindowRequested] " + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target));
+                if (!string.IsNullOrWhiteSpace(target))
+                {
+                    e.Handled = true;
+                    _popupWeb?.CoreWebView2?.Navigate(target);
+                }
             }
-            catch (Exception ex) { Log("[NewWindowRequested] " + ex); }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb.NewWindowRequested] " + ex.Message);
+            }
+        }
+
+        private void PopupWeb_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+        {
+            try
+            {
+                var src = _popupWeb?.CoreWebView2?.Source ?? "";
+                Log("[PopupWeb] NavigationCompleted: " + (e.IsSuccess ? "OK" : ("Err " + e.WebErrorStatus)) + " | " + src);
+            }
+            catch { }
+        }
+
+        private async void BtnClosePopup_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_popupWeb?.CoreWebView2 != null)
+                {
+                    Log("[PopupWeb] close requested by button");
+                    try
+                    {
+                        await _popupWeb.CoreWebView2.ExecuteScriptAsync("try { window.close(); } catch(e) { 'close-error'; }");
+                    }
+                    catch { }
+                    await Task.Delay(150);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb.CloseButton] " + ex.Message);
+            }
+
+            ClosePopupHost();
+        }
+
+        private void PopupWeb_WindowCloseRequested(object? sender, object e)
+        {
+            try
+            {
+                Log("[PopupWeb] WindowCloseRequested");
+                Dispatcher.BeginInvoke(new Action(ClosePopupHost));
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb.WindowCloseRequested] " + ex.Message);
+            }
+        }
+
+        private void ClosePopupHost()
+        {
+            try
+            {
+                if (PopupHost != null)
+                    PopupHost.Visibility = Visibility.Collapsed;
+                if (Web != null)
+                    Web.Visibility = Visibility.Visible;
+                DestroyPopupWeb();
+                Web?.Focus();
+                Log("[PopupWeb] closed");
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb.Close] " + ex.Message);
+            }
+        }
+
+        private void DestroyPopupWeb()
+        {
+            var popupWeb = _popupWeb;
+            _popupWeb = null;
+            _popupWebHooked = false;
+
+            if (popupWeb == null)
+                return;
+
+            try
+            {
+                if (popupWeb.CoreWebView2 != null)
+                {
+                    popupWeb.CoreWebView2.NewWindowRequested -= PopupWeb_NewWindowRequested;
+                    popupWeb.CoreWebView2.WindowCloseRequested -= PopupWeb_WindowCloseRequested;
+                    try { popupWeb.CoreWebView2.Stop(); } catch { }
+                }
+            }
+            catch { }
+
+            try { popupWeb.NavigationCompleted -= PopupWeb_NavigationCompleted; } catch { }
+
+            try
+            {
+                if (PopupWebHost != null)
+                    PopupWebHost.Children.Remove(popupWeb);
+            }
+            catch { }
+
+            try { popupWeb.Dispose(); } catch { }
         }
 
 
@@ -4120,6 +4303,8 @@ Ví dụ không hợp lệ:
 
                 if (!await EnsureLicenseAsync())
                     return;
+
+                await EnsureToolBridgeInjectedAsync();
             }
             catch (Exception ex)
             {
@@ -4140,6 +4325,8 @@ Ví dụ không hợp lệ:
                     if (ChkTrial != null) ChkTrial.IsChecked = false;
                     return;
                 }
+
+                await EnsureToolBridgeInjectedAsync();
             }
             catch (Exception ex)
             {
@@ -4830,6 +5017,9 @@ Ví dụ không hợp lệ:
                     if (!await EnsureLicenseAsync())
                         return;
                 }
+
+                await EnsureToolBridgeInjectedAsync();
+
                 var typeBetJson = await Web.ExecuteScriptAsync("typeof window.__cw_bet");
                 var typeBet = typeBetJson?.Trim('"');
                 if (!string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
@@ -5934,6 +6124,14 @@ Ví dụ không hợp lệ:
             }
 
 
+        }
+
+        private async Task EnsureToolBridgeInjectedAsync()
+        {
+            await EnsureWebReadyAsync();
+            await EnsureBridgeRegisteredAsync();
+            await InjectOnNewDocAsync();
+            Log("[Bridge] Explicit tool injection requested.");
         }
 
 
