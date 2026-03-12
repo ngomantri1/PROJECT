@@ -2900,7 +2900,16 @@ Ví dụ không hợp lệ:
         }
 
 
+        private async Task<bool> EnsureLicenseOnceAsync()
+        {
+            if (!CheckLicense)
+                return true;
 
+            if (ChkTrial?.IsChecked == true)
+                return await EnsureTrialAsync();
+
+            return await EnsureLicenseAsync();
+        }
 
         private async Task<bool> EnsureLicenseAsync()
         {
@@ -3718,7 +3727,7 @@ Ví dụ không hợp lệ:
                 {
                     if (_runExpiresAt == null || _runExpiresAt <= DateTimeOffset.Now)
                     {
-                        if (!await EnsureLicenseAsync())
+                        if (!await EnsureLicenseOnceAsync())
                             return;
                     }
                 }

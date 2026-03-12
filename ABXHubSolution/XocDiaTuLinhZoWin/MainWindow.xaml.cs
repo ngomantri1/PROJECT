@@ -3898,7 +3898,16 @@ Ví dụ không hợp lệ:
         }
 
 
+        private async Task<bool> EnsureLicenseOnceAsync()
+        {
+            if (!CheckLicense)
+                return true;
 
+            if (ChkTrial?.IsChecked == true)
+                return await EnsureTrialAsync();
+
+            return await EnsureLicenseAsync();
+        }
 
         private async Task<bool> EnsureLicenseAsync()
         {
@@ -4827,7 +4836,7 @@ Ví dụ không hợp lệ:
                 ResetBetMiniPanel();    // xo? TH?NG/THUA, C?A D?T, TI?N CU?C, M?C TI?N
                 if (CheckLicense && (!_licenseVerified || _runExpiresAt == null || _runExpiresAt <= DateTimeOffset.Now))
                 {
-                    if (!await EnsureLicenseAsync())
+                    if (!await EnsureLicenseOnceAsync())
                         return;
                 }
                 var typeBetJson = await Web.ExecuteScriptAsync("typeof window.__cw_bet");

@@ -3688,7 +3688,7 @@ Ví dụ không hợp lệ:
                 _cooldown = false;
                 if (CheckLicense)
                 {
-                    if (!await EnsureLicenseAsync())
+                    if (!await EnsureLicenseOnceAsync())
                         return;
                 }
 
@@ -4749,6 +4749,16 @@ Ví dụ không hợp lệ:
                 await Task.Delay(300);
             }
             return false;
+        }
+
+        private async Task<bool> EnsureLicenseOnceAsync()
+        {
+            if (!CheckLicense) return true;
+
+            if (ChkTrial?.IsChecked == true)
+                return await EnsureTrialAsync();
+
+            return await EnsureLicenseAsync();
         }
 
         private async Task<bool> EnsureLicenseAsync()
