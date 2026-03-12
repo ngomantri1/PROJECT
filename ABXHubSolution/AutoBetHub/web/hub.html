@@ -44,6 +44,70 @@
                       { title: "Baccarat Sexy Casino",                                slug: "baccarat-sexy-casino",    tag: "Baccarat", gradient: "from-rose-500 to-fuchsia-500", img: "Assets/BaccaratSexyCasino.png" },
                     ];
 
+                    const SEARCH_ALIASES = {
+                      "xoc-dia-live-hit": ["xoc", "dia", "xoc dia", "xd", "xocdia"],
+                      "tai-xiu-live-hit": ["tai", "xiu", "tai xiu", "tx", "taixiu"],
+                      "xoc-dia-soi-live-kh24": ["xoc", "dia", "xoc dia", "xd", "xocdia", "soi"],
+                      "baccarat-pp-rr88": ["bac", "baccarat", "pp", "rr88"],
+                      "xoc-dia-tu-linh-zowin": ["xoc", "dia", "xoc dia", "xd", "xocdia", "tu linh"],
+                      "tai-xiu-thuong-zowin": ["tai", "xiu", "tai xiu", "tx", "taixiu", "thuong"],
+                      "tai-xiu-b29": ["tai", "xiu", "tai xiu", "tx", "taixiu", "b29"],
+                      "xoc-dia-b29": ["xoc", "dia", "xoc dia", "xd", "xocdia", "b29"],
+                      "baccarat-sexy-casino": ["bac", "baccarat", "sexy"],
+                    };
+
+                    function normalizeSearchText(text) {
+                      return (text || "")
+                        .toLowerCase()
+                        .normalize("NFD")
+                        .replace(/[\u0300-\u036f]/g, "")
+                        .replace(/đ/g, "d")
+                        .replace(/[^a-z0-9]+/g, " ")
+                        .replace(/\s+/g, " ")
+                        .trim();
+                    }
+
+                    function splitSearchTokens(text) {
+                      const normalized = normalizeSearchText(text);
+                      return normalized ? normalized.split(" ") : [];
+                    }
+
+                    function buildSearchIndex(game) {
+                      const parts = [
+                        game.title,
+                        game.tag,
+                        game.slug,
+                        ...(SEARCH_ALIASES[game.slug] || []),
+                      ];
+
+                      const normalizedParts = parts.map(normalizeSearchText).filter(Boolean);
+
+                      return {
+                        text: normalizedParts.join(" "),
+                        tokens: Array.from(new Set(normalizedParts.flatMap(splitSearchTokens))),
+                      };
+                    }
+
+                    function matchesGame(game, query) {
+                      const normalizedQuery = normalizeSearchText(query);
+                      if (!normalizedQuery) return true;
+
+                      const index = buildSearchIndex(game);
+                      const queryTokens = splitSearchTokens(normalizedQuery);
+                      const compactQuery = normalizedQuery.replace(/\s+/g, "");
+                      const compactText = index.text.replace(/\s+/g, "");
+
+                      if (index.text.includes(normalizedQuery)) return true;
+                      if (compactQuery && compactText.includes(compactQuery)) return true;
+
+                      return queryTokens.every((token) =>
+                        index.tokens.some((candidate) =>
+                          candidate === token ||
+                          candidate.startsWith(token) ||
+                          candidate.includes(token))
+                      );
+                    }
+
                     const LS_KEYS = {
                       pinned:       "abx.home.pinned",
                       pinnedList:   "abx.home.pinnedList",
@@ -105,11 +169,37 @@
                     ];
 
                     /* ================== UI Helpers ================== */
-                    const Pill = ({children, t}) => (
-                      <span className={`inline-flex items-center px-2 py-0.5 text-xs rounded-full ${t.pillBg} ${t.pillText} backdrop-blur`}>
-                        {children}
+                    const Pill = ({children, t}) => {
+                      const label = typeof children === "string"
+                        ? children.replace(/ /g, "\u00A0")
+                        : children;
+
+                      return (
+                      <span
+                        className={`inline-flex shrink-0 items-center justify-center rounded-full px-3 py-1 text-xs ${t.pillBg} ${t.pillText} backdrop-blur`}
+                        style={{
+                          minWidth: "76px",
+                          height: "32px",
+                          whiteSpace: "nowrap",
+                          wordBreak: "keep-all",
+                          overflowWrap: "normal",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <span
+                          className="block text-center"
+                          style={{
+                            whiteSpace: "nowrap",
+                            wordBreak: "keep-all",
+                            overflowWrap: "normal",
+                            lineHeight: 1,
+                          }}
+                        >
+                          {label}
+                        </span>
                       </span>
-                    );
+                      );
+                    };
 
 
                     const TelegramButton = ({ tone }) => {
@@ -251,8 +341,8 @@ const TileArtwork = ({ title, gradient, img }) => {
                           </div>
 
                           <div className="flex-1 flex flex-col gap-1">
-                            <div className="flex items-center justify-between">
-                              <h3 className={`font-semibold ${t.textStrong} tracking-wide`}>{game.title}</h3>
+                            <div className="flex items-start justify-between gap-3">
+                              <h3 className={`min-w-0 flex-1 font-semibold ${t.textStrong} tracking-wide`}>{game.title}</h3>
                               <Pill t={t}>{game.tag}</Pill>
                             </div>
                           </div>
@@ -464,6 +554,12 @@ const TileArtwork = ({ title, gradient, img }) => {
                       const [pinnedList, setPinnedList] = useState([]);
                       const [autoJump, setAutoJump] = useState(false);
                       const [autoJumpSlug, setAutoJumpSlug] = useState(null);
+                      const [searchQuery, setSearchQuery] = useState("");
+
+                      const filteredGames = useMemo(
+                        () => GAMES.filter((game) => matchesGame(game, searchQuery)),
+                        [searchQuery]
+                      );
 
                       // Khởi tạo từ localStorage
                       useEffect(() => {
@@ -646,11 +742,7 @@ const TileArtwork = ({ title, gradient, img }) => {
                                   placeholder="Tìm kiếm…"
                                   className={`w-full md:w-96 px-4 py-2 rounded-xl ${t.panel} border ${t.border} ${t.text} placeholder:text-slate-400`}
                                   onChange={(e) => {
-                                    const q = e.target.value.toLowerCase();
-                                    document.querySelectorAll('[data-gametitle]')?.forEach((el) => {
-                                      const name = el.getAttribute('data-gametitle') || "";
-                                      el.classList.toggle('hidden', !name.toLowerCase().includes(q));
-                                    });
+                                    setSearchQuery(e.target.value);
                                   }}
                                 />
                               </div>
@@ -659,7 +751,7 @@ const TileArtwork = ({ title, gradient, img }) => {
                             {/* ==== TẤT CẢ GAME ==== */}
                             <h2 className={`text-xl font-bold mb-4 ${t.textStrong}`}>Tất cả game</h2>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                              {GAMES.map((g) => (
+                              {filteredGames.map((g) => (
                                 <div key={g.slug} data-gametitle={g.title}>
                                   <GameCard
                                     game={g}
@@ -672,6 +764,12 @@ const TileArtwork = ({ title, gradient, img }) => {
                                 </div>
                               ))}
                             </div>
+
+                            {filteredGames.length === 0 && (
+                              <div className={`mt-4 rounded-2xl border ${t.border} ${t.panel} px-4 py-6 text-sm ${t.textSoft}`}>
+                                {"Không tìm thấy game phù hợp với từ khóa \"" + searchQuery + "\"."}
+                              </div>
+                            )}
 
                             <div className="my-8 text-center text-xs text-slate-400/90">
                               © {new Date().getFullYear()} ABX Hub
