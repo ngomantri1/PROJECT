@@ -3074,11 +3074,8 @@
             console.warn('[cwBetTx] chip node null', chip);
             return false;
         }
-        var ok = emitClick(chip.node);
-        if (!ok) {
-            var node = clickableOf(chip.node, 5);
-            ok = emitClick(node);
-        }
+        var node = clickableOf(chip.node, 5);
+        var ok = emitClick(node);
         if (!ok) {
             console.warn('[cwBetTx] click chip thất bại', chip.amount);
             return false;
@@ -3096,11 +3093,8 @@
             console.warn('[cwBetTx] Không tìm thấy nút cửa', side, 'tailEnd =', tailEnd);
             return false;
         }
-        var ok = emitClick(n);
-        if (!ok) {
-            var node = clickableOf(n, 5);
-            ok = emitClick(node);
-        }
+        var node = clickableOf(n, 5);
+        var ok = emitClick(node);
         if (!ok) {
             console.warn('[cwBetTx] click cửa thất bại', side);
             return false;
@@ -3114,11 +3108,8 @@
             console.warn('[cwBetTx] Không tìm thấy nút ĐẶT CƯỢC');
             return false;
         }
-        var ok = emitClick(n);
-        if (!ok) {
-            var node = clickableOf(n, 5);
-            ok = emitClick(node);
-        }
+        var node = clickableOf(n, 5);
+        var ok = emitClick(node);
         if (!ok) {
             console.warn('[cwBetTx] click ĐẶT CƯỢC thất bại');
             return false;
@@ -3127,7 +3118,8 @@
         return true;
     }
 
-    // ĐẶT CƯỢC: chọn phỉnh -> click cửa cho từng chip -> cuối cùng ấn ĐẶT CƯỢC 1 lần
+    // ĐẶT CƯỢC: dùng đúng flow cũ đã hoạt động ổn:
+    // chọn cửa 1 lần -> bấm chip theo plan -> xác nhận 1 lần.
     async function cwBetTxByChip(side, amount) {
         side = String(side || '').toUpperCase();
         side = (side === 'TAI') ? 'TAI' : 'XIU';
@@ -3164,8 +3156,15 @@
                 }).join(' + '));
         } catch (e) {}
 
-        // 3) Với mỗi chip: chọn phỉnh -> click cửa.
-        // Với bàn này, click cửa trước thường chỉ highlight, chưa gắn tiền vào cửa.
+        // 3) Chọn cửa 1 lần trước, rồi mới rải chip theo đúng cơ chế cũ.
+        var okSideOnce = txClickSide(side);
+        if (!okSideOnce) {
+            console.warn('[cwBetTx] click cửa lần đầu thất bại', side);
+            return false;
+        }
+        await sleep(TX_BET_DELAY.sideToChip);
+
+        // 4) Sau khi đã chọn cửa, chỉ bấm chip theo plan.
         for (var s = 0; s < steps.length; s++) {
             var step = steps[s];
             for (var i = 0; i < step.count; i++) {
@@ -3174,24 +3173,14 @@
                     console.warn('[cwBetTx] click chip thất bại', step.chip.amount);
                     return false;
                 }
-                await sleep(TX_BET_DELAY.chipToSide);
-
-                var okSide = txClickSide(side);
-                if (!okSide) {
-                    console.warn('[cwBetTx] click cửa thất bại sau khi chọn chip', side, step.chip.amount);
-                    return false;
-                }
-
-                // ➜ Delay giữa các lần rải chip liên tiếp
-                await sleep(TX_BET_DELAY.sideToChip);
                 await sleep(TX_BET_DELAY.chipToChip);
             }
         }
 
-        // 4) Đợi thêm một nhịp để game gom hết phỉnh rồi mới nhấn ĐẶT CƯỢC
+        // 5) Đợi thêm một nhịp để game gom hết phỉnh rồi mới nhấn ĐẶT CƯỢC
         await sleep(TX_BET_DELAY.afterChipsBeforeConfirm);
 
-        // 5) Cuối cùng nhấn ĐẶT CƯỢC 1 lần để xác nhận, KHÔNG dùng tip
+        // 6) Cuối cùng nhấn ĐẶT CƯỢC 1 lần để xác nhận, KHÔNG dùng tip
         var okDat = await txClickDatCuoc();
         if (!okDat) {
             console.warn('[cwBetTx] click ĐẶT CƯỢC thất bại');
@@ -3226,12 +3215,18 @@
                     throw new Error('click_failed');
                 }
 
-                // Chỉ chờ thêm cho ổn định, không dùng kết quả để chặn thành công/thất bại
+                var changed = true;
                 try {
                     if (typeof waitForTotalsChange === 'function') {
-                        await waitForTotalsChange(before, side, 1600);
+                        changed = await waitForTotalsChange(before, side, 1600);
                     }
-                } catch (_) {}
+                } catch (_) {
+                    changed = true;
+                }
+
+                if (!changed) {
+                    throw new Error('totals_not_changed');
+                }
 
                 safePost({
                     abx: 'bet',

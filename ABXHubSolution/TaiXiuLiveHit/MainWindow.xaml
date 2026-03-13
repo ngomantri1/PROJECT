@@ -540,6 +540,8 @@
                                         <RowDefinition Height="Auto" />
                                         <!--  CÓ LÃI QUAY VỀ MỨC ĐẦU  -->
                                         <RowDefinition Height="Auto" />
+                                        <!--  CỬA ĐẶT & TỈ LỆ  -->
+                                        <RowDefinition Height="Auto" />
                                         <!--  ĐẶT KHI CÒN (GIÂY)  -->
                                     </Grid.RowDefinitions>
 
@@ -740,25 +742,11 @@
                                         Unchecked="ChkS7ResetOnProfit_Changed"
                                         Visibility="Collapsed" />
 
-                                    <!--  ĐẶT KHI CÒN (GIÂY)  -->
-                                    <TextBlock
-                                        Grid.Row="5"
-                                        Grid.Column="0"
-                                        Style="{StaticResource CapsLabel}"
-                                        Text="ĐẶT KHI CÒN (GIÂY)" />
-                                    <TextBox
-                                        x:Name="TxtDecisionSecond"
-                                        Grid.Row="5"
-                                        Grid.Column="1"
-                                        MinHeight="36"
-                                        MaxHeight="120"
-                                        Margin="{StaticResource ValueFieldMargin}"
-                                        HorizontalAlignment="Stretch"
-                                        Text="0" />
                                     <Grid
                                         x:Name="RowSideRatio"
-                                        Grid.Row="6"
+                                        Grid.Row="5"
                                         Grid.ColumnSpan="2"
+                                        Margin="0,2,0,0"
                                         Visibility="Collapsed">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="130" />
@@ -802,6 +790,22 @@
                                                 Visibility="Collapsed" />
                                         </StackPanel>
                                     </Grid>
+
+                                    <!--  ĐẶT KHI CÒN (GIÂY)  -->
+                                    <TextBlock
+                                        Grid.Row="6"
+                                        Grid.Column="0"
+                                        Style="{StaticResource CapsLabel}"
+                                        Text="ĐẶT KHI CÒN (GIÂY)" />
+                                    <TextBox
+                                        x:Name="TxtDecisionSecond"
+                                        Grid.Row="6"
+                                        Grid.Column="1"
+                                        MinHeight="36"
+                                        MaxHeight="120"
+                                        Margin="{StaticResource ValueFieldMargin}"
+                                        HorizontalAlignment="Stretch"
+                                        Text="0" />
                                 </Grid>
                                 <!--  HÀNG: CẮT LÃI / CẮT LỖ (đặt ngay sau hàng 'Đặt khi còn (giây)')  -->
                                 <Grid>
