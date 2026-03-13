@@ -2996,7 +2996,8 @@ Ví dụ không hợp lệ:
                         try
                         {
                             double progNow = snap.prog ?? 0;
-                            var seqStr = snap.seq ?? "";
+                            var seqDisplay = snap.seq ?? "";
+                            var seqStr = FilterPlayableSeq(seqDisplay);
 
                             if (_lockMajorMinorUpdates == true &&
                                 !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
@@ -4805,7 +4806,7 @@ Ví dụ không hợp lệ:
 
             return new GameContext
             {
-                GetSnap = () => { lock (_snapLock) return _lastSnap; },
+                GetSnap = () => { lock (_snapLock) return CloneSnapForTasks(_lastSnap); },
                 TabId = tab.Id,
                 EvalJsAsync = (js) => Dispatcher.InvokeAsync(() => Web.ExecuteScriptAsync(js)).Task.Unwrap(),
                 Log = (s) => Log(s),
@@ -6937,6 +6938,55 @@ Ví dụ không hợp lệ:
             if (e.Key == Key.Enter) BtnGoto_Click(sender, e);
         }
 
+
+        private static string FilterPlayableSeq(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return "";
+            var sb = new StringBuilder(raw.Length);
+            foreach (var ch in raw)
+            {
+                char u = char.ToUpperInvariant(ch);
+                if (u == 'B' || u == 'P') sb.Append(u);
+            }
+            return sb.ToString();
+        }
+
+        private static CwTotals? CloneTotalsForTasks(CwTotals? t)
+        {
+            if (t == null) return null;
+            return new CwTotals
+            {
+                B = t.B,
+                P = t.P,
+                A = t.A,
+                N = t.N,
+                SD = t.SD,
+                TT = t.TT,
+                T3T = t.T3T,
+                T3D = t.T3D,
+                TD = t.TD
+            };
+        }
+
+        private static CwSnapshot? CloneSnapForTasks(CwSnapshot? snap)
+        {
+            if (snap == null) return null;
+            return new CwSnapshot
+            {
+                abx = snap.abx,
+                prog = snap.prog,
+                totals = CloneTotalsForTasks(snap.totals),
+                seq = FilterPlayableSeq(snap.seq),
+                niSeq = snap.niSeq,
+                ts = snap.ts,
+                side = snap.side,
+                amount = snap.amount,
+                error = snap.error,
+                session = snap.session,
+                username = snap.username,
+                status = snap.status
+            };
+        }
 
         private static string NormalizeSeq(string raw) =>
             TextNorm.U(Regex.Replace(raw ?? "", @"[,\s\-]+", "")); // bỏ dấu phẩy, khoảng trắng, dấu gạch
