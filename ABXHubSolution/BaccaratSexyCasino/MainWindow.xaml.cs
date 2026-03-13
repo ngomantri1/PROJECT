@@ -775,7 +775,9 @@ Ví dụ không hợp lệ:
         private CoreWebView2Environment? _webEnv;
         private bool _webInitDone;
         private bool _popupWebHooked;
+        private bool _popupWebMsgHooked;
         private bool _popupBridgeRegistered;
+        private bool _popupDevToolsOpened;
         private string? _popupLastDocKey;
         private WebView2? _popupWeb;
         private const string Wv2ZipResNameX64 = "BaccaratSexyCasino.ThirdParty.WebView2Fixed_win-x64.zip";
@@ -844,7 +846,7 @@ Ví dụ không hợp lệ:
     var delay=300, tries=0;
     (function tick(){
       try{
-        if (window.__cw_startPush && window.cc && cc.director && cc.director.getScene){
+        if (window.__cw_startPush){
           try{ window.__cw_startPush(240); }catch(_){}
           return;
         }
@@ -1954,332 +1956,7 @@ Ví dụ không hợp lệ:
                 if (!_webMsgHooked)
                 {
                     _webMsgHooked = true;
-                    Web.CoreWebView2.WebMessageReceived += async (s, e) =>
-                    {
-                        try
-                        {
-                            var msg = e.TryGetWebMessageAsString() ?? "";
-                            if (string.IsNullOrWhiteSpace(msg)) return;
-
-                            EnqueueUi($"[JS] {msg}"); // chỉ hiển thị UI, không ghi ra file
-
-                            try
-                            {
-                                using var doc = JsonDocument.Parse(msg);
-                                var root = doc.RootElement;
-
-                                if (!root.TryGetProperty("abx", out var abxEl)) return;
-                                var abxStr = abxEl.GetString() ?? "";
-
-                                // 1) result: EvalJsAwaitAsync bridge
-                                if (abxStr == "result" && root.TryGetProperty("id", out var idEl))
-                                {
-                                    var id = idEl.GetString() ?? "";
-                                    string val = root.TryGetProperty("value", out var vEl) ? vEl.ToString() : root.ToString();
-                                    if (_jsAwaiters.TryRemove(id, out var waiter))
-                                        waiter.TrySetResult(val);
-                                    return;
-                                }
-
-                                // 2) tick: cập nhật snapshot + UI + (NI & finalize khi đuôi đổi)
-                                if (abxStr == "tick")
-                                {
-                                    // Đổi tên biến JSON để không đụng 'doc'/'root' bên ngoài
-                                    using var jdocTick = System.Text.Json.JsonDocument.Parse(msg);
-                                    var jrootTick = jdocTick.RootElement;
-
-                                    var snap = System.Text.Json.JsonSerializer.Deserialize<CwSnapshot>(msg);
-                                    if (snap != null)
-                                    {
-                                        // Ghi nhận username từ tick game (dùng làm _homeUsername nếu Home chưa gửi)
-                                        try
-                                        {
-                                            var userVal = snap.username ?? "";
-                                            if (!string.IsNullOrWhiteSpace(userVal))
-                                            {
-                                                var normalized = userVal.Trim().ToLowerInvariant();
-                                                _homeUsername = normalized;
-                                                _homeUsernameAt = DateTime.UtcNow;
-
-                                                if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
-                                                {
-                                                    _cfg.LastHomeUsername = _homeUsername;
-                                                    _ = SaveConfigAsync();
-                                                }
-                                            }
-                                        }
-                                        catch { /* ignore */ }
-
-                                        // === NI-SEQUENCE & finalize đúng thời điểm (đuôi seq đổi) ===
-                                        try
-                                        {
-                                            double progNow = snap.prog ?? 0;
-                                            var seqStr = snap.seq ?? "";
-
-                                            // Nếu đang khóa theo dõi và chuỗi đã thay đổi so với _baseSeq => ván cũ khép
-                                            if (_lockMajorMinorUpdates == true &&
-                                                !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
-                                            {
-                                                char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
-                                                bool winIsBanker = (tail == 'B');
-
-                                                long prevB = _roundTotalsB, prevP = _roundTotalsP;
-                                                // Ni: nếu cửa thắng là cửa có tổng tiền lớn hơn trong ván đó => 'N', ngược lại 'I'
-                                                char ni = winIsBanker ? ((prevB >= prevP) ? 'N' : 'I')
-                                                                      : ((prevP >= prevB) ? 'N' : 'I');
-
-                                                _niSeq.Append(ni);
-                                                if (_niSeq.Length > NiSeqMax)
-                                                    _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
-
-                                                Log($"[NI] add={ni} | seq={_niSeq} | tail={tail} | B={prevB} | P={prevP}");
-
-                                                // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
-                                                var kqStr = winIsBanker ? "BANKER" : "PLAYER";
-                                                long? accNow2 = snap?.totals?.A;
-                                                if (_pendingRows.Count > 0 && accNow2.HasValue)
-                                                {
-                                                    // Chiến lược 17 tự finalize nhiều cửa theo winners
-                                                    if (!HasJackpotMultiSideRunning())
-                                                    {
-                                        FinalizeLastBet(kqStr, accNow2.Value);
-                                                    }
-                                                }
-
-                                                _lockMajorMinorUpdates = false; // xong chu kỳ này
-                                            }
-
-                                            // Khi vào ván mới (prog == 0) → lấy mốc base & totals để so sánh cho ván sắp khép
-                                            if (_lockMajorMinorUpdates == false)
-                                            {
-                                                if (progNow == 0)
-                                                {
-                                                    _baseSeq = seqStr;
-                                                    _roundTotalsB = snap.totals?.B ?? 0;
-                                                    _roundTotalsP = snap.totals?.P ?? 0;
-                                                    if (_roundTotalsB != 0 && _roundTotalsP != 0)
-                                                        _lockMajorMinorUpdates = true;
-                                                }
-                                            }
-                                        }
-                                        catch { /* an toàn */ }
-
-                                        // Ghi lại niSeq vào snapshot cho UI
-                                        snap.niSeq = _niSeq.ToString();
-                                        lock (_snapLock) _lastSnap = snap;
-
-                                        // --- NEW: lấy status từ JSON (JS đã bơm vào tick) ---
-                                        string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
-
-                                        // --- Cập nhật UI ---
-                                        _ = Dispatcher.BeginInvoke(new Action(() =>
-                                        {
-                                            try
-                                            {
-                                                // Progress / thời gian đếm ngược (giây)
-                                                if (snap.prog.HasValue)
-                                                {
-                                                    const double progMaxSec = 20;
-                                                    var sec = Math.Max(0, Math.Min(progMaxSec, snap.prog.Value));
-                                                    var secInt = (int)Math.Round(sec, MidpointRounding.AwayFromZero);
-                                                    var ratio = (progMaxSec > 0) ? (sec / progMaxSec) : 0;
-                                                    if (PrgBet != null)
-                                                    {
-                                                        PrgBet.Minimum = 0;
-                                                        PrgBet.Maximum = 1;
-                                                        PrgBet.Value = ratio;
-                                                    }
-                                                    if (LblProg != null) LblProg.Text = $"{secInt}s";
-                                                }
-                                                else
-                                                {
-                                                    if (PrgBet != null) PrgBet.Value = 0;
-                                                    if (LblProg != null) LblProg.Text = "-";
-                                                }
-
-                                                // Kết quả gần nhất từ chuỗi seq
-                                                var seqStrLocal = snap.seq ?? "";
-                                                char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
-                                                var kq = (last == 'C') ? "CHAN"
-                                                         : (last == 'L') ? "LE" : "";
-                                                SetLastResultUI(kq);
-
-                                                // Tổng tiền
-                                                var amt = snap?.totals?.A;
-                                                if (LblAmount != null)
-                                                    LblAmount.Text = amt.HasValue
-                                                        ? amt.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) : "-";
-                                                if (LblUserName != null)
-                                                {
-                                                    var name = snap?.totals?.N ?? "";
-                                                    LblUserName.Text = !string.IsNullOrWhiteSpace(name) ? name : "-";
-                                                }
-
-                                                // Chuỗi kết quả
-                                                UpdateSeqUI(snap.seq ?? "");
-
-                                                // 🔸 Trạng thái: "Phiên mới" / "Ngừng đặt cược" / "Đang chờ kết quả"
-                                                if (LblStatusText != null)
-                                                {
-                                                    if (!string.IsNullOrWhiteSpace(statusUi))
-                                                    {
-                                                        LblStatusText.Text = statusUi;
-                                                        LblStatusText.Visibility = Visibility.Visible;
-                                                    }
-                                                    else
-                                                    {
-                                                        LblStatusText.Text = "";
-                                                        LblStatusText.Visibility = Visibility.Collapsed;
-                                                    }
-                                                }
-                                            }
-                                            catch { }
-                                        }));
-                                    }
-
-                                    _lastGameTickUtc = DateTime.UtcNow;
-                                    return;
-                                }
-
-
-
-                                // 2.b) game_hint: Home báo đã có game/iframe → chuyển UI tức thì
-                                if (abxStr == "game_hint")
-                                {
-                                    _lastGameTickUtc = DateTime.UtcNow; // synthetic tick
-                                    _ = Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(true)));
-                                    return;
-                                }
-
-                                // 3) bet ok → tạo dòng placeholder (Result/WinLose = "-") và SHOW TRANG 1
-                                if (abxStr == "bet")
-                                {
-                                    string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
-                                    long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
-                                    string side = sideRaw.Equals("CHAN", StringComparison.OrdinalIgnoreCase) ? "CHAN"
-                                                : sideRaw.Equals("LE", StringComparison.OrdinalIgnoreCase) ? "LE"
-                                                : sideRaw.ToUpperInvariant();
-
-                                    Log($"[BET] {side} {amount:N0}");
-
-                                    long accNow = 0;
-                                    try { accNow = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
-
-                                    var row = new BetRow
-                                    {
-                                        At = DateTime.Now,
-                                        Game = "Xóc đĩa live",
-                                        Stake = amount,
-                                        Side = side,
-                                        Result = "-",
-                                        WinLose = "-",
-                                        Account = accNow
-                                    };
-
-                                    // MỚI NHẤT Ở ĐẦU DANH SÁCH (trang 1)
-                                    _betAll.Insert(0, row);
-                                    if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
-                                    _pendingRows.Add(row);
-                                    // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
-                                    if (_autoFollowNewest)
-                                    {
-                                        ShowFirstPage();
-                                    }
-                                    else
-                                    {
-                                        RefreshCurrentPage();   // (mục 3 bên dưới)
-                                    }
-                                    return;
-                                }
-
-
-                                // 4) bet_error
-                                if (abxStr == "bet_error")
-                                {
-                                    string side = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "?") : "?";
-                                    long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
-                                    string error = root.TryGetProperty("error", out var ee) ? (ee.GetString() ?? "") : "";
-                                    Log($"[BET][ERR] {side} {amount} :: {error}");
-                                    return;
-                                }
-
-                                // 5) home_tick: username/balance/url từ Home
-                                if (abxStr == "home_tick")
-                                {
-                                    var uname = root.TryGetProperty("username", out var uEl) ? (uEl.GetString() ?? "") : "";
-                                    if (!string.IsNullOrWhiteSpace(uname))
-                                    {
-                                        var normalized = uname.Trim().ToLowerInvariant();
-                                        if (_homeUsername != normalized)
-                                        {
-                                            _homeUsername = normalized;
-                                            _homeUsernameAt = DateTime.UtcNow;
-
-                                            if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
-                                            {
-                                                _cfg.LastHomeUsername = _homeUsername;
-                                                _ = SaveConfigAsync(); // fire-and-forget
-                                            }
-                                        }
-                                    }
-
-                                    var bal = root.TryGetProperty("balance", out var bEl) ? (bEl.GetString() ?? "") : "";
-                                    var href = root.TryGetProperty("href", out var hEl) ? (hEl.GetString() ?? "") : "";
-
-                                    try
-                                    {
-                                        await Dispatcher.InvokeAsync(() =>
-                                        {
-                                            //if (!string.IsNullOrWhiteSpace(uname) && TxtUser != null)
-                                            //{
-                                               // if (string.IsNullOrWhiteSpace(TxtUser.Text) || TxtUser.Text != uname)
-                                               //     TxtUser.Text = uname;
-                                            //}
-                                            if (LblUserName != null) LblUserName.Text = uname;
-                                            if (LblAmount != null) LblAmount.Text = bal;
-                                        });
-
-                                        // cập nhật trạng thái đã đăng nhập dựa trên nút Logout/Login
-                                        try
-                                        {
-                                            var jsLogged = @"
-(function(){
-  try{
-    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}}; 
-    const low=s=>rm(String(s||'').trim().toLowerCase());
-    const vis=el=>{if(!el)return false; const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
-                   return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
-    const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
-
-    const hasLogoutVis = qa('a,button,[role=""button""],.btn,.base-button')
-        .some(el => vis(el) && /dang\\s*xuat|đăng\\s*xuất|logout|sign\\s*out/i.test(low(el.textContent)));
-    const hasLoginVis = qa('a,button,[role=""button""],.btn,.base-button')
-        .some(el => vis(el) && /dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
-
-    return (hasLogoutVis && !hasLoginVis) ? '1' : '0';
-  }catch(e){ return '0'; }
-})();";
-                                            var st = await ExecJsAsyncStr(jsLogged);
-                                            _homeLoggedIn = (st == "1");
-                                        }
-                                        catch { /* ignore */ }
-                                    }
-                                    catch { }
-
-                                    _lastHomeTickUtc = DateTime.UtcNow;
-                                    return;
-                                }
-                            }
-                            catch
-                            {
-                                // ignore non-JSON
-                            }
-                        }
-                        catch (Exception ex2)
-                        {
-                            Log("[WebMessageReceived] " + ex2);
-                        }
-                    };
+                    Web.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
                 }
 
                 // 3) Hook NavigationCompleted để chuyển UI theo URL ngay khi điều hướng xong
@@ -2485,7 +2162,7 @@ Ví dụ không hợp lệ:
                     // settings.AreDevToolsEnabled = true;
                 }
 
-                try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
+                // Khong tu mo DevTools cua Web chinh de tranh nham voi PopupWeb game.
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
                 // Giữ nguyên hành vi popup/new window như trình duyệt thật để không làm hỏng flow mở game/provider
@@ -3204,10 +2881,27 @@ Ví dụ không hợp lệ:
                 Log("[PopupWeb] bridge registered");
             }
 
+            if (!_popupWebMsgHooked)
+            {
+                popupWeb.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
+                _popupWebMsgHooked = true;
+                Log("[PopupWeb] WebMessageReceived hooked");
+            }
+
             popupWeb.CoreWebView2.NewWindowRequested += PopupWeb_NewWindowRequested;
             popupWeb.CoreWebView2.WindowCloseRequested += PopupWeb_WindowCloseRequested;
             popupWeb.NavigationCompleted += PopupWeb_NavigationCompleted;
             _popupWebHooked = true;
+            if (!_popupDevToolsOpened)
+            {
+                try
+                {
+                    popupWeb.CoreWebView2.OpenDevToolsWindow();
+                    _popupDevToolsOpened = true;
+                    Log("[PopupWeb] DevTools opened");
+                }
+                catch { }
+            }
             Log("[PopupWeb] ready");
             return popupWeb;
         }
@@ -3233,6 +2927,304 @@ Ví dụ không hợp lệ:
                 await _popupWeb.CoreWebView2.ExecuteScriptAsync(FRAME_AUTOSTART);
                 _popupLastDocKey = key;
                 Log("[PopupWeb] bridge injected, key=" + key);
+            }
+        }
+
+        private async void CoreWebView2_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+        {
+            try
+            {
+                var msg = e.TryGetWebMessageAsString() ?? "";
+                if (string.IsNullOrWhiteSpace(msg)) return;
+                await HandleIncomingWebMessageAsync(msg);
+            }
+            catch (Exception ex)
+            {
+                Log("[WebMessageReceived] " + ex);
+            }
+        }
+
+        private async Task HandleIncomingWebMessageAsync(string msg)
+        {
+            if (string.IsNullOrWhiteSpace(msg)) return;
+
+            EnqueueUi($"[JS] {msg}"); // chỉ hiển thị UI, không ghi ra file
+
+            try
+            {
+                using var doc = JsonDocument.Parse(msg);
+                var root = doc.RootElement;
+
+                if (!root.TryGetProperty("abx", out var abxEl)) return;
+                var abxStr = abxEl.GetString() ?? "";
+
+                if (abxStr == "result" && root.TryGetProperty("id", out var idEl))
+                {
+                    var id = idEl.GetString() ?? "";
+                    string val = root.TryGetProperty("value", out var vEl) ? vEl.ToString() : root.ToString();
+                    if (_jsAwaiters.TryRemove(id, out var waiter))
+                        waiter.TrySetResult(val);
+                    return;
+                }
+
+                if (abxStr == "tick")
+                {
+                    using var jdocTick = JsonDocument.Parse(msg);
+                    var jrootTick = jdocTick.RootElement;
+
+                    var snap = JsonSerializer.Deserialize<CwSnapshot>(msg);
+                    if (snap != null)
+                    {
+                        try
+                        {
+                            var userVal = snap.username ?? "";
+                            if (!string.IsNullOrWhiteSpace(userVal))
+                            {
+                                var normalized = userVal.Trim().ToLowerInvariant();
+                                _homeUsername = normalized;
+                                _homeUsernameAt = DateTime.UtcNow;
+
+                                if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
+                                {
+                                    _cfg.LastHomeUsername = _homeUsername;
+                                    _ = SaveConfigAsync();
+                                }
+                            }
+                        }
+                        catch { }
+
+                        try
+                        {
+                            double progNow = snap.prog ?? 0;
+                            var seqStr = snap.seq ?? "";
+
+                            if (_lockMajorMinorUpdates == true &&
+                                !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
+                            {
+                                char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
+                                bool winIsBanker = (tail == 'B');
+
+                                long prevB = _roundTotalsB, prevP = _roundTotalsP;
+                                char ni = winIsBanker ? ((prevB >= prevP) ? 'N' : 'I')
+                                                      : ((prevP >= prevB) ? 'N' : 'I');
+
+                                _niSeq.Append(ni);
+                                if (_niSeq.Length > NiSeqMax)
+                                    _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
+
+                                Log($"[NI] add={ni} | seq={_niSeq} | tail={tail} | B={prevB} | P={prevP}");
+
+                                var kqStr = winIsBanker ? "BANKER" : "PLAYER";
+                                long? accNow2 = snap?.totals?.A;
+                                if (_pendingRows.Count > 0 && accNow2.HasValue)
+                                {
+                                    if (!HasJackpotMultiSideRunning())
+                                    {
+                                        FinalizeLastBet(kqStr, accNow2.Value);
+                                    }
+                                }
+
+                                _lockMajorMinorUpdates = false;
+                            }
+
+                            if (_lockMajorMinorUpdates == false)
+                            {
+                                if (progNow == 0)
+                                {
+                                    _baseSeq = seqStr;
+                                    _roundTotalsB = snap.totals?.B ?? 0;
+                                    _roundTotalsP = snap.totals?.P ?? 0;
+                                    if (_roundTotalsB != 0 && _roundTotalsP != 0)
+                                        _lockMajorMinorUpdates = true;
+                                }
+                            }
+                        }
+                        catch { }
+
+                        snap.niSeq = _niSeq.ToString();
+                        lock (_snapLock) _lastSnap = snap;
+
+                        string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
+                        if (!string.IsNullOrWhiteSpace(statusUi))
+                            Log("[Tick] status=" + statusUi);
+
+                        _ = Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            try
+                            {
+                                if (snap.prog.HasValue)
+                                {
+                                    const double progMaxSec = 20;
+                                    var sec = Math.Max(0, Math.Min(progMaxSec, snap.prog.Value));
+                                    var secInt = (int)Math.Round(sec, MidpointRounding.AwayFromZero);
+                                    var ratio = (progMaxSec > 0) ? (sec / progMaxSec) : 0;
+                                    if (PrgBet != null)
+                                    {
+                                        PrgBet.Minimum = 0;
+                                        PrgBet.Maximum = 1;
+                                        PrgBet.Value = ratio;
+                                    }
+                                    if (LblProg != null) LblProg.Text = $"{secInt}s";
+                                }
+                                else
+                                {
+                                    if (PrgBet != null) PrgBet.Value = 0;
+                                    if (LblProg != null)
+                                        LblProg.Text = !string.IsNullOrWhiteSpace(statusUi) ? "0s" : "-";
+                                }
+
+                                var seqStrLocal = snap.seq ?? "";
+                                char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
+                                var kq = (last == 'C') ? "CHAN"
+                                         : (last == 'L') ? "LE" : "";
+                                SetLastResultUI(kq);
+
+                                var amt = snap?.totals?.A;
+                                if (LblAmount != null)
+                                    LblAmount.Text = amt.HasValue
+                                        ? amt.Value.ToString("N0", CultureInfo.InvariantCulture) : "-";
+                                if (LblUserName != null)
+                                {
+                                    var name = snap?.totals?.N ?? "";
+                                    LblUserName.Text = !string.IsNullOrWhiteSpace(name) ? name : "-";
+                                }
+
+                                UpdateSeqUI(snap.seq ?? "");
+
+                                if (LblStatusText != null)
+                                {
+                                    if (!string.IsNullOrWhiteSpace(statusUi))
+                                    {
+                                        LblStatusText.Text = statusUi;
+                                        LblStatusText.Visibility = Visibility.Visible;
+                                    }
+                                    else
+                                    {
+                                        LblStatusText.Text = "";
+                                        LblStatusText.Visibility = Visibility.Collapsed;
+                                    }
+                                }
+                            }
+                            catch { }
+                        }));
+                    }
+
+                    _lastGameTickUtc = DateTime.UtcNow;
+                    return;
+                }
+
+                if (abxStr == "game_hint")
+                {
+                    _lastGameTickUtc = DateTime.UtcNow;
+                    _ = Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(true)));
+                    return;
+                }
+
+                if (abxStr == "bet")
+                {
+                    string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
+                    long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
+                    string side = sideRaw.Equals("CHAN", StringComparison.OrdinalIgnoreCase) ? "CHAN"
+                                : sideRaw.Equals("LE", StringComparison.OrdinalIgnoreCase) ? "LE"
+                                : sideRaw.ToUpperInvariant();
+
+                    Log($"[BET] {side} {amount:N0}");
+
+                    long accNow = 0;
+                    try { accNow = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
+
+                    var row = new BetRow
+                    {
+                        At = DateTime.Now,
+                        Game = "Xóc đĩa live",
+                        Stake = amount,
+                        Side = side,
+                        Result = "-",
+                        WinLose = "-",
+                        Account = accNow
+                    };
+
+                    _betAll.Insert(0, row);
+                    if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
+                    _pendingRows.Add(row);
+                    if (_autoFollowNewest)
+                        ShowFirstPage();
+                    else
+                        RefreshCurrentPage();
+                    return;
+                }
+
+                if (abxStr == "bet_error")
+                {
+                    string side = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "?") : "?";
+                    long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
+                    string error = root.TryGetProperty("error", out var ee) ? (ee.GetString() ?? "") : "";
+                    Log($"[BET][ERR] {side} {amount} :: {error}");
+                    return;
+                }
+
+                if (abxStr == "home_tick")
+                {
+                    var uname = root.TryGetProperty("username", out var uEl) ? (uEl.GetString() ?? "") : "";
+                    if (!string.IsNullOrWhiteSpace(uname))
+                    {
+                        var normalized = uname.Trim().ToLowerInvariant();
+                        if (_homeUsername != normalized)
+                        {
+                            _homeUsername = normalized;
+                            _homeUsernameAt = DateTime.UtcNow;
+
+                            if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
+                            {
+                                _cfg.LastHomeUsername = _homeUsername;
+                                _ = SaveConfigAsync();
+                            }
+                        }
+                    }
+
+                    var bal = root.TryGetProperty("balance", out var bEl) ? (bEl.GetString() ?? "") : "";
+
+                    try
+                    {
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            if (LblUserName != null) LblUserName.Text = uname;
+                            if (LblAmount != null) LblAmount.Text = bal;
+                        });
+
+                        try
+                        {
+                            var jsLogged = @"
+(function(){
+  try{
+    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}}; 
+    const low=s=>rm(String(s||'').trim().toLowerCase());
+    const vis=el=>{if(!el)return false; const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
+                   return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
+    const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
+
+    const hasLogoutVis = qa('a,button,[role=""button""],.btn,.base-button')
+        .some(el => vis(el) && /dang\\s*xuat|đăng\\s*xuất|logout|sign\\s*out/i.test(low(el.textContent)));
+    const hasLoginVis = qa('a,button,[role=""button""],.btn,.base-button')
+        .some(el => vis(el) && /dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
+
+    return (hasLogoutVis && !hasLoginVis) ? '1' : '0';
+  }catch(e){ return '0'; }
+})();";
+                            var st = await ExecJsAsyncStr(jsLogged);
+                            _homeLoggedIn = (st == "1");
+                        }
+                        catch { }
+                    }
+                    catch { }
+
+                    _lastHomeTickUtc = DateTime.UtcNow;
+                    return;
+                }
+            }
+            catch
+            {
+                // ignore non-JSON
             }
         }
 
@@ -3356,7 +3348,9 @@ Ví dụ không hợp lệ:
             var popupWeb = _popupWeb;
             _popupWeb = null;
             _popupWebHooked = false;
+            _popupWebMsgHooked = false;
             _popupBridgeRegistered = false;
+            _popupDevToolsOpened = false;
             _popupLastDocKey = null;
 
             if (popupWeb == null)
@@ -3366,6 +3360,7 @@ Ví dụ không hợp lệ:
             {
                 if (popupWeb.CoreWebView2 != null)
                 {
+                    popupWeb.CoreWebView2.WebMessageReceived -= CoreWebView2_WebMessageReceived;
                     popupWeb.CoreWebView2.NewWindowRequested -= PopupWeb_NewWindowRequested;
                     popupWeb.CoreWebView2.WindowCloseRequested -= PopupWeb_WindowCloseRequested;
                     popupWeb.CoreWebView2.FrameCreated -= PopupCore_FrameCreated_Bridge;
