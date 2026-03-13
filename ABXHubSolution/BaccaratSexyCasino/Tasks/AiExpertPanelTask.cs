@@ -207,10 +207,11 @@ namespace BaccaratSexyCasino.Tasks
                 // Chấm điểm thực tế theo cửa đã đặt
                 var snapBefore = ctx.GetSnap();
                 string baseSeq = snapBefore?.seq ?? string.Empty;
-                bool ok = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                bool? ok = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
 
                 // P&L theo kết quả thực
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(ok ? stake : -stake));
+                var netDelta = CalcNetDelta(side, stake, ok);
+                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {
                     // cần biến local để truyền ref
@@ -224,7 +225,8 @@ namespace BaccaratSexyCasino.Tasks
                         ref chainIndex,
                         ref chainStep,
                         ref chainProfit,
-                        ok);
+                        ok,
+                        netDelta);
 
                     // gán ngược lại vào context
                     ctx.MoneyChainIndex = chainIndex;
@@ -239,13 +241,22 @@ namespace BaccaratSexyCasino.Tasks
 
                 // TÍNH panelWin (giả lập) và trainingWin (cho học)
                 // trueWinSide: 0/1 là BANKER/PLAYER thực tế thắng
-                int trueWinSide = ok ? placedPick : 1 - placedPick;
+                if (ok == null)
+                {
+                    Log(ctx, "[AI15] RESULT ok=PUSH | trueWin=T | panelWin=PUSH | trainingWin=SKIP");
+                    st.lastPanelPick = panelPick;
+                    st.lastPlacedPick = placedPick;
+                    st.lastOk = null;
+                    continue;
+                }
+
+                int trueWinSide = ok.Value ? placedPick : 1 - placedPick;
                 bool panelWin = (trueWinSide == panelPick);
 
                 bool trainingWin = panelWin;       // HỌC THEO PANEL GỐC (GIẢ LẬP)
                 int trainingPick = panelPick;     // pick dùng để học
 
-                Log(ctx, $"[AI15] RESULT ok={(ok ? "WIN" : "LOSE")} | trueWin={(trueWinSide == 0 ? "B" : "P")} | panelPick={(panelPick == 0 ? "B" : "P")} -> panelWin={(panelWin ? "WIN" : "LOSE")} | trainingWin={(trainingWin ? "WIN" : "LOSE")}");
+                Log(ctx, $"[AI15] RESULT ok={(ok.Value ? "WIN" : "LOSE")} | trueWin={(trueWinSide == 0 ? "B" : "P")} | panelPick={(panelPick == 0 ? "B" : "P")} -> panelWin={(panelWin ? "WIN" : "LOSE")} | trainingWin={(trainingWin ? "WIN" : "LOSE")}");
 
                 // Cập nhật trạng thái học/guard/ewma theo trainingWin
                 UpdateAfterTraining(st, trainingWin, trainingPick);

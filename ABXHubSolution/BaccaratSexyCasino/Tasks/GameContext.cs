@@ -9,6 +9,7 @@ namespace BaccaratSexyCasino.Tasks
     {
         // Lấy snapshot mới nhất từ MainWindow (thread-safe)
         public Func<CwSnapshot> GetSnap { get; init; }
+        public Func<CwSnapshot>? GetRawSnap { get; init; }
 
         // Tab id (chiến lược) dùng cho queue bet
         public string TabId { get; init; } = "";
@@ -68,6 +69,7 @@ namespace BaccaratSexyCasino.Tasks
         public Action<double>? UiSetStake;    // tiền đang đánh
         public Action<double>? UiAddWin;      // cộng/trừ tiền thắng lũy kế
         public Action<bool>? UiWinLoss;       // true = win, false = loss
+        public Action<string?>? UiSetWinLossText; // "Hòa" hoặc text khác nếu cần
         public Action<int, int>? UiSetChainLevel; // (chainIndex, levelIndex) cho MultiChain
     }
 }

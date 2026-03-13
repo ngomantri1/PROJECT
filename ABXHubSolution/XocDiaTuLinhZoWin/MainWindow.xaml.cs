@@ -368,7 +368,7 @@ namespace XocDiaTuLinhZoWin
         // Chỉ dùng cho hiển thị LblLevel: vị trí hiện tại trong _stakeSeq
         private int _stakeLevelIndexForUi = -1;
 
-        private double _decisionPercent = 3; // 3s
+        private double _decisionPercent = 5; // 5s
 
         // Chống bắn trùng khi vừa cược
         private bool _cooldown = false;

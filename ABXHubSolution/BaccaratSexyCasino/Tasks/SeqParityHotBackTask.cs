@@ -232,8 +232,9 @@ namespace BaccaratSexyCasino.Tasks
 
                 await PlaceBet(ctx, side, stake, ct);
 
-                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
+                bool? win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                var netDelta = CalcNetDelta(side, stake, win);
+                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {
                     int chainIndex = ctx.MoneyChainIndex;
@@ -246,7 +247,8 @@ namespace BaccaratSexyCasino.Tasks
                         ref chainIndex,
                         ref chainStep,
                         ref chainProfit,
-                        win);
+                        win,
+                        netDelta);
 
                     ctx.MoneyChainIndex = chainIndex;
                     ctx.MoneyChainStep = chainStep;
@@ -268,7 +270,7 @@ namespace BaccaratSexyCasino.Tasks
                     RemoveLatestWindowFromSet(candidates, lastWindow, lastWindowRev, ctx.Log, "");
                 }
 
-                if (!win && !string.IsNullOrEmpty(pattern))
+                if (win == false && !string.IsNullOrEmpty(pattern))
                 {
                     patternIndex = 0;
                     pattern = null;

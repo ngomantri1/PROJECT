@@ -131,10 +131,11 @@ namespace BaccaratSexyCasino.Tasks
                 await PlaceBet(ctx, side, stake, ct);
 
                 // Chờ ván xong & chấm kết quả so với baseSeq NGAY TRƯỚC KHI ĐẶT
-                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                bool? win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
 
                 // Cập nhật lũy kế & quản lý vốn
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
+                var netDelta = CalcNetDelta(side, stake, win);
+                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {
                     // cần biến local để truyền ref
@@ -148,7 +149,8 @@ namespace BaccaratSexyCasino.Tasks
                         ref chainIndex,
                         ref chainStep,
                         ref chainProfit,
-                        win);
+                        win,
+                        netDelta);
 
                     // gán ngược lại vào context
                     ctx.MoneyChainIndex = chainIndex;

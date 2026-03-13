@@ -350,6 +350,7 @@ namespace BaccaratSexyCasino
         private int _lastSeqLenNi = 0;
         private bool _lockMajorMinorUpdates = false;
         private string _baseSeq = "";
+        private string _baseSeqDisplay = "";
 
         private DecisionState _dec = new();
         private long[] _stakeSeq = Array.Empty<long>();
@@ -697,6 +698,7 @@ Ví dụ không hợp lệ:
             public double WinTotal { get; set; } = 0;
             public string LastSide { get; set; } = "";
             public bool? LastWinLoss { get; set; }
+            public string? LastWinLossText { get; set; } = null;
             public long? LastStakeAmount { get; set; }
             public string LastLevelText { get; set; } = "";
             public long[] RunStakeSeq { get; set; } = Array.Empty<long>();
@@ -1445,7 +1447,10 @@ Ví dụ không hợp lệ:
             if (LblStake != null) LblStake.Text = tab.LastStakeAmount.HasValue ? tab.LastStakeAmount.Value.ToString("N0") : "";
             if (LblLevel != null) LblLevel.Text = tab.LastLevelText ?? "";
             SetLastSideUI(tab.LastSide);
-            SetWinLossUI(tab.LastWinLoss);
+            if (string.Equals(TextNorm.U(tab.LastWinLossText ?? ""), "HOA", StringComparison.Ordinal))
+                SetWinLossTextUI(tab.LastWinLossText);
+            else
+                SetWinLossUI(tab.LastWinLoss);
             UpdateStatsUi(tab);
         }
 
@@ -2998,6 +3003,23 @@ Ví dụ không hợp lệ:
                             double progNow = snap.prog ?? 0;
                             var seqDisplay = snap.seq ?? "";
                             var seqStr = FilterPlayableSeq(seqDisplay);
+                            char tailDisplay = (seqDisplay.Length > 0) ? seqDisplay[^1] : '\0';
+
+                            if (_lockMajorMinorUpdates == true &&
+                                !string.Equals(seqDisplay, _baseSeqDisplay, StringComparison.Ordinal) &&
+                                tailDisplay == 'T')
+                            {
+                                long? accNowTie = snap?.totals?.A;
+                                if (_pendingRows.Count > 0 && accNowTie.HasValue)
+                                {
+                                    if (!HasJackpotMultiSideRunning())
+                                    {
+                                        FinalizeLastBet("TIE", accNowTie.Value, new HashSet<string>(StringComparer.OrdinalIgnoreCase), "TIE");
+                                    }
+                                }
+
+                                _lockMajorMinorUpdates = false;
+                            }
 
                             if (_lockMajorMinorUpdates == true &&
                                 !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
@@ -3033,6 +3055,7 @@ Ví dụ không hợp lệ:
                                 if (progNow == 0)
                                 {
                                     _baseSeq = seqStr;
+                                    _baseSeqDisplay = seqDisplay;
                                     _roundTotalsB = snap.totals?.B ?? 0;
                                     _roundTotalsP = snap.totals?.P ?? 0;
                                     if (_roundTotalsB != 0 && _roundTotalsP != 0)
@@ -4807,6 +4830,7 @@ Ví dụ không hợp lệ:
             return new GameContext
             {
                 GetSnap = () => { lock (_snapLock) return CloneSnapForTasks(_lastSnap); },
+                GetRawSnap = () => { lock (_snapLock) return _lastSnap; },
                 TabId = tab.Id,
                 EvalJsAsync = (js) => Dispatcher.InvokeAsync(() => Web.ExecuteScriptAsync(js)).Task.Unwrap(),
                 Log = (s) => Log(s),
@@ -4850,8 +4874,7 @@ Ví dụ không hợp lệ:
                 {
                     void Apply()
                     {
-                        var net = (applyWinTax && delta > 0) ? Math.Round(delta * 0.98) : delta;
-                        UpdateTabWin(tab, net, moneyStrategyId);
+                        UpdateTabWin(tab, delta, moneyStrategyId);
                     }
 
                     if (Dispatcher.CheckAccess()) Apply();
@@ -4861,6 +4884,10 @@ Ví dụ không hợp lệ:
                 UiWinLoss = s => Dispatcher.Invoke(() =>
                 {
                     UpdateTabWinLoss(tab, s);
+                }),
+                UiSetWinLossText = text => Dispatcher.Invoke(() =>
+                {
+                    UpdateTabWinLossText(tab, text);
                 }),
             };
         }
@@ -5551,6 +5578,7 @@ Ví dụ không hợp lệ:
         {
             if (tab == null) return;
             tab.LastWinLoss = result;
+            tab.LastWinLossText = result == true ? "Thắng" : result == false ? "Thua" : null;
             if (result.HasValue)
             {
                 if (result.Value)
@@ -5575,9 +5603,27 @@ Ví dụ không hợp lệ:
             UpdateStatsUi(tab);
         }
 
+        private void UpdateTabWinLossText(StrategyTabState tab, string? text)
+        {
+            if (tab == null) return;
+            var u = TextNorm.U(text ?? "");
+            tab.LastWinLossText = text;
+            if (u == "THANG") tab.LastWinLoss = true;
+            else if (u == "THUA") tab.LastWinLoss = false;
+            else tab.LastWinLoss = null;
+
+            if (ReferenceEquals(_activeTab, tab))
+            {
+                if (u == "HOA") SetWinLossTextUI(text);
+                else SetWinLossUI(tab.LastWinLoss);
+            }
+            UpdateStatsUi(tab);
+        }
+
         private void ResetTabMiniState(StrategyTabState tab)
         {
             tab.LastWinLoss = null;
+            tab.LastWinLossText = null;
             tab.LastSide = "";
             tab.LastStakeAmount = null;
             tab.LastLevelText = "";
@@ -5671,6 +5717,16 @@ Ví dụ không hợp lệ:
 
             // Chưa có kết quả
             ShowText("");
+        }
+
+        private void SetWinLossTextUI(string? text)
+        {
+            if (ImgThangThua != null) ImgThangThua.Visibility = Visibility.Collapsed;
+            if (LblWinLoss != null)
+            {
+                LblWinLoss.Visibility = Visibility.Visible;
+                LblWinLoss.Text = string.IsNullOrWhiteSpace(text) ? "" : text;
+            }
         }
 
 
@@ -6614,12 +6670,14 @@ Ví dụ không hợp lệ:
             var resultText = string.IsNullOrWhiteSpace(displayResult)
                 ? result!.ToUpperInvariant()
                 : displayResult!;
+            bool isTieResult = string.Equals(TextNorm.U(resultText), "TIE", StringComparison.Ordinal)
+                               || string.Equals(TextNorm.U(resultText), "T", StringComparison.Ordinal);
 
             foreach (var row in _pendingRows)
             {
                 row.Result = resultText;
-                bool win = winSet.Contains(row.Side);
-                row.WinLose = win ? "Thắng" : "Thua";
+                bool win = !isTieResult && winSet.Contains(row.Side);
+                row.WinLose = isTieResult ? "Hòa" : (win ? "Thắng" : "Thua");
                 row.Account = balanceAfter;
 
                 // KHÔNG add lại vào _betAll (đã chèn ở thời điểm BET)

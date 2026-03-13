@@ -125,11 +125,12 @@ namespace BaccaratSexyCasino.Tasks
                                             ref int step, ref bool v2DoublePhase, bool? win)
         {
             int n = Math.Max(1, seq?.Length ?? 0);
+            if (win == null) return;
 
             switch (strategyId ?? "IncreaseWhenLose")
             {
                 case "IncreaseWhenLose":
-                    if (win == true || win == null) step = 0;
+                    if (win == true) step = 0;
                     else step = (step + 1) % n;
                     v2DoublePhase = false;
                     break;
@@ -156,7 +157,7 @@ namespace BaccaratSexyCasino.Tasks
                     break;
 
                 case "ReverseFibo":
-                    if (win == true || win == null) step = 0;
+                    if (win == true) step = 0;
                     else step = Math.Min(step + 1, n - 1); // dồn lên mức cao nhất rồi giữ nguyên
                     v2DoublePhase = false;
                     break;
@@ -196,7 +197,7 @@ namespace BaccaratSexyCasino.Tasks
                     }
 
                 default:
-                    if (win == true || win == null) step = 0;
+                    if (win == true) step = 0;
                     else step = (step + 1) % n;
                     v2DoublePhase = false;
                     break;
@@ -226,7 +227,8 @@ namespace BaccaratSexyCasino.Tasks
             ref int chainIndex,
             ref int levelIndex,
             ref double profitOnCurrentChain,
-            bool? win)
+            bool? win,
+            double? roundDelta = null)
         {
             int chainCount = chains?.Length ?? 0;
             if (chainCount == 0) return;
@@ -261,7 +263,10 @@ namespace BaccaratSexyCasino.Tasks
                     for (int i = 0; i < wonLevel; i++)
                         spentInThisChain += curChain[i];
 
-                    double netWinOnThisChain = 0.98 * justWon - spentInThisChain;
+                    double grossWin = roundDelta.HasValue && roundDelta.Value > 0
+                        ? roundDelta.Value
+                        : 0.98 * justWon;
+                    double netWinOnThisChain = grossWin - spentInThisChain;
                     if (netWinOnThisChain < 0)
                         netWinOnThisChain = 0;
 

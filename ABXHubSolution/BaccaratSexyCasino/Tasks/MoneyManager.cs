@@ -32,23 +32,26 @@ namespace BaccaratSexyCasino.Tasks
             return CurrentUnit;
         }
 
-        /// <summary>Gọi sau khi có kết quả WIN/LOSS (true/false).</summary>
-        public void OnRoundResult(bool win)
+        /// <summary>Gọi sau khi có kết quả WIN/LOSS/PUSH (true/false/null).</summary>
+        public void OnRoundResult(bool? win)
         {
+            if (win == null)
+                return;
+
             switch (_id)
             {
                 case "IncreaseWhenLose":   // thua ↑1 mức, thắng → về mức 1
                     _needDoubleNext = false;
-                    _i = win ? 0 : (_i + 1 < _seq.Length ? _i + 1 : 0);
+                    _i = win.Value ? 0 : (_i + 1 < _seq.Length ? _i + 1 : 0);
                     break;
 
                 case "IncreaseWhenWin":    // thắng ↑1 mức, thua → về mức 1
                     _needDoubleNext = false;
-                    _i = win ? (_i + 1 < _seq.Length ? _i + 1 : 0) : 0;
+                    _i = win.Value ? (_i + 1 < _seq.Length ? _i + 1 : 0) : 0;
                     break;
 
                 case "Victor2":
-                    if (win)
+                    if (win.Value)
                     {
                         if (_usedDoubleThisRound)
                         {
@@ -77,7 +80,7 @@ namespace BaccaratSexyCasino.Tasks
 
                 case "ReverseFibo":        // thua ↑1 mức (đến mức cao nhất thì giữ nguyên), thắng → về mức 1
                     _needDoubleNext = false;
-                    _i = win ? 0 : Math.Min(_i + 1, _seq.Length - 1);
+                    _i = win.Value ? 0 : Math.Min(_i + 1, _seq.Length - 1);
                     break;
 
                 case "IncreaseEveryRound": // thua/thắng đều nhảy bậc, hết chuỗi quay về
@@ -91,7 +94,7 @@ namespace BaccaratSexyCasino.Tasks
                     {
                         _needDoubleNext = false; // không dùng Victor2 ở strategy này
 
-                        if (win)
+                        if (win.Value)
                         {
                             var before = _i;
 

@@ -176,8 +176,9 @@ namespace BaccaratSexyCasino.Tasks
                 await PlaceBet(ctx, side, stake, ct);
 
                 // 5) Kết quả ván
-                bool win = await WaitRoundFinishAndJudge(ctx, side, preSeq, ct);
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
+                bool? win = await WaitRoundFinishAndJudge(ctx, side, preSeq, ct);
+                var netDelta = CalcNetDelta(side, stake, win);
+                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {
                     // cần biến local để truyền ref
@@ -191,7 +192,8 @@ namespace BaccaratSexyCasino.Tasks
                         ref chainIndex,
                         ref chainStep,
                         ref chainProfit,
-                        win);
+                        win,
+                        netDelta);
 
                     // gán ngược lại vào context
                     ctx.MoneyChainIndex = chainIndex;
@@ -205,7 +207,8 @@ namespace BaccaratSexyCasino.Tasks
                 }
 
                 // 6) cập nhật loss streak
-                _lossStreak = win ? 0 : _lossStreak + 1;
+                if (win == true) _lossStreak = 0;
+                else if (win == false) _lossStreak++;
 
                 // 7) Học online từ kết quả thực
                 var postSnap = ctx.GetSnap?.Invoke();
@@ -250,13 +253,21 @@ namespace BaccaratSexyCasino.Tasks
         }
 
         // ================== THÍCH NGHI: escalate + ease-in + auto-decay ==================
-        private void OnJudgedAndAdapt(GameContext ctx, bool win, bool lastUndecidable)
+        private void OnJudgedAndAdapt(GameContext ctx, bool? win, bool lastUndecidable)
         {
             // 1) Cửa sổ undecidable 50 ván (1=undecidable, 0=decidable)
             PushUndBit(lastUndecidable, _ap.UndWindowLen);
 
+            if (win == null)
+            {
+                _st.SaveNow();
+                _ap.SaveNow();
+                ctx.Log?.Invoke("[AI-NGram] Push/Tie -> giữ nguyên safety, không học win/loss.");
+                return;
+            }
+
             // 2) Quản lý episode & escalate (1 lần S5, +1 lần S8 trong cùng episode)
-            if (win)
+            if (win.Value)
             {
                 _st.LossStreak = 0;
 

@@ -142,8 +142,9 @@ namespace BaccaratSexyCasino.Tasks
                         var stake0 = money.GetStakeForThisBet();
                         await PlaceBet(ctx, fallbackSide, stake0, ct);
 
-                        bool win0 = await WaitRoundFinishAndJudge(ctx, fallbackSide, baseSeq, ct);
-                        await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win0 ? stake0 : -stake0));
+                        bool? win0 = await WaitRoundFinishAndJudge(ctx, fallbackSide, baseSeq, ct);
+                        var netDelta0 = CalcNetDelta(fallbackSide, stake0, win0);
+                        await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta0));
                         money.OnRoundResult(win0);
 
                         // Cập nhật lại list 10 mới về
@@ -179,8 +180,9 @@ namespace BaccaratSexyCasino.Tasks
                 await PlaceBet(ctx, side, stake, ct);
 
                 // Chờ KẾT QUẢ: WaitRoundFinishAndJudge so sánh chuỗi → phù hợp cửa sổ 50 trượt
-                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
+                bool? win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                var netDelta = CalcNetDelta(side, stake, win);
+                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {
                     // cần biến local để truyền ref
@@ -194,7 +196,8 @@ namespace BaccaratSexyCasino.Tasks
                         ref chainIndex,
                         ref chainStep,
                         ref chainProfit,
-                        win);
+                        win,
+                        netDelta);
 
                     // gán ngược lại vào context
                     ctx.MoneyChainIndex = chainIndex;
@@ -219,7 +222,7 @@ namespace BaccaratSexyCasino.Tasks
 
                 // Nếu THẮNG → được chuyển chuỗi mới nếu count(new) >= count(current)
                 bool switched = false;
-                if (win)
+                if (win == true)
                 {
                     var (bestPat, bestCnt) = PickBest(counts);
                     if (!string.IsNullOrEmpty(bestPat) && (bestCnt >= curCount) && bestPat != curPattern)

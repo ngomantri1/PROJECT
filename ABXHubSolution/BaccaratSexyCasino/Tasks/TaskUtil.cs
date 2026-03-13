@@ -12,6 +12,13 @@ namespace BaccaratSexyCasino.Tasks
 {
     internal static class TaskUtil
     {
+        internal enum RoundOutcome
+        {
+            Win,
+            Lose,
+            Push
+        }
+
         // Khóa chống bắn đúp: 3s kể từ lần place bet THÀNH CÔNG gần nhất
         private static readonly ConcurrentDictionary<string, long> _lastBetOkMsByTab = new();
         private static readonly ConcurrentDictionary<string, int> _lastBetRoundByTab = new();
@@ -41,10 +48,30 @@ namespace BaccaratSexyCasino.Tasks
             return new string(a);
         }
 
-        public static bool IsWin(string betSide, char lastDigit)
+        public static string SeqCharToResult(char lastDigit)
         {
-            var lastSide = (lastDigit == 'B') ? "BANKER" : "PLAYER";
-            return string.Equals(betSide, lastSide, StringComparison.OrdinalIgnoreCase);
+            char u = char.ToUpperInvariant(lastDigit);
+            if (u == 'B') return "BANKER";
+            if (u == 'P') return "PLAYER";
+            if (u == 'T') return "TIE";
+            return "";
+        }
+
+        public static bool? IsWin(string betSide, char lastDigit)
+        {
+            var result = SeqCharToResult(lastDigit);
+            if (string.IsNullOrEmpty(result)) return null;
+            if (string.Equals(result, "TIE", StringComparison.OrdinalIgnoreCase)) return null;
+            return string.Equals(betSide, result, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static double CalcNetDelta(string betSide, long stake, bool? win)
+        {
+            if (win == null) return 0;
+            if (win == false) return -stake;
+            return string.Equals(betSide, "BANKER", StringComparison.OrdinalIgnoreCase)
+                ? Math.Round(stake * 0.95, 0, MidpointRounding.AwayFromZero)
+                : stake;
         }
 
         private static void UiResetRoundControls()
@@ -122,7 +149,7 @@ namespace BaccaratSexyCasino.Tasks
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke(side));
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
 
-            var snap = ctx.GetSnap?.Invoke();
+            var snap = ctx.GetRawSnap?.Invoke() ?? ctx.GetSnap?.Invoke();
             var roundId = 0;
             try { roundId = (snap?.seq ?? "").Length; } catch { roundId = 0; }
 
@@ -168,18 +195,29 @@ namespace BaccaratSexyCasino.Tasks
 
             return ok;
         }
-        public static async Task<bool> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSeq, CancellationToken ct)
+        public static async Task<bool?> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSeq, CancellationToken ct)
         {
             // chờ seq tăng độ dài → có kết quả mới
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                var s = ctx.GetSnap?.Invoke();
+                var s = ctx.GetRawSnap?.Invoke() ?? ctx.GetSnap?.Invoke();
                 var curSeq = s?.seq ?? "";
                 if (!string.Equals(curSeq, baseSeq, StringComparison.Ordinal))
                 {
-                    bool win = IsWin(betSide, curSeq[^1]);
-                    await ctx.UiDispatcher.InvokeAsync(() => ctx.UiWinLoss?.Invoke(win));
+                    bool? win = IsWin(betSide, curSeq[^1]);
+                    await ctx.UiDispatcher.InvokeAsync(() =>
+                    {
+                        if (win.HasValue)
+                        {
+                            ctx.UiWinLoss?.Invoke(win.Value);
+                            ctx.UiSetWinLossText?.Invoke(win.Value ? "Thắng" : "Thua");
+                        }
+                        else
+                        {
+                            ctx.UiSetWinLossText?.Invoke("Hòa");
+                        }
+                    });
                     // cộng tiền lũy kế: +amount khi thắng, -amount khi thua (đơn giản)
                     //TaskUtil.UiRoundAllowNextReset();
                     return win;

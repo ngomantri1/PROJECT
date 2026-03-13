@@ -97,8 +97,9 @@ namespace BaccaratSexyCasino.Tasks
                 }
                 await PlaceBet(ctx, side, stake, ct);
 
-                bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
+                bool? win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                var netDelta = CalcNetDelta(side, stake, win);
+                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {
                     // cần biến local để truyền ref
@@ -112,7 +113,8 @@ namespace BaccaratSexyCasino.Tasks
                         ref chainIndex,
                         ref chainStep,
                         ref chainProfit,
-                        win);
+                        win,
+                        netDelta);
 
                     // gán ngược lại vào context
                     ctx.MoneyChainIndex = chainIndex;
