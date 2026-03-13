@@ -38,6 +38,7 @@ namespace BaccaratSexyCasino
             EnsureImage(app.Resources, "ImgBANKER", "Assets/side/BANKER.png");
             EnsureImage(app.Resources, "ImgTHANG", "Assets/kq/THANG.png");
             EnsureImage(app.Resources, "ImgTHUA", "Assets/kq/THUA.png");
+            EnsureImage(app.Resources, "ImgHOA", "Assets/kq/HOA.png");
             EnsureImage(app.Resources, "ImgBALL0", "Assets/side/TU_TRANG.png");
             EnsureImage(app.Resources, "ImgBALL1", "Assets/side/1TRANG_3DO.png");
             EnsureImage(app.Resources, "ImgBALL2", "Assets/side/SAP_DOI.png");

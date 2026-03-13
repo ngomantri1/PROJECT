@@ -50,13 +50,14 @@ namespace BaccaratSexyCasino
         private const string ResultPlayerPng = "Assets/side/PLAYER.png";
         private const string WinPng = "Assets/kq/THANG.png";
         private const string LossPng = "Assets/kq/THUA.png";
+        private const string DrawPng = "Assets/kq/HOA.png";
         private const string TuTrangPng = "Assets/side/TU_TRANG.png";
         private const string TuDoPng = "Assets/side/TU_DO.png";
         private const string SapDoiPng = "Assets/side/SAP_DOI.png";
         private const string Trang3Do1Png = "Assets/side/1DO_3TRANG.png";
         private const string Do3Trang1Png = "Assets/side/1TRANG_3DO.png";
 
-        private static ImageSource? _sideChan, _sideLe, _resultChan, _resultLe, _win, _loss;
+        private static ImageSource? _sideChan, _sideLe, _resultChan, _resultLe, _win, _loss, _draw;
         private static ImageSource? _tuTrang, _tuDo, _sapDoi, _trang3Do1, _do3Trang1;
 
         public static ImageSource? GetSideBanker() => SharedIcons.SideBanker ?? (_sideChan ??= Load(SideBankerPng));
@@ -65,6 +66,7 @@ namespace BaccaratSexyCasino
         public static ImageSource? GetResultPlayer() => SharedIcons.ResultPlayer ?? (_resultLe ??= Load(ResultPlayerPng));
         public static ImageSource? GetWin() => SharedIcons.Win ?? (_win ??= Load(WinPng));
         public static ImageSource? GetLoss() => SharedIcons.Loss ?? (_loss ??= Load(LossPng));
+        public static ImageSource? GetDraw() => SharedIcons.Draw ?? (_draw ??= Load(DrawPng));
         public static ImageSource? GetTuTrang() => SharedIcons.TuTrang ?? (_tuTrang ??= Load(TuTrangPng));
         public static ImageSource? GetTuDo() => SharedIcons.TuDo ?? (_tuDo ??= Load(TuDoPng));
         public static ImageSource? GetSapDoi() => SharedIcons.SapDoi ?? (_sapDoi ??= Load(SapDoiPng));
@@ -734,7 +736,7 @@ Ví dụ không hợp lệ:
         {
             public static ImageSource? SideBanker, SidePlayer;        // ảnh “Cửa đặt” CHẴN/LẺ
             public static ImageSource? ResultBanker, ResultPlayer;    // ảnh “Kết quả” CHẴN/LẺ
-            public static ImageSource? Win, Loss;               // ảnh “Thắng/Thua”
+            public static ImageSource? Win, Loss, Draw;         // ảnh “Thắng/Thua/Hòa”
             public static ImageSource? TuTrang, TuDo, SapDoi, Trang3Do1, Do3Trang1;
         }
 
@@ -5721,6 +5723,19 @@ Ví dụ không hợp lệ:
 
         private void SetWinLossTextUI(string? text)
         {
+            var u = TextNorm.U(text ?? "");
+            if (u == "HOA")
+            {
+                var img = (TryFindResource("ImgHOA") as ImageSource) ?? FallbackIcons.GetDraw();
+                if (img != null && ImgThangThua != null)
+                {
+                    ImgThangThua.Source = img;
+                    ImgThangThua.Visibility = Visibility.Visible;
+                    if (LblWinLoss != null) LblWinLoss.Visibility = Visibility.Collapsed;
+                    return;
+                }
+            }
+
             if (ImgThangThua != null) ImgThangThua.Visibility = Visibility.Collapsed;
             if (LblWinLoss != null)
             {

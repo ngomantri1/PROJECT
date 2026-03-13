@@ -3,6 +3,7 @@
     <BitmapImage x:Key="ImgPLAYER" UriSource="/BaccaratSexyCasino;component/Assets/side/PLAYER.png" />
     <BitmapImage x:Key="ImgTHANG" UriSource="/BaccaratSexyCasino;component/Assets/kq/THANG.png" />
     <BitmapImage x:Key="ImgTHUA" UriSource="/BaccaratSexyCasino;component/Assets/kq/THUA.png" />
+    <BitmapImage x:Key="ImgHOA" UriSource="/BaccaratSexyCasino;component/Assets/kq/HOA.png" />
     <BitmapImage x:Key="ImgBALL0" UriSource="/BaccaratSexyCasino;component/Assets/side/TU_TRANG.png" />
     <BitmapImage x:Key="ImgBALL1" UriSource="/BaccaratSexyCasino;component/Assets/side/1TRANG_3DO.png" />
     <BitmapImage x:Key="ImgBALL2" UriSource="/BaccaratSexyCasino;component/Assets/side/SAP_DOI.png" />
