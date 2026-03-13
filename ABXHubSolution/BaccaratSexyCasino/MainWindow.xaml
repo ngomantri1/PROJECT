@@ -412,18 +412,18 @@
                                         x:Name="BtnClosePopup"
                                         Width="30"
                                         Height="24"
-                                        Margin="0,8,8,0"
-                                        HorizontalAlignment="Right"
-                                        VerticalAlignment="Top"
-                                        Padding="0"
                                         MinWidth="0"
                                         MinHeight="0"
-                                        FontSize="14"
-                                        FontWeight="Bold"
+                                        Margin="0,8,8,0"
+                                        Padding="0"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Top"
                                         BorderThickness="1"
-                                        Cursor="Hand"
                                         Click="BtnClosePopup_Click"
-                                        Content="">
+                                        Content=""
+                                        Cursor="Hand"
+                                        FontSize="14"
+                                        FontWeight="Bold">
                                         <Button.Style>
                                             <Style TargetType="Button">
                                                 <Setter Property="Background" Value="#FFFFFF" />
@@ -1691,8 +1691,8 @@
                                                     <DataTemplate DataType="{x:Type local:SeqIconVM}">
                                                         <Image
                                                             x:Name="Icon"
-                                                            Width="15"
-                                                            Height="15"
+                                                            Width="19"
+                                                            Height="19"
                                                             Opacity="1"
                                                             Source="{Binding Img}">
                                                             <Image.CacheMode>

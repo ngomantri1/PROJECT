@@ -3075,8 +3075,9 @@ Ví dụ không hợp lệ:
 
                                 var seqStrLocal = snap.seq ?? "";
                                 char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
-                                var kq = (last == 'C') ? "CHAN"
-                                         : (last == 'L') ? "LE" : "";
+                                var kq = (last == 'B') ? "B"
+                                         : (last == 'P') ? "P"
+                                         : (last == 'T') ? "T" : "";
                                 SetLastResultUI(kq);
 
                                 var amt = snap?.totals?.A;
@@ -5362,6 +5363,11 @@ Ví dụ không hợp lệ:
                 "pack://application:,,,/Assets/Seq/B.png",
                 "pack://application:,/Assets/Seq/B.png"
             );
+            _seqIconMap['T'] = FallbackIcons.LoadPackImage("Assets/Seq/T.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/T.png",
+                "pack://application:,,,/Assets/Seq/T.png",
+                "pack://application:,/Assets/Seq/T.png"
+            );
         }
 
 
@@ -5390,8 +5396,9 @@ Ví dụ không hợp lệ:
             string s = TextNorm.U(result ?? string.Empty);
             bool isBanker = (s == "BANKER" || s == "B");
             bool isPlayer = (s == "PLAYER" || s == "P");
+            bool isTie = (s == "TIE" || s == "T");
 
-            if (!isBanker && !isPlayer && s.Length == 1 && char.IsDigit(s[0]))
+            if (!isBanker && !isPlayer && !isTie && s.Length == 1 && char.IsDigit(s[0]))
             {
                 isPlayer = (s[0] == '1' || s[0] == '3');
                 isBanker = !isPlayer;
@@ -5408,35 +5415,46 @@ Ví dụ không hợp lệ:
                 }
             }
 
-            if (!isBanker && !isPlayer)
+            if (!isBanker && !isPlayer && !isTie)
             {
                 ShowText("");
                 return;
             }
 
-            // Ưu tiên lấy ảnh trong Resource (ImgBANKER/ImgPLAYER) -> nếu không có thì dùng SharedIcons
-            string resKey = isPlayer ? "ImgPLAYER" : "ImgBANKER";
-            var resImg = TryFindResource(resKey) as ImageSource;
+            string asm = GetType().Assembly.GetName().Name!;
+            string sideAsset = isTie ? "Assets/side/TIE.png" : (isPlayer ? "Assets/side/PLAYER.png" : "Assets/side/BANKER.png");
+            ImageSource? sideIcon =
+                FallbackIcons.LoadPackImage(sideAsset) ?? LoadImgSafe(
+                    $"pack://application:,,,/{asm};component/{sideAsset}",
+                    $"pack://application:,,,/{sideAsset}",
+                    $"pack://application:,/{sideAsset}"
+                );
+
+            // Ô KẾT QUẢ dùng bộ icon side: BANKER / PLAYER / TIE.
+            string resKey = isTie ? string.Empty : (isPlayer ? "ImgPLAYER" : "ImgBANKER");
+            ImageSource? resImg = string.IsNullOrWhiteSpace(resKey)
+                ? null
+                : (TryFindResource(resKey) as ImageSource);
 
             ImageSource? icon =
-                resImg
-                ?? (isBanker ? (SharedIcons.ResultBanker ?? SharedIcons.SideBanker)
-                           : (SharedIcons.ResultPlayer ?? SharedIcons.SidePlayer));
+                sideIcon
+                ?? resImg
+                ?? (isTie ? null
+                          : (isBanker ? (SharedIcons.ResultBanker ?? SharedIcons.SideBanker)
+                                      : (SharedIcons.ResultPlayer ?? SharedIcons.SidePlayer)));
 
             if (icon != null && ImgKetQua != null)
             {
-                // Hiển thị ảnh + ẩn chữ
                 ImgKetQua.Source = icon;
                 ImgKetQua.Visibility = Visibility.Visible;
                 if (LblKetQua != null) LblKetQua.Visibility = Visibility.Collapsed;
 
-                // Cache lại để DataGrid (converters) có thể "kế thừa" từ trạng thái
                 if (isBanker) SharedIcons.ResultBanker = icon;
                 else SharedIcons.ResultPlayer = icon;
             }
             else
             {
-                ShowText(isBanker ? "BANKER" : "PLAYER");
+                ShowText(isTie ? "TIE" : (isBanker ? "BANKER" : "PLAYER"));
             }
         }
 
