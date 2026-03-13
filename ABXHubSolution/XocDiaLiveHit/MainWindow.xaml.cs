@@ -1125,7 +1125,7 @@ Ví dụ không hợp lệ:
                         TxtUser.Text = _cfg.Username;
                 }
 
-                if (ChkTrial != null) ChkTrial.IsChecked = false;
+                if (ChkTrial != null) ChkTrial.IsChecked = IsTrialModeRequestedOrActive();
                 ApplyCutUiFromConfig();
                 LoadStats();
 
@@ -1164,7 +1164,7 @@ Ví dụ không hợp lệ:
                 else { _cfg.EncUser = ""; _cfg.EncPass = ""; _cfg.Username = ""; }
 
                 _cfg.LockMouse = (ChkLockMouse?.IsChecked == true);
-                _cfg.UseTrial = (ChkTrial?.IsChecked == true) || string.Equals(_expireMode, "trial", StringComparison.OrdinalIgnoreCase);
+                _cfg.UseTrial = IsTrialModeRequestedOrActive();
                 _cfg.LeaseClientId = _leaseClientId;
                 _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
                 if (ChkS7ResetOnProfit != null)
@@ -3149,12 +3149,22 @@ Ví dụ không hợp lệ:
         }
 
 
+        private bool IsTrialModeRequestedOrActive()
+        {
+            return (ChkTrial?.IsChecked == true)
+                || (_cfg?.UseTrial == true)
+                || string.Equals(_expireMode, "trial", StringComparison.OrdinalIgnoreCase);
+        }
+
         private async Task<bool> EnsureLicenseOnceAsync()
         {
             if (!CheckLicense)
                 return true;
 
-            if (ChkTrial?.IsChecked == true)
+            var trialMode = IsTrialModeRequestedOrActive();
+            Log($"[AccessGate] trial={trialMode} | chk={(ChkTrial?.IsChecked == true)} | cfg={(_cfg?.UseTrial == true)} | mode={_expireMode}");
+
+            if (trialMode)
                 return await EnsureTrialAsync();
 
             return await EnsureLicenseAsync();
@@ -3361,6 +3371,7 @@ Ví dụ không hợp lệ:
         {
             try
             {
+                _cfg.UseTrial = false;
                 if (ChkTrial != null) ChkTrial.IsChecked = false;
                 await SaveConfigAsync();
                 await EnsureWebReadyAsync();
@@ -3381,12 +3392,14 @@ Ví dụ không hợp lệ:
         {
             try
             {
+                _cfg.UseTrial = true;
                 if (ChkTrial != null) ChkTrial.IsChecked = true;
                 await SaveConfigAsync();
                 await EnsureWebReadyAsync();
 
                 if (!await EnsureTrialAsync())
                 {
+                    _cfg.UseTrial = false;
                     if (ChkTrial != null) ChkTrial.IsChecked = false;
                     return;
                 }
@@ -3396,6 +3409,7 @@ Ví dụ không hợp lệ:
             }
             catch (Exception ex)
             {
+                _cfg.UseTrial = false;
                 if (ChkTrial != null) ChkTrial.IsChecked = false;
                 Log("[BtnTrialTool_Click] " + ex);
             }

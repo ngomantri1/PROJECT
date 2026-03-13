@@ -149,23 +149,34 @@
         ]);
     }
 
-    function collectMarkersInContext(ctx) {
+    function median(nums) {
+        if (!nums || !nums.length) return 0;
+        var arr = nums.slice().sort(function (a, b) { return a - b; });
+        var mid = Math.floor(arr.length / 2);
+        return (arr.length % 2) ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
+    }
+
+    function collectMarkersInContext(ctx, opts) {
+        opts = opts || {};
         var out = [];
-        var textOnly = [];
         var doc = ctx.doc;
         var view = ctx.win || window;
-        var maxX = (view.innerWidth || 1600) * 0.42;
-        var minY = (view.innerHeight || 900) * 0.58;
+        var maxX = (view.innerWidth || 1600) * (opts.maxXRatio || 0.18);
+        var minY = (view.innerHeight || 900) * (opts.minYRatio || 0.72);
+        var maxSize = opts.maxSize || 34;
+        var maxChildren = opts.maxChildren || 2;
+        var maxChildKeep = opts.maxChildKeep || 1;
+        var roundRatio = opts.roundRatio || 0.28;
         var all = doc.querySelectorAll('div,span,p,b,strong,button,svg,circle,td');
         var seen = Object.create(null);
         for (var i = 0; i < all.length && i < 6000; i++) {
             var el = all[i];
             if (!visible(el)) continue;
-            if (el.childElementCount && el.childElementCount > 1) continue;
+            if (el.childElementCount && el.childElementCount > maxChildren) continue;
             var r = el.getBoundingClientRect();
             if (r.left < 0 || r.top < 0) continue;
             if (r.left > maxX || r.top < minY) continue;
-            if (r.width < 10 || r.height < 10 || r.width > 28 || r.height > 28) continue;
+            if (r.width < 10 || r.height < 10 || r.width > maxSize || r.height > maxSize) continue;
             if (Math.abs(r.width - r.height) > 10) continue;
             var cs = view.getComputedStyle(el);
             var marker = classifyMarker(el, cs);
@@ -177,9 +188,9 @@
             var roundHint =
                 tag === 'circle' ||
                 /50%|999/.test(borderRadius) ||
-                rx >= (minSide * 0.38);
+                rx >= (minSide * roundRatio);
             if (!roundHint) continue;
-            if (el.childElementCount > 0 && tag !== 'svg') continue;
+            if (el.childElementCount > maxChildKeep && tag !== 'svg') continue;
             var key = marker + '|' + Math.round(r.left / 4) + '|' + Math.round(r.top / 4);
             if (seen[key]) continue;
             seen[key] = 1;
@@ -196,18 +207,45 @@
                 element: el
             };
             out.push(item);
-            if (/^[BPTH]$/.test(String(item.rawText || '').toUpperCase())) {
-                textOnly.push(item);
+        }
+        return out;
+    }
+
+    function findBoardWithProfiles(contexts, screenW, screenH) {
+        var profiles = [
+            { maxXRatio: 0.18, minYRatio: 0.72, maxSize: 34, maxChildren: 2, maxChildKeep: 1, roundRatio: 0.28 },
+            { maxXRatio: 0.24, minYRatio: 0.68, maxSize: 38, maxChildren: 3, maxChildKeep: 2, roundRatio: 0.22 },
+            { maxXRatio: 0.30, minYRatio: 0.62, maxSize: 42, maxChildren: 4, maxChildKeep: 3, roundRatio: 0.18 }
+        ];
+
+        var bestPack = { board: null, markers: [], profile: -1 };
+        for (var p = 0; p < profiles.length; p++) {
+            var allMarkers = [];
+            for (var i = 0; i < contexts.length; i++) {
+                var ctx = contexts[i];
+                var markers = collectMarkersInContext(ctx, profiles[p]);
+                for (var j = 0; j < markers.length; j++) {
+                    markers[j].ctxScore = ctx.score || 0;
+                    allMarkers.push(markers[j]);
+                }
+            }
+            var board = pickBoard(allMarkers, screenW, screenH);
+            if (board) {
+                bestPack = { board: board, markers: allMarkers, profile: p };
+                break;
+            }
+            if (allMarkers.length > bestPack.markers.length) {
+                bestPack = { board: null, markers: allMarkers, profile: p };
             }
         }
-        return textOnly.length >= 8 ? textOnly : out;
+        return bestPack;
     }
 
     function splitComponents(items) {
         var comps = [];
         var used = new Array(items.length);
         function close(a, b) {
-            return Math.abs(a.x - b.x) <= 140 && Math.abs(a.y - b.y) <= 180;
+            return Math.abs(a.x - b.x) <= 64 && Math.abs(a.y - b.y) <= 92;
         }
         for (var i = 0; i < items.length; i++) {
             if (used[i]) continue;
@@ -260,23 +298,28 @@
             for (var t = 0; t < comp.length; t++) {
                 if (/^[BPTH]$/.test(String(comp[t].rawText || '').toUpperCase())) textCount++;
             }
+            if (comp.length < 8) continue;
+            if (colCount < 2) continue;
             var score = comp.length * 30;
-            score += Math.max(0, (screenW * 0.45 - minX));
-            score += Math.max(0, (maxY - screenH * 0.55));
-            score += Math.max(0, (screenH * 0.92 - minY));
+            score += Math.max(0, (screenW * 0.16 - minX)) * 10;
+            score += Math.max(0, (screenH - maxY)) * 0.2;
+            score += Math.max(0, (screenH * 0.88 - minY));
             score += textCount * 80;
-            if (width > 220) score += 120;
-            if (height > 140) score += 80;
-            if (comp.length >= 20) score += 200;
+            if (comp.length >= 12 && comp.length <= 40) score += 220;
             if (rowCount >= 5) score += 260;
             if (rowCount >= 6) score += 120;
-            if (colCount >= 4) score += 120;
-            if (colCount >= 6) score += 80;
+            if (colCount >= 3) score += 160;
+            if (colCount >= 4) score += 140;
+            if (colCount >= 6) score += 100;
             if (rowCount <= 2) score -= 260;
             if (colCount <= 2) score -= 120;
             if (height < 70) score -= 180;
-            if (width < 90) score -= 120;
-            if (height > 155) score -= 220;
+            if (width < 45) score -= 160;
+            if (width >= 45 && width <= 120) score += 260;
+            if (height >= 95 && height <= 175) score += 220;
+            if (width > 135) score -= 420;
+            if (height > 185) score -= 260;
+            if (minX > screenW * 0.12) score -= 420;
             if (minY > screenH * 0.9) score -= 260;
             if (!best || score > best.score) {
                 best = {
@@ -461,8 +504,11 @@
             if (it.y > maxY) maxY = it.y;
         }
         if (!isFinite(minY) || !isFinite(maxY)) return board;
+        var rows = buildRows(board.items);
+        var rowDiffs = [];
+        for (var r = 1; r < rows.length; r++) rowDiffs.push(rows[r].cy - rows[r - 1].cy);
         var avgH = board.items.reduce(function (s, x) { return s + x.h; }, 0) / board.items.length;
-        var rowStep = Math.max(10, Math.round(avgH * 1.05));
+        var rowStep = Math.max(10, Math.round(median(rowDiffs) || (avgH * 1.05)));
         for (var j = 0; j < board.items.length; j++) {
             var cell = board.items[j];
             var idx = Math.round((cell.y - minY) / rowStep);
@@ -477,6 +523,145 @@
         board.maxY = minY + rowStep * 5;
         board.height = board.maxY - board.minY;
         return board;
+    }
+
+    function refineBoardMarkers(contexts, board) {
+        if (!board || !board.items || !board.items.length) return [];
+        var src = board.items[0].source;
+        var ctx = null;
+        for (var i = 0; i < contexts.length; i++) {
+            if (contexts[i].source === src) {
+                ctx = contexts[i];
+                break;
+            }
+        }
+        if (!ctx) return board.items.slice();
+
+        var avgW = board.items.reduce(function (s, x) { return s + x.w; }, 0) / board.items.length;
+        var avgH = board.items.reduce(function (s, x) { return s + x.h; }, 0) / board.items.length;
+        var padX = Math.max(8, Math.round(avgW * 0.9));
+        var padY = Math.max(8, Math.round(avgH * 0.9));
+        var minX = board.minX - padX;
+        var maxX = board.maxX + padX;
+        var minY = board.minY - padY;
+        var maxY = board.maxY + padY;
+        var out = [];
+        var seen = Object.create(null);
+        var all = ctx.doc.querySelectorAll('div,span,p,b,strong,button,svg,circle,td');
+        for (var n = 0; n < all.length && n < 8000; n++) {
+            var el = all[n];
+            if (!visible(el)) continue;
+            var r = el.getBoundingClientRect();
+            var gx = Math.round((ctx.offX || 0) + r.left);
+            var gy = Math.round((ctx.offY || 0) + r.top);
+            if (gx < minX || gx > maxX || gy < minY || gy > maxY) continue;
+            if (r.width < 10 || r.height < 10 || r.width > 40 || r.height > 40) continue;
+            if (Math.abs(r.width - r.height) > 12) continue;
+            var cs = ctx.win.getComputedStyle(el);
+            var marker = classifyMarker(el, cs);
+            if (!marker) continue;
+            var borderRadius = cs.borderRadius || '';
+            var minSide = Math.min(r.width, r.height);
+            var rx = parseRadiusPx(borderRadius, minSide);
+            var tag = String(el.tagName || '').toLowerCase();
+            var roundHint =
+                tag === 'circle' ||
+                /50%|999/.test(borderRadius) ||
+                rx >= (minSide * 0.18);
+            if (!roundHint) continue;
+            var key = marker + '|' + Math.round(gx / 4) + '|' + Math.round(gy / 4);
+            if (seen[key]) continue;
+            seen[key] = 1;
+            out.push({
+                v: marker,
+                source: ctx.source,
+                href: ctx.href,
+                x: gx,
+                y: gy,
+                w: Math.round(r.width),
+                h: Math.round(r.height),
+                rawText: collapse(el.innerText || el.textContent || ''),
+                tail: fullPath(el, 80),
+                element: el
+            });
+        }
+        return out.length ? out : board.items.slice();
+    }
+
+    function buildGrid6xN(items) {
+        if (!items || !items.length) return { grid: [], cols: [], rowStep: 0, colStep: 0 };
+        var colsRaw = buildColumns(items);
+        var colCenters = colsRaw.map(function (c) { return c.cx; }).sort(function (a, b) { return a - b; });
+        var colDiffs = [];
+        for (var i = 1; i < colCenters.length; i++) colDiffs.push(colCenters[i] - colCenters[i - 1]);
+        var colStep = Math.max(12, Math.round(median(colDiffs) || median(items.map(function (x) { return x.w; })) || 18));
+
+        var rowsRaw = buildRows(items);
+        var rowCenters = rowsRaw.map(function (r) { return r.cy; }).sort(function (a, b) { return a - b; });
+        var rowDiffs = [];
+        for (var j = 1; j < rowCenters.length; j++) rowDiffs.push(rowCenters[j] - rowCenters[j - 1]);
+        var rowStep = Math.max(10, Math.round(median(rowDiffs) || median(items.map(function (x) { return x.h; })) || 20));
+
+        var minX = Math.min.apply(null, colCenters);
+        var minY = Math.min.apply(null, rowCenters);
+        var maxCol = 0;
+        for (var k = 0; k < items.length; k++) {
+            var cidx = Math.round((items[k].x - minX) / colStep);
+            if (cidx > maxCol) maxCol = cidx;
+        }
+        var grid = [];
+        for (var c = 0; c <= maxCol; c++) {
+            grid[c] = [null, null, null, null, null, null];
+        }
+
+        function scoreCell(item, col, row) {
+            var cx = minX + col * colStep;
+            var cy = minY + row * rowStep;
+            var dist = Math.abs(item.x - cx) + Math.abs(item.y - cy);
+            var textBonus = /^[BPTH]$/.test(String(item.rawText || '').toUpperCase()) ? 1000 : 0;
+            return textBonus - dist;
+        }
+
+        for (var m = 0; m < items.length; m++) {
+            var it = items[m];
+            var col = Math.round((it.x - minX) / colStep);
+            var row = Math.round((it.y - minY) / rowStep);
+            if (col < 0) col = 0;
+            if (row < 0) row = 0;
+            if (row > 5) row = 5;
+            var current = grid[col] && grid[col][row];
+            if (!current || scoreCell(it, col, row) > scoreCell(current, col, row)) {
+                it._col = col;
+                it._row = row;
+                it._gridX = minX + col * colStep;
+                it._gridY = minY + row * rowStep;
+                grid[col][row] = it;
+            }
+        }
+
+        var cols = [];
+        for (var cc = 0; cc < grid.length; cc++) {
+            var colItems = [];
+            for (var rr = 0; rr < 6; rr++) {
+                if (grid[cc][rr]) colItems.push(grid[cc][rr]);
+            }
+            if (colItems.length) {
+                cols.push({
+                    cx: minX + cc * colStep,
+                    items: colItems
+                });
+            }
+        }
+        return { grid: grid, cols: cols, rowStep: rowStep, colStep: colStep, minX: minX, minY: minY };
+    }
+
+    function sequenceFromGrid(gridPack) {
+        if (!gridPack || !gridPack.cols) return '';
+        return gridPack.cols.map(function (col) {
+            return col.items.map(function (it) {
+                return it.v === 'H' ? 'T' : it.v;
+            }).join('');
+        }).join('');
     }
 
     function ensureOverlayRoot() {
@@ -543,26 +728,23 @@
             ctx.score = scoreContext(ctx);
         });
 
-        var allMarkers = [];
-        for (var i = 0; i < contexts.length; i++) {
-            var ctx = contexts[i];
-            var markers = collectMarkersInContext(ctx);
-            for (var j = 0; j < markers.length; j++) {
-                markers[j].ctxScore = ctx.score || 0;
-                allMarkers.push(markers[j]);
-            }
-        }
-
         var screenW = window.innerWidth || 1600;
         var screenH = window.innerHeight || 900;
-        var board = pickBoard(allMarkers, screenW, screenH);
+        var picked = findBoardWithProfiles(contexts, screenW, screenH);
+        var allMarkers = picked.markers || [];
+        var board = picked.board;
         board = trimBoardToTopSixRows(board);
         board = trimBoardToLeftTopSegment(board);
         board = normalizeBoardToSixRows(board);
-        var cols = board ? buildColumns(board.items) : [];
-        var seq = cols.map(function (col) {
-            return col.items.map(function (it) { return it.v; }).join('');
-        }).join('');
+        if (board) {
+            board.items = refineBoardMarkers(contexts, board);
+            board = trimBoardToTopSixRows(board);
+            board = trimBoardToLeftTopSegment(board);
+            board = normalizeBoardToSixRows(board);
+        }
+        var gridPack = board ? buildGrid6xN(board.items) : { cols: [], grid: [] };
+        var cols = gridPack.cols || [];
+        var seq = sequenceFromGrid(gridPack);
 
         drawOverlay(board, cols);
 
@@ -579,8 +761,9 @@
             w: board.width,
             h: board.height,
             rows: board.rowCount,
-            cols: board.colCount
-        } : null);
+            cols: board.colCount,
+            profile: picked.profile
+        } : { profile: picked.profile, markers: allMarkers.length });
 
         console.log('[ABX BEAD] columns=');
         console.table(cols.map(function (col, idx) {
@@ -588,7 +771,7 @@
                 col: idx + 1,
                 x: col.cx,
                 count: col.items.length,
-                seq: col.items.map(function (it) { return it.v; }).join('')
+                seq: col.items.map(function (it) { return it.v === 'H' ? 'T' : it.v; }).join('')
             };
         }));
 
