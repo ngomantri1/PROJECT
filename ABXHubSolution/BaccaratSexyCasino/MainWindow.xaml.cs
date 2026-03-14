@@ -346,14 +346,17 @@ namespace BaccaratSexyCasino
         private IBetTask _activeTask;
         private const int NiSeqMax = 50;
         private readonly System.Text.StringBuilder _niSeq = new(NiSeqMax);
+        private readonly object _roundStateLock = new();
 
         // Tổng B/P của ván đang diễn ra (để dùng khi ván vừa khép lại)
         private long _roundTotalsB = 0;
         private long _roundTotalsP = 0;
+        private long _roundTotalsT = 0;
         private int _lastSeqLenNi = 0;
         private bool _lockMajorMinorUpdates = false;
         private string _baseSeq = "";
         private string _baseSeqDisplay = "";
+        private string _lastSettledRoundMarker = "";
 
         private DecisionState _dec = new();
         private long[] _stakeSeq = Array.Empty<long>();
@@ -792,12 +795,6 @@ Ví dụ không hợp lệ:
         private string? _popupLastDocKey;
         private WebView2? _popupWeb;
         private int _popupTickPullBusy = 0;
-        private DateTime _lastDiagWebMsgUtc = DateTime.MinValue;
-        private DateTime _lastDiagTickUtc = DateTime.MinValue;
-        private DateTime _lastDiagTickDropUtc = DateTime.MinValue;
-        private DateTime _lastDiagPullUtc = DateTime.MinValue;
-        private DateTime _lastDiagPullEmptyUtc = DateTime.MinValue;
-        private DateTime _lastDiagGameHintUtc = DateTime.MinValue;
         private const string Wv2ZipResNameX64 = "BaccaratSexyCasino.ThirdParty.WebView2Fixed_win-x64.zip";
         // Thư mục cache bền vững cho runtime (không bị dọn như %TEMP%)
         private static string Wv2BaseDir =>
@@ -935,86 +932,6 @@ try{
   }catch(_){}
 }catch(_){}";
 
-        private const string FRAME_DIRECT_TICK_AUTOSTART = @"
-(function(){
-  try{
-    var href = '';
-    try{ href = String((location && location.href) || ''); }catch(_){}
-    if (!/singleBacTable\.jsp/i.test(href)) return;
-
-    var key = String((performance && performance.timeOrigin) || Date.now());
-    if (window.__cw_frame_direct_key === key) return;
-    window.__cw_frame_direct_key = key;
-
-    function safeDirectPost(obj){
-      try{
-        if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function'){
-          chrome.webview.postMessage(JSON.stringify(obj));
-          return true;
-        }
-      }catch(_){}
-      return false;
-    }
-
-    function diag(reason){
-      try{
-        safeDirectPost({
-          abx:'frame_direct_diag',
-          reason:String(reason || ''),
-          href:href,
-          hasReadSnapshot:(typeof window.__cw_readSnapshot === 'function'),
-          hasReadProgress:(typeof window.readProgressVal === 'function'),
-          hasReadTotals:(typeof window.readTotalsSafe === 'function'),
-          hasReadSeq:(typeof window.readSeqSafe === 'function'),
-          hasWebview:!!(window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function'),
-          ts:Date.now()
-        });
-      }catch(_){}
-    }
-
-    function hasData(snap){
-      try{
-        if (!snap) return false;
-        var t = snap.totals || null;
-        var hasSeq = !!(snap.seq && String(snap.seq).trim());
-        var hasHud = !!((snap.username && String(snap.username).trim()) || (t && ((t.N && String(t.N).trim()) || t.A != null)));
-        var hasRound = !!(t && (((t.B||0)!==0) || ((t.P||0)!==0) || ((t.T||0)!==0)));
-        var hasProg = snap.prog != null;
-        var hasStatus = !!(snap.status && String(snap.status).trim() && !/^Baccarat DOM\b/i.test(String(snap.status)));
-        return hasSeq || hasHud || hasRound || hasProg || hasStatus;
-      }catch(_){
-        return false;
-      }
-    }
-
-    var timer = null;
-    var lastJson = '';
-    function pump(){
-      try{
-        if (typeof window.__cw_readSnapshot !== 'function'){
-          diag('read_snapshot_unavailable');
-          return;
-        }
-        var snap = window.__cw_readSnapshot();
-        if (!hasData(snap)) return;
-        var s = '';
-        try{ s = JSON.stringify(snap); }catch(_){}
-        if (!s || s === lastJson) return;
-        lastJson = s;
-        safeDirectPost(snap);
-      }catch(_){}
-    }
-
-    try{
-      if (timer) clearInterval(timer);
-    }catch(_){}
-    pump();
-    if (typeof window.__cw_readSnapshot !== 'function') return;
-    timer = setInterval(pump, 240);
-    window.__cw_frame_direct_timer = timer;
-  }catch(_){}
-})();";
-
         private const string PULL_POPUP_TICK_NOW = @"
   (function(){
     try{
@@ -1124,8 +1041,6 @@ try{
               snap = win.__cw_last_panel_snapshot;
             }
           }catch(_){}
-          if (!snap)
-            snap = parsePanelFallback();
           if (!snap){
             var p = (typeof win.readProgressVal === 'function') ? win.readProgressVal() : null;
             var st = (typeof win.statusByProg === 'function') ? win.statusByProg(p) : '';
@@ -1230,6 +1145,12 @@ try{
         // ====== Log helpers (batch) ======
         private void EnqueueUi(string line)
         {
+            if (string.IsNullOrEmpty(line))
+                return;
+            if (line.StartsWith("[JS] {\"abx\":\"tick\"", StringComparison.Ordinal))
+                return;
+            if (line.Length > 512)
+                line = line.Substring(0, 512) + "...";
             _uiLogQueue.Enqueue(line);
         }
         private void EnqueueFile(string line)
@@ -3268,23 +3189,6 @@ try{
             {
                 var msg = e.TryGetWebMessageAsString() ?? "";
                 if (string.IsNullOrWhiteSpace(msg)) return;
-                var now = DateTime.UtcNow;
-                if ((now - _lastDiagWebMsgUtc).TotalMilliseconds >= 1500)
-                {
-                    string src = ReferenceEquals(sender, _popupWeb?.CoreWebView2) ? "popup-top"
-                                : ReferenceEquals(sender, Web?.CoreWebView2) ? "main-top"
-                                : "unknown";
-                    string abx = "";
-                    try
-                    {
-                        using var diagDoc = JsonDocument.Parse(msg);
-                        if (diagDoc.RootElement.TryGetProperty("abx", out var abxEl))
-                            abx = abxEl.GetString() ?? "";
-                    }
-                    catch { }
-                    Log($"[DIAG][MSG] src={src} abx={abx} len={msg.Length}");
-                    _lastDiagWebMsgUtc = now;
-                }
                 await HandleIncomingWebMessageAsync(msg, ReferenceEquals(sender, _popupWeb?.CoreWebView2) ? "popup-msg" : "main-msg");
             }
             catch (Exception ex)
@@ -3321,15 +3225,7 @@ try{
                     var jrootTick = root;
                     var snap = ParseCwSnapshotLoose(jrootTick);
                     if (snap == null)
-                    {
-                        var now = DateTime.UtcNow;
-                        if ((now - _lastDiagTickDropUtc).TotalMilliseconds >= 1200)
-                        {
-                            Log($"[DIAG][TICK][DROP] src={source} reason=parse-null");
-                            _lastDiagTickDropUtc = now;
-                        }
                         return;
-                    }
 
                     if (snap != null)
                     {
@@ -3354,38 +3250,9 @@ try{
                             statusUi.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase);
                         bool isEmptyTick = !hasMeaningfulData;
                         if (isPlaceholderDomTick)
-                        {
-                            var now = DateTime.UtcNow;
-                            if ((now - _lastDiagTickDropUtc).TotalMilliseconds >= 1200)
-                            {
-                                Log($"[DIAG][TICK][DROP] src={source} status={statusUi} seqLen={seqDisplayRaw.Length} hasHud={hasHudData} hasRound={hasRoundTotals}");
-                                _lastDiagTickDropUtc = now;
-                            }
                             return;
-                        }
                         if (isEmptyTick)
-                        {
-                            var now = DateTime.UtcNow;
-                            if ((now - _lastDiagTickDropUtc).TotalMilliseconds >= 1200)
-                            {
-                                Log($"[DIAG][TICK][DROP] src={source} status={statusUi} seqLen={seqDisplayRaw.Length} prog={(snap?.prog?.ToString() ?? "-")} user={snap?.totals?.N ?? snap?.username ?? "-"}");
-                                _lastDiagTickDropUtc = now;
-                            }
                             return;
-                        }
-
-                        {
-                            var now = DateTime.UtcNow;
-                            if ((now - _lastDiagTickUtc).TotalMilliseconds >= 1500)
-                            {
-                                var userDiag = !string.IsNullOrWhiteSpace(snap?.totals?.N) ? snap.totals.N
-                                            : !string.IsNullOrWhiteSpace(snap?.username) ? snap.username
-                                            : "-";
-                                var balDiag = snap?.totals?.A;
-                                Log($"[DIAG][TICK][OK] src={source} status={statusUi} prog={snap?.prog?.ToString() ?? "-"} seqLen={seqDisplayRaw.Length} user={userDiag} bal={(balDiag.HasValue ? balDiag.Value.ToString(CultureInfo.InvariantCulture) : "-")}");
-                                _lastDiagTickUtc = now;
-                            }
-                        }
 
                         try
                         {
@@ -3407,73 +3274,103 @@ try{
 
                         try
                         {
-                            double progNow = snap.prog ?? 0;
-                            var seqDisplay = snap.seq ?? "";
-                            var seqStr = FilterPlayableSeq(seqDisplay);
-                            char tailDisplay = (seqDisplay.Length > 0) ? seqDisplay[^1] : '\0';
-
-                            if (_lockMajorMinorUpdates == true &&
-                                !string.Equals(seqDisplay, _baseSeqDisplay, StringComparison.Ordinal) &&
-                                tailDisplay == 'T')
+                            string niSeqText;
+                            lock (_roundStateLock)
                             {
-                                long? accNowTie = snap?.totals?.A;
-                                if (_pendingRows.Count > 0 && accNowTie.HasValue)
+                                double progNow = snap.prog ?? 0;
+                                var seqDisplay = snap.seq ?? "";
+                                var seqStr = FilterPlayableSeq(seqDisplay);
+                                char tailDisplay = (seqDisplay.Length > 0) ? seqDisplay[^1] : '\0';
+                                long currB = snap.totals?.B ?? 0;
+                                long currP = snap.totals?.P ?? 0;
+                                long currT = snap.totals?.T ?? 0;
+
+                                if (_lockMajorMinorUpdates == false)
                                 {
-                                    if (!HasJackpotMultiSideRunning())
+                                    if (progNow == 0)
                                     {
-                                        FinalizeLastBet("TIE", accNowTie.Value, new HashSet<string>(StringComparer.OrdinalIgnoreCase), "TIE");
+                                        _baseSeq = seqStr;
+                                        _baseSeqDisplay = seqDisplay;
+                                        _roundTotalsB = currB;
+                                        _roundTotalsP = currP;
+                                        _roundTotalsT = currT;
+                                        _lastSettledRoundMarker = "";
+                                        MarkPendingRowsClosed();
+                                        if (_roundTotalsB != 0 || _roundTotalsP != 0 || _roundTotalsT != 0)
+                                            _lockMajorMinorUpdates = true;
+                                    }
+                                }
+                                else
+                                {
+                                    bool totalsChanged =
+                                        currB != _roundTotalsB ||
+                                        currP != _roundTotalsP ||
+                                        currT != _roundTotalsT;
+
+                                    if (totalsChanged)
+                                    {
+                                        var settleMarker = $"{currB}|{currP}|{currT}|{tailDisplay}";
+                                        if (!string.Equals(settleMarker, _lastSettledRoundMarker, StringComparison.Ordinal))
+                                        {
+                                            if (tailDisplay == 'T')
+                                            {
+                                                long balanceAfter = ResolveHistoryBalance(snap?.totals?.A);
+                                                if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
+                                                {
+                                                    FinalizeLastBet(
+                                                        "TIE",
+                                                        balanceAfter,
+                                                        new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                                                        "TIE",
+                                                        currentB: currB,
+                                                        currentP: currP,
+                                                        currentT: currT);
+                                                }
+
+                                                _lastSettledRoundMarker = settleMarker;
+                                                _lockMajorMinorUpdates = false;
+                                            }
+                                            else
+                                            {
+                                                char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
+                                                if (tail == 'B' || tail == 'P')
+                                                {
+                                                    bool winIsBanker = (tail == 'B');
+                                                    long prevB = _roundTotalsB, prevP = _roundTotalsP;
+                                                    char ni = winIsBanker ? ((prevB >= prevP) ? 'N' : 'I')
+                                                                          : ((prevP >= prevB) ? 'N' : 'I');
+
+                                                    _niSeq.Append(ni);
+                                                    if (_niSeq.Length > NiSeqMax)
+                                                        _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
+
+                                                    Log($"[NI] add={ni} | seq={_niSeq} | tail={tail} | B={prevB} | P={prevP}");
+
+                                                    long balanceAfter = ResolveHistoryBalance(snap?.totals?.A);
+                                                    if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
+                                                    {
+                                                        FinalizeLastBet(
+                                                            winIsBanker ? "BANKER" : "PLAYER",
+                                                            balanceAfter,
+                                                            currentB: currB,
+                                                            currentP: currP,
+                                                            currentT: currT);
+                                                    }
+
+                                                    _lastSettledRoundMarker = settleMarker;
+                                                    _lockMajorMinorUpdates = false;
+                                                }
+                                            }
+                                        }
                                     }
                                 }
 
-                                _lockMajorMinorUpdates = false;
+                                niSeqText = _niSeq.ToString();
                             }
 
-                            if (_lockMajorMinorUpdates == true &&
-                                !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
-                            {
-                                char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
-                                bool winIsBanker = (tail == 'B');
-
-                                long prevB = _roundTotalsB, prevP = _roundTotalsP;
-                                char ni = winIsBanker ? ((prevB >= prevP) ? 'N' : 'I')
-                                                      : ((prevP >= prevB) ? 'N' : 'I');
-
-                                _niSeq.Append(ni);
-                                if (_niSeq.Length > NiSeqMax)
-                                    _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
-
-                                Log($"[NI] add={ni} | seq={_niSeq} | tail={tail} | B={prevB} | P={prevP}");
-
-                                var kqStr = winIsBanker ? "BANKER" : "PLAYER";
-                                long? accNow2 = snap?.totals?.A;
-                                if (_pendingRows.Count > 0 && accNow2.HasValue)
-                                {
-                                    if (!HasJackpotMultiSideRunning())
-                                    {
-                                        FinalizeLastBet(kqStr, accNow2.Value);
-                                    }
-                                }
-
-                                _lockMajorMinorUpdates = false;
-                            }
-
-                            if (_lockMajorMinorUpdates == false)
-                            {
-                                if (progNow == 0)
-                                {
-                                    _baseSeq = seqStr;
-                                    _baseSeqDisplay = seqDisplay;
-                                    _roundTotalsB = snap.totals?.B ?? 0;
-                                    _roundTotalsP = snap.totals?.P ?? 0;
-                                    MarkPendingRowsClosed();
-                                    if (_roundTotalsB != 0 && _roundTotalsP != 0)
-                                        _lockMajorMinorUpdates = true;
-                                }
-                            }
+                            snap.niSeq = niSeqText;
                         }
                         catch { }
-
-                        snap.niSeq = _niSeq.ToString();
                         lock (_snapLock) _lastSnap = snap;
 
                         _ = Dispatcher.BeginInvoke(new Action(() =>
@@ -3542,23 +3439,9 @@ try{
                     return;
                 }
 
-                if (abxStr == "frame_direct_diag")
-                {
-                    var reason = root.TryGetProperty("reason", out var rEl) ? (rEl.GetString() ?? "") : "";
-                    var href = root.TryGetProperty("href", out var hEl) ? (hEl.GetString() ?? "") : "";
-                    Log($"[DIAG][FRAME] reason={reason} href={href}");
-                    return;
-                }
-
                 if (abxStr == "game_hint")
                 {
                     _lastGameTickUtc = DateTime.UtcNow;
-                    var now = DateTime.UtcNow;
-                    if ((now - _lastDiagGameHintUtc).TotalMilliseconds >= 1500)
-                    {
-                        Log($"[DIAG][HINT] src={source}");
-                        _lastDiagGameHintUtc = now;
-                    }
                     _ = Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(true)));
                     return;
                 }
@@ -3886,7 +3769,6 @@ try{
                     _ = f.ExecuteScriptAsync(_appJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
                 _ = f.ExecuteScriptAsync(START_PUSH_NOW);
-                _ = f.ExecuteScriptAsync(FRAME_DIRECT_TICK_AUTOSTART);
                 f.WebMessageReceived += PopupFrame_WebMessageReceived;
                 f.DOMContentLoaded += Frame_DOMContentLoaded_Bridge;
                 f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
@@ -5469,30 +5351,6 @@ try{
             {
                 var msg = e.TryGetWebMessageAsString() ?? "";
                 if (string.IsNullOrWhiteSpace(msg)) return;
-                bool hasAbx = false;
-                var now = DateTime.UtcNow;
-                string abx = "";
-                try
-                {
-                    using var diagDoc = JsonDocument.Parse(msg);
-                    if (diagDoc.RootElement.TryGetProperty("abx", out var abxEl))
-                    {
-                        abx = abxEl.GetString() ?? "";
-                        hasAbx = true;
-                    }
-                }
-                catch { }
-                if ((now - _lastDiagWebMsgUtc).TotalMilliseconds >= 1500)
-                {
-                    if (hasAbx)
-                        Log($"[DIAG][MSG] src=popup-frame abx={abx} len={msg.Length}");
-                    else
-                    {
-                        var preview = msg.Length > 160 ? msg[..160] : msg;
-                        Log($"[DIAG][MSG] src=popup-frame abx=? len={msg.Length} preview={preview.Replace('\r', ' ').Replace('\n', ' ')}");
-                    }
-                    _lastDiagWebMsgUtc = now;
-                }
                 await HandleIncomingWebMessageAsync(msg, "popup-frame");
             }
             catch (Exception ex)
@@ -7063,7 +6921,6 @@ try{
                     _ = f.ExecuteScriptAsync(_appJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
                 _ = f.ExecuteScriptAsync(START_PUSH_NOW);
-                _ = f.ExecuteScriptAsync(FRAME_DIRECT_TICK_AUTOSTART);
 
                 Log("[Bridge] Frame DOMContentLoaded -> reinjected + autostart.");
             }
@@ -7086,7 +6943,6 @@ try{
                     _ = f.ExecuteScriptAsync(_appJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
                 _ = f.ExecuteScriptAsync(START_PUSH_NOW);
-                _ = f.ExecuteScriptAsync(FRAME_DIRECT_TICK_AUTOSTART);
 
                 Log("[Bridge] Frame NavigationCompleted -> reinjected + autostart.");
             }
@@ -7104,24 +6960,10 @@ try{
             if (Interlocked.Exchange(ref _popupTickPullBusy, 1) == 1) return;
             try
             {
-                var now = DateTime.UtcNow;
-                if ((now - _lastDiagPullUtc).TotalMilliseconds >= 1500)
-                {
-                    Log($"[DIAG][PULL] start ageMs={(int)age.TotalMilliseconds}");
-                    _lastDiagPullUtc = now;
-                }
                 var raw = await _popupWeb.CoreWebView2.ExecuteScriptAsync(PULL_POPUP_TICK_NOW);
                 var msg = JsonSerializer.Deserialize<string>(raw) ?? "";
                 if (string.IsNullOrWhiteSpace(msg))
-                {
-                    var nowEmpty = DateTime.UtcNow;
-                    if ((nowEmpty - _lastDiagPullEmptyUtc).TotalMilliseconds >= 1500)
-                    {
-                        Log("[DIAG][PULL][EMPTY] popup returned no tick");
-                        _lastDiagPullEmptyUtc = nowEmpty;
-                    }
                     return;
-                }
                 await HandleIncomingWebMessageAsync(msg, "popup-pull");
             }
             catch { }
@@ -7617,7 +7459,33 @@ try{
                 row.SawClosedAfterIssue = true;
         }
 
-        private void FinalizeLastBet(string? result, long balanceAfter, HashSet<string>? winners = null, string? displayResult = null)
+        private long ResolveHistoryBalance(long? preferred = null)
+        {
+            if (preferred.HasValue)
+                return preferred.Value;
+            try
+            {
+                var uiBalance = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0");
+                if (uiBalance > 0)
+                    return uiBalance;
+            }
+            catch { }
+            lock (_snapLock)
+            {
+                if (_lastSnap?.totals?.A is long snapBalance)
+                    return snapBalance;
+            }
+            return _pendingRows.Count > 0 ? _pendingRows[0].Account : 0;
+        }
+
+        private void FinalizeLastBet(
+            string? result,
+            long balanceAfter,
+            HashSet<string>? winners = null,
+            string? displayResult = null,
+            long? currentB = null,
+            long? currentP = null,
+            long? currentT = null)
         {
             if (_pendingRows.Count == 0 || string.IsNullOrWhiteSpace(result)) return;
 
@@ -7627,7 +7495,12 @@ try{
                 : displayResult!;
             bool isTieResult = string.Equals(TextNorm.U(resultText), "TIE", StringComparison.Ordinal)
                                || string.Equals(TextNorm.U(resultText), "T", StringComparison.Ordinal);
-            var rowsToFinalize = _pendingRows.Where(r => r.SawClosedAfterIssue).ToList();
+            long finalB = currentB ?? (_lastSnap?.totals?.B ?? 0);
+            long finalP = currentP ?? (_lastSnap?.totals?.P ?? 0);
+            long finalT = currentT ?? (_lastSnap?.totals?.T ?? 0);
+            var rowsToFinalize = _pendingRows
+                .Where(r => r.IssuedTotalB != finalB || r.IssuedTotalP != finalP || r.IssuedTotalT != finalT)
+                .ToList();
             if (rowsToFinalize.Count == 0) return;
 
             foreach (var row in rowsToFinalize)
@@ -7659,12 +7532,18 @@ try{
         public void FinalizePendingBetsWithWinners(HashSet<string> winners, string? displayResult = null)
         {
             if (_pendingRows.Count == 0) return;
-            long balance = 0;
-            try { balance = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
+            long balance = ResolveHistoryBalance();
+            long currentB = 0, currentP = 0, currentT = 0;
+            lock (_snapLock)
+            {
+                currentB = _lastSnap?.totals?.B ?? 0;
+                currentP = _lastSnap?.totals?.P ?? 0;
+                currentT = _lastSnap?.totals?.T ?? 0;
+            }
             var resText = !string.IsNullOrWhiteSpace(displayResult)
                 ? displayResult
                 : (winners != null && winners.Count > 0 ? string.Join("/", winners) : "-");
-            FinalizeLastBet(resText, balance, winners, resText);
+            FinalizeLastBet(resText, balance, winners, resText, currentB, currentP, currentT);
         }
         private void SetLevelForMultiChain(StrategyTabState tab, int chainIndex, int levelIndex)
         {

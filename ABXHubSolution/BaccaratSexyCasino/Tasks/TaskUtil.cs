@@ -154,7 +154,7 @@ namespace BaccaratSexyCasino.Tasks
                 double p = s?.prog ?? 1.0;
                 //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
                 if (p <= ctx.DecisionPercent && p > 0) break;
-                await Task.Delay(120, ct);
+                await Task.Delay(80, ct);
             }
         }
 
@@ -167,7 +167,7 @@ namespace BaccaratSexyCasino.Tasks
                 var s = ctx.GetSnap?.Invoke();
                 double p = s?.prog ?? 1.0;
                 if (p >= ctx.DecisionPercent) break;
-                await Task.Delay(120, ct);
+                await Task.Delay(80, ct);
             }
         }
 

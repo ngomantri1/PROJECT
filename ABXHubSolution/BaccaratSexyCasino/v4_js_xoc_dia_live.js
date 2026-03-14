@@ -3533,7 +3533,7 @@
         var last = before;
         var want = normalizeSide(side);
         while (((performance && performance.now ? performance.now() : Date.now()) - t0) < timeout) {
-            await sleep(90);
+            await sleep(60);
             var cur = sampleTotalsNow();
             if (((want === 'BANKER' || want === 'CHAN') && ((cur.B !== last.B) || (cur.C !== last.C))) ||
                 ((want === 'PLAYER' || want === 'LE') && ((cur.P !== last.P) || (cur.L !== last.L))) ||
@@ -5721,7 +5721,7 @@
             var c = domPickBestConfirm();
             if (c && c.enabled)
                 return c;
-            await sleep(50);
+            await sleep(16);
         }
         return null;
     }
@@ -5729,7 +5729,7 @@
         timeout = timeout || 1400;
         var t0 = Date.now();
         while ((Date.now() - t0) < timeout) {
-            await sleep(60);
+            await sleep(20);
             var c = domPickBestConfirm();
             if (!c || !c.enabled)
                 return true;
@@ -5737,7 +5737,7 @@
         return false;
     }
     async function domClickConfirmAfterBet() {
-        var confirm = await domWaitConfirmReady(900);
+        var confirm = await domWaitConfirmReady(700);
         if (!confirm) {
             console.warn('[cwBet++] không thấy nút xác nhận');
             return false;
@@ -5753,8 +5753,8 @@
                 source: confirm.source
             });
             domFireClick(confirm.el);
-            await sleep(60);
-            if (await domWaitConfirmSettled(800))
+            await sleep(14);
+            if (await domWaitConfirmSettled(600))
                 return true;
             confirm = domPickBestConfirm() || confirm;
         }
@@ -6182,7 +6182,7 @@
         // chờ ngắn nếu đang bận để tránh trượt lệnh khi bắn liên tục nhiều cửa
         for (var i = 0; i < 4 && LOCK.busy; i++) {
             console.warn('[cwBet++] busy, wait', i);
-            await sleep(120);
+            await sleep(80);
         }
         if (LOCK.busy) {
             console.warn('[cwBet++] busy (give up)');
@@ -6246,7 +6246,7 @@
                 return failBet('bet target not found', { side: side });
             }
             clickBetTarget(tgt0);
-            await sleep(80);
+            await sleep(50);
             clearBetError();
             return true;
         }
@@ -6274,7 +6274,7 @@
             var map = window.cwScanChips() || {};
             if (!Object.keys(map).length) {
                 await tryOpenChipPanel();
-                await sleep(200);
+                await sleep(120);
                 map = isDomMode ? (window.cwScanChips() || {}) : wideScan();
             }
             var availSet = {};
@@ -6319,7 +6319,7 @@
                     return false;
                 });
                 if (!appliedOne && isDomMode) {
-                    appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 450).catch(function () {
+                    appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 180).catch(function () {
                         return false;
                     });
                 }
@@ -6348,7 +6348,7 @@
                         return failBet('confirm failed', { side: side, amount: raw, chipUnits: X });
                     }
                 }
-                await sleep(50);
+                await sleep(15);
                 clearBetError();
                 return true;
             }
@@ -6417,7 +6417,7 @@
                             return failBet('bet click not reflected', { side: side, amount: raw, chipUnits: step.val, turn: i2 + 1 });
                         }
                     }
-                    await sleep(50);
+                    await sleep(15);
                 }
             }
             if (isDomMode) {
