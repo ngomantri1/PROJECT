@@ -897,23 +897,55 @@ try{
         private const string PULL_POPUP_TICK_NOW = @"
   (function(){
     try{
-      var p = (typeof readProgressVal === 'function') ? readProgressVal() : null;
-      var st = (typeof statusByProg === 'function') ? statusByProg(p) : '';
+      function isClosed(win, st){
+        try{
+          if (win && typeof win.__cw_hasCocos === 'function' && !win.__cw_hasCocos() &&
+              typeof win.domStatusImpliesClosed === 'function' && win.domStatusImpliesClosed(st))
+            return true;
+        }catch(_){}
+        return false;
+      }
+      function pullFrom(win){
+        try{
+          if (!win) return null;
+          var p = (typeof win.readProgressVal === 'function') ? win.readProgressVal() : null;
+          var st = (typeof win.statusByProg === 'function') ? win.statusByProg(p) : '';
+          if (isClosed(win, st)) p = 0;
+          var t = (typeof win.readTotalsSafe === 'function') ? win.readTotalsSafe() : null;
+          var seq = (typeof win.readSeqSafe === 'function') ? (win.readSeqSafe() || '') : '';
+          var uname = '';
+          try{
+            if (t && t.N != null) uname = String(t.N || '');
+          }catch(_){}
+          var hasSeq = !!(seq && String(seq).trim());
+          var hasRound = !!(t && (((t.B||0)!==0) || ((t.P||0)!==0) || ((t.T||0)!==0)));
+          var hasHud = !!(uname || (t && t.A != null));
+          var href = '';
+          try{ href = String((win.location && win.location.href) || ''); }catch(_){}
+          return {
+            abx:'tick',
+            prog:p,
+            totals:t,
+            seq:seq,
+            username:uname,
+            status:String(st || ''),
+            ts:Date.now(),
+            __score:(hasSeq?100:0) + (hasRound?50:0) + (hasHud?10:0) + (/singleBacTable\.jsp/i.test(href)?500:0)
+          };
+        }catch(_){ return null; }
+      }
+
+      var best = pullFrom(window);
       try{
-        if (typeof __cw_hasCocos === 'function' && !__cw_hasCocos() &&
-            typeof domStatusImpliesClosed === 'function' && domStatusImpliesClosed(st)){
-          p = 0;
+        for (var i=0;i<window.frames.length;i++){
+          var cand = pullFrom(window.frames[i]);
+          if (!cand) continue;
+          if (!best || (cand.__score||0) > (best.__score||0)) best = cand;
         }
       }catch(_){}
-      var t = null;
-      try{ t = (typeof readTotalsSafe === 'function') ? readTotalsSafe() : null; }catch(_){}
-      var seq = '';
-      try{ seq = (typeof readSeqSafe === 'function') ? (readSeqSafe() || '') : ''; }catch(_){}
-      var uname = '';
-      try{
-        if (t && t.N != null) uname = String(t.N || '');
-      }catch(_){}
-      return JSON.stringify({ abx:'tick', prog:p, totals:t, seq:seq, username:uname, status:String(st || ''), ts:Date.now() });
+      if (!best) return '';
+      try{ delete best.__score; }catch(_){}
+      return JSON.stringify(best);
     }catch(_){
       return '';
     }
