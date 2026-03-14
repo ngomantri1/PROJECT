@@ -4087,6 +4087,32 @@
             var last = esc(S.seq.slice(-1));
             seqHtml = 'Chuỗi kết quả : <span>' + head + '</span><span style="color:#f66">' + last + '</span>';
         }
+        try {
+            window.__cw_last_panel_snapshot = {
+                prog: S.prog,
+                status: String(S.status || ''),
+                seq: String(S.seq || ''),
+                totals: {
+                    B: (t.B != null ? t.B : t.C),
+                    P: (t.P != null ? t.P : t.L),
+                    T: (t.T != null ? t.T : null),
+                    A: (t.A != null ? t.A : null),
+                    N: (t.N != null ? String(t.N) : null),
+                    TB: (t.TB != null ? t.TB : null),
+                    TA: (t.TA != null ? t.TA : null),
+                    C: (t.C != null ? t.C : null),
+                    L: (t.L != null ? t.L : null),
+                    rawHS: (t.rawHS != null ? t.rawHS : null),
+                    cards: (t.cards || [])
+                },
+                username: (t.N != null ? String(t.N) : ''),
+                ts: Date.now()
+            };
+        } catch (_) {}
+        try {
+            if (window.__cw_pushPanelSnapshot)
+                window.__cw_pushPanelSnapshot();
+        } catch (_) {}
         panel.querySelector('#cwInfo').innerHTML = esc(base) + '\n' + seqHtml;
     }
 
@@ -6791,10 +6817,17 @@
 
     function teardown() {
         try {
+            if (window.__cw_stopPush)
+                window.__cw_stopPush();
+        } catch (e) {}
+        try {
             stop();
         } catch (e) {}
         try {
             document.removeEventListener('keydown', onKey);
+        } catch (e) {}
+        try {
+            window.__cw_last_panel_snapshot = null;
         } catch (e) {}
         try {
             root.remove();
@@ -6827,6 +6860,35 @@
                 } catch (_) {}
             }
         }
+
+        window.__cw_pushPanelSnapshot = function () {
+            try {
+                var cached = window.__cw_last_panel_snapshot;
+                if (!cached)
+                    return 'no-panel-snapshot';
+                var snap = {
+                    abx: 'tick',
+                    prog: cached.prog,
+                    totals: cached.totals || null,
+                    seq: String(cached.seq || ''),
+                    username: cached.username || '',
+                    status: String(cached.status || ''),
+                    ts: Date.now(),
+                    origin: 'canvas-panel'
+                };
+                var s = '';
+                try { s = JSON.stringify(snap); } catch (_) {}
+                if (!s)
+                    return 'empty';
+                if (window.__cw_last_panel_sent_json === s)
+                    return 'same';
+                window.__cw_last_panel_sent_json = s;
+                safePost(snap);
+                return 'sent';
+            } catch (_) {
+                return 'fail';
+            }
+        };
 
         var _pushTimer = null;
         var _lastJson = '';
@@ -6874,6 +6936,121 @@
             return '';
         }
 
+        function hasRoundTotalsData(totals) {
+            try {
+                if (!totals)
+                    return false;
+                return !!(((totals.B || 0) !== 0) || ((totals.P || 0) !== 0) || ((totals.T || 0) !== 0));
+            } catch (_) {
+                return false;
+            }
+        }
+
+        function hasHudData(totals) {
+            try {
+                if (!totals)
+                    return false;
+                return !!((totals.N && String(totals.N).trim()) || totals.A != null);
+            } catch (_) {
+                return false;
+            }
+        }
+
+        function buildSnapshotNow() {
+            var p = null;
+            var st = '';
+            var t = null;
+            var seq = '';
+            var cached = null;
+
+            try {
+                if (window.__cw_last_panel_snapshot)
+                    cached = window.__cw_last_panel_snapshot;
+            } catch (_) {}
+
+            try {
+                if (cached && cached.prog != null)
+                    p = cached.prog;
+            } catch (_) {}
+            try {
+                if (p == null && S && S.prog != null)
+                    p = S.prog;
+            } catch (_) {}
+            if (p == null)
+                p = readProgressVal();
+
+            try {
+                if (cached && cached.status != null)
+                    st = String(cached.status || '');
+            } catch (_) {}
+            try {
+                if (!st && S && S.status != null)
+                    st = String(S.status || '');
+            } catch (_) {}
+            if (!st) {
+                try {
+                    st = (typeof statusByProg === 'function') ? String(statusByProg(p) || '') : '';
+                } catch (_) {
+                    st = '';
+                }
+            }
+
+            try {
+                if (cached && cached.totals)
+                    t = cached.totals;
+            } catch (_) {}
+            try {
+                if (!t && S && S._lastTotals)
+                    t = S._lastTotals;
+            } catch (_) {}
+            if (!t)
+                t = readTotalsSafe();
+
+            try {
+                if (cached && cached.seq)
+                    seq = String(cached.seq || '');
+            } catch (_) {}
+            try {
+                if (!seq && S && S.seq)
+                    seq = String(S.seq || '');
+            } catch (_) {}
+            if (!seq)
+                seq = readSeqSafe();
+
+            try {
+                if (!__cw_hasCocos() && domStatusImpliesClosed(st))
+                    p = 0;
+            } catch (_) {}
+
+            var uname = '';
+            try {
+                if (cached && cached.username != null)
+                    uname = String(cached.username || '');
+                if (!uname && t && t.N != null)
+                    uname = String(t.N || '');
+            } catch (_) {}
+
+            return {
+                abx: 'tick',
+                prog: p,
+                totals: t,
+                seq: seq,
+                username: uname,
+                status: String(st || ''),
+                ts: Date.now(),
+                hasRound: hasRoundTotalsData(t),
+                hasHud: hasHudData(t)
+            };
+        }
+
+        window.__cw_readSnapshot = function () {
+            try {
+                return buildSnapshotNow();
+            } catch (_) {
+                return null;
+            }
+        };
+
         // Bắt đầu bắn snapshot định kỳ {abx:'tick', prog, totals, seq, status}
         window.__cw_startPush = function (tickMs) {
             try {
@@ -6888,19 +7065,11 @@
                 }
                 _lastJson = '';
                 _pushTimer = setInterval(function () {
-                    var p = readProgressVal(); // lấy progress hiện tại
-                    var st = (typeof statusByProg === 'function') // tính status theo rule mới
-                     ? statusByProg(p) : '';
-                    if (!__cw_hasCocos() && domStatusImpliesClosed(st))
-                        p = 0;
-                    var snap = {
-                        abx: 'tick',
-                        prog: p,
-                        totals: readTotalsSafe(),
-                        seq: readSeqSafe(),
-                        status: String(st || ''), // <-- THÊM TRƯỜNG status
-                        ts: Date.now()
-                    };
+                    var snap = buildSnapshotNow();
+                    try {
+                        delete snap.hasRound;
+                        delete snap.hasHud;
+                    } catch (_) {}
                     if (shallowChanged(snap))
                         safePost(snap);
                 }, tickMs);

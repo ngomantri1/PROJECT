@@ -876,10 +876,10 @@ Ví dụ không hợp lệ:
 })();";
 
         private const string START_PUSH_NOW = @"
-try{
   try{
-    if (window.__cw_startPush){
-      window.__cw_startPush(240);
+    try{
+      if (window.__cw_startPush){
+        window.__cw_startPush(240);
     }
   }catch(_){}
   try{
@@ -893,6 +893,127 @@ try{
     }
   }catch(_){}
 }catch(_){}";
+
+        private const string POPUP_TOP_AUTOSTART_SINGLE_BAC = @"
+(function(){
+  try{
+    var key = String((performance && performance.timeOrigin) || Date.now());
+    if (window.__cw_popup_autostart_key === key) return;
+    window.__cw_popup_autostart_key = key;
+    var delay=250, tries=0;
+    (function tick(){
+      try{
+        for (var i=0;i<window.frames.length;i++){
+          try{
+            var w = window.frames[i];
+            var href = String((w.location && w.location.href) || '');
+            if (/singleBacTable\.jsp/i.test(href) && w.__cw_startPush){
+              try{ w.__cw_startPush(240); }catch(_){}
+              return;
+            }
+          }catch(_){}
+        }
+      }catch(_){}
+      tries++; delay = Math.min(5000, delay + (tries<10?100:500));
+      setTimeout(tick, delay);
+    })();
+  }catch(_){}
+})();";
+
+        private const string POPUP_TOP_START_PUSH_SINGLE_BAC = @"
+try{
+  try{
+    for (var i=0;i<window.frames.length;i++){
+      try{
+        var w = window.frames[i];
+        var href = String((w.location && w.location.href) || '');
+        if (/singleBacTable\.jsp/i.test(href) && w && w.__cw_startPush){
+          w.__cw_startPush(240);
+        }
+      }catch(_){}
+    }
+  }catch(_){}
+}catch(_){}";
+
+        private const string FRAME_DIRECT_TICK_AUTOSTART = @"
+(function(){
+  try{
+    var href = '';
+    try{ href = String((location && location.href) || ''); }catch(_){}
+    if (!/singleBacTable\.jsp/i.test(href)) return;
+
+    var key = String((performance && performance.timeOrigin) || Date.now());
+    if (window.__cw_frame_direct_key === key) return;
+    window.__cw_frame_direct_key = key;
+
+    function safeDirectPost(obj){
+      try{
+        if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function'){
+          chrome.webview.postMessage(JSON.stringify(obj));
+          return true;
+        }
+      }catch(_){}
+      return false;
+    }
+
+    function diag(reason){
+      try{
+        safeDirectPost({
+          abx:'frame_direct_diag',
+          reason:String(reason || ''),
+          href:href,
+          hasReadSnapshot:(typeof window.__cw_readSnapshot === 'function'),
+          hasReadProgress:(typeof window.readProgressVal === 'function'),
+          hasReadTotals:(typeof window.readTotalsSafe === 'function'),
+          hasReadSeq:(typeof window.readSeqSafe === 'function'),
+          hasWebview:!!(window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function'),
+          ts:Date.now()
+        });
+      }catch(_){}
+    }
+
+    function hasData(snap){
+      try{
+        if (!snap) return false;
+        var t = snap.totals || null;
+        var hasSeq = !!(snap.seq && String(snap.seq).trim());
+        var hasHud = !!((snap.username && String(snap.username).trim()) || (t && ((t.N && String(t.N).trim()) || t.A != null)));
+        var hasRound = !!(t && (((t.B||0)!==0) || ((t.P||0)!==0) || ((t.T||0)!==0)));
+        var hasProg = snap.prog != null;
+        var hasStatus = !!(snap.status && String(snap.status).trim() && !/^Baccarat DOM\b/i.test(String(snap.status)));
+        return hasSeq || hasHud || hasRound || hasProg || hasStatus;
+      }catch(_){
+        return false;
+      }
+    }
+
+    var timer = null;
+    var lastJson = '';
+    function pump(){
+      try{
+        if (typeof window.__cw_readSnapshot !== 'function'){
+          diag('read_snapshot_unavailable');
+          return;
+        }
+        var snap = window.__cw_readSnapshot();
+        if (!hasData(snap)) return;
+        var s = '';
+        try{ s = JSON.stringify(snap); }catch(_){}
+        if (!s || s === lastJson) return;
+        lastJson = s;
+        safeDirectPost(snap);
+      }catch(_){}
+    }
+
+    try{
+      if (timer) clearInterval(timer);
+    }catch(_){}
+    pump();
+    if (typeof window.__cw_readSnapshot !== 'function') return;
+    timer = setInterval(pump, 240);
+    window.__cw_frame_direct_timer = timer;
+  }catch(_){}
+})();";
 
         private const string PULL_POPUP_TICK_NOW = @"
   (function(){
@@ -908,14 +1029,125 @@ try{
       function pullFrom(win){
         try{
           if (!win) return null;
-          var p = (typeof win.readProgressVal === 'function') ? win.readProgressVal() : null;
-          var st = (typeof win.statusByProg === 'function') ? win.statusByProg(p) : '';
+          var snap = null;
+          function parseMoney(txt){
+            try{
+              txt = String(txt || '').trim().toUpperCase();
+              if (!txt) return null;
+              txt = txt.replace(/[₫$€£¥]/g, '').replace(/\s+/g, '');
+              var mul = 1;
+              if (/[KMB]$/.test(txt)){
+                if (/K$/.test(txt)) mul = 1e3;
+                else if (/M$/.test(txt)) mul = 1e6;
+                else mul = 1e9;
+                txt = txt.slice(0, -1);
+              }
+              txt = txt.replace(/,/g, '');
+              var num = parseFloat(txt);
+              if (!isFinite(num)) return null;
+              return Math.round(num * mul);
+            }catch(_){ return null; }
+          }
+          function parsePanelFallback(){
+            try{
+              var doc = win.document;
+              if (!doc) return null;
+              var info = doc.querySelector('#cwInfo');
+              if (!info) return null;
+              var text = String(info.innerText || info.textContent || '');
+              if (!text) return null;
+              var status = '';
+              var prog = null;
+              var seq = '';
+              var user = '';
+              var bal = null;
+              var banker = null, player = null, tie = null;
+
+              var mStatus = text.match(/Trang thai:\s*(.*?)\s*\|\s*Prog:\s*([0-9]+)(?:s|%)/i);
+              if (!mStatus)
+                mStatus = text.match(/Tr[^\n:]*:\s*(.*?)\s*\|\s*Prog:\s*([0-9]+)(?:s|%)/i);
+              if (mStatus){
+                status = String(mStatus[1] || '').trim();
+                prog = Number(mStatus[2] || 0);
+                if (!isFinite(prog)) prog = null;
+              }
+
+              var mHud = text.match(/TAI KHOAN\s*:\s*([^\|\n]+)\|\s*SO DU\s*:\s*([^\n]+)/i);
+              if (!mHud)
+                mHud = text.match(/T[^\n:]*:\s*([^\|\n]+)\|\s*S[^\n:]*:\s*([^\n]+)/i);
+              if (mHud){
+                user = String(mHud[1] || '').trim();
+                bal = parseMoney(mHud[2]);
+              }
+
+              var mTotals = text.match(/BANKER:\s*([0-9]+)\s*\|\s*PLAYER:\s*([0-9]+)\s*\|\s*TIE:\s*([0-9]+)/i);
+              if (mTotals){
+                banker = Number(mTotals[1] || 0);
+                player = Number(mTotals[2] || 0);
+                tie = Number(mTotals[3] || 0);
+              }
+
+              var seqMatches = text.match(/SEQ:([BPT0-4]+)/ig);
+              if (seqMatches && seqMatches.length){
+                var rawSeq = seqMatches[seqMatches.length - 1] || '';
+                seq = String(rawSeq).replace(/^SEQ:/i, '').trim();
+              }
+              if (!seq){
+                var mSeq = text.match(/Chu[^\n:]*:\s*([BPT0-4]+)/i);
+                if (mSeq) seq = String(mSeq[1] || '').trim();
+              }
+
+              return {
+                abx:'tick',
+                prog:prog,
+                totals:{
+                  B:banker,
+                  P:player,
+                  T:tie,
+                  A:bal,
+                  N:user || null
+                },
+                seq:seq,
+                username:user,
+                status:status,
+                ts:Date.now()
+              };
+            }catch(_){ return null; }
+          }
+          try{
+            if (typeof win.__cw_readSnapshot === 'function')
+              snap = win.__cw_readSnapshot();
+          }catch(_){}
+          try{
+            if ((!snap || (!snap.seq && !(snap.totals && snap.totals.A != null) && !snap.prog)) &&
+                win.__cw_last_panel_snapshot){
+              snap = win.__cw_last_panel_snapshot;
+            }
+          }catch(_){}
+          if (!snap)
+            snap = parsePanelFallback();
+          if (!snap){
+            var p = (typeof win.readProgressVal === 'function') ? win.readProgressVal() : null;
+            var st = (typeof win.statusByProg === 'function') ? win.statusByProg(p) : '';
+            if (isClosed(win, st)) p = 0;
+            snap = {
+              abx:'tick',
+              prog:p,
+              totals:(typeof win.readTotalsSafe === 'function') ? win.readTotalsSafe() : null,
+              seq:(typeof win.readSeqSafe === 'function') ? (win.readSeqSafe() || '') : '',
+              status:String(st || ''),
+              ts:Date.now()
+            };
+          }
+          var p = snap ? snap.prog : null;
+          var st = snap ? String(snap.status || '') : '';
           if (isClosed(win, st)) p = 0;
-          var t = (typeof win.readTotalsSafe === 'function') ? win.readTotalsSafe() : null;
-          var seq = (typeof win.readSeqSafe === 'function') ? (win.readSeqSafe() || '') : '';
+          var t = snap ? (snap.totals || null) : null;
+          var seq = snap ? String(snap.seq || '') : '';
           var uname = '';
           try{
-            if (t && t.N != null) uname = String(t.N || '');
+            if (snap && snap.username != null) uname = String(snap.username || '');
+            if (!uname && t && t.N != null) uname = String(t.N || '');
           }catch(_){}
           var hasSeq = !!(seq && String(seq).trim());
           var hasRound = !!(t && (((t.B||0)!==0) || ((t.P||0)!==0) || ((t.T||0)!==0)));
@@ -3022,11 +3254,11 @@ try{
                 await _popupWeb.CoreWebView2.ExecuteScriptAsync(TOP_FORWARD);
                 if (!string.IsNullOrEmpty(_appJs))
                     await _popupWeb.CoreWebView2.ExecuteScriptAsync(_appJs);
-                await _popupWeb.CoreWebView2.ExecuteScriptAsync(FRAME_AUTOSTART);
-                await _popupWeb.CoreWebView2.ExecuteScriptAsync(START_PUSH_NOW);
+                await _popupWeb.CoreWebView2.ExecuteScriptAsync(POPUP_TOP_AUTOSTART_SINGLE_BAC);
+                await _popupWeb.CoreWebView2.ExecuteScriptAsync(POPUP_TOP_START_PUSH_SINGLE_BAC);
                 _popupLastDocKey = key;
                 Log("[PopupWeb] bridge injected, key=" + key);
-                Log("[PopupWeb] ensure push 240ms");
+                Log("[PopupWeb] ensure push 240ms (singleBac only)");
             }
         }
 
@@ -3086,36 +3318,57 @@ try{
 
                 if (abxStr == "tick")
                 {
-                    using var jdocTick = JsonDocument.Parse(msg);
-                    var jrootTick = jdocTick.RootElement;
+                    var jrootTick = root;
+                    var snap = ParseCwSnapshotLoose(jrootTick);
+                    if (snap == null)
+                    {
+                        var now = DateTime.UtcNow;
+                        if ((now - _lastDiagTickDropUtc).TotalMilliseconds >= 1200)
+                        {
+                            Log($"[DIAG][TICK][DROP] src={source} reason=parse-null");
+                            _lastDiagTickDropUtc = now;
+                        }
+                        return;
+                    }
 
-                    var snap = JsonSerializer.Deserialize<CwSnapshot>(msg);
                     if (snap != null)
                     {
-                        string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
+                        string statusUi = GetJsonStringLoose(jrootTick, "status") ?? "";
                         var seqDisplayRaw = snap.seq ?? "";
                         var totalsNow = snap.totals;
                         bool hasSeqData = !string.IsNullOrWhiteSpace(seqDisplayRaw);
-                        bool hasTotalsData = totalsNow != null &&
-                                             (!string.IsNullOrWhiteSpace(totalsNow.N) ||
-                                              totalsNow.A != 0 ||
-                                              totalsNow.B != 0 ||
-                                              totalsNow.P != 0 ||
-                                              totalsNow.T != 0);
+                        bool hasHudData = totalsNow != null &&
+                                          (!string.IsNullOrWhiteSpace(totalsNow.N) ||
+                                           totalsNow.A.HasValue);
                         bool hasRoundTotals = totalsNow != null &&
                                               ((totalsNow.B ?? 0) != 0 ||
                                                (totalsNow.P ?? 0) != 0 ||
                                                (totalsNow.T ?? 0) != 0);
+                        bool hasProgressData = snap.prog.HasValue;
+                        bool hasMeaningfulStatus = !string.IsNullOrWhiteSpace(statusUi) &&
+                                                   !statusUi.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase);
+                        bool hasMeaningfulData = hasSeqData || hasHudData || hasRoundTotals || hasProgressData || hasMeaningfulStatus;
                         bool isPlaceholderDomTick =
                             !hasSeqData &&
                             !hasRoundTotals &&
                             statusUi.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase);
+                        bool isEmptyTick = !hasMeaningfulData;
                         if (isPlaceholderDomTick)
                         {
                             var now = DateTime.UtcNow;
                             if ((now - _lastDiagTickDropUtc).TotalMilliseconds >= 1200)
                             {
-                                Log($"[DIAG][TICK][DROP] src={source} status={statusUi} seqLen={seqDisplayRaw.Length} hasTotals={hasTotalsData}");
+                                Log($"[DIAG][TICK][DROP] src={source} status={statusUi} seqLen={seqDisplayRaw.Length} hasHud={hasHudData} hasRound={hasRoundTotals}");
+                                _lastDiagTickDropUtc = now;
+                            }
+                            return;
+                        }
+                        if (isEmptyTick)
+                        {
+                            var now = DateTime.UtcNow;
+                            if ((now - _lastDiagTickDropUtc).TotalMilliseconds >= 1200)
+                            {
+                                Log($"[DIAG][TICK][DROP] src={source} status={statusUi} seqLen={seqDisplayRaw.Length} prog={(snap?.prog?.ToString() ?? "-")} user={snap?.totals?.N ?? snap?.username ?? "-"}");
                                 _lastDiagTickDropUtc = now;
                             }
                             return;
@@ -3289,6 +3542,14 @@ try{
                     return;
                 }
 
+                if (abxStr == "frame_direct_diag")
+                {
+                    var reason = root.TryGetProperty("reason", out var rEl) ? (rEl.GetString() ?? "") : "";
+                    var href = root.TryGetProperty("href", out var hEl) ? (hEl.GetString() ?? "") : "";
+                    Log($"[DIAG][FRAME] reason={reason} href={href}");
+                    return;
+                }
+
                 if (abxStr == "game_hint")
                 {
                     _lastGameTickUtc = DateTime.UtcNow;
@@ -3432,10 +3693,187 @@ try{
                     return;
                 }
             }
+            catch (Exception ex)
+            {
+                var preview = msg.Length > 240 ? msg[..240] : msg;
+                Log($"[DIAG][MSG][ERR] src={source} err={ex.GetType().Name}: {ex.Message} preview={preview.Replace('\r', ' ').Replace('\n', ' ')}");
+            }
+        }
+
+        private static CwSnapshot? ParseCwSnapshotLoose(JsonElement root)
+        {
+            try
+            {
+                var snap = new CwSnapshot
+                {
+                    abx = GetJsonStringLoose(root, "abx") ?? "",
+                    prog = GetJsonDoubleLoose(root, "prog"),
+                    seq = GetJsonStringLoose(root, "seq") ?? "",
+                    username = GetJsonStringLoose(root, "username") ?? "",
+                    status = GetJsonStringLoose(root, "status") ?? "",
+                    side = GetJsonStringLoose(root, "side") ?? "",
+                    error = GetJsonStringLoose(root, "error") ?? "",
+                    session = GetJsonStringLoose(root, "session") ?? "",
+                    ts = GetJsonLongLoose(root, "ts") ?? 0
+                };
+
+                if (root.TryGetProperty("amount", out var amountEl))
+                    snap.amount = ReadJsonLongLoose(amountEl);
+
+                if (root.TryGetProperty("totals", out var totalsEl) && totalsEl.ValueKind == JsonValueKind.Object)
+                {
+                    snap.totals = new CwTotals
+                    {
+                        B = GetJsonLongLoose(totalsEl, "B"),
+                        P = GetJsonLongLoose(totalsEl, "P"),
+                        T = GetJsonLongLoose(totalsEl, "T"),
+                        A = GetJsonLongLoose(totalsEl, "A"),
+                        N = GetJsonStringLoose(totalsEl, "N") ?? "",
+                        SD = GetJsonLongLoose(totalsEl, "SD"),
+                        TT = GetJsonLongLoose(totalsEl, "TT"),
+                        T3T = GetJsonLongLoose(totalsEl, "T3T"),
+                        T3D = GetJsonLongLoose(totalsEl, "T3D"),
+                        TD = GetJsonLongLoose(totalsEl, "TD")
+                    };
+                }
+
+                if (string.IsNullOrWhiteSpace(snap.username) && !string.IsNullOrWhiteSpace(snap.totals?.N))
+                    snap.username = snap.totals.N;
+
+                return snap;
+            }
             catch
             {
-                // ignore non-JSON
+                return null;
             }
+        }
+
+        private static string? GetJsonStringLoose(JsonElement root, string name)
+        {
+            if (!root.TryGetProperty(name, out var el))
+                return null;
+            return ReadJsonStringLoose(el);
+        }
+
+        private static long? GetJsonLongLoose(JsonElement root, string name)
+        {
+            if (!root.TryGetProperty(name, out var el))
+                return null;
+            return ReadJsonLongLoose(el);
+        }
+
+        private static double? GetJsonDoubleLoose(JsonElement root, string name)
+        {
+            if (!root.TryGetProperty(name, out var el))
+                return null;
+            return ReadJsonDoubleLoose(el);
+        }
+
+        private static string? ReadJsonStringLoose(JsonElement el)
+        {
+            return el.ValueKind switch
+            {
+                JsonValueKind.String => el.GetString(),
+                JsonValueKind.Number => el.ToString(),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                _ => null
+            };
+        }
+
+        private static long? ReadJsonLongLoose(JsonElement el)
+        {
+            var d = ReadJsonDoubleLoose(el);
+            if (!d.HasValue || !double.IsFinite(d.Value))
+                return null;
+            try
+            {
+                return checked((long)Math.Round(d.Value, MidpointRounding.AwayFromZero));
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static double? ReadJsonDoubleLoose(JsonElement el)
+        {
+            try
+            {
+                switch (el.ValueKind)
+                {
+                    case JsonValueKind.Number:
+                        if (el.TryGetDouble(out var num))
+                            return num;
+                        break;
+                    case JsonValueKind.String:
+                    {
+                        var s = el.GetString();
+                        if (TryParseLooseDouble(s, out var parsed))
+                            return parsed;
+                        break;
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static bool TryParseLooseDouble(string? raw, out double value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(raw))
+                return false;
+
+            var s = raw.Trim()
+                .Replace("\u00A0", "")
+                .Replace("₫", "")
+                .Replace("$", "")
+                .Replace("€", "")
+                .Replace("£", "")
+                .Replace("¥", "")
+                .Replace("%", "")
+                .Replace(" ", "");
+
+            double mul = 1;
+            if (s.EndsWith("K", StringComparison.OrdinalIgnoreCase))
+            {
+                mul = 1e3;
+                s = s[..^1];
+            }
+            else if (s.EndsWith("M", StringComparison.OrdinalIgnoreCase))
+            {
+                mul = 1e6;
+                s = s[..^1];
+            }
+            else if (s.EndsWith("B", StringComparison.OrdinalIgnoreCase))
+            {
+                mul = 1e9;
+                s = s[..^1];
+            }
+
+            if (s.Contains(',') && s.Contains('.'))
+            {
+                if (s.LastIndexOf(',') > s.LastIndexOf('.'))
+                    s = s.Replace(".", "").Replace(',', '.');
+                else
+                    s = s.Replace(",", "");
+            }
+            else if (s.Contains(','))
+            {
+                if (Regex.IsMatch(s, @"^\d+,\d{1,2}$"))
+                    s = s.Replace(',', '.');
+                else
+                    s = s.Replace(",", "");
+            }
+
+            if (double.TryParse(s, NumberStyles.Float | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var parsed))
+            {
+                value = parsed * mul;
+                return double.IsFinite(value);
+            }
+
+            return false;
         }
 
         private void PopupCore_FrameCreated_Bridge(object? sender, CoreWebView2FrameCreatedEventArgs e)
@@ -3448,6 +3886,7 @@ try{
                     _ = f.ExecuteScriptAsync(_appJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
                 _ = f.ExecuteScriptAsync(START_PUSH_NOW);
+                _ = f.ExecuteScriptAsync(FRAME_DIRECT_TICK_AUTOSTART);
                 f.WebMessageReceived += PopupFrame_WebMessageReceived;
                 f.DOMContentLoaded += Frame_DOMContentLoaded_Bridge;
                 f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
@@ -5030,18 +5469,28 @@ try{
             {
                 var msg = e.TryGetWebMessageAsString() ?? "";
                 if (string.IsNullOrWhiteSpace(msg)) return;
+                bool hasAbx = false;
                 var now = DateTime.UtcNow;
+                string abx = "";
+                try
+                {
+                    using var diagDoc = JsonDocument.Parse(msg);
+                    if (diagDoc.RootElement.TryGetProperty("abx", out var abxEl))
+                    {
+                        abx = abxEl.GetString() ?? "";
+                        hasAbx = true;
+                    }
+                }
+                catch { }
                 if ((now - _lastDiagWebMsgUtc).TotalMilliseconds >= 1500)
                 {
-                    string abx = "";
-                    try
+                    if (hasAbx)
+                        Log($"[DIAG][MSG] src=popup-frame abx={abx} len={msg.Length}");
+                    else
                     {
-                        using var diagDoc = JsonDocument.Parse(msg);
-                        if (diagDoc.RootElement.TryGetProperty("abx", out var abxEl))
-                            abx = abxEl.GetString() ?? "";
+                        var preview = msg.Length > 160 ? msg[..160] : msg;
+                        Log($"[DIAG][MSG] src=popup-frame abx=? len={msg.Length} preview={preview.Replace('\r', ' ').Replace('\n', ' ')}");
                     }
-                    catch { }
-                    Log($"[DIAG][MSG] src=popup-frame abx={abx} len={msg.Length}");
                     _lastDiagWebMsgUtc = now;
                 }
                 await HandleIncomingWebMessageAsync(msg, "popup-frame");
@@ -6614,6 +7063,7 @@ try{
                     _ = f.ExecuteScriptAsync(_appJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
                 _ = f.ExecuteScriptAsync(START_PUSH_NOW);
+                _ = f.ExecuteScriptAsync(FRAME_DIRECT_TICK_AUTOSTART);
 
                 Log("[Bridge] Frame DOMContentLoaded -> reinjected + autostart.");
             }
@@ -6636,6 +7086,7 @@ try{
                     _ = f.ExecuteScriptAsync(_appJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
                 _ = f.ExecuteScriptAsync(START_PUSH_NOW);
+                _ = f.ExecuteScriptAsync(FRAME_DIRECT_TICK_AUTOSTART);
 
                 Log("[Bridge] Frame NavigationCompleted -> reinjected + autostart.");
             }
