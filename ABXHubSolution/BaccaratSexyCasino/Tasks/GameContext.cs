@@ -16,6 +16,7 @@ namespace BaccaratSexyCasino.Tasks
 
         // Thực thi JS: trả về chuỗi (Web.ExecuteScriptAsync)
         public Func<string, Task<string>> EvalJsAsync { get; init; }
+        public Func<string, Task<string>>? EvalJsAwaitResultAsync { get; init; }
 
         // Ghi log ra UI/File tuỳ bạn
         public Action<string> Log { get; init; }

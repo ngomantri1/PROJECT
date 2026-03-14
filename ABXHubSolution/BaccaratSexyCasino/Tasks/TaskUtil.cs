@@ -23,6 +23,7 @@ namespace BaccaratSexyCasino.Tasks
         private static readonly ConcurrentDictionary<string, long> _lastBetOkMsByTab = new();
         private static readonly ConcurrentDictionary<string, int> _lastBetRoundByTab = new();
         private static readonly ConcurrentDictionary<string, string> _lastBetSideByTab = new();
+        private static readonly ConcurrentDictionary<string, string> _lastAcceptedPlayableSeqByTab = new();
 
         // (tuỳ chọn) reset khi dừng task
         public static void ClearBetCooldown()
@@ -30,6 +31,7 @@ namespace BaccaratSexyCasino.Tasks
             _lastBetOkMsByTab.Clear();
             _lastBetRoundByTab.Clear();
             _lastBetSideByTab.Clear();
+            _lastAcceptedPlayableSeqByTab.Clear();
         }
 
         public static string ParityCharToSide(char ch) => (ch == 'B') ? "BANKER" : "PLAYER";
@@ -145,11 +147,9 @@ namespace BaccaratSexyCasino.Tasks
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
 
-            // Cập nhật UI chỉ khi thực sự được phép bắn
-            await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke(side));
-            await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
-
-            var snap = ctx.GetRawSnap?.Invoke() ?? ctx.GetSnap?.Invoke();
+            var playableSnap = ctx.GetSnap?.Invoke();
+            var snap = ctx.GetRawSnap?.Invoke() ?? playableSnap;
+            var playableSeq = playableSnap?.seq ?? "";
             var roundId = 0;
             try { roundId = (snap?.seq ?? "").Length; } catch { roundId = 0; }
 
@@ -164,44 +164,76 @@ namespace BaccaratSexyCasino.Tasks
             {
                 if (sameRound && sameSide && now - last < 3000)
                 {
-                    ctx.Log?.Invoke($"[BET] cooldown 3s active, skip ({3000 - (now - last)}ms left)");
+                    _lastAcceptedPlayableSeqByTab.TryRemove(tabKey, out _);
                     return false;
                 }
             }
 
-            // Gửi intent xuống JS queue
+            // Gửi intent xuống JS queue; với WebView2 phải chờ kết quả qua postMessage vì ExecuteScriptAsync không await Promise JS.
             var js =
                 "(async function(){try{" +
                 " var intent = { tabId: '" + tabKey + "', roundId: " + roundId + ", side: '" + side + "', amount: " + amount + " };" +
                 " if (typeof window.__cw_bet_enqueue==='function'){" +
-                "   return String(await window.__cw_bet_enqueue(intent));" +
+                "   return await window.__cw_bet_enqueue(intent);" +
                 " } else if (typeof window.__cw_bet==='function'){" +
-                "   return String(await window.__cw_bet('" + side + "', " + amount + "));" +
+                "   return await window.__cw_bet('" + side + "', " + amount + ");" +
                 " } else { return 'no'; }" +
-                "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
+                "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})()";
 
-            var rRaw = await ctx.EvalJsAsync(js);
+            var eval = ctx.EvalJsAwaitResultAsync ?? ctx.EvalJsAsync;
+            var rRaw = await eval(js);
             ctx.Log?.Invoke($"[BET-JS] tab={tabKey} round={roundId} result={rRaw}");
 
-            // Không kiểm tra thành công/thất bại để tránh bắn lặp; chỉ đẩy lệnh một lần
-            bool ok = true;
+            var normalized = (rRaw ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(normalized))
+                normalized = normalized.Trim().Trim('"');
+            bool ok =
+                string.Equals(normalized, "ok", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "true", StringComparison.OrdinalIgnoreCase);
 
             if (ok)
             {
+                await ctx.UiDispatcher.InvokeAsync(() =>
+                {
+                    ctx.UiSetSide?.Invoke(side);
+                    ctx.UiSetStake?.Invoke(amount);
+                });
                 _lastBetOkMsByTab[tabKey] = now; // kích hoạt khóa 3s
                 _lastBetRoundByTab[tabKey] = roundId;
                 _lastBetSideByTab[tabKey] = side ?? "";
+                _lastAcceptedPlayableSeqByTab[tabKey] = playableSeq;
+            }
+            else
+            {
+                _lastAcceptedPlayableSeqByTab.TryRemove(tabKey, out _);
             }
 
             return ok;
         }
         public static async Task<bool?> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSeq, CancellationToken ct)
         {
+            var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
+            if (!_lastAcceptedPlayableSeqByTab.TryGetValue(tabKey, out var acceptedSeq) ||
+                !string.Equals(acceptedSeq ?? "", baseSeq ?? "", StringComparison.Ordinal))
+            {
+                ctx.Log?.Invoke($"[BET][SKIP] no accepted bet for settle | tab={tabKey} | seq={baseSeq ?? ""}");
+                while (true)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var skippedSnap = ctx.GetSnap?.Invoke();
+                    var skippedSeq = skippedSnap?.seq ?? "";
+                    if (!string.Equals(skippedSeq, baseSeq ?? "", StringComparison.Ordinal))
+                        break;
+                    await Task.Delay(120, ct);
+                }
+                return null;
+            }
+
             // chờ seq tăng độ dài → có kết quả mới
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                var s = ctx.GetRawSnap?.Invoke() ?? ctx.GetSnap?.Invoke();
+                var s = ctx.GetSnap?.Invoke();
                 var curSeq = s?.seq ?? "";
                 if (!string.Equals(curSeq, baseSeq, StringComparison.Ordinal))
                 {
@@ -218,6 +250,11 @@ namespace BaccaratSexyCasino.Tasks
                             ctx.UiSetWinLossText?.Invoke("Hòa");
                         }
                     });
+                    if (_lastAcceptedPlayableSeqByTab.TryGetValue(tabKey, out var pendingSeq) &&
+                        string.Equals(pendingSeq ?? "", baseSeq ?? "", StringComparison.Ordinal))
+                    {
+                        _lastAcceptedPlayableSeqByTab.TryRemove(tabKey, out _);
+                    }
                     // cộng tiền lũy kế: +amount khi thắng, -amount khi thua (đơn giản)
                     //TaskUtil.UiRoundAllowNextReset();
                     return win;

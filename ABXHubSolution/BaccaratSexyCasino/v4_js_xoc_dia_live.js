@@ -3537,6 +3537,7 @@
             var cur = sampleTotalsNow();
             if (((want === 'BANKER' || want === 'CHAN') && ((cur.B !== last.B) || (cur.C !== last.C))) ||
                 ((want === 'PLAYER' || want === 'LE') && ((cur.P !== last.P) || (cur.L !== last.L))) ||
+                ((want === 'TIE') && ((cur.T !== last.T) || (cur.TT !== last.TT))) ||
                 (cur.A !== last.A))
                 return true;
             last = cur;
@@ -4583,7 +4584,22 @@
         '100000000': 1,
         '500000000': 1
     };
+    var DOM_ALLOWED_SET = {};
+    for (var _di = 0; _di < DENOMS_DESC.length; _di++) {
+        var _domUnit = Math.floor(DENOMS_DESC[_di] / 1000);
+        if (_domUnit > 0)
+            DOM_ALLOWED_SET[String(_domUnit)] = 1;
+    }
     var DENOMS = [500000000, 100000000, 50000000, 20000000, 10000000, 5000000, 1000000, 500000, 100000, 50000, 10000, 5000, 1000];
+
+    function normalizeDomChipValue(val) {
+        var num = Math.max(0, Math.floor(+val || 0));
+        if (!num)
+            return null;
+        if (num >= 1000 && num % 1000 === 0)
+            return Math.floor(num / 1000);
+        return num;
+    }
 
     function active(n) {
         return !n || n.activeInHierarchy !== false;
@@ -4858,6 +4874,8 @@
             return 'BANKER';
         if (s === 'PLAYER' || s === 'P' || s === 'LE' || s === 'ODD')
             return 'PLAYER';
+        if (s === 'TIE' || s === 'T' || s === 'HOA')
+            return 'TIE';
         if (s === 'SAP_DOI' || s === 'SAPDOI' || s === '2DO2TRANG' || s === '2D2T' || s === '2R2W')
             return 'SAP_DOI';
         if (s === 'TRANG3_DO1' || s === '3TRANG1DO' || s === '3T1D' || s === '3W1R' || s === '1DO3TRANG' || s === '1D3T' || s === '1R3W')
@@ -4873,6 +4891,7 @@
     var SIDE_REGEX = {
         BANKER: /(BANKER|CHAN|EVEN|\bB\b)\b/i,
         PLAYER: /(PLAYER|\bLE\b|ODD|\bP\b)\b/i,
+        TIE: /(TIE|HOA|\bT\b)\b/i,
         SAP_DOI: /(SAP\s*DOI|SAPDOI|2\s*DO\s*2\s*TRANG|2D2T|2R2W|2DO2TRANG)/i,
         TRANG3_DO1: /(3\s*TRANG\s*1\s*DO|3T1D|3W1R|3TRANG1DO|1\s*DO\s*3\s*TRANG|1D3T|1R3W|1DO3TRANG)/i,
         DO3_TRANG1: /(3\s*DO\s*1\s*TRANG|3D1T|3R1W|3DO1TRANG|1\s*TRANG\s*3\s*DO|1T3D|1W3R|1TRANG3DO)/i,
@@ -5017,6 +5036,33 @@
         return list;
     }
     function findBetTarget(side) {
+        if (!__cw_hasCocos()) {
+            var domBest = domPickBestBetTargets();
+            var wantDom = normalizeSide(side);
+            var domTgt = domBest && domBest.targets ? domBest.targets[wantDom] : null;
+            if (domTgt) {
+                return {
+                    node: domTgt.el,
+                    el: domTgt.el,
+                    dom: true,
+                    source: domTgt.source,
+                    text: domTgt.text,
+                    tail: domTgt.tail,
+                    rect: {
+                        x: domTgt.x,
+                        y: domTgt.y,
+                        w: domTgt.w,
+                        h: domTgt.h,
+                        sx: domTgt.x,
+                        sy: domTgt.y,
+                        sw: domTgt.w,
+                        sh: domTgt.h
+                    },
+                    area: (domTgt.w || 0) * (domTgt.h || 0)
+                };
+            }
+            return null;
+        }
         var WANT = normalizeSide(side);
         var tail = BET_TAILS[WANT];
         if (tail) {
@@ -5061,6 +5107,9 @@
     function clickBetTarget(tgt) {
         if (!tgt || !tgt.node)
             return false;
+        if (tgt.dom && tgt.el && tgt.el.ownerDocument) {
+            return domFireClick(tgt.el);
+        }
         var node = tgt.node;
         var rect = tgt.rect || rectFromNodeCompat(node);
         var ok = false;
@@ -5096,7 +5145,564 @@
         return null;
     }
 
+    function domGetBetContexts() {
+        var contexts = [];
+        domWalkContexts(window, 'top', 0, 0, contexts, []);
+        return contexts;
+    }
+    function domTextOf(el) {
+        try {
+            return domCollapse(el && (el.innerText || el.textContent) || '');
+        } catch (_) {
+            return '';
+        }
+    }
+    function domTailOf(el) {
+        try {
+            return fullPath(el, 80) || domTailOfEl(el) || '';
+        } catch (_) {
+            return '';
+        }
+    }
+    function domFireClick(el) {
+        try {
+            if (!el || !el.getBoundingClientRect)
+                return false;
+            var rect = el.getBoundingClientRect();
+            var x = rect.left + rect.width / 2;
+            var y = rect.top + rect.height / 2;
+            var win = el.ownerDocument && el.ownerDocument.defaultView ? el.ownerDocument.defaultView : window;
+            var opts = {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                clientX: x,
+                clientY: y,
+                button: 0,
+                buttons: 1
+            };
+            try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (_) {}
+            try { el.focus && el.focus(); } catch (_) {}
+            try { el.dispatchEvent(new win.PointerEvent('pointerdown', opts)); } catch (_) {}
+            try { el.dispatchEvent(new win.MouseEvent('mousedown', opts)); } catch (_) {}
+            try { el.dispatchEvent(new win.PointerEvent('pointerup', opts)); } catch (_) {}
+            try { el.dispatchEvent(new win.MouseEvent('mouseup', opts)); } catch (_) {}
+            try { el.dispatchEvent(new win.MouseEvent('click', opts)); } catch (_) {}
+            try { typeof el.click === 'function' && el.click(); } catch (_) {}
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+    function domChipValueFromIdOrClass(el) {
+        var raw = '';
+        try {
+            raw = String((el && el.id) || '') + ' ' + String((el && el.className) || '');
+        } catch (_) {
+            raw = '';
+        }
+        var m = NORM(raw).match(/(?:^|[_\-\s])(50K|20K|10K|5K|2K|1K|500|200|100|50|20|10)(?:$|[_\-\s])/i);
+        return m ? parseDomChipValue(m[1]) : null;
+    }
+    function domChipHostOf(el) {
+        if (!el || !el.closest)
+            return null;
+        var selectors = [
+            "[id^='Chips_']",
+            "[id^='iChips_']",
+            ".list_select_chips3d > div",
+            ".list_select_chips3d > li",
+            ".chips3d"
+        ];
+        for (var i = 0; i < selectors.length; i++) {
+            try {
+                var host = el.closest(selectors[i]);
+                if (host)
+                    return host;
+            } catch (_) {}
+        }
+        return null;
+    }
+    function parseDomChipValue(txt) {
+        if (!txt)
+            return null;
+        var s = NORM(txt);
+        var m = s.match(/(\d+)\s*(K|M)\b/);
+        if (m) {
+            var v = +m[1];
+            v *= (m[2] === 'K' ? 1e3 : 1e6);
+            return normalizeDomChipValue(v);
+        }
+        m = s.match(/(\d{1,3}(?:[.,\s]\d{3})+|\d{1,9})/);
+        if (m)
+            return normalizeDomChipValue(parseInt(m[1].replace(/[^\d]/g, ''), 10));
+        return null;
+    }
+    function domCollectSettingPopupChips(doc, source) {
+        var rows = [];
+        if (!doc || !doc.querySelectorAll)
+            return rows;
+        var nodes = doc.querySelectorAll("[id^='Chips_'], [id^='iChips_']");
+        var byId = {};
+        for (var i = 0; i < nodes.length; i++) {
+            var li = nodes[i];
+            if (!domVisible(li))
+                continue;
+            var rect = li.getBoundingClientRect();
+            if (rect.width < 40 || rect.height < 40)
+                continue;
+            var val = parseDomChipValue(domTextOf(li)) || domChipValueFromIdOrClass(li);
+            if (!val)
+                continue;
+            var idKey = String(li.id || '').toLowerCase();
+            if (!idKey)
+                idKey = String(val) + '|' + Math.round(rect.left / 10) + '|' + Math.round(rect.top / 10);
+            var cs = doc.defaultView.getComputedStyle(li);
+            byId[idKey] = {
+                val: val,
+                x: Math.round(rect.left),
+                y: Math.round(rect.top),
+                w: Math.round(rect.width),
+                h: Math.round(rect.height),
+                source: source,
+                tail: domTailOf(li),
+                enabled: Number(cs.opacity || '1') > 0.5,
+                selected: /\bselect\b/i.test(String(li.className || '')),
+                el: li,
+                rect: {
+                    x: Math.round(rect.left),
+                    y: Math.round(rect.top),
+                    w: Math.round(rect.width),
+                    h: Math.round(rect.height)
+                }
+            };
+        }
+        for (var k in byId)
+            rows.push(byId[k]);
+        rows.sort(function (a, b) { return a.y - b.y || a.x - b.x || a.val - b.val; });
+        return rows.length >= 6 ? rows : [];
+    }
+    function domCollectActiveBarChips(doc, source) {
+        var rows = [];
+        if (!doc || !doc.querySelectorAll)
+            return rows;
+        var nodes = doc.querySelectorAll(".list_select_chips3d > div, .list_select_chips3d > li, .chips3d");
+        var byKey = {};
+        for (var i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            if (!domVisible(el))
+                continue;
+            var host = domChipHostOf(el) || el;
+            if (!domVisible(host))
+                continue;
+            var rect = host.getBoundingClientRect();
+            if (rect.top < doc.defaultView.innerHeight * 0.72)
+                continue;
+            var val = parseDomChipValue(domTextOf(host)) || domChipValueFromIdOrClass(host);
+            if (!val)
+                continue;
+            var key = String(val) + '|' + Math.round(rect.left / 10) + '|' + Math.round(rect.top / 10);
+            var cs = doc.defaultView.getComputedStyle(host);
+            if (!byKey[key]) {
+                byKey[key] = {
+                    val: val,
+                    x: Math.round(rect.left),
+                    y: Math.round(rect.top),
+                    w: Math.round(rect.width),
+                    h: Math.round(rect.height),
+                    source: source,
+                    tail: domTailOf(host),
+                    enabled: Number(cs.opacity || '1') > 0.5,
+                    selected: true,
+                    el: host,
+                    rect: {
+                        x: Math.round(rect.left),
+                        y: Math.round(rect.top),
+                        w: Math.round(rect.width),
+                        h: Math.round(rect.height)
+                    }
+                };
+            }
+        }
+        for (var k in byKey)
+            rows.push(byKey[k]);
+        rows.sort(function (a, b) { return a.x - b.x || a.y - b.y || a.val - b.val; });
+        return rows;
+    }
+    function domPickBestChipPanel() {
+        var contexts = domGetBetContexts();
+        var bestPopup = null;
+        var bestBar = null;
+        for (var i = 0; i < contexts.length; i++) {
+            var ctx = contexts[i];
+            var popup = domCollectSettingPopupChips(ctx.doc, ctx.source);
+            if (popup.length) {
+                var popupScore = popup.length * 500 + (ctx.source === 'top/frame[1]' ? 800 : 0);
+                if (!bestPopup || popupScore > bestPopup.score)
+                    bestPopup = { mode: 'settings-popup', score: popupScore, chips: popup, source: ctx.source, doc: ctx.doc };
+            }
+            var bar = domCollectActiveBarChips(ctx.doc, ctx.source);
+            if (bar.length) {
+                var barScore = bar.length * 120 + (ctx.source === 'top/frame[1]' ? 250 : 0);
+                if (!bestBar || barScore > bestBar.score)
+                    bestBar = { mode: 'active-bar', score: barScore, chips: bar, source: ctx.source, doc: ctx.doc };
+            }
+        }
+        return bestPopup || bestBar;
+    }
+    function domScanChipMap() {
+        var panel = domPickBestChipPanel();
+        var out = {};
+        if (!panel || !panel.chips || !panel.chips.length)
+            return out;
+        for (var i = 0; i < panel.chips.length; i++) {
+            var c = panel.chips[i];
+            out[String(c.val)] = {
+                entry: c.el,
+                node: c.el,
+                el: c.el,
+                rect: c.rect,
+                selected: !!c.selected,
+                source: c.source,
+                tail: c.tail
+            };
+        }
+        return out;
+    }
+    async function domFocusChipInfo(info, amount) {
+        if (!info || !info.el)
+            return false;
+        if (amount != null) {
+            var normalizedAmount = normalizeDomChipValue(amount);
+            var normalizedInfo = normalizeDomChipValue(info.value);
+            if (normalizedAmount != null && normalizedInfo != null && normalizedAmount !== normalizedInfo)
+                return false;
+        }
+        if (!domFireClick(info.el))
+            return false;
+        await sleep(140);
+        return true;
+    }
+    async function domFocusChip(amount) {
+        var val = Math.max(0, Math.floor(+amount || 0));
+        if (!DOM_ALLOWED_SET[String(val)] && !ALLOWED_SET[String(val)])
+            throw new Error('Menh gia khong hop le: ' + amount);
+        var map = domScanChipMap();
+        var info = map[String(val)];
+        if (!info || !info.el)
+            return false;
+        return await domFocusChipInfo(info, val);
+    }
+    function domBetSideOfText(text) {
+        var s = NORM(text || '');
+        if (!s)
+            return null;
+        if (/PLAYER|TAY CON|\u95F2/.test(s))
+            return 'PLAYER';
+        if (/BANKER|NHA CAI|\u5E84/.test(s))
+            return 'BANKER';
+        if (/TIE|HOA|\u548C/.test(s))
+            return 'TIE';
+        return null;
+    }
+    function domBetTargetHostOf(el) {
+        if (!el || !el.closest)
+            return null;
+        var ownText = domTextOf(el);
+        var ownSide = domBetSideOfText(ownText);
+        var selectors = [
+            "li[id^='betBox']",
+            ".zone_bet_bottom > li",
+            ".zone_bet_bottom li",
+            ".zone_bet_bottom > div",
+            ".zone_bet_bottom div"
+        ];
+        for (var i = 0; i < selectors.length; i++) {
+            var host = null;
+            try {
+                host = el.closest(selectors[i]);
+            } catch (_) {
+                host = null;
+            }
+            if (!host)
+                continue;
+            var hostText = domTextOf(host);
+            var flatTail = NORM(domTailOf(host));
+            if (flatTail.indexOf('ZONE_BET_BOTTOM') === -1 && flatTail.indexOf('BETBOX') === -1)
+                continue;
+            if (domBetSideOfText(hostText) || ownSide)
+                return host;
+        }
+        return null;
+    }
+    function domCollectBetTargetCandidates(doc, source) {
+        var rows = [];
+        if (!doc || !doc.querySelectorAll)
+            return rows;
+        var all = doc.querySelectorAll('body *');
+        for (var i = 0; i < all.length; i++) {
+            var el = all[i];
+            if (!domVisible(el))
+                continue;
+            var host = domBetTargetHostOf(el);
+            if (!host || !domVisible(host))
+                continue;
+            var txt = domTextOf(host) || domTextOf(el);
+            var side = domBetSideOfText(txt) || domBetSideOfText(domTextOf(el));
+            if (!side)
+                continue;
+            var rect = host.getBoundingClientRect();
+            if (rect.top < doc.defaultView.innerHeight * 0.60)
+                continue;
+            if (rect.width < 50 || rect.height < 30)
+                continue;
+            var tail = domTailOf(host);
+            var flatTail = NORM(tail);
+            if (flatTail.indexOf('ZONE_BET_BOTTOM') === -1 && flatTail.indexOf('BETBOX') === -1)
+                continue;
+            var key = side + '|' + Math.round(rect.left / 8) + '|' + Math.round(rect.top / 8);
+            rows.push({
+                side: side,
+                text: txt,
+                x: Math.round(rect.left),
+                y: Math.round(rect.top),
+                w: Math.round(rect.width),
+                h: Math.round(rect.height),
+                source: source,
+                tail: tail,
+                opacity: String(doc.defaultView.getComputedStyle(host).opacity || ''),
+                enabled: Number(doc.defaultView.getComputedStyle(host).opacity || '1') > 0.2,
+                el: host,
+                _key: key
+            });
+        }
+        var bestByKey = {};
+        var keys = [];
+        for (var j = 0; j < rows.length; j++) {
+            var row = rows[j];
+            if (!bestByKey[row._key]) {
+                bestByKey[row._key] = row;
+                keys.push(row._key);
+            } else {
+                var prev = bestByKey[row._key];
+                if ((row.w * row.h) > (prev.w * prev.h))
+                    bestByKey[row._key] = row;
+            }
+        }
+        var out = [];
+        for (var k = 0; k < keys.length; k++)
+            out.push(bestByKey[keys[k]]);
+        out.sort(function (a, b) { return a.y - b.y || a.x - b.x; });
+        return out;
+    }
+    function domPickBestBetTargets() {
+        var contexts = domGetBetContexts();
+        var best = null;
+        for (var i = 0; i < contexts.length; i++) {
+            var ctx = contexts[i];
+            var candidates = domCollectBetTargetCandidates(ctx.doc, ctx.source);
+            if (!candidates.length)
+                continue;
+            var bySide = {};
+            for (var j = 0; j < candidates.length; j++) {
+                var c = candidates[j];
+                var score = 0;
+                score += c.source === 'top/frame[1]' ? 250 : 0;
+                score += c.y > ctx.win.innerHeight * 0.68 ? 200 : 0;
+                score += Math.min(c.w * c.h, 60000) / 400;
+                if (/zone_bet_bottom|betbox/i.test(c.tail))
+                    score += 300;
+                if (/\b1:8\b/.test(c.text) && c.side === 'TIE')
+                    score += 120;
+                if (/\b1:1\b/.test(c.text) && (c.side === 'PLAYER' || c.side === 'BANKER'))
+                    score += 80;
+                c._score = score;
+                if (!bySide[c.side] || score > bySide[c.side]._score)
+                    bySide[c.side] = c;
+            }
+            var sides = ['PLAYER', 'BANKER', 'TIE'];
+            var found = 0;
+            var totalScore = (ctx.score || domScoreRows(ctx.rows || []));
+            for (var s = 0; s < sides.length; s++) {
+                var hit = bySide[sides[s]];
+                if (!hit)
+                    continue;
+                found++;
+                totalScore += hit._score || 0;
+            }
+            totalScore += found * 500;
+            var result = {
+                source: ctx.source,
+                href: ctx.href,
+                score: totalScore,
+                targets: bySide,
+                doc: ctx.doc
+            };
+            if (!best || result.score > best.score)
+                best = result;
+        }
+        return best;
+    }
+    function domLooksLikeConfirmText(text) {
+        var s = NORM(text || '');
+        return s === 'XAC NHAN' || s === 'CONFIRM' || s === 'OK';
+    }
+    function domConfirmHostOf(el) {
+        if (!el || !el.closest)
+            return null;
+        var ownText = domTextOf(el);
+        if (domLooksLikeConfirmText(ownText))
+            return el;
+        var selectors = ['button', 'span', 'p', "[role='button']", '.btn', '.button', '.confirm', '.btn_confirm', '.game_btn', '.zone_bet_bottom button', '.zone_bet_bottom > div', '.zone_bet_bottom > li', '.zone_bet_bottom li'];
+        for (var i = 0; i < selectors.length; i++) {
+            var host = null;
+            try {
+                host = el.closest(selectors[i]);
+            } catch (_) {
+                host = null;
+            }
+            if (!host)
+                continue;
+            var txt = domTextOf(host);
+            if (domLooksLikeConfirmText(txt) || domLooksLikeConfirmText(ownText))
+                return host;
+        }
+        return null;
+    }
+    function domCollectConfirmCandidates(doc, source) {
+        var rows = [];
+        if (!doc || !doc.querySelectorAll)
+            return rows;
+        var all = doc.querySelectorAll('body *');
+        for (var i = 0; i < all.length; i++) {
+            var el = all[i];
+            if (!domVisible(el))
+                continue;
+            var host = domConfirmHostOf(el);
+            if (!host || !domVisible(host))
+                continue;
+            var txt = domTextOf(host) || domTextOf(el);
+            if (!domLooksLikeConfirmText(txt))
+                continue;
+            var rect = host.getBoundingClientRect();
+            if (rect.top < doc.defaultView.innerHeight * 0.70)
+                continue;
+            if (rect.width < 40 || rect.height < 20 || rect.width > 180 || rect.height > 90)
+                continue;
+            var cs = doc.defaultView.getComputedStyle(host);
+            rows.push({
+                text: txt,
+                x: Math.round(rect.left),
+                y: Math.round(rect.top),
+                w: Math.round(rect.width),
+                h: Math.round(rect.height),
+                source: source,
+                opacity: String(cs.opacity || ''),
+                enabled: Number(cs.opacity || '1') > 0.2 && !host.hasAttribute('disabled') && !/true/i.test(String(host.getAttribute('aria-disabled') || '')),
+                tail: domTailOf(host),
+                el: host
+            });
+        }
+        return rows;
+    }
+    function domPickBestConfirm() {
+        var contexts = domGetBetContexts();
+        var best = null;
+        for (var i = 0; i < contexts.length; i++) {
+            var ctx = contexts[i];
+            var candidates = domCollectConfirmCandidates(ctx.doc, ctx.source);
+            for (var j = 0; j < candidates.length; j++) {
+                var c = candidates[j];
+                var score = 0;
+                score += c.source === 'top/frame[1]' ? 300 : 0;
+                score += c.y > ctx.win.innerHeight * 0.78 ? 220 : 0;
+                score += Math.min(c.w * c.h, 40000) / 250;
+                score -= Math.max(0, c.w - 140) * 2;
+                score -= Math.max(0, c.h - 60) * 3;
+                if (/zone_bet_bottom|betbox|confirm|btn/i.test(c.tail))
+                    score += 180;
+                if (domLooksLikeConfirmText(c.text))
+                    score += 260;
+                if (c.enabled)
+                    score += 60;
+                c._score = score;
+                if (!best || score > best._score)
+                    best = {
+                        source: c.source,
+                        href: ctx.href,
+                        doc: ctx.doc,
+                        el: c.el,
+                        x: c.x,
+                        y: c.y,
+                        w: c.w,
+                        h: c.h,
+                        enabled: c.enabled,
+                        text: c.text,
+                        tail: c.tail,
+                        _score: score
+                    };
+            }
+        }
+        return best;
+    }
+    async function domWaitConfirmReady(timeout) {
+        timeout = timeout || 1200;
+        var t0 = Date.now();
+        while ((Date.now() - t0) < timeout) {
+            var c = domPickBestConfirm();
+            if (c && c.enabled)
+                return c;
+            await sleep(80);
+        }
+        return null;
+    }
+    async function domWaitConfirmSettled(timeout) {
+        timeout = timeout || 1400;
+        var t0 = Date.now();
+        while ((Date.now() - t0) < timeout) {
+            await sleep(90);
+            var c = domPickBestConfirm();
+            if (!c || !c.enabled)
+                return true;
+        }
+        return false;
+    }
+    async function domClickConfirmAfterBet() {
+        var confirm = await domWaitConfirmReady(1400);
+        if (!confirm) {
+            console.warn('[cwBet++] không thấy nút xác nhận');
+            return false;
+        }
+        for (var i = 0; i < 3; i++) {
+            console.log('[cwBet++] confirm click', {
+                attempt: i + 1,
+                x: confirm.x,
+                y: confirm.y,
+                w: confirm.w,
+                h: confirm.h,
+                text: confirm.text,
+                source: confirm.source
+            });
+            domFireClick(confirm.el);
+            await sleep(120);
+            if (await domWaitConfirmSettled(1200))
+                return true;
+            confirm = domPickBestConfirm() || confirm;
+        }
+        console.warn('[cwBet++] xác nhận không hoàn tất');
+        return false;
+    }
+    async function domWaitPendingConfirmEnabled(beforeEnabled, timeout) {
+        timeout = timeout || 700;
+        if (beforeEnabled)
+            return false;
+        var confirm = await domWaitConfirmReady(timeout);
+        return !!(confirm && confirm.enabled);
+    }
+
     async function tryOpenChipPanel() {
+        if (!__cw_hasCocos())
+            return false;
         var key = /CHIP|COIN|PHINH|CHON|CHOOSE|MENH|BET/i;
         var cand = null;
         (function walk(n) {
@@ -5121,6 +5727,7 @@
             emitClick(clickableOf(cand));
             await sleep(220);
         }
+        return !!cand;
     }
 
     function wideScan() {
@@ -5346,6 +5953,12 @@
 
     var prevScan = window.cwScanChips;
     window.cwScanChips = function () {
+        if (!__cw_hasCocos()) {
+            var dm = domScanChipMap();
+            if (!Object.keys(dm).length)
+                console.warn('[cwScanChips++] chưa thấy chip DOM.');
+            return dm;
+        }
         var m = scanChipsByTail();
         if (m && Object.keys(m).length)
             return m;
@@ -5379,6 +5992,16 @@
     var prevFocus = window.cwFocusChip;
     window.cwFocusChip = async function (amount) {
         var val = Math.max(0, Math.floor(+amount || 0));
+        if (!__cw_hasCocos()) {
+            if (!DOM_ALLOWED_SET[String(val)] && !ALLOWED_SET[String(val)])
+                throw new Error('M?nh gi  kh?ng h?p l?: ' + amount);
+            var okDom = await domFocusChip(val).catch(function () { return false; });
+            if (okDom)
+                return true;
+            await tryOpenChipPanel();
+            await sleep(180);
+            return !!(await domFocusChip(val).catch(function () { return false; }));
+        }
         if (!ALLOWED_SET[String(val)])
             throw new Error('M?nh gi  kh?ng h?p l?: ' + amount);
         var map = window.cwScanChips() || {};
@@ -5507,8 +6130,12 @@
     function makePlan(X, availableSet) {
         var rest = Math.max(0, Math.floor(+X || 0));
         var plan = [];
-        for (var i = 0; i < DENOMS.length; i++) {
-            var d = DENOMS[i];
+        var denoms = Object.keys(availableSet || {}).map(function (x) { return +x; }).filter(function (x) { return x > 0; });
+        if (!denoms.length)
+            denoms = DENOMS.slice();
+        denoms.sort(function (a, b) { return b - a; });
+        for (var i = 0; i < denoms.length; i++) {
+            var d = denoms[i];
             if (d <= rest && availableSet[d]) {
                 var c = Math.floor(rest / d);
                 if (c > 0) {
@@ -5527,39 +6154,59 @@
     }
 
     window.cwBet = async function (side, amount) {
+        function failBet(reason, detail) {
+            var message = String(reason || 'cwBet failed');
+            window.__cw_lastBetError = message;
+            return {
+                ok: false,
+                error: message,
+                detail: detail || null
+            };
+        }
+        function clearBetError() {
+            window.__cw_lastBetError = '';
+        }
+        clearBetError();
         side = normalizeSide(side);
         if (amount == null || isNaN(amount)) {
             if (old_cwBet)
-                return old_cwBet(side);
+                return await old_cwBet(side);
             var tgt0 = findBetTarget(side);
             if (!tgt0 || !tgt0.node) {
                 console.warn('[cwBet++] không thấy nút cửa:', side);
-                return false;
+                return failBet('bet target not found', { side: side });
             }
             clickBetTarget(tgt0);
             await sleep(80);
+            clearBetError();
             return true;
         }
 
         var raw = Math.max(0, Math.floor(+amount || 0));
         if (!raw) {
             console.warn('[cwBet++] amount=0');
-            return false;
+            return failBet('amount=0', { side: side, amount: raw });
         }
-        var X = raw - (raw % 1000);
 
         return withLock(async function () {
+            clearBetError();
             var tgt = findBetTarget(side);
             if (!tgt || !tgt.node) {
                 console.warn('[cwBet++] không thấy nút cửa:', side);
-                return false;
+                return failBet('bet target not found', { side: side });
+            }
+            var isDomMode = !__cw_hasCocos();
+            var X = isDomMode ? Math.floor(raw / 1000) : (raw - (raw % 1000));
+            if (isDomMode && X <= 0) {
+                console.warn('[cwBet++] amount quá nhỏ cho đơn vị chip DOM', { amount: raw });
+                return failBet('amount too small for dom chip units', { side: side, amount: raw, chipUnits: X });
             }
 
             var map = window.cwScanChips() || {};
             if (!Object.keys(map).length) {
                 await tryOpenChipPanel();
                 await sleep(200);
-                map = wideScan();
+                map = isDomMode ? (window.cwScanChips() || {}) : wideScan();
             }
             var availSet = {};
             var ks = Object.keys(map);
@@ -5567,13 +6214,65 @@
                 availSet[ks[i]] = 1;
             if (!Object.keys(availSet).length) {
                 console.warn('[cwBet++] không thấy chip nào');
-                return false;
+                return failBet('no chips visible', { side: side, amount: raw });
             }
 
             if (availSet[String(X)]) {
-                await window.cwFocusChip(X);
+                var focusOne = false;
+                if (isDomMode) {
+                    focusOne = await domFocusChipInfo(map[String(X)], X).catch(function () {
+                        return false;
+                    });
+                    if (!focusOne) {
+                        focusOne = await window.cwFocusChip(X).catch(function () {
+                            return false;
+                        });
+                    }
+                } else {
+                    focusOne = await window.cwFocusChip(X).catch(function () {
+                        return false;
+                    });
+                }
+                if (!focusOne) {
+                    console.warn('[cwBet++] không focus được chip exact-hit', X);
+                    return failBet('focus exact chip failed', { side: side, amount: raw, chipUnits: X });
+                }
+                var confirmBeforeEnabled = false;
+                if (isDomMode) {
+                    try {
+                        var confirmBefore = domPickBestConfirm();
+                        confirmBeforeEnabled = !!(confirmBefore && confirmBefore.enabled);
+                    } catch (_) {}
+                }
+                var before0 = sampleTotalsNow();
                 clickBetTarget(tgt);
+                var appliedOne = await waitForTotalsChange(before0, side, 1600).catch(function () {
+                    return false;
+                });
+                if (!appliedOne && isDomMode) {
+                    appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 700).catch(function () {
+                        return false;
+                    });
+                }
+                if (!appliedOne) {
+                    console.warn('[cwBet++] click cửa không ghi nhận tiền exact-hit', {
+                        side: side,
+                        amount: X
+                    });
+                    return failBet('bet click not reflected for exact chip', { side: side, amount: raw, chipUnits: X });
+                }
+                if (isDomMode) {
+                    var confirmOne = await domClickConfirmAfterBet();
+                    if (!confirmOne) {
+                        console.warn('[cwBet++] confirm failed', {
+                            side: side,
+                            amount: X
+                        });
+                        return failBet('confirm failed', { side: side, amount: raw, chipUnits: X });
+                    }
+                }
                 await sleep(120);
+                clearBetError();
                 return true;
             }
 
@@ -5590,37 +6289,72 @@
                     X: X,
                     have: haveKeys
                 });
-                return false;
+                return failBet('cannot split amount by visible chips', { side: side, amount: raw, chipUnits: X, have: haveKeys });
             }
             var planStr = [];
             for (var p = 0; p < plan.length; p++) {
                 planStr.push(plan[p].count + '×' + plan[p].val.toLocaleString());
             }
-            console.log('[cwBet++] plan:', planStr.join(' + '));
+            console.log('[cwBet++] plan:', planStr.join(' + '), { amount: raw, chipUnits: X, dom: isDomMode });
 
             for (var s = 0; s < plan.length; s++) {
                 var step = plan[s];
-                var ok = await window.cwFocusChip(step.val).catch(function () {
-                    return false;
-                });
+                var ok = false;
+                if (isDomMode) {
+                    ok = await domFocusChipInfo(map[String(step.val)], step.val).catch(function () {
+                        return false;
+                    });
+                    if (!ok) {
+                        ok = await window.cwFocusChip(step.val).catch(function () {
+                            return false;
+                        });
+                    }
+                } else {
+                    ok = await window.cwFocusChip(step.val).catch(function () {
+                        return false;
+                    });
+                }
                 if (!ok) {
                     console.warn('[cwBet++] không focus được chip', step.val);
-                    return false;
+                    return failBet('focus chip failed', { side: side, amount: raw, chipUnits: step.val });
                 }
                 for (var i2 = 0; i2 < step.count; i2++) {
+                    var beforeStep = sampleTotalsNow();
                     if (!clickBetTarget(tgt))
                         console.warn('[cwBet++] click cửa thất bại', {
                             side: side,
                             denom: step.val,
                             turn: i2 + 1
                         });
+                    var appliedStep = await waitForTotalsChange(beforeStep, side, 1000).catch(function () {
+                        return false;
+                    });
+                    if (!appliedStep) {
+                        console.warn('[cwBet++] click cửa không ghi nhận tiền', {
+                            side: side,
+                            denom: step.val,
+                            turn: i2 + 1
+                        });
+                        return failBet('bet click not reflected', { side: side, amount: raw, chipUnits: step.val, turn: i2 + 1 });
+                    }
                     await sleep(100);
+                }
+            }
+            if (isDomMode) {
+                var confirmOk = await domClickConfirmAfterBet();
+                if (!confirmOk) {
+                    console.warn('[cwBet++] confirm failed', {
+                        side: side,
+                        amount: X
+                    });
+                    return failBet('confirm failed', { side: side, amount: raw, chipUnits: X });
                 }
             }
             console.log('[cwBet++] DONE ►', {
                 side: side,
                 amount: X
             });
+            clearBetError();
             return true;
         });
     };
@@ -6176,7 +6910,11 @@
                         });
                         result = "ok";
                     } else {
-                        var reason = (rawResult && rawResult.error) ? String(rawResult.error) : (rawResult === false ? "cwBet returned false" : ("cwBet returned " + String(rawResult)));
+                        var reason = (rawResult && rawResult.error)
+                            ? String(rawResult.error)
+                            : (rawResult === false
+                                ? (window.__cw_lastBetError || "cwBet returned false")
+                                : ("cwBet returned " + String(rawResult)));
                         safePost({
                             abx: "bet_error",
                             side: job.side,
@@ -6211,17 +6949,19 @@
             try {
                 var job = normalizeIntent(intent);
                 if (!job) return "bad";
-                BET_QUEUE.push(job);
-                processBetQueue();
-                safePost({
-                    abx: "bet_queued",
-                    tabId: job.tabId,
-                    roundId: job.roundId,
-                    side: job.side,
-                    amount: job.amt,
-                    ts: Date.now()
+                return await new Promise(function (resolve) {
+                    job.resolve = resolve;
+                    BET_QUEUE.push(job);
+                    processBetQueue();
+                    safePost({
+                        abx: "bet_queued",
+                        tabId: job.tabId,
+                        roundId: job.roundId,
+                        side: job.side,
+                        amount: job.amt,
+                        ts: Date.now()
+                    });
                 });
-                return "queued";
             } catch (err) {
                 safePost({
                     abx: "bet_error",

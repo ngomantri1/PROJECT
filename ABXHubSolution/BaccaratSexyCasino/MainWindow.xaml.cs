@@ -333,6 +333,7 @@ namespace BaccaratSexyCasino
         // ====== CDP / Packet tap ======
         private bool _cdpNetworkOn = false;
         private readonly ConcurrentDictionary<string, string> _wsUrlByRequestId = new();
+        private readonly ConcurrentDictionary<string, byte> _recordedValidBetKeys = new();
         private readonly string[] _pktInterestingHints = new[] { "wss://", "websocket", "hytsocesk", "xoc", "live", "socket" };
 
         // ==== Auto-login watcher ====
@@ -3071,8 +3072,6 @@ Ví dụ không hợp lệ:
                         lock (_snapLock) _lastSnap = snap;
 
                         string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
-                        if (!string.IsNullOrWhiteSpace(statusUi))
-                            Log("[Tick] status=" + statusUi);
 
                         _ = Dispatcher.BeginInvoke(new Action(() =>
                         {
@@ -3151,11 +3150,38 @@ Ví dụ không hợp lệ:
                 {
                     string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
                     long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
+                    string tabId = root.TryGetProperty("tabId", out var te) ? (te.GetString() ?? "") : "";
+                    long roundId = root.TryGetProperty("roundId", out var re) ? re.GetInt64() : 0;
                     string side = sideRaw.Equals("CHAN", StringComparison.OrdinalIgnoreCase) ? "CHAN"
                                 : sideRaw.Equals("LE", StringComparison.OrdinalIgnoreCase) ? "LE"
                                 : sideRaw.ToUpperInvariant();
 
-                    Log($"[BET] {side} {amount:N0}");
+                    var betKey = $"{tabId}|{roundId}|{side}|{amount}";
+                    if (!_recordedValidBetKeys.TryAdd(betKey, 1))
+                        return;
+                    if (_recordedValidBetKeys.Count > 4096)
+                    {
+                        foreach (var key in _recordedValidBetKeys.Keys.Take(1024).ToList())
+                            _recordedValidBetKeys.TryRemove(key, out _);
+                    }
+
+                    Log($"[BET] {side} {amount:N0} | round={roundId}");
+
+                    var betTab = !string.IsNullOrWhiteSpace(tabId)
+                        ? _strategyTabs.FirstOrDefault(t => string.Equals(t.Id, tabId, StringComparison.Ordinal))
+                        : _activeTab;
+                    betTab ??= _activeTab;
+                    if (betTab != null)
+                    {
+                        var stakeSeq = (betTab.RunStakeSeq != null && betTab.RunStakeSeq.Length > 0)
+                            ? betTab.RunStakeSeq
+                            : (_stakeSeq ?? Array.Empty<long>());
+                        var moneyStrategyId = betTab.Config?.MoneyStrategy ?? _cfg?.MoneyStrategy ?? "IncreaseWhenLose";
+
+                        UpdateTabSide(betTab, side);
+                        UpdateTabStake(betTab, amount, stakeSeq, moneyStrategyId);
+                        RecordValidBet(betTab, amount);
+                    }
 
                     long accNow = 0;
                     try { accNow = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
@@ -3170,6 +3196,8 @@ Ví dụ không hợp lệ:
                         WinLose = "-",
                         Account = accNow
                     };
+
+                    Log($"[BET][HIST] {row.At:HH:mm:ss} | {side} | {amount:N0} | round={roundId} | acc={row.Account:N0}");
 
                     _betAll.Insert(0, row);
                     if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
@@ -4808,6 +4836,111 @@ Ví dụ không hợp lệ:
             _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? 4;
             await SaveConfigAsync();
         }
+
+        private WebView2? GetBetWebView()
+        {
+            if (_popupWeb?.CoreWebView2 != null)
+                return _popupWeb;
+            if (Web?.CoreWebView2 != null)
+                return Web;
+            return null;
+        }
+
+        private string GetBetWebViewName(WebView2? view)
+        {
+            if (ReferenceEquals(view, _popupWeb))
+                return "PopupWeb";
+            if (ReferenceEquals(view, Web))
+                return "Web";
+            return "UnknownWeb";
+        }
+
+        private string GetBetWebViewSource(WebView2? view)
+        {
+            try
+            {
+                return view?.CoreWebView2?.Source ?? "";
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private Task<string> ExecuteOnBetWebAsync(string js)
+        {
+            return Dispatcher.InvokeAsync(async () =>
+            {
+                var target = GetBetWebView();
+                if (target?.CoreWebView2 == null)
+                {
+                    await EnsureWebReadyAsync();
+                    target = GetBetWebView();
+                }
+
+                if (target?.CoreWebView2 == null)
+                    return "";
+
+                return await target.ExecuteScriptAsync(js);
+            }).Task.Unwrap();
+        }
+
+        private async Task<string> ExecuteOnBetWebAwaitResultAsync(string jsExpression, int timeoutMs = 20000)
+        {
+            var id = Guid.NewGuid().ToString("N");
+            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _jsAwaiters[id] = tcs;
+
+            var wrapped =
+                "(function(){" +
+                " try{" +
+                "   var __abx_id=" + JsonSerializer.Serialize(id) + ";" +
+                "   Promise.resolve((function(){ return " + jsExpression + "; })())" +
+                "     .then(function(v){" +
+                "       try {" +
+                "         window.chrome.webview.postMessage(JSON.stringify({ abx:'result', id: __abx_id, value: (v == null ? '' : String(v)) }));" +
+                "       } catch(_) {}" +
+                "     })" +
+                "     .catch(function(e){" +
+                "       try {" +
+                "         window.chrome.webview.postMessage(JSON.stringify({ abx:'result', id: __abx_id, value: 'err:' + (e && e.message ? e.message : String(e)) }));" +
+                "       } catch(_) {}" +
+                "     });" +
+                "   return 'pending';" +
+                " }catch(e){" +
+                "   return 'err:' + (e && e.message ? e.message : String(e));" +
+                " }" +
+                "})();";
+
+            string raw = "";
+            try
+            {
+                raw = await ExecuteOnBetWebAsync(wrapped);
+            }
+            catch
+            {
+                _jsAwaiters.TryRemove(id, out _);
+                throw;
+            }
+
+            var normalized = (raw ?? "").Trim().Trim('"');
+            if (normalized.StartsWith("err:", StringComparison.OrdinalIgnoreCase))
+            {
+                _jsAwaiters.TryRemove(id, out _);
+                return normalized;
+            }
+
+            var completed = await Task.WhenAny(tcs.Task, Task.Delay(timeoutMs));
+            if (completed == tcs.Task)
+            {
+                _jsAwaiters.TryRemove(id, out _);
+                return await tcs.Task;
+            }
+
+            _jsAwaiters.TryRemove(id, out _);
+            return "err:timeout";
+        }
+
         private GameContext BuildContext(StrategyTabState tab, bool useRawWinAmount = false)
         {
             var applyWinTax = !useRawWinAmount;
@@ -4834,7 +4967,8 @@ Ví dụ không hợp lệ:
                 GetSnap = () => { lock (_snapLock) return CloneSnapForTasks(_lastSnap); },
                 GetRawSnap = () => { lock (_snapLock) return _lastSnap; },
                 TabId = tab.Id,
-                EvalJsAsync = (js) => Dispatcher.InvokeAsync(() => Web.ExecuteScriptAsync(js)).Task.Unwrap(),
+                EvalJsAsync = (js) => ExecuteOnBetWebAsync(js),
+                EvalJsAwaitResultAsync = (js) => ExecuteOnBetWebAwaitResultAsync(js),
                 Log = (s) => Log(s),
 
                 StakeSeq = stakeSeqArr,
@@ -5000,12 +5134,21 @@ Ví dụ không hợp lệ:
 
                 await EnsureToolBridgeInjectedAsync();
 
-                var typeBetJson = await Web.ExecuteScriptAsync("typeof window.__cw_bet");
+                var betWeb = GetBetWebView();
+                var typeBetJson = await ExecuteOnBetWebAsync("typeof window.__cw_bet");
                 var typeBet = typeBetJson?.Trim('"');
                 if (!string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
                 {
                     Log("[DEC] Chưa thấy bridge JS (__cw_bet) → tự động 'Xóc Đĩa Live' và inject.");
-                    VaoXocDia_Click(sender, e);
+                    if (_popupWeb?.CoreWebView2 != null)
+                    {
+                        Log($"[DEC] ChÆ°a tháº¥y bridge JS (__cw_bet) trÃªn {GetBetWebViewName(betWeb)} | {GetBetWebViewSource(betWeb)} â†’ reinject popup.");
+                        await InjectOnPopupDocAsync();
+                    }
+                    else
+                    {
+                        VaoXocDia_Click(sender, e);
+                    }
 
                     // Poll chờ bridge sẵn sàng tối đa 30s
                     var t0 = DateTime.UtcNow;
@@ -5015,7 +5158,7 @@ Ví dụ không hợp lệ:
                         await Task.Delay(400);
                         try
                         {
-                            typeBetJson = await Web.ExecuteScriptAsync("typeof window.__cw_bet");
+                            typeBetJson = await ExecuteOnBetWebAsync("typeof window.__cw_bet");
                             typeBet = typeBetJson?.Trim('"');
                             if (string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
                                 break;
@@ -5030,7 +5173,7 @@ Ví dụ không hợp lệ:
                 }
 
                 // Bật kênh push (idempotent)
-                await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
+                await ExecuteOnBetWebAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[CW] ensure push 240ms");
 
                 // 🔒 MỚI: Chờ đủ bridge + Cocos + tick để tránh nổ IndexOutOfRange trong task
@@ -5038,7 +5181,7 @@ Ví dụ không hợp lệ:
                 if (!ready)
                 {
                     Log("[DEC] Dữ liệu chưa sẵn sàng (bridge/cocos/tick). Thử gia hạn push & chờ thêm.");
-                    await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
+                    await ExecuteOnBetWebAsync("window.__cw_startPush && window.__cw_startPush(240);");
                     ready = await WaitForBridgeAndGameDataAsync(15000);
                     if (!ready)
                     {
@@ -5535,8 +5678,6 @@ Ví dụ không hợp lệ:
 
             long rounded = (long)Math.Round(amount);
             tab.LastStakeAmount = rounded;
-            if (rounded > 0)
-                tab.Stats.TotalBetAmount += rounded;
             int levelIndex = Array.FindIndex(stakeSeq, s => s == rounded);
             string levelText = (levelIndex >= 0) ? $"{levelIndex + 1}/{stakeSeq.Length}" : "";
             tab.LastLevelText = levelText;
@@ -5550,6 +5691,19 @@ Ví dụ không hợp lệ:
                 }
                 UpdateStatsUi(tab);
             }
+            _ = SaveStatsAsync();
+        }
+
+        private void RecordValidBet(StrategyTabState tab, long amount)
+        {
+            if (tab == null) return;
+
+            long rounded = Math.Max(0, amount);
+            if (rounded <= 0) return;
+
+            tab.Stats.TotalBetAmount += rounded;
+            if (ReferenceEquals(_activeTab, tab))
+                UpdateStatsUi(tab);
             _ = SaveStatsAsync();
         }
 
@@ -6102,7 +6256,20 @@ Ví dụ không hợp lệ:
             await EnsureWebReadyAsync();
             await EnsureBridgeRegisteredAsync();
             await InjectOnNewDocAsync();
-            Log("[Bridge] Explicit tool injection requested.");
+            if (_popupWeb != null)
+            {
+                try
+                {
+                    await EnsurePopupWebReadyAsync();
+                    await InjectOnPopupDocAsync();
+                }
+                catch (Exception ex)
+                {
+                    Log("[Bridge.PopupInject] " + ex.Message);
+                }
+            }
+            var target = GetBetWebView();
+            Log("[Bridge] Explicit tool injection requested on " + GetBetWebViewName(target) + " | " + GetBetWebViewSource(target));
         }
 
 
@@ -6204,22 +6371,19 @@ Ví dụ không hợp lệ:
                 try
                 {
                     // 1) __cw_bet có chưa
-                    var typeBet = (await Web.ExecuteScriptAsync("typeof window.__cw_bet"))?.Trim('"');
+                    var typeBet = (await ExecuteOnBetWebAsync("typeof window.__cw_bet"))?.Trim('"');
                     bool hasBet = string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase);
 
-                    // 2) Cocos có chưa
-                    var cocosJson = await Web.ExecuteScriptAsync(
-                        "(function(){try{return !!(window.cc && cc.director && cc.director.getScene);}catch(e){return false;}})()");
-                    bool hasCocos = bool.TryParse(cocosJson, out var b) && b;
-
-                    // 3) Đã có tick chưa (ít nhất 1 ký tự seq)
+                    // 2) Đã có tick chưa (ít nhất có seq hoặc status)
                     bool hasTick = false;
                     lock (_snapLock)
                     {
-                        hasTick = _lastSnap?.seq != null && _lastSnap.seq.Length > 0;
+                        hasTick =
+                            (_lastSnap?.seq != null && _lastSnap.seq.Length > 0) ||
+                            !string.IsNullOrWhiteSpace(_lastSnap?.status);
                     }
 
-                    if (hasBet && hasCocos && hasTick)
+                    if (hasBet && hasTick)
                         return true;
                 }
                 catch { /* tiếp tục đợi */ }
