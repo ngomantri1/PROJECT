@@ -58,14 +58,6 @@
           }
         }
       },
-      "ABX.Core/1.0.0": {
-        "runtime": {
-          "ABX.Core.dll": {
-            "assemblyVersion": "1.0.0.0",
-            "fileVersion": "1.0.0.0"
-          }
-        }
-      },
       "Microsoft.Web.WebView2.Core/1.0.3485.44": {
         "runtime": {
           "Microsoft.Web.WebView2.Core.dll": {
@@ -118,11 +110,6 @@
       "sha512": "sha512-jrK22i5LRzxZCfGb+tGmke2VH7oE0DvcDlJ1HAKYU8cPmD8XnpUT0bYn2Gy98GEhGjtfbR/sxKTVb+dE770pfA==",
       "path": "system.management/8.0.0",
       "hashPath": "system.management.8.0.0.nupkg.sha512"
-    },
-    "ABX.Core/1.0.0": {
-      "type": "project",
-      "serviceable": false,
-      "sha512": ""
     },
     "Microsoft.Web.WebView2.Core/1.0.3485.44": {
       "type": "reference",

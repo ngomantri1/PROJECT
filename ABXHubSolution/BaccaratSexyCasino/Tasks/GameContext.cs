@@ -68,6 +68,7 @@ namespace BaccaratSexyCasino.Tasks
         // --- UI updaters (được gán từ MainWindow) ---
         public Action<string>? UiSetSide;     // "BANKER"/"PLAYER"
         public Action<double>? UiSetStake;    // tiền đang đánh
+        public Action<string, long, long>? UiRecordBetIssued; // optimistic: vừa gửi bet xuống JS là ghi nhận ngay
         public Action<double>? UiAddWin;      // cộng/trừ tiền thắng lũy kế
         public Action<bool>? UiWinLoss;       // true = win, false = loss
         public Action<string?>? UiSetWinLossText; // "Hòa" hoặc text khác nếu cần

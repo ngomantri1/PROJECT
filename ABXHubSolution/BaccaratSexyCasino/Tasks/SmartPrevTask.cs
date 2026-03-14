@@ -71,7 +71,12 @@ namespace BaccaratSexyCasino.Tasks
                 {
                     stake = money.GetStakeForThisBet();
                 }
-                await PlaceBet(ctx, side, stake, ct);
+                var placed = await PlaceBet(ctx, side, stake, ct);
+                if (!placed)
+                {
+                    await Task.Delay(250, ct);
+                    continue;
+                }
 
                 bool? win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
                 var netDelta = CalcNetDelta(side, stake, win);

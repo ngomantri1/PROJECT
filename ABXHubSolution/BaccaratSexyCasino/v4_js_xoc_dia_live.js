@@ -5108,6 +5108,8 @@
         if (!tgt || !tgt.node)
             return false;
         if (tgt.dom && tgt.el && tgt.el.ownerDocument) {
+            if (domClickTargetRect(tgt))
+                return true;
             return domFireClick(tgt.el);
         }
         var node = tgt.node;
@@ -5188,8 +5190,49 @@
             try { el.dispatchEvent(new win.PointerEvent('pointerup', opts)); } catch (_) {}
             try { el.dispatchEvent(new win.MouseEvent('mouseup', opts)); } catch (_) {}
             try { el.dispatchEvent(new win.MouseEvent('click', opts)); } catch (_) {}
-            try { typeof el.click === 'function' && el.click(); } catch (_) {}
             return true;
+        } catch (_) {
+            return false;
+        }
+    }
+    function domFireClickAtPoint(doc, x, y) {
+        try {
+            if (!doc || !doc.elementFromPoint)
+                return false;
+            var el = doc.elementFromPoint(x, y);
+            if (!el)
+                return false;
+            var win = doc.defaultView || window;
+            var opts = {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                clientX: x,
+                clientY: y,
+                button: 0,
+                buttons: 1
+            };
+            try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (_) {}
+            try { el.focus && el.focus(); } catch (_) {}
+            try { el.dispatchEvent(new win.PointerEvent('pointerdown', opts)); } catch (_) {}
+            try { el.dispatchEvent(new win.MouseEvent('mousedown', opts)); } catch (_) {}
+            try { el.dispatchEvent(new win.PointerEvent('pointerup', opts)); } catch (_) {}
+            try { el.dispatchEvent(new win.MouseEvent('mouseup', opts)); } catch (_) {}
+            try { el.dispatchEvent(new win.MouseEvent('click', opts)); } catch (_) {}
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+    function domClickTargetRect(tgt) {
+        try {
+            var doc = tgt && tgt.el && tgt.el.ownerDocument ? tgt.el.ownerDocument : null;
+            var rect = tgt && tgt.rect ? tgt.rect : null;
+            if (!doc || !rect)
+                return false;
+            var px = rect.x + rect.w * 0.50;
+            var py = rect.y + rect.h * 0.50;
+            return domFireClickAtPoint(doc, px, py);
         } catch (_) {
             return false;
         }
@@ -5652,7 +5695,7 @@
             var c = domPickBestConfirm();
             if (c && c.enabled)
                 return c;
-            await sleep(80);
+            await sleep(50);
         }
         return null;
     }
@@ -5660,7 +5703,7 @@
         timeout = timeout || 1400;
         var t0 = Date.now();
         while ((Date.now() - t0) < timeout) {
-            await sleep(90);
+            await sleep(60);
             var c = domPickBestConfirm();
             if (!c || !c.enabled)
                 return true;
@@ -5668,7 +5711,7 @@
         return false;
     }
     async function domClickConfirmAfterBet() {
-        var confirm = await domWaitConfirmReady(1400);
+        var confirm = await domWaitConfirmReady(900);
         if (!confirm) {
             console.warn('[cwBet++] không thấy nút xác nhận');
             return false;
@@ -5684,8 +5727,8 @@
                 source: confirm.source
             });
             domFireClick(confirm.el);
-            await sleep(120);
-            if (await domWaitConfirmSettled(1200))
+            await sleep(60);
+            if (await domWaitConfirmSettled(800))
                 return true;
             confirm = domPickBestConfirm() || confirm;
         }
@@ -6245,16 +6288,16 @@
                     } catch (_) {}
                 }
                 var before0 = sampleTotalsNow();
-                clickBetTarget(tgt);
+                var targetClickedOne = clickBetTarget(tgt);
                 var appliedOne = await waitForTotalsChange(before0, side, 1600).catch(function () {
                     return false;
                 });
                 if (!appliedOne && isDomMode) {
-                    appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 700).catch(function () {
+                    appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 450).catch(function () {
                         return false;
                     });
                 }
-                if (!appliedOne) {
+                if (!appliedOne && !isDomMode) {
                     console.warn('[cwBet++] click cửa không ghi nhận tiền exact-hit', {
                         side: side,
                         amount: X
@@ -6264,6 +6307,14 @@
                 if (isDomMode) {
                     var confirmOne = await domClickConfirmAfterBet();
                     if (!confirmOne) {
+                        if (!appliedOne) {
+                            console.warn('[cwBet++] click cửa không ghi nhận tiền exact-hit', {
+                                side: side,
+                                amount: X,
+                                targetClicked: !!targetClickedOne
+                            });
+                            return failBet('bet click not reflected for exact chip', { side: side, amount: raw, chipUnits: X, targetClicked: !!targetClickedOne });
+                        }
                         console.warn('[cwBet++] confirm failed', {
                             side: side,
                             amount: X
@@ -6271,7 +6322,7 @@
                         return failBet('confirm failed', { side: side, amount: raw, chipUnits: X });
                     }
                 }
-                await sleep(120);
+                await sleep(50);
                 clearBetError();
                 return true;
             }
@@ -6320,7 +6371,8 @@
                 }
                 for (var i2 = 0; i2 < step.count; i2++) {
                     var beforeStep = sampleTotalsNow();
-                    if (!clickBetTarget(tgt))
+                    var targetClickedStep = clickBetTarget(tgt);
+                    if (!targetClickedStep)
                         console.warn('[cwBet++] click cửa thất bại', {
                             side: side,
                             denom: step.val,
@@ -6330,14 +6382,16 @@
                         return false;
                     });
                     if (!appliedStep) {
-                        console.warn('[cwBet++] click cửa không ghi nhận tiền', {
-                            side: side,
-                            denom: step.val,
-                            turn: i2 + 1
-                        });
-                        return failBet('bet click not reflected', { side: side, amount: raw, chipUnits: step.val, turn: i2 + 1 });
+                        if (!isDomMode) {
+                            console.warn('[cwBet++] click cửa không ghi nhận tiền', {
+                                side: side,
+                                denom: step.val,
+                                turn: i2 + 1
+                            });
+                            return failBet('bet click not reflected', { side: side, amount: raw, chipUnits: step.val, turn: i2 + 1 });
+                        }
                     }
-                    await sleep(100);
+                    await sleep(50);
                 }
             }
             if (isDomMode) {
@@ -6445,6 +6499,34 @@
             return '';
         }
     }
+    function foldStatusText(s) {
+        try {
+            return String(s || '')
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        } catch (_) {
+            return String(s || '').toLowerCase().trim();
+        }
+    }
+    function domStatusImpliesClosed(statusText) {
+        var s = foldStatusText(statusText);
+        if (!s)
+            return false;
+        if (s.indexOf('mo bai') !== -1)
+            return true;
+        if (s.indexOf('ket qua') !== -1)
+            return true;
+        if (s.indexOf('cho van sau') !== -1)
+            return true;
+        if (s.indexOf('tam dung nhan cuoc') !== -1)
+            return true;
+        if (s.indexOf('da dong cua dat cuoc') !== -1)
+            return true;
+        return false;
+    }
     function statusByProg(p) {
         if (!__cw_hasCocos()) {
             try {
@@ -6511,9 +6593,12 @@
 
     function tick() {
         var p = collectProgress();
+        var st = statusByProg(p == null ? null : p);
+        if (!__cw_hasCocos() && domStatusImpliesClosed(st))
+            p = 0;
         if (p != null)
             S.prog = p;
-        S.status = statusByProg(p == null ? null : p);
+        S.status = st;
         var T = totals(S);
         S._lastTotals = T;
 
@@ -6806,6 +6891,8 @@
                     var p = readProgressVal(); // lấy progress hiện tại
                     var st = (typeof statusByProg === 'function') // tính status theo rule mới
                      ? statusByProg(p) : '';
+                    if (!__cw_hasCocos() && domStatusImpliesClosed(st))
+                        p = 0;
                     var snap = {
                         abx: 'tick',
                         prog: p,
@@ -6915,27 +7002,9 @@
                             : (rawResult === false
                                 ? (window.__cw_lastBetError || "cwBet returned false")
                                 : ("cwBet returned " + String(rawResult)));
-                        safePost({
-                            abx: "bet_error",
-                            side: job.side,
-                            amount: job.amt,
-                            tabId: job.tabId,
-                            roundId: job.roundId,
-                            error: reason,
-                            ts: Date.now()
-                        });
                         result = "fail:" + reason;
                     }
                 } catch (err) {
-                    safePost({
-                        abx: "bet_error",
-                        side: job.side,
-                        amount: job.amt,
-                        tabId: job.tabId,
-                        roundId: job.roundId,
-                        error: String(err && err.message || err),
-                        ts: Date.now()
-                    });
                     result = "fail:" + String(err && err.message || err);
                 }
                 if (typeof job.resolve === "function") {
@@ -6963,13 +7032,6 @@
                     });
                 });
             } catch (err) {
-                safePost({
-                    abx: "bet_error",
-                    side: (intent && intent.side) ? intent.side : "?",
-                    amount: (intent && intent.amount) ? intent.amount : 0,
-                    error: String(err && err.message || err),
-                    ts: Date.now()
-                });
                 return "fail:" + String(err && err.message || err);
             }
         };
@@ -6986,13 +7048,6 @@
             try {
                 return String(await window.__cw_bet_enqueue({ side: side, amount: amount }));
             } catch (err) {
-                safePost({
-                    abx: "bet_error",
-                    side: side,
-                    amount: amount,
-                    error: String(err && err.message || err),
-                    ts: Date.now()
-                });
                 return "fail:" + String(err && err.message || err);
             }
         };

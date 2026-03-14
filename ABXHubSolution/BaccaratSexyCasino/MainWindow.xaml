@@ -32,6 +32,8 @@
         <!--  (tuỳ chọn) Brush dùng cho badge khi fallback chữ  -->
         <SolidColorBrush x:Key="WinBg" Color="#EBF5E9" />
         <SolidColorBrush x:Key="LossBg" Color="#FDECEC" />
+        <SolidColorBrush x:Key="PendingBg" Color="#FFF6D8" />
+        <SolidColorBrush x:Key="PendingText" Color="#A05A00" />
 
 
         <!--  Palette  -->
@@ -2027,6 +2029,10 @@
                                                                 <Setter TargetName="ImgKq" Property="Visibility" Value="Collapsed" />
                                                                 <Setter TargetName="TxtKq" Property="Visibility" Value="Visible" />
                                                             </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Result}" Value="Chờ">
+                                                                <Setter TargetName="TxtKq" Property="Foreground" Value="{StaticResource PendingText}" />
+                                                                <Setter TargetName="TxtKq" Property="FontWeight" Value="SemiBold" />
+                                                            </DataTrigger>
                                                         </DataTemplate.Triggers>
                                                     </DataTemplate>
                                                 </DataGridTemplateColumn.CellTemplate>
@@ -2064,6 +2070,11 @@
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding WinLose}" Value="Thua">
                                                                 <Setter TargetName="Badge" Property="Background" Value="{StaticResource LossBg}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding WinLose}" Value="Đang chờ">
+                                                                <Setter TargetName="Badge" Property="Background" Value="{StaticResource PendingBg}" />
+                                                                <Setter TargetName="TxtWL" Property="Foreground" Value="{StaticResource PendingText}" />
+                                                                <Setter TargetName="TxtWL" Property="FontWeight" Value="SemiBold" />
                                                             </DataTrigger>
                                                         </DataTemplate.Triggers>
                                                     </DataTemplate>

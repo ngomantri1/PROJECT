@@ -731,6 +731,12 @@ Ví dụ không hợp lệ:
             public string Result { get; set; } = "";         // Kết quả "CHAN"/"LE"
             public string WinLose { get; set; } = "";        // "Thắng"/"Thua"
             public long Account { get; set; }                // Số dư sau ván
+            public string IssuedSeqDisplay { get; set; } = "";
+            public string IssuedSeqCalc { get; set; } = "";
+            public long IssuedTotalB { get; set; }
+            public long IssuedTotalP { get; set; }
+            public long IssuedTotalT { get; set; }
+            public bool SawClosedAfterIssue { get; set; }
         }
 
         public static class SharedIcons
@@ -785,6 +791,13 @@ Ví dụ không hợp lệ:
         private bool _popupDevToolsOpened;
         private string? _popupLastDocKey;
         private WebView2? _popupWeb;
+        private int _popupTickPullBusy = 0;
+        private DateTime _lastDiagWebMsgUtc = DateTime.MinValue;
+        private DateTime _lastDiagTickUtc = DateTime.MinValue;
+        private DateTime _lastDiagTickDropUtc = DateTime.MinValue;
+        private DateTime _lastDiagPullUtc = DateTime.MinValue;
+        private DateTime _lastDiagPullEmptyUtc = DateTime.MinValue;
+        private DateTime _lastDiagGameHintUtc = DateTime.MinValue;
         private const string Wv2ZipResNameX64 = "BaccaratSexyCasino.ThirdParty.WebView2Fixed_win-x64.zip";
         // Thư mục cache bền vững cho runtime (không bị dọn như %TEMP%)
         private static string Wv2BaseDir =>
@@ -861,6 +874,50 @@ Ví dụ không hợp lệ:
     })();
   }catch(_){}
 })();";
+
+        private const string START_PUSH_NOW = @"
+try{
+  try{
+    if (window.__cw_startPush){
+      window.__cw_startPush(240);
+    }
+  }catch(_){}
+  try{
+    for (var i=0;i<window.frames.length;i++){
+      try{
+        var w = window.frames[i];
+        if (w && w.__cw_startPush){
+          w.__cw_startPush(240);
+        }
+      }catch(_){}
+    }
+  }catch(_){}
+}catch(_){}";
+
+        private const string PULL_POPUP_TICK_NOW = @"
+  (function(){
+    try{
+      var p = (typeof readProgressVal === 'function') ? readProgressVal() : null;
+      var st = (typeof statusByProg === 'function') ? statusByProg(p) : '';
+      try{
+        if (typeof __cw_hasCocos === 'function' && !__cw_hasCocos() &&
+            typeof domStatusImpliesClosed === 'function' && domStatusImpliesClosed(st)){
+          p = 0;
+        }
+      }catch(_){}
+      var t = null;
+      try{ t = (typeof readTotalsSafe === 'function') ? readTotalsSafe() : null; }catch(_){}
+      var seq = '';
+      try{ seq = (typeof readSeqSafe === 'function') ? (readSeqSafe() || '') : ''; }catch(_){}
+      var uname = '';
+      try{
+        if (t && t.N != null) uname = String(t.N || '');
+      }catch(_){}
+      return JSON.stringify({ abx:'tick', prog:p, totals:t, seq:seq, username:uname, status:String(st || ''), ts:Date.now() });
+    }catch(_){
+      return '';
+    }
+  })();";
 
         // Guard chống re-entrancy (đặt ở class level)
         private bool _ensuringWeb = false;
@@ -2537,6 +2594,7 @@ Ví dụ không hợp lệ:
                     _uiModeTimer.Tick += (_, __) =>
                     {
                         try { RecomputeUiMode(); } catch { /* ignore */ }
+                        _ = TryPullPopupTickFallbackAsync();
                     };
                     _uiModeTimer.Start();
                     RecomputeUiMode();
@@ -2933,8 +2991,10 @@ Ví dụ không hợp lệ:
                 if (!string.IsNullOrEmpty(_appJs))
                     await _popupWeb.CoreWebView2.ExecuteScriptAsync(_appJs);
                 await _popupWeb.CoreWebView2.ExecuteScriptAsync(FRAME_AUTOSTART);
+                await _popupWeb.CoreWebView2.ExecuteScriptAsync(START_PUSH_NOW);
                 _popupLastDocKey = key;
                 Log("[PopupWeb] bridge injected, key=" + key);
+                Log("[PopupWeb] ensure push 240ms");
             }
         }
 
@@ -2944,7 +3004,24 @@ Ví dụ không hợp lệ:
             {
                 var msg = e.TryGetWebMessageAsString() ?? "";
                 if (string.IsNullOrWhiteSpace(msg)) return;
-                await HandleIncomingWebMessageAsync(msg);
+                var now = DateTime.UtcNow;
+                if ((now - _lastDiagWebMsgUtc).TotalMilliseconds >= 1500)
+                {
+                    string src = ReferenceEquals(sender, _popupWeb?.CoreWebView2) ? "popup-top"
+                                : ReferenceEquals(sender, Web?.CoreWebView2) ? "main-top"
+                                : "unknown";
+                    string abx = "";
+                    try
+                    {
+                        using var diagDoc = JsonDocument.Parse(msg);
+                        if (diagDoc.RootElement.TryGetProperty("abx", out var abxEl))
+                            abx = abxEl.GetString() ?? "";
+                    }
+                    catch { }
+                    Log($"[DIAG][MSG] src={src} abx={abx} len={msg.Length}");
+                    _lastDiagWebMsgUtc = now;
+                }
+                await HandleIncomingWebMessageAsync(msg, ReferenceEquals(sender, _popupWeb?.CoreWebView2) ? "popup-msg" : "main-msg");
             }
             catch (Exception ex)
             {
@@ -2952,7 +3029,7 @@ Ví dụ không hợp lệ:
             }
         }
 
-        private async Task HandleIncomingWebMessageAsync(string msg)
+        private async Task HandleIncomingWebMessageAsync(string msg, string source = "direct")
         {
             if (string.IsNullOrWhiteSpace(msg)) return;
 
@@ -2983,6 +3060,48 @@ Ví dụ không hợp lệ:
                     var snap = JsonSerializer.Deserialize<CwSnapshot>(msg);
                     if (snap != null)
                     {
+                        string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
+                        var seqDisplayRaw = snap.seq ?? "";
+                        var totalsNow = snap.totals;
+                        bool hasSeqData = !string.IsNullOrWhiteSpace(seqDisplayRaw);
+                        bool hasTotalsData = totalsNow != null &&
+                                             (!string.IsNullOrWhiteSpace(totalsNow.N) ||
+                                              totalsNow.A != 0 ||
+                                              totalsNow.B != 0 ||
+                                              totalsNow.P != 0 ||
+                                              totalsNow.T != 0);
+                        bool hasRoundTotals = totalsNow != null &&
+                                              ((totalsNow.B ?? 0) != 0 ||
+                                               (totalsNow.P ?? 0) != 0 ||
+                                               (totalsNow.T ?? 0) != 0);
+                        bool isPlaceholderDomTick =
+                            !hasSeqData &&
+                            !hasRoundTotals &&
+                            statusUi.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase);
+                        if (isPlaceholderDomTick)
+                        {
+                            var now = DateTime.UtcNow;
+                            if ((now - _lastDiagTickDropUtc).TotalMilliseconds >= 1200)
+                            {
+                                Log($"[DIAG][TICK][DROP] src={source} status={statusUi} seqLen={seqDisplayRaw.Length} hasTotals={hasTotalsData}");
+                                _lastDiagTickDropUtc = now;
+                            }
+                            return;
+                        }
+
+                        {
+                            var now = DateTime.UtcNow;
+                            if ((now - _lastDiagTickUtc).TotalMilliseconds >= 1500)
+                            {
+                                var userDiag = !string.IsNullOrWhiteSpace(snap?.totals?.N) ? snap.totals.N
+                                            : !string.IsNullOrWhiteSpace(snap?.username) ? snap.username
+                                            : "-";
+                                var balDiag = snap?.totals?.A;
+                                Log($"[DIAG][TICK][OK] src={source} status={statusUi} prog={snap?.prog?.ToString() ?? "-"} seqLen={seqDisplayRaw.Length} user={userDiag} bal={(balDiag.HasValue ? balDiag.Value.ToString(CultureInfo.InvariantCulture) : "-")}");
+                                _lastDiagTickUtc = now;
+                            }
+                        }
+
                         try
                         {
                             var userVal = snap.username ?? "";
@@ -3061,6 +3180,7 @@ Ví dụ không hợp lệ:
                                     _baseSeqDisplay = seqDisplay;
                                     _roundTotalsB = snap.totals?.B ?? 0;
                                     _roundTotalsP = snap.totals?.P ?? 0;
+                                    MarkPendingRowsClosed();
                                     if (_roundTotalsB != 0 && _roundTotalsP != 0)
                                         _lockMajorMinorUpdates = true;
                                 }
@@ -3070,8 +3190,6 @@ Ví dụ không hợp lệ:
 
                         snap.niSeq = _niSeq.ToString();
                         lock (_snapLock) _lastSnap = snap;
-
-                        string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
 
                         _ = Dispatcher.BeginInvoke(new Action(() =>
                         {
@@ -3142,6 +3260,12 @@ Ví dụ không hợp lệ:
                 if (abxStr == "game_hint")
                 {
                     _lastGameTickUtc = DateTime.UtcNow;
+                    var now = DateTime.UtcNow;
+                    if ((now - _lastDiagGameHintUtc).TotalMilliseconds >= 1500)
+                    {
+                        Log($"[DIAG][HINT] src={source}");
+                        _lastDiagGameHintUtc = now;
+                    }
                     _ = Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(true)));
                     return;
                 }
@@ -3152,6 +3276,8 @@ Ví dụ không hợp lệ:
                     long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
                     string tabId = root.TryGetProperty("tabId", out var te) ? (te.GetString() ?? "") : "";
                     long roundId = root.TryGetProperty("roundId", out var re) ? re.GetInt64() : 0;
+                    RecordBetIssuedUi(null, tabId, sideRaw, amount, roundId);
+                    return;
                     string side = sideRaw.Equals("CHAN", StringComparison.OrdinalIgnoreCase) ? "CHAN"
                                 : sideRaw.Equals("LE", StringComparison.OrdinalIgnoreCase) ? "LE"
                                 : sideRaw.ToUpperInvariant();
@@ -3197,7 +3323,7 @@ Ví dụ không hợp lệ:
                         Account = accNow
                     };
 
-                    Log($"[BET][HIST] {row.At:HH:mm:ss} | {side} | {amount:N0} | round={roundId} | acc={row.Account:N0}");
+                    Log($"[BET][HIST][PENDING] {row.At:HH:mm:ss} | {side} | {amount:N0} | round={roundId} | acc={row.Account:N0}");
 
                     _betAll.Insert(0, row);
                     if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
@@ -3211,10 +3337,7 @@ Ví dụ không hợp lệ:
 
                 if (abxStr == "bet_error")
                 {
-                    string side = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "?") : "?";
-                    long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
-                    string error = root.TryGetProperty("error", out var ee) ? (ee.GetString() ?? "") : "";
-                    Log($"[BET][ERR] {side} {amount} :: {error}");
+                    // Optimistic mode: đã gửi bet xuống JS thì không quan tâm kết quả click DOM thật.
                     return;
                 }
 
@@ -3292,6 +3415,8 @@ Ví dụ không hợp lệ:
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
+                _ = f.ExecuteScriptAsync(START_PUSH_NOW);
+                f.WebMessageReceived += PopupFrame_WebMessageReceived;
                 f.DOMContentLoaded += Frame_DOMContentLoaded_Bridge;
                 f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
                 Log("[PopupWeb] frame bridge armed.");
@@ -4867,6 +4992,34 @@ Ví dụ không hợp lệ:
             }
         }
 
+        private async void PopupFrame_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+        {
+            try
+            {
+                var msg = e.TryGetWebMessageAsString() ?? "";
+                if (string.IsNullOrWhiteSpace(msg)) return;
+                var now = DateTime.UtcNow;
+                if ((now - _lastDiagWebMsgUtc).TotalMilliseconds >= 1500)
+                {
+                    string abx = "";
+                    try
+                    {
+                        using var diagDoc = JsonDocument.Parse(msg);
+                        if (diagDoc.RootElement.TryGetProperty("abx", out var abxEl))
+                            abx = abxEl.GetString() ?? "";
+                    }
+                    catch { }
+                    Log($"[DIAG][MSG] src=popup-frame abx={abx} len={msg.Length}");
+                    _lastDiagWebMsgUtc = now;
+                }
+                await HandleIncomingWebMessageAsync(msg, "popup-frame");
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupFrame.WebMessageReceived] " + ex);
+            }
+        }
+
         private Task<string> ExecuteOnBetWebAsync(string js)
         {
             return Dispatcher.InvokeAsync(async () =>
@@ -5005,6 +5158,16 @@ Ví dụ không hợp lệ:
                 {
                     UpdateTabStake(tab, v, stakeSeqArr, moneyStrategyId);
                 }),
+                UiRecordBetIssued = (side, amount, roundId) =>
+                {
+                    void Apply()
+                    {
+                        RecordBetIssuedUi(tab, tab.Id, side, amount, roundId);
+                    }
+
+                    if (Dispatcher.CheckAccess()) Apply();
+                    else Dispatcher.Invoke(Apply);
+                },
 
                 UiAddWin = delta =>
                 {
@@ -5026,6 +5189,92 @@ Ví dụ không hợp lệ:
                     UpdateTabWinLossText(tab, text);
                 }),
             };
+        }
+
+        private bool TryRegisterBetIssued(string tabId, long roundId, string side, long amount)
+        {
+            var betKey = $"{tabId}|{roundId}|{side}|{amount}";
+            if (!_recordedValidBetKeys.TryAdd(betKey, 1))
+                return false;
+
+            if (_recordedValidBetKeys.Count > 4096)
+            {
+                foreach (var key in _recordedValidBetKeys.Keys.Take(1024).ToList())
+                    _recordedValidBetKeys.TryRemove(key, out _);
+            }
+
+            return true;
+        }
+
+        private StrategyTabState? ResolveBetTab(string? tabId)
+        {
+            var betTab = !string.IsNullOrWhiteSpace(tabId)
+                ? _strategyTabs.FirstOrDefault(t => string.Equals(t.Id, tabId, StringComparison.Ordinal))
+                : _activeTab;
+            return betTab ?? _activeTab;
+        }
+
+        private void RecordBetIssuedUi(StrategyTabState? betTab, string? tabId, string sideRaw, long amount, long roundId)
+        {
+            string side = sideRaw.Equals("CHAN", StringComparison.OrdinalIgnoreCase) ? "CHAN"
+                        : sideRaw.Equals("LE", StringComparison.OrdinalIgnoreCase) ? "LE"
+                        : sideRaw.ToUpperInvariant();
+            string tabKey = tabId ?? "";
+            CwSnapshot? issuedSnap;
+            lock (_snapLock) issuedSnap = _lastSnap;
+            var issuedSeqDisplay = issuedSnap?.seq ?? "";
+            var issuedSeqCalc = FilterPlayableSeq(issuedSeqDisplay);
+            var issuedTotalB = issuedSnap?.totals?.B ?? 0;
+            var issuedTotalP = issuedSnap?.totals?.P ?? 0;
+            var issuedTotalT = issuedSnap?.totals?.T ?? 0;
+
+            if (!TryRegisterBetIssued(tabKey, roundId, side, amount))
+                return;
+
+            Log($"[BET] {side} {amount:N0} | round={roundId}");
+
+            betTab ??= ResolveBetTab(tabId);
+            if (betTab != null)
+            {
+                var stakeSeq = (betTab.RunStakeSeq != null && betTab.RunStakeSeq.Length > 0)
+                    ? betTab.RunStakeSeq
+                    : (_stakeSeq ?? Array.Empty<long>());
+                var moneyStrategyId = betTab.Config?.MoneyStrategy ?? _cfg?.MoneyStrategy ?? "IncreaseWhenLose";
+
+                UpdateTabSide(betTab, side);
+                UpdateTabStake(betTab, amount, stakeSeq, moneyStrategyId);
+                RecordValidBet(betTab, amount);
+            }
+
+            long accNow = 0;
+            try { accNow = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
+
+            var row = new BetRow
+            {
+                At = DateTime.Now,
+                Game = "Baccarat Sexy",
+                Stake = amount,
+                Side = side,
+                Result = "Chờ",
+                WinLose = "Đang chờ",
+                Account = accNow,
+                IssuedSeqDisplay = issuedSeqDisplay,
+                IssuedSeqCalc = issuedSeqCalc,
+                IssuedTotalB = issuedTotalB,
+                IssuedTotalP = issuedTotalP,
+                IssuedTotalT = issuedTotalT,
+                SawClosedAfterIssue = false
+            };
+
+            Log($"[BET][HIST][PENDING] {row.At:HH:mm:ss} | {side} | {amount:N0} | round={roundId} | acc={row.Account:N0}");
+
+            _betAll.Insert(0, row);
+            if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
+            _pendingRows.Add(row);
+            if (_autoFollowNewest)
+                ShowFirstPage();
+            else
+                RefreshCurrentPage();
         }
 
         private async Task StartTaskAsync(StrategyTabState tab, IBetTask task, CancellationToken ct, bool useRawWinAmount = false)
@@ -6332,6 +6581,7 @@ Ví dụ không hợp lệ:
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
+                _ = f.ExecuteScriptAsync(START_PUSH_NOW);
 
                 Log("[Bridge] Frame DOMContentLoaded -> reinjected + autostart.");
             }
@@ -6353,12 +6603,48 @@ Ví dụ không hợp lệ:
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
+                _ = f.ExecuteScriptAsync(START_PUSH_NOW);
 
                 Log("[Bridge] Frame NavigationCompleted -> reinjected + autostart.");
             }
             catch (Exception ex)
             {
                 Log("[Bridge.Frame NavigationCompleted] " + ex.Message);
+            }
+        }
+
+        private async Task TryPullPopupTickFallbackAsync()
+        {
+            if (_popupWeb?.CoreWebView2 == null) return;
+            var age = DateTime.UtcNow - _lastGameTickUtc;
+            if (age <= TimeSpan.FromSeconds(1.2)) return;
+            if (Interlocked.Exchange(ref _popupTickPullBusy, 1) == 1) return;
+            try
+            {
+                var now = DateTime.UtcNow;
+                if ((now - _lastDiagPullUtc).TotalMilliseconds >= 1500)
+                {
+                    Log($"[DIAG][PULL] start ageMs={(int)age.TotalMilliseconds}");
+                    _lastDiagPullUtc = now;
+                }
+                var raw = await _popupWeb.CoreWebView2.ExecuteScriptAsync(PULL_POPUP_TICK_NOW);
+                var msg = JsonSerializer.Deserialize<string>(raw) ?? "";
+                if (string.IsNullOrWhiteSpace(msg))
+                {
+                    var nowEmpty = DateTime.UtcNow;
+                    if ((nowEmpty - _lastDiagPullEmptyUtc).TotalMilliseconds >= 1500)
+                    {
+                        Log("[DIAG][PULL][EMPTY] popup returned no tick");
+                        _lastDiagPullEmptyUtc = nowEmpty;
+                    }
+                    return;
+                }
+                await HandleIncomingWebMessageAsync(msg, "popup-pull");
+            }
+            catch { }
+            finally
+            {
+                Interlocked.Exchange(ref _popupTickPullBusy, 0);
             }
         }
 
@@ -6841,6 +7127,13 @@ Ví dụ không hợp lệ:
             catch { /* ignore */ }
         }
 
+        private void MarkPendingRowsClosed()
+        {
+            if (_pendingRows.Count == 0) return;
+            foreach (var row in _pendingRows)
+                row.SawClosedAfterIssue = true;
+        }
+
         private void FinalizeLastBet(string? result, long balanceAfter, HashSet<string>? winners = null, string? displayResult = null)
         {
             if (_pendingRows.Count == 0 || string.IsNullOrWhiteSpace(result)) return;
@@ -6851,13 +7144,16 @@ Ví dụ không hợp lệ:
                 : displayResult!;
             bool isTieResult = string.Equals(TextNorm.U(resultText), "TIE", StringComparison.Ordinal)
                                || string.Equals(TextNorm.U(resultText), "T", StringComparison.Ordinal);
+            var rowsToFinalize = _pendingRows.Where(r => r.SawClosedAfterIssue).ToList();
+            if (rowsToFinalize.Count == 0) return;
 
-            foreach (var row in _pendingRows)
+            foreach (var row in rowsToFinalize)
             {
                 row.Result = resultText;
                 bool win = !isTieResult && winSet.Contains(row.Side);
                 row.WinLose = isTieResult ? "Hòa" : (win ? "Thắng" : "Thua");
                 row.Account = balanceAfter;
+                Log($"[BET][HIST][FINAL] {row.At:HH:mm:ss} | {row.Side} | {row.Stake:N0} | result={row.Result} | wl={row.WinLose} | acc={row.Account:N0}");
 
                 // KHÔNG add lại vào _betAll (đã chèn ở thời điểm BET)
                 try { AppendBetCsv(row); } catch { /* ignore IO */ }
@@ -6873,7 +7169,8 @@ Ví dụ không hợp lệ:
                 RefreshCurrentPage();   // (mục 3 bên dưới)
             }
 
-            _pendingRows.Clear(); // sẵn sàng ván tiếp theo
+            foreach (var row in rowsToFinalize)
+                _pendingRows.Remove(row);
         }
 
         public void FinalizePendingBetsWithWinners(HashSet<string> winners, string? displayResult = null)
@@ -7195,6 +7492,7 @@ Ví dụ không hợp lệ:
             {
                 B = t.B,
                 P = t.P,
+                T = t.T,
                 A = t.A,
                 N = t.N,
                 SD = t.SD,
