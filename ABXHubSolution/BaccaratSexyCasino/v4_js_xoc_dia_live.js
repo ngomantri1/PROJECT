@@ -5616,11 +5616,21 @@
         var s = NORM(text || '');
         return s === 'XAC NHAN' || s === 'CONFIRM' || s === 'OK';
     }
+    function domLooksLikeRepeatOrDoubleText(text) {
+        var s = NORM(text || '');
+        return s === 'X2' ||
+            s === 'LAP LAI' ||
+            s === 'REPEAT' ||
+            s === 'DOUBLE' ||
+            s === 'NHAN DOI' ||
+            s === 'GAP DOI' ||
+            /(?:^| )X2(?: |$)/.test(s);
+    }
     function domConfirmHostOf(el) {
         if (!el || !el.closest)
             return null;
         var ownText = domTextOf(el);
-        if (domLooksLikeConfirmText(ownText))
+        if (domLooksLikeConfirmText(ownText) && !domLooksLikeRepeatOrDoubleText(ownText))
             return el;
         var selectors = ['button', 'span', 'p', "[role='button']", '.btn', '.button', '.confirm', '.btn_confirm', '.game_btn', '.zone_bet_bottom button', '.zone_bet_bottom > div', '.zone_bet_bottom > li', '.zone_bet_bottom li'];
         for (var i = 0; i < selectors.length; i++) {
@@ -5633,7 +5643,9 @@
             if (!host)
                 continue;
             var txt = domTextOf(host);
-            if (domLooksLikeConfirmText(txt) || domLooksLikeConfirmText(ownText))
+            if (domLooksLikeRepeatOrDoubleText(txt))
+                continue;
+            if (domLooksLikeConfirmText(txt))
                 return host;
         }
         return null;
@@ -5651,6 +5663,8 @@
             if (!host || !domVisible(host))
                 continue;
             var txt = domTextOf(host) || domTextOf(el);
+            if (domLooksLikeRepeatOrDoubleText(txt))
+                continue;
             if (!domLooksLikeConfirmText(txt))
                 continue;
             var rect = host.getBoundingClientRect();
@@ -5737,7 +5751,7 @@
         return false;
     }
     async function domClickConfirmAfterBet() {
-        var confirm = await domWaitConfirmReady(700);
+        var confirm = await domWaitConfirmReady(900);
         if (!confirm) {
             console.warn('[cwBet++] không thấy nút xác nhận');
             return false;
@@ -5753,8 +5767,15 @@
                 source: confirm.source
             });
             domFireClick(confirm.el);
-            await sleep(14);
-            if (await domWaitConfirmSettled(600))
+            try {
+                domFireClickAtPoint(
+                    confirm.doc,
+                    confirm.x + confirm.w * 0.50,
+                    confirm.y + confirm.h * 0.50
+                );
+            } catch (_) {}
+            await sleep(22);
+            if (await domWaitConfirmSettled(900))
                 return true;
             confirm = domPickBestConfirm() || confirm;
         }
@@ -6319,55 +6340,28 @@
                     return false;
                 });
                 if (!appliedOne && isDomMode) {
-                    appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 520).catch(function () {
+                    appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 180).catch(function () {
                         return false;
                     });
                 }
-                var confirmOne = false;
-                if (!appliedOne && isDomMode && targetClickedOne) {
-                    confirmOne = await domClickConfirmAfterBet().catch(function () {
-                        return false;
-                    });
-                    if (confirmOne) {
-                        await sleep(15);
-                        clearBetError();
-                        return true;
-                    }
-                }
-                if (!appliedOne && isDomMode) {
-                    await sleep(24);
-                    targetClickedOne = clickBetTarget(tgt) || targetClickedOne;
-                    appliedOne = await waitForTotalsChange(before0, side, 1200).catch(function () {
-                        return false;
-                    });
-                    if (!appliedOne) {
-                        appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 520).catch(function () {
-                            return false;
-                        });
-                    }
-                    if (!appliedOne && targetClickedOne) {
-                        confirmOne = await domClickConfirmAfterBet().catch(function () {
-                            return false;
-                        });
-                        if (confirmOne) {
-                            await sleep(15);
-                            clearBetError();
-                            return true;
-                        }
-                    }
-                }
-                if (!appliedOne && !confirmOne) {
+                if (!appliedOne && !isDomMode) {
                     console.warn('[cwBet++] click cửa không ghi nhận tiền exact-hit', {
                         side: side,
-                        amount: X,
-                        dom: isDomMode,
-                        targetClicked: !!targetClickedOne
+                        amount: X
                     });
-                    return failBet('bet click not reflected for exact chip', { side: side, amount: raw, chipUnits: X, dom: isDomMode, targetClicked: !!targetClickedOne });
+                    return failBet('bet click not reflected for exact chip', { side: side, amount: raw, chipUnits: X });
                 }
-                if (isDomMode && !confirmOne) {
-                    confirmOne = await domClickConfirmAfterBet();
+                if (isDomMode) {
+                    var confirmOne = await domClickConfirmAfterBet();
                     if (!confirmOne) {
+                        if (!appliedOne) {
+                            console.warn('[cwBet++] click cửa không ghi nhận tiền exact-hit', {
+                                side: side,
+                                amount: X,
+                                targetClicked: !!targetClickedOne
+                            });
+                            return failBet('bet click not reflected for exact chip', { side: side, amount: raw, chipUnits: X, targetClicked: !!targetClickedOne });
+                        }
                         console.warn('[cwBet++] confirm failed', {
                             side: side,
                             amount: X
@@ -6423,13 +6417,6 @@
                     return failBet('focus chip failed', { side: side, amount: raw, chipUnits: step.val });
                 }
                 for (var i2 = 0; i2 < step.count; i2++) {
-                    var confirmBeforeEnabledStep = false;
-                    if (isDomMode) {
-                        try {
-                            var confirmBeforeStep = domPickBestConfirm();
-                            confirmBeforeEnabledStep = !!(confirmBeforeStep && confirmBeforeStep.enabled);
-                        } catch (_) {}
-                    }
                     var beforeStep = sampleTotalsNow();
                     var targetClickedStep = clickBetTarget(tgt);
                     if (!targetClickedStep)
@@ -6442,28 +6429,14 @@
                         return false;
                     });
                     if (!appliedStep) {
-                        if (isDomMode) {
-                            appliedStep = await domWaitPendingConfirmEnabled(confirmBeforeEnabledStep, 260).catch(function () {
-                                return false;
+                        if (!isDomMode) {
+                            console.warn('[cwBet++] click cửa không ghi nhận tiền', {
+                                side: side,
+                                denom: step.val,
+                                turn: i2 + 1
                             });
-                            if (!appliedStep) {
-                                await sleep(24);
-                                targetClickedStep = clickBetTarget(tgt) || targetClickedStep;
-                                appliedStep = await waitForTotalsChange(beforeStep, side, 1200).catch(function () {
-                                    return false;
-                                });
-                            }
+                            return failBet('bet click not reflected', { side: side, amount: raw, chipUnits: step.val, turn: i2 + 1 });
                         }
-                    }
-                    if (!appliedStep) {
-                        console.warn('[cwBet++] click cửa không ghi nhận tiền', {
-                            side: side,
-                            denom: step.val,
-                            turn: i2 + 1,
-                            dom: isDomMode,
-                            targetClicked: !!targetClickedStep
-                        });
-                        return failBet('bet click not reflected', { side: side, amount: raw, chipUnits: step.val, turn: i2 + 1, dom: isDomMode, targetClicked: !!targetClickedStep });
                     }
                     await sleep(15);
                 }

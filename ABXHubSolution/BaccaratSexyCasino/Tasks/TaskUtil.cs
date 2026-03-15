@@ -280,8 +280,20 @@ namespace BaccaratSexyCasino.Tasks
                 if (!string.Equals(curTotalsMarker, waitTotalsMarker, StringComparison.Ordinal))
                 {
                     var curTotals = ReadTotals(s);
+                    var curSeqRaw = s?.seq ?? string.Empty;
+                    var curTailRaw = curSeqRaw.Length > 0
+                        ? char.ToUpperInvariant(curSeqRaw[^1])
+                        : '\0';
                     bool? win;
-                    if (curTotals.T > waitTotals.T)
+
+                    // Ưu tiên raw tail 'T' để đồng bộ với luồng finalize/history.
+                    // Một số tick có thể lệch tạm thời giữa seq và totals; nếu seq đã báo TIE
+                    // thì không được chấm thành thắng/thua chỉ vì totals B/P cập nhật sớm hơn.
+                    if (curTailRaw == 'T')
+                    {
+                        win = null;
+                    }
+                    else if (curTotals.T > waitTotals.T)
                     {
                         win = null;
                     }
@@ -295,7 +307,7 @@ namespace BaccaratSexyCasino.Tasks
                     }
                     else
                     {
-                        var curSeq = s?.seq ?? "";
+                        var curSeq = curSeqRaw;
                         if (curSeq.Length == 0)
                         {
                             await Task.Delay(120, ct);
