@@ -3313,10 +3313,30 @@ try{
 
                                     if (totalsChanged)
                                     {
-                                        var settleMarker = $"{currB}|{currP}|{currT}|{tailDisplay}";
+                                        var settleMarker = $"{currB}|{currP}|{currT}";
                                         if (!string.Equals(settleMarker, _lastSettledRoundMarker, StringComparison.Ordinal))
                                         {
-                                            if (tailDisplay == 'T')
+                                            string? settledResult = null;
+                                            if (currT > _roundTotalsT || tailDisplay == 'T')
+                                            {
+                                                settledResult = "TIE";
+                                            }
+                                            else if (currB > _roundTotalsB)
+                                            {
+                                                settledResult = "BANKER";
+                                            }
+                                            else if (currP > _roundTotalsP)
+                                            {
+                                                settledResult = "PLAYER";
+                                            }
+                                            else
+                                            {
+                                                char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
+                                                if (tail == 'B') settledResult = "BANKER";
+                                                else if (tail == 'P') settledResult = "PLAYER";
+                                            }
+
+                                            if (string.Equals(settledResult, "TIE", StringComparison.Ordinal))
                                             {
                                                 long balanceAfter = ResolveHistoryBalance(snap?.totals?.A);
                                                 if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
@@ -3334,36 +3354,33 @@ try{
                                                 _lastSettledRoundMarker = settleMarker;
                                                 _lockMajorMinorUpdates = false;
                                             }
-                                            else
+                                            else if (string.Equals(settledResult, "BANKER", StringComparison.Ordinal) ||
+                                                     string.Equals(settledResult, "PLAYER", StringComparison.Ordinal))
                                             {
-                                                char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
-                                                if (tail == 'B' || tail == 'P')
+                                                bool winIsBanker = string.Equals(settledResult, "BANKER", StringComparison.Ordinal);
+                                                long prevB = _roundTotalsB, prevP = _roundTotalsP;
+                                                char ni = winIsBanker ? ((prevB >= prevP) ? 'N' : 'I')
+                                                                      : ((prevP >= prevB) ? 'N' : 'I');
+
+                                                _niSeq.Append(ni);
+                                                if (_niSeq.Length > NiSeqMax)
+                                                    _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
+
+                                                Log($"[NI] add={ni} | seq={_niSeq} | tail={(winIsBanker ? 'B' : 'P')} | B={prevB} | P={prevP}");
+
+                                                long balanceAfter = ResolveHistoryBalance(snap?.totals?.A);
+                                                if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
                                                 {
-                                                    bool winIsBanker = (tail == 'B');
-                                                    long prevB = _roundTotalsB, prevP = _roundTotalsP;
-                                                    char ni = winIsBanker ? ((prevB >= prevP) ? 'N' : 'I')
-                                                                          : ((prevP >= prevB) ? 'N' : 'I');
-
-                                                    _niSeq.Append(ni);
-                                                    if (_niSeq.Length > NiSeqMax)
-                                                        _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
-
-                                                    Log($"[NI] add={ni} | seq={_niSeq} | tail={tail} | B={prevB} | P={prevP}");
-
-                                                    long balanceAfter = ResolveHistoryBalance(snap?.totals?.A);
-                                                    if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
-                                                    {
-                                                        FinalizeLastBet(
-                                                            winIsBanker ? "BANKER" : "PLAYER",
-                                                            balanceAfter,
-                                                            currentB: currB,
-                                                            currentP: currP,
-                                                            currentT: currT);
-                                                    }
-
-                                                    _lastSettledRoundMarker = settleMarker;
-                                                    _lockMajorMinorUpdates = false;
+                                                    FinalizeLastBet(
+                                                        winIsBanker ? "BANKER" : "PLAYER",
+                                                        balanceAfter,
+                                                        currentB: currB,
+                                                        currentP: currP,
+                                                        currentT: currT);
                                                 }
+
+                                                _lastSettledRoundMarker = settleMarker;
+                                                _lockMajorMinorUpdates = false;
                                             }
                                         }
                                     }
@@ -3452,72 +3469,32 @@ try{
 
                 if (abxStr == "bet")
                 {
-                    string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
-                    long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
-                    string tabId = root.TryGetProperty("tabId", out var te) ? (te.GetString() ?? "") : "";
-                    long roundId = root.TryGetProperty("roundId", out var re) ? re.GetInt64() : 0;
-                    RecordBetIssuedUi(null, tabId, sideRaw, amount, roundId);
-                    return;
-                    string side = sideRaw.Equals("CHAN", StringComparison.OrdinalIgnoreCase) ? "CHAN"
-                                : sideRaw.Equals("LE", StringComparison.OrdinalIgnoreCase) ? "LE"
-                                : sideRaw.ToUpperInvariant();
-
-                    var betKey = $"{tabId}|{roundId}|{side}|{amount}";
-                    if (!_recordedValidBetKeys.TryAdd(betKey, 1))
-                        return;
-                    if (_recordedValidBetKeys.Count > 4096)
-                    {
-                        foreach (var key in _recordedValidBetKeys.Keys.Take(1024).ToList())
-                            _recordedValidBetKeys.TryRemove(key, out _);
-                    }
-
-                    Log($"[BET] {side} {amount:N0} | round={roundId}");
-
-                    var betTab = !string.IsNullOrWhiteSpace(tabId)
-                        ? _strategyTabs.FirstOrDefault(t => string.Equals(t.Id, tabId, StringComparison.Ordinal))
-                        : _activeTab;
-                    betTab ??= _activeTab;
-                    if (betTab != null)
-                    {
-                        var stakeSeq = (betTab.RunStakeSeq != null && betTab.RunStakeSeq.Length > 0)
-                            ? betTab.RunStakeSeq
-                            : (_stakeSeq ?? Array.Empty<long>());
-                        var moneyStrategyId = betTab.Config?.MoneyStrategy ?? _cfg?.MoneyStrategy ?? "IncreaseWhenLose";
-
-                        UpdateTabSide(betTab, side);
-                        UpdateTabStake(betTab, amount, stakeSeq, moneyStrategyId);
-                        RecordValidBet(betTab, amount);
-                    }
-
-                    long accNow = 0;
-                    try { accNow = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
-
-                    var row = new BetRow
-                    {
-                        At = DateTime.Now,
-                        Game = "Xóc đĩa live",
-                        Stake = amount,
-                        Side = side,
-                        Result = "-",
-                        WinLose = "-",
-                        Account = accNow
-                    };
-
-                    Log($"[BET][HIST][PENDING] {row.At:HH:mm:ss} | {side} | {amount:N0} | round={roundId} | acc={row.Account:N0}");
-
-                    _betAll.Insert(0, row);
-                    if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
-                    _pendingRows.Add(row);
-                    if (_autoFollowNewest)
-                        ShowFirstPage();
-                    else
-                        RefreshCurrentPage();
+                    // Optimistic mode: pending row đã được tạo ngay tại PlaceBet(...).
+                    // JS "bet" chỉ là ack sau confirm, không được insert thêm lần nữa
+                    // nếu không sẽ tạo duplicate pending và làm finalize/history lệch.
                     return;
                 }
 
                 if (abxStr == "bet_error")
                 {
                     // Optimistic mode: đã gửi bet xuống JS thì không quan tâm kết quả click DOM thật.
+                    return;
+                }
+
+                if (abxStr == "confirm_diag")
+                {
+                    var stage = GetJsonStringLoose(root, "stage") ?? "";
+                    var mode = GetJsonStringLoose(root, "mode") ?? "";
+                    var source2 = GetJsonStringLoose(root, "source") ?? "";
+                    var text = GetJsonStringLoose(root, "text") ?? "";
+                    var hitText = GetJsonStringLoose(root, "hitText") ?? "";
+                    var hitTail = GetJsonStringLoose(root, "hitTail") ?? "";
+                    var attempt = GetJsonLongLoose(root, "attempt") ?? 0;
+                    var shielded = GetJsonLongLoose(root, "shielded") ?? 0;
+                    var settled = GetJsonLongLoose(root, "settled");
+                    var px = GetJsonLongLoose(root, "px") ?? 0;
+                    var py = GetJsonLongLoose(root, "py") ?? 0;
+                    Log($"[DIAG][CONFIRM] stage={stage} attempt={attempt} mode={mode} src={source2} text={text} shielded={shielded} settled={(settled.HasValue ? settled.Value.ToString() : "-")} point={px},{py} hitText={hitText} hitTail={hitTail}");
                     return;
                 }
 

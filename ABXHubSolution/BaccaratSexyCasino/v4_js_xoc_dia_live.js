@@ -4248,9 +4248,9 @@
     var CHIP_TAIL_ROW4 = 'xdlive/canvas/bg/tipdealer/tabtipdealer/tipcontent/views/contentchat/row4/itemtip/lbmoney';
     var DENOMS_DESC = [10000000, 5000000, 1000000, 500000, 100000, 50000, 20000, 10000, 5000, 2000, 1000];
     var cfgBet = {
-        delayPick: 220,
-        delayTap: 260,
-        delayBetweenSteps: 280
+        delayPick: 120,
+        delayTap: 100,
+        delayBetweenSteps: 120
     };
 
     function clickAtWin(x, y) {
@@ -5616,6 +5616,10 @@
         var s = NORM(text || '');
         return s === 'XAC NHAN' || s === 'CONFIRM' || s === 'OK';
     }
+    function domContainsRepeatOrDoubleText(text) {
+        var s = NORM(text || '');
+        return /(?:^| )(X2|LAP LAI|REPEAT|DOUBLE|NHAN DOI|GAP DOI)(?: |$)/.test(s);
+    }
     function domLooksLikeRepeatOrDoubleText(text) {
         var s = NORM(text || '');
         return s === 'X2' ||
@@ -5643,7 +5647,7 @@
             if (!host)
                 continue;
             var txt = domTextOf(host);
-            if (domLooksLikeRepeatOrDoubleText(txt))
+            if (domContainsRepeatOrDoubleText(txt))
                 continue;
             if (domLooksLikeConfirmText(txt))
                 return host;
@@ -5663,7 +5667,7 @@
             if (!host || !domVisible(host))
                 continue;
             var txt = domTextOf(host) || domTextOf(el);
-            if (domLooksLikeRepeatOrDoubleText(txt))
+            if (domContainsRepeatOrDoubleText(txt))
                 continue;
             if (!domLooksLikeConfirmText(txt))
                 continue;
@@ -5673,6 +5677,16 @@
             if (rect.width < 40 || rect.height < 20 || rect.width > 180 || rect.height > 90)
                 continue;
             var cs = doc.defaultView.getComputedStyle(host);
+            var tail = domTailOf(host);
+            var cls = '';
+            try { cls = String(host.className || ''); } catch (_) { cls = ''; }
+            var disabledLike =
+                /\bdisabled\b/i.test(cls) ||
+                /\bdisabled\b/i.test(tail) ||
+                /none/i.test(String(cs.pointerEvents || '')) ||
+                Number(cs.opacity || '1') <= 0.2 ||
+                host.hasAttribute('disabled') ||
+                /true/i.test(String(host.getAttribute('aria-disabled') || ''));
             rows.push({
                 text: txt,
                 x: Math.round(rect.left),
@@ -5681,9 +5695,50 @@
                 h: Math.round(rect.height),
                 source: source,
                 opacity: String(cs.opacity || ''),
-                enabled: Number(cs.opacity || '1') > 0.2 && !host.hasAttribute('disabled') && !/true/i.test(String(host.getAttribute('aria-disabled') || '')),
-                tail: domTailOf(host),
+                enabled: !disabledLike,
+                tail: tail,
                 el: host
+            });
+        }
+        return rows;
+    }
+    function domCollectRepeatCandidates(doc) {
+        var rows = [];
+        if (!doc || !doc.querySelectorAll)
+            return rows;
+        var all = doc.querySelectorAll('body *');
+        var seen = [];
+        for (var i = 0; i < all.length; i++) {
+            var el = all[i];
+            if (!domVisible(el))
+                continue;
+            var txt = domTextOf(el);
+            if (!domLooksLikeRepeatOrDoubleText(txt))
+                continue;
+            var host = el;
+            try {
+                host = el.closest('button,span,p,[role=\"button\"],.btn,.button,.game_btn,.zone_bet_bottom button,.zone_bet_bottom > div,.zone_bet_bottom > li,.zone_bet_bottom li') || el;
+            } catch (_) {
+                host = el;
+            }
+            if (!host || !domVisible(host))
+                continue;
+            if (seen.indexOf(host) >= 0)
+                continue;
+            var rect = host.getBoundingClientRect();
+            if (rect.top < doc.defaultView.innerHeight * 0.70)
+                continue;
+            if (rect.width < 30 || rect.height < 20 || rect.width > 220 || rect.height > 100)
+                continue;
+            seen.push(host);
+            rows.push({
+                el: host,
+                text: domTextOf(host),
+                tail: domTailOf(host),
+                x: Math.round(rect.left),
+                y: Math.round(rect.top),
+                w: Math.round(rect.width),
+                h: Math.round(rect.height)
             });
         }
         return rows;
@@ -5728,6 +5783,88 @@
         }
         return best;
     }
+    function domShortOuterHtml(el) {
+        try {
+            return String((el && el.outerHTML) || '').replace(/\s+/g, ' ').slice(0, 220);
+        } catch (_) {
+            return '';
+        }
+    }
+    function domEmitConfirmDiag(stage, confirm, extra) {
+        try {
+            extra = extra || {};
+            var doc = confirm && confirm.doc ? confirm.doc : null;
+            var px = confirm ? Math.round(confirm.x + confirm.w * 0.32) : 0;
+            var py = confirm ? Math.round(confirm.y + confirm.h * 0.50) : 0;
+            var hit = null;
+            try {
+                hit = (doc && doc.elementFromPoint) ? doc.elementFromPoint(px, py) : null;
+            } catch (_) {
+                hit = null;
+            }
+            var payload = {
+                stage: stage || '',
+                attempt: extra.attempt || 0,
+                mode: extra.mode || '',
+                shielded: extra.shielded || 0,
+                settled: extra.settled === true ? 1 : (extra.settled === false ? 0 : null),
+                text: confirm ? String(confirm.text || '') : '',
+                tail: confirm ? String(confirm.tail || '') : '',
+                source: confirm ? String(confirm.source || '') : '',
+                x: confirm ? confirm.x : 0,
+                y: confirm ? confirm.y : 0,
+                w: confirm ? confirm.w : 0,
+                h: confirm ? confirm.h : 0,
+                px: px,
+                py: py,
+                hitText: hit ? String(domTextOf(hit) || '') : '',
+                hitTail: hit ? String(domTailOf(hit) || '') : '',
+                hitHtml: hit ? domShortOuterHtml(hit) : ''
+            };
+            try { console.log('[cwBet++] confirm diag', payload); } catch (_) {}
+            try {
+                if (window.__cw_diag_post)
+                    window.__cw_diag_post(payload);
+            } catch (_) {}
+        } catch (_) {}
+    }
+    function domShieldRepeatButtons(doc) {
+        var rows = domCollectRepeatCandidates(doc);
+        var touched = [];
+        for (var i = 0; i < rows.length; i++) {
+            var host = rows[i].el;
+            if (!host || !host.style)
+                continue;
+            touched.push({
+                el: host,
+                pointerEvents: host.style.pointerEvents,
+                ariaDisabled: host.getAttribute('aria-disabled'),
+                disabled: host.hasAttribute('disabled')
+            });
+            try { host.style.pointerEvents = 'none'; } catch (_) {}
+            try { host.setAttribute('aria-disabled', 'true'); } catch (_) {}
+            try {
+                if (host.hasAttribute && !host.hasAttribute('disabled'))
+                    host.setAttribute('data-cw-temp-disabled', '1');
+            } catch (_) {}
+        }
+        return {
+            count: touched.length,
+            restore: function () {
+                for (var j = 0; j < touched.length; j++) {
+                    var it = touched[j];
+                    var el = it.el;
+                    if (!el || !el.style)
+                        continue;
+                    try { el.style.pointerEvents = it.pointerEvents || ''; } catch (_) {}
+                    try {
+                        if (it.ariaDisabled == null) el.removeAttribute('aria-disabled');
+                        else el.setAttribute('aria-disabled', it.ariaDisabled);
+                    } catch (_) {}
+                }
+            }
+        };
+    }
     async function domWaitConfirmReady(timeout) {
         timeout = timeout || 1200;
         var t0 = Date.now();
@@ -5756,32 +5893,57 @@
             console.warn('[cwBet++] không thấy nút xác nhận');
             return false;
         }
-        for (var i = 0; i < 3; i++) {
-            console.log('[cwBet++] confirm click', {
-                attempt: i + 1,
-                x: confirm.x,
-                y: confirm.y,
-                w: confirm.w,
-                h: confirm.h,
-                text: confirm.text,
-                source: confirm.source
-            });
-            domFireClick(confirm.el);
-            try {
-                domFireClickAtPoint(
-                    confirm.doc,
-                    confirm.x + confirm.w * 0.50,
-                    confirm.y + confirm.h * 0.50
-                );
-            } catch (_) {}
-            await sleep(22);
-            if (await domWaitConfirmSettled(900))
-                return true;
-            confirm = domPickBestConfirm() || confirm;
+        var shield = null;
+        try { shield = domShieldRepeatButtons(confirm.doc); } catch (_) { shield = null; }
+        try {
+            domEmitConfirmDiag('ready', confirm, { shielded: shield ? shield.count : 0 });
+            for (var i = 0; i < 2; i++) {
+                var mode = (i === 0) ? 'element' : 'point';
+                console.log('[cwBet++] confirm click', {
+                    attempt: i + 1,
+                    mode: mode,
+                    x: confirm.x,
+                    y: confirm.y,
+                    w: confirm.w,
+                    h: confirm.h,
+                    text: confirm.text,
+                    source: confirm.source
+                });
+                domEmitConfirmDiag('before_click', confirm, {
+                    attempt: i + 1,
+                    mode: mode,
+                    shielded: shield ? shield.count : 0
+                });
+                if (mode === 'element') {
+                    domFireClick(confirm.el);
+                } else {
+                    try {
+                        var px = confirm.x + confirm.w * 0.32;
+                        var py = confirm.y + confirm.h * 0.50;
+                        domFireClickAtPoint(confirm.doc, px, py);
+                    } catch (_) {}
+                }
+                await sleep(28);
+                var settled = await domWaitConfirmSettled(900);
+                domEmitConfirmDiag('after_click', confirm, {
+                    attempt: i + 1,
+                    mode: mode,
+                    shielded: shield ? shield.count : 0,
+                    settled: settled
+                });
+                if (settled)
+                    return true;
+                confirm = domPickBestConfirm() || confirm;
+            }
+        } finally {
+            try { if (shield && shield.restore) shield.restore(); } catch (_) {}
         }
         console.warn('[cwBet++] xác nhận không hoàn tất');
         return false;
     }
+    window.__cw_diag_confirm_once = async function () {
+        return await domClickConfirmAfterBet();
+    };
     async function domWaitPendingConfirmEnabled(beforeEnabled, timeout) {
         timeout = timeout || 700;
         if (beforeEnabled)
@@ -6881,6 +7043,16 @@
                 } catch (_) {}
             }
         }
+        window.__cw_diag_post = function (obj) {
+            try {
+                var payload = {};
+                var src = obj || {};
+                for (var k in src) payload[k] = src[k];
+                payload.abx = 'confirm_diag';
+                payload.ts = Date.now();
+                safePost(payload);
+            } catch (_) {}
+        };
 
         window.__cw_pushPanelSnapshot = function () {
             try {
