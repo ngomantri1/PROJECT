@@ -270,28 +270,47 @@ namespace BaccaratSexyCasino.Tasks
             }
 
             var waitTotals = ParseTotalsMarker(waitTotalsMarker);
+            var waitSeq = baseSeq ?? string.Empty;
+            var waitSeqLen = waitSeq.Length;
 
-            // Chờ totals B/P/T đổi so với mốc đã chụp tại thời điểm PlaceBet.
+            // Ưu tiên baseSeq -> curSeq làm marker chính.
+            // Totals B/P/T chỉ là fallback khi seq bị lệch hoặc chưa usable.
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                var s = ctx.GetRawSnap?.Invoke() ?? ctx.GetSnap?.Invoke();
+                var s = ctx.GetSnap?.Invoke() ?? ctx.GetRawSnap?.Invoke();
+                var curSeqRaw = s?.seq ?? string.Empty;
+                var curTotals = ReadTotals(s);
                 var curTotalsMarker = BuildTotalsMarker(s);
-                if (!string.Equals(curTotalsMarker, waitTotalsMarker, StringComparison.Ordinal))
+                var totalsChanged = !string.Equals(curTotalsMarker, waitTotalsMarker, StringComparison.Ordinal);
+
+                char seqResultChar = '\0';
+                bool seqAdvanced = !string.Equals(curSeqRaw, waitSeq, StringComparison.Ordinal);
+                bool haveSeqResult = false;
+
+                if (seqAdvanced && curSeqRaw.Length > 0)
                 {
-                    var curTotals = ReadTotals(s);
-                    var curSeqRaw = s?.seq ?? string.Empty;
-                    var curTailRaw = curSeqRaw.Length > 0
-                        ? char.ToUpperInvariant(curSeqRaw[^1])
-                        : '\0';
+                    if (curSeqRaw.Length > waitSeqLen &&
+                        (waitSeqLen == 0 || curSeqRaw.StartsWith(waitSeq, StringComparison.Ordinal)))
+                    {
+                        seqResultChar = char.ToUpperInvariant(curSeqRaw[waitSeqLen]);
+                    }
+                    else
+                    {
+                        // Fallback khi seq không còn là prefix sạch của baseSeq
+                        // nhưng vẫn đã đổi; dùng ký tự cuối hiện tại thay vì treo chờ mãi.
+                        seqResultChar = char.ToUpperInvariant(curSeqRaw[^1]);
+                    }
+                    haveSeqResult = seqResultChar == 'B' || seqResultChar == 'P' || seqResultChar == 'T';
+                }
+
+                if (haveSeqResult || totalsChanged)
+                {
                     bool? win;
 
-                    // Ưu tiên raw tail 'T' để đồng bộ với luồng finalize/history.
-                    // Một số tick có thể lệch tạm thời giữa seq và totals; nếu seq đã báo TIE
-                    // thì không được chấm thành thắng/thua chỉ vì totals B/P cập nhật sớm hơn.
-                    if (curTailRaw == 'T')
+                    if (haveSeqResult)
                     {
-                        win = null;
+                        win = IsWin(betSide, seqResultChar);
                     }
                     else if (curTotals.T > waitTotals.T)
                     {
@@ -307,13 +326,8 @@ namespace BaccaratSexyCasino.Tasks
                     }
                     else
                     {
-                        var curSeq = curSeqRaw;
-                        if (curSeq.Length == 0)
-                        {
-                            await Task.Delay(120, ct);
-                            continue;
-                        }
-                        win = IsWin(betSide, curSeq[^1]);
+                        await Task.Delay(120, ct);
+                        continue;
                     }
 
                     await ctx.UiDispatcher.InvokeAsync(() =>
