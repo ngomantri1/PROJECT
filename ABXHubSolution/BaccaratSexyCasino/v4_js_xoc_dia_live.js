@@ -5184,14 +5184,9 @@
     }
     function domMinimalClick(el) {
         try {
-            if (!el || !el.getBoundingClientRect)
+            if (!el)
                 return false;
-            var rect = el.getBoundingClientRect();
-            var x = rect.left + rect.width / 2;
-            var y = rect.top + rect.height / 2;
             var win = el.ownerDocument && el.ownerDocument.defaultView ? el.ownerDocument.defaultView : window;
-            try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (_) {}
-            try { el.focus && el.focus(); } catch (_) {}
             try {
                 el.click();
                 return true;
@@ -5200,11 +5195,7 @@
                 el.dispatchEvent(new win.MouseEvent('click', {
                     bubbles: true,
                     cancelable: true,
-                    composed: true,
-                    clientX: x,
-                    clientY: y,
-                    button: 0,
-                    buttons: 1
+                    composed: true
                 }));
                 return true;
             } catch (_) {}
