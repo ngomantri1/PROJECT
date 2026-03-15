@@ -48,6 +48,7 @@ namespace BaccaratSexyCasino
         private const string SidePlayerPng = "Assets/side/PLAYER.png";
         private const string ResultBankerPng = "Assets/side/BANKER.png";
         private const string ResultPlayerPng = "Assets/side/PLAYER.png";
+        private const string ResultTiePng = "Assets/side/TIE.png";
         private const string WinPng = "Assets/kq/THANG.png";
         private const string LossPng = "Assets/kq/THUA.png";
         private const string DrawPng = "Assets/kq/HOA.png";
@@ -57,13 +58,14 @@ namespace BaccaratSexyCasino
         private const string Trang3Do1Png = "Assets/side/1DO_3TRANG.png";
         private const string Do3Trang1Png = "Assets/side/1TRANG_3DO.png";
 
-        private static ImageSource? _sideChan, _sideLe, _resultChan, _resultLe, _win, _loss, _draw;
+        private static ImageSource? _sideChan, _sideLe, _resultChan, _resultLe, _resultTie, _win, _loss, _draw;
         private static ImageSource? _tuTrang, _tuDo, _sapDoi, _trang3Do1, _do3Trang1;
 
         public static ImageSource? GetSideBanker() => SharedIcons.SideBanker ?? (_sideChan ??= Load(SideBankerPng));
         public static ImageSource? GetSidePlayer() => SharedIcons.SidePlayer ?? (_sideLe ??= Load(SidePlayerPng));
         public static ImageSource? GetResultBanker() => SharedIcons.ResultBanker ?? (_resultChan ??= Load(ResultBankerPng));
         public static ImageSource? GetResultPlayer() => SharedIcons.ResultPlayer ?? (_resultLe ??= Load(ResultPlayerPng));
+        public static ImageSource? GetResultTie() => _resultTie ??= Load(ResultTiePng);
         public static ImageSource? GetWin() => SharedIcons.Win ?? (_win ??= Load(WinPng));
         public static ImageSource? GetLoss() => SharedIcons.Loss ?? (_loss ??= Load(LossPng));
         public static ImageSource? GetDraw() => SharedIcons.Draw ?? (_draw ??= Load(DrawPng));
@@ -201,6 +203,7 @@ namespace BaccaratSexyCasino
             var u = TextNorm.U(value?.ToString() ?? "");
             if (u == "BANKER" || u == "B") return FallbackIcons.GetResultBanker();
             if (u == "PLAYER" || u == "P") return FallbackIcons.GetResultPlayer();
+            if (u == "TIE" || u == "T" || u == "HOA") return FallbackIcons.GetResultTie();
 
             char digit = '\0';
             if (u.Length == 1 && char.IsDigit(u[0])) digit = u[0];
@@ -231,6 +234,7 @@ namespace BaccaratSexyCasino
             var u = TextNorm.U(value?.ToString() ?? "");
             if (u.StartsWith("THANG")) return FallbackIcons.GetWin();
             if (u.StartsWith("THUA")) return FallbackIcons.GetLoss();
+            if (u.StartsWith("HOA") || u == "TIE" || u == "T") return FallbackIcons.GetDraw();
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -5530,11 +5534,24 @@ try{
             };
         }
 
-        private bool TryRegisterBetIssued(string tabId, long roundId, string side, long amount)
+        private bool TryRegisterBetIssued(
+            string tabId,
+            long roundId,
+            string side,
+            long amount,
+            string issuedSeqDisplay,
+            string issuedSeqCalc,
+            long issuedTotalB,
+            long issuedTotalP,
+            long issuedTotalT)
         {
-            var betKey = $"{tabId}|{roundId}|{side}|{amount}";
+            var betKey =
+                $"{tabId}|{roundId}|{side}|{amount}|{issuedSeqDisplay}|{issuedSeqCalc}|{issuedTotalB}|{issuedTotalP}|{issuedTotalT}";
             if (!_recordedValidBetKeys.TryAdd(betKey, 1))
+            {
+                Log($"[BET][DEDUP] skip duplicate history row | tab={tabId} round={roundId} side={side} amount={amount:N0} totals={issuedTotalB}|{issuedTotalP}|{issuedTotalT} seq={issuedSeqDisplay}");
                 return false;
+            }
 
             if (_recordedValidBetKeys.Count > 4096)
             {
@@ -5567,7 +5584,16 @@ try{
             var issuedTotalP = issuedSnap?.totals?.P ?? 0;
             var issuedTotalT = issuedSnap?.totals?.T ?? 0;
 
-            if (!TryRegisterBetIssued(tabKey, roundId, side, amount))
+            if (!TryRegisterBetIssued(
+                tabKey,
+                roundId,
+                side,
+                amount,
+                issuedSeqDisplay,
+                issuedSeqCalc,
+                issuedTotalB,
+                issuedTotalP,
+                issuedTotalT))
                 return;
 
             Log($"[BET] {side} {amount:N0} | round={roundId}");

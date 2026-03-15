@@ -8,6 +8,7 @@
             <!--  Dùng pack URI: pack://application:,,,/Assembly;component/<path>  -->
             <BitmapImage x:Key="ImgPLAYER" UriSource="pack://application:,,,/BaccaratSexyCasino;component/Assets/side/PLAYER.png" />
             <BitmapImage x:Key="ImgBANKER" UriSource="pack://application:,,,/BaccaratSexyCasino;component/Assets/side/BANKER.png" />
+            <BitmapImage x:Key="ImgTIE" UriSource="pack://application:,,,/BaccaratSexyCasino;component/Assets/side/TIE.png" />
             <BitmapImage x:Key="ImgTHANG" UriSource="pack://application:,,,/BaccaratSexyCasino;component/Assets/kq/THANG.png" />
             <BitmapImage x:Key="ImgTHUA" UriSource="pack://application:,,,/BaccaratSexyCasino;component/Assets/kq/THUA.png" />
             <BitmapImage x:Key="ImgHOA" UriSource="pack://application:,,,/BaccaratSexyCasino;component/Assets/kq/HOA.png" />

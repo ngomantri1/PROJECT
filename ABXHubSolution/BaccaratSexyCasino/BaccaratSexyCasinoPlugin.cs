@@ -134,8 +134,10 @@ namespace BaccaratSexyCasino
 
             SetImg("ImgBANKER", "Assets/side/BANKER.png");
             SetImg("ImgPLAYER", "Assets/side/PLAYER.png");
+            SetImg("ImgTIE", "Assets/side/TIE.png");
             SetImg("ImgTHANG", "Assets/kq/THANG.png");
             SetImg("ImgTHUA", "Assets/kq/THUA.png");
+            SetImg("ImgHOA", "Assets/kq/HOA.png");
             SetImg("ImgBALL0", "Assets/side/TU_TRANG.png");
             SetImg("ImgBALL1", "Assets/side/1TRANG_3DO.png");
             SetImg("ImgBALL2", "Assets/side/SAP_DOI.png");
@@ -156,6 +158,7 @@ namespace BaccaratSexyCasino
                 if (dict["ImgPLAYER"] is ImageSource le2) BaccaratSexyCasino.MainWindow.SharedIcons.ResultPlayer = le2;
                 if (dict["ImgTHANG"] is ImageSource win) BaccaratSexyCasino.MainWindow.SharedIcons.Win = win;
                 if (dict["ImgTHUA"] is ImageSource loss) BaccaratSexyCasino.MainWindow.SharedIcons.Loss = loss;
+                if (dict["ImgHOA"] is ImageSource draw) BaccaratSexyCasino.MainWindow.SharedIcons.Draw = draw;
                 // set thêm các icon mới cho converter
                 if (dict["ImgTU_TRANG"] is ImageSource tuw) BaccaratSexyCasino.MainWindow.SharedIcons.TuTrang = tuw;
                 if (dict["ImgTU_DO"] is ImageSource tur) BaccaratSexyCasino.MainWindow.SharedIcons.TuDo = tur;

@@ -6319,28 +6319,55 @@
                     return false;
                 });
                 if (!appliedOne && isDomMode) {
-                    appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 180).catch(function () {
+                    appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 520).catch(function () {
                         return false;
                     });
                 }
-                if (!appliedOne && !isDomMode) {
+                var confirmOne = false;
+                if (!appliedOne && isDomMode && targetClickedOne) {
+                    confirmOne = await domClickConfirmAfterBet().catch(function () {
+                        return false;
+                    });
+                    if (confirmOne) {
+                        await sleep(15);
+                        clearBetError();
+                        return true;
+                    }
+                }
+                if (!appliedOne && isDomMode) {
+                    await sleep(24);
+                    targetClickedOne = clickBetTarget(tgt) || targetClickedOne;
+                    appliedOne = await waitForTotalsChange(before0, side, 1200).catch(function () {
+                        return false;
+                    });
+                    if (!appliedOne) {
+                        appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 520).catch(function () {
+                            return false;
+                        });
+                    }
+                    if (!appliedOne && targetClickedOne) {
+                        confirmOne = await domClickConfirmAfterBet().catch(function () {
+                            return false;
+                        });
+                        if (confirmOne) {
+                            await sleep(15);
+                            clearBetError();
+                            return true;
+                        }
+                    }
+                }
+                if (!appliedOne && !confirmOne) {
                     console.warn('[cwBet++] click cửa không ghi nhận tiền exact-hit', {
                         side: side,
-                        amount: X
+                        amount: X,
+                        dom: isDomMode,
+                        targetClicked: !!targetClickedOne
                     });
-                    return failBet('bet click not reflected for exact chip', { side: side, amount: raw, chipUnits: X });
+                    return failBet('bet click not reflected for exact chip', { side: side, amount: raw, chipUnits: X, dom: isDomMode, targetClicked: !!targetClickedOne });
                 }
-                if (isDomMode) {
-                    var confirmOne = await domClickConfirmAfterBet();
+                if (isDomMode && !confirmOne) {
+                    confirmOne = await domClickConfirmAfterBet();
                     if (!confirmOne) {
-                        if (!appliedOne) {
-                            console.warn('[cwBet++] click cửa không ghi nhận tiền exact-hit', {
-                                side: side,
-                                amount: X,
-                                targetClicked: !!targetClickedOne
-                            });
-                            return failBet('bet click not reflected for exact chip', { side: side, amount: raw, chipUnits: X, targetClicked: !!targetClickedOne });
-                        }
                         console.warn('[cwBet++] confirm failed', {
                             side: side,
                             amount: X
@@ -6396,6 +6423,13 @@
                     return failBet('focus chip failed', { side: side, amount: raw, chipUnits: step.val });
                 }
                 for (var i2 = 0; i2 < step.count; i2++) {
+                    var confirmBeforeEnabledStep = false;
+                    if (isDomMode) {
+                        try {
+                            var confirmBeforeStep = domPickBestConfirm();
+                            confirmBeforeEnabledStep = !!(confirmBeforeStep && confirmBeforeStep.enabled);
+                        } catch (_) {}
+                    }
                     var beforeStep = sampleTotalsNow();
                     var targetClickedStep = clickBetTarget(tgt);
                     if (!targetClickedStep)
@@ -6408,14 +6442,28 @@
                         return false;
                     });
                     if (!appliedStep) {
-                        if (!isDomMode) {
-                            console.warn('[cwBet++] click cửa không ghi nhận tiền', {
-                                side: side,
-                                denom: step.val,
-                                turn: i2 + 1
+                        if (isDomMode) {
+                            appliedStep = await domWaitPendingConfirmEnabled(confirmBeforeEnabledStep, 260).catch(function () {
+                                return false;
                             });
-                            return failBet('bet click not reflected', { side: side, amount: raw, chipUnits: step.val, turn: i2 + 1 });
+                            if (!appliedStep) {
+                                await sleep(24);
+                                targetClickedStep = clickBetTarget(tgt) || targetClickedStep;
+                                appliedStep = await waitForTotalsChange(beforeStep, side, 1200).catch(function () {
+                                    return false;
+                                });
+                            }
                         }
+                    }
+                    if (!appliedStep) {
+                        console.warn('[cwBet++] click cửa không ghi nhận tiền', {
+                            side: side,
+                            denom: step.val,
+                            turn: i2 + 1,
+                            dom: isDomMode,
+                            targetClicked: !!targetClickedStep
+                        });
+                        return failBet('bet click not reflected', { side: side, amount: raw, chipUnits: step.val, turn: i2 + 1, dom: isDomMode, targetClicked: !!targetClickedStep });
                     }
                     await sleep(15);
                 }

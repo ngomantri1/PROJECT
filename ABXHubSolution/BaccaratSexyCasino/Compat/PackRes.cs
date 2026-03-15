@@ -36,6 +36,7 @@ namespace BaccaratSexyCasino
             // 2. fallback: tự tạo ảnh để dù Images.xaml không load được vẫn không vỡ XAML
             EnsureImage(app.Resources, "ImgPLAYER", "Assets/side/PLAYER.png");
             EnsureImage(app.Resources, "ImgBANKER", "Assets/side/BANKER.png");
+            EnsureImage(app.Resources, "ImgTIE", "Assets/side/TIE.png");
             EnsureImage(app.Resources, "ImgTHANG", "Assets/kq/THANG.png");
             EnsureImage(app.Resources, "ImgTHUA", "Assets/kq/THUA.png");
             EnsureImage(app.Resources, "ImgHOA", "Assets/kq/HOA.png");
