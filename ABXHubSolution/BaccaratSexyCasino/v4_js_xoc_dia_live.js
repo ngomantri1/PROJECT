@@ -2867,6 +2867,7 @@
             if (bead && bead.seq && bead.seq.length) {
                 return {
                     seq: bead.seq || '',
+                    rawSeq: bead.rawSeq || bead.seq || '',
                     which: bead.which || 'dom-bead',
                     cols: bead.cols || [],
                     cells: bead.cells || []
@@ -2875,8 +2876,10 @@
             var cards = domScanBaccaratCards();
             var active = domPickActiveCard(cards);
             if (active) {
+                var seq = limitSeq50(String(active.seq || '').replace(/H/g, 'T'));
                 return {
-                    seq: limitSeq50(String(active.seq || '').replace(/H/g, 'T')),
+                    seq: seq,
+                    rawSeq: seq,
                     which: 'dom-baccarat-fallback',
                     cols: active.cols || [],
                     cells: active.cells || []
@@ -2884,6 +2887,7 @@
             }
             return {
                 seq: _domBeadSeqManaged || '',
+                rawSeq: window.__cw_bead_raw_seq || _domBeadSeqManaged || '',
                 which: 'dom-bead',
                 cols: [],
                 cells: []
@@ -2891,8 +2895,29 @@
         }
         var r = readTKSeqBeads();
         if (r && r.seq && r.seq.length)
-            return r;
-        return readTKSeqDigits();
+            return {
+                seq: r.seq || '',
+                rawSeq: r.rawSeq || r.seq || '',
+                which: r.which || '',
+                cols: r.cols || [],
+                cells: r.cells || []
+            };
+        var digits = readTKSeqDigits();
+        if (digits && digits.seq && digits.seq.length)
+            return {
+                seq: digits.seq || '',
+                rawSeq: digits.rawSeq || digits.seq || '',
+                which: digits.which || '',
+                cols: digits.cols || [],
+                cells: digits.cells || []
+            };
+        return {
+            seq: '',
+            rawSeq: '',
+            which: '',
+            cols: [],
+            cells: []
+        };
     }
 
 
@@ -4092,19 +4117,7 @@
                 prog: S.prog,
                 status: String(S.status || ''),
                 seq: String(S.seq || ''),
-                totals: {
-                    B: (t.B != null ? t.B : t.C),
-                    P: (t.P != null ? t.P : t.L),
-                    T: (t.T != null ? t.T : null),
-                    A: (t.A != null ? t.A : null),
-                    N: (t.N != null ? String(t.N) : null),
-                    TB: (t.TB != null ? t.TB : null),
-                    TA: (t.TA != null ? t.TA : null),
-                    C: (t.C != null ? t.C : null),
-                    L: (t.L != null ? t.L : null),
-                    rawHS: (t.rawHS != null ? t.rawHS : null),
-                    cards: (t.cards || [])
-                },
+                totals: normalizeTotalsSnapshot(t),
                 username: (t.N != null ? String(t.N) : ''),
                 ts: Date.now()
             };
@@ -7227,23 +7240,27 @@
             return '';
         }
 
-        function hasRoundTotalsData(totals) {
+        function normalizeTotalsSnapshot(src) {
             try {
-                if (!totals)
-                    return false;
-                return !!(((totals.B || 0) !== 0) || ((totals.P || 0) !== 0) || ((totals.T || 0) !== 0));
+                if (!src)
+                    return null;
+                return {
+                    B: (src.B != null ? Number(src.B) : (src.C != null ? Number(src.C) : null)),
+                    P: (src.P != null ? Number(src.P) : (src.L != null ? Number(src.L) : null)),
+                    T: (src.T != null ? Number(src.T) : null),
+                    A: (src.A != null ? Number(src.A) : null),
+                    N: (src.N != null ? String(src.N) : null),
+                    C: (src.C != null ? Number(src.C) : (src.B != null ? Number(src.B) : null)),
+                    L: (src.L != null ? Number(src.L) : (src.P != null ? Number(src.P) : null)),
+                    rawA: (src.rawA != null ? src.rawA : null),
+                    rawN: (src.rawN != null ? src.rawN : null),
+                    rawHS: (src.rawHS != null ? src.rawHS : null),
+                    TB: (src.TB != null ? src.TB : null),
+                    TA: (src.TA != null ? src.TA : null),
+                    cards: (src.cards || [])
+                };
             } catch (_) {
-                return false;
-            }
-        }
-
-        function hasHudData(totals) {
-            try {
-                if (!totals)
-                    return false;
-                return !!((totals.N && String(totals.N).trim()) || totals.A != null);
-            } catch (_) {
-                return false;
+                return null;
             }
         }
 
@@ -7288,14 +7305,13 @@
 
             try {
                 if (cached && cached.totals)
-                    t = cached.totals;
+                    t = normalizeTotalsSnapshot(cached.totals);
             } catch (_) {}
             try {
                 if (!t && S && S._lastTotals)
-                    t = S._lastTotals;
+                    t = normalizeTotalsSnapshot(S._lastTotals);
             } catch (_) {}
-            if (!t)
-                t = readTotalsSafe();
+            t = normalizeTotalsSnapshot(readTotalsSafe()) || t;
 
             try {
                 if (cached && cached.seq)
@@ -7328,9 +7344,7 @@
                 seq: seq,
                 username: uname,
                 status: String(st || ''),
-                ts: Date.now(),
-                hasRound: hasRoundTotalsData(t),
-                hasHud: hasHudData(t)
+                ts: Date.now()
             };
         }
 
@@ -7357,10 +7371,6 @@
                 _lastJson = '';
                 _pushTimer = setInterval(function () {
                     var snap = buildSnapshotNow();
-                    try {
-                        delete snap.hasRound;
-                        delete snap.hasHud;
-                    } catch (_) {}
                     if (shallowChanged(snap))
                         safePost(snap);
                 }, tickMs);

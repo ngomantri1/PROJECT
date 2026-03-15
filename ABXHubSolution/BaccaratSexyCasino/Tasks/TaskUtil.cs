@@ -24,7 +24,6 @@ namespace BaccaratSexyCasino.Tasks
         private static readonly ConcurrentDictionary<string, int> _lastBetRoundByTab = new();
         private static readonly ConcurrentDictionary<string, string> _lastBetSideByTab = new();
         private static readonly ConcurrentDictionary<string, string> _lastAcceptedRawSeqByTab = new();
-        private static readonly ConcurrentDictionary<string, string> _lastAcceptedTotalsMarkerByTab = new();
         private static readonly ConcurrentDictionary<string, byte> _betInFlightByTab = new();
         private const long SendOnlyCooldownMs = 3000;
 
@@ -35,7 +34,6 @@ namespace BaccaratSexyCasino.Tasks
             _lastBetRoundByTab.Clear();
             _lastBetSideByTab.Clear();
             _lastAcceptedRawSeqByTab.Clear();
-            _lastAcceptedTotalsMarkerByTab.Clear();
             _betInFlightByTab.Clear();
         }
 
@@ -70,32 +68,6 @@ namespace BaccaratSexyCasino.Tasks
             if (string.IsNullOrEmpty(result)) return null;
             if (string.Equals(result, "TIE", StringComparison.OrdinalIgnoreCase)) return null;
             return string.Equals(betSide, result, StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static string BuildTotalsMarker(CwSnapshot? snap)
-        {
-            var t = snap?.totals;
-            var b = t?.B ?? 0;
-            var p = t?.P ?? 0;
-            var tie = t?.T ?? 0;
-            return $"{b}|{p}|{tie}";
-        }
-
-        private static (long B, long P, long T) ReadTotals(CwSnapshot? snap)
-        {
-            var t = snap?.totals;
-            return (t?.B ?? 0, t?.P ?? 0, t?.T ?? 0);
-        }
-
-        private static (long B, long P, long T) ParseTotalsMarker(string? marker)
-        {
-            if (string.IsNullOrWhiteSpace(marker)) return (0, 0, 0);
-            var parts = marker.Split('|');
-            if (parts.Length != 3) return (0, 0, 0);
-            long.TryParse(parts[0], out var b);
-            long.TryParse(parts[1], out var p);
-            long.TryParse(parts[2], out var t);
-            return (b, p, t);
         }
 
         public static double CalcNetDelta(string betSide, long stake, bool? win)
@@ -180,7 +152,6 @@ namespace BaccaratSexyCasino.Tasks
             var playableSnap = ctx.GetSnap?.Invoke();
             var snap = ctx.GetRawSnap?.Invoke() ?? playableSnap;
             var rawSeq = snap?.seq ?? "";
-            var totalsMarker = BuildTotalsMarker(snap);
             var roundId = 0;
             try { roundId = (snap?.seq ?? "").Length; } catch { roundId = 0; }
 
@@ -204,26 +175,20 @@ namespace BaccaratSexyCasino.Tasks
                 }
             }
 
-            // Optimistic mode: chỉ cần đẩy intent xuống JS là coi như thành công.
+            // Optimistic mode giống XocDiaTuLinhZoWin: qua được chặn local thì coi như đã bắn.
             var js =
-                "(function(){try{" +
+                "(async function(){try{" +
                 " var intent = { tabId: '" + tabKey + "', roundId: " + roundId + ", side: '" + side + "', amount: " + amount + " };" +
                 " if (typeof window.__cw_bet_enqueue==='function'){" +
-                "   window.__cw_bet_enqueue(intent); return 'sent';" +
+                "   return String(await window.__cw_bet_enqueue(intent));" +
                 " } else if (typeof window.__cw_bet==='function'){" +
-                "   window.__cw_bet('" + side + "', " + amount + "); return 'sent';" +
+                "   return String(await window.__cw_bet('" + side + "', " + amount + "));" +
                 " } else { return 'no'; }" +
-                "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})()";
+                "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
             var rRaw = await ctx.EvalJsAsync(js);
             ctx.Log?.Invoke($"[BET-JS] tab={tabKey} round={roundId} result={rRaw}");
-
-            var normalized = (rRaw ?? "").Trim();
-            if (!string.IsNullOrWhiteSpace(normalized))
-                normalized = normalized.Trim().Trim('"');
-            bool ok =
-                !string.Equals(normalized, "no", StringComparison.OrdinalIgnoreCase) &&
-                !(normalized.StartsWith("err:", StringComparison.OrdinalIgnoreCase));
+            bool ok = true;
 
             if (ok)
             {
@@ -246,89 +211,39 @@ namespace BaccaratSexyCasino.Tasks
                 _lastBetRoundByTab[tabKey] = roundId;
                 _lastBetSideByTab[tabKey] = side ?? "";
                 _lastAcceptedRawSeqByTab[tabKey] = rawSeq;
-                _lastAcceptedTotalsMarkerByTab[tabKey] = totalsMarker;
                 _betInFlightByTab[tabKey] = 1;
             }
-            else
-            {
-                _lastAcceptedRawSeqByTab.TryRemove(tabKey, out _);
-                _lastAcceptedTotalsMarkerByTab.TryRemove(tabKey, out _);
-                _betInFlightByTab.TryRemove(tabKey, out _);
-            }
-
             return ok;
         }
         public static async Task<bool?> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSeq, CancellationToken ct)
         {
             var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
-            if (!_lastAcceptedTotalsMarkerByTab.TryGetValue(tabKey, out var waitTotalsMarker) ||
-                string.IsNullOrWhiteSpace(waitTotalsMarker))
+            if (!_lastAcceptedRawSeqByTab.TryGetValue(tabKey, out var acceptedRawSeq) ||
+                string.IsNullOrWhiteSpace(acceptedRawSeq))
             {
-                ctx.Log?.Invoke($"[BET][SKIP] no accepted totals marker for settle | tab={tabKey}");
+                ctx.Log?.Invoke($"[BET][SKIP] no accepted raw seq for settle | tab={tabKey}");
                 _betInFlightByTab.TryRemove(tabKey, out _);
                 return null;
             }
 
-            var waitTotals = ParseTotalsMarker(waitTotalsMarker);
-            var waitSeq = baseSeq ?? string.Empty;
-            var waitSeqLen = waitSeq.Length;
+            var waitSeq = acceptedRawSeq ?? string.Empty;
 
-            // Ưu tiên baseSeq -> curSeq làm marker chính.
-            // Totals B/P/T chỉ là fallback khi seq bị lệch hoặc chưa usable.
+            // Baccarat settle theo raw seq để giữ được cả 'T'.
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                var s = ctx.GetSnap?.Invoke() ?? ctx.GetRawSnap?.Invoke();
+                var s = ctx.GetRawSnap?.Invoke() ?? ctx.GetSnap?.Invoke();
                 var curSeqRaw = s?.seq ?? string.Empty;
-                var curTotals = ReadTotals(s);
-                var curTotalsMarker = BuildTotalsMarker(s);
-                var totalsChanged = !string.Equals(curTotalsMarker, waitTotalsMarker, StringComparison.Ordinal);
-
-                char seqResultChar = '\0';
-                bool seqAdvanced = !string.Equals(curSeqRaw, waitSeq, StringComparison.Ordinal);
-                bool haveSeqResult = false;
-
-                if (seqAdvanced && curSeqRaw.Length > 0)
+                if (!string.Equals(curSeqRaw, waitSeq, StringComparison.Ordinal) && curSeqRaw.Length > 0)
                 {
-                    if (curSeqRaw.Length > waitSeqLen &&
-                        (waitSeqLen == 0 || curSeqRaw.StartsWith(waitSeq, StringComparison.Ordinal)))
-                    {
-                        seqResultChar = char.ToUpperInvariant(curSeqRaw[waitSeqLen]);
-                    }
-                    else
-                    {
-                        // Fallback khi seq không còn là prefix sạch của baseSeq
-                        // nhưng vẫn đã đổi; dùng ký tự cuối hiện tại thay vì treo chờ mãi.
-                        seqResultChar = char.ToUpperInvariant(curSeqRaw[^1]);
-                    }
-                    haveSeqResult = seqResultChar == 'B' || seqResultChar == 'P' || seqResultChar == 'T';
-                }
-
-                if (haveSeqResult || totalsChanged)
-                {
-                    bool? win;
-
-                    if (haveSeqResult)
-                    {
-                        win = IsWin(betSide, seqResultChar);
-                    }
-                    else if (curTotals.T > waitTotals.T)
-                    {
-                        win = null;
-                    }
-                    else if (curTotals.B > waitTotals.B)
-                    {
-                        win = string.Equals(betSide, "BANKER", StringComparison.OrdinalIgnoreCase);
-                    }
-                    else if (curTotals.P > waitTotals.P)
-                    {
-                        win = string.Equals(betSide, "PLAYER", StringComparison.OrdinalIgnoreCase);
-                    }
-                    else
+                    var seqResultChar = char.ToUpperInvariant(curSeqRaw[^1]);
+                    if (seqResultChar != 'B' && seqResultChar != 'P' && seqResultChar != 'T')
                     {
                         await Task.Delay(80, ct);
                         continue;
                     }
+
+                    bool? win = IsWin(betSide, seqResultChar);
 
                     await ctx.UiDispatcher.InvokeAsync(() =>
                     {
@@ -343,7 +258,6 @@ namespace BaccaratSexyCasino.Tasks
                         }
                     });
                     _lastAcceptedRawSeqByTab.TryRemove(tabKey, out _);
-                    _lastAcceptedTotalsMarkerByTab.TryRemove(tabKey, out _);
                     _betInFlightByTab.TryRemove(tabKey, out _);
                     // cộng tiền lũy kế: +amount khi thắng, -amount khi thua (đơn giản)
                     //TaskUtil.UiRoundAllowNextReset();

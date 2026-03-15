@@ -2084,7 +2084,7 @@
                                             <!--  Tài khoản  -->
                                             <DataGridTextColumn
                                                 Width="*"
-                                                Binding="{Binding Account, StringFormat=N0}"
+                                                Binding="{Binding Account, StringFormat={}{0:#,0.##}}"
                                                 Header="Tài khoản">
                                                 <DataGridTextColumn.ElementStyle>
                                                     <Style TargetType="TextBlock">

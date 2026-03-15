@@ -9,7 +9,7 @@ namespace BaccaratSexyCasino
         public long? B { get; set; }
         public long? P { get; set; }
         public long? T { get; set; }
-        public long? A { get; set; }
+        public double? A { get; set; }
         public string N { get; set; }
         public long? SD { get; set; }
         public long? TT { get; set; }
