@@ -5133,11 +5133,8 @@
     function clickBetTarget(tgt) {
         if (!tgt || !tgt.node)
             return false;
-        if (tgt.dom && tgt.el && tgt.el.ownerDocument) {
-            if (domClickTargetRect(tgt))
-                return true;
-            return domFireClick(tgt.el);
-        }
+        if (tgt.dom && tgt.el && tgt.el.ownerDocument)
+            return domMinimalClick(tgt.el);
         var node = tgt.node;
         var rect = tgt.rect || rectFromNodeCompat(node);
         var ok = false;
@@ -5183,6 +5180,37 @@
             return domCollapse(el && (el.innerText || el.textContent) || '');
         } catch (_) {
             return '';
+        }
+    }
+    function domMinimalClick(el) {
+        try {
+            if (!el || !el.getBoundingClientRect)
+                return false;
+            var rect = el.getBoundingClientRect();
+            var x = rect.left + rect.width / 2;
+            var y = rect.top + rect.height / 2;
+            var win = el.ownerDocument && el.ownerDocument.defaultView ? el.ownerDocument.defaultView : window;
+            try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (_) {}
+            try { el.focus && el.focus(); } catch (_) {}
+            try {
+                el.click();
+                return true;
+            } catch (_) {}
+            try {
+                el.dispatchEvent(new win.MouseEvent('click', {
+                    bubbles: true,
+                    cancelable: true,
+                    composed: true,
+                    clientX: x,
+                    clientY: y,
+                    button: 0,
+                    buttons: 1
+                }));
+                return true;
+            } catch (_) {}
+            return false;
+        } catch (_) {
+            return false;
         }
     }
     function domTailOf(el) {
@@ -5447,7 +5475,7 @@
             if (normalizedAmount != null && normalizedInfo != null && normalizedAmount !== normalizedInfo)
                 return false;
         }
-        if (!domFireClick(info.el))
+        if (!domMinimalClick(info.el))
             return false;
         await sleep(140);
         return true;
@@ -5974,52 +6002,40 @@
                 expectedStake: expectedUnits || null,
                 targetStake: readyStake ? readyStake.val : null
             });
-            for (var i = 0; i < 2; i++) {
-                var mode = (i === 0) ? 'element' : 'point';
-                console.log('[cwBet++] confirm click', {
-                    attempt: i + 1,
-                    mode: mode,
-                    x: confirm.x,
-                    y: confirm.y,
-                    w: confirm.w,
-                    h: confirm.h,
-                    text: confirm.text,
-                    source: confirm.source
-                });
-                domEmitConfirmDiag('before_click', confirm, {
-                    attempt: i + 1,
-                    mode: mode,
-                    shielded: shield ? shield.count : 0,
-                    expectedStake: expectedUnits || null,
-                    targetStake: readyStake ? readyStake.val : null
-                });
-                if (mode === 'element') {
-                    domFireClick(confirm.el);
-                } else {
-                    try {
-                        var px = confirm.x + confirm.w * 0.32;
-                        var py = confirm.y + confirm.h * 0.50;
-                        domFireClickAtPoint(confirm.doc, px, py);
-                    } catch (_) {}
-                }
-                await sleep(14);
-                var settled = await domWaitConfirmSettled(520);
-                var stakeHit = null;
-                if (expectedUnits != null)
-                    stakeHit = await domWaitTargetStakeUnits(tgt, expectedUnits, 180);
-                domEmitConfirmDiag('after_click', confirm, {
-                    attempt: i + 1,
-                    mode: mode,
-                    shielded: shield ? shield.count : 0,
-                    settled: settled,
-                    expectedStake: expectedUnits || null,
-                    targetStake: stakeHit ? stakeHit.val : null
-                });
-                if (settled && (expectedUnits == null || (stakeHit && stakeHit.val === expectedUnits)))
-                    return true;
-                confirm = domPickBestConfirm() || confirm;
-                readyStake = domReadTargetStakeUnits(tgt, expectedUnits);
-            }
+            var mode = 'element';
+            console.log('[cwBet++] confirm click', {
+                attempt: 1,
+                mode: mode,
+                x: confirm.x,
+                y: confirm.y,
+                w: confirm.w,
+                h: confirm.h,
+                text: confirm.text,
+                source: confirm.source
+            });
+            domEmitConfirmDiag('before_click', confirm, {
+                attempt: 1,
+                mode: mode,
+                shielded: shield ? shield.count : 0,
+                expectedStake: expectedUnits || null,
+                targetStake: readyStake ? readyStake.val : null
+            });
+            domMinimalClick(confirm.el);
+            await sleep(14);
+            var settled = await domWaitConfirmSettled(520);
+            var stakeHit = null;
+            if (expectedUnits != null)
+                stakeHit = await domWaitTargetStakeUnits(tgt, expectedUnits, 180);
+            domEmitConfirmDiag('after_click', confirm, {
+                attempt: 1,
+                mode: mode,
+                shielded: shield ? shield.count : 0,
+                settled: settled,
+                expectedStake: expectedUnits || null,
+                targetStake: stakeHit ? stakeHit.val : null
+            });
+            if (settled && (expectedUnits == null || (stakeHit && stakeHit.val === expectedUnits)))
+                return true;
         } finally {
             try { if (shield && shield.restore) shield.restore(); } catch (_) {}
         }
