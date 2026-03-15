@@ -326,7 +326,7 @@ namespace BaccaratSexyCasino.Tasks
                     }
                     else
                     {
-                        await Task.Delay(120, ct);
+                        await Task.Delay(80, ct);
                         continue;
                     }
 
@@ -349,7 +349,7 @@ namespace BaccaratSexyCasino.Tasks
                     //TaskUtil.UiRoundAllowNextReset();
                     return win;
                 }
-                await Task.Delay(120, ct);
+                await Task.Delay(80, ct);
             }
         }
     }

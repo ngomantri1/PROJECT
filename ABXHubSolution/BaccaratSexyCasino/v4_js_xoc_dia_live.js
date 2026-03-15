@@ -4248,9 +4248,9 @@
     var CHIP_TAIL_ROW4 = 'xdlive/canvas/bg/tipdealer/tabtipdealer/tipcontent/views/contentchat/row4/itemtip/lbmoney';
     var DENOMS_DESC = [10000000, 5000000, 1000000, 500000, 100000, 50000, 20000, 10000, 5000, 2000, 1000];
     var cfgBet = {
-        delayPick: 85,
-        delayTap: 70,
-        delayBetweenSteps: 75
+    delayPick: 70,
+    delayTap: 55,
+    delayBetweenSteps: 60
     };
 
     function clickAtWin(x, y) {
@@ -5979,7 +5979,7 @@
         return false;
     }
     async function domClickConfirmAfterBet(tgt, expectedUnits) {
-        var confirm = await domWaitConfirmReady(620);
+      var confirm = await domWaitConfirmReady(500);
         if (!confirm) {
             console.warn('[cwBet++] không thấy nút xác nhận');
             return false;
@@ -6012,11 +6012,11 @@
                 targetStake: readyStake ? readyStake.val : null
             });
             domMinimalClick(confirm.el);
-            await sleep(14);
-            var settled = await domWaitConfirmSettled(520);
+          await sleep(10);
+          var settled = await domWaitConfirmSettled(420);
             var stakeHit = null;
             if (expectedUnits != null)
-                stakeHit = await domWaitTargetStakeUnits(tgt, expectedUnits, 180);
+          stakeHit = await domWaitTargetStakeUnits(tgt, expectedUnits, 140);
             domEmitConfirmDiag('after_click', confirm, {
                 attempt: 1,
                 mode: mode,
@@ -6594,11 +6594,11 @@
                     return false;
                 });
                 if (!appliedOne && isDomMode) {
-                    appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 180).catch(function () {
+        appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 140).catch(function () {
                         return false;
                     });
                     if (!appliedOne) {
-                        var stakeHitOne = await domWaitTargetStakeUnits(tgt, X, 180).catch(function () {
+        var stakeHitOne = await domWaitTargetStakeUnits(tgt, X, 140).catch(function () {
                             return null;
                         });
                         appliedOne = !!(stakeHitOne && stakeHitOne.val === X);
