@@ -3533,7 +3533,7 @@
         var last = before;
         var want = normalizeSide(side);
         while (((performance && performance.now ? performance.now() : Date.now()) - t0) < timeout) {
-            await sleep(60);
+            await sleep(40);
             var cur = sampleTotalsNow();
             if (((want === 'BANKER' || want === 'CHAN') && ((cur.B !== last.B) || (cur.C !== last.C))) ||
                 ((want === 'PLAYER' || want === 'LE') && ((cur.P !== last.P) || (cur.L !== last.L))) ||
@@ -4248,9 +4248,9 @@
     var CHIP_TAIL_ROW4 = 'xdlive/canvas/bg/tipdealer/tabtipdealer/tipcontent/views/contentchat/row4/itemtip/lbmoney';
     var DENOMS_DESC = [10000000, 5000000, 1000000, 500000, 100000, 50000, 20000, 10000, 5000, 2000, 1000];
     var cfgBet = {
-        delayPick: 100,
-        delayTap: 85,
-        delayBetweenSteps: 100
+        delayPick: 85,
+        delayTap: 70,
+        delayBetweenSteps: 75
     };
 
     function clickAtWin(x, y) {
@@ -5960,7 +5960,7 @@
         return false;
     }
     async function domClickConfirmAfterBet(tgt, expectedUnits) {
-        var confirm = await domWaitConfirmReady(750);
+        var confirm = await domWaitConfirmReady(620);
         if (!confirm) {
             console.warn('[cwBet++] không thấy nút xác nhận');
             return false;
@@ -6002,11 +6002,11 @@
                         domFireClickAtPoint(confirm.doc, px, py);
                     } catch (_) {}
                 }
-                await sleep(20);
-                var settled = await domWaitConfirmSettled(700);
+                await sleep(14);
+                var settled = await domWaitConfirmSettled(520);
                 var stakeHit = null;
                 if (expectedUnits != null)
-                    stakeHit = await domWaitTargetStakeUnits(tgt, expectedUnits, 260);
+                    stakeHit = await domWaitTargetStakeUnits(tgt, expectedUnits, 180);
                 domEmitConfirmDiag('after_click', confirm, {
                     attempt: i + 1,
                     mode: mode,
@@ -6030,7 +6030,7 @@
         return await domClickConfirmAfterBet();
     };
     async function domWaitPendingConfirmEnabled(beforeEnabled, timeout) {
-        timeout = timeout || 550;
+        timeout = timeout || 420;
         if (beforeEnabled)
             return false;
         var confirm = await domWaitConfirmReady(timeout);
@@ -6591,7 +6591,7 @@
                         return false;
                     });
                     if (!appliedOne) {
-                        var stakeHitOne = await domWaitTargetStakeUnits(tgt, X, 260).catch(function () {
+                        var stakeHitOne = await domWaitTargetStakeUnits(tgt, X, 180).catch(function () {
                             return null;
                         });
                         appliedOne = !!(stakeHitOne && stakeHitOne.val === X);
