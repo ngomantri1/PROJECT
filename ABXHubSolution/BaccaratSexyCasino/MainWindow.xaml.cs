@@ -3492,9 +3492,11 @@ try{
                     var attempt = GetJsonLongLoose(root, "attempt") ?? 0;
                     var shielded = GetJsonLongLoose(root, "shielded") ?? 0;
                     var settled = GetJsonLongLoose(root, "settled");
+                    var expectedStake = GetJsonLongLoose(root, "expectedStake");
+                    var targetStake = GetJsonLongLoose(root, "targetStake");
                     var px = GetJsonLongLoose(root, "px") ?? 0;
                     var py = GetJsonLongLoose(root, "py") ?? 0;
-                    Log($"[DIAG][CONFIRM] stage={stage} attempt={attempt} mode={mode} src={source2} text={text} shielded={shielded} settled={(settled.HasValue ? settled.Value.ToString() : "-")} point={px},{py} hitText={hitText} hitTail={hitTail}");
+                    Log($"[DIAG][CONFIRM] stage={stage} attempt={attempt} mode={mode} src={source2} text={text} shielded={shielded} settled={(settled.HasValue ? settled.Value.ToString() : "-")} expectedStake={(expectedStake.HasValue ? expectedStake.Value.ToString() : "-")} targetStake={(targetStake.HasValue ? targetStake.Value.ToString() : "-")} point={px},{py} hitText={hitText} hitTail={hitTail}");
                     return;
                 }
 

@@ -5654,6 +5654,76 @@
         }
         return null;
     }
+    function parseStakeUnitsLoose(txt) {
+        if (!txt)
+            return null;
+        var raw = String(txt || '').trim();
+        if (!raw)
+            return null;
+        if (/[:/]/.test(raw))
+            return null;
+        var amt = parseAmountLoose(raw);
+        if (amt != null && amt > 0)
+            return Math.floor(amt / 1000);
+        var s = NORM(raw);
+        var m = s.match(/\b(\d{1,5})\b/);
+        if (!m)
+            return null;
+        var val = parseInt(m[1], 10);
+        if (!isFinite(val) || val <= 1)
+            return null;
+        return val;
+    }
+    function domReadTargetStakeUnits(tgt, expectedUnits) {
+        try {
+            if (!tgt || !tgt.rect)
+                return null;
+            var rect = tgt.rect;
+            var cx0 = rect.x + rect.w / 2;
+            var cy0 = rect.y + rect.h / 2;
+            var texts = buildTextRects();
+            var best = null;
+            var bestScore = -1e9;
+            for (var i = 0; i < texts.length; i++) {
+                var t = texts[i];
+                var val = parseStakeUnitsLoose(t.text);
+                if (!(val > 0))
+                    continue;
+                var cx = t.x + t.w / 2;
+                var cy = t.y + t.h / 2;
+                if (cx < rect.x - 12 || cx > rect.x + rect.w + 12)
+                    continue;
+                if (cy < rect.y - 12 || cy > rect.y + rect.h + 12)
+                    continue;
+                var score = 0;
+                if (expectedUnits != null && val === expectedUnits)
+                    score += 1000;
+                if (t.w <= Math.max(64, rect.w * 0.45))
+                    score += 120;
+                if (t.h <= Math.max(40, rect.h * 0.55))
+                    score += 80;
+                score -= Math.round(dist2(cx, cy, cx0, cy0) / 12);
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = { val: val, text: t.text, tail: t.tail, x: cx, y: cy };
+                }
+            }
+            return best;
+        } catch (_) {
+            return null;
+        }
+    }
+    async function domWaitTargetStakeUnits(tgt, expectedUnits, timeout) {
+        timeout = timeout || 420;
+        var t0 = Date.now();
+        while ((Date.now() - t0) < timeout) {
+            await sleep(24);
+            var hit = domReadTargetStakeUnits(tgt, expectedUnits);
+            if (hit && (expectedUnits == null || hit.val === expectedUnits))
+                return hit;
+        }
+        return null;
+    }
     function domCollectConfirmCandidates(doc, source) {
         var rows = [];
         if (!doc || !doc.querySelectorAll)
@@ -5817,6 +5887,8 @@
                 h: confirm ? confirm.h : 0,
                 px: px,
                 py: py,
+                expectedStake: extra.expectedStake || null,
+                targetStake: extra.targetStake || null,
                 hitText: hit ? String(domTextOf(hit) || '') : '',
                 hitTail: hit ? String(domTailOf(hit) || '') : '',
                 hitHtml: hit ? domShortOuterHtml(hit) : ''
@@ -5887,7 +5959,7 @@
         }
         return false;
     }
-    async function domClickConfirmAfterBet() {
+    async function domClickConfirmAfterBet(tgt, expectedUnits) {
         var confirm = await domWaitConfirmReady(750);
         if (!confirm) {
             console.warn('[cwBet++] không thấy nút xác nhận');
@@ -5896,7 +5968,12 @@
         var shield = null;
         try { shield = domShieldRepeatButtons(confirm.doc); } catch (_) { shield = null; }
         try {
-            domEmitConfirmDiag('ready', confirm, { shielded: shield ? shield.count : 0 });
+            var readyStake = domReadTargetStakeUnits(tgt, expectedUnits);
+            domEmitConfirmDiag('ready', confirm, {
+                shielded: shield ? shield.count : 0,
+                expectedStake: expectedUnits || null,
+                targetStake: readyStake ? readyStake.val : null
+            });
             for (var i = 0; i < 2; i++) {
                 var mode = (i === 0) ? 'element' : 'point';
                 console.log('[cwBet++] confirm click', {
@@ -5912,7 +5989,9 @@
                 domEmitConfirmDiag('before_click', confirm, {
                     attempt: i + 1,
                     mode: mode,
-                    shielded: shield ? shield.count : 0
+                    shielded: shield ? shield.count : 0,
+                    expectedStake: expectedUnits || null,
+                    targetStake: readyStake ? readyStake.val : null
                 });
                 if (mode === 'element') {
                     domFireClick(confirm.el);
@@ -5925,15 +6004,21 @@
                 }
                 await sleep(20);
                 var settled = await domWaitConfirmSettled(700);
+                var stakeHit = null;
+                if (expectedUnits != null)
+                    stakeHit = await domWaitTargetStakeUnits(tgt, expectedUnits, 260);
                 domEmitConfirmDiag('after_click', confirm, {
                     attempt: i + 1,
                     mode: mode,
                     shielded: shield ? shield.count : 0,
-                    settled: settled
+                    settled: settled,
+                    expectedStake: expectedUnits || null,
+                    targetStake: stakeHit ? stakeHit.val : null
                 });
-                if (settled)
+                if (settled && (expectedUnits == null || (stakeHit && stakeHit.val === expectedUnits)))
                     return true;
                 confirm = domPickBestConfirm() || confirm;
+                readyStake = domReadTargetStakeUnits(tgt, expectedUnits);
             }
         } finally {
             try { if (shield && shield.restore) shield.restore(); } catch (_) {}
@@ -6505,6 +6590,12 @@
                     appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 180).catch(function () {
                         return false;
                     });
+                    if (!appliedOne) {
+                        var stakeHitOne = await domWaitTargetStakeUnits(tgt, X, 260).catch(function () {
+                            return null;
+                        });
+                        appliedOne = !!(stakeHitOne && stakeHitOne.val === X);
+                    }
                 }
                 if (!appliedOne && !isDomMode) {
                     console.warn('[cwBet++] click cửa không ghi nhận tiền exact-hit', {
@@ -6514,7 +6605,7 @@
                     return failBet('bet click not reflected for exact chip', { side: side, amount: raw, chipUnits: X });
                 }
                 if (isDomMode) {
-                    var confirmOne = await domClickConfirmAfterBet();
+                    var confirmOne = await domClickConfirmAfterBet(tgt, X);
                     if (!confirmOne) {
                         if (!appliedOne) {
                             console.warn('[cwBet++] click cửa không ghi nhận tiền exact-hit', {
@@ -6604,7 +6695,7 @@
                 }
             }
             if (isDomMode) {
-                var confirmOk = await domClickConfirmAfterBet();
+                var confirmOk = await domClickConfirmAfterBet(tgt, X);
                 if (!confirmOk) {
                     console.warn('[cwBet++] confirm failed', {
                         side: side,
