@@ -3610,7 +3610,7 @@
         '</div>' +
         '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
+    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -4248,9 +4248,9 @@
     var CHIP_TAIL_ROW4 = 'xdlive/canvas/bg/tipdealer/tabtipdealer/tipcontent/views/contentchat/row4/itemtip/lbmoney';
     var DENOMS_DESC = [10000000, 5000000, 1000000, 500000, 100000, 50000, 20000, 10000, 5000, 2000, 1000];
     var cfgBet = {
-        delayPick: 120,
-        delayTap: 100,
-        delayBetweenSteps: 120
+        delayPick: 100,
+        delayTap: 85,
+        delayBetweenSteps: 100
     };
 
     function clickAtWin(x, y) {
@@ -5888,7 +5888,7 @@
         return false;
     }
     async function domClickConfirmAfterBet() {
-        var confirm = await domWaitConfirmReady(900);
+        var confirm = await domWaitConfirmReady(750);
         if (!confirm) {
             console.warn('[cwBet++] không thấy nút xác nhận');
             return false;
@@ -5923,8 +5923,8 @@
                         domFireClickAtPoint(confirm.doc, px, py);
                     } catch (_) {}
                 }
-                await sleep(28);
-                var settled = await domWaitConfirmSettled(900);
+                await sleep(20);
+                var settled = await domWaitConfirmSettled(700);
                 domEmitConfirmDiag('after_click', confirm, {
                     attempt: i + 1,
                     mode: mode,
@@ -5945,7 +5945,7 @@
         return await domClickConfirmAfterBet();
     };
     async function domWaitPendingConfirmEnabled(beforeEnabled, timeout) {
-        timeout = timeout || 700;
+        timeout = timeout || 550;
         if (beforeEnabled)
             return false;
         var confirm = await domWaitConfirmReady(timeout);
@@ -5977,7 +5977,7 @@
         })(cc.director.getScene());
         if (cand) {
             emitClick(clickableOf(cand));
-            await sleep(220);
+            await sleep(180);
         }
         return !!cand;
     }
