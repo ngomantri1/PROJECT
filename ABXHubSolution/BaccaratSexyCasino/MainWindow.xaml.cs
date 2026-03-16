@@ -3228,23 +3228,53 @@ try{
 
                     if (snap != null)
                     {
-                        string statusUi = GetJsonStringLoose(jrootTick, "status") ?? "";
+                        string statusRaw = GetJsonStringLoose(jrootTick, "status") ?? "";
+                        string statusUi = statusRaw;
+                        if (statusUi.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase))
+                            statusUi = "Baccarat" + statusUi.Substring("Baccarat DOM".Length);
                         var seqDisplayRaw = snap.seq ?? "";
                         var totalsNow = snap.totals;
-                        bool hasSeqData = !string.IsNullOrWhiteSpace(seqDisplayRaw);
+                        bool hasSeqData = seqDisplayRaw.Any(ch =>
+                        {
+                            char u = char.ToUpperInvariant(ch);
+                            return u == 'B' || u == 'P' || u == 'T';
+                        });
                         bool hasHudData = totalsNow != null &&
                                           (!string.IsNullOrWhiteSpace(totalsNow.N) ||
                                            totalsNow.A.HasValue);
                         bool hasProgressData = snap.prog.HasValue;
+                        bool isDomStatus = statusRaw.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase);
+                        bool isDomWaitingStatus =
+                            isDomStatus &&
+                            statusRaw.IndexOf("waiting", StringComparison.OrdinalIgnoreCase) >= 0;
                         bool hasMeaningfulStatus = !string.IsNullOrWhiteSpace(statusUi) &&
-                                                   !statusUi.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase);
+                                                   !isDomStatus;
                         bool hasMeaningfulData = hasSeqData || hasHudData || hasProgressData || hasMeaningfulStatus;
                         bool isPlaceholderDomTick =
                             !hasSeqData &&
                             !hasHudData &&
                             !hasProgressData &&
-                            statusUi.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase);
+                            isDomStatus;
+                        bool isDomWaitingTick =
+                            !hasSeqData &&
+                            isDomWaitingStatus;
                         bool isEmptyTick = !hasMeaningfulData;
+                        if (isDomWaitingTick)
+                        {
+                            _ = Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                try
+                                {
+                                    if (LblStatusText != null)
+                                    {
+                                        LblStatusText.Text = "";
+                                        LblStatusText.Visibility = Visibility.Collapsed;
+                                    }
+                                }
+                                catch { }
+                            }));
+                            return;
+                        }
                         if (isPlaceholderDomTick)
                             return;
                         if (isEmptyTick)
