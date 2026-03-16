@@ -146,6 +146,13 @@
     }
 
     function __cw_boot() {
+    try {
+        cwDbg('BOOT', 'cw boot start', {
+            href: String(location.href || ''),
+            top: __cw_isTopDocument() ? 1 : 0,
+            hasCocos: __cw_hasCocos() ? 1 : 0
+        }, 0, 'boot-start');
+    } catch (_) {}
     /* ---------------- utils ---------------- */
     var V2 = (__cw_hasCocos() && cc ? (cc.v2 || cc.Vec2) : null);
     var sleep = function (ms) {
@@ -239,6 +246,110 @@
             return (v / 1e3).toFixed(2) + 'K';
         return String(v);
     };
+    try {
+        if (typeof window.__cw_debug_seq === 'undefined')
+            window.__cw_debug_seq = 1;
+        if (typeof window.__cw_debug_seq_detail === 'undefined')
+            window.__cw_debug_seq_detail = 1;
+    } catch (_) {}
+    var _cwDbgBuf = [];
+    var _cwDbgLast = Object.create(null);
+    var _cwSeqDiagState = {
+        lastNoBoard: null,
+        lastSourcePick: null,
+        lastParserError: null
+    };
+    function cwShort(s, n) {
+        s = String(s == null ? '' : s);
+        n = Number(n || 90);
+        if (s.length <= n)
+            return s;
+        return s.slice(0, n) + '...';
+    }
+    function brHrefShort(href) {
+        var s = String(href || '');
+        if (!s)
+            return '';
+        var m = s.match(/https?:\/\/[^/]+(\/[^?#]*)?/i);
+        return m ? String(m[0] || '') : cwShort(s, 120);
+    }
+    function brContextSummary(contexts, limit) {
+        var out = [];
+        contexts = contexts || [];
+        limit = Number(limit || 8);
+        for (var i = 0; i < contexts.length && i < limit; i++) {
+            var ctx = contexts[i] || {};
+            out.push({
+                source: String(ctx.source || ''),
+                href: brHrefShort(ctx.href || ''),
+                score: Number(ctx.score || 0),
+                rowCount: (ctx.rows && ctx.rows.length) ? ctx.rows.length : 0,
+                offX: Number(ctx.offX || 0),
+                offY: Number(ctx.offY || 0)
+            });
+        }
+        return out;
+    }
+    function brProfileSummary(profiles) {
+        var out = [];
+        profiles = profiles || [];
+        for (var i = 0; i < profiles.length; i++) {
+            var p = profiles[i] || {};
+            out.push({
+                idx: Number(p.idx || 0),
+                markerCount: Number(p.markerCount || 0),
+                boardFound: p.boardFound ? 1 : 0,
+                boardScore: p.board && p.board.score != null ? Number(p.board.score) : 0,
+                reason: String(p.reason || '')
+            });
+        }
+        return out;
+    }
+    function cwDbg(tag, msg, data, throttleMs, key) {
+        try {
+            if (!(window.__cw_debug_seq === 1 || window.__cw_debug_seq === true))
+                return;
+            var now = Date.now();
+            var k = String(key || (tag + '|' + msg));
+            var wait = Number(throttleMs || 0);
+            var last = _cwDbgLast[k] || 0;
+            if (wait > 0 && (now - last) < wait)
+                return;
+            _cwDbgLast[k] = now;
+            var rec = {
+                ts: now,
+                tag: String(tag || ''),
+                msg: String(msg || ''),
+                data: data || null
+            };
+            _cwDbgBuf.push(rec);
+            if (_cwDbgBuf.length > 600)
+                _cwDbgBuf.shift();
+            try {
+                if (data != null)
+                    console.log('[CWDBG][' + rec.tag + '] ' + rec.msg, data);
+                else
+                    console.log('[CWDBG][' + rec.tag + '] ' + rec.msg);
+            } catch (_) {}
+        } catch (_) {}
+    }
+    try {
+        window.__cw_get_debug_seq_logs = function () {
+            return _cwDbgBuf.slice();
+        };
+        window.__cw_clear_debug_seq_logs = function () {
+            _cwDbgBuf = [];
+            _cwDbgLast = Object.create(null);
+            return 'ok';
+        };
+        window.__cw_get_seq_diag_state = function () {
+            return {
+                lastNoBoard: _cwSeqDiagState.lastNoBoard,
+                lastSourcePick: _cwSeqDiagState.lastSourcePick,
+                lastParserError: _cwSeqDiagState.lastParserError
+            };
+        };
+    } catch (_) {}
     var cssRect = function (r) {
         var x = (r && r.sx != null) ? r.sx : r.x;
         var y = (r && r.sy != null) ? r.sy : r.y;
@@ -655,6 +766,58 @@
         }
         return score;
     }
+    function domTableContextScore(ctx) {
+        try {
+            if (!ctx)
+                return 0;
+            var rows = ctx.rows || [];
+            var joined = rows.map(function (r) { return domNorm(r.text); }).join(' | ');
+            var href = String(ctx.href || '').toLowerCase();
+            var source = String(ctx.source || '');
+            var score = Number(ctx.score || 0);
+            if (href.indexOf('singlebactable.jsp') !== -1)
+                score += 1800;
+            if (source === 'top/frame[1]')
+                score += 120;
+            if (/(processstatus|countdowntime|countdown|xac nhan|no comm|reload|tam dung dat cuoc|dang mo bai|chuc may man)/.test(joined))
+                score += 520;
+            if (/(banker|player|nha cai|tay con|hoa|chuoi ket qua|tai khoan)/.test(joined))
+                score += 260;
+            if (/(category|truyen thong|xoc dia|roulette|hide|vao choi|live casino|sports|slot game)/.test(joined))
+                score -= 800;
+            var cardHits = joined.match(/baccarat c\d+/g) || [];
+            if (cardHits.length >= 3)
+                score -= 420;
+            return score;
+        } catch (_) {
+            return 0;
+        }
+    }
+    function domChooseLikelyGameContexts(contexts) {
+        contexts = contexts || [];
+        var ranked = [];
+        for (var i = 0; i < contexts.length; i++) {
+            var c = contexts[i];
+            if (!c)
+                continue;
+            if (typeof c.score !== 'number')
+                c.score = domScoreRows(c.rows || []);
+            c.tableScore = domTableContextScore(c);
+            ranked.push(c);
+        }
+        ranked.sort(function (a, b) {
+            return (Number(b.tableScore || 0) - Number(a.tableScore || 0))
+                || (Number(b.score || 0) - Number(a.score || 0))
+                || (((b.rows && b.rows.length) || 0) - ((a.rows && a.rows.length) || 0));
+        });
+        var strict = ranked.filter(function (c) { return Number(c.tableScore || 0) >= 450; });
+        if (strict.length)
+            return strict;
+        var relaxed = ranked.filter(function (c) {
+            return Number(c.tableScore || 0) >= 220 && Number(c.score || 0) >= 40;
+        });
+        return relaxed.length ? relaxed : ranked;
+    }
     function domWalkContexts(rootWin, source, offX, offY, out, seen) {
         try {
             if (!rootWin || seen.indexOf(rootWin) >= 0)
@@ -1060,17 +1223,19 @@
         }
         return '';
     }
-    function domFindCardRoot(el) {
-        var ctx = domGetContext();
+    function domFindCardRoot(el, ctxOverride) {
+        var ctx = ctxOverride || domGetContext();
+        var innerW = Number((ctx && ctx.innerWidth) || (ctx && ctx.win && ctx.win.innerWidth) || domTopInnerWidth() || 1600);
+        var innerH = Number((ctx && ctx.innerHeight) || (ctx && ctx.win && ctx.win.innerHeight) || domTopInnerHeight() || 900);
         var cur = el;
         var depth = 0;
         var best = null;
         while (cur && cur !== ctx.doc.body && depth < 8) {
             try {
                 var r = cur.getBoundingClientRect();
-                if (r.width >= 220 && r.height >= 120 && r.width <= ctx.innerWidth * 0.7 && r.height <= ctx.innerHeight * 0.75)
+                if (r.width >= 220 && r.height >= 120 && r.width <= innerW * 0.7 && r.height <= innerH * 0.75)
                     best = cur;
-                if (r.width > ctx.innerWidth * 0.8 || r.height > ctx.innerHeight * 0.8)
+                if (r.width > innerW * 0.8 || r.height > innerH * 0.8)
                     break;
             } catch (_) { }
             cur = cur.parentElement;
@@ -1215,39 +1380,108 @@
         var now = Date.now();
         if (!force && _domBaccaratCache.cards.length && now - _domBaccaratCache.at < 1200)
             return _domBaccaratCache.cards;
-
-        var ctx = domGetContext(force);
-        var candidates = ctx.doc.querySelectorAll('div,span,a,strong,b,h1,h2,h3,h4,p');
+        var contexts = [];
+        domWalkContexts(window, 'top', 0, 0, contexts, []);
+        var pickContexts = domChooseLikelyGameContexts(contexts).slice(0, 4);
         var roots = [];
         var seenRoot = [];
-        for (var i = 0; i < candidates.length && i < 1200; i++) {
-            var el = candidates[i];
-            if (!domVisible(el)) continue;
-            var txt = domCollapse(el.innerText || el.textContent || '');
-            var m = txt.match(/\bBaccarat\s*[A-Z0-9]+\b/i);
-            if (!m) continue;
-            var root = domFindCardRoot(el);
-            if (!root) continue;
-            if (seenRoot.indexOf(root) >= 0) continue;
-            seenRoot.push(root);
-            roots.push(domParseCard(root, m[0]));
+        var ctxCardCount = Object.create(null);
+        for (var ci = 0; ci < pickContexts.length; ci++) {
+            var ctx = pickContexts[ci];
+            if (!ctx || !ctx.doc)
+                continue;
+            var candidates = [];
+            try {
+                candidates = ctx.doc.querySelectorAll('div,span,a,strong,b,h1,h2,h3,h4,p');
+            } catch (_) {
+                candidates = [];
+            }
+            var ctxW = (ctx.win && ctx.win.innerWidth) || domTopInnerWidth();
+            var ctxH = (ctx.win && ctx.win.innerHeight) || domTopInnerHeight();
+            for (var i = 0; i < candidates.length && i < 1400; i++) {
+                var el = candidates[i];
+                if (!domVisible(el))
+                    continue;
+                var txt = domCollapse(el.innerText || el.textContent || '');
+                var m = txt.match(/\bBaccarat\s*[A-Z0-9]+\b/i);
+                if (!m)
+                    continue;
+                var root = domFindCardRoot(el, {
+                    doc: ctx.doc,
+                    innerWidth: ctxW,
+                    innerHeight: ctxH,
+                    win: ctx.win
+                });
+                if (!root)
+                    continue;
+                if (seenRoot.indexOf(root) >= 0)
+                    continue;
+                var rr = root.getBoundingClientRect();
+                if (!rr || rr.width < 180 || rr.height < 90)
+                    continue;
+                if (rr.right < 0 || rr.bottom < 0 || rr.left > ctxW || rr.top > ctxH)
+                    continue;
+                if (rr.width > ctxW * 0.95 || rr.height > ctxH * 0.95)
+                    continue;
+                seenRoot.push(root);
+                var parsed = domParseCard(root, m[0]);
+                if (!parsed)
+                    continue;
+                parsed._ctxSource = String(ctx.source || 'top');
+                parsed._ctxHref = String(ctx.href || '');
+                parsed._ctxScore = Number(ctx.score || 0);
+                parsed._ctxTableScore = Number(ctx.tableScore || 0);
+                parsed._ctxKey = parsed._ctxSource + '|' + parsed._ctxHref;
+                ctxCardCount[parsed._ctxKey] = Number(ctxCardCount[parsed._ctxKey] || 0) + 1;
+                roots.push(parsed);
+            }
         }
-        roots = roots.filter(function (x) { return !!x; })
-            .sort(function (a, b) { return a.rect.top - b.rect.top || a.rect.left - b.rect.left; });
+        for (var ri = 0; ri < roots.length; ri++) {
+            var card = roots[ri];
+            var area = Math.max(1, Math.round((card.rect && card.rect.width || 0) * (card.rect && card.rect.height || 0)));
+            card._ctxCardCount = Number(ctxCardCount[card._ctxKey] || 0);
+            card._pickScore = 0;
+            card._pickScore += Number(card._ctxTableScore || 0);
+            if (String(card._ctxHref || '').toLowerCase().indexOf('singlebactable.jsp') !== -1)
+                card._pickScore += 900;
+            if (card.countdown != null)
+                card._pickScore += 280;
+            card._pickScore += Math.min(200, String(card.seq || '').length * 8);
+            card._pickScore += Math.min(240, Math.round(area / 5000));
+            if (card._ctxCardCount >= 4)
+                card._pickScore -= 260;
+        }
+        roots = roots.filter(function (x) { return !!x; }).sort(function (a, b) {
+            return (Number(b._pickScore || 0) - Number(a._pickScore || 0))
+                || (a.rect.top - b.rect.top)
+                || (a.rect.left - b.rect.left);
+        });
         _domBaccaratCache.at = now;
         _domBaccaratCache.cards = roots;
         return roots;
     }
     function domPickActiveCard(cards) {
         cards = cards || domScanBaccaratCards();
-        if (!cards || !cards.length) return null;
-        var pick = cards[0];
-        for (var i = 0; i < cards.length; i++) {
-            var c = cards[i];
-            if (c.countdown != null) return c;
-            if ((c.seq || '').length > (pick.seq || '').length) pick = c;
+        if (!cards || !cards.length)
+            return null;
+        var strict = cards.filter(function (c) { return Number(c._ctxTableScore || 0) >= 450; });
+        var pool = strict.length ? strict : cards;
+        var pick = pool[0];
+        var pickScore = Number((pick && pick._pickScore) || 0);
+        for (var i = 0; i < pool.length; i++) {
+            var c = pool[i];
+            var score = Number(c && c._pickScore || 0);
+            if (c && c.countdown != null && pick && pick.countdown == null)
+                return c;
+            if (score > pickScore) {
+                pick = c;
+                pickScore = score;
+            } else if (score === pickScore && String(c.seq || '').length > String(pick.seq || '').length) {
+                pick = c;
+                pickScore = score;
+            }
         }
-        return pick;
+        return pick || cards[0];
     }
     function domReadBetCountdown() {
         try {
@@ -1961,9 +2195,9 @@
     function limitSeq52(seq) {
         if (!seq)
             return '';
-        if (seq.length <= 52)
+        if (seq.length <= 50)
             return seq;
-        return seq.slice(-52);
+        return seq.slice(-50);
     }
 
     function readTKSeqDigits() {
@@ -2072,7 +2306,26 @@
             el.getAttribute ? el.getAttribute('stroke') : ''
         ]);
     }
-    function brCollectMarkersInContext(ctx, opts) {
+    function brDiagBump(diag, key) {
+        if (!diag)
+            return;
+        if (!diag.reasons)
+            diag.reasons = {};
+        diag.reasons[key] = Number(diag.reasons[key] || 0) + 1;
+    }
+    function brDiagSample(diag, key, value, max) {
+        if (!diag)
+            return;
+        if (!diag.samples)
+            diag.samples = {};
+        if (!diag.samples[key])
+            diag.samples[key] = [];
+        var arr = diag.samples[key];
+        if (arr.length >= Number(max || 3))
+            return;
+        arr.push(value);
+    }
+    function brCollectMarkersInContext(ctx, opts, diag) {
         opts = opts || {};
         var out = [];
         var doc = ctx.doc;
@@ -2085,37 +2338,75 @@
         var roundRatio = opts.roundRatio || 0.28;
         var all = doc.querySelectorAll('div,span,p,b,strong,button,svg,circle,td');
         var seen = Object.create(null);
+        if (diag) {
+            diag.totalNodes = 0;
+            diag.accepted = 0;
+            diag.reasons = {};
+            diag.samples = {};
+        }
         for (var i = 0; i < all.length && i < 6000; i++) {
             var el = all[i];
-            if (!domVisible(el))
+            if (diag)
+                diag.totalNodes++;
+            if (!domVisible(el)) {
+                brDiagBump(diag, 'invisible');
                 continue;
-            if (el.childElementCount && el.childElementCount > maxChildren)
+            }
+            if (el.childElementCount && el.childElementCount > maxChildren) {
+                brDiagBump(diag, 'too-many-children');
                 continue;
+            }
             var r = el.getBoundingClientRect();
-            if (r.left < 0 || r.top < 0)
+            if (r.left < 0 || r.top < 0) {
+                brDiagBump(diag, 'out-negative');
                 continue;
-            if (r.left > maxX || r.top < minY)
+            }
+            if (r.left > maxX || r.top < minY) {
+                brDiagBump(diag, 'out-target-zone');
                 continue;
-            if (r.width < 10 || r.height < 10 || r.width > maxSize || r.height > maxSize)
+            }
+            if (r.width < 10 || r.height < 10 || r.width > maxSize || r.height > maxSize) {
+                brDiagBump(diag, 'size-filter');
+                brDiagSample(diag, 'size-filter', {
+                    w: Math.round(r.width),
+                    h: Math.round(r.height),
+                    maxSize: maxSize
+                }, 3);
                 continue;
-            if (Math.abs(r.width - r.height) > 10)
+            }
+            if (Math.abs(r.width - r.height) > 10) {
+                brDiagBump(diag, 'not-square');
                 continue;
+            }
             var cs = view.getComputedStyle(el);
             var marker = brClassifyMarker(el, cs);
-            if (!marker)
+            if (!marker) {
+                brDiagBump(diag, 'marker-empty');
                 continue;
+            }
             var tag = String(el.tagName || '').toLowerCase();
             var borderRadius = cs.borderRadius || '';
             var minSide = Math.min(r.width, r.height);
             var rx = brParseRadiusPx(borderRadius, minSide);
             var roundHint = tag === 'circle' || /50%|999/.test(borderRadius) || rx >= (minSide * roundRatio);
-            if (!roundHint)
+            if (!roundHint) {
+                brDiagBump(diag, 'not-round');
+                brDiagSample(diag, 'not-round', {
+                    tag: tag,
+                    borderRadius: String(borderRadius || ''),
+                    rx: Number(rx || 0)
+                }, 3);
                 continue;
-            if (el.childElementCount > maxChildKeep && tag !== 'svg')
+            }
+            if (el.childElementCount > maxChildKeep && tag !== 'svg') {
+                brDiagBump(diag, 'child-keep-filter');
                 continue;
+            }
             var key = marker + '|' + Math.round(r.left / 4) + '|' + Math.round(r.top / 4);
-            if (seen[key])
+            if (seen[key]) {
+                brDiagBump(diag, 'dedup');
                 continue;
+            }
             seen[key] = 1;
             out.push({
                 v: marker,
@@ -2129,6 +2420,8 @@
                 tail: fullPath(el, 80),
                 element: el
             });
+            if (diag)
+                diag.accepted++;
         }
         return out;
     }
@@ -2254,19 +2547,26 @@
                 if (/^[BPTH]$/.test(String(comp[t].rawText || '').toUpperCase()))
                     textCount++;
             }
-            if (comp.length < 8 || colCount < 2)
+            var allowSmall = (comp.length >= 2
+                    && minX <= screenW * 0.36
+                    && minY >= screenH * 0.54
+                    && width <= 190
+                    && height <= 230);
+            if (!allowSmall && (comp.length < 8 || colCount < 2))
                 continue;
             var score = comp.length * 30;
             score += Math.max(0, (screenW * 0.16 - minX)) * 10;
             score += Math.max(0, (screenH - maxY)) * 0.2;
             score += Math.max(0, (screenH * 0.88 - minY));
             score += textCount * 80;
+            if (allowSmall) score += 180;
             if (comp.length >= 12 && comp.length <= 40) score += 220;
             if (rowCount >= 5) score += 260;
             if (rowCount >= 6) score += 120;
             if (colCount >= 3) score += 160;
             if (colCount >= 4) score += 140;
             if (colCount >= 6) score += 100;
+            if (comp.length < 8) score -= (8 - comp.length) * 45;
             if (rowCount <= 2) score -= 260;
             if (colCount <= 2) score -= 120;
             if (height < 70) score -= 180;
@@ -2533,35 +2833,87 @@
             }).join('');
         }).join('');
     }
-    function brFindBoardWithProfiles(contexts, screenW, screenH) {
+    function brFindBoardWithProfiles(contexts, screenW, screenH, diagOut) {
         var profiles = [
             { maxXRatio: 0.18, minYRatio: 0.72, maxSize: 34, maxChildren: 2, maxChildKeep: 1, roundRatio: 0.28 },
             { maxXRatio: 0.24, minYRatio: 0.68, maxSize: 38, maxChildren: 3, maxChildKeep: 2, roundRatio: 0.22 },
             { maxXRatio: 0.30, minYRatio: 0.62, maxSize: 42, maxChildren: 4, maxChildKeep: 3, roundRatio: 0.18 }
         ];
         var bestPack = { board: null, markers: [], profile: -1 };
+        if (diagOut) {
+            diagOut.screen = { w: Number(screenW || 0), h: Number(screenH || 0) };
+            diagOut.profiles = [];
+            diagOut.contextCount = (contexts || []).length;
+        }
         for (var p = 0; p < profiles.length; p++) {
             var allMarkers = [];
+            var pdiag = {
+                idx: p,
+                opts: profiles[p],
+                markerCount: 0,
+                boardFound: false,
+                board: null,
+                reason: '',
+                contexts: []
+            };
             for (var i = 0; i < contexts.length; i++) {
                 var ctx = contexts[i];
-                var markers = brCollectMarkersInContext(ctx, profiles[p]);
+                var cdiag = {};
+                var markers = brCollectMarkersInContext(ctx, profiles[p], cdiag);
                 for (var j = 0; j < markers.length; j++) {
                     markers[j].ctxScore = ctx.score || 0;
                     allMarkers.push(markers[j]);
                 }
+                pdiag.contexts.push({
+                    source: String(ctx && ctx.source || ''),
+                    href: brHrefShort(ctx && ctx.href || ''),
+                    score: Number(ctx && ctx.score || 0),
+                    rows: (ctx && ctx.rows && ctx.rows.length) ? ctx.rows.length : 0,
+                    scan: cdiag
+                });
             }
+            pdiag.markerCount = allMarkers.length;
             var board = brPickBoard(allMarkers, screenW, screenH);
             if (board) {
+                pdiag.boardFound = true;
+                pdiag.board = {
+                    score: Number(board.score || 0),
+                    itemCount: (board.items && board.items.length) ? board.items.length : 0,
+                    rowCount: Number(board.rowCount || 0),
+                    colCount: Number(board.colCount || 0),
+                    minX: Number(board.minX || 0),
+                    minY: Number(board.minY || 0),
+                    width: Number(board.width || 0),
+                    height: Number(board.height || 0)
+                };
+                pdiag.reason = 'ok';
+                if (diagOut)
+                    diagOut.profiles.push(pdiag);
                 bestPack = { board: board, markers: allMarkers, profile: p };
                 break;
             }
+            pdiag.reason = allMarkers.length ? 'marker-found-but-no-board' : 'no-marker';
+            if (diagOut)
+                diagOut.profiles.push(pdiag);
             if (allMarkers.length > bestPack.markers.length)
                 bestPack = { board: null, markers: allMarkers, profile: p };
+        }
+        if (diagOut) {
+            diagOut.bestMarkerProfile = Number(bestPack.profile);
+            diagOut.bestMarkerCount = (bestPack.markers && bestPack.markers.length) ? bestPack.markers.length : 0;
         }
         return bestPack;
     }
     var _domBeadSeqManaged = '';
     var _domBeadSeqPrevRaw = '';
+    var _domSeqVersion = 0;
+    var _domSeqEvent = 'init';
+    var _domSeqAppend = '';
+    var _domShoeResetPending = false;
+    var _domShoeResetAt = 0;
+    var _domLastActiveTitle = '';
+    var _domManagedTableTitle = '';
+    var _domLastActiveSeedKey = '';
     function brOverlapSuffixPrefix(a, b) {
         a = String(a || '');
         b = String(b || '');
@@ -2572,52 +2924,328 @@
         }
         return 0;
     }
+    function brSanitizeSeq(raw) {
+        return String(raw || '')
+            .toUpperCase()
+            .replace(/H/g, 'T')
+            .replace(/[^BPT]/g, '');
+    }
+    function brPublishSeqState() {
+        try {
+            window.__cw_seq_version = _domSeqVersion;
+            window.__cw_seq_event = _domSeqEvent;
+            window.__cw_seq_append = _domSeqAppend;
+            window.__cw_seq_board_prev = _domBeadSeqPrevRaw;
+            window.__cw_seq_reset_pending = _domShoeResetPending ? 1 : 0;
+        } catch (_) {}
+    }
+    function brAppendManaged(delta, eventName) {
+        var clean = brSanitizeSeq(delta);
+        if (!clean)
+            return false;
+        _domBeadSeqManaged = limitSeq50(_domBeadSeqManaged + clean);
+        _domSeqVersion += clean.length;
+        _domSeqEvent = String(eventName || 'append');
+        _domSeqAppend = clean;
+        _domShoeResetPending = false;
+        cwDbg('SEQ', 'append ' + String(eventName || 'append'), {
+            delta: clean,
+            seq: _domBeadSeqManaged,
+            seqLen: _domBeadSeqManaged.length,
+            seqVersion: _domSeqVersion
+        }, 0, 'append|' + clean + '|' + _domSeqVersion);
+        brPublishSeqState();
+        return true;
+    }
     function brMergeManagedSeq(rawSeq) {
-        var raw = String(rawSeq || '').replace(/H/g, 'T');
-        if (!raw)
-            return _domBeadSeqManaged;
-        if (!_domBeadSeqPrevRaw) {
-            _domBeadSeqPrevRaw = raw;
-            _domBeadSeqManaged = limitSeq50(raw);
+        var rawInput = String(rawSeq || '');
+        var raw = brSanitizeSeq(rawSeq);
+        var prev = _domBeadSeqPrevRaw;
+        _domSeqAppend = '';
+        if (rawInput && !raw) {
+            cwDbg('SEQ', 'raw-parse-invalid', {
+                rawInput: cwShort(rawInput, 180),
+                rawInputLen: rawInput.length,
+                managedLen: String(_domBeadSeqManaged || '').length,
+                prevLen: String(prev || '').length
+            }, 700, 'raw-parse-invalid|' + rawInput.length);
+        } else if (rawInput && raw && rawInput !== raw) {
+            cwDbg('SEQ', 'raw-sanitized', {
+                rawInput: cwShort(rawInput, 120),
+                rawSanitized: cwShort(raw, 120),
+                rawInputLen: rawInput.length,
+                rawLen: raw.length
+            }, 900, 'raw-sanitized|' + rawInput.length + '|' + raw.length);
+        }
+
+        if (!raw) {
+            if (prev && prev.length >= 8) {
+                _domShoeResetPending = true;
+                _domShoeResetAt = Date.now();
+                _domSeqEvent = 'shoe-reset-arm';
+                cwDbg('SEQ', 'shoe-reset-arm by empty board', {
+                    prevLen: prev.length,
+                    managedLen: (_domBeadSeqManaged || '').length
+                }, 0, 'reset-arm-empty|' + prev.length);
+            } else {
+                _domSeqEvent = 'board-empty';
+                cwDbg('SEQ', 'board-empty', {
+                    prevLen: prev ? prev.length : 0,
+                    managedLen: (_domBeadSeqManaged || '').length
+                }, 1500, 'board-empty');
+            }
+            _domBeadSeqPrevRaw = '';
+            brPublishSeqState();
             return _domBeadSeqManaged;
         }
-        if (raw === _domBeadSeqPrevRaw)
-            return _domBeadSeqManaged;
-        if (raw.indexOf(_domBeadSeqPrevRaw) === 0) {
-            _domBeadSeqManaged = limitSeq50(_domBeadSeqManaged + raw.slice(_domBeadSeqPrevRaw.length));
+
+        if (!prev) {
             _domBeadSeqPrevRaw = raw;
+            if (_domShoeResetPending) {
+                brAppendManaged(raw, 'append-after-reset');
+            } else {
+                // Khi vừa có board hợp lệ (đặc biệt lúc mới vào bàn), managed phải bám raw hiện tại.
+                var beforeInit = String(_domBeadSeqManaged || '');
+                _domBeadSeqManaged = limitSeq50(raw);
+                _domSeqVersion = Math.max(Number(_domSeqVersion || 0) + 1, _domBeadSeqManaged.length);
+                _domSeqEvent = 'hydrate-init';
+                _domSeqAppend = _domBeadSeqManaged;
+                _domShoeResetPending = false;
+                cwDbg('SEQ', 'hydrate-init-from-raw', {
+                    boardRaw: raw,
+                    beforeManaged: beforeInit,
+                    managed: _domBeadSeqManaged,
+                    seqVersion: _domSeqVersion
+                }, 0, 'hydrate-init-raw|' + _domSeqVersion + '|' + _domBeadSeqManaged.length);
+            }
+            brPublishSeqState();
             return _domBeadSeqManaged;
         }
-        var ov = brOverlapSuffixPrefix(_domBeadSeqPrevRaw, raw);
+
+        if (raw === prev) {
+            _domSeqEvent = 'no-change';
+            cwDbg('SEQ', 'no-change', {
+                boardLen: raw.length,
+                managedLen: (_domBeadSeqManaged || '').length,
+                seqVersion: _domSeqVersion
+            }, 2000, 'no-change|' + raw.length + '|' + _domSeqVersion);
+            brPublishSeqState();
+            return _domBeadSeqManaged;
+        }
+
+        if (raw.indexOf(prev) === 0) {
+            brAppendManaged(raw.slice(prev.length), 'append-extend');
+            _domBeadSeqPrevRaw = raw;
+            brPublishSeqState();
+            return _domBeadSeqManaged;
+        }
+
+        var ov = brOverlapSuffixPrefix(prev, raw);
         if (ov > 0) {
-            _domBeadSeqManaged = limitSeq50(_domBeadSeqManaged + raw.slice(ov));
+            var delta = raw.slice(ov);
+            if (delta.length > 0 && delta.length <= 3) {
+                brAppendManaged(delta, 'append-overlap');
+                _domBeadSeqPrevRaw = raw;
+                brPublishSeqState();
+                return _domBeadSeqManaged;
+            }
+        }
+
+        if (prev.indexOf(raw) === 0) {
+            var shrinkRatio = raw.length / Math.max(1, prev.length);
+            if (raw.length <= 2 || shrinkRatio <= 0.45) {
+                _domShoeResetPending = true;
+                _domShoeResetAt = Date.now();
+                _domSeqEvent = 'shoe-reset-arm';
+                cwDbg('SEQ', 'shoe-reset-arm by shrink', {
+                    prevLen: prev.length,
+                    rawLen: raw.length,
+                    shrinkRatio: shrinkRatio
+                }, 0, 'reset-arm-shrink|' + prev.length + '|' + raw.length);
+            } else {
+                _domSeqEvent = 'board-shrink';
+                cwDbg('SEQ', 'board-shrink', {
+                    prevLen: prev.length,
+                    rawLen: raw.length,
+                    shrinkRatio: shrinkRatio
+                }, 0, 'board-shrink|' + prev.length + '|' + raw.length);
+            }
             _domBeadSeqPrevRaw = raw;
+            brPublishSeqState();
             return _domBeadSeqManaged;
         }
-        if (_domBeadSeqPrevRaw.indexOf(raw) === 0) {
+
+        if (!_domShoeResetPending && prev.length >= 10 && raw.length <= 3) {
+            _domShoeResetPending = true;
+            _domShoeResetAt = Date.now();
+            cwDbg('SEQ', 'shoe-reset-arm by tiny raw', {
+                prevLen: prev.length,
+                rawLen: raw.length
+            }, 0, 'reset-arm-tiny|' + prev.length + '|' + raw.length);
+        }
+        if (_domShoeResetPending && raw.length <= 4) {
+            brAppendManaged(raw, 'append-reset-seed');
             _domBeadSeqPrevRaw = raw;
+            brPublishSeqState();
             return _domBeadSeqManaged;
         }
+
+        // Raw đã đổi kiểu "jump": resync managed theo raw để tránh kẹt chuỗi cũ.
+        var beforeJump = String(_domBeadSeqManaged || '');
         _domBeadSeqPrevRaw = raw;
         _domBeadSeqManaged = limitSeq50(raw);
+        _domSeqVersion = Math.max(Number(_domSeqVersion || 0) + 1, _domBeadSeqManaged.length);
+        _domSeqEvent = 'hydrate-resync';
+        _domSeqAppend = _domBeadSeqManaged;
+        _domShoeResetPending = false;
+        cwDbg('SEQ', 'board-jump-resync', {
+            prev: prev,
+            raw: raw,
+            beforeManaged: beforeJump,
+            managed: _domBeadSeqManaged,
+            seqVersion: _domSeqVersion
+        }, 0, 'board-jump-resync|' + _domSeqVersion + '|' + _domBeadSeqManaged.length);
+        brPublishSeqState();
         return _domBeadSeqManaged;
+    }
+    function brAppendNewTail(baseSeq, candSeq) {
+        var base = String(baseSeq || '').replace(/H/g, 'T');
+        var cand = String(candSeq || '').replace(/H/g, 'T');
+        if (!base || !cand)
+            return '';
+        if (cand === base)
+            return '';
+        if (cand.indexOf(base) === 0 && cand.length > base.length)
+            return limitSeq50(cand);
+
+        // Cand có thể chỉ là đoạn cuối của board; nếu suffix base trùng prefix cand
+        // đủ dài (>=5) và delta nhỏ (<=2) thì append delta để tránh đứng chuỗi.
+        var maxK = Math.min(12, base.length, cand.length);
+        for (var k = maxK; k >= 5; k--) {
+            if (base.slice(base.length - k) === cand.slice(0, k)) {
+                var delta = cand.slice(k);
+                if (delta.length > 0 && delta.length <= 2)
+                    return limitSeq50(base + delta);
+                break;
+            }
+        }
+        return '';
+    }
+    function brSeedManagedFromActive(activeSeq, activeTitle) {
+        var raw = brSanitizeSeq(activeSeq);
+        if (!raw)
+            return _domBeadSeqManaged || '';
+        var key = String(activeTitle || '') + '|' + raw;
+        if (_domLastActiveSeedKey === key) {
+            _domSeqEvent = 'no-change';
+            brPublishSeqState();
+            return _domBeadSeqManaged || '';
+        }
+        // Nếu đã có đuôi giống hệt thì không append lại.
+        var managedNow = String(_domBeadSeqManaged || '');
+        if (managedNow && managedNow.slice(-raw.length) === raw) {
+            _domLastActiveSeedKey = key;
+            _domSeqEvent = 'no-change';
+            brPublishSeqState();
+            return managedNow;
+        }
+
+        // Force reset-seed path: bỏ prevRaw để tránh nhánh "board-shrink/jump" nuốt dữ liệu.
+        _domShoeResetPending = true;
+        _domShoeResetAt = Date.now();
+        _domBeadSeqPrevRaw = '';
+        var before = String(_domBeadSeqManaged || '');
+        var merged = brMergeManagedSeq(raw);
+        var moved = String(_domSeqEvent || '').indexOf('append') === 0 && String(merged || '') !== before;
+        if (!moved) {
+            // Chốt append cưỡng bức 1 lần khi parser board fail nhưng active seq đã có.
+            brAppendManaged(raw, 'append-reset-seed-active-force');
+            merged = String(_domBeadSeqManaged || '');
+        }
+        _domLastActiveSeedKey = key;
+        return merged || '';
+    }
+    function brResetManagedForTable(activeTitle, activeSeq, reason) {
+        var cleanTitle = String(activeTitle || '').trim();
+        var raw = brSanitizeSeq(activeSeq);
+        if (!cleanTitle || !raw)
+            return false;
+        _domBeadSeqManaged = limitSeq50(raw);
+        _domBeadSeqPrevRaw = '';
+        _domShoeResetPending = false;
+        _domShoeResetAt = 0;
+        _domLastActiveSeedKey = cleanTitle + '|' + raw;
+        _domManagedTableTitle = cleanTitle;
+        // đảm bảo có event khác no-change để host nhận update ngay
+        _domSeqVersion = Math.max(Number(_domSeqVersion || 0) + 1, _domBeadSeqManaged.length);
+        _domSeqEvent = String(reason || 'table-switch-reset');
+        _domSeqAppend = raw;
+        brPublishSeqState();
+        cwDbg('SEQSRC', 'table-switch-reset-managed', {
+            title: cleanTitle,
+            seq: raw,
+            seqLen: raw.length,
+            seqVersion: _domSeqVersion,
+            seqEvent: _domSeqEvent
+        }, 0, 'table-switch-reset|' + cleanTitle + '|' + _domSeqVersion);
+        return true;
     }
     function readDomBeadSeq() {
         try {
-            var contexts = [];
-            domWalkContexts(window, 'top', 0, 0, contexts, []);
-            for (var i = 0; i < contexts.length; i++) {
-                contexts[i].score = domScoreRows(contexts[i].rows || []);
+            var allContexts = [];
+            domWalkContexts(window, 'top', 0, 0, allContexts, []);
+            for (var i = 0; i < allContexts.length; i++) {
+                allContexts[i].score = domScoreRows(allContexts[i].rows || []);
             }
+            var contexts = domChooseLikelyGameContexts(allContexts);
             var screenW = window.innerWidth || 1600;
             var screenH = window.innerHeight || 900;
-            var picked = brFindBoardWithProfiles(contexts, screenW, screenH);
+            var findDiag = {
+                at: Date.now(),
+                screen: { w: Number(screenW || 0), h: Number(screenH || 0) },
+                contexts: brContextSummary(contexts, 10),
+                allContexts: brContextSummary(allContexts, 6),
+                profiles: []
+            };
+            var picked = brFindBoardWithProfiles(contexts, screenW, screenH, findDiag);
             var board = picked.board;
             if (!board) {
+                var psum = brProfileSummary(findDiag.profiles || []);
+                var hasMarkers = false;
+                for (var ps = 0; ps < psum.length; ps++) {
+                    if (Number(psum[ps].markerCount || 0) > 0) {
+                        hasMarkers = true;
+                        break;
+                    }
+                }
+                var failReason = '';
+                if (!contexts.length)
+                    failReason = 'no-context';
+                else if (!hasMarkers)
+                    failReason = 'no-marker-in-target-zone';
+                else
+                    failReason = 'marker-found-but-board-cluster-fail';
+                findDiag.failReason = failReason;
+                findDiag.managedSeq = String(_domBeadSeqManaged || '');
+                findDiag.managedLen = String(_domBeadSeqManaged || '').length;
+                _cwSeqDiagState.lastNoBoard = findDiag;
+                cwDbg('SEQ', 'no-board-detected', {
+                    reason: failReason,
+                    managedSeq: _domBeadSeqManaged,
+                    managedLen: (_domBeadSeqManaged || '').length,
+                    scoreContexts: contexts.length,
+                    contextTop: findDiag.contexts,
+                    profiles: psum
+                }, 1200, 'no-board');
+                if (window.__cw_debug_seq_detail === 1 || window.__cw_debug_seq_detail === true) {
+                    cwDbg('SEQ', 'no-board-detail', findDiag, 1500, 'no-board-detail|' + failReason + '|' + String(_domBeadSeqManaged || '').length);
+                }
                 return {
                     seq: _domBeadSeqManaged || '',
                     rawSeq: '',
                     which: 'dom-bead',
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent,
                     cols: [],
                     cells: []
                 };
@@ -2632,6 +3260,25 @@
             var gridPack = brBuildGrid6xN(board.items);
             var rawSeq = brSequenceFromGrid(gridPack);
             var managed = brMergeManagedSeq(rawSeq);
+            _cwSeqDiagState.lastParserError = null;
+            cwDbg('SEQ', 'dom-bead-read', {
+                rawSeq: rawSeq,
+                managedSeq: managed,
+                rawLen: rawSeq.length,
+                managedLen: (managed || '').length,
+                boardMeta: {
+                    profile: Number(picked && picked.profile != null ? picked.profile : -1),
+                    items: (board.items && board.items.length) ? board.items.length : 0,
+                    rowCount: Number(board.rowCount || 0),
+                    colCount: Number(board.colCount || 0),
+                    minX: Number(board.minX || 0),
+                    minY: Number(board.minY || 0),
+                    width: Number(board.width || 0),
+                    height: Number(board.height || 0)
+                },
+                seqVersion: _domSeqVersion,
+                seqEvent: _domSeqEvent
+            }, 500, 'dom-bead-read|' + rawSeq + '|' + _domSeqVersion);
             try {
                 window.__cw_bead_raw_seq = rawSeq;
                 window.__cw_bead_managed_seq = managed;
@@ -2640,14 +3287,26 @@
                 seq: managed,
                 rawSeq: rawSeq,
                 which: 'dom-bead',
+                seqVersion: _domSeqVersion,
+                seqEvent: _domSeqEvent,
                 cols: gridPack.cols || [],
                 cells: board.items || []
             };
-        } catch (_) {
+        } catch (err) {
+            var errInfo = {
+                message: String(err && err.message || err),
+                stack: cwShort(String(err && err.stack || ''), 600),
+                managedSeq: String(_domBeadSeqManaged || ''),
+                managedLen: String(_domBeadSeqManaged || '').length
+            };
+            _cwSeqDiagState.lastParserError = errInfo;
+            cwDbg('SEQ', 'dom-bead-error', errInfo, 300, 'dom-bead-error|' + errInfo.message);
             return {
                 seq: _domBeadSeqManaged || '',
                 rawSeq: '',
                 which: 'dom-bead-error',
+                seqVersion: _domSeqVersion,
+                seqEvent: _domSeqEvent,
                 cols: [],
                 cells: []
             };
@@ -2864,31 +3523,308 @@
     function readTKSeq() {
         if (!__cw_hasCocos()) {
             var bead = readDomBeadSeq();
-            if (bead && bead.seq && bead.seq.length) {
-                return {
-                    seq: bead.seq || '',
-                    rawSeq: bead.rawSeq || bead.seq || '',
-                    which: bead.which || 'dom-bead',
-                    cols: bead.cols || [],
-                    cells: bead.cells || []
-                };
-            }
+            var beadSeq = (bead && bead.seq) ? String(bead.seq || '') : '';
+            var beadRawSeq = (bead && bead.rawSeq) ? String(bead.rawSeq || '') : '';
             var cards = domScanBaccaratCards();
             var active = domPickActiveCard(cards);
-            if (active) {
-                var seq = limitSeq50(String(active.seq || '').replace(/H/g, 'T'));
+            var activeSeq = active ? limitSeq50(String(active.seq || '').replace(/H/g, 'T')) : '';
+            var activeTitle = active && active.title ? String(active.title || '') : '';
+            if (activeTitle !== _domLastActiveTitle) {
+                cwDbg('TABLE', 'active-card-changed', {
+                    prev: _domLastActiveTitle,
+                    current: activeTitle,
+                    cards: (cards || []).map(function (x) { return x && x.title ? x.title : ''; }),
+                    cardSeqLens: (cards || []).map(function (x) {
+                        return x && x.seq ? String(x.seq || '').length : 0;
+                    }),
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: _domSeqVersion,
+                    resetPending: _domShoeResetPending ? 1 : 0
+                }, 0, 'active-card|' + activeTitle);
+                _domLastActiveTitle = activeTitle;
+            }
+
+            // Đổi bàn: không được append tiếp chuỗi cũ từ bàn trước.
+            if (activeTitle && _domManagedTableTitle && activeTitle !== _domManagedTableTitle && activeSeq) {
+                var managedNow = String(_domBeadSeqManaged || '');
+                var overlap = brOverlapSuffixPrefix(managedNow, activeSeq);
+                if (overlap < 4) {
+                    brResetManagedForTable(activeTitle, activeSeq, 'table-switch-reset');
+                }
+            } else if (activeTitle && !_domManagedTableTitle && activeSeq) {
+                // Lần đầu vào bàn trong phiên JS hiện tại.
+                _domManagedTableTitle = activeTitle;
+            }
+
+            // Khi parser bead fail (rawSeq rỗng), luôn ưu tiên seed từ active seq để không kẹt chuỗi.
+            var allowActiveSeedWhenNoBoard = (
+                    // Chỉ seed active khi chưa có managed (phiên mới) và active đủ dài.
+                    (!String(_domBeadSeqManaged || '') && activeSeq.length >= 8)
+                    // Hoặc đang chờ reset shoe và active có tối thiểu vài ký tự để mở lại nhịp.
+                    || (_domShoeResetPending && activeSeq.length >= 3 && String(_domBeadSeqManaged || '').length <= 8)
+                );
+            if (!beadRawSeq && activeSeq && allowActiveSeedWhenNoBoard) {
+                var managedBeforeMiss = String(_domBeadSeqManaged || '');
+                var mergedFromActive = brSeedManagedFromActive(activeSeq, activeTitle);
+                var movedFromActive = String(_domSeqEvent || '').indexOf('append') === 0
+                    && String(mergedFromActive || '') !== managedBeforeMiss;
+                if (activeTitle && !_domManagedTableTitle)
+                    _domManagedTableTitle = activeTitle;
+                _cwSeqDiagState.lastSourcePick = {
+                    source: 'dom-baccarat-fallback-seed',
+                    reason: movedFromActive ? 'bead-missing-seeded' : 'bead-missing-keep',
+                    activeTitle: activeTitle,
+                    activeSeqLen: activeSeq.length,
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent
+                };
+                cwDbg('SEQSRC', 'bead-missing-seed-from-active', {
+                    activeTitle: activeTitle,
+                    activeSeq: activeSeq,
+                    moved: movedFromActive ? 1 : 0,
+                    managedSeq: _domBeadSeqManaged,
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent
+                }, 300, 'seqsrc-bead-missing-seed|' + activeTitle + '|' + _domSeqVersion + '|' + (_domSeqEvent || ''));
                 return {
-                    seq: seq,
-                    rawSeq: seq,
-                    which: 'dom-baccarat-fallback',
+                    seq: _domBeadSeqManaged || mergedFromActive || activeSeq || beadSeq || '',
+                    rawSeq: activeSeq,
+                    which: 'dom-baccarat-fallback-seed',
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent,
                     cols: active.cols || [],
                     cells: active.cells || []
                 };
             }
+            if (!beadRawSeq && activeSeq && !allowActiveSeedWhenNoBoard) {
+                _cwSeqDiagState.lastSourcePick = {
+                    source: 'dom-baccarat-managed-hold',
+                    reason: 'bead-missing-active-seed-blocked',
+                    activeTitle: activeTitle,
+                    activeSeqLen: activeSeq.length,
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent
+                };
+                cwDbg('SEQSRC', 'bead-missing-hold-managed', {
+                    reason: 'active-seed-blocked',
+                    activeTitle: activeTitle,
+                    activeSeqLen: activeSeq.length,
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent
+                }, 300, 'seqsrc-bead-missing-hold|' + activeTitle + '|' + _domSeqVersion + '|' + (_domSeqEvent || ''));
+                return {
+                    seq: _domBeadSeqManaged || '',
+                    rawSeq: window.__cw_bead_raw_seq || '',
+                    which: 'dom-baccarat-hold-managed',
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent,
+                    cols: [],
+                    cells: []
+                };
+            }
+
+            var beadStuckWhileReset = (!beadRawSeq)
+                || ((String(_domSeqEvent || '') === 'no-change' || String(_domSeqEvent || '').indexOf('board-') === 0)
+                    && beadRawSeq && activeSeq && beadRawSeq !== activeSeq);
+            if (_domShoeResetPending && activeSeq && beadStuckWhileReset) {
+                var managedBefore = String(_domBeadSeqManaged || '');
+                var mergedActive = brMergeManagedSeq(activeSeq);
+                var didMove = String(_domSeqEvent || '').indexOf('append') === 0 && String(mergedActive || '') !== managedBefore;
+                if (didMove) {
+                    _cwSeqDiagState.lastSourcePick = {
+                        source: 'dom-baccarat-reset-fallback',
+                        reason: 'reset-pending-bead-empty',
+                        activeTitle: activeTitle,
+                        activeSeqLen: activeSeq.length,
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent
+                    };
+                    cwDbg('SEQSRC', 'append-from-active-while-reset-pending', {
+                        activeTitle: activeTitle,
+                        activeSeq: activeSeq,
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent
+                    }, 0, 'seqsrc-reset-active|' + activeTitle + '|' + _domSeqVersion);
+                    return {
+                        seq: _domBeadSeqManaged || mergedActive || '',
+                        rawSeq: activeSeq,
+                        which: 'dom-baccarat-reset-fallback',
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent,
+                        cols: active.cols || [],
+                        cells: active.cells || []
+                    };
+                }
+            }
+
+            // Ưu tiên bead; nếu bead đứng nhưng active seq cho thấy đuôi mới hợp lệ thì append.
+            if (beadSeq && beadRawSeq && activeSeq && !_domShoeResetPending) {
+                var stitched = brAppendNewTail(beadSeq, activeSeq);
+                if (stitched) {
+                    _domBeadSeqManaged = limitSeq50(stitched);
+                    _domSeqEvent = 'dom-baccarat-extend';
+                    brPublishSeqState();
+                    _cwSeqDiagState.lastSourcePick = {
+                        source: 'dom-baccarat-extend',
+                        reason: 'active-tail-valid',
+                        beadSeqLen: beadSeq.length,
+                        activeSeqLen: activeSeq.length,
+                        stitchedLen: stitched.length,
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent
+                    };
+                    cwDbg('SEQ', 'readTKSeq-dom-baccarat-extend', {
+                        beadSeq: beadSeq,
+                        activeSeq: activeSeq,
+                        stitched: stitched,
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent
+                    }, 0, 'readseq-extend|' + stitched + '|' + _domSeqVersion);
+                    return {
+                        seq: _domBeadSeqManaged,
+                        rawSeq: activeSeq,
+                        which: 'dom-baccarat-extend',
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent,
+                        cols: active.cols || [],
+                        cells: active.cells || []
+                    };
+                }
+                _cwSeqDiagState.lastSourcePick = {
+                    source: 'dom-bead',
+                    reason: 'active-tail-not-match',
+                    beadSeqLen: beadSeq.length,
+                    activeSeqLen: activeSeq.length,
+                    resetPending: _domShoeResetPending ? 1 : 0,
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent
+                };
+                cwDbg('SEQSRC', 'prefer-dom-bead-over-active', {
+                    reason: 'active-tail-not-match',
+                    beadSeqLen: beadSeq.length,
+                    activeSeqLen: activeSeq.length,
+                    activeTitle: activeTitle,
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent
+                }, 500, 'seqsrc-bead-over-active|' + beadSeq.length + '|' + activeSeq.length + '|' + _domSeqVersion);
+                return {
+                    seq: beadSeq,
+                    rawSeq: bead.rawSeq || beadSeq || '',
+                    which: bead.which || 'dom-bead',
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent,
+                    cols: bead.cols || [],
+                    cells: bead.cells || []
+                };
+            }
+
+            if (beadSeq && beadRawSeq) {
+                _cwSeqDiagState.lastSourcePick = {
+                    source: 'dom-bead',
+                    reason: 'bead-available',
+                    beadSeqLen: beadSeq.length,
+                    activeSeqLen: activeSeq.length,
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent
+                };
+                cwDbg('SEQ', 'readTKSeq-dom-bead', {
+                    beadSeqLen: beadSeq.length,
+                    rawSeqLen: String(bead.rawSeq || '').length,
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent,
+                    resetPending: _domShoeResetPending ? 1 : 0
+                }, 500, 'readseq-bead|' + beadSeq + '|' + _domSeqVersion);
+                return {
+                    seq: beadSeq,
+                    rawSeq: bead.rawSeq || beadSeq || '',
+                    which: bead.which || 'dom-bead',
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent,
+                    cols: bead.cols || [],
+                    cells: bead.cells || []
+                };
+            }
+            if (active && activeSeq) {
+                if (String(_domBeadSeqManaged || '').length) {
+                    _cwSeqDiagState.lastSourcePick = {
+                        source: 'dom-baccarat-managed-hold',
+                        reason: 'active-fallback-blocked-managed-present',
+                        activeTitle: activeTitle,
+                        activeSeqLen: activeSeq.length,
+                        managedLen: String(_domBeadSeqManaged || '').length,
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent
+                    };
+                    cwDbg('SEQSRC', 'active-fallback-blocked-managed-present', {
+                        activeTitle: activeTitle,
+                        activeSeqLen: activeSeq.length,
+                        managedLen: String(_domBeadSeqManaged || '').length,
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent
+                    }, 500, 'seqsrc-active-blocked|' + activeTitle + '|' + _domSeqVersion);
+                    return {
+                        seq: _domBeadSeqManaged || '',
+                        rawSeq: window.__cw_bead_raw_seq || '',
+                        which: 'dom-baccarat-managed-hold',
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent,
+                        cols: [],
+                        cells: []
+                    };
+                }
+                _cwSeqDiagState.lastSourcePick = {
+                    source: 'dom-baccarat-fallback',
+                    reason: 'bead-empty-active-available',
+                    activeTitle: activeTitle,
+                    activeSeqLen: activeSeq.length,
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent
+                };
+                cwDbg('SEQSRC', 'use-active-fallback', {
+                    reason: 'bead-empty-active-available',
+                    activeTitle: activeTitle,
+                    activeSeqLen: activeSeq.length,
+                    resetPending: _domShoeResetPending ? 1 : 0,
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent
+                }, 500, 'seqsrc-active-fallback|' + activeTitle + '|' + activeSeq.length + '|' + _domSeqVersion);
+                cwDbg('SEQ', 'readTKSeq-dom-fallback-active', {
+                    activeTitle: activeTitle,
+                    activeSeq: activeSeq,
+                    resetPending: _domShoeResetPending ? 1 : 0
+                }, 500, 'readseq-fallback|' + activeTitle + '|' + activeSeq);
+                return {
+                    seq: activeSeq,
+                    rawSeq: activeSeq,
+                    which: 'dom-baccarat-fallback',
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent,
+                    cols: active.cols || [],
+                    cells: active.cells || []
+                };
+            }
+            _cwSeqDiagState.lastSourcePick = {
+                source: 'dom-bead-managed',
+                reason: 'no-bead-no-active',
+                managedLen: String(_domBeadSeqManaged || '').length,
+                seqVersion: _domSeqVersion,
+                seqEvent: _domSeqEvent
+            };
+            cwDbg('SEQ', 'readTKSeq-dom-empty', {
+                managed: _domBeadSeqManaged,
+                seqVersion: _domSeqVersion,
+                seqEvent: _domSeqEvent,
+                resetPending: _domShoeResetPending ? 1 : 0
+            }, 1200, 'readseq-empty|' + _domSeqVersion + '|' + _domSeqEvent);
             return {
                 seq: _domBeadSeqManaged || '',
                 rawSeq: window.__cw_bead_raw_seq || _domBeadSeqManaged || '',
                 which: 'dom-bead',
+                seqVersion: _domSeqVersion,
+                seqEvent: _domSeqEvent,
                 cols: [],
                 cells: []
             };
@@ -2899,6 +3835,8 @@
                 seq: r.seq || '',
                 rawSeq: r.rawSeq || r.seq || '',
                 which: r.which || '',
+                seqVersion: null,
+                seqEvent: '',
                 cols: r.cols || [],
                 cells: r.cells || []
             };
@@ -2908,6 +3846,8 @@
                 seq: digits.seq || '',
                 rawSeq: digits.rawSeq || digits.seq || '',
                 which: digits.which || '',
+                seqVersion: null,
+                seqEvent: '',
                 cols: digits.cols || [],
                 cells: digits.cells || []
             };
@@ -2915,6 +3855,8 @@
             seq: '',
             rawSeq: '',
             which: '',
+            seqVersion: null,
+            seqEvent: '',
             cols: [],
             cells: []
         };
@@ -3588,6 +4530,8 @@
         showText: false,
         stakeK: 1,
         seq: '',
+        seqVersion: 0,
+        seqEvent: '',
         focusPinned: null
     };
 
@@ -4106,6 +5050,8 @@
 
         var tk = readTKSeq();
         S.seq = tk.seq || '';
+        S.seqVersion = Number(tk && tk.seqVersion != null ? tk.seqVersion : (window.__cw_seq_version || 0)) || 0;
+        S.seqEvent = String(tk && tk.seqEvent ? tk.seqEvent : (window.__cw_seq_event || ''));
         var seqHtml = 'Chuỗi kết quả : <i>--</i>';
         if (S.seq && S.seq.length) {
             var head = esc(S.seq.slice(0, -1));
@@ -4117,6 +5063,8 @@
                 prog: S.prog,
                 status: String(S.status || ''),
                 seq: String(S.seq || ''),
+                seqVersion: Number(S.seqVersion || 0),
+                seqEvent: String(S.seqEvent || ''),
                 totals: normalizeTotalsSnapshot(t),
                 username: (t.N != null ? String(t.N) : ''),
                 ts: Date.now()
@@ -5992,7 +6940,7 @@
         return false;
     }
     async function domClickConfirmAfterBet(tgt, expectedUnits) {
-      var confirm = await domWaitConfirmReady(500);
+      var confirm = await domWaitConfirmReady(200);
         if (!confirm) {
             console.warn('[cwBet++] không thấy nút xác nhận');
             return false;
@@ -6603,7 +7551,7 @@
                 }
                 var before0 = sampleTotalsNow();
                 var targetClickedOne = clickBetTarget(tgt);
-                var appliedOne = await waitForTotalsChange(before0, side, 1600).catch(function () {
+                var appliedOne = await waitForTotalsChange(before0, side, 1000).catch(function () {
                     return false;
                 });
                 if (!appliedOne && isDomMode) {
@@ -6698,7 +7646,7 @@
                             denom: step.val,
                             turn: i2 + 1
                         });
-                    var appliedStep = await waitForTotalsChange(beforeStep, side, 1000).catch(function () {
+                    var appliedStep = await waitForTotalsChange(beforeStep, side, 100).catch(function () {
                         return false;
                     });
                     if (!appliedStep) {
@@ -6925,6 +7873,8 @@
         // TK sequence
         var tk = readTKSeq();
         S.seq = tk.seq || '';
+        S.seqVersion = Number(tk && tk.seqVersion != null ? tk.seqVersion : (window.__cw_seq_version || 0)) || 0;
+        S.seqEvent = String(tk && tk.seqEvent ? tk.seqEvent : (window.__cw_seq_event || ''));
 
         // keep focus
         if (S.focus) {
@@ -7142,6 +8092,15 @@
 
         function safePost(obj) {
             try {
+                try {
+                    cwDbg('POST', 'safePost outgoing', {
+                        abx: obj && obj.abx,
+                        seqLen: obj && obj.seq ? String(obj.seq || '').length : 0,
+                        seqVersion: obj && obj.seqVersion != null ? obj.seqVersion : null,
+                        seqEvent: obj && obj.seqEvent ? obj.seqEvent : '',
+                        status: obj && obj.status ? obj.status : ''
+                    }, 300, 'post|' + (obj && obj.abx ? obj.abx : '') + '|' + (obj && obj.seqVersion != null ? obj.seqVersion : '') + '|' + (obj && obj.seqEvent ? obj.seqEvent : ''));
+                } catch (_) {}
                 if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function') {
                     chrome.webview.postMessage(JSON.stringify(obj));
                 } else {
@@ -7149,6 +8108,12 @@
                     parent.postMessage(obj, '*');
                 }
             } catch (e) {
+                try {
+                    cwDbg('POST', 'safePost failed, fallback parent.postMessage', {
+                        error: String(e && e.message ? e.message : e),
+                        abx: obj && obj.abx ? obj.abx : ''
+                    }, 0, 'post-fail|' + (obj && obj.abx ? obj.abx : ''));
+                } catch (_) {}
                 try {
                     parent.postMessage(obj, '*');
                 } catch (_) {}
@@ -7175,6 +8140,8 @@
                     prog: cached.prog,
                     totals: cached.totals || null,
                     seq: String(cached.seq || ''),
+                    seqVersion: Number(cached.seqVersion || 0),
+                    seqEvent: String(cached.seqEvent || ''),
                     username: cached.username || '',
                     status: String(cached.status || ''),
                     ts: Date.now(),
@@ -7196,6 +8163,7 @@
 
         var _pushTimer = null;
         var _lastJson = '';
+        var _forcePushOnce = false;
 
         function shallowChanged(obj) {
             var s = '';
@@ -7230,14 +8198,27 @@
             }
         }
 
-        function readSeqSafe() {
+        function readSeqStateSafe() {
             try {
                 if (typeof readTKSeq === 'function') {
                     var r = readTKSeq();
-                    return (r && r.seq) ? r.seq : '';
+                    return {
+                        seq: (r && r.seq) ? String(r.seq || '') : '',
+                        seqVersion: Number(r && r.seqVersion != null ? r.seqVersion : (window.__cw_seq_version || 0)) || 0,
+                        seqEvent: String(r && r.seqEvent ? r.seqEvent : (window.__cw_seq_event || ''))
+                    };
                 }
             } catch (_) {}
-            return '';
+            return {
+                seq: '',
+                seqVersion: Number(window.__cw_seq_version || 0) || 0,
+                seqEvent: String(window.__cw_seq_event || '')
+            };
+        }
+
+        function readSeqSafe() {
+            var r = readSeqStateSafe();
+            return r && r.seq ? r.seq : '';
         }
 
         function normalizeTotalsSnapshot(src) {
@@ -7269,6 +8250,9 @@
             var st = '';
             var t = null;
             var seq = '';
+            var seqFresh = '';
+            var seqVersion = 0;
+            var seqEvent = '';
             var cached = null;
 
             try {
@@ -7321,8 +8305,49 @@
                 if (!seq && S && S.seq)
                     seq = String(S.seq || '');
             } catch (_) {}
-            if (!seq)
+            try {
+                var seqState = readSeqStateSafe();
+                seqFresh = String((seqState && seqState.seq) || '');
+                seqVersion = Number((seqState && seqState.seqVersion != null) ? seqState.seqVersion : (window.__cw_seq_version || 0)) || 0;
+                seqEvent = String((seqState && seqState.seqEvent) ? seqState.seqEvent : (window.__cw_seq_event || ''));
+            } catch (_) {
+                seqFresh = '';
+                seqVersion = Number(window.__cw_seq_version || 0) || 0;
+                seqEvent = String(window.__cw_seq_event || '');
+            }
+            if (seqFresh) {
+                if (!seq ||
+                    (seqFresh.length > seq.length && seqFresh.indexOf(seq) === 0) ||
+                    (seq && seq.indexOf(seqFresh) !== 0 && seqFresh.length > seq.length)) {
+                    seq = seqFresh;
+                }
+            } else if (!seq) {
                 seq = readSeqSafe();
+            }
+            if (!seqVersion) {
+                try {
+                    if (cached && cached.seqVersion != null)
+                        seqVersion = Number(cached.seqVersion) || 0;
+                } catch (_) {}
+                if (!seqVersion) {
+                    try {
+                        if (S && S.seqVersion != null)
+                            seqVersion = Number(S.seqVersion) || 0;
+                    } catch (_) {}
+                }
+            }
+            if (!seqEvent) {
+                try {
+                    if (cached && cached.seqEvent != null)
+                        seqEvent = String(cached.seqEvent || '');
+                } catch (_) {}
+                if (!seqEvent) {
+                    try {
+                        if (S && S.seqEvent != null)
+                            seqEvent = String(S.seqEvent || '');
+                    } catch (_) {}
+                }
+            }
 
             try {
                 if (!__cw_hasCocos() && domStatusImpliesClosed(st))
@@ -7342,6 +8367,8 @@
                 prog: p,
                 totals: t,
                 seq: seq,
+                seqVersion: seqVersion,
+                seqEvent: seqEvent,
                 username: uname,
                 status: String(st || ''),
                 ts: Date.now()
@@ -7369,13 +8396,37 @@
                     _pushTimer = null;
                 }
                 _lastJson = '';
+                cwDbg('PUSH', 'startPush', { tickMs: tickMs }, 0, 'startPush|' + tickMs);
                 _pushTimer = setInterval(function () {
                     var snap = buildSnapshotNow();
-                    if (shallowChanged(snap))
+                    var ev = String(snap && snap.seqEvent ? snap.seqEvent : '');
+                    if (/^append|^shoe-reset|^append-after-reset|^append-reset-seed/i.test(ev))
+                        _forcePushOnce = true;
+                    var changed = shallowChanged(snap);
+                    if (_forcePushOnce || changed) {
+                        cwDbg('PUSH', 'send tick', {
+                            changed: changed ? 1 : 0,
+                            forced: _forcePushOnce ? 1 : 0,
+                            seqLen: snap && snap.seq ? String(snap.seq || '').length : 0,
+                            seqVersion: snap && snap.seqVersion != null ? snap.seqVersion : null,
+                            seqEvent: snap && snap.seqEvent ? snap.seqEvent : '',
+                            status: snap && snap.status ? snap.status : ''
+                        }, 180, 'tick-send|' + (snap && snap.seqVersion != null ? snap.seqVersion : '') + '|' + (snap && snap.seqEvent ? snap.seqEvent : '') + '|' + (changed ? '1' : '0') + '|' + (_forcePushOnce ? '1' : '0'));
                         safePost(snap);
+                        _forcePushOnce = false;
+                    } else if (/append|shoe-reset/i.test(ev)) {
+                        cwDbg('PUSH', 'event-but-not-sent', {
+                            seqLen: snap && snap.seq ? String(snap.seq || '').length : 0,
+                            seqVersion: snap && snap.seqVersion != null ? snap.seqVersion : null,
+                            seqEvent: ev
+                        }, 0, 'event-not-sent|' + (snap && snap.seqVersion != null ? snap.seqVersion : '') + '|' + ev);
+                    }
                 }, tickMs);
                 return 'started';
             } catch (err) {
+                cwDbg('PUSH', 'startPush fail', {
+                    error: String(err && err.message || err)
+                }, 0, 'startPush-fail');
                 safePost({
                     abx: 'tick_error',
                     error: String(err && err.message || err),
@@ -7390,6 +8441,7 @@
                 clearInterval(_pushTimer);
                 _pushTimer = null;
             }
+            cwDbg('PUSH', 'stopPush', null, 0, 'stopPush');
             return 'stopped';
         };
 

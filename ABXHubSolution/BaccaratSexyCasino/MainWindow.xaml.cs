@@ -3567,6 +3567,8 @@ try{
                     abx = GetJsonStringLoose(root, "abx") ?? "",
                     prog = GetJsonDoubleLoose(root, "prog"),
                     seq = GetJsonStringLoose(root, "seq") ?? "",
+                    seqVersion = GetJsonLongLoose(root, "seqVersion"),
+                    seqEvent = GetJsonStringLoose(root, "seqEvent") ?? "",
                     username = GetJsonStringLoose(root, "username") ?? "",
                     status = GetJsonStringLoose(root, "status") ?? "",
                     side = GetJsonStringLoose(root, "side") ?? "",

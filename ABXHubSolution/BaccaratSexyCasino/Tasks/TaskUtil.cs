@@ -153,7 +153,20 @@ namespace BaccaratSexyCasino.Tasks
             var snap = ctx.GetRawSnap?.Invoke() ?? playableSnap;
             var rawSeq = snap?.seq ?? "";
             var roundId = 0;
-            try { roundId = (snap?.seq ?? "").Length; } catch { roundId = 0; }
+            try
+            {
+                var seqVer = snap?.seqVersion;
+                if (seqVer.HasValue && seqVer.Value > 0)
+                {
+                    if (seqVer.Value > int.MaxValue) roundId = int.MaxValue;
+                    else roundId = (int)seqVer.Value;
+                }
+                else
+                {
+                    roundId = (snap?.seq ?? "").Length;
+                }
+            }
+            catch { roundId = 0; }
 
             var last = _lastBetOkMsByTab.TryGetValue(tabKey, out var v) ? v : 0;
             var lastRound = _lastBetRoundByTab.TryGetValue(tabKey, out var r) ? r : -1;
