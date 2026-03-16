@@ -3028,7 +3028,7 @@
                 boardLen: raw.length,
                 managedLen: (_domBeadSeqManaged || '').length,
                 seqVersion: _domSeqVersion
-            }, 2000, 'no-change|' + raw.length + '|' + _domSeqVersion);
+            }, 5000, 'no-change|' + raw.length + '|' + _domSeqVersion);
             brPublishSeqState();
             return _domBeadSeqManaged;
         }
@@ -3614,7 +3614,7 @@
                     managedLen: String(_domBeadSeqManaged || '').length,
                     seqVersion: _domSeqVersion,
                     seqEvent: _domSeqEvent
-                }, 300, 'seqsrc-bead-missing-hold|' + activeTitle + '|' + _domSeqVersion + '|' + (_domSeqEvent || ''));
+                }, 2500, 'seqsrc-bead-missing-hold|' + activeTitle + '|' + _domSeqVersion + '|' + (_domSeqEvent || ''));
                 return {
                     seq: _domBeadSeqManaged || '',
                     rawSeq: window.__cw_bead_raw_seq || '',
@@ -3709,7 +3709,7 @@
                     activeTitle: activeTitle,
                     seqVersion: _domSeqVersion,
                     seqEvent: _domSeqEvent
-                }, 500, 'seqsrc-bead-over-active|' + beadSeq.length + '|' + activeSeq.length + '|' + _domSeqVersion);
+                }, 5000, 'seqsrc-bead-over-active|' + beadSeq.length + '|' + activeSeq.length + '|' + _domSeqVersion);
                 return {
                     seq: beadSeq,
                     rawSeq: bead.rawSeq || beadSeq || '',
@@ -3736,7 +3736,7 @@
                     seqVersion: _domSeqVersion,
                     seqEvent: _domSeqEvent,
                     resetPending: _domShoeResetPending ? 1 : 0
-                }, 500, 'readseq-bead|' + beadSeq + '|' + _domSeqVersion);
+                }, 4000, 'readseq-bead|' + beadSeq + '|' + _domSeqVersion);
                 return {
                     seq: beadSeq,
                     rawSeq: bead.rawSeq || beadSeq || '',
@@ -8099,7 +8099,7 @@
                         seqVersion: obj && obj.seqVersion != null ? obj.seqVersion : null,
                         seqEvent: obj && obj.seqEvent ? obj.seqEvent : '',
                         status: obj && obj.status ? obj.status : ''
-                    }, 300, 'post|' + (obj && obj.abx ? obj.abx : '') + '|' + (obj && obj.seqVersion != null ? obj.seqVersion : '') + '|' + (obj && obj.seqEvent ? obj.seqEvent : ''));
+                    }, 2000, 'post|' + (obj && obj.abx ? obj.abx : '') + '|' + (obj && obj.seqVersion != null ? obj.seqVersion : '') + '|' + (obj && obj.seqEvent ? obj.seqEvent : ''));
                 } catch (_) {}
                 if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function') {
                     chrome.webview.postMessage(JSON.stringify(obj));
@@ -8411,7 +8411,7 @@
                             seqVersion: snap && snap.seqVersion != null ? snap.seqVersion : null,
                             seqEvent: snap && snap.seqEvent ? snap.seqEvent : '',
                             status: snap && snap.status ? snap.status : ''
-                        }, 180, 'tick-send|' + (snap && snap.seqVersion != null ? snap.seqVersion : '') + '|' + (snap && snap.seqEvent ? snap.seqEvent : '') + '|' + (changed ? '1' : '0') + '|' + (_forcePushOnce ? '1' : '0'));
+                        }, 2200, 'tick-send|' + (snap && snap.seqVersion != null ? snap.seqVersion : '') + '|' + (snap && snap.seqEvent ? snap.seqEvent : '') + '|' + (changed ? '1' : '0') + '|' + (_forcePushOnce ? '1' : '0'));
                         safePost(snap);
                         _forcePushOnce = false;
                     } else if (/append|shoe-reset/i.test(ev)) {
