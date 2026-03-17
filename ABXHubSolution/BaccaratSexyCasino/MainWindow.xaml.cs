@@ -376,6 +376,12 @@ namespace BaccaratSexyCasino
         private long _baseSeqVersion = 0;
         private string _baseSeqEvent = "";
         private DateTime _lastHistAlertUtc = DateTime.MinValue;
+        private int _lastSeqRxLen = -1;
+        private long _lastSeqRxVer = -1;
+        private string _lastSeqRxEvt = "";
+        private char _lastSeqRxTail = '\0';
+        private int _lastSeqRxPending = -1;
+        private bool _lastSeqRxLock = false;
 
         private DecisionState _dec = new();
         private long[] _stakeSeq = Array.Empty<long>();
@@ -1260,6 +1266,33 @@ try{
             var line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
             EnqueueUi(line);
             EnqueueFile(line);
+        }
+
+        private void LogSeqRxIfChanged(string seqDisplay, long seqVersion, string seqEvent, double progNow, string statusRaw)
+        {
+            int len = seqDisplay?.Length ?? 0;
+            char tail = len > 0 ? seqDisplay![len - 1] : '-';
+            int pending = _pendingRows.Count;
+            bool lockState = _lockMajorMinorUpdates;
+            string evt = string.IsNullOrWhiteSpace(seqEvent) ? "-" : seqEvent;
+            bool changed =
+                len != _lastSeqRxLen ||
+                seqVersion != _lastSeqRxVer ||
+                !string.Equals(evt, _lastSeqRxEvt, StringComparison.Ordinal) ||
+                tail != _lastSeqRxTail ||
+                pending != _lastSeqRxPending ||
+                lockState != _lastSeqRxLock;
+            if (!changed)
+                return;
+
+            _lastSeqRxLen = len;
+            _lastSeqRxVer = seqVersion;
+            _lastSeqRxEvt = evt;
+            _lastSeqRxTail = tail;
+            _lastSeqRxPending = pending;
+            _lastSeqRxLock = lockState;
+
+            Log($"[SEQ][RX] prog={progNow:0.###} | seqLen={len} | tail={tail} | seqVer={seqVersion} | seqEvt={evt} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | lockMajorMinor={(lockState ? 1 : 0)} | pending={pending} | status={statusRaw}");
         }
 
         private void SetModeUi(bool isGame)
@@ -3325,22 +3358,37 @@ try{
                                 double progNow = snap.prog ?? 0;
                                 var seqDisplay = snap.seq ?? "";
                                 var seqStr = FilterPlayableSeq(seqDisplay);
+                                long seqVersionNow = snap.seqVersion ?? 0;
+                                string seqEventNow = snap.seqEvent ?? "";
                                 long currB = snap.totals?.B ?? 0;
                                 long currP = snap.totals?.P ?? 0;
                                 long currT = snap.totals?.T ?? 0;
+                                LogSeqRxIfChanged(seqDisplay, seqVersionNow, seqEventNow, progNow, statusRaw);
 
                                 if (_lockMajorMinorUpdates == false)
                                 {
                                     if (progNow == 0)
                                     {
+                                        string prevBaseDisplay = _baseSeqDisplay;
+                                        long prevBaseVersion = _baseSeqVersion;
+                                        string prevBaseEvent = _baseSeqEvent;
                                         _baseSeq = seqStr;
                                         _baseSeqDisplay = seqDisplay;
-                                        _baseSeqVersion = snap.seqVersion ?? 0;
-                                        _baseSeqEvent = snap.seqEvent ?? "";
+                                        _baseSeqVersion = seqVersionNow;
+                                        _baseSeqEvent = seqEventNow;
                                         _roundTotalsB = currB;
                                         _roundTotalsP = currP;
                                         _roundTotalsT = currT;
                                         MarkPendingRowsClosed();
+                                        bool baseChanged =
+                                            !string.Equals(prevBaseDisplay, _baseSeqDisplay, StringComparison.Ordinal) ||
+                                            prevBaseVersion != _baseSeqVersion ||
+                                            !string.Equals(prevBaseEvent, _baseSeqEvent, StringComparison.Ordinal);
+                                        if (baseChanged)
+                                        {
+                                            char baseTail = _baseSeqDisplay.Length > 0 ? _baseSeqDisplay[^1] : '-';
+                                            Log($"[SEQ][BASE] reason=prog0-reset | prevLen={prevBaseDisplay.Length} | prevVer={prevBaseVersion} | prevEvt={(string.IsNullOrWhiteSpace(prevBaseEvent) ? "-" : prevBaseEvent)} | newLen={_baseSeqDisplay.Length} | newVer={_baseSeqVersion} | newEvt={(string.IsNullOrWhiteSpace(_baseSeqEvent) ? "-" : _baseSeqEvent)} | newTail={baseTail} | totalsB={_roundTotalsB} | totalsP={_roundTotalsP} | totalsT={_roundTotalsT}");
+                                        }
                                         if (_roundTotalsB != 0 || _roundTotalsP != 0 || _roundTotalsT != 0 || !string.IsNullOrWhiteSpace(_baseSeq))
                                             _lockMajorMinorUpdates = true;
                                     }
@@ -3354,6 +3402,8 @@ try{
                                         bool hasSeqAdvance = (_baseSeqVersion > 0 && settleSeqVersion > 0)
                                             ? (settleSeqVersion > _baseSeqVersion)
                                             : !string.Equals(seqDisplay, _baseSeqDisplay, StringComparison.Ordinal);
+                                        char settleTail = seqDisplay.Length > 0 ? seqDisplay[^1] : '-';
+                                        Log($"[SEQ][GATE] hasAdvance={(hasSeqAdvance ? 1 : 0)} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | baseEvt={(string.IsNullOrWhiteSpace(_baseSeqEvent) ? "-" : _baseSeqEvent)} | curLen={seqDisplay.Length} | curVer={settleSeqVersion} | curEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)} | curTail={settleTail} | pending={_pendingRows.Count}");
                                         if (!hasSeqAdvance)
                                         {
                                             Log($"[BET][HIST][SETTLE][SKIP] reason=seq-not-advanced | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | baseEvt={_baseSeqEvent} | curLen={seqDisplay.Length} | curVer={settleSeqVersion} | curEvt={settleSeqEvent}");

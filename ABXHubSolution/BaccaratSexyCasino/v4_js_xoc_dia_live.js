@@ -2961,16 +2961,62 @@
             window.__cw_seq_reset_pending = _domShoeResetPending ? 1 : 0;
         } catch (_) {}
     }
+    function brSeqTrace(branch, raw, prev, beforeState, extra, throttleMs, keySuffix) {
+        try {
+            var afterState = {
+                managed: String(_domBeadSeqManaged || ''),
+                managedLen: String(_domBeadSeqManaged || '').length,
+                resetPending: _domShoeResetPending ? 1 : 0,
+                seqVersion: Number(_domSeqVersion || 0),
+                seqEvent: String(_domSeqEvent || '')
+            };
+            var payload = {
+                branch: String(branch || ''),
+                raw: String(raw || ''),
+                rawLen: String(raw || '').length,
+                prev: String(prev || ''),
+                prevLen: String(prev || '').length,
+                managedBefore: String(beforeState && beforeState.managed || ''),
+                managedAfter: afterState.managed,
+                managedLenBefore: Number(beforeState && beforeState.managedLen || 0),
+                managedLenAfter: Number(afterState.managedLen || 0),
+                resetPendingBefore: Number(beforeState && beforeState.resetPending || 0),
+                resetPendingAfter: Number(afterState.resetPending || 0),
+                seqVersionBefore: Number(beforeState && beforeState.seqVersion || 0),
+                seqVersionAfter: Number(afterState.seqVersion || 0),
+                seqEventBefore: String(beforeState && beforeState.seqEvent || ''),
+                seqEventAfter: String(afterState.seqEvent || '')
+            };
+            if (extra && typeof extra === 'object') {
+                for (var k in extra) {
+                    if (Object.prototype.hasOwnProperty.call(extra, k))
+                        payload[k] = extra[k];
+                }
+            }
+            cwDbg('SEQTRACE', String(branch || ''), payload, Number(throttleMs || 0), 'seqtrace|' + String(branch || '') + '|' + String(keySuffix || ''));
+        } catch (_) {}
+    }
     function brAppendManaged(delta, eventName) {
         var clean = brSanitizeSeq(delta);
         if (!clean)
             return false;
         var beforeSeq = String(_domBeadSeqManaged || '');
+        var beforeState = {
+            managed: beforeSeq,
+            managedLen: beforeSeq.length,
+            resetPending: _domShoeResetPending ? 1 : 0,
+            seqVersion: Number(_domSeqVersion || 0),
+            seqEvent: String(_domSeqEvent || '')
+        };
         var nextSeq = limitSeq50(beforeSeq + clean);
         // Không tăng seqVersion nếu append không làm đổi chuỗi (tránh spam round/settle).
         if (nextSeq === beforeSeq) {
             _domSeqEvent = 'no-change';
             _domSeqAppend = '';
+            brSeqTrace('append-no-change', clean, _domBeadSeqPrevRaw, beforeState, {
+                delta: clean,
+                eventName: String(eventName || 'append')
+            }, 0, 'append-no-change|' + clean);
             brPublishSeqState();
             return false;
         }
@@ -2987,6 +3033,10 @@
             seqLen: _domBeadSeqManaged.length,
             seqVersion: _domSeqVersion
         }, 0, 'append|' + clean + '|' + _domSeqVersion);
+        brSeqTrace('append-managed', clean, _domBeadSeqPrevRaw, beforeState, {
+            delta: clean,
+            eventName: String(eventName || 'append')
+        }, 0, 'append-managed|' + clean + '|' + _domSeqVersion);
         brPublishSeqState();
         return true;
     }
@@ -2994,6 +3044,17 @@
         var rawInput = String(rawSeq || '');
         var raw = brSanitizeSeq(rawSeq);
         var prev = _domBeadSeqPrevRaw;
+        var beforeState = {
+            managed: String(_domBeadSeqManaged || ''),
+            managedLen: String(_domBeadSeqManaged || '').length,
+            resetPending: _domShoeResetPending ? 1 : 0,
+            seqVersion: Number(_domSeqVersion || 0),
+            seqEvent: String(_domSeqEvent || '')
+        };
+        brSeqTrace('merge-enter', raw, prev, beforeState, {
+            rawInputLen: rawInput.length,
+            rawInput: cwShort(rawInput, 120)
+        }, 400, 'merge-enter|' + raw + '|' + prev);
         _domSeqAppend = '';
         if (rawInput && !raw) {
             cwDbg('SEQ', 'raw-parse-invalid', {
@@ -3028,6 +3089,7 @@
                 }, 1500, 'board-empty');
             }
             _domBeadSeqPrevRaw = '';
+            brSeqTrace('return-empty-raw', raw, prev, beforeState, null, 0, 'return-empty-raw|' + prev.length);
             brPublishSeqState();
             return _domBeadSeqManaged;
         }
@@ -3052,6 +3114,10 @@
                 }, 0, 'hydrate-init-raw|' + _domSeqVersion + '|' + _domBeadSeqManaged.length);
             } else {
                 // Append-only: nếu managed đã có thì không overwrite theo raw mới.
+                brSeqTrace('WARN_FIRST_RAW_HOLD', raw, prev, beforeState, {
+                    warning: 1,
+                    reason: 'first-raw-with-managed-and-reset-not-armed'
+                }, 0, 'warn-first-raw-hold|' + raw.length + '|' + beforeState.managedLen);
                 _domSeqEvent = 'hydrate-hold-managed';
                 _domSeqAppend = '';
                 cwDbg('SEQ', 'hydrate-skip-keep-managed', {
@@ -3061,6 +3127,7 @@
                     seqVersion: _domSeqVersion
                 }, 1200, 'hydrate-hold|' + raw.length + '|' + _domSeqVersion);
             }
+            brSeqTrace('return-no-prev', raw, prev, beforeState, null, 0, 'return-no-prev|' + raw.length);
             brPublishSeqState();
             return _domBeadSeqManaged;
         }
@@ -3072,6 +3139,7 @@
                 managedLen: (_domBeadSeqManaged || '').length,
                 seqVersion: _domSeqVersion
             }, 5000, 'no-change|' + raw.length + '|' + _domSeqVersion);
+            brSeqTrace('return-raw-eq-prev', raw, prev, beforeState, null, 300, 'return-raw-eq-prev|' + raw.length);
             brPublishSeqState();
             return _domBeadSeqManaged;
         }
@@ -3079,6 +3147,9 @@
         if (raw.indexOf(prev) === 0) {
             brAppendManaged(raw.slice(prev.length), 'append-extend');
             _domBeadSeqPrevRaw = raw;
+            brSeqTrace('return-extend', raw, prev, beforeState, {
+                delta: raw.slice(prev.length)
+            }, 0, 'return-extend|' + raw.length + '|' + prev.length);
             brPublishSeqState();
             return _domBeadSeqManaged;
         }
@@ -3089,12 +3160,22 @@
             if (delta.length > 0 && delta.length <= 3) {
                 brAppendManaged(delta, 'append-overlap');
                 _domBeadSeqPrevRaw = raw;
+                brSeqTrace('return-overlap', raw, prev, beforeState, {
+                    overlap: ov,
+                    delta: delta
+                }, 0, 'return-overlap|' + raw.length + '|' + ov);
                 brPublishSeqState();
                 return _domBeadSeqManaged;
             }
         }
 
         if (prev.indexOf(raw) === 0) {
+            if (_domShoeResetPending && raw.length <= 2) {
+                brSeqTrace('WARN_RESET_SWALLOWED_BY_PREFIX', raw, prev, beforeState, {
+                    warning: 1,
+                    reason: 'reset-pending-but-returning-prefix-shrink-first'
+                }, 0, 'warn-reset-swallowed|' + prev.length + '|' + raw.length);
+            }
             var shrinkRatio = raw.length / Math.max(1, prev.length);
             if (raw.length <= 2 || shrinkRatio <= 0.45) {
                 _domShoeResetPending = true;
@@ -3114,6 +3195,9 @@
                 }, 0, 'board-shrink|' + prev.length + '|' + raw.length);
             }
             _domBeadSeqPrevRaw = raw;
+            brSeqTrace('return-prev-prefix-of-raw', raw, prev, beforeState, {
+                shrinkRatio: shrinkRatio
+            }, 0, 'return-prev-prefix|' + prev.length + '|' + raw.length);
             brPublishSeqState();
             return _domBeadSeqManaged;
         }
@@ -3129,6 +3213,7 @@
         if (_domShoeResetPending && raw.length <= 4) {
             brAppendManaged(raw, 'append-reset-seed');
             _domBeadSeqPrevRaw = raw;
+            brSeqTrace('return-reset-seed', raw, prev, beforeState, null, 0, 'return-reset-seed|' + raw.length);
             brPublishSeqState();
             return _domBeadSeqManaged;
         }
@@ -3141,6 +3226,10 @@
             if (jumpDelta.length > 0 && jumpDelta.length <= 2) {
                 brAppendManaged(jumpDelta, 'append-jump-overlap');
                 _domBeadSeqPrevRaw = raw;
+                brSeqTrace('return-jump-overlap', raw, prev, beforeState, {
+                    overlap: ovJump,
+                    delta: jumpDelta
+                }, 0, 'return-jump-overlap|' + raw.length + '|' + ovJump);
                 brPublishSeqState();
                 return _domBeadSeqManaged;
             }
@@ -3155,6 +3244,7 @@
             managedLen: managedNow.length,
             seqVersion: _domSeqVersion
         }, 1200, 'board-jump-hold|' + managedNow.length + '|' + raw.length + '|' + _domSeqVersion);
+        brSeqTrace('return-board-jump-hold', raw, prev, beforeState, null, 0, 'return-board-jump-hold|' + raw.length);
         brPublishSeqState();
         return _domBeadSeqManaged;
     }
@@ -8381,6 +8471,15 @@
                         _forcePushOnce = true;
                     var changed = shallowChanged(snap);
                     if (_forcePushOnce || changed) {
+                        cwDbg('SEQPUSH', 'tick-send', {
+                            changed: changed ? 1 : 0,
+                            forced: _forcePushOnce ? 1 : 0,
+                            seqLen: snap && snap.seq ? String(snap.seq || '').length : 0,
+                            seqVersion: snap && snap.seqVersion != null ? snap.seqVersion : null,
+                            seqEvent: snap && snap.seqEvent ? snap.seqEvent : '',
+                            resetPending: _domShoeResetPending ? 1 : 0,
+                            status: snap && snap.status ? snap.status : ''
+                        }, 800, 'seqpush-tick-send|' + (snap && snap.seqVersion != null ? snap.seqVersion : '') + '|' + ev + '|' + (changed ? '1' : '0') + '|' + (_forcePushOnce ? '1' : '0'));
                         cwDbg('PUSH', 'send tick', {
                             changed: changed ? 1 : 0,
                             forced: _forcePushOnce ? 1 : 0,
@@ -8392,6 +8491,12 @@
                         safePost(snap);
                         _forcePushOnce = false;
                     } else if (/append/i.test(ev)) {
+                        cwDbg('SEQPUSH', 'event-but-not-sent', {
+                            seqLen: snap && snap.seq ? String(snap.seq || '').length : 0,
+                            seqVersion: snap && snap.seqVersion != null ? snap.seqVersion : null,
+                            seqEvent: ev,
+                            resetPending: _domShoeResetPending ? 1 : 0
+                        }, 0, 'seqpush-event-not-sent|' + (snap && snap.seqVersion != null ? snap.seqVersion : '') + '|' + ev);
                         cwDbg('PUSH', 'event-but-not-sent', {
                             seqLen: snap && snap.seq ? String(snap.seq || '').length : 0,
                             seqVersion: snap && snap.seqVersion != null ? snap.seqVersion : null,
