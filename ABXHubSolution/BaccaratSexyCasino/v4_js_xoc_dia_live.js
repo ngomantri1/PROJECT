@@ -2920,7 +2920,7 @@
     var _cwSnapshotBuildSource = '';
     var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     var _cwSeqLastPubSyncAt = 0;
-    var _cwSeqScriptRev = 'SEQFIX-20260317-r10';
+    var _cwSeqScriptRev = 'SEQFIX-20260318-r13';
     var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
@@ -2940,10 +2940,14 @@
     var _domActiveSeedTailTitle = '';
     var _domActiveSeedTailLen = 0;
     var _domActiveSeedConsumedPrefixLen = 0;
+    var _domActiveSeedTailSeq = '';
+    var _domLastActiveSeedStepBuildId = 0;
     function brResetActiveSeedTailTracker() {
         _domActiveSeedTailTitle = '';
         _domActiveSeedTailLen = 0;
         _domActiveSeedConsumedPrefixLen = 0;
+        _domActiveSeedTailSeq = '';
+        _domLastActiveSeedStepBuildId = 0;
     }
     function brResetSeedTracker() {
         _domResetSeedTargetRaw = '';
@@ -3109,6 +3113,8 @@
                 activeSeedTailTitle: String(_domActiveSeedTailTitle || ''),
                 activeSeedTailLen: Number(_domActiveSeedTailLen || 0),
                 activeSeedConsumedPrefixLen: Number(_domActiveSeedConsumedPrefixLen || 0),
+                activeSeedTailSeq: String(_domActiveSeedTailSeq || ''),
+                activeSeedStepBuildId: Number(_domLastActiveSeedStepBuildId || 0),
                 managedTitle: String(_domManagedTableTitle || ''),
                 buildId: buildId,
                 buildSource: buildSource,
@@ -3147,6 +3153,8 @@
             _domActiveSeedTailTitle = String(pub.activeSeedTailTitle || _domActiveSeedTailTitle || '');
             _domActiveSeedTailLen = Number(pub.activeSeedTailLen || _domActiveSeedTailLen || 0);
             _domActiveSeedConsumedPrefixLen = Number(pub.activeSeedConsumedPrefixLen || _domActiveSeedConsumedPrefixLen || 0);
+            _domActiveSeedTailSeq = String(pub.activeSeedTailSeq || _domActiveSeedTailSeq || '');
+            _domLastActiveSeedStepBuildId = Number(pub.activeSeedStepBuildId || _domLastActiveSeedStepBuildId || 0);
             _domManagedTableTitle = String(pub.managedTitle || _domManagedTableTitle || '');
             cwDbg('SEQFLOW', 'sync-from-published', {
                 reason: String(syncReason || ''),
@@ -4266,18 +4274,41 @@
                 lastNoBoardReason === 'marker-found-but-no-board';
             var curBuildSource = String(_cwSnapshotBuildSource || '');
             var curBuildId = Number(_cwSnapshotBuildId || 0);
-            var isSnapshotContext = !!(curBuildId > 0 && (curBuildSource === 'push' || curBuildSource === 'pull'));
+            var isPushBuildContext = !!(curBuildId > 0 && curBuildSource === 'push');
             var canUseActiveResetSeed = !!(
                 _domShoeResetPending &&
                 activeSeq &&
                 activeSeq.length <= 8 &&
                 sameTableForActiveSeed &&
-                isSnapshotContext &&
+                isPushBuildContext &&
                 !activeSeedBurstBlocked &&
                 !activeSeedGlobalBlocked &&
                 allowActiveSeedByNoBoardReason
             );
             function useActiveResetSeed(reasonTag) {
+                if (!isPushBuildContext) {
+                    _domSeqEvent = 'active-reset-seed-wait-push';
+                    _domSeqAppend = '';
+                    brPublishSeqState();
+                    cwDbg('SEQSRC', 'skip-active-reset-seed-nonpush', {
+                        reason: String(reasonTag || ''),
+                        activeTitle: activeTitle,
+                        activeSeqLen: String(activeSeq || '').length,
+                        buildSource: curBuildSource,
+                        buildId: curBuildId,
+                        seqVersion: Number(_domSeqVersion || 0),
+                        seqEvent: String(_domSeqEvent || '')
+                    }, 0, 'seqsrc-skip-active-nonpush|' + String(curBuildSource || '') + '|' + curBuildId + '|' + Number(_domSeqVersion || 0));
+                    return {
+                        seq: _domBeadSeqManaged || '',
+                        rawSeq: window.__cw_bead_raw_seq || '',
+                        which: 'dom-baccarat-hold-managed',
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent,
+                        cols: [],
+                        cells: []
+                    };
+                }
                 var seedTarget = String(_domResetSeedTargetRaw || '');
                 var seedConsumed = String(_domResetSeedConsumedRaw || '');
                 var isFreshSeedCycle = (!seedTarget && !seedConsumed);
@@ -4349,29 +4380,160 @@
                 var activeLen = activeClean.length;
                 var prevTailLen = Number(_domActiveSeedTailLen || 0);
                 var prevConsumedPrefix = Number(_domActiveSeedConsumedPrefixLen || 0);
+                var prevTailSeq = String(_domActiveSeedTailSeq || '');
                 var appendedDelta = '';
                 var appendIndex = -1;
                 var growth = activeLen - prevTailLen;
                 var reserveTail = (activeLen >= 2) ? 1 : 0;
                 var safePrefixLen = Math.max(0, activeLen - reserveTail);
+                var prevReserveTail = (prevTailLen >= 2) ? 1 : 0;
+                var prevSafePrefixLen = Math.max(0, prevTailLen - prevReserveTail);
+                var prevSafePrefix = prevTailSeq ? prevTailSeq.slice(0, prevSafePrefixLen) : '';
+                var curSafePrefix = activeClean.slice(0, safePrefixLen);
+                var prefixShifted = !!(prevSafePrefix && curSafePrefix && curSafePrefix.indexOf(prevSafePrefix) !== 0);
+                var activeStepBuildLocked = !!(
+                    Number(_domLastActiveSeedStepBuildId || 0) > 0 &&
+                    Number(_domLastActiveSeedStepBuildId || 0) === Number(curBuildId || 0)
+                );
+                var initSeedEligible = !!(
+                    beforeLen <= 0 &&
+                    activeLen === 1 &&
+                    prevConsumedPrefix < safePrefixLen
+                );
                 var mode = 'hold';
                 // Active seq có thể chứa 1 ký tự dự báo ở đuôi; chỉ consume prefix đã "an toàn".
                 // Mỗi lần tăng activeLen chỉ consume tối đa 1 step để không nhảy loạn.
                 if (titleChanged || prevTailLen <= 0) {
                     _domActiveSeedTailLen = activeLen;
-                    _domSeqEvent = 'active-reset-seed-tail-init';
-                    _domSeqAppend = '';
-                    brPublishSeqState();
-                    mode = 'init';
-                } else if (growth > 0 && prevConsumedPrefix < safePrefixLen) {
-                    appendIndex = prevConsumedPrefix;
-                    appendedDelta = activeClean.charAt(appendIndex);
-                    if (appendedDelta) {
-                        brAppendManaged(appendedDelta, 'append-reset-seed-step');
-                        _domActiveSeedConsumedPrefixLen = appendIndex + 1;
-                        mode = (growth > 1) ? 'prefix-step-jump' : 'prefix-step';
+                    _domActiveSeedTailSeq = activeClean;
+                    if (initSeedEligible) {
+                        appendIndex = prevConsumedPrefix;
+                        appendedDelta = activeClean.charAt(appendIndex);
+                        if (appendedDelta && !activeStepBuildLocked) {
+                            brAppendManaged(appendedDelta, 'append-reset-seed-step');
+                            _domActiveSeedConsumedPrefixLen = appendIndex + 1;
+                            _domLastActiveSeedStepBuildId = Number(curBuildId || 0);
+                            mode = 'init-prefix-step';
+                        } else if (activeStepBuildLocked) {
+                            _domSeqEvent = 'active-reset-seed-step-build-lock';
+                            _domSeqAppend = '';
+                            brPublishSeqState();
+                            mode = 'init-build-lock';
+                            cwDbg('SEQFLOW', 'active-seed-step-build-lock', {
+                                reason: 'init',
+                                activeTitle: activeTitle,
+                                activeSeq: activeClean,
+                                activeSeqLen: activeLen,
+                                seqVersion: Number(_domSeqVersion || 0),
+                                seqEvent: String(_domSeqEvent || ''),
+                                buildId: Number(curBuildId || 0),
+                                stepBuildId: Number(_domLastActiveSeedStepBuildId || 0)
+                            }, 0, 'active-seed-step-lock|init|' + Number(curBuildId || 0) + '|' + Number(_domSeqVersion || 0));
+                        } else {
+                            _domSeqEvent = 'active-reset-seed-tail-init';
+                            _domSeqAppend = '';
+                            brPublishSeqState();
+                            mode = 'init';
+                        }
                     } else {
-                        mode = 'prefix-empty';
+                        _domSeqEvent = 'active-reset-seed-tail-init';
+                        _domSeqAppend = '';
+                        brPublishSeqState();
+                        mode = 'init';
+                    }
+                } else if (growth > 0 && prevConsumedPrefix < safePrefixLen) {
+                    if (prefixShifted) {
+                        var canRecoverPrefixShift = !!(
+                            beforeLen <= 0 &&
+                            prevConsumedPrefix <= 0 &&
+                            prevTailLen >= 2 &&
+                            activeLen === (prevTailLen + 1) &&
+                            safePrefixLen >= 1 &&
+                            !activeStepBuildLocked
+                        );
+                        if (canRecoverPrefixShift) {
+                            appendIndex = 0;
+                            appendedDelta = activeClean.charAt(appendIndex);
+                            if (appendedDelta) {
+                                brAppendManaged(appendedDelta, 'append-reset-seed-step');
+                                _domActiveSeedConsumedPrefixLen = 1;
+                                _domLastActiveSeedStepBuildId = Number(curBuildId || 0);
+                                mode = 'prefix-shift-recover-step';
+                                cwDbg('SEQFLOW', 'active-seed-prefix-shift-recover', {
+                                    activeTitle: activeTitle,
+                                    activeSeq: activeClean,
+                                    prevTailSeq: prevTailSeq,
+                                    prevTailLen: prevTailLen,
+                                    activeSeqLen: activeLen,
+                                    prevSafePrefix: prevSafePrefix,
+                                    curSafePrefix: curSafePrefix,
+                                    prevSafePrefixLen: prevSafePrefixLen,
+                                    curSafePrefixLen: safePrefixLen,
+                                    prevConsumedPrefix: prevConsumedPrefix,
+                                    recoveredIndex: appendIndex,
+                                    recoveredDelta: appendedDelta,
+                                    seqVersion: Number(_domSeqVersion || 0),
+                                    seqEvent: String(_domSeqEvent || ''),
+                                    buildId: Number(curBuildId || 0)
+                                }, 0, 'active-seed-prefix-recover|' + String(activeTitle || '') + '|' + Number(curBuildId || 0) + '|' + Number(_domSeqVersion || 0));
+                            } else {
+                                _domActiveSeedConsumedPrefixLen = 0;
+                                _domSeqEvent = 'active-reset-seed-tail-prefix-shift';
+                                _domSeqAppend = '';
+                                brPublishSeqState();
+                                mode = 'prefix-shift-hold';
+                            }
+                        } else {
+                            _domActiveSeedConsumedPrefixLen = 0;
+                            _domSeqEvent = 'active-reset-seed-tail-prefix-shift';
+                            _domSeqAppend = '';
+                            brPublishSeqState();
+                            mode = 'prefix-shift-hold';
+                            cwDbg('SEQFLOW', 'active-seed-prefix-shift-hold', {
+                                activeTitle: activeTitle,
+                                activeSeq: activeClean,
+                                prevTailSeq: prevTailSeq,
+                                prevTailLen: prevTailLen,
+                                activeSeqLen: activeLen,
+                                prevSafePrefix: prevSafePrefix,
+                                curSafePrefix: curSafePrefix,
+                                prevSafePrefixLen: prevSafePrefixLen,
+                                curSafePrefixLen: safePrefixLen,
+                                prevConsumedPrefix: prevConsumedPrefix,
+                                canRecoverPrefixShift: canRecoverPrefixShift ? 1 : 0,
+                                seqVersion: Number(_domSeqVersion || 0),
+                                seqEvent: String(_domSeqEvent || ''),
+                                buildId: Number(curBuildId || 0)
+                            }, 0, 'active-seed-prefix-shift|' + String(activeTitle || '') + '|' + Number(curBuildId || 0) + '|' + Number(_domSeqVersion || 0));
+                        }
+                    } else if (activeStepBuildLocked) {
+                        _domSeqEvent = 'active-reset-seed-step-build-lock';
+                        _domSeqAppend = '';
+                        brPublishSeqState();
+                        mode = 'step-build-lock';
+                        cwDbg('SEQFLOW', 'active-seed-step-build-lock', {
+                            reason: 'growth',
+                            activeTitle: activeTitle,
+                            activeSeq: activeClean,
+                            activeSeqLen: activeLen,
+                            prevTailLen: prevTailLen,
+                            prevConsumedPrefix: prevConsumedPrefix,
+                            seqVersion: Number(_domSeqVersion || 0),
+                            seqEvent: String(_domSeqEvent || ''),
+                            buildId: Number(curBuildId || 0),
+                            stepBuildId: Number(_domLastActiveSeedStepBuildId || 0)
+                        }, 0, 'active-seed-step-lock|growth|' + Number(curBuildId || 0) + '|' + Number(_domSeqVersion || 0));
+                    } else {
+                        appendIndex = prevConsumedPrefix;
+                        appendedDelta = activeClean.charAt(appendIndex);
+                        if (appendedDelta) {
+                            brAppendManaged(appendedDelta, 'append-reset-seed-step');
+                            _domActiveSeedConsumedPrefixLen = appendIndex + 1;
+                            _domLastActiveSeedStepBuildId = Number(curBuildId || 0);
+                            mode = (growth > 1) ? 'prefix-step-jump' : 'prefix-step';
+                        } else {
+                            mode = 'prefix-empty';
+                        }
                     }
                     _domActiveSeedTailLen = activeLen;
                 } else {
@@ -4381,6 +4543,7 @@
                     brPublishSeqState();
                     mode = (growth > 0) ? 'growth-hold' : 'hold';
                 }
+                _domActiveSeedTailSeq = activeClean;
 
                 var afterSeq = String(_domBeadSeqManaged || '');
                 var afterLen = afterSeq.length;
@@ -4421,8 +4584,14 @@
                     activeSeedMode: mode,
                     activeSeedGrowth: growth,
                     activeSeedDelta: appendedDelta,
+                    initSeedEligible: initSeedEligible ? 1 : 0,
+                    activeStepBuildLocked: activeStepBuildLocked ? 1 : 0,
+                    prefixShifted: prefixShifted ? 1 : 0,
                     reserveTail: reserveTail,
                     safePrefixLen: safePrefixLen,
+                    prevSafePrefixLen: prevSafePrefixLen,
+                    prevSafePrefix: prevSafePrefix,
+                    curSafePrefix: curSafePrefix,
                     prefixConsumedBefore: prevConsumedPrefix,
                     prefixConsumedAfter: Number(_domActiveSeedConsumedPrefixLen || 0),
                     appendIndex: appendIndex,
@@ -4442,6 +4611,9 @@
                     '|mode=' + mode +
                     '|growth=' + growth +
                     '|delta=' + (appendedDelta || '-') +
+                    '|initSeed=' + (initSeedEligible ? 1 : 0) +
+                    '|stepLock=' + (activeStepBuildLocked ? 1 : 0) +
+                    '|prefixShift=' + (prefixShifted ? 1 : 0) +
                     '|idx=' + appendIndex +
                     '|reserve=' + reserveTail +
                     '|safePrefix=' + safePrefixLen +
@@ -4541,7 +4713,7 @@
                 if (!canUseActiveResetSeed &&
                     noBoardBurstActive &&
                     sameTableForActiveSeed &&
-                    isSnapshotContext &&
+                    isPushBuildContext &&
                     activeSeq.length <= 8 &&
                     !activeSeedBurstBlocked &&
                     !activeSeedGlobalBlocked &&
@@ -4619,8 +4791,19 @@
 
             // Ưu tiên bead; nếu bead đứng nhưng active seq cho thấy đuôi mới hợp lệ thì append.
             if (beadSeq && beadRawSeq && activeSeq && !_domShoeResetPending) {
-                var stitched = brAppendNewTail(beadSeq, activeSeq);
-                if (stitched) {
+                var allowActiveTailExtend = !!(window && window.__cw_allow_active_tail_extend === 1);
+                var stitched = allowActiveTailExtend ? brAppendNewTail(beadSeq, activeSeq) : '';
+                if (!allowActiveTailExtend && activeSeq.indexOf(beadSeq) === 0 && activeSeq.length > beadSeq.length) {
+                    cwDbg('SEQFLOW', 'active-tail-extend-disabled', {
+                        beadSeqLen: beadSeq.length,
+                        activeSeqLen: activeSeq.length,
+                        beadTail: beadSeq ? beadSeq.charAt(beadSeq.length - 1) : '',
+                        activeTail: activeSeq ? activeSeq.charAt(activeSeq.length - 1) : '',
+                        seqVersion: Number(_domSeqVersion || 0),
+                        seqEvent: String(_domSeqEvent || ''),
+                        activeTitle: activeTitle
+                    }, 6000, 'active-tail-extend-disabled|' + beadSeq.length + '|' + activeSeq.length + '|' + String(activeTitle || ''));
+                } else if (stitched) {
                     _domBeadSeqManaged = limitSeq50(stitched);
                     _domSeqEvent = 'dom-baccarat-extend';
                     brPublishSeqState();
