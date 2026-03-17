@@ -154,6 +154,19 @@ namespace BaccaratSexyCasino
 
     public sealed class SideToIconConverter : IValueConverter
     {
+        internal static ImageSource? ResolveResultIcon(string resourceKey, string fallbackAsset)
+        {
+            try
+            {
+                if (System.Windows.Application.Current?.Resources != null &&
+                    System.Windows.Application.Current.Resources[resourceKey] is ImageSource img)
+                    return img;
+            }
+            catch { }
+
+            return FallbackIcons.LoadPackImage(fallbackAsset);
+        }
+
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
             var u = TextNorm.U(value?.ToString() ?? "");
@@ -201,25 +214,25 @@ namespace BaccaratSexyCasino
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
             var u = TextNorm.U(value?.ToString() ?? "");
-            if (u == "BANKER" || u == "B") return FallbackIcons.GetResultBanker();
-            if (u == "PLAYER" || u == "P") return FallbackIcons.GetResultPlayer();
-            if (u == "TIE" || u == "T" || u == "HOA") return FallbackIcons.GetResultTie();
+            if (u == "BANKER" || u == "B") return SideToIconConverter.ResolveResultIcon("ImgBANKER", "Assets/side/BANKER.png");
+            if (u == "PLAYER" || u == "P") return SideToIconConverter.ResolveResultIcon("ImgPLAYER", "Assets/side/PLAYER.png");
+            if (u == "TIE" || u == "T" || u == "HOA") return SideToIconConverter.ResolveResultIcon("ImgTIE", "Assets/side/TIE.png");
 
             char digit = '\0';
             if (u.Length == 1 && char.IsDigit(u[0])) digit = u[0];
             else if (u.StartsWith("BALL", StringComparison.OrdinalIgnoreCase) && u.Length >= 5)
             {
                 var cBall = u[4];
-                if (cBall == 'B') return FallbackIcons.GetSideBanker();
-                if (cBall == 'P') return FallbackIcons.GetSidePlayer();
+                if (cBall == 'B') return SideToIconConverter.ResolveResultIcon("ImgBANKER", "Assets/side/BANKER.png");
+                if (cBall == 'P') return SideToIconConverter.ResolveResultIcon("ImgPLAYER", "Assets/side/PLAYER.png");
                 if (char.IsDigit(cBall)) digit = cBall;
             }
 
             if (digit >= '0' && digit <= '4')
             {
                 return (digit == '1' || digit == '3')
-                    ? FallbackIcons.GetResultPlayer()
-                    : FallbackIcons.GetResultBanker();
+                    ? SideToIconConverter.ResolveResultIcon("ImgPLAYER", "Assets/side/PLAYER.png")
+                    : SideToIconConverter.ResolveResultIcon("ImgBANKER", "Assets/side/BANKER.png");
             }
 
             return null;

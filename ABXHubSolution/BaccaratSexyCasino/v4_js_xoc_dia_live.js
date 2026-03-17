@@ -3181,40 +3181,6 @@
         }
         return '';
     }
-    function brSeedManagedFromActive(activeSeq, activeTitle) {
-        var raw = brSanitizeSeq(activeSeq);
-        if (!raw)
-            return _domBeadSeqManaged || '';
-        var inResetSeedWindow = (_domShoeResetPending && raw.length > 0 && raw.length <= 4);
-        // Trong reset/no-board chỉ dùng 1 ký tự kết quả hiện tại để tránh nhảy chuỗi.
-        var seed = inResetSeedWindow ? String(raw || '').charAt(0) : raw;
-        if (!seed)
-            seed = raw;
-        var key = String(activeTitle || '') + '|' + seed;
-        if (_domLastActiveSeedKey === key) {
-            _domSeqEvent = 'no-change';
-            brPublishSeqState();
-            return _domBeadSeqManaged || '';
-        }
-        // Nếu đã có đuôi giống hệt thì không append lại.
-        var managedNow = String(_domBeadSeqManaged || '');
-        if (managedNow && managedNow.slice(-seed.length) === seed) {
-            _domLastActiveSeedKey = key;
-            _domSeqEvent = 'no-change';
-            brPublishSeqState();
-            return managedNow;
-        }
-        var before = String(_domBeadSeqManaged || '');
-        var merged = brMergeManagedSeq(seed);
-        var moved = String(_domSeqEvent || '').indexOf('append') === 0 && String(merged || '') !== before;
-        if (!moved && inResetSeedWindow) {
-            // Chốt append cưỡng bức 1 lần khi parser board fail nhưng active seq đã có.
-            brAppendManaged(seed, 'append-reset-seed-active-force');
-            merged = String(_domBeadSeqManaged || '');
-        }
-        _domLastActiveSeedKey = key;
-        return merged || '';
-    }
     function brResetManagedForTable(activeTitle, activeSeq, reason) {
         var cleanTitle = String(activeTitle || '').trim();
         var raw = brSanitizeSeq(activeSeq);
@@ -3641,57 +3607,8 @@
                 }
             }
 
-            // Khi parser bead fail (rawSeq rỗng), luôn ưu tiên seed từ active seq để không kẹt chuỗi.
-            var managedLenNow = String(_domBeadSeqManaged || '').length;
-            var allowNoBoardResetSeedFromActive = (
-                    _domShoeResetPending
-                    && managedLenNow >= 10
-                    && activeSeq.length >= 2
-                    && (_domShoeResetAt ? (Date.now() - _domShoeResetAt) >= 600 : true)
-                );
-            var allowActiveSeedWhenNoBoard = (
-                    // Chỉ seed active khi chưa có managed (phiên mới) và active đủ dài.
-                    (!managedLenNow && activeSeq.length >= 8)
-                    // Hoặc đang chờ reset shoe và active có tối thiểu vài ký tự để mở lại nhịp.
-                    || (_domShoeResetPending && activeSeq.length >= 3 && managedLenNow <= 8)
-                    // Hoặc board vừa rỗng sau xáo (managed còn dài), cho seed active sớm để không hụt ván đầu.
-                    || allowNoBoardResetSeedFromActive
-                );
-            if (!beadRawSeq && activeSeq && allowActiveSeedWhenNoBoard) {
-                var managedBeforeMiss = String(_domBeadSeqManaged || '');
-                var mergedFromActive = brSeedManagedFromActive(activeSeq, activeTitle);
-                var movedFromActive = String(_domSeqEvent || '').indexOf('append') === 0
-                    && String(mergedFromActive || '') !== managedBeforeMiss;
-                if (activeTitle && !_domManagedTableTitle)
-                    _domManagedTableTitle = activeTitle;
-                _cwSeqDiagState.lastSourcePick = {
-                    source: 'dom-baccarat-fallback-seed',
-                    reason: movedFromActive ? 'bead-missing-seeded' : 'bead-missing-keep',
-                    activeTitle: activeTitle,
-                    activeSeqLen: activeSeq.length,
-                    managedLen: String(_domBeadSeqManaged || '').length,
-                    seqVersion: _domSeqVersion,
-                    seqEvent: _domSeqEvent
-                };
-                cwDbg('SEQSRC', 'bead-missing-seed-from-active', {
-                    activeTitle: activeTitle,
-                    activeSeq: activeSeq,
-                    moved: movedFromActive ? 1 : 0,
-                    managedSeq: _domBeadSeqManaged,
-                    seqVersion: _domSeqVersion,
-                    seqEvent: _domSeqEvent
-                }, 300, 'seqsrc-bead-missing-seed|' + activeTitle + '|' + _domSeqVersion + '|' + (_domSeqEvent || ''));
-                return {
-                    seq: _domBeadSeqManaged || mergedFromActive || activeSeq || beadSeq || '',
-                    rawSeq: activeSeq,
-                    which: 'dom-baccarat-fallback-seed',
-                    seqVersion: _domSeqVersion,
-                    seqEvent: _domSeqEvent,
-                    cols: active.cols || [],
-                    cells: active.cells || []
-                };
-            }
-            if (!beadRawSeq && activeSeq && !allowActiveSeedWhenNoBoard) {
+            // Board fail: không seed từ active, chỉ giữ managed hiện tại để tránh append sai.
+            if (!beadRawSeq && activeSeq) {
                 _cwSeqDiagState.lastSourcePick = {
                     source: 'dom-baccarat-managed-hold',
                     reason: 'bead-missing-active-seed-blocked',
@@ -3718,40 +3635,6 @@
                     cols: [],
                     cells: []
                 };
-            }
-
-            var beadStuckWhileReset = (!beadRawSeq)
-                || ((String(_domSeqEvent || '') === 'no-change' || String(_domSeqEvent || '').indexOf('board-') === 0)
-                    && beadRawSeq && activeSeq && beadRawSeq !== activeSeq);
-            if (_domShoeResetPending && activeSeq && beadStuckWhileReset) {
-                var managedBefore = String(_domBeadSeqManaged || '');
-                var mergedActive = brMergeManagedSeq(activeSeq);
-                var didMove = String(_domSeqEvent || '').indexOf('append') === 0 && String(mergedActive || '') !== managedBefore;
-                if (didMove) {
-                    _cwSeqDiagState.lastSourcePick = {
-                        source: 'dom-baccarat-reset-fallback',
-                        reason: 'reset-pending-bead-empty',
-                        activeTitle: activeTitle,
-                        activeSeqLen: activeSeq.length,
-                        seqVersion: _domSeqVersion,
-                        seqEvent: _domSeqEvent
-                    };
-                    cwDbg('SEQSRC', 'append-from-active-while-reset-pending', {
-                        activeTitle: activeTitle,
-                        activeSeq: activeSeq,
-                        seqVersion: _domSeqVersion,
-                        seqEvent: _domSeqEvent
-                    }, 0, 'seqsrc-reset-active|' + activeTitle + '|' + _domSeqVersion);
-                    return {
-                        seq: _domBeadSeqManaged || mergedActive || '',
-                        rawSeq: activeSeq,
-                        which: 'dom-baccarat-reset-fallback',
-                        seqVersion: _domSeqVersion,
-                        seqEvent: _domSeqEvent,
-                        cols: active.cols || [],
-                        cells: active.cells || []
-                    };
-                }
             }
 
             // Ưu tiên bead; nếu bead đứng nhưng active seq cho thấy đuôi mới hợp lệ thì append.
