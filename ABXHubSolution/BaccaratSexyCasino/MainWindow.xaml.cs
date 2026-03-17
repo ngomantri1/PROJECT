@@ -360,6 +360,9 @@ namespace BaccaratSexyCasino
         private bool _lockMajorMinorUpdates = false;
         private string _baseSeq = "";
         private string _baseSeqDisplay = "";
+        private long _baseSeqVersion = 0;
+        private string _baseSeqEvent = "";
+        private DateTime _lastHistAlertUtc = DateTime.MinValue;
 
         private DecisionState _dec = new();
         private long[] _stakeSeq = Array.Empty<long>();
@@ -739,6 +742,9 @@ Ví dụ không hợp lệ:
             public double Account { get; set; }              // Số dư sau ván
             public string IssuedSeqDisplay { get; set; } = "";
             public string IssuedSeqCalc { get; set; } = "";
+            public long? IssuedSeqVersion { get; set; }
+            public string IssuedSeqEvent { get; set; } = "";
+            public long IssuedRoundId { get; set; }
             public bool SawClosedAfterIssue { get; set; }
         }
 
@@ -3316,6 +3322,8 @@ try{
                                     {
                                         _baseSeq = seqStr;
                                         _baseSeqDisplay = seqDisplay;
+                                        _baseSeqVersion = snap.seqVersion ?? 0;
+                                        _baseSeqEvent = snap.seqEvent ?? "";
                                         _roundTotalsB = currB;
                                         _roundTotalsP = currP;
                                         _roundTotalsT = currT;
@@ -3328,52 +3336,81 @@ try{
                                 {
                                     if (!string.Equals(seqDisplay, _baseSeqDisplay, StringComparison.Ordinal))
                                     {
-                                        char tail = (seqDisplay.Length > 0) ? seqDisplay[^1] : '\0';
-                                        string? settledResult = tail switch
+                                        long settleSeqVersion = snap.seqVersion ?? 0;
+                                        string settleSeqEvent = snap.seqEvent ?? "";
+                                        bool hasSeqAdvance = (_baseSeqVersion > 0 && settleSeqVersion > 0)
+                                            ? (settleSeqVersion > _baseSeqVersion)
+                                            : !string.Equals(seqDisplay, _baseSeqDisplay, StringComparison.Ordinal);
+                                        if (!hasSeqAdvance)
                                         {
-                                            'T' => "TIE",
-                                            'B' => "BANKER",
-                                            'P' => "PLAYER",
-                                            _ => null
-                                        };
-
-                                        if (string.Equals(settledResult, "TIE", StringComparison.Ordinal))
-                                        {
-                                            double balanceAfter = ResolveHistoryBalance(snap?.totals?.A);
-                                            if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
+                                            Log($"[BET][HIST][SETTLE][SKIP] reason=seq-not-advanced | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | baseEvt={_baseSeqEvent} | curLen={seqDisplay.Length} | curVer={settleSeqVersion} | curEvt={settleSeqEvent}");
+                                            if (_pendingRows.Count > 0)
                                             {
-                                                FinalizeLastBet(
-                                                    "TIE",
-                                                    balanceAfter,
-                                                    new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-                                                    "TIE");
+                                                var oldest = _pendingRows[0];
+                                                LogHistAlertThrottled(
+                                                    $"[BET][HIST][ALERT] pending-not-settled | reason=seq-not-advanced | pending={_pendingRows.Count} | oldestAt={oldest.At:HH:mm:ss} | oldestRound={oldest.IssuedRoundId} | oldestIssueVer={(oldest.IssuedSeqVersion?.ToString() ?? "-")} | curVer={settleSeqVersion} | curEvt={settleSeqEvent}");
                                             }
-
-                                            _lockMajorMinorUpdates = false;
                                         }
-                                        else if (string.Equals(settledResult, "BANKER", StringComparison.Ordinal) ||
-                                                 string.Equals(settledResult, "PLAYER", StringComparison.Ordinal))
+                                        else
                                         {
-                                            bool winIsBanker = string.Equals(settledResult, "BANKER", StringComparison.Ordinal);
-                                            long prevB = _roundTotalsB, prevP = _roundTotalsP;
-                                            char ni = winIsBanker ? ((prevB >= prevP) ? 'N' : 'I')
-                                                                  : ((prevP >= prevB) ? 'N' : 'I');
-
-                                            _niSeq.Append(ni);
-                                            if (_niSeq.Length > NiSeqMax)
-                                                _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
-
-                                            Log($"[NI] add={ni} | seq={_niSeq} | tail={(winIsBanker ? 'B' : 'P')} | B={prevB} | P={prevP}");
-
-                                            double balanceAfter = ResolveHistoryBalance(snap?.totals?.A);
-                                            if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
+                                            char tail = (seqDisplay.Length > 0) ? seqDisplay[^1] : '\0';
+                                            string? settledResult = tail switch
                                             {
-                                                FinalizeLastBet(
-                                                    winIsBanker ? "BANKER" : "PLAYER",
-                                                    balanceAfter);
-                                            }
+                                                'T' => "TIE",
+                                                'B' => "BANKER",
+                                                'P' => "PLAYER",
+                                                _ => null
+                                            };
+                                            Log($"[BET][HIST][SETTLE] baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | baseEvt={_baseSeqEvent} | curLen={seqDisplay.Length} | curVer={settleSeqVersion} | curEvt={settleSeqEvent} | tail={tail} | result={settledResult ?? "-"} | pending={_pendingRows.Count}");
 
-                                            _lockMajorMinorUpdates = false;
+                                            if (string.Equals(settledResult, "TIE", StringComparison.Ordinal))
+                                            {
+                                                double balanceAfter = ResolveHistoryBalance(snap?.totals?.A);
+                                                if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
+                                                {
+                                                    FinalizeLastBet(
+                                                        "TIE",
+                                                        balanceAfter,
+                                                        new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                                                        "TIE",
+                                                        seqDisplay,
+                                                        settleSeqVersion,
+                                                        settleSeqEvent,
+                                                        "tick-tail-change");
+                                                }
+
+                                                _lockMajorMinorUpdates = false;
+                                            }
+                                            else if (string.Equals(settledResult, "BANKER", StringComparison.Ordinal) ||
+                                                     string.Equals(settledResult, "PLAYER", StringComparison.Ordinal))
+                                            {
+                                                bool winIsBanker = string.Equals(settledResult, "BANKER", StringComparison.Ordinal);
+                                                long prevB = _roundTotalsB, prevP = _roundTotalsP;
+                                                char ni = winIsBanker ? ((prevB >= prevP) ? 'N' : 'I')
+                                                                      : ((prevP >= prevB) ? 'N' : 'I');
+
+                                                _niSeq.Append(ni);
+                                                if (_niSeq.Length > NiSeqMax)
+                                                    _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
+
+                                                Log($"[NI] add={ni} | seq={_niSeq} | tail={(winIsBanker ? 'B' : 'P')} | B={prevB} | P={prevP}");
+
+                                                double balanceAfter = ResolveHistoryBalance(snap?.totals?.A);
+                                                if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
+                                                {
+                                                    FinalizeLastBet(
+                                                        winIsBanker ? "BANKER" : "PLAYER",
+                                                        balanceAfter,
+                                                        null,
+                                                        null,
+                                                        seqDisplay,
+                                                        settleSeqVersion,
+                                                        settleSeqEvent,
+                                                        "tick-tail-change");
+                                                }
+
+                                                _lockMajorMinorUpdates = false;
+                                            }
                                         }
                                     }
                                 }
@@ -5550,6 +5587,8 @@ try{
             lock (_snapLock) issuedSnap = _lastSnap;
             var issuedSeqDisplay = issuedSnap?.seq ?? "";
             var issuedSeqCalc = FilterPlayableSeq(issuedSeqDisplay);
+            long? issuedSeqVersion = issuedSnap?.seqVersion;
+            string issuedSeqEvent = issuedSnap?.seqEvent ?? "";
 
             if (!TryRegisterBetIssued(
                 tabKey,
@@ -5589,10 +5628,14 @@ try{
                 Account = accNow,
                 IssuedSeqDisplay = issuedSeqDisplay,
                 IssuedSeqCalc = issuedSeqCalc,
+                IssuedSeqVersion = issuedSeqVersion,
+                IssuedSeqEvent = issuedSeqEvent,
+                IssuedRoundId = roundId,
                 SawClosedAfterIssue = false
             };
 
-            Log($"[BET][HIST][PENDING] {row.At:HH:mm:ss} | {side} | {amount:N0} | round={roundId} | acc={row.Account:#,0.##}");
+            char issueTail = issuedSeqDisplay.Length > 0 ? issuedSeqDisplay[^1] : '-';
+            Log($"[BET][HIST][PENDING] {row.At:HH:mm:ss} | {side} | {amount:N0} | round={roundId} | seqLen={issuedSeqDisplay.Length} | seqVer={(issuedSeqVersion?.ToString() ?? "-")} | seqEvt={issuedSeqEvent} | tail={issueTail} | acc={row.Account:#,0.##}");
 
             _betAll.Insert(0, row);
             if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
@@ -7446,6 +7489,15 @@ try{
                 row.SawClosedAfterIssue = true;
         }
 
+        private void LogHistAlertThrottled(string message, int minSeconds = 5)
+        {
+            var now = DateTime.UtcNow;
+            if ((now - _lastHistAlertUtc).TotalSeconds < minSeconds)
+                return;
+            _lastHistAlertUtc = now;
+            Log(message);
+        }
+
         private double ResolveHistoryBalance(double? preferred = null)
         {
             if (preferred.HasValue)
@@ -7469,7 +7521,11 @@ try{
             string? result,
             double balanceAfter,
             HashSet<string>? winners = null,
-            string? displayResult = null)
+            string? displayResult = null,
+            string? settleSeqDisplay = null,
+            long? settleSeqVersion = null,
+            string? settleSeqEvent = null,
+            string settleReason = "")
         {
             if (_pendingRows.Count == 0 || string.IsNullOrWhiteSpace(result)) return;
 
@@ -7480,29 +7536,73 @@ try{
             bool isTieResult = string.Equals(TextNorm.U(resultText), "TIE", StringComparison.Ordinal)
                                || string.Equals(TextNorm.U(resultText), "T", StringComparison.Ordinal);
 
-            foreach (var row in _pendingRows)
+            var settleDisplay = settleSeqDisplay ?? "";
+            bool hasSettleContext = !string.IsNullOrWhiteSpace(settleDisplay) || (settleSeqVersion ?? 0) > 0;
+            bool hasSettleVersion = (settleSeqVersion ?? 0) > 0;
+            char settleTail = settleDisplay.Length > 0 ? settleDisplay[^1] : '-';
+
+            bool IsRowSeqAdvanced(BetRow row)
+            {
+                if (!hasSettleContext) return true;
+                bool hasIssueVersion = (row.IssuedSeqVersion ?? 0) > 0;
+                if (hasSettleVersion && hasIssueVersion)
+                    return settleSeqVersion!.Value > row.IssuedSeqVersion!.Value;
+                return !string.Equals(settleDisplay, row.IssuedSeqDisplay ?? "", StringComparison.Ordinal);
+            }
+
+            var pendingSnapshot = _pendingRows.ToList();
+            var rowsToFinalize = hasSettleContext
+                ? pendingSnapshot.Where(IsRowSeqAdvanced).ToList()
+                : pendingSnapshot;
+            int holdCount = pendingSnapshot.Count - rowsToFinalize.Count;
+
+            Log($"[BET][HIST][CHECK] reason={(string.IsNullOrWhiteSpace(settleReason) ? "-" : settleReason)} | result={resultText} | pending={pendingSnapshot.Count} | matched={rowsToFinalize.Count} | hold={holdCount} | settleLen={settleDisplay.Length} | settleVer={(hasSettleVersion ? settleSeqVersion!.Value.ToString() : "-")} | settleEvt={(settleSeqEvent ?? "-")} | settleTail={settleTail}");
+            foreach (var row in pendingSnapshot)
+            {
+                bool advanced = IsRowSeqAdvanced(row);
+                char issueTail = row.IssuedSeqDisplay.Length > 0 ? row.IssuedSeqDisplay[^1] : '-';
+                Log($"[BET][HIST][CHECK][ROW] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueLen={row.IssuedSeqDisplay.Length} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | issueEvt={row.IssuedSeqEvent} | issueTail={issueTail} | advanced={advanced}");
+            }
+
+            if (rowsToFinalize.Count == 0)
+            {
+                Log("[BET][HIST][CHECK][SKIP] no pending row passed settle sequence gating");
+                var oldest = pendingSnapshot[0];
+                LogHistAlertThrottled(
+                    $"[BET][HIST][ALERT] pending-not-settled | reason=no-row-passed-gating | pending={pendingSnapshot.Count} | oldestAt={oldest.At:HH:mm:ss} | oldestRound={oldest.IssuedRoundId} | oldestIssueVer={(oldest.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(hasSettleVersion ? settleSeqVersion!.Value.ToString() : "-")} | settleEvt={(settleSeqEvent ?? "-")}");
+                return;
+            }
+
+            if (holdCount > 0)
+            {
+                var oldestHold = pendingSnapshot.FirstOrDefault(r => !rowsToFinalize.Contains(r));
+                if (oldestHold != null)
+                {
+                    Log($"[BET][HIST][HOLD] count={holdCount} | oldestAt={oldestHold.At:HH:mm:ss} | oldestRound={oldestHold.IssuedRoundId} | oldestIssueVer={(oldestHold.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(hasSettleVersion ? settleSeqVersion!.Value.ToString() : "-")} | settleEvt={(settleSeqEvent ?? "-")}");
+                }
+            }
+
+            foreach (var row in rowsToFinalize)
             {
                 row.Result = resultText;
                 bool win = !isTieResult && winSet.Contains(row.Side);
                 row.WinLose = isTieResult ? "Hòa" : (win ? "Thắng" : "Thua");
                 row.Account = balanceAfter;
-                Log($"[BET][HIST][FINAL] {row.At:HH:mm:ss} | {row.Side} | {row.Stake:N0} | result={row.Result} | wl={row.WinLose} | acc={row.Account:#,0.##}");
+                Log($"[BET][HIST][FINAL] {row.At:HH:mm:ss} | {row.Side} | {row.Stake:N0} | round={row.IssuedRoundId} | result={row.Result} | wl={row.WinLose} | acc={row.Account:#,0.##} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(hasSettleVersion ? settleSeqVersion!.Value.ToString() : "-")}");
 
-                // KHÔNG add lại vào _betAll (đã chèn ở thời điểm BET)
-                try { AppendBetCsv(row); } catch { /* ignore IO */ }
+                try { AppendBetCsv(row); } catch { }
             }
+            foreach (var row in rowsToFinalize)
+                _pendingRows.Remove(row);
 
-            // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
             if (_autoFollowNewest)
             {
                 ShowFirstPage();
             }
             else
             {
-                RefreshCurrentPage();   // (mục 3 bên dưới)
+                RefreshCurrentPage();
             }
-
-            _pendingRows.Clear();
         }
 
         public void FinalizePendingBetsWithWinners(HashSet<string> winners, string? displayResult = null)

@@ -2914,6 +2914,28 @@
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
     var _domLastActiveSeedKey = '';
+    function brArmShoeResetByNoBoard(reason) {
+        var prevLen = String(_domBeadSeqPrevRaw || '').length;
+        var managedLen = String(_domBeadSeqManaged || '').length;
+        if (_domShoeResetPending)
+            return false;
+        // Chỉ arm khi trước đó đã có board/chuỗi đủ dài để tránh trigger nhầm lúc mới mở app.
+        if (prevLen < 8 && managedLen < 10)
+            return false;
+        _domShoeResetPending = true;
+        _domShoeResetAt = Date.now();
+        // Cho phép seed lại 1 lần sau khi board mất (tránh bị chặn bởi key cũ của shoe trước).
+        _domLastActiveSeedKey = '';
+        _domSeqEvent = 'shoe-reset-arm-no-board';
+        _domSeqAppend = '';
+        cwDbg('SEQ', 'shoe-reset-arm by no-board', {
+            reason: String(reason || ''),
+            prevLen: prevLen,
+            managedLen: managedLen
+        }, 1200, 'reset-arm-no-board|' + String(reason || '') + '|' + prevLen + '|' + managedLen);
+        brPublishSeqState();
+        return true;
+    }
     function brOverlapSuffixPrefix(a, b) {
         a = String(a || '');
         b = String(b || '');
@@ -2943,11 +2965,22 @@
         var clean = brSanitizeSeq(delta);
         if (!clean)
             return false;
-        _domBeadSeqManaged = limitSeq50(_domBeadSeqManaged + clean);
+        var beforeSeq = String(_domBeadSeqManaged || '');
+        var nextSeq = limitSeq50(beforeSeq + clean);
+        // Không tăng seqVersion nếu append không làm đổi chuỗi (tránh spam round/settle).
+        if (nextSeq === beforeSeq) {
+            _domSeqEvent = 'no-change';
+            _domSeqAppend = '';
+            brPublishSeqState();
+            return false;
+        }
+        _domBeadSeqManaged = nextSeq;
         _domSeqVersion += clean.length;
         _domSeqEvent = String(eventName || 'append');
         _domSeqAppend = clean;
-        _domShoeResetPending = false;
+        // Seed trong giai đoạn reset: giữ pending để không arm lại liên tục khi board còn fail.
+        var evt = String(eventName || '');
+        _domShoeResetPending = (evt.indexOf('append-reset-seed') === 0);
         cwDbg('SEQ', 'append ' + String(eventName || 'append'), {
             delta: clean,
             seq: _domBeadSeqManaged,
@@ -3003,7 +3036,7 @@
             _domBeadSeqPrevRaw = raw;
             if (_domShoeResetPending) {
                 brAppendManaged(raw, 'append-after-reset');
-            } else {
+            } else if (!String(_domBeadSeqManaged || '')) {
                 // Khi vừa có board hợp lệ (đặc biệt lúc mới vào bàn), managed phải bám raw hiện tại.
                 var beforeInit = String(_domBeadSeqManaged || '');
                 _domBeadSeqManaged = limitSeq50(raw);
@@ -3017,6 +3050,16 @@
                     managed: _domBeadSeqManaged,
                     seqVersion: _domSeqVersion
                 }, 0, 'hydrate-init-raw|' + _domSeqVersion + '|' + _domBeadSeqManaged.length);
+            } else {
+                // Append-only: nếu managed đã có thì không overwrite theo raw mới.
+                _domSeqEvent = 'hydrate-hold-managed';
+                _domSeqAppend = '';
+                cwDbg('SEQ', 'hydrate-skip-keep-managed', {
+                    boardRaw: raw,
+                    boardRawLen: raw.length,
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: _domSeqVersion
+                }, 1200, 'hydrate-hold|' + raw.length + '|' + _domSeqVersion);
             }
             brPublishSeqState();
             return _domBeadSeqManaged;
@@ -3090,21 +3133,28 @@
             return _domBeadSeqManaged;
         }
 
-        // Raw đã đổi kiểu "jump": resync managed theo raw để tránh kẹt chuỗi cũ.
-        var beforeJump = String(_domBeadSeqManaged || '');
+        // Raw đổi kiểu "jump": append-only, không overwrite managed hiện có.
+        var managedNow = String(_domBeadSeqManaged || '');
+        var ovJump = brOverlapSuffixPrefix(managedNow, raw);
+        if (ovJump >= 5) {
+            var jumpDelta = raw.slice(ovJump);
+            if (jumpDelta.length > 0 && jumpDelta.length <= 2) {
+                brAppendManaged(jumpDelta, 'append-jump-overlap');
+                _domBeadSeqPrevRaw = raw;
+                brPublishSeqState();
+                return _domBeadSeqManaged;
+            }
+        }
         _domBeadSeqPrevRaw = raw;
-        _domBeadSeqManaged = limitSeq50(raw);
-        _domSeqVersion = Math.max(Number(_domSeqVersion || 0) + 1, _domBeadSeqManaged.length);
-        _domSeqEvent = 'hydrate-resync';
-        _domSeqAppend = _domBeadSeqManaged;
-        _domShoeResetPending = false;
-        cwDbg('SEQ', 'board-jump-resync', {
+        _domSeqEvent = 'board-jump-hold';
+        _domSeqAppend = '';
+        cwDbg('SEQ', 'board-jump-hold-managed', {
             prev: prev,
             raw: raw,
-            beforeManaged: beforeJump,
-            managed: _domBeadSeqManaged,
+            managed: managedNow,
+            managedLen: managedNow.length,
             seqVersion: _domSeqVersion
-        }, 0, 'board-jump-resync|' + _domSeqVersion + '|' + _domBeadSeqManaged.length);
+        }, 1200, 'board-jump-hold|' + managedNow.length + '|' + raw.length + '|' + _domSeqVersion);
         brPublishSeqState();
         return _domBeadSeqManaged;
     }
@@ -3135,7 +3185,12 @@
         var raw = brSanitizeSeq(activeSeq);
         if (!raw)
             return _domBeadSeqManaged || '';
-        var key = String(activeTitle || '') + '|' + raw;
+        var inResetSeedWindow = (_domShoeResetPending && raw.length > 0 && raw.length <= 4);
+        // Trong reset/no-board chỉ dùng 1 ký tự kết quả hiện tại để tránh nhảy chuỗi.
+        var seed = inResetSeedWindow ? String(raw || '').charAt(0) : raw;
+        if (!seed)
+            seed = raw;
+        var key = String(activeTitle || '') + '|' + seed;
         if (_domLastActiveSeedKey === key) {
             _domSeqEvent = 'no-change';
             brPublishSeqState();
@@ -3143,23 +3198,18 @@
         }
         // Nếu đã có đuôi giống hệt thì không append lại.
         var managedNow = String(_domBeadSeqManaged || '');
-        if (managedNow && managedNow.slice(-raw.length) === raw) {
+        if (managedNow && managedNow.slice(-seed.length) === seed) {
             _domLastActiveSeedKey = key;
             _domSeqEvent = 'no-change';
             brPublishSeqState();
             return managedNow;
         }
-
-        // Force reset-seed path: bỏ prevRaw để tránh nhánh "board-shrink/jump" nuốt dữ liệu.
-        _domShoeResetPending = true;
-        _domShoeResetAt = Date.now();
-        _domBeadSeqPrevRaw = '';
         var before = String(_domBeadSeqManaged || '');
-        var merged = brMergeManagedSeq(raw);
+        var merged = brMergeManagedSeq(seed);
         var moved = String(_domSeqEvent || '').indexOf('append') === 0 && String(merged || '') !== before;
-        if (!moved) {
+        if (!moved && inResetSeedWindow) {
             // Chốt append cưỡng bức 1 lần khi parser board fail nhưng active seq đã có.
-            brAppendManaged(raw, 'append-reset-seed-active-force');
+            brAppendManaged(seed, 'append-reset-seed-active-force');
             merged = String(_domBeadSeqManaged || '');
         }
         _domLastActiveSeedKey = key;
@@ -3170,21 +3220,24 @@
         var raw = brSanitizeSeq(activeSeq);
         if (!cleanTitle || !raw)
             return false;
+        var before = String(_domBeadSeqManaged || '');
         _domBeadSeqManaged = limitSeq50(raw);
-        _domBeadSeqPrevRaw = '';
+        _domBeadSeqPrevRaw = raw;
         _domShoeResetPending = false;
         _domShoeResetAt = 0;
         _domLastActiveSeedKey = cleanTitle + '|' + raw;
         _domManagedTableTitle = cleanTitle;
-        // đảm bảo có event khác no-change để host nhận update ngay
-        _domSeqVersion = Math.max(Number(_domSeqVersion || 0) + 1, _domBeadSeqManaged.length);
+        // Đổi bàn phải coi như phiên mới của bàn đó: reset theo seq của bàn mới.
+        _domSeqVersion = Math.max(Number(_domSeqVersion || 0) + 1, String(_domBeadSeqManaged || '').length);
         _domSeqEvent = String(reason || 'table-switch-reset');
-        _domSeqAppend = raw;
+        _domSeqAppend = _domBeadSeqManaged;
         brPublishSeqState();
         cwDbg('SEQSRC', 'table-switch-reset-managed', {
             title: cleanTitle,
             seq: raw,
             seqLen: raw.length,
+            beforeLen: before.length,
+            afterLen: String(_domBeadSeqManaged || '').length,
             seqVersion: _domSeqVersion,
             seqEvent: _domSeqEvent
         }, 0, 'table-switch-reset|' + cleanTitle + '|' + _domSeqVersion);
@@ -3237,6 +3290,7 @@
                     contextTop: findDiag.contexts,
                     profiles: psum
                 }, 1200, 'no-board');
+                brArmShoeResetByNoBoard(failReason);
                 if (window.__cw_debug_seq_detail === 1 || window.__cw_debug_seq_detail === true) {
                     cwDbg('SEQ', 'no-board-detail', findDiag, 1500, 'no-board-detail|' + failReason + '|' + String(_domBeadSeqManaged || '').length);
                 }
@@ -3544,24 +3598,64 @@
                 _domLastActiveTitle = activeTitle;
             }
 
-            // Đổi bàn: không được append tiếp chuỗi cũ từ bàn trước.
-            if (activeTitle && _domManagedTableTitle && activeTitle !== _domManagedTableTitle && activeSeq) {
-                var managedNow = String(_domBeadSeqManaged || '');
-                var overlap = brOverlapSuffixPrefix(managedNow, activeSeq);
-                if (overlap < 4) {
-                    brResetManagedForTable(activeTitle, activeSeq, 'table-switch-reset');
+            // Đổi bàn A -> B: reset chuỗi theo bàn mới (giống mới vào app).
+            if (activeTitle && activeTitle !== _domManagedTableTitle) {
+                var prevTitle = String(_domManagedTableTitle || '');
+                var switched = false;
+                // Ưu tiên bead raw (board thật, có T); chỉ fallback activeSeq khi bead chưa sẵn.
+                var hasBeadRawForReset = !!String(beadRawSeq || '');
+                var resetSeqSource = String(beadRawSeq || activeSeq || '');
+                if (resetSeqSource)
+                    switched = brResetManagedForTable(activeTitle, resetSeqSource, 'table-switch-reset');
+                cwDbg('TABLE', switched ? 'active-table-switch-reset-seq' : 'active-table-switch-wait-seq', {
+                    from: prevTitle,
+                    to: activeTitle,
+                    switched: switched ? 1 : 0,
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    activeSeqLen: String(activeSeq || '').length,
+                    beadRawLen: String(beadRawSeq || '').length,
+                    resetSource: String(beadRawSeq ? 'bead-raw' : (activeSeq ? 'active-seq' : 'none'))
+                }, 0, 'table-switch|' + prevTitle + '|' + activeTitle + '|' + (switched ? '1' : '0'));
+                if (switched) {
+                    // Chốt luôn snapshot sau switch để tránh 1 tick trả nhầm beadSeq cũ.
+                    beadSeq = String(_domBeadSeqManaged || '');
+                    beadRawSeq = brSanitizeSeq(resetSeqSource) || beadRawSeq || '';
+                    _cwSeqDiagState.lastSourcePick = {
+                        source: 'dom-baccarat-table-switch-reset',
+                        reason: 'table-changed-reset-from-best-source',
+                        activeTitle: activeTitle,
+                        sourceType: String(hasBeadRawForReset ? 'bead-raw' : 'active-seq'),
+                        seqLen: beadSeq.length,
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent
+                    };
+                    return {
+                        seq: beadSeq,
+                        rawSeq: beadRawSeq,
+                        which: 'dom-baccarat-table-switch-reset',
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent,
+                        cols: bead.cols || active.cols || [],
+                        cells: bead.cells || active.cells || []
+                    };
                 }
-            } else if (activeTitle && !_domManagedTableTitle && activeSeq) {
-                // Lần đầu vào bàn trong phiên JS hiện tại.
-                _domManagedTableTitle = activeTitle;
             }
 
             // Khi parser bead fail (rawSeq rỗng), luôn ưu tiên seed từ active seq để không kẹt chuỗi.
+            var managedLenNow = String(_domBeadSeqManaged || '').length;
+            var allowNoBoardResetSeedFromActive = (
+                    _domShoeResetPending
+                    && managedLenNow >= 10
+                    && activeSeq.length >= 2
+                    && (_domShoeResetAt ? (Date.now() - _domShoeResetAt) >= 600 : true)
+                );
             var allowActiveSeedWhenNoBoard = (
                     // Chỉ seed active khi chưa có managed (phiên mới) và active đủ dài.
-                    (!String(_domBeadSeqManaged || '') && activeSeq.length >= 8)
+                    (!managedLenNow && activeSeq.length >= 8)
                     // Hoặc đang chờ reset shoe và active có tối thiểu vài ký tự để mở lại nhịp.
-                    || (_domShoeResetPending && activeSeq.length >= 3 && String(_domBeadSeqManaged || '').length <= 8)
+                    || (_domShoeResetPending && activeSeq.length >= 3 && managedLenNow <= 8)
+                    // Hoặc board vừa rỗng sau xáo (managed còn dài), cho seed active sớm để không hụt ván đầu.
+                    || allowNoBoardResetSeedFromActive
                 );
             if (!beadRawSeq && activeSeq && allowActiveSeedWhenNoBoard) {
                 var managedBeforeMiss = String(_domBeadSeqManaged || '');
@@ -8400,7 +8494,7 @@
                 _pushTimer = setInterval(function () {
                     var snap = buildSnapshotNow();
                     var ev = String(snap && snap.seqEvent ? snap.seqEvent : '');
-                    if (/^append|^shoe-reset|^append-after-reset|^append-reset-seed/i.test(ev))
+                    if (/^append|^append-after-reset|^append-reset-seed/i.test(ev))
                         _forcePushOnce = true;
                     var changed = shallowChanged(snap);
                     if (_forcePushOnce || changed) {
@@ -8414,7 +8508,7 @@
                         }, 2200, 'tick-send|' + (snap && snap.seqVersion != null ? snap.seqVersion : '') + '|' + (snap && snap.seqEvent ? snap.seqEvent : '') + '|' + (changed ? '1' : '0') + '|' + (_forcePushOnce ? '1' : '0'));
                         safePost(snap);
                         _forcePushOnce = false;
-                    } else if (/append|shoe-reset/i.test(ev)) {
+                    } else if (/append/i.test(ev)) {
                         cwDbg('PUSH', 'event-but-not-sent', {
                             seqLen: snap && snap.seq ? String(snap.seq || '').length : 0,
                             seqVersion: snap && snap.seqVersion != null ? snap.seqVersion : null,
