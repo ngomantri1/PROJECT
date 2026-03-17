@@ -3367,11 +3367,24 @@ try{
 
                                 if (_lockMajorMinorUpdates == false)
                                 {
+                                    bool seqChangedWhileUnlocked = !string.Equals(seqDisplay, _baseSeqDisplay, StringComparison.Ordinal);
+                                    bool unlockHasAdvance = (_baseSeqVersion > 0 && seqVersionNow > 0)
+                                        ? (seqVersionNow > _baseSeqVersion)
+                                        : seqChangedWhileUnlocked;
+                                    char unlockTail = seqDisplay.Length > 0 ? seqDisplay[^1] : '-';
+                                    if (seqChangedWhileUnlocked)
+                                    {
+                                        Log($"[SEQ][UNLOCK] prog={progNow:0.###} | hasAdvance={(unlockHasAdvance ? 1 : 0)} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | baseEvt={(string.IsNullOrWhiteSpace(_baseSeqEvent) ? "-" : _baseSeqEvent)} | curLen={seqDisplay.Length} | curVer={seqVersionNow} | curEvt={(string.IsNullOrWhiteSpace(seqEventNow) ? "-" : seqEventNow)} | curTail={unlockTail} | pending={_pendingRows.Count}");
+                                    }
                                     if (progNow == 0)
                                     {
                                         string prevBaseDisplay = _baseSeqDisplay;
                                         long prevBaseVersion = _baseSeqVersion;
                                         string prevBaseEvent = _baseSeqEvent;
+                                        if (seqChangedWhileUnlocked && unlockHasAdvance)
+                                        {
+                                            Log($"[SEQ][UNLOCK][BASE-RESET] reason=prog0-base-reset-with-advance | baseLen={prevBaseDisplay.Length} | baseVer={prevBaseVersion} | baseEvt={(string.IsNullOrWhiteSpace(prevBaseEvent) ? "-" : prevBaseEvent)} | curLen={seqDisplay.Length} | curVer={seqVersionNow} | curEvt={(string.IsNullOrWhiteSpace(seqEventNow) ? "-" : seqEventNow)} | curTail={unlockTail} | pending={_pendingRows.Count}");
+                                        }
                                         _baseSeq = seqStr;
                                         _baseSeqDisplay = seqDisplay;
                                         _baseSeqVersion = seqVersionNow;
@@ -3391,6 +3404,14 @@ try{
                                         }
                                         if (_roundTotalsB != 0 || _roundTotalsP != 0 || _roundTotalsT != 0 || !string.IsNullOrWhiteSpace(_baseSeq))
                                             _lockMajorMinorUpdates = true;
+                                        if (_lockMajorMinorUpdates)
+                                        {
+                                            Log($"[SEQ][UNLOCK][LOCK-ON] reason=base-initialized | prog={progNow:0.###} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | baseEvt={(string.IsNullOrWhiteSpace(_baseSeqEvent) ? "-" : _baseSeqEvent)}");
+                                        }
+                                    }
+                                    else if (seqChangedWhileUnlocked)
+                                    {
+                                        Log($"[SEQ][UNLOCK][HOLD] reason=prog-not-zero | prog={progNow:0.###} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | curLen={seqDisplay.Length} | curVer={seqVersionNow} | curEvt={(string.IsNullOrWhiteSpace(seqEventNow) ? "-" : seqEventNow)} | curTail={unlockTail} | pending={_pendingRows.Count}");
                                     }
                                 }
                                 else
@@ -3443,6 +3464,7 @@ try{
                                                 }
 
                                                 _lockMajorMinorUpdates = false;
+                                                Log($"[SEQ][GATE][UNLOCK] reason=settled-tie | curLen={seqDisplay.Length} | curVer={settleSeqVersion} | curEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)} | curTail={tail} | pending={_pendingRows.Count}");
                                             }
                                             else if (string.Equals(settledResult, "BANKER", StringComparison.Ordinal) ||
                                                      string.Equals(settledResult, "PLAYER", StringComparison.Ordinal))
@@ -3473,6 +3495,7 @@ try{
                                                 }
 
                                                 _lockMajorMinorUpdates = false;
+                                                Log($"[SEQ][GATE][UNLOCK] reason=settled-{settledResult.ToLowerInvariant()} | curLen={seqDisplay.Length} | curVer={settleSeqVersion} | curEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)} | curTail={tail} | pending={_pendingRows.Count}");
                                             }
                                         }
                                     }

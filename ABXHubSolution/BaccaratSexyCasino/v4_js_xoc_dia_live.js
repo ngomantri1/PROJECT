@@ -2911,27 +2911,104 @@
     var _domSeqAppend = '';
     var _domShoeResetPending = false;
     var _domShoeResetAt = 0;
+    var _domResetSeedTargetRaw = '';
+    var _domResetSeedConsumedRaw = '';
+    var _domLastSeedStepAt = 0;
+    var _domLastSeedStepVersion = 0;
+    var _domLastSeedStepBuildId = 0;
+    var _cwSnapshotBuildId = 0;
+    var _cwSnapshotBuildSource = '';
+    var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    var _cwSeqLastPubSyncAt = 0;
+    var _cwSeqScriptRev = 'SEQFIX-20260317-r10';
+    var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
     var _domLastActiveSeedKey = '';
+    var _domLastActiveSeedBurstId = 0;
+    var _domNoBoardStreak = 0;
+    var _domNoBoardFirstAt = 0;
+    var _domNoBoardLastAt = 0;
+    var _domNoBoardLastReason = '';
+    var _domNoBoardBurstId = 0;
+    var _domRawEqPrevStreak = 0;
+    var _domRawEqPrevFirstAt = 0;
+    var _domRawEqPrevLastAt = 0;
+    var _domRawStallLastActiveKey = '';
+    var _domLastActiveSeq = '';
+    var _domLastActiveSeqTitle = '';
+    var _domActiveSeedTailTitle = '';
+    var _domActiveSeedTailLen = 0;
+    var _domActiveSeedConsumedPrefixLen = 0;
+    function brResetActiveSeedTailTracker() {
+        _domActiveSeedTailTitle = '';
+        _domActiveSeedTailLen = 0;
+        _domActiveSeedConsumedPrefixLen = 0;
+    }
+    function brResetSeedTracker() {
+        _domResetSeedTargetRaw = '';
+        _domResetSeedConsumedRaw = '';
+        brResetActiveSeedTailTracker();
+    }
     function brArmShoeResetByNoBoard(reason) {
+        var nowMs = Date.now();
+        var reasonText = String(reason || '');
+        if (reasonText === _domNoBoardLastReason && (nowMs - Number(_domNoBoardLastAt || 0)) <= 1500) {
+            if (!_domNoBoardFirstAt)
+                _domNoBoardFirstAt = nowMs;
+            _domNoBoardStreak = Number(_domNoBoardStreak || 0) + 1;
+        } else {
+            _domNoBoardStreak = 1;
+            _domNoBoardFirstAt = nowMs;
+            _domNoBoardLastReason = reasonText;
+            _domNoBoardBurstId = Number(_domNoBoardBurstId || 0) + 1;
+        }
+        _domNoBoardLastAt = nowMs;
         var prevLen = String(_domBeadSeqPrevRaw || '').length;
         var managedLen = String(_domBeadSeqManaged || '').length;
+        var evtNow = String(_domSeqEvent || '');
+        var noBoardBurstMs = _domNoBoardFirstAt ? (nowMs - _domNoBoardFirstAt) : 0;
+        var rawEqBurstMs = _domRawEqPrevFirstAt ? (nowMs - _domRawEqPrevFirstAt) : 0;
+        var forceArmShort = (
+            (_domNoBoardStreak >= 3 && noBoardBurstMs <= 5000) ||
+            (_domRawEqPrevStreak >= 6 && rawEqBurstMs <= 8000)
+        );
+        var allowShortByContext = (evtNow.indexOf('table-switch-reset') === 0 || evtNow.indexOf('shoe-reset-arm') === 0 || forceArmShort);
         if (_domShoeResetPending)
             return false;
         // Chỉ arm khi trước đó đã có board/chuỗi đủ dài để tránh trigger nhầm lúc mới mở app.
-        if (prevLen < 8 && managedLen < 10)
+        if (prevLen < 8 && managedLen < 10 && !allowShortByContext) {
+            _domSeqEvent = 'shoe-reset-arm-skip-short';
+            _domSeqAppend = '';
+            cwDbg('SEQ', 'shoe-reset-arm-skip-short-seq', {
+                reason: reasonText,
+                prevLen: prevLen,
+                managedLen: managedLen,
+                seqEvent: evtNow,
+                allowShortByContext: allowShortByContext ? 1 : 0,
+                noBoardStreak: Number(_domNoBoardStreak || 0),
+                noBoardBurstMs: Number(noBoardBurstMs || 0),
+                rawEqPrevStreak: Number(_domRawEqPrevStreak || 0),
+                rawEqBurstMs: Number(rawEqBurstMs || 0)
+            }, 1500, 'reset-arm-skip-short|' + String(reason || '') + '|' + prevLen + '|' + managedLen + '|' + evtNow);
+            brPublishSeqState();
             return false;
+        }
         _domShoeResetPending = true;
-        _domShoeResetAt = Date.now();
-        // Cho phép seed lại 1 lần sau khi board mất (tránh bị chặn bởi key cũ của shoe trước).
-        _domLastActiveSeedKey = '';
+        _domShoeResetAt = nowMs;
+        brResetSeedTracker();
+        _domRawStallLastActiveKey = '';
         _domSeqEvent = 'shoe-reset-arm-no-board';
         _domSeqAppend = '';
         cwDbg('SEQ', 'shoe-reset-arm by no-board', {
             reason: String(reason || ''),
             prevLen: prevLen,
-            managedLen: managedLen
+            managedLen: managedLen,
+            noBoardStreak: Number(_domNoBoardStreak || 0),
+            noBoardBurstMs: Number(noBoardBurstMs || 0),
+            rawEqPrevStreak: Number(_domRawEqPrevStreak || 0),
+            rawEqBurstMs: Number(rawEqBurstMs || 0),
+            forceArmShort: forceArmShort ? 1 : 0
         }, 1200, 'reset-arm-no-board|' + String(reason || '') + '|' + prevLen + '|' + managedLen);
         brPublishSeqState();
         return true;
@@ -2946,20 +3023,146 @@
         }
         return 0;
     }
+    function brGetLastPushedSeqVersion() {
+        var v = 0;
+        try {
+            if (typeof _lastPushSeqVersion !== 'undefined')
+                v = Number(_lastPushSeqVersion || 0) || 0;
+        } catch (_) {}
+        if (!v) {
+            try {
+                v = Number(window.__cw_last_push_seq_version || 0) || 0;
+            } catch (_) {}
+        }
+        return Number(v || 0) || 0;
+    }
     function brSanitizeSeq(raw) {
         return String(raw || '')
             .toUpperCase()
             .replace(/H/g, 'T')
             .replace(/[^BPT]/g, '');
     }
+    function brBuildActiveSeedKey(title, seq) {
+        return String(title || '').trim() + '|' + brSanitizeSeq(seq || '');
+    }
     function brPublishSeqState() {
+        var managed = String(_domBeadSeqManaged || '');
+        var ver = Number(_domSeqVersion || 0) || 0;
+        var evt = String(_domSeqEvent || '');
+        var incomingLen = managed.length;
+        var buildSource = String(_cwSnapshotBuildSource || '');
+        var buildId = Number(_cwSnapshotBuildId || 0);
+        var allowPublish = true;
+        var staleReason = '';
         try {
-            window.__cw_seq_version = _domSeqVersion;
-            window.__cw_seq_event = _domSeqEvent;
+            var pub = window.__cw_seq_pub || null;
+            if (pub) {
+                var pubVer = Number(pub.ver || 0) || 0;
+                var pubLen = Number(pub.len || 0) || 0;
+                if (ver < pubVer) {
+                    allowPublish = false;
+                    staleReason = 'version-older';
+                } else if (ver === pubVer && incomingLen < pubLen) {
+                    allowPublish = false;
+                    staleReason = 'length-older';
+                }
+            }
+        } catch (_) {}
+        if (!allowPublish) {
+            // Context cũ (thường buildId=0/source='') không được phép đè global seq state.
+            try {
+                var nowMs = Date.now();
+                if ((nowMs - Number(_cwSeqLastPubSyncAt || 0)) >= 1000) {
+                    _cwSeqLastPubSyncAt = nowMs;
+                    cwDbg('SEQFLOW', 'publish-skip-stale', {
+                        reason: staleReason,
+                        instanceId: _cwSeqInstanceId,
+                        ver: ver,
+                        seqLen: incomingLen,
+                        evt: evt,
+                        buildId: buildId,
+                        buildSource: buildSource
+                    }, 0, 'publish-skip-stale|' + staleReason + '|' + ver + '|' + incomingLen + '|' + buildId);
+                }
+            } catch (_) {}
+            return;
+        }
+        try {
+            window.__cw_seq = managed;
+            window.__cw_seq_version = ver;
+            window.__cw_seq_event = evt;
             window.__cw_seq_append = _domSeqAppend;
             window.__cw_seq_board_prev = _domBeadSeqPrevRaw;
             window.__cw_seq_reset_pending = _domShoeResetPending ? 1 : 0;
+            window.__cw_seq_pub = {
+                seq: managed,
+                ver: ver,
+                len: incomingLen,
+                evt: evt,
+                append: String(_domSeqAppend || ''),
+                boardPrev: String(_domBeadSeqPrevRaw || ''),
+                resetPending: _domShoeResetPending ? 1 : 0,
+                activeSeedKey: String(_domLastActiveSeedKey || ''),
+                activeSeedBurstId: Number(_domLastActiveSeedBurstId || 0),
+                noBoardBurstId: Number(_domNoBoardBurstId || 0),
+                rawStallActiveKey: String(_domRawStallLastActiveKey || ''),
+                activeSeedTailTitle: String(_domActiveSeedTailTitle || ''),
+                activeSeedTailLen: Number(_domActiveSeedTailLen || 0),
+                activeSeedConsumedPrefixLen: Number(_domActiveSeedConsumedPrefixLen || 0),
+                managedTitle: String(_domManagedTableTitle || ''),
+                buildId: buildId,
+                buildSource: buildSource,
+                instanceId: _cwSeqInstanceId,
+                rev: _cwSeqScriptRev,
+                ts: Date.now()
+            };
         } catch (_) {}
+    }
+    function brSyncFromPublishedState(syncReason) {
+        try {
+            var pub = window.__cw_seq_pub || null;
+            if (!pub)
+                return false;
+            var pubSeq = brSanitizeSeq(pub.seq || '');
+            if (!pubSeq)
+                return false;
+            var pubVer = Number(pub.ver || 0) || 0;
+            var pubLen = Number(pub.len || pubSeq.length || 0) || 0;
+            var localSeq = String(_domBeadSeqManaged || '');
+            var localVer = Number(_domSeqVersion || 0) || 0;
+            var localLen = localSeq.length;
+            var shouldAdopt = (pubVer > localVer) || (pubVer === localVer && pubLen > localLen);
+            if (!shouldAdopt)
+                return false;
+            _domBeadSeqManaged = limitSeq50(pubSeq);
+            _domSeqVersion = pubVer;
+            _domSeqEvent = String(pub.evt || _domSeqEvent || 'sync-published');
+            _domSeqAppend = String(pub.append || '');
+            _domBeadSeqPrevRaw = brSanitizeSeq(pub.boardPrev || _domBeadSeqPrevRaw || '');
+            _domShoeResetPending = !!Number(pub.resetPending || 0);
+            _domLastActiveSeedKey = String(pub.activeSeedKey || _domLastActiveSeedKey || '');
+            _domLastActiveSeedBurstId = Number(pub.activeSeedBurstId || _domLastActiveSeedBurstId || 0);
+            _domNoBoardBurstId = Number(pub.noBoardBurstId || _domNoBoardBurstId || 0);
+            _domRawStallLastActiveKey = String(pub.rawStallActiveKey || _domRawStallLastActiveKey || '');
+            _domActiveSeedTailTitle = String(pub.activeSeedTailTitle || _domActiveSeedTailTitle || '');
+            _domActiveSeedTailLen = Number(pub.activeSeedTailLen || _domActiveSeedTailLen || 0);
+            _domActiveSeedConsumedPrefixLen = Number(pub.activeSeedConsumedPrefixLen || _domActiveSeedConsumedPrefixLen || 0);
+            _domManagedTableTitle = String(pub.managedTitle || _domManagedTableTitle || '');
+            cwDbg('SEQFLOW', 'sync-from-published', {
+                reason: String(syncReason || ''),
+                fromInstanceId: String(pub.instanceId || ''),
+                localInstanceId: _cwSeqInstanceId,
+                pubVer: pubVer,
+                pubLen: pubLen,
+                localVerBefore: localVer,
+                localLenBefore: localLen,
+                buildId: Number(_cwSnapshotBuildId || 0),
+                buildSource: String(_cwSnapshotBuildSource || '')
+            }, 0, 'sync-from-published|' + pubVer + '|' + pubLen + '|' + String(syncReason || ''));
+            return true;
+        } catch (_) {
+            return false;
+        }
     }
     function brSeqTrace(branch, raw, prev, beforeState, extra, throttleMs, keySuffix) {
         try {
@@ -3027,6 +3230,11 @@
         // Seed trong giai đoạn reset: giữ pending để không arm lại liên tục khi board còn fail.
         var evt = String(eventName || '');
         _domShoeResetPending = (evt.indexOf('append-reset-seed') === 0);
+        if (evt === 'append-reset-seed-step') {
+            _domLastSeedStepAt = Date.now();
+            _domLastSeedStepVersion = Number(_domSeqVersion || 0);
+            _domLastSeedStepBuildId = Number(_cwSnapshotBuildId || 0);
+        }
         cwDbg('SEQ', 'append ' + String(eventName || 'append'), {
             delta: clean,
             seq: _domBeadSeqManaged,
@@ -3076,6 +3284,7 @@
             if (prev && prev.length >= 8) {
                 _domShoeResetPending = true;
                 _domShoeResetAt = Date.now();
+                brResetSeedTracker();
                 _domSeqEvent = 'shoe-reset-arm';
                 cwDbg('SEQ', 'shoe-reset-arm by empty board', {
                     prevLen: prev.length,
@@ -3090,6 +3299,185 @@
             }
             _domBeadSeqPrevRaw = '';
             brSeqTrace('return-empty-raw', raw, prev, beforeState, null, 0, 'return-empty-raw|' + prev.length);
+            brPublishSeqState();
+            return _domBeadSeqManaged;
+        }
+
+        // Seed sau shoe-reset theo từng ký tự để không nuốt ván đầu khi board trả về chuỗi ngắn (thường 2..5 ký tự).
+        if (_domShoeResetPending && raw.length <= 8) {
+            // Tránh race push/pull: chỉ cho phép seed-step mutate ở luồng push khi push đang chạy.
+            var seedBuildSource = String(_cwSnapshotBuildSource || '');
+            if (seedBuildSource !== 'push') {
+                _domSeqEvent = 'reset-seed-wait-push';
+                _domSeqAppend = '';
+                cwDbg('SEQFLOW', 'seed-step-skip-nonpush', {
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    source: seedBuildSource || 'unknown',
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    raw: raw,
+                    rawLen: raw.length,
+                    targetRaw: String(_domResetSeedTargetRaw || ''),
+                    consumedRaw: String(_domResetSeedConsumedRaw || '')
+                }, 0, 'seed-skip-nonpush|' + Number(_cwSnapshotBuildId || 0) + '|' + Number(_domSeqVersion || 0));
+                brSeqTrace('return-reset-seed-wait-nonpush', raw, prev, beforeState, {
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    source: seedBuildSource || 'unknown'
+                }, 0, 'return-reset-seed-wait-nonpush|' + raw + '|' + Number(_cwSnapshotBuildId || 0));
+                brPublishSeqState();
+                return _domBeadSeqManaged;
+            }
+
+            // Chỉ cho phép append step kế tiếp khi step trước đã được push ra ngoài.
+            // Nếu không, rất dễ nhảy ver 6 -> 8 và mất ván đầu sau xáo.
+            var lastPushedVer = brGetLastPushedSeqVersion();
+            var curSeedVer = Number(_domSeqVersion || 0);
+            if (lastPushedVer > 0 && curSeedVer > lastPushedVer) {
+                _domSeqEvent = 'reset-seed-wait-push-ack';
+                _domSeqAppend = '';
+                cwDbg('SEQFLOW', 'seed-step-wait-push-ack', {
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    source: seedBuildSource || 'unknown',
+                    curVer: curSeedVer,
+                    lastPushedVer: lastPushedVer,
+                    raw: raw,
+                    rawLen: raw.length,
+                    targetRaw: String(_domResetSeedTargetRaw || ''),
+                    consumedRaw: String(_domResetSeedConsumedRaw || ''),
+                    resetPending: _domShoeResetPending ? 1 : 0,
+                    seqScriptRev: _cwSeqScriptRev
+                }, 0, 'seed-wait-push-ack|' + curSeedVer + '|' + lastPushedVer + '|' + Number(_cwSnapshotBuildId || 0));
+                brSeqTrace('return-reset-seed-wait-push-ack', raw, prev, beforeState, {
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    source: seedBuildSource || 'unknown',
+                    curVer: curSeedVer,
+                    lastPushedVer: lastPushedVer
+                }, 0, 'return-reset-seed-wait-push-ack|' + raw + '|' + curSeedVer + '|' + lastPushedVer);
+                brPublishSeqState();
+                return _domBeadSeqManaged;
+            }
+
+            if (_domResetSeedTargetRaw !== raw) {
+                var keep = '';
+                var consumedRaw = String(_domResetSeedConsumedRaw || '');
+                var maxKeep = Math.min(consumedRaw.length, raw.length);
+                for (var kk = maxKeep; kk >= 0; kk--) {
+                    var cand = consumedRaw.slice(0, kk);
+                    if (raw.indexOf(cand) === 0) {
+                        keep = cand;
+                        break;
+                    }
+                }
+                if (!keep) {
+                    var managedNowForSeed = String(_domBeadSeqManaged || '');
+                    var maxFromManaged = Math.min(managedNowForSeed.length, raw.length);
+                    for (var mm = maxFromManaged; mm >= 1; mm--) {
+                        var rawPrefix = raw.slice(0, mm);
+                        if (managedNowForSeed.slice(managedNowForSeed.length - mm) === rawPrefix) {
+                            keep = rawPrefix;
+                            cwDbg('SEQFLOW', 'seed-target-align-from-managed', {
+                                raw: raw,
+                                managedTail: managedNowForSeed.slice(Math.max(0, managedNowForSeed.length - mm)),
+                                keep: keep,
+                                keepLen: mm,
+                                managedLen: managedNowForSeed.length,
+                                seqVersion: Number(_domSeqVersion || 0),
+                                seqEvent: String(_domSeqEvent || ''),
+                                buildId: Number(_cwSnapshotBuildId || 0),
+                                buildSource: String(_cwSnapshotBuildSource || '')
+                            }, 0, 'seed-align-managed|' + raw + '|' + keep + '|' + Number(_domSeqVersion || 0));
+                            break;
+                        }
+                    }
+                }
+                _domResetSeedTargetRaw = raw;
+                _domResetSeedConsumedRaw = keep;
+            }
+
+            if (raw.indexOf(_domResetSeedConsumedRaw) !== 0)
+                _domResetSeedConsumedRaw = '';
+
+            // Khóa 1 step / 1 snapshot build để tránh nuốt ván đầu (6 -> 7 -> 8 trong cùng buildId).
+            if (Number(_domLastSeedStepBuildId || 0) === Number(_cwSnapshotBuildId || 0)) {
+                _domBeadSeqPrevRaw = raw;
+                cwDbg('SEQFLOW', 'reset-seed-build-lock', {
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    targetRaw: String(_domResetSeedTargetRaw || ''),
+                    consumedRaw: String(_domResetSeedConsumedRaw || ''),
+                    raw: raw,
+                    rawLen: raw.length,
+                    resetPending: _domShoeResetPending ? 1 : 0
+                }, 0, 'seed-build-lock|' + Number(_cwSnapshotBuildId || 0) + '|' + Number(_domSeqVersion || 0));
+                cwDbg(
+                    'SEQFLOW',
+                    'seed-build-lock compact|build=' + Number(_cwSnapshotBuildId || 0) +
+                    '|ver=' + Number(_domSeqVersion || 0) +
+                    '|evt=' + String(_domSeqEvent || '') +
+                    '|raw=' + raw +
+                    '|consumed=' + String(_domResetSeedConsumedRaw || '') +
+                    '|target=' + String(_domResetSeedTargetRaw || ''),
+                    null,
+                    0,
+                    'seed-build-lock-compact|' + Number(_cwSnapshotBuildId || 0) + '|' + Number(_domSeqVersion || 0)
+                );
+                brSeqTrace('return-reset-seed-build-lock', raw, prev, beforeState, {
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    targetRaw: String(_domResetSeedTargetRaw || ''),
+                    consumedRaw: String(_domResetSeedConsumedRaw || '')
+                }, 0, 'return-reset-seed-build-lock|' + raw + '|' + Number(_cwSnapshotBuildId || 0));
+                brPublishSeqState();
+                return _domBeadSeqManaged;
+            }
+
+            var seedStepIdx = String(_domResetSeedConsumedRaw || '').length;
+            var seedDelta = '';
+            if (seedStepIdx < raw.length)
+                seedDelta = raw.charAt(seedStepIdx);
+
+            if (seedDelta) {
+                brAppendManaged(seedDelta, 'append-reset-seed-step');
+                _domResetSeedConsumedRaw = String(_domResetSeedConsumedRaw || '') + seedDelta;
+            } else {
+                _domSeqEvent = 'reset-seed-wait';
+                _domSeqAppend = '';
+            }
+
+            _domBeadSeqPrevRaw = raw;
+
+            var seedDone = String(_domResetSeedConsumedRaw || '').length >= raw.length;
+            var traceTargetRaw = String(_domResetSeedTargetRaw || '');
+            var traceConsumedRaw = String(_domResetSeedConsumedRaw || '');
+            if (seedDone) {
+                _domShoeResetPending = false;
+                _domShoeResetAt = 0;
+                _domSeqEvent = seedDelta ? 'append-reset-seed-complete' : 'reset-seed-complete';
+                _domSeqAppend = seedDelta || '';
+                _domLastActiveSeedKey = brBuildActiveSeedKey(_domManagedTableTitle, raw);
+                _domLastActiveSeedBurstId = Number(_domNoBoardBurstId || 0);
+                brResetSeedTracker();
+            }
+
+            brSeqTrace('return-reset-seed-step', raw, prev, beforeState, {
+                targetRaw: traceTargetRaw,
+                consumedRaw: traceConsumedRaw,
+                stepDelta: seedDelta,
+                seedDone: seedDone ? 1 : 0
+            }, 0, 'return-reset-seed-step|' + raw + '|' + (seedStepIdx + 1));
+            cwDbg(
+                'SEQFLOW',
+                'seed-step compact|build=' + Number(_cwSnapshotBuildId || 0) +
+                '|ver=' + Number(_domSeqVersion || 0) +
+                '|evt=' + String(_domSeqEvent || '') +
+                '|raw=' + raw +
+                '|delta=' + (seedDelta || '-') +
+                '|consumed=' + traceConsumedRaw +
+                '|done=' + (seedDone ? 1 : 0),
+                null,
+                0,
+                'seed-step-compact|' + Number(_cwSnapshotBuildId || 0) + '|' + Number(_domSeqVersion || 0) + '|' + traceConsumedRaw
+            );
             brPublishSeqState();
             return _domBeadSeqManaged;
         }
@@ -3133,6 +3521,137 @@
         }
 
         if (raw === prev) {
+            var nowEqPrevMs = Date.now();
+            if (!_domRawEqPrevStreak || (nowEqPrevMs - Number(_domRawEqPrevLastAt || 0)) > 2500) {
+                _domRawEqPrevStreak = 1;
+                _domRawEqPrevFirstAt = nowEqPrevMs;
+            } else {
+                _domRawEqPrevStreak = Number(_domRawEqPrevStreak || 0) + 1;
+            }
+            _domRawEqPrevLastAt = nowEqPrevMs;
+            var activeHint = brSanitizeSeq(_domLastActiveSeq || '');
+            var activeHintTitle = String(_domLastActiveSeqTitle || '');
+            var managedTitle = String(_domManagedTableTitle || '');
+            var activeSameTable = (!managedTitle || !activeHintTitle || managedTitle === activeHintTitle);
+            var activeHintKey = brBuildActiveSeedKey(activeHintTitle || managedTitle, activeHint);
+            var activeHintAlreadyForced = !!(activeHintKey && _domRawStallLastActiveKey === activeHintKey);
+            var managedNowEqPrev = String(_domBeadSeqManaged || '');
+            var managedEndsWithActiveHint = !!(
+                activeHint &&
+                managedNowEqPrev.length >= activeHint.length &&
+                managedNowEqPrev.slice(managedNowEqPrev.length - activeHint.length) === activeHint
+            );
+            var activeHintAhead = !!(
+                activeHint &&
+                activeHint.length <= 8 &&
+                activeHint.length > raw.length &&
+                activeHint.indexOf(raw) === 0 &&
+                activeSameTable
+            );
+            var activeHintGap = activeHintAhead ? (activeHint.length - raw.length) : 0;
+            var activeHintOneStepAhead = !!(activeHintAhead && activeHintGap === 1);
+            var rawStallForceEligible = !!(
+                activeHintOneStepAhead &&
+                raw.length >= 4 &&
+                managedNowEqPrev.length <= (raw.length + 1)
+            );
+            var canSeedByActiveHint = !!(
+                !_domShoeResetPending &&
+                rawStallForceEligible &&
+                _domRawEqPrevStreak >= 2 &&
+                String(_cwSnapshotBuildSource || '') === 'push' &&
+                !activeHintAlreadyForced &&
+                !managedEndsWithActiveHint
+            );
+            if (canSeedByActiveHint) {
+                _domShoeResetPending = true;
+                _domShoeResetAt = nowEqPrevMs;
+                brResetSeedTracker();
+                _domRawStallLastActiveKey = activeHintKey;
+                _domSeqEvent = 'shoe-reset-arm-raw-stall-active';
+                _domSeqAppend = '';
+                cwDbg('SEQFLOW', 'raw-stall-force-seed-active', {
+                    raw: raw,
+                    activeHint: activeHint,
+                    rawLen: raw.length,
+                    activeLen: activeHint.length,
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    rawEqPrevStreak: Number(_domRawEqPrevStreak || 0),
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    buildSource: String(_cwSnapshotBuildSource || ''),
+                    activeTitle: activeHintTitle,
+                    activeHintKey: activeHintKey,
+                    activeHintAlreadyForced: activeHintAlreadyForced ? 1 : 0,
+                    managedEndsWithActiveHint: managedEndsWithActiveHint ? 1 : 0
+                }, 0, 'raw-stall-force-seed|' + raw + '|' + activeHint + '|' + Number(_domSeqVersion || 0));
+                brPublishSeqState();
+                return brMergeManagedSeq(activeHint);
+            }
+            if (activeHintAhead && _domRawEqPrevStreak >= 2 && String(_cwSnapshotBuildSource || '') === 'push') {
+                var blockReason = 'unknown';
+                if (!activeHintOneStepAhead)
+                    blockReason = 'gap-not-1';
+                else if (raw.length < 4)
+                    blockReason = 'raw-too-short';
+                else if (managedNowEqPrev.length > (raw.length + 1))
+                    blockReason = 'managed-too-ahead';
+                else if (_domShoeResetPending)
+                    blockReason = 'reset-pending';
+                else if (activeHintAlreadyForced)
+                    blockReason = 'already-forced';
+                else if (managedEndsWithActiveHint)
+                    blockReason = 'managed-ends-with-active';
+                var stallStreakNow = Number(_domRawEqPrevStreak || 0);
+                if (stallStreakNow <= 3 || (stallStreakNow % 10) === 0) {
+                    cwDbg('SEQFLOW', 'raw-stall-force-seed-blocked', {
+                        reason: blockReason,
+                        raw: raw,
+                        activeHint: activeHint,
+                        rawLen: raw.length,
+                        activeLen: activeHint.length,
+                        activeGap: activeHintGap,
+                        managedLen: managedNowEqPrev.length,
+                        rawEqPrevStreak: stallStreakNow,
+                        seqVersion: Number(_domSeqVersion || 0),
+                        seqEvent: String(_domSeqEvent || ''),
+                        activeTitle: activeHintTitle,
+                        activeHintKey: activeHintKey,
+                        buildId: Number(_cwSnapshotBuildId || 0),
+                        buildSource: String(_cwSnapshotBuildSource || '')
+                    }, 5000, 'raw-stall-force-blocked|' + blockReason + '|' + raw.length + '|' + activeHint.length + '|' + String(activeHintTitle || ''));
+                }
+            }
+            if (activeHintAlreadyForced) {
+                cwDbg('SEQFLOW', 'raw-stall-force-seed-skip-dup', {
+                    raw: raw,
+                    activeHint: activeHint,
+                    activeHintKey: activeHintKey,
+                    rawEqPrevStreak: Number(_domRawEqPrevStreak || 0),
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    buildSource: String(_cwSnapshotBuildSource || '')
+                }, 1200, 'raw-stall-skip-dup|' + activeHintKey + '|' + Number(_domSeqVersion || 0));
+            }
+            var beforeNoChangeEvt = String(_domSeqEvent || '');
+            var beforeNoChangeVer = Number(_domSeqVersion || 0);
+            var seedAgeMs = _domLastSeedStepAt ? (Date.now() - _domLastSeedStepAt) : 999999;
+            if (beforeNoChangeEvt === 'append-reset-seed-step' &&
+                beforeNoChangeVer === Number(_domLastSeedStepVersion || 0) &&
+                seedAgeMs <= 2500) {
+                cwDbg('SEQFLOW', 'event-overwrite-before-push', {
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    buildSource: String(_cwSnapshotBuildSource || ''),
+                    beforeEvent: beforeNoChangeEvt,
+                    beforeVersion: beforeNoChangeVer,
+                    rawLen: raw.length,
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seedAgeMs: seedAgeMs,
+                    seedBuildId: Number(_domLastSeedStepBuildId || 0),
+                    resetPending: _domShoeResetPending ? 1 : 0
+                }, 0, 'seqflow-overwrite|' + beforeNoChangeVer + '|' + Number(_cwSnapshotBuildId || 0));
+            }
             _domSeqEvent = 'no-change';
             cwDbg('SEQ', 'no-change', {
                 boardLen: raw.length,
@@ -3143,6 +3662,10 @@
             brPublishSeqState();
             return _domBeadSeqManaged;
         }
+        _domRawEqPrevStreak = 0;
+        _domRawEqPrevFirstAt = 0;
+        _domRawEqPrevLastAt = 0;
+        _domRawStallLastActiveKey = '';
 
         if (raw.indexOf(prev) === 0) {
             brAppendManaged(raw.slice(prev.length), 'append-extend');
@@ -3152,6 +3675,39 @@
             }, 0, 'return-extend|' + raw.length + '|' + prev.length);
             brPublishSeqState();
             return _domBeadSeqManaged;
+        }
+
+        // Sau no-board mà prev/raw đều ngắn, overlap dễ nuốt nhầm ván đầu.
+        // Trong ngữ cảnh table-switch-reset/shoe-reset, ưu tiên chuyển sang reset-seed-step.
+        var evtNow2 = String(_domSeqEvent || '');
+        var lastNoBoardAt = Number(_cwSeqDiagState && _cwSeqDiagState.lastNoBoard && _cwSeqDiagState.lastNoBoard.at || 0);
+        var noBoardRecent = !!(lastNoBoardAt && (Date.now() - lastNoBoardAt) <= 15000);
+        if (!_domShoeResetPending &&
+            raw.length <= 4 &&
+            prev.length <= 4 &&
+            noBoardRecent &&
+            (evtNow2.indexOf('table-switch-reset') === 0 || evtNow2.indexOf('shoe-reset-arm') === 0)) {
+            _domShoeResetPending = true;
+            _domShoeResetAt = Date.now();
+            brResetSeedTracker();
+            _domSeqEvent = 'shoe-reset-arm-short-overlap';
+            _domSeqAppend = '';
+            cwDbg('SEQ', 'shoe-reset-arm by short-overlap', {
+                raw: raw,
+                prev: prev,
+                rawLen: raw.length,
+                prevLen: prev.length,
+                managedLen: String(_domBeadSeqManaged || '').length,
+                seqVersion: Number(_domSeqVersion || 0),
+                lastNoBoardAgeMs: Date.now() - lastNoBoardAt,
+                prevEvent: evtNow2
+            }, 0, 'reset-arm-short-overlap|' + prev + '|' + raw + '|' + Number(_domSeqVersion || 0));
+            brSeqTrace('reenter-short-overlap-seed', raw, prev, beforeState, {
+                prevEvent: evtNow2,
+                noBoardRecent: noBoardRecent ? 1 : 0
+            }, 0, 'reenter-short-overlap-seed|' + prev + '|' + raw);
+            brPublishSeqState();
+            return brMergeManagedSeq(raw);
         }
 
         var ov = brOverlapSuffixPrefix(prev, raw);
@@ -3180,6 +3736,7 @@
             if (raw.length <= 2 || shrinkRatio <= 0.45) {
                 _domShoeResetPending = true;
                 _domShoeResetAt = Date.now();
+                brResetSeedTracker();
                 _domSeqEvent = 'shoe-reset-arm';
                 cwDbg('SEQ', 'shoe-reset-arm by shrink', {
                     prevLen: prev.length,
@@ -3205,17 +3762,11 @@
         if (!_domShoeResetPending && prev.length >= 10 && raw.length <= 3) {
             _domShoeResetPending = true;
             _domShoeResetAt = Date.now();
+            brResetSeedTracker();
             cwDbg('SEQ', 'shoe-reset-arm by tiny raw', {
                 prevLen: prev.length,
                 rawLen: raw.length
             }, 0, 'reset-arm-tiny|' + prev.length + '|' + raw.length);
-        }
-        if (_domShoeResetPending && raw.length <= 4) {
-            brAppendManaged(raw, 'append-reset-seed');
-            _domBeadSeqPrevRaw = raw;
-            brSeqTrace('return-reset-seed', raw, prev, beforeState, null, 0, 'return-reset-seed|' + raw.length);
-            brPublishSeqState();
-            return _domBeadSeqManaged;
         }
 
         // Raw đổi kiểu "jump": append-only, không overwrite managed hiện có.
@@ -3255,8 +3806,12 @@
             return '';
         if (cand === base)
             return '';
-        if (cand.indexOf(base) === 0 && cand.length > base.length)
-            return limitSeq50(cand);
+        if (cand.indexOf(base) === 0 && cand.length > base.length) {
+            var directDelta = cand.length - base.length;
+            if (directDelta === 1)
+                return limitSeq50(cand);
+            return '';
+        }
 
         // Cand có thể chỉ là đoạn cuối của board; nếu suffix base trùng prefix cand
         // đủ dài (>=5) và delta nhỏ (<=2) thì append delta để tránh đứng chuỗi.
@@ -3264,7 +3819,7 @@
         for (var k = maxK; k >= 5; k--) {
             if (base.slice(base.length - k) === cand.slice(0, k)) {
                 var delta = cand.slice(k);
-                if (delta.length > 0 && delta.length <= 2)
+                if (delta.length > 0 && delta.length <= 1)
                     return limitSeq50(base + delta);
                 break;
             }
@@ -3281,7 +3836,10 @@
         _domBeadSeqPrevRaw = raw;
         _domShoeResetPending = false;
         _domShoeResetAt = 0;
+        brResetSeedTracker();
         _domLastActiveSeedKey = cleanTitle + '|' + raw;
+        _domLastActiveSeedBurstId = Number(_domNoBoardBurstId || 0);
+        _domRawStallLastActiveKey = '';
         _domManagedTableTitle = cleanTitle;
         // Đổi bàn phải coi như phiên mới của bàn đó: reset theo seq của bàn mới.
         _domSeqVersion = Math.max(Number(_domSeqVersion || 0) + 1, String(_domBeadSeqManaged || '').length);
@@ -3297,6 +3855,33 @@
             seqVersion: _domSeqVersion,
             seqEvent: _domSeqEvent
         }, 0, 'table-switch-reset|' + cleanTitle + '|' + _domSeqVersion);
+        return true;
+    }
+    function brResetManagedForTableWaitBead(activeTitle, reason) {
+        var cleanTitle = String(activeTitle || '').trim();
+        if (!cleanTitle)
+            return false;
+        var before = String(_domBeadSeqManaged || '');
+        _domBeadSeqManaged = '';
+        _domBeadSeqPrevRaw = '';
+        _domShoeResetPending = false;
+        _domShoeResetAt = 0;
+        brResetSeedTracker();
+        _domLastActiveSeedKey = '';
+        _domLastActiveSeedBurstId = 0;
+        _domRawStallLastActiveKey = '';
+        _domManagedTableTitle = cleanTitle;
+        _domSeqVersion = Number(_domSeqVersion || 0) + 1;
+        _domSeqEvent = String(reason || 'table-switch-wait-bead');
+        _domSeqAppend = '';
+        brPublishSeqState();
+        cwDbg('SEQSRC', 'table-switch-clear-wait-bead', {
+            title: cleanTitle,
+            beforeLen: before.length,
+            afterLen: 0,
+            seqVersion: _domSeqVersion,
+            seqEvent: _domSeqEvent
+        }, 0, 'table-switch-wait-bead|' + cleanTitle + '|' + _domSeqVersion);
         return true;
     }
     function readDomBeadSeq() {
@@ -3360,6 +3945,10 @@
                     cells: []
                 };
             }
+            _domNoBoardStreak = 0;
+            _domNoBoardFirstAt = 0;
+            _domNoBoardLastAt = 0;
+            _domNoBoardLastReason = '';
             board = brTrimBoardToTopSixRows(board);
             board = brTrimBoardToLeftTopSegment(board);
             board = brNormalizeBoardToSixRows(board);
@@ -3407,7 +3996,9 @@
                 message: String(err && err.message || err),
                 stack: cwShort(String(err && err.stack || ''), 600),
                 managedSeq: String(_domBeadSeqManaged || ''),
-                managedLen: String(_domBeadSeqManaged || '').length
+                managedLen: String(_domBeadSeqManaged || '').length,
+                seqScriptRev: _cwSeqScriptRev,
+                lastPushSeqVersionSeen: brGetLastPushedSeqVersion()
             };
             _cwSeqDiagState.lastParserError = errInfo;
             cwDbg('SEQ', 'dom-bead-error', errInfo, 300, 'dom-bead-error|' + errInfo.message);
@@ -3631,6 +4222,14 @@
     }
 
     function readTKSeq() {
+        // Đồng bộ state theo global publisher để context cũ không kéo lùi seqVersion/seqLen.
+        brSyncFromPublishedState('readTKSeq-entry');
+        if (!_cwSeqRevLogged) {
+            _cwSeqRevLogged = true;
+            cwDbg('SEQFLOW', 'script-rev', {
+                seqScriptRev: _cwSeqScriptRev
+            }, 0, 'script-rev|' + _cwSeqScriptRev);
+        }
         if (!__cw_hasCocos()) {
             var bead = readDomBeadSeq();
             var beadSeq = (bead && bead.seq) ? String(bead.seq || '') : '';
@@ -3639,6 +4238,236 @@
             var active = domPickActiveCard(cards);
             var activeSeq = active ? limitSeq50(String(active.seq || '').replace(/H/g, 'T')) : '';
             var activeTitle = active && active.title ? String(active.title || '') : '';
+            _domLastActiveSeq = activeSeq;
+            _domLastActiveSeqTitle = activeTitle;
+            if (activeTitle && !_domManagedTableTitle)
+                _domManagedTableTitle = activeTitle;
+            var managedNow = String(_domBeadSeqManaged || '');
+            var managedTableTitle = String(_domManagedTableTitle || '');
+            var sameTableForActiveSeed = (!managedTableTitle || !activeTitle || managedTableTitle === activeTitle);
+            var activeSeedKey = brBuildActiveSeedKey(activeTitle, activeSeq);
+            var activeSeedAlreadyUsed = !!(activeSeedKey && _domLastActiveSeedKey === activeSeedKey);
+            var activeSeedGlobalBlocked = !!(
+                activeSeedAlreadyUsed &&
+                String(_domBeadSeqManaged || '').length >= activeSeq.length
+            );
+            var activeSeedBurstBlocked = !!(
+                activeSeedKey &&
+                _domLastActiveSeedKey === activeSeedKey &&
+                Number(_domLastActiveSeedBurstId || 0) === Number(_domNoBoardBurstId || 0)
+            );
+            var lastNoBoardReason = String(
+                (_cwSeqDiagState && _cwSeqDiagState.lastNoBoard && _cwSeqDiagState.lastNoBoard.failReason) ||
+                _domNoBoardLastReason ||
+                ''
+            );
+            var allowActiveSeedByNoBoardReason = !lastNoBoardReason ||
+                lastNoBoardReason === 'marker-found-but-board-cluster-fail' ||
+                lastNoBoardReason === 'marker-found-but-no-board';
+            var curBuildSource = String(_cwSnapshotBuildSource || '');
+            var curBuildId = Number(_cwSnapshotBuildId || 0);
+            var isSnapshotContext = !!(curBuildId > 0 && (curBuildSource === 'push' || curBuildSource === 'pull'));
+            var canUseActiveResetSeed = !!(
+                _domShoeResetPending &&
+                activeSeq &&
+                activeSeq.length <= 8 &&
+                sameTableForActiveSeed &&
+                isSnapshotContext &&
+                !activeSeedBurstBlocked &&
+                !activeSeedGlobalBlocked &&
+                allowActiveSeedByNoBoardReason
+            );
+            function useActiveResetSeed(reasonTag) {
+                var seedTarget = String(_domResetSeedTargetRaw || '');
+                var seedConsumed = String(_domResetSeedConsumedRaw || '');
+                var isFreshSeedCycle = (!seedTarget && !seedConsumed);
+                if (activeSeedBurstBlocked && isFreshSeedCycle) {
+                    _domShoeResetPending = false;
+                    _domSeqEvent = 'active-reset-seed-skip-same-burst';
+                    _domSeqAppend = '';
+                    brPublishSeqState();
+                    cwDbg('SEQSRC', 'skip-active-reset-seed-same-burst', {
+                        reason: String(reasonTag || ''),
+                        activeTitle: activeTitle,
+                        activeSeqLen: activeSeq.length,
+                        activeSeedKey: activeSeedKey,
+                        noBoardBurstId: Number(_domNoBoardBurstId || 0),
+                        lastActiveSeedBurstId: Number(_domLastActiveSeedBurstId || 0),
+                        seqVersion: Number(_domSeqVersion || 0),
+                        seqEvent: String(_domSeqEvent || ''),
+                        buildSource: curBuildSource,
+                        buildId: curBuildId
+                    }, 0, 'seqsrc-skip-active-seed-same-burst|' + activeSeedKey + '|' + Number(_domNoBoardBurstId || 0) + '|' + Number(_domSeqVersion || 0));
+                    return {
+                        seq: _domBeadSeqManaged || '',
+                        rawSeq: window.__cw_bead_raw_seq || '',
+                        which: 'dom-baccarat-hold-managed',
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent,
+                        cols: [],
+                        cells: []
+                    };
+                }
+                var activeClean = brSanitizeSeq(activeSeq);
+                var beforeLen = String(_domBeadSeqManaged || '').length;
+                var baseTailTitle = String(_domActiveSeedTailTitle || '');
+                var titleChanged = (!!activeTitle && activeTitle !== baseTailTitle);
+                if (titleChanged) {
+                    _domActiveSeedTailTitle = activeTitle;
+                    _domActiveSeedTailLen = 0;
+                } else if (!_domActiveSeedTailTitle && activeTitle) {
+                    _domActiveSeedTailTitle = activeTitle;
+                }
+
+                if (!activeClean) {
+                    _domSeqEvent = 'active-reset-seed-tail-empty';
+                    _domSeqAppend = '';
+                    brPublishSeqState();
+                    cwDbg('SEQFLOW', 'active-seed-tail-empty', {
+                        reason: String(reasonTag || ''),
+                        activeTitle: activeTitle,
+                        activeSeqLen: String(activeSeq || '').length,
+                        tailTitle: String(_domActiveSeedTailTitle || ''),
+                        tailLen: Number(_domActiveSeedTailLen || 0),
+                        beforeManagedLen: beforeLen,
+                        seqVersion: Number(_domSeqVersion || 0),
+                        seqEvent: String(_domSeqEvent || ''),
+                        buildId: curBuildId,
+                        buildSource: curBuildSource
+                    }, 0, 'active-seed-tail-empty|' + String(reasonTag || '') + '|' + Number(_domSeqVersion || 0) + '|' + curBuildId);
+                    return {
+                        seq: _domBeadSeqManaged || '',
+                        rawSeq: window.__cw_bead_raw_seq || '',
+                        which: 'dom-baccarat-hold-managed',
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent,
+                        cols: [],
+                        cells: []
+                    };
+                }
+
+                var activeLen = activeClean.length;
+                var prevTailLen = Number(_domActiveSeedTailLen || 0);
+                var prevConsumedPrefix = Number(_domActiveSeedConsumedPrefixLen || 0);
+                var appendedDelta = '';
+                var appendIndex = -1;
+                var growth = activeLen - prevTailLen;
+                var reserveTail = (activeLen >= 2) ? 1 : 0;
+                var safePrefixLen = Math.max(0, activeLen - reserveTail);
+                var mode = 'hold';
+                // Active seq có thể chứa 1 ký tự dự báo ở đuôi; chỉ consume prefix đã "an toàn".
+                // Mỗi lần tăng activeLen chỉ consume tối đa 1 step để không nhảy loạn.
+                if (titleChanged || prevTailLen <= 0) {
+                    _domActiveSeedTailLen = activeLen;
+                    _domSeqEvent = 'active-reset-seed-tail-init';
+                    _domSeqAppend = '';
+                    brPublishSeqState();
+                    mode = 'init';
+                } else if (growth > 0 && prevConsumedPrefix < safePrefixLen) {
+                    appendIndex = prevConsumedPrefix;
+                    appendedDelta = activeClean.charAt(appendIndex);
+                    if (appendedDelta) {
+                        brAppendManaged(appendedDelta, 'append-reset-seed-step');
+                        _domActiveSeedConsumedPrefixLen = appendIndex + 1;
+                        mode = (growth > 1) ? 'prefix-step-jump' : 'prefix-step';
+                    } else {
+                        mode = 'prefix-empty';
+                    }
+                    _domActiveSeedTailLen = activeLen;
+                } else {
+                    _domActiveSeedTailLen = activeLen;
+                    _domSeqEvent = 'active-reset-seed-tail-hold';
+                    _domSeqAppend = '';
+                    brPublishSeqState();
+                    mode = (growth > 0) ? 'growth-hold' : 'hold';
+                }
+
+                var afterSeq = String(_domBeadSeqManaged || '');
+                var afterLen = afterSeq.length;
+                _domShoeResetPending = true;
+                _domShoeResetAt = Date.now();
+                _domLastActiveSeedKey = brBuildActiveSeedKey(activeTitle, activeClean);
+                _domLastActiveSeedBurstId = Number(_domNoBoardBurstId || 0);
+                brPublishSeqState();
+                _cwSeqDiagState.lastSourcePick = {
+                    source: 'dom-baccarat-active-reset-seed',
+                    reason: String(reasonTag || ''),
+                    activeTitle: activeTitle,
+                    activeSeqLen: activeLen,
+                    activeSeedMode: mode,
+                    growth: growth,
+                    tailLenBefore: prevTailLen,
+                    tailLenAfter: Number(_domActiveSeedTailLen || 0),
+                    reserveTail: reserveTail,
+                    safePrefixLen: safePrefixLen,
+                    prefixConsumedBefore: prevConsumedPrefix,
+                    prefixConsumedAfter: Number(_domActiveSeedConsumedPrefixLen || 0),
+                    appendIndex: appendIndex,
+                    activeSeq: activeClean,
+                    appendedDelta: appendedDelta,
+                    beforeManagedLen: beforeLen,
+                    afterManagedLen: afterLen,
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent,
+                    buildSource: curBuildSource,
+                    buildId: curBuildId
+                };
+                cwDbg('SEQSRC', 'use-active-reset-seed', {
+                    reason: String(reasonTag || ''),
+                    activeTitle: activeTitle,
+                    activeSeqLen: activeLen,
+                    managedTableTitle: managedTableTitle,
+                    sameTableForActiveSeed: sameTableForActiveSeed ? 1 : 0,
+                    activeSeedMode: mode,
+                    activeSeedGrowth: growth,
+                    activeSeedDelta: appendedDelta,
+                    reserveTail: reserveTail,
+                    safePrefixLen: safePrefixLen,
+                    prefixConsumedBefore: prevConsumedPrefix,
+                    prefixConsumedAfter: Number(_domActiveSeedConsumedPrefixLen || 0),
+                    appendIndex: appendIndex,
+                    tailLenBefore: prevTailLen,
+                    tailLenAfter: Number(_domActiveSeedTailLen || 0),
+                    beforeManagedLen: beforeLen,
+                    afterManagedLen: afterLen,
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent,
+                    buildSource: curBuildSource,
+                    buildId: curBuildId
+                }, 0, 'seqsrc-active-reset-seed|' + String(reasonTag || '') + '|' + activeTitle + '|' + Number(_domSeqVersion || 0) + '|' + curBuildSource + '|' + curBuildId);
+                cwDbg(
+                    'SEQFLOW',
+                    'active-reset-seed compact|reason=' + String(reasonTag || '') +
+                    '|activeLen=' + activeLen +
+                    '|mode=' + mode +
+                    '|growth=' + growth +
+                    '|delta=' + (appendedDelta || '-') +
+                    '|idx=' + appendIndex +
+                    '|reserve=' + reserveTail +
+                    '|safePrefix=' + safePrefixLen +
+                    '|consumed=' + prevConsumedPrefix + '->' + Number(_domActiveSeedConsumedPrefixLen || 0) +
+                    '|active=' + activeClean +
+                    '|tail=' + prevTailLen + '->' + Number(_domActiveSeedTailLen || 0) +
+                    '|before=' + beforeLen +
+                    '|after=' + afterLen +
+                    '|ver=' + Number(_domSeqVersion || 0) +
+                    '|evt=' + String(_domSeqEvent || '') +
+                    '|build=' + curBuildId +
+                    '|src=' + curBuildSource,
+                    null,
+                    0,
+                    'active-reset-seed-compact|' + String(reasonTag || '') + '|' + Number(_domSeqVersion || 0) + '|' + curBuildId
+                );
+                return {
+                    seq: afterSeq,
+                    rawSeq: activeClean,
+                    which: 'dom-baccarat-active-reset-seed',
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent,
+                    cols: active.cols || [],
+                    cells: active.cells || []
+                };
+            }
             if (activeTitle !== _domLastActiveTitle) {
                 cwDbg('TABLE', 'active-card-changed', {
                     prev: _domLastActiveTitle,
@@ -3652,6 +4481,8 @@
                     resetPending: _domShoeResetPending ? 1 : 0
                 }, 0, 'active-card|' + activeTitle);
                 _domLastActiveTitle = activeTitle;
+                _domRawStallLastActiveKey = '';
+                brResetActiveSeedTailTracker();
             }
 
             // Đổi bàn A -> B: reset chuỗi theo bàn mới (giống mới vào app).
@@ -3660,9 +4491,11 @@
                 var switched = false;
                 // Ưu tiên bead raw (board thật, có T); chỉ fallback activeSeq khi bead chưa sẵn.
                 var hasBeadRawForReset = !!String(beadRawSeq || '');
-                var resetSeqSource = String(beadRawSeq || activeSeq || '');
-                if (resetSeqSource)
-                    switched = brResetManagedForTable(activeTitle, resetSeqSource, 'table-switch-reset');
+                if (hasBeadRawForReset) {
+                    switched = brResetManagedForTable(activeTitle, String(beadRawSeq || ''), 'table-switch-reset');
+                } else {
+                    switched = brResetManagedForTableWaitBead(activeTitle, 'table-switch-wait-bead');
+                }
                 cwDbg('TABLE', switched ? 'active-table-switch-reset-seq' : 'active-table-switch-wait-seq', {
                     from: prevTitle,
                     to: activeTitle,
@@ -3670,17 +4503,17 @@
                     managedLen: String(_domBeadSeqManaged || '').length,
                     activeSeqLen: String(activeSeq || '').length,
                     beadRawLen: String(beadRawSeq || '').length,
-                    resetSource: String(beadRawSeq ? 'bead-raw' : (activeSeq ? 'active-seq' : 'none'))
+                    resetSource: String(hasBeadRawForReset ? 'bead-raw' : 'wait-bead')
                 }, 0, 'table-switch|' + prevTitle + '|' + activeTitle + '|' + (switched ? '1' : '0'));
                 if (switched) {
                     // Chốt luôn snapshot sau switch để tránh 1 tick trả nhầm beadSeq cũ.
                     beadSeq = String(_domBeadSeqManaged || '');
-                    beadRawSeq = brSanitizeSeq(resetSeqSource) || beadRawSeq || '';
+                    beadRawSeq = brSanitizeSeq(beadRawSeq || '') || '';
                     _cwSeqDiagState.lastSourcePick = {
                         source: 'dom-baccarat-table-switch-reset',
-                        reason: 'table-changed-reset-from-best-source',
+                        reason: hasBeadRawForReset ? 'table-changed-reset-from-bead-raw' : 'table-changed-wait-bead-raw',
                         activeTitle: activeTitle,
-                        sourceType: String(hasBeadRawForReset ? 'bead-raw' : 'active-seq'),
+                        sourceType: String(hasBeadRawForReset ? 'bead-raw' : 'wait-bead'),
                         seqLen: beadSeq.length,
                         seqVersion: _domSeqVersion,
                         seqEvent: _domSeqEvent
@@ -3699,6 +4532,41 @@
 
             // Board fail: không seed từ active, chỉ giữ managed hiện tại để tránh append sai.
             if (!beadRawSeq && activeSeq) {
+                var noBoardBurstActive = !!(
+                    !_domShoeResetPending &&
+                    Number(_domNoBoardStreak || 0) >= 2 &&
+                    _domNoBoardFirstAt &&
+                    (Date.now() - _domNoBoardFirstAt) <= 5000
+                );
+                if (!canUseActiveResetSeed &&
+                    noBoardBurstActive &&
+                    sameTableForActiveSeed &&
+                    isSnapshotContext &&
+                    activeSeq.length <= 8 &&
+                    !activeSeedBurstBlocked &&
+                    !activeSeedGlobalBlocked &&
+                    allowActiveSeedByNoBoardReason) {
+                    _domShoeResetPending = true;
+                    _domShoeResetAt = Date.now();
+                    brResetSeedTracker();
+                    _domRawStallLastActiveKey = '';
+                    _domSeqEvent = 'shoe-reset-arm-bead-missing-active';
+                    _domSeqAppend = '';
+                    brPublishSeqState();
+                    canUseActiveResetSeed = true;
+                    cwDbg('SEQSRC', 'force-arm-active-seed-by-no-board', {
+                        activeTitle: activeTitle,
+                        activeSeqLen: activeSeq.length,
+                        managedLen: String(_domBeadSeqManaged || '').length,
+                        noBoardStreak: Number(_domNoBoardStreak || 0),
+                        noBoardBurstMs: Date.now() - Number(_domNoBoardFirstAt || 0),
+                        buildSource: curBuildSource,
+                        buildId: curBuildId
+                    }, 0, 'seqsrc-force-arm-active|' + activeTitle + '|' + activeSeq.length + '|' + Number(_domSeqVersion || 0));
+                }
+                if (canUseActiveResetSeed) {
+                    return useActiveResetSeed('bead-missing');
+                }
                 _cwSeqDiagState.lastSourcePick = {
                     source: 'dom-baccarat-managed-hold',
                     reason: 'bead-missing-active-seed-blocked',
@@ -3709,12 +4577,20 @@
                     seqEvent: _domSeqEvent
                 };
                 cwDbg('SEQSRC', 'bead-missing-hold-managed', {
-                    reason: 'active-seed-blocked',
+                    reason: activeSeedBurstBlocked ? 'active-seed-same-burst'
+                        : (activeSeedGlobalBlocked ? 'active-seed-same-key'
+                            : (!allowActiveSeedByNoBoardReason ? ('active-seed-no-board-reason-' + lastNoBoardReason) : 'active-seed-blocked')),
                     activeTitle: activeTitle,
                     activeSeqLen: activeSeq.length,
                     managedLen: String(_domBeadSeqManaged || '').length,
                     seqVersion: _domSeqVersion,
-                    seqEvent: _domSeqEvent
+                    seqEvent: _domSeqEvent,
+                    activeSeedKey: activeSeedKey,
+                    activeSeedGlobalBlocked: activeSeedGlobalBlocked ? 1 : 0,
+                    activeSeedAlreadyUsed: activeSeedAlreadyUsed ? 1 : 0,
+                    lastNoBoardReason: lastNoBoardReason,
+                    noBoardBurstId: Number(_domNoBoardBurstId || 0),
+                    lastActiveSeedBurstId: Number(_domLastActiveSeedBurstId || 0)
                 }, 2500, 'seqsrc-bead-missing-hold|' + activeTitle + '|' + _domSeqVersion + '|' + (_domSeqEvent || ''));
                 return {
                     seq: _domBeadSeqManaged || '',
@@ -3725,6 +4601,20 @@
                     cols: [],
                     cells: []
                 };
+            }
+
+            if (beadRawSeq && Number(_domActiveSeedTailLen || 0) > 0) {
+                cwDbg('SEQFLOW', 'active-seed-tail-clear-by-bead', {
+                    activeTitle: activeTitle,
+                    beadRawLen: String(beadRawSeq || '').length,
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    tailTitle: String(_domActiveSeedTailTitle || ''),
+                    tailLen: Number(_domActiveSeedTailLen || 0),
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || '')
+                }, 0, 'active-seed-tail-clear-bead|' + String(activeTitle || '') + '|' + Number(_domSeqVersion || 0));
+                brResetActiveSeedTailTracker();
+                brPublishSeqState();
             }
 
             // Ưu tiên bead; nếu bead đứng nhưng active seq cho thấy đuôi mới hợp lệ thì append.
@@ -3759,6 +4649,21 @@
                         cols: active.cols || [],
                         cells: active.cells || []
                     };
+                }
+                if (activeSeq.indexOf(beadSeq) === 0 && activeSeq.length > beadSeq.length) {
+                    var directGap = activeSeq.length - beadSeq.length;
+                    if (directGap > 1) {
+                        cwDbg('SEQFLOW', 'active-tail-extend-blocked-gap', {
+                            beadSeqLen: beadSeq.length,
+                            activeSeqLen: activeSeq.length,
+                            directGap: directGap,
+                            beadTail: beadSeq ? beadSeq.charAt(beadSeq.length - 1) : '',
+                            activeTail: activeSeq ? activeSeq.charAt(activeSeq.length - 1) : '',
+                            seqVersion: Number(_domSeqVersion || 0),
+                            seqEvent: String(_domSeqEvent || ''),
+                            activeTitle: activeTitle
+                        }, 7000, 'active-tail-blocked-gap|' + beadSeq.length + '|' + activeSeq.length + '|' + String(activeTitle || ''));
+                    }
                 }
                 _cwSeqDiagState.lastSourcePick = {
                     source: 'dom-bead',
@@ -3804,6 +4709,19 @@
                     seqEvent: _domSeqEvent,
                     resetPending: _domShoeResetPending ? 1 : 0
                 }, 4000, 'readseq-bead|' + beadSeq + '|' + _domSeqVersion);
+                cwDbg(
+                    'SEQFLOW',
+                    'readseq-bead compact|ver=' + Number(_domSeqVersion || 0) +
+                    '|evt=' + String(_domSeqEvent || '') +
+                    '|seqLen=' + beadSeq.length +
+                    '|rawLen=' + String(bead.rawSeq || '').length +
+                    '|tail=' + (beadSeq ? beadSeq.charAt(beadSeq.length - 1) : '-') +
+                    '|resetPending=' + (_domShoeResetPending ? 1 : 0) +
+                    '|rev=' + _cwSeqScriptRev,
+                    null,
+                    1500,
+                    'readseq-bead-compact|' + Number(_domSeqVersion || 0) + '|' + beadSeq.length + '|' + String(_domSeqEvent || '')
+                );
                 return {
                     seq: beadSeq,
                     rawSeq: bead.rawSeq || beadSeq || '',
@@ -3816,6 +4734,9 @@
             }
             if (active && activeSeq) {
                 if (String(_domBeadSeqManaged || '').length) {
+                    if (canUseActiveResetSeed) {
+                        return useActiveResetSeed('active-blocked-managed-present');
+                    }
                     _cwSeqDiagState.lastSourcePick = {
                         source: 'dom-baccarat-managed-hold',
                         reason: 'active-fallback-blocked-managed-present',
@@ -8231,6 +9152,8 @@
         var _pushTimer = null;
         var _lastJson = '';
         var _forcePushOnce = false;
+        var _lastPullSeqVersion = 0;
+        var _lastPushSeqVersion = 0;
 
         function shallowChanged(obj) {
             var s = '';
@@ -8312,7 +9235,7 @@
             }
         }
 
-        function buildSnapshotNow() {
+        function buildSnapshotNow(sourceTag) {
             var p = null;
             var st = '';
             var t = null;
@@ -8321,6 +9244,16 @@
             var seqVersion = 0;
             var seqEvent = '';
             var cached = null;
+            var buildSource = String(sourceTag || 'auto');
+            _cwSnapshotBuildId = Number(_cwSnapshotBuildId || 0) + 1;
+            _cwSnapshotBuildSource = buildSource;
+            var buildId = Number(_cwSnapshotBuildId || 0);
+            var domSeqVerBefore = Number(_domSeqVersion || 0);
+            var domSeqEvtBefore = String(_domSeqEvent || '');
+            try {
+                window.__cw_seq_build_id = buildId;
+                window.__cw_seq_build_source = buildSource;
+            } catch (_) {}
 
             try {
                 if (window.__cw_last_panel_snapshot)
@@ -8421,6 +9354,23 @@
                     p = 0;
             } catch (_) {}
 
+            try {
+                if ((/^shoe-reset/i.test(seqEvent || '') || /append-reset-seed/i.test(seqEvent || '') ||
+                    (/append-reset-seed-step/i.test(domSeqEvtBefore || '') && String(seqEvent || '') === 'no-change' && Number(seqVersion || 0) === Number(domSeqVerBefore || 0))) &&
+                    (__cw_debug_seq || __cw_debug_seq_detail)) {
+                    cwDbg('SEQFLOW', 'build-snapshot', {
+                        buildId: buildId,
+                        source: buildSource,
+                        domSeqVerBefore: domSeqVerBefore,
+                        domSeqEvtBefore: domSeqEvtBefore,
+                        snapSeqVer: Number(seqVersion || 0),
+                        snapSeqEvt: String(seqEvent || ''),
+                        snapSeqLen: String(seq || '').length,
+                        resetPending: _domShoeResetPending ? 1 : 0
+                    }, 0, 'seqflow-build|' + buildSource + '|' + buildId + '|' + Number(seqVersion || 0) + '|' + String(seqEvent || ''));
+                }
+            } catch (_) {}
+
             var uname = '';
             try {
                 if (cached && cached.username != null)
@@ -8444,7 +9394,21 @@
 
         window.__cw_readSnapshot = function () {
             try {
-                return buildSnapshotNow();
+                var snap = buildSnapshotNow('pull');
+                var curVer = Number(snap && snap.seqVersion != null ? snap.seqVersion : 0) || 0;
+                if (_lastPullSeqVersion > 0 && curVer > (_lastPullSeqVersion + 1)) {
+                    cwDbg('SEQFLOW', 'pull-version-jump', {
+                        prevPullVer: _lastPullSeqVersion,
+                        curPullVer: curVer,
+                        delta: curVer - _lastPullSeqVersion,
+                        seqEvent: String(snap && snap.seqEvent ? snap.seqEvent : ''),
+                        seqLen: String(snap && snap.seq ? snap.seq : '').length,
+                        resetPending: _domShoeResetPending ? 1 : 0,
+                        buildId: Number(_cwSnapshotBuildId || 0)
+                    }, 0, 'seqflow-pull-jump|' + _lastPullSeqVersion + '|' + curVer);
+                }
+                _lastPullSeqVersion = curVer;
+                return snap;
             } catch (_) {
                 return null;
             }
@@ -8463,12 +9427,38 @@
                     _pushTimer = null;
                 }
                 _lastJson = '';
+                try { window.__cw_last_push_seq_version = Number(_lastPushSeqVersion || 0) || 0; } catch (_) {}
                 cwDbg('PUSH', 'startPush', { tickMs: tickMs }, 0, 'startPush|' + tickMs);
                 _pushTimer = setInterval(function () {
-                    var snap = buildSnapshotNow();
+                    var snap = buildSnapshotNow('push');
                     var ev = String(snap && snap.seqEvent ? snap.seqEvent : '');
                     if (/^append|^append-after-reset|^append-reset-seed/i.test(ev))
                         _forcePushOnce = true;
+                    var curVer = Number(snap && snap.seqVersion != null ? snap.seqVersion : 0) || 0;
+                    if (ev === 'no-change' &&
+                        curVer === Number(_domLastSeedStepVersion || 0) &&
+                        _domLastSeedStepAt &&
+                        (Date.now() - _domLastSeedStepAt) <= 2500) {
+                        cwDbg('SEQFLOW', 'push-sees-no-change-after-seed-step', {
+                            seqVersion: curVer,
+                            seqLen: String(snap && snap.seq ? snap.seq : '').length,
+                            seedAgeMs: Date.now() - _domLastSeedStepAt,
+                            seedBuildId: Number(_domLastSeedStepBuildId || 0),
+                            buildId: Number(_cwSnapshotBuildId || 0),
+                            resetPending: _domShoeResetPending ? 1 : 0
+                        }, 0, 'seqflow-push-nochange-after-seed|' + curVer + '|' + Number(_cwSnapshotBuildId || 0));
+                    }
+                    if (_lastPushSeqVersion > 0 && curVer > (_lastPushSeqVersion + 1)) {
+                        cwDbg('SEQFLOW', 'push-version-jump', {
+                            prevPushVer: _lastPushSeqVersion,
+                            curPushVer: curVer,
+                            delta: curVer - _lastPushSeqVersion,
+                            seqEvent: ev,
+                            seqLen: String(snap && snap.seq ? snap.seq : '').length,
+                            resetPending: _domShoeResetPending ? 1 : 0,
+                            buildId: Number(_cwSnapshotBuildId || 0)
+                        }, 0, 'seqflow-push-jump|' + _lastPushSeqVersion + '|' + curVer);
+                    }
                     var changed = shallowChanged(snap);
                     if (_forcePushOnce || changed) {
                         cwDbg('SEQPUSH', 'tick-send', {
@@ -8489,6 +9479,8 @@
                             status: snap && snap.status ? snap.status : ''
                         }, 2200, 'tick-send|' + (snap && snap.seqVersion != null ? snap.seqVersion : '') + '|' + (snap && snap.seqEvent ? snap.seqEvent : '') + '|' + (changed ? '1' : '0') + '|' + (_forcePushOnce ? '1' : '0'));
                         safePost(snap);
+                        _lastPushSeqVersion = curVer;
+                        try { window.__cw_last_push_seq_version = curVer; } catch (_) {}
                         _forcePushOnce = false;
                     } else if (/append/i.test(ev)) {
                         cwDbg('SEQPUSH', 'event-but-not-sent', {
