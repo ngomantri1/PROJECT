@@ -8392,7 +8392,7 @@
         return false;
     }
     async function domClickConfirmAfterBet(tgt, expectedUnits) {
-      var confirm = await domWaitConfirmReady(200);
+      var confirm = await domWaitConfirmReady(100);
         if (!confirm) {
             console.warn('[cwBet++] không thấy nút xác nhận');
             return false;
@@ -8426,7 +8426,7 @@
             });
             domMinimalClick(confirm.el);
           await sleep(10);
-          var settled = await domWaitConfirmSettled(420);
+          var settled = await domWaitConfirmSettled(100);
             var stakeHit = null;
             if (expectedUnits != null)
           stakeHit = await domWaitTargetStakeUnits(tgt, expectedUnits, 140);
@@ -9003,7 +9003,7 @@
                 }
                 var before0 = sampleTotalsNow();
                 var targetClickedOne = clickBetTarget(tgt);
-                var appliedOne = await waitForTotalsChange(before0, side, 1000).catch(function () {
+                var appliedOne = await waitForTotalsChange(before0, side, 100).catch(function () {
                     return false;
                 });
                 if (!appliedOne && isDomMode) {
