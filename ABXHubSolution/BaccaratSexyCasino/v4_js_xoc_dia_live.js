@@ -2629,13 +2629,42 @@
         var cols = brBuildColumns(board.items);
         if (!cols.length)
             return board;
+        // Với board nhỏ (<=3 cột) nhưng item đã dày, giữ toàn bộ để không rơi cột đuôi ngắn (vd 6-6-2).
+        if (cols.length <= 3 && board.items.length >= 10) {
+            var keepRowsAll = brBuildRows(board.items).slice(0, 6);
+            board.rows = keepRowsAll;
+            board.rowCount = keepRowsAll.length;
+            board.colCount = cols.length;
+            cwDbg('SEQFLOW', 'trim-left-keep-few-cols', {
+                itemCount: board.items.length,
+                colCount: cols.length,
+                rowCount: keepRowsAll.length,
+                minX: Number(board.minX || 0),
+                maxX: Number(board.maxX || 0),
+                width: Number(board.width || 0),
+                reason: 'few-cols-rich-items'
+            }, 0, 'trim-left-keep-few-cols|' + cols.length + '|' + board.items.length);
+            return board;
+        }
         var leftCols = [cols[0]];
         var avgW = board.items.reduce(function (s, x) { return s + x.w; }, 0) / board.items.length;
-        var maxGap = Math.max(18, Math.round(avgW * 1.45));
+        var maxGap = Math.max(28, Math.round(avgW * 1.85));
+        var droppedByGap = 0;
         for (var i = 1; i < cols.length; i++) {
             var gap = cols[i].cx - cols[i - 1].cx;
-            if (gap > maxGap)
+            if (gap > maxGap) {
+                droppedByGap = cols.length - i;
+                cwDbg('SEQFLOW', 'trim-left-gap-break', {
+                    atCol: i,
+                    totalCols: cols.length,
+                    keepCols: leftCols.length,
+                    gap: gap,
+                    maxGap: maxGap,
+                    avgW: Math.round(avgW || 0),
+                    itemCount: board.items.length
+                }, 1800, 'trim-left-gap-break|' + i + '|' + cols.length + '|' + gap + '|' + maxGap);
                 break;
+            }
             leftCols.push(cols[i]);
             if (leftCols.length >= 8)
                 break;
@@ -2665,6 +2694,15 @@
         board.minX = minX; board.maxX = maxX; board.minY = minY; board.maxY = maxY;
         board.width = maxX - minX; board.height = maxY - minY;
         board.rows = topRows; board.rowCount = topRows.length; board.colCount = brBuildColumns(topKeep).length;
+        if (droppedByGap > 0) {
+            cwDbg('SEQFLOW', 'trim-left-result', {
+                droppedByGap: droppedByGap,
+                keepCols: leftCols.length,
+                outCols: Number(board.colCount || 0),
+                outItems: topKeep.length,
+                outRows: topRows.length
+            }, 1800, 'trim-left-result|' + droppedByGap + '|' + Number(board.colCount || 0) + '|' + topKeep.length);
+        }
         return board;
     }
     function brNormalizeBoardToSixRows(board) {
@@ -2920,7 +2958,7 @@
     var _cwSnapshotBuildSource = '';
     var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     var _cwSeqLastPubSyncAt = 0;
-    var _cwSeqScriptRev = 'SEQFIX-20260318-r13';
+    var _cwSeqScriptRev = 'SEQFIX-20260318-r14';
     var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
