@@ -1483,6 +1483,241 @@
         }
         return pick || cards[0];
     }
+    var _domBetStakeCache = {
+        at: 0,
+        data: null
+    };
+    function domExtractMoneyTokens(text) {
+        var out = [];
+        var s = String(text || '').replace(/\u00A0/g, ' ');
+        if (!s)
+            return out;
+        var re = /\d+(?:[.,]\d+)?\s*[KMB]\b|\d{1,3}(?:[.,\s]\d{3})+|\d{4,9}/ig;
+        var m;
+        while ((m = re.exec(s)) !== null) {
+            var tok = String(m[0] || '').trim();
+            if (!tok)
+                continue;
+            var idx = Number(m.index || 0);
+            var prev = idx > 0 ? s.charAt(idx - 1) : '';
+            var next = s.charAt(idx + tok.length);
+            // Loại odds kiểu "1:1" để không nhầm thành tiền.
+            if (prev === ':' || next === ':')
+                continue;
+            var val = moneyOf(tok);
+            if (!(val > 0))
+                continue;
+            if (val < 1000)
+                continue;
+            out.push({
+                token: tok,
+                value: val,
+                hasUnit: /[KMB]\b/i.test(tok)
+            });
+        }
+        return out;
+    }
+    function domResolveBetSideFromHost(host, textFallback) {
+        var side = domBetSideOfText(textFallback || domTextOf(host));
+        if (side)
+            return side;
+        if (!host || !host.querySelectorAll)
+            return null;
+        var nodes = [];
+        try {
+            nodes = host.querySelectorAll('span,p,div,b,strong,label,small');
+        } catch (_) {
+            nodes = [];
+        }
+        for (var i = 0; i < nodes.length && i < 48; i++) {
+            var el = nodes[i];
+            if (!el || !domVisible(el))
+                continue;
+            var txt = domTextOf(el);
+            if (!txt || txt.length > 40)
+                continue;
+            side = domBetSideOfText(txt);
+            if (side)
+                return side;
+        }
+        return null;
+    }
+    function domExtractStakeFromHost(host) {
+        if (!host)
+            return {
+                value: null,
+                token: null
+            };
+        var tokens = domExtractMoneyTokens(domTextOf(host));
+        if (!tokens.length && host.querySelectorAll) {
+            var leaves = [];
+            try {
+                leaves = host.querySelectorAll('span,p,div,small,b,strong,label');
+            } catch (_) {
+                leaves = [];
+            }
+            for (var i = 0; i < leaves.length && i < 80; i++) {
+                var el = leaves[i];
+                if (!el || !domVisible(el))
+                    continue;
+                var txt = domTextOf(el);
+                if (!txt || txt.length > 32)
+                    continue;
+                var add = domExtractMoneyTokens(txt);
+                for (var j = 0; j < add.length; j++)
+                    tokens.push(add[j]);
+            }
+        }
+        if (!tokens.length)
+            return {
+                value: null,
+                token: null
+            };
+        tokens.sort(function (a, b) {
+            if (b.value !== a.value)
+                return b.value - a.value;
+            if (b.hasUnit !== a.hasUnit)
+                return (b.hasUnit ? 1 : 0) - (a.hasUnit ? 1 : 0);
+            return String(a.token || '').length - String(b.token || '').length;
+        });
+        return {
+            value: tokens[0].value,
+            token: tokens[0].token
+        };
+    }
+    function domScanBetStakeTotals(force) {
+        try {
+            var now = Date.now();
+            if (!force && _domBetStakeCache.data && (now - Number(_domBetStakeCache.at || 0)) < 700)
+                return _domBetStakeCache.data;
+            var contexts = domGetBetContexts();
+            var best = null;
+            for (var ci = 0; ci < contexts.length; ci++) {
+                var ctx = contexts[ci];
+                var doc = ctx && ctx.doc ? ctx.doc : null;
+                var win = ctx && ctx.win ? ctx.win : null;
+                if (!doc || !win || !doc.querySelectorAll)
+                    continue;
+                var hosts = [];
+                var seen = [];
+                var nodes = [];
+                try {
+                    nodes = doc.querySelectorAll("li[id^='betBox'], [id*='betBox'], .zone_bet_bottom > li, .zone_bet_bottom li, .zone_bet_bottom > div, .zone_bet_bottom div");
+                } catch (_) {
+                    nodes = [];
+                }
+                for (var ni = 0; ni < nodes.length && ni < 220; ni++) {
+                    var host = nodes[ni];
+                    if (!host || seen.indexOf(host) >= 0 || !domVisible(host))
+                        continue;
+                    var rect = host.getBoundingClientRect();
+                    if (!rect || rect.width < 45 || rect.height < 24)
+                        continue;
+                    if (rect.bottom < 0 || rect.top > win.innerHeight || rect.right < 0 || rect.left > win.innerWidth)
+                        continue;
+                    if (rect.top < win.innerHeight * 0.48)
+                        continue;
+                    seen.push(host);
+                    var txt = domTextOf(host);
+                    var side = domResolveBetSideFromHost(host, txt);
+                    var stake = domExtractStakeFromHost(host);
+                    hosts.push({
+                        host: host,
+                        side: side,
+                        text: txt,
+                        amount: stake.value,
+                        rawAmount: stake.token,
+                        rect: rect,
+                        source: String(ctx.source || 'top')
+                    });
+                }
+                if (!hosts.length)
+                    continue;
+                var ordered = hosts.slice().sort(function (a, b) {
+                    return a.rect.left - b.rect.left || a.rect.top - b.rect.top;
+                });
+                var fallback = ['PLAYER', 'TIE', 'BANKER'];
+                for (var oi = 0; oi < ordered.length && oi < 3; oi++) {
+                    if (!ordered[oi].side)
+                        ordered[oi].side = fallback[oi];
+                }
+                var bySide = {};
+                for (var hi = 0; hi < hosts.length; hi++) {
+                    var row = hosts[hi];
+                    if (!row.side)
+                        continue;
+                    var score = 0;
+                    if (row.amount != null)
+                        score += 1000 + Math.min(300, Math.round(row.amount / 1000));
+                    if (row.rect.top >= win.innerHeight * 0.62)
+                        score += 100;
+                    if (/betbox|zone_bet_bottom/i.test(String((row.host.id || '') + ' ' + (row.host.className || ''))))
+                        score += 180;
+                    if (/singlebactable\.jsp/i.test(String(ctx.href || '')))
+                        score += 120;
+                    if (String(ctx.source || '') === 'top/frame[1]')
+                        score += 80;
+                    var prev = bySide[row.side];
+                    if (!prev || score > prev._score)
+                        bySide[row.side] = {
+                            amount: row.amount,
+                            raw: row.rawAmount,
+                            _score: score,
+                            source: row.source
+                        };
+                }
+                var found = 0;
+                var sum = 0;
+                var keys = ['BANKER', 'PLAYER', 'TIE'];
+                for (var ki = 0; ki < keys.length; ki++) {
+                    var it = bySide[keys[ki]];
+                    if (!it)
+                        continue;
+                    found++;
+                    sum += Number(it._score || 0);
+                }
+                if (!found)
+                    continue;
+                var ctxScore = found * 500 + sum;
+                var pack = {
+                    B: bySide.BANKER ? bySide.BANKER.amount : null,
+                    P: bySide.PLAYER ? bySide.PLAYER.amount : null,
+                    T: bySide.TIE ? bySide.TIE.amount : null,
+                    rawB: bySide.BANKER ? bySide.BANKER.raw : null,
+                    rawP: bySide.PLAYER ? bySide.PLAYER.raw : null,
+                    rawT: bySide.TIE ? bySide.TIE.raw : null,
+                    source: String(ctx.source || 'top'),
+                    score: ctxScore
+                };
+                if (!best || pack.score > best.score)
+                    best = pack;
+            }
+            var out = best || {
+                B: null,
+                P: null,
+                T: null,
+                rawB: null,
+                rawP: null,
+                rawT: null,
+                source: null,
+                score: 0
+            };
+            _domBetStakeCache.at = now;
+            _domBetStakeCache.data = out;
+            return out;
+        } catch (_) {
+            return {
+                B: null,
+                P: null,
+                T: null,
+                rawB: null,
+                rawP: null,
+                rawT: null,
+                source: null,
+                score: 0
+            };
+        }
+    }
     function domReadBetCountdown() {
         try {
             var contexts = [];
@@ -5602,42 +5837,49 @@
             var cards = domScanBaccaratCards();
             var active = domPickActiveCard(cards);
             var hud = domFindHudSnapshot();
+            var stake = domScanBetStakeTotals();
             if (!active) {
                 return {
-                    B: null,
-                    P: null,
+                    B: stake ? stake.B : null,
+                    P: stake ? stake.P : null,
                     C: null,
                     L: null,
                     A: hud.balance,
                     N: hud.account,
                     TB: null,
                     TA: null,
-                    T: null,
+                    T: stake ? stake.T : null,
+                    BS: stake ? stake.source : null,
                     rawA: hud.rawBalance,
                     rawN: hud.account || null,
                     rawHS: hud.source || null,
+                    rawB: stake ? stake.rawB : null,
+                    rawP: stake ? stake.rawP : null,
+                    rawT: stake ? stake.rawT : null,
                     rawTB: null,
                     rawTA: null,
                     cards: cards
                 };
             }
             return {
-                B: active.B,
-                P: active.P,
-                C: active.B,
-                L: active.P,
+                B: stake ? stake.B : null,
+                P: stake ? stake.P : null,
+                C: stake ? stake.B : null,
+                L: stake ? stake.P : null,
                 A: hud.balance,
                 N: hud.account,
                 TB: active.title,
                 TA: active.amount,
-                T: active.T,
-                rawB: active.B != null ? String(active.B) : null,
-                rawP: active.P != null ? String(active.P) : null,
-                rawC: active.B != null ? String(active.B) : null,
-                rawL: active.P != null ? String(active.P) : null,
+                T: stake ? stake.T : null,
+                BS: stake ? stake.source : null,
+                rawB: stake ? stake.rawB : null,
+                rawP: stake ? stake.rawP : null,
+                rawC: stake ? stake.rawB : null,
+                rawL: stake ? stake.rawP : null,
                 rawA: hud.rawBalance,
                 rawN: hud.account || null,
                 rawHS: hud.source || null,
+                rawT: stake ? stake.rawT : null,
                 rawTB: active.title || null,
                 rawTA: active.amount != null ? String(active.amount) : null,
                 cards: cards
@@ -5788,7 +6030,7 @@
         '</div>' +
         '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    root.style.display='none';
+    //root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -6234,6 +6476,7 @@
             '• HUD : ' + hudSource + '\n' +
             '• TÀI KHOẢN : ' + accountName + ' | SỐ DƯ : ' + fmt(t.A) + '\n' +
             '• BÀN : ' + tableName + ' | TIỀN BÀN : ' + tableAmount + ' | BANKER: ' + fmt(bankerVal) + ' | PLAYER: ' + fmt(playerVal) + ' | TIE: ' + fmt(t.T) + '\n' +
+            (!__cw_hasCocos() ? ('• BET POOL DOM : B=' + fmt(t.B) + ' | P=' + fmt(t.P) + ' | T=' + fmt(t.T) + ' | SRC=' + (t.BS || '--') + '\n') : '') +
 
             '• Focus: ' + (f ? f.kind : '-') + '\n' +
             '  idx : ' + (f && f.idx != null ? f.idx : '-') + '\n' +
