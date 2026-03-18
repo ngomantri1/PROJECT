@@ -248,9 +248,11 @@
     };
     try {
         if (typeof window.__cw_debug_seq === 'undefined')
-            window.__cw_debug_seq = 1;
+            window.__cw_debug_seq = 0;
         if (typeof window.__cw_debug_seq_detail === 'undefined')
-            window.__cw_debug_seq_detail = 1;
+            window.__cw_debug_seq_detail = 0;
+        if (typeof window.__cw_debug_bet === 'undefined')
+            window.__cw_debug_bet = 0;
     } catch (_) {}
     var _cwDbgBuf = [];
     var _cwDbgLast = Object.create(null);
@@ -331,6 +333,13 @@
                 else
                     console.log('[CWDBG][' + rec.tag + '] ' + rec.msg);
             } catch (_) {}
+        } catch (_) {}
+    }
+    function cwBetDbg() {
+        try {
+            if (!(window.__cw_debug_bet === 1 || window.__cw_debug_bet === true))
+                return;
+            console.log.apply(console, arguments);
         } catch (_) {}
     }
     try {
@@ -6030,7 +6039,7 @@
         '</div>' +
         '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
+    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -6968,7 +6977,7 @@
                     var applied = false;
                     for (var attempt = 0; attempt < 3 && !applied; attempt++) {
                         await tapSide(side);
-                        applied = await waitForTotalsChange(before, side, 1400);
+                        applied = await waitForTotalsChange(before, side, 200);
                         if (!applied && attempt === 1) {
                             await sleep(80);
                             await pickChip(step.val, chips);
@@ -6989,7 +6998,7 @@
                                 };
                                 clickRectCenter(r);
                                 await sleep(cfgBet.delayTap);
-                                if (await waitForTotalsChange(before, side, 900)) {
+                                if (await waitForTotalsChange(before, side, 200)) {
                                     applied = true;
                                     break;
                                 }
@@ -8325,7 +8334,7 @@
                 hitTail: hit ? String(domTailOf(hit) || '') : '',
                 hitHtml: hit ? domShortOuterHtml(hit) : ''
             };
-            try { console.log('[cwBet++] confirm diag', payload); } catch (_) {}
+            try { cwBetDbg('[cwBet++] confirm diag', payload); } catch (_) {}
             try {
                 if (window.__cw_diag_post)
                     window.__cw_diag_post(payload);
@@ -8392,7 +8401,7 @@
         return false;
     }
     async function domClickConfirmAfterBet(tgt, expectedUnits) {
-      var confirm = await domWaitConfirmReady(100);
+      var confirm = await domWaitConfirmReady(200);
         if (!confirm) {
             console.warn('[cwBet++] không thấy nút xác nhận');
             return false;
@@ -8407,7 +8416,7 @@
                 targetStake: readyStake ? readyStake.val : null
             });
             var mode = 'element';
-            console.log('[cwBet++] confirm click', {
+            cwBetDbg('[cwBet++] confirm click', {
                 attempt: 1,
                 mode: mode,
                 x: confirm.x,
@@ -8426,7 +8435,7 @@
             });
             domMinimalClick(confirm.el);
           await sleep(10);
-          var settled = await domWaitConfirmSettled(100);
+          var settled = await domWaitConfirmSettled(200);
             var stakeHit = null;
             if (expectedUnits != null)
           stakeHit = await domWaitTargetStakeUnits(tgt, expectedUnits, 140);
@@ -9003,7 +9012,7 @@
                 }
                 var before0 = sampleTotalsNow();
                 var targetClickedOne = clickBetTarget(tgt);
-                var appliedOne = await waitForTotalsChange(before0, side, 100).catch(function () {
+                var appliedOne = await waitForTotalsChange(before0, side, 150).catch(function () {
                     return false;
                 });
                 if (!appliedOne && isDomMode) {
@@ -9066,7 +9075,7 @@
             for (var p = 0; p < plan.length; p++) {
                 planStr.push(plan[p].count + '×' + plan[p].val.toLocaleString());
             }
-            console.log('[cwBet++] plan:', planStr.join(' + '), { amount: raw, chipUnits: X, dom: isDomMode });
+            cwBetDbg('[cwBet++] plan:', planStr.join(' + '), { amount: raw, chipUnits: X, dom: isDomMode });
 
             for (var s = 0; s < plan.length; s++) {
                 var step = plan[s];
@@ -9124,7 +9133,7 @@
                     return failBet('confirm failed', { side: side, amount: raw, chipUnits: X });
                 }
             }
-            console.log('[cwBet++] DONE ►', {
+            cwBetDbg('[cwBet++] DONE ►', {
                 side: side,
                 amount: X
             });
@@ -9133,7 +9142,7 @@
         });
     };
 
-    console.log('[READY] CW merged (compat + TextMap + Scan200Text + TK sequence + Totals by (x,tail) + standardized exports).');
+    cwBetDbg('[READY] CW merged (compat + TextMap + Scan200Text + TK sequence + Totals by (x,tail) + standardized exports).');
 
     /* ---------------- tick & controls ---------------- */
     function domCleanStatusText(txt) {
@@ -10043,7 +10052,7 @@
                     var ok = rawResult === true || rawResult === "ok" || (rawResult && rawResult.ok === true);
                     try {
                         if (ok && typeof waitForTotalsChange === "function") {
-                            await waitForTotalsChange(before, job.side, 1600);
+                            await waitForTotalsChange(before, job.side, 200);
                         }
                     } catch (_) {}
                     if (ok) {

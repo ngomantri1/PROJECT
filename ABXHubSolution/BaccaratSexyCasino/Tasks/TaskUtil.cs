@@ -26,6 +26,7 @@ namespace BaccaratSexyCasino.Tasks
         private static readonly ConcurrentDictionary<string, string> _lastAcceptedRawSeqByTab = new();
         private static readonly ConcurrentDictionary<string, byte> _betInFlightByTab = new();
         private const long SendOnlyCooldownMs = 3000;
+        private const int BetSendTimeoutMs = 2500;
 
         // (tuỳ chọn) reset khi dừng task
         public static void ClearBetCooldown()
@@ -138,7 +139,7 @@ namespace BaccaratSexyCasino.Tasks
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
                 double p = s?.prog ?? 1.0;
-                if (p >= ctx.DecisionPercent) break;
+                if (p >= ctx.DecisionPercent && p <= 20) break;
                 await Task.Delay(80, ct);
             }
         }
@@ -148,6 +149,23 @@ namespace BaccaratSexyCasino.Tasks
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
+            var runTag = ctx != null && ctx.RunId > 0 ? $" | run={ctx.RunId}" : "";
+
+            if (ctx?.IsRunActive != null && !ctx.IsRunActive())
+            {
+                ctx.Log?.Invoke($"[BET][BLOCK] stale-run | tab={tabKey}{runTag} | side={side} | amount={amount:N0}");
+                return false;
+            }
+
+            if (ctx?.GetBetPipeReady != null)
+            {
+                var ready = ctx.GetBetPipeReady();
+                if (!ready.ok)
+                {
+                    ctx.Log?.Invoke($"[BET][BLOCK] bet-pipe-not-ready | tab={tabKey}{runTag} | reason={ready.reason} | side={side} | amount={amount:N0}");
+                    return false;
+                }
+            }
 
             var playableSnap = ctx.GetSnap?.Invoke();
             var snap = ctx.GetRawSnap?.Invoke() ?? playableSnap;
@@ -171,19 +189,19 @@ namespace BaccaratSexyCasino.Tasks
             var last = _lastBetOkMsByTab.TryGetValue(tabKey, out var v) ? v : 0;
             var lastRound = _lastBetRoundByTab.TryGetValue(tabKey, out var r) ? r : -1;
             var lastSide = _lastBetSideByTab.TryGetValue(tabKey, out var s) ? s : "";
-            var sameRound = lastRound == roundId && roundId > 0;
+            var sameRound = lastRound == roundId;
             var sameSide = string.Equals(lastSide, side, StringComparison.OrdinalIgnoreCase);
             if (!ignoreCooldown)
             {
                 if (_betInFlightByTab.ContainsKey(tabKey))
                 {
-                    ctx.Log?.Invoke($"[BET][BLOCK] pending settle | tab={tabKey} | side={side} | amount={amount:N0}");
+                    ctx.Log?.Invoke($"[BET][BLOCK] pending settle | tab={tabKey}{runTag} | side={side} | amount={amount:N0}");
                     return false;
                 }
 
                 if (sameRound && sameSide && now - last < SendOnlyCooldownMs)
                 {
-                    ctx.Log?.Invoke($"[BET][BLOCK] skip duplicate send | tab={tabKey} | side={side} | amount={amount:N0}");
+                    ctx.Log?.Invoke($"[BET][BLOCK] skip duplicate send | tab={tabKey}{runTag} | side={side} | amount={amount:N0}");
                     return false;
                 }
             }
@@ -199,9 +217,39 @@ namespace BaccaratSexyCasino.Tasks
                 " } else { return 'no'; }" +
                 "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
-            var rRaw = await ctx.EvalJsAsync(js);
-            ctx.Log?.Invoke($"[BET-JS] tab={tabKey} round={roundId} result={rRaw}");
-            bool ok = true;
+            ctx.Log?.Invoke($"[BET-SEND][BEGIN] tab={tabKey}{runTag} | round={roundId} | side={side} | amount={amount:N0}");
+
+            string rRaw = "";
+            var sendAt = DateTime.UtcNow;
+            try
+            {
+                var evalTask = ctx.EvalJsAsync(js);
+                var completed = await Task.WhenAny(evalTask, Task.Delay(BetSendTimeoutMs, ct));
+                if (completed != evalTask)
+                {
+                    var ms = (int)(DateTime.UtcNow - sendAt).TotalMilliseconds;
+                    ctx.Log?.Invoke($"[BET-SEND][TIMEOUT] tab={tabKey}{runTag} | round={roundId} | side={side} | amount={amount:N0} | waitMs={ms}");
+                    return false;
+                }
+                rRaw = await evalTask;
+            }
+            catch (Exception ex)
+            {
+                var ms = (int)(DateTime.UtcNow - sendAt).TotalMilliseconds;
+                ctx.Log?.Invoke($"[BET-SEND][ERR] tab={tabKey}{runTag} | round={roundId} | side={side} | amount={amount:N0} | waitMs={ms} | err={ex.Message}");
+                return false;
+            }
+
+            var resultNorm = (rRaw ?? "").Trim().Trim('"');
+            bool ok = !(string.IsNullOrWhiteSpace(resultNorm) ||
+                        string.Equals(resultNorm, "no", StringComparison.OrdinalIgnoreCase) ||
+                        resultNorm.StartsWith("err:", StringComparison.OrdinalIgnoreCase));
+            var elapsedMs = (int)(DateTime.UtcNow - sendAt).TotalMilliseconds;
+            ctx.Log?.Invoke($"[BET-JS] tab={tabKey}{runTag} round={roundId} result={rRaw}");
+            if (ok)
+                ctx.Log?.Invoke($"[BET-SEND][OK] tab={tabKey}{runTag} | round={roundId} | side={side} | amount={amount:N0} | waitMs={elapsedMs}");
+            else
+                ctx.Log?.Invoke($"[BET-SEND][FAIL] tab={tabKey}{runTag} | round={roundId} | side={side} | amount={amount:N0} | waitMs={elapsedMs} | result={resultNorm}");
 
             if (ok)
             {
@@ -231,8 +279,7 @@ namespace BaccaratSexyCasino.Tasks
         public static async Task<bool?> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSeq, CancellationToken ct)
         {
             var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
-            if (!_lastAcceptedRawSeqByTab.TryGetValue(tabKey, out var acceptedRawSeq) ||
-                string.IsNullOrWhiteSpace(acceptedRawSeq))
+            if (!_lastAcceptedRawSeqByTab.TryGetValue(tabKey, out var acceptedRawSeq))
             {
                 ctx.Log?.Invoke($"[BET][SKIP] no accepted raw seq for settle | tab={tabKey}");
                 _betInFlightByTab.TryRemove(tabKey, out _);

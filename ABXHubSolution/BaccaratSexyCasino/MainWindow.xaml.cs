@@ -435,9 +435,14 @@ namespace BaccaratSexyCasino
 
 
         private int _playStartInProgress = 0;// Ngăn PlayXocDia_Click chạy song song
+        private long _taskRunSeq = 0;
+        private DateTime _betWebNavigatingSinceUtc = DateTime.MinValue;
+        private DateTime _betWebLastNavDoneUtc = DateTime.MinValue;
+        private DateTime _lastAutoStopByNavUtc = DateTime.MinValue;
 
         private readonly SemaphoreSlim _cfgWriteGate = new(1, 1);// Khoá ghi config để không bao giờ ghi song song
         private readonly SemaphoreSlim _statsWriteGate = new(1, 1);
+        private readonly ConcurrentDictionary<string, long> _logThrottleLastMs = new();
                                                                  // --- UI mode monitor ---
         private DateTime _lastGameTickUtc = DateTime.MinValue;
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
@@ -736,6 +741,7 @@ Ví dụ không hợp lệ:
             public List<long[]> RunStakeChains { get; set; } = new();
             public long[] RunStakeChainTotals { get; set; } = Array.Empty<long>();
             public double RunDecisionPercent { get; set; } = 0;
+            public long RunId { get; set; } = 0;
             public bool CutStopTriggered { get; set; } = false;
 
             public CancellationTokenSource? TaskCts { get; set; }
@@ -1261,8 +1267,44 @@ try{
             _logPumpCts = null;
         }
 
+        private bool ShouldSkipNoisyLog(string msg)
+        {
+            if (string.IsNullOrWhiteSpace(msg))
+                return false;
+
+            // Confirm diag: giữ lại after_click, bỏ ready/before để giảm spam.
+            if (msg.StartsWith("[DIAG][CONFIRM]", StringComparison.Ordinal))
+            {
+                if (msg.Contains("stage=ready", StringComparison.Ordinal) ||
+                    msg.Contains("stage=before_click", StringComparison.Ordinal))
+                    return true;
+            }
+
+            bool HitThrottle(string key, int ms)
+            {
+                var now = Environment.TickCount64;
+                var last = _logThrottleLastMs.TryGetValue(key, out var v) ? v : 0;
+                if ((now - last) < ms) return true;
+                _logThrottleLastMs[key] = now;
+                return false;
+            }
+
+            if (msg.StartsWith("[SEQ][UNLOCK][HOLD]", StringComparison.Ordinal))
+                return HitThrottle("SEQ_UNL_HOLD", 1200);
+            if (msg.StartsWith("[SEQ][UNLOCK] ", StringComparison.Ordinal))
+                return HitThrottle("SEQ_UNL", 700);
+            if (msg.StartsWith("[SEQ][GATE] ", StringComparison.Ordinal))
+                return HitThrottle("SEQ_GATE", 700);
+            if (msg.StartsWith("[BET][HIST][CHECK][ROW]", StringComparison.Ordinal))
+                return HitThrottle("BET_HIST_ROW", 700);
+
+            return false;
+        }
+
         private void Log(string msg)
         {
+            if (ShouldSkipNoisyLog(msg))
+                return;
             var line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
             EnqueueUi(line);
             EnqueueFile(line);
@@ -3192,6 +3234,7 @@ try{
 
             popupWeb.CoreWebView2.NewWindowRequested += PopupWeb_NewWindowRequested;
             popupWeb.CoreWebView2.WindowCloseRequested += PopupWeb_WindowCloseRequested;
+            popupWeb.NavigationStarting += PopupWeb_NavigationStarting;
             popupWeb.NavigationCompleted += PopupWeb_NavigationCompleted;
             _popupWebHooked = true;
             if (!_popupDevToolsOpened)
@@ -3364,6 +3407,31 @@ try{
                                 long currP = snap.totals?.P ?? 0;
                                 long currT = snap.totals?.T ?? 0;
                                 LogSeqRxIfChanged(seqDisplay, seqVersionNow, seqEventNow, progNow, statusRaw);
+
+                                bool seqVersionRegress =
+                                    _lockMajorMinorUpdates &&
+                                    _baseSeqVersion > 0 &&
+                                    seqVersionNow > 0 &&
+                                    seqVersionNow < _baseSeqVersion &&
+                                    (_baseSeqVersion - seqVersionNow) >= 2 &&
+                                    !string.Equals(seqDisplay, _baseSeqDisplay, StringComparison.Ordinal);
+                                if (seqVersionRegress)
+                                {
+                                    Log($"[SEQ][VER-REGRESS] src={source} | prog={progNow:0.###} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | baseEvt={(string.IsNullOrWhiteSpace(_baseSeqEvent) ? "-" : _baseSeqEvent)} | curLen={seqDisplay.Length} | curVer={seqVersionNow} | curEvt={(string.IsNullOrWhiteSpace(seqEventNow) ? "-" : seqEventNow)}");
+
+                                    _baseSeq = seqStr;
+                                    _baseSeqDisplay = seqDisplay;
+                                    _baseSeqVersion = seqVersionNow;
+                                    _baseSeqEvent = string.IsNullOrWhiteSpace(seqEventNow) ? "rebase-version-regress" : seqEventNow;
+                                    _roundTotalsB = currB;
+                                    _roundTotalsP = currP;
+                                    _roundTotalsT = currT;
+                                    MarkPendingRowsClosed();
+                                    _lockMajorMinorUpdates = (_roundTotalsB != 0 || _roundTotalsP != 0 || _roundTotalsT != 0 || !string.IsNullOrWhiteSpace(_baseSeq));
+
+                                    char rebasedTail = _baseSeqDisplay.Length > 0 ? _baseSeqDisplay[^1] : '-';
+                                    Log($"[SEQ][REBASE] reason=version-regress | newLen={_baseSeqDisplay.Length} | newVer={_baseSeqVersion} | newEvt={(string.IsNullOrWhiteSpace(_baseSeqEvent) ? "-" : _baseSeqEvent)} | tail={rebasedTail} | lock={(_lockMajorMinorUpdates ? 1 : 0)} | pending={_pendingRows.Count} | totalsB={_roundTotalsB} | totalsP={_roundTotalsP} | totalsT={_roundTotalsT}");
+                                }
 
                                 if (_lockMajorMinorUpdates == false)
                                 {
@@ -3910,14 +3978,32 @@ try{
             }
         }
 
+        private void PopupWeb_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+        {
+            try
+            {
+                _betWebNavigatingSinceUtc = DateTime.UtcNow;
+                var src = (e.Uri ?? "").Trim();
+                if (!IsLikelyBetGameUrl(src))
+                    AutoStopTasksOnBetPipelineReset("popup-nav-start", src);
+            }
+            catch { }
+        }
+
         private async void PopupWeb_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
         {
             try
             {
                 var src = _popupWeb?.CoreWebView2?.Source ?? "";
                 Log("[PopupWeb] NavigationCompleted: " + (e.IsSuccess ? "OK" : ("Err " + e.WebErrorStatus)) + " | " + src);
+                _betWebNavigatingSinceUtc = DateTime.MinValue;
+                _betWebLastNavDoneUtc = DateTime.UtcNow;
                 if (e.IsSuccess)
+                {
+                    if (!IsLikelyBetGameUrl(src))
+                        AutoStopTasksOnBetPipelineReset("popup-nav-done-non-game", src);
                     await InjectOnPopupDocAsync();
+                }
             }
             catch { }
         }
@@ -3985,6 +4071,8 @@ try{
             _popupBridgeRegistered = false;
             _popupDevToolsOpened = false;
             _popupLastDocKey = null;
+            _betWebNavigatingSinceUtc = DateTime.MinValue;
+            _betWebLastNavDoneUtc = DateTime.MinValue;
 
             if (popupWeb == null)
                 return;
@@ -4003,6 +4091,7 @@ try{
             }
             catch { }
 
+            try { popupWeb.NavigationStarting -= PopupWeb_NavigationStarting; } catch { }
             try { popupWeb.NavigationCompleted -= PopupWeb_NavigationCompleted; } catch { }
 
             try
@@ -5445,6 +5534,141 @@ try{
             }
         }
 
+        private static bool IsLikelyBetGameUrl(string? rawUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rawUrl))
+                return false;
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var u))
+                return false;
+            var host = (u.Host ?? "").ToLowerInvariant();
+            if (host.StartsWith("bpweb.") || host.StartsWith("games."))
+                return true;
+            if (u.AbsolutePath.IndexOf("/player/webMain.jsp", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            return false;
+        }
+
+        private (bool ok, string reason) GetBetPipeReadyState(StrategyTabState tab, long runId)
+        {
+            if (tab == null)
+                return (false, "tab-null");
+            if (tab.RunId != runId)
+                return (false, $"stale-run current={tab.RunId} expect={runId}");
+            if (tab.TaskCts == null || tab.TaskCts.IsCancellationRequested || !tab.IsRunning)
+                return (false, "task-not-running");
+
+            var now = DateTime.UtcNow;
+            if (_betWebNavigatingSinceUtc != DateTime.MinValue &&
+                (now - _betWebNavigatingSinceUtc) < TimeSpan.FromSeconds(5))
+            {
+                return (false, $"nav-in-flight age={(now - _betWebNavigatingSinceUtc).TotalSeconds:0.0}s");
+            }
+
+            if (_betWebLastNavDoneUtc != DateTime.MinValue &&
+                (now - _betWebLastNavDoneUtc) < TimeSpan.FromMilliseconds(800))
+            {
+                return (false, $"nav-cooldown age={(now - _betWebLastNavDoneUtc).TotalMilliseconds:0}ms");
+            }
+
+            var betWeb = GetBetWebView();
+            if (betWeb?.CoreWebView2 == null)
+                return (false, "bet-web-null");
+            var src = GetBetWebViewSource(betWeb);
+            if (!IsLikelyBetGameUrl(src))
+                return (false, $"bet-src-not-game src={src}");
+
+            var tickAge = now - _lastGameTickUtc;
+            if (tickAge > TimeSpan.FromSeconds(6))
+                return (false, $"tick-stale age={tickAge.TotalSeconds:0.0}s");
+
+            CwSnapshot? snap;
+            lock (_snapLock) snap = _lastSnap;
+            bool hasSnapData =
+                snap?.prog.HasValue == true ||
+                !string.IsNullOrWhiteSpace(snap?.status) ||
+                !string.IsNullOrWhiteSpace(snap?.seq);
+            if (!hasSnapData)
+                return (false, "snap-empty");
+
+            return (true, "ok");
+        }
+
+        private void AutoStopTasksOnBetPipelineReset(string reason, string src)
+        {
+            ResetSeqSyncState($"auto-stop:{reason}", clearPendingRows: false, forceLog: false);
+            if (!IsAnyTabRunning()) return;
+            var now = DateTime.UtcNow;
+            if ((now - _lastAutoStopByNavUtc) < TimeSpan.FromSeconds(2))
+                return;
+            _lastAutoStopByNavUtc = now;
+
+            var runningTabs = _strategyTabs.Where(t => t.IsRunning || t.TaskCts != null).ToList();
+            if (runningTabs.Count == 0) return;
+
+            Log($"[Loop][AUTO-STOP] reason={reason} | src={src} | tabs={runningTabs.Count}");
+            foreach (var tab in runningTabs)
+            {
+                Log($"[Loop][AUTO-STOP] tab={tab.Name} | run={tab.RunId}");
+                StopTask(tab);
+            }
+            BaccaratSexyCasino.Tasks.TaskUtil.ClearBetCooldown();
+            SetPlayButtonState(_activeTab?.IsRunning == true);
+        }
+
+        private void ResetSeqSyncState(string reason, bool clearPendingRows = false, bool forceLog = false)
+        {
+            int prevLen;
+            long prevVer;
+            string prevEvt;
+            bool prevLock;
+            int pendingBefore;
+            int pendingAfter;
+            bool hadState;
+            lock (_roundStateLock)
+            {
+                prevLen = _baseSeqDisplay?.Length ?? 0;
+                prevVer = _baseSeqVersion;
+                prevEvt = _baseSeqEvent ?? "";
+                prevLock = _lockMajorMinorUpdates;
+                pendingBefore = _pendingRows.Count;
+
+                hadState = prevLen > 0 ||
+                           prevVer > 0 ||
+                           prevLock ||
+                           _roundTotalsB != 0 ||
+                           _roundTotalsP != 0 ||
+                           _roundTotalsT != 0 ||
+                           pendingBefore > 0;
+
+                _baseSeq = "";
+                _baseSeqDisplay = "";
+                _baseSeqVersion = 0;
+                _baseSeqEvent = "";
+                _roundTotalsB = 0;
+                _roundTotalsP = 0;
+                _roundTotalsT = 0;
+                _lockMajorMinorUpdates = false;
+                _lastSeqLenNi = 0;
+                _lastSeqRxLen = -1;
+                _lastSeqRxVer = -1;
+                _lastSeqRxEvt = "";
+                _lastSeqRxTail = '\0';
+                _lastSeqRxPending = -1;
+                _lastSeqRxLock = false;
+                _lastHistAlertUtc = DateTime.MinValue;
+
+                if (clearPendingRows && _pendingRows.Count > 0)
+                    _pendingRows.Clear();
+
+                pendingAfter = _pendingRows.Count;
+            }
+
+            if (forceLog || hadState || clearPendingRows)
+            {
+                Log($"[SEQ][CTX-RESET] reason={reason} | prevLen={prevLen} | prevVer={prevVer} | prevEvt={(string.IsNullOrWhiteSpace(prevEvt) ? "-" : prevEvt)} | prevLock={(prevLock ? 1 : 0)} | pending={pendingBefore}->{pendingAfter} | clearPending={(clearPendingRows ? 1 : 0)}");
+            }
+        }
+
         private async void PopupFrame_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
             try
@@ -5533,7 +5757,7 @@ try{
             return "err:timeout";
         }
 
-        private GameContext BuildContext(StrategyTabState tab, bool useRawWinAmount = false)
+        private GameContext BuildContext(StrategyTabState tab, long runId, bool useRawWinAmount = false)
         {
             var applyWinTax = !useRawWinAmount;
             var cfg = tab?.Config ?? _cfg;
@@ -5559,6 +5783,13 @@ try{
                 GetSnap = () => { lock (_snapLock) return CloneSnapForTasks(_lastSnap); },
                 GetRawSnap = () => { lock (_snapLock) return _lastSnap; },
                 TabId = tab.Id,
+                RunId = runId,
+                IsRunActive = () => tab.RunId == runId && tab.TaskCts != null && !tab.TaskCts.IsCancellationRequested && tab.IsRunning,
+                GetBetPipeReady = () =>
+                {
+                    if (Dispatcher.CheckAccess()) return GetBetPipeReadyState(tab, runId);
+                    return Dispatcher.Invoke(() => GetBetPipeReadyState(tab, runId));
+                },
                 EvalJsAsync = (js) => ExecuteOnBetWebAsync(js),
                 EvalJsAwaitResultAsync = (js) => ExecuteOnBetWebAwaitResultAsync(js),
                 Log = (s) => Log(s),
@@ -5700,8 +5931,11 @@ try{
                 RecordValidBet(betTab, amount);
             }
 
-            double accNow = 0;
-            try { accNow = ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
+            double accNow = issuedSnap?.totals?.A ?? 0;
+            if (accNow <= 0)
+            {
+                try { accNow = ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
+            }
 
             var row = new BetRow
             {
@@ -5734,20 +5968,42 @@ try{
 
         private async Task StartTaskAsync(StrategyTabState tab, IBetTask task, CancellationToken ct, bool useRawWinAmount = false)
         {
+            var runId = tab.RunId;
             tab.ActiveTask = task;
             _dec = new DecisionState(); // reset trạng thái cho task mới
             tab.DecisionState = new DecisionState();
             BaccaratSexyCasino.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
-            var ctx = BuildContext(tab, useRawWinAmount);
+            var ctx = BuildContext(tab, runId, useRawWinAmount);
+            ctx.Log?.Invoke($"[TASK][RUN] start | tab={tab.Id} | run={runId} | task={task.DisplayName}");
             // === Preflight: chờ __cw_bet sẵn sàng trước khi chạy chiến lược ===
+            bool preflightOk = false;
             for (int i = 0; i < 25; i++) // 25 * 200ms ~= 5s
             {
                 ct.ThrowIfCancellationRequested();
-                var check = await ctx.EvalJsAsync("(function(){return (typeof window.__cw_bet==='function')?'ok':'no';})()");
+                string check = "timeout";
+                try
+                {
+                    var checkTask = ctx.EvalJsAsync("(function(){return (typeof window.__cw_bet_enqueue==='function' || typeof window.__cw_bet==='function')?'ok':'no';})()");
+                    var done = await Task.WhenAny(checkTask, Task.Delay(1200, ct));
+                    if (done == checkTask)
+                        check = (await checkTask)?.Trim().Trim('"') ?? "";
+                }
+                catch (Exception ex)
+                {
+                    check = "err:" + ex.Message;
+                }
+
                 if (string.Equals(check, "ok", StringComparison.OrdinalIgnoreCase))
+                {
+                    preflightOk = true;
                     break;
+                }
+                if (i == 0 || i == 12 || i == 24)
+                    ctx.Log?.Invoke($"[TASK][PRECHECK] tab={tab.Id} | run={runId} | attempt={i + 1}/25 | bridge={check}");
                 await Task.Delay(200, ct);
             }
+            if (!preflightOk)
+                ctx.Log?.Invoke($"[TASK][PRECHECK][WARN] tab={tab.Id} | run={runId} | bridge-not-ready-after-5s");
 
             await task.RunAsync(ctx, ct);
         }
@@ -5809,7 +6065,7 @@ try{
                 }
                 if (activeTab.TaskCts != null || activeTab.IsRunning)
                 {
-                    Log($"[DEC] \"{activeTab.Name}\" is already running");
+                    Log($"[DEC] \"{activeTab.Name}\" is already running | run={activeTab.RunId}");
                     return;
                 }
                 await SaveConfigAsync();
@@ -5836,6 +6092,7 @@ try{
                         return;
                 }
 
+                ResetSeqSyncState("play-start", clearPendingRows: false, forceLog: true);
                 await EnsureToolBridgeInjectedAsync();
 
                 var betWeb = GetBetWebView();
@@ -5912,6 +6169,8 @@ try{
 
 
                 // === Khởi động task theo lựa chọn CHIẾN LƯỢC ===
+                var runId = Interlocked.Increment(ref _taskRunSeq);
+                activeTab.RunId = runId;
                 activeTab.TaskCts = new CancellationTokenSource();
 
                 bool useRawWinAmount = false;
@@ -5940,6 +6199,7 @@ try{
                 activeTab.ActiveTask = task;
 
                 var tabRef = activeTab;
+                var runIdRef = runId;
 
                 var running = Task.Run(() => StartTaskAsync(tabRef, task, tabRef.TaskCts.Token, useRawWinAmount));
                 tabRef.RunningTask = running;
@@ -5958,15 +6218,15 @@ try{
                             SetPlayButtonState(false);
 
                         if (t.IsFaulted)
-                            Log("[Task ERR] " + (t.Exception?.GetBaseException().Message ?? "Unknown error"));
+                            Log($"[Task ERR] run={runIdRef} | " + (t.Exception?.GetBaseException().Message ?? "Unknown error"));
                         else if (t.IsCanceled)
-                            Log("[Task] canceled");
+                            Log($"[Task] canceled | run={runIdRef}");
                         else
-                            Log("[Task] completed");
+                            Log($"[Task] completed | run={runIdRef}");
                     }));
                 }, TaskScheduler.Default);
 
-                Log("[Loop] started task: " + task.DisplayName);
+                Log($"[Loop] started task: {task.DisplayName} | run={runId}");
                 SetPlayButtonState(true);
             }
             catch (Exception ex)
@@ -6022,7 +6282,7 @@ try{
                 if (!IsAnyTabRunning())
                 {
                     BaccaratSexyCasino.Tasks.TaskUtil.ClearBetCooldown();
-                    Log("[Loop] stopped");
+                    Log($"[Loop] stopped | run={activeTab.RunId}");
                     StopExpiryCountdown();
                     StopLeaseHeartbeat();
                     StopLicenseRecheckTimer();
@@ -6032,7 +6292,7 @@ try{
                 }
                 else
                 {
-                    Log($"[Loop] stopped tab: {activeTab.Name}");
+                    Log($"[Loop] stopped tab: {activeTab.Name} | run={activeTab.RunId}");
                 }
 
                 SetPlayButtonState(activeTab.IsRunning);
@@ -7488,9 +7748,9 @@ try{
         private static double ParseMoneyOrZero(string s)
         {
             if (string.IsNullOrWhiteSpace(s)) return 0;            // ⬅️ rỗng = 0 (tắt)
-                                                                   // Cho phép số âm ở đầu, bỏ dấu ngăn cách
-            var cleaned = new string(s.Where(c => char.IsDigit(c) || (c == '-' && s.IndexOf(c) == 0)).ToArray());
-            return double.TryParse(cleaned, out var v) ? v : 0;
+            if (TryParseLooseDouble(s, out var v))
+                return v;
+            return 0;
         }
 
         private async void TxtCut_LostFocus(object sender, RoutedEventArgs e)
@@ -7626,14 +7886,31 @@ try{
             bool hasSettleContext = !string.IsNullOrWhiteSpace(settleDisplay) || (settleSeqVersion ?? 0) > 0;
             bool hasSettleVersion = (settleSeqVersion ?? 0) > 0;
             char settleTail = settleDisplay.Length > 0 ? settleDisplay[^1] : '-';
+            bool advFallbackLogged = false;
 
             bool IsRowSeqAdvanced(BetRow row)
             {
                 if (!hasSettleContext) return true;
+                bool displayAdvanced = !string.Equals(settleDisplay, row.IssuedSeqDisplay ?? "", StringComparison.Ordinal);
                 bool hasIssueVersion = (row.IssuedSeqVersion ?? 0) > 0;
                 if (hasSettleVersion && hasIssueVersion)
-                    return settleSeqVersion!.Value > row.IssuedSeqVersion!.Value;
-                return !string.Equals(settleDisplay, row.IssuedSeqDisplay ?? "", StringComparison.Ordinal);
+                {
+                    if (settleSeqVersion!.Value > row.IssuedSeqVersion!.Value)
+                        return true;
+                    if (settleSeqVersion!.Value < row.IssuedSeqVersion!.Value &&
+                        row.SawClosedAfterIssue &&
+                        displayAdvanced)
+                    {
+                        if (!advFallbackLogged)
+                        {
+                            advFallbackLogged = true;
+                            Log($"[BET][HIST][ADV-FALLBACK] reason=version-regress-display | issueVer={row.IssuedSeqVersion} | settleVer={settleSeqVersion} | issueLen={row.IssuedSeqDisplay.Length} | settleLen={settleDisplay.Length} | settleEvt={(settleSeqEvent ?? "-")}");
+                        }
+                        return true;
+                    }
+                    return false;
+                }
+                return displayAdvanced;
             }
 
             var pendingSnapshot = _pendingRows.ToList();

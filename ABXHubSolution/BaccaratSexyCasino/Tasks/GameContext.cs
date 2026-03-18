@@ -13,6 +13,9 @@ namespace BaccaratSexyCasino.Tasks
 
         // Tab id (chiến lược) dùng cho queue bet
         public string TabId { get; init; } = "";
+        public long RunId { get; init; } = 0;
+        public Func<bool>? IsRunActive { get; init; }
+        public Func<(bool ok, string reason)>? GetBetPipeReady { get; init; }
 
         // Thực thi JS: trả về chuỗi (Web.ExecuteScriptAsync)
         public Func<string, Task<string>> EvalJsAsync { get; init; }

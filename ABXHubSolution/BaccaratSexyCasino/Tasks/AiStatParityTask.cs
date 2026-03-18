@@ -99,7 +99,7 @@ namespace BaccaratSexyCasino.Tasks
             {
                 ct.ThrowIfCancellationRequested();
 
-                await WaitUntilBetWindow(ctx, ct);
+                await WaitUntilNewRoundStart(ctx, ct);
 
                 // Ảnh chụp chuỗi trước khi đặt (để chấm thắng/thua)
                 var snap = ctx.GetSnap();
