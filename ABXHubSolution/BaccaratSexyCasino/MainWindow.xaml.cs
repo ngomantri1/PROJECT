@@ -382,9 +382,6 @@ namespace BaccaratSexyCasino
         private char _lastSeqRxTail = '\0';
         private int _lastSeqRxPending = -1;
         private bool _lastSeqRxLock = false;
-        private string _activeTickSession = "";
-        private DateTime _activeTickSessionAtUtc = DateTime.MinValue;
-        private DateTime _lastTickSessionDropLogUtc = DateTime.MinValue;
 
         private DecisionState _dec = new();
         private long[] _stakeSeq = Array.Empty<long>();
@@ -1338,61 +1335,6 @@ try{
             _lastSeqRxLock = lockState;
 
             Log($"[SEQ][RX] prog={progNow:0.###} | seqLen={len} | tail={tail} | seqVer={seqVersion} | seqEvt={evt} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | lockMajorMinor={(lockState ? 1 : 0)} | pending={pending} | status={statusRaw}");
-        }
-
-        private bool AcceptTickStream(CwSnapshot snap, string source)
-        {
-            var incoming = (snap.session ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(incoming))
-                return true;
-
-            var now = DateTime.UtcNow;
-            if (string.IsNullOrWhiteSpace(_activeTickSession))
-            {
-                _activeTickSession = incoming;
-                _activeTickSessionAtUtc = now;
-                Log($"[SEQ][STREAM][BIND] session={incoming} | src={source}");
-                return true;
-            }
-
-            if (string.Equals(_activeTickSession, incoming, StringComparison.Ordinal))
-            {
-                _activeTickSessionAtUtc = now;
-                return true;
-            }
-
-            var idle = now - _activeTickSessionAtUtc;
-            if (idle >= TimeSpan.FromSeconds(3))
-            {
-                var prev = _activeTickSession;
-                _activeTickSession = incoming;
-                _activeTickSessionAtUtc = now;
-                Log($"[SEQ][STREAM][SWITCH] prev={prev} -> cur={incoming} | idleMs={(int)idle.TotalMilliseconds} | src={source}");
-                return true;
-            }
-
-            if ((now - _lastTickSessionDropLogUtc) >= TimeSpan.FromSeconds(5))
-            {
-                _lastTickSessionDropLogUtc = now;
-                Log($"[SEQ][STREAM][DROP] keep={_activeTickSession} | drop={incoming} | idleMs={(int)idle.TotalMilliseconds} | src={source}");
-            }
-            return false;
-        }
-
-        private static bool IsSeqResetLikeEvent(string? evt)
-        {
-            if (string.IsNullOrWhiteSpace(evt))
-                return false;
-            var e = evt.Trim().ToLowerInvariant();
-            if (e.Contains("reset")) return true;
-            if (e.Contains("table-switch")) return true;
-            if (e.Contains("shoe")) return true;
-            if (e.Contains("no-board")) return true;
-            if (e.Contains("board-jump")) return true;
-            if (e.Contains("wait-bead")) return true;
-            if (e.Contains("board-empty")) return true;
-            if (e.Contains("board-shrink")) return true;
-            return false;
         }
 
         private void SetModeUi(bool isGame)
@@ -3378,8 +3320,6 @@ try{
                     var snap = ParseCwSnapshotLoose(jrootTick);
                     if (snap == null)
                         return;
-                    if (!AcceptTickStream(snap, source))
-                        return;
 
                     if (snap != null)
                     {
@@ -3552,8 +3492,6 @@ try{
                                             ? (settleSeqVersion > _baseSeqVersion)
                                             : !string.Equals(seqDisplay, _baseSeqDisplay, StringComparison.Ordinal);
                                         char settleTail = seqDisplay.Length > 0 ? seqDisplay[^1] : '-';
-                                        int seqLenDelta = seqDisplay.Length - _baseSeqDisplay.Length;
-                                        bool resetLikeAdvance = IsSeqResetLikeEvent(settleSeqEvent) || IsSeqResetLikeEvent(_baseSeqEvent);
                                         Log($"[SEQ][GATE] hasAdvance={(hasSeqAdvance ? 1 : 0)} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | baseEvt={(string.IsNullOrWhiteSpace(_baseSeqEvent) ? "-" : _baseSeqEvent)} | curLen={seqDisplay.Length} | curVer={settleSeqVersion} | curEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)} | curTail={settleTail} | pending={_pendingRows.Count}");
                                         if (!hasSeqAdvance)
                                         {
@@ -3564,26 +3502,6 @@ try{
                                                 LogHistAlertThrottled(
                                                     $"[BET][HIST][ALERT] pending-not-settled | reason=seq-not-advanced | pending={_pendingRows.Count} | oldestAt={oldest.At:HH:mm:ss} | oldestRound={oldest.IssuedRoundId} | oldestIssueVer={(oldest.IssuedSeqVersion?.ToString() ?? "-")} | curVer={settleSeqVersion} | curEvt={settleSeqEvent}");
                                             }
-                                        }
-                                        else if (_pendingRows.Count == 0 && (Math.Abs(seqLenDelta) > 1 || resetLikeAdvance))
-                                        {
-                                            Log($"[SEQ][GATE][RESYNC-SKIP] reason={(resetLikeAdvance ? "reset-like-event" : "multi-step-no-pending")} | deltaLen={seqLenDelta} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | baseEvt={(string.IsNullOrWhiteSpace(_baseSeqEvent) ? "-" : _baseSeqEvent)} | curLen={seqDisplay.Length} | curVer={settleSeqVersion} | curEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)} | curTail={settleTail}");
-
-                                            _baseSeq = seqStr;
-                                            _baseSeqDisplay = seqDisplay;
-                                            _baseSeqVersion = settleSeqVersion;
-                                            _baseSeqEvent = settleSeqEvent;
-                                            _roundTotalsB = currB;
-                                            _roundTotalsP = currP;
-                                            _roundTotalsT = currT;
-                                            _lockMajorMinorUpdates = (_roundTotalsB != 0 || _roundTotalsP != 0 || _roundTotalsT != 0 || !string.IsNullOrWhiteSpace(_baseSeq));
-                                        }
-                                        else if (_pendingRows.Count > 0 && (Math.Abs(seqLenDelta) > 2 || resetLikeAdvance))
-                                        {
-                                            Log($"[BET][HIST][SETTLE][SKIP] reason=unstable-advance-with-pending | pending={_pendingRows.Count} | deltaLen={seqLenDelta} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | baseEvt={(string.IsNullOrWhiteSpace(_baseSeqEvent) ? "-" : _baseSeqEvent)} | curLen={seqDisplay.Length} | curVer={settleSeqVersion} | curEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)} | curTail={settleTail}");
-                                            var oldest = _pendingRows[0];
-                                            LogHistAlertThrottled(
-                                                $"[BET][HIST][ALERT] pending-not-settled | reason=unstable-advance-with-pending | pending={_pendingRows.Count} | oldestAt={oldest.At:HH:mm:ss} | oldestRound={oldest.IssuedRoundId} | oldestIssueVer={(oldest.IssuedSeqVersion?.ToString() ?? "-")} | curVer={settleSeqVersion} | curEvt={settleSeqEvent} | deltaLen={seqLenDelta}");
                                         }
                                         else
                                         {
@@ -5738,9 +5656,6 @@ try{
                 _lastSeqRxPending = -1;
                 _lastSeqRxLock = false;
                 _lastHistAlertUtc = DateTime.MinValue;
-                _activeTickSession = "";
-                _activeTickSessionAtUtc = DateTime.MinValue;
-                _lastTickSessionDropLogUtc = DateTime.MinValue;
 
                 if (clearPendingRows && _pendingRows.Count > 0)
                     _pendingRows.Clear();

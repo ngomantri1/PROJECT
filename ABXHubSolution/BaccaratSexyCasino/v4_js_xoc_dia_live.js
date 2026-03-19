@@ -248,9 +248,9 @@
     };
     try {
         if (typeof window.__cw_debug_seq === 'undefined')
-            window.__cw_debug_seq = 1;
+            window.__cw_debug_seq = 0;
         if (typeof window.__cw_debug_seq_detail === 'undefined')
-            window.__cw_debug_seq_detail = 1;
+            window.__cw_debug_seq_detail = 0;
         if (typeof window.__cw_debug_bet === 'undefined')
             window.__cw_debug_bet = 0;
     } catch (_) {}
@@ -1786,50 +1786,109 @@
             return null;
         }
     }
+    function domHasBalanceLabel(norm) {
+        return /(?:^|[^a-z0-9])(so du|sodu|balance)(?:[^a-z0-9]|$)/.test(String(norm || ''));
+    }
+    function domExtractBalanceTokenFromLabelText(txt) {
+        var s = String(txt || '');
+        var m = s.match(/(?:so\s*du|sodu|balance)\s*[:=]?\s*([$€£¥₫]?\s*[\d][\d.,]*(?:\s*[KMB])?)/i);
+        if (m && m[1])
+            return domCollapse(m[1]);
+        return '';
+    }
+    function domIsStrictHudBalanceText(txt) {
+        var s = domCollapse(txt).replace(/[₫$€£¥]/g, '').replace(/\s+/g, '');
+        if (!s)
+            return false;
+        if (/^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(s))
+            return true;
+        if (/^\d{1,3}(\.\d{3})+(,\d{1,2})?$/.test(s))
+            return true;
+        if (/^\d+\.\d{1,2}$/.test(s))
+            return true;
+        if (/^\d+,\d{1,2}$/.test(s))
+            return true;
+        if (/^\d+(?:\.\d+)?[KMB]$/i.test(s))
+            return true;
+        return false;
+    }
+    function domIsNearBalanceLabelRow(row, labelRows) {
+        if (!row || !labelRows || !labelRows.length)
+            return false;
+        for (var i = 0; i < labelRows.length; i++) {
+            var lb = labelRows[i];
+            if (!lb)
+                continue;
+            if (row.source && lb.source && row.source !== lb.source)
+                continue;
+            var dy = Math.abs(((row.y || 0) + (row.h || 0) / 2) - ((lb.y || 0) + (lb.h || 0) / 2));
+            var dx = (row.x || 0) - (lb.x || 0);
+            if (dy <= 26 && dx >= -220 && dx <= 520)
+                return true;
+        }
+        return false;
+    }
     function domParseHudRows(rows, leftBiasMinX, leftBiasMaxX) {
         var account = '';
+        var accountRow = null;
         var balance = null;
         var rawBalance = null;
         rows = rows || [];
+        var labelRows = [];
 
         for (var i = 0; i < rows.length; i++) {
-            var txt = domCollapse(rows[i].text || rows[i].txt || '');
+            var row = rows[i] || {};
+            var txt = domCollapse(row.text || row.txt || '');
             var norm = domNorm(txt);
-            if (!account && /^plyr[a-z0-9_]+/i.test(txt))
+            if (!account && /^plyr[a-z0-9_]+/i.test(txt)) {
                 account = txt;
-            if (!account && /^(player|user|usr)[a-z0-9_]+/i.test(txt))
+                accountRow = row;
+            }
+            if (!account && /^(player|user|usr)[a-z0-9_]+/i.test(txt)) {
                 account = txt;
+                accountRow = row;
+            }
 
-            if (/so du|sodu|balance/.test(norm)) {
-                    var val = balanceOf(txt);
-                    if (val != null) {
-                        balance = val;
-                        rawBalance = txt;
-                    } else {
-                        var m = txt.match(/(?:so du|sodu|balance)\s*[:=]?\s*([$€£¥₫]?\s*[\d.,KMB]+)/i);
-                        if (m) {
-                            balance = balanceOf(m[1]);
-                            rawBalance = m[1];
-                        }
-                    }
+            if (domHasBalanceLabel(norm)) {
+                labelRows.push(row);
+                var token = domExtractBalanceTokenFromLabelText(txt);
+                var val = token ? balanceOf(token) : balanceOf(txt);
+                if (val != null) {
+                    balance = val;
+                    rawBalance = token || txt;
                 }
+            }
         }
 
         if ((!account || balance == null) && rows.length) {
             rows = rows.slice().sort(function (a, b) { return a.y - b.y || a.x - b.x; });
             for (var j = 0; j < rows.length; j++) {
-                var txt2 = domCollapse(rows[j].text || rows[j].txt || '');
+                var row2 = rows[j] || {};
+                var txt2 = domCollapse(row2.text || row2.txt || '');
                 var norm2 = domNorm(txt2);
                 if (!account && /^(plyr|player|user|usr)[a-z0-9_]{3,}/i.test(txt2)) {
                     account = txt2;
+                    accountRow = row2;
                 }
-                if (balance == null &&
-                    rows[j].x > (leftBiasMinX == null ? 0 : leftBiasMinX) &&
-                    rows[j].x < (leftBiasMaxX == null ? 999999 : leftBiasMaxX)) {
-                    var val2 = balanceOf(txt2);
-                    if (val2 != null) {
-                        balance = val2;
-                        rawBalance = txt2;
+                if (balance == null) {
+                    var inBiasRange = row2.x > (leftBiasMinX == null ? 0 : leftBiasMinX) &&
+                        row2.x < (leftBiasMaxX == null ? 999999 : leftBiasMaxX);
+                    var hasLabel2 = domHasBalanceLabel(norm2);
+                    var nearLabel2 = domIsNearBalanceLabelRow(row2, labelRows);
+                    var strictMoney2 = domIsStrictHudBalanceText(txt2);
+                    var nearAccount2 = false;
+                    if (accountRow && row2.source === accountRow.source) {
+                        var dy2 = Math.abs(((row2.y || 0) + (row2.h || 0) / 2) - ((accountRow.y || 0) + (accountRow.h || 0) / 2));
+                        var dx2 = (row2.x || 0) - ((accountRow.x || 0) + (accountRow.w || 0));
+                        nearAccount2 = (dy2 <= 24 && dx2 >= -60 && dx2 <= 460);
+                    }
+                    if (inBiasRange && (hasLabel2 || (strictMoney2 && (nearLabel2 || nearAccount2)))) {
+                        var token2 = hasLabel2 ? domExtractBalanceTokenFromLabelText(txt2) : '';
+                        var val2 = token2 ? balanceOf(token2) : balanceOf(txt2);
+                        if (val2 != null) {
+                            balance = val2;
+                            rawBalance = token2 || txt2;
+                        }
                     }
                 }
                 if (account && balance != null)
@@ -1873,16 +1932,40 @@
             }
             function pickBalance(rows, account) {
                 var list = [];
+                var labelRows = [];
+                for (var li = 0; li < rows.length; li++) {
+                    var ltxt = domCollapse(rows[li].text || rows[li].txt || '');
+                    if (domHasBalanceLabel(domNorm(ltxt)))
+                        labelRows.push(rows[li]);
+                }
                 for (var bi = 0; bi < rows.length; bi++) {
                     var txt = domCollapse(rows[bi].text || rows[bi].txt || '');
                     var norm = domNorm(txt);
-                    var mv = balanceOf(txt);
-                    var hasLabel = /so du|sodu|balance/.test(norm);
-                    if (!hasLabel && mv == null)
+                    var hasLabel = domHasBalanceLabel(norm);
+                    var token = hasLabel ? domExtractBalanceTokenFromLabelText(txt) : '';
+                    var mv = token ? balanceOf(token) : balanceOf(txt);
+                    var strictMoney = domIsStrictHudBalanceText(txt);
+                    var nearLabel = domIsNearBalanceLabelRow(rows[bi], labelRows);
+                    var nearAccount = false;
+                    if (account && rows[bi].source === account.source) {
+                        var ady = Math.abs(((rows[bi].y || 0) + (rows[bi].h || 0) / 2) - ((account.y || 0) + (account.h || 0) / 2));
+                        var adx = (rows[bi].x || 0) - ((account.x || 0) + (account.w || 0));
+                        nearAccount = (ady <= 22 && adx >= -70 && adx <= 460);
+                    }
+                    var accepted = false;
+                    if (hasLabel && mv != null)
+                        accepted = true;
+                    else if (!hasLabel && strictMoney && mv != null && (nearLabel || nearAccount))
+                        accepted = true;
+                    if (!accepted)
                         continue;
                     var score = 0;
                     if (hasLabel)
-                        score += 100;
+                        score += 220;
+                    if (nearLabel)
+                        score += 120;
+                    if (strictMoney)
+                        score += 90;
                     if (mv != null)
                         score += 30;
                     if (/0\.00|0,00/.test(txt))
@@ -2761,145 +2844,6 @@
         rows.sort(function (a, b) { return a.cy - b.cy; });
         return rows;
     }
-    function brIsResetLikeSeqEvent(evt) {
-        var e = String(evt || '').toLowerCase();
-        if (!e)
-            return false;
-        return (
-            e.indexOf('reset') !== -1 ||
-            e.indexOf('table-switch') !== -1 ||
-            e.indexOf('shoe') !== -1 ||
-            e.indexOf('no-board') !== -1 ||
-            e.indexOf('board-jump') !== -1 ||
-            e.indexOf('wait-bead') !== -1 ||
-            e.indexOf('board-empty') !== -1 ||
-            e.indexOf('board-shrink') !== -1
-        );
-    }
-    function brScoreBoardContinuity(candSeq) {
-        var cand = brSanitizeSeq(candSeq || '');
-        if (!cand)
-            return -900;
-        var score = 0;
-        var prevRaw = brSanitizeSeq(_domBeadSeqPrevRaw || '');
-        var managed = brSanitizeSeq(_domBeadSeqManaged || '');
-        var resetPending = !!_domShoeResetPending;
-        var evtNow = String(_domSeqEvent || '');
-
-        if (prevRaw) {
-            if (cand === prevRaw) {
-                score += 260;
-            } else if (cand.indexOf(prevRaw) === 0) {
-                var d = cand.length - prevRaw.length;
-                if (d === 1) score += 420;
-                else if (d === 2) score += 260;
-                else if (d > 2) score -= Math.min(420, 90 + d * 40);
-            } else if (prevRaw.indexOf(cand) === 0) {
-                var shrink = prevRaw.length - cand.length;
-                if (resetPending || brIsResetLikeSeqEvent(evtNow))
-                    score -= Math.min(180, shrink * 24);
-                else
-                    score -= (shrink >= 4 ? 560 : 280);
-            } else {
-                var ov = brOverlapSuffixPrefix(prevRaw, cand);
-                if (ov >= 8) score += 200;
-                else if (ov >= 5) score += 110;
-                else score -= 140;
-            }
-        }
-
-        if (managed) {
-            var ovm = brOverlapSuffixPrefix(managed, cand);
-            if (ovm >= 10) score += 180;
-            else if (ovm >= 6) score += 95;
-            if (!resetPending && managed.indexOf(cand) >= 0 && cand.length <= Math.max(6, managed.length - 6))
-                score -= 240;
-            if (!resetPending && cand.length < Math.max(6, Math.floor(managed.length * 0.52)))
-                score -= 180;
-        }
-
-        return score;
-    }
-    function brScoreGridBeadShape(gridPack) {
-        try {
-            var cols = (gridPack && gridPack.cols) ? gridPack.cols : [];
-            if (!cols.length)
-                return -600;
-            var score = 0;
-            var maxCols = Math.min(cols.length, 14);
-            for (var i = 0; i < maxCols; i++) {
-                var col = cols[i];
-                var items = (col && col.items) ? col.items : [];
-                if (!items.length) {
-                    score -= 40;
-                    continue;
-                }
-                var seen = Object.create(null);
-                var rows = [];
-                for (var j = 0; j < items.length; j++) {
-                    var r = Number(items[j] && items[j]._row);
-                    if (!isFinite(r)) {
-                        var yy = Number(items[j] && (items[j]._gridY != null ? items[j]._gridY : items[j].y));
-                        var minY = Number(gridPack && gridPack.minY || 0);
-                        var rowStep = Math.max(1, Number(gridPack && gridPack.rowStep || 1));
-                        r = Math.round((yy - minY) / rowStep);
-                    }
-                    if (r < 0) r = 0;
-                    if (r > 5) r = 5;
-                    if (!seen[r]) {
-                        seen[r] = 1;
-                        rows.push(r);
-                    }
-                }
-                rows.sort(function (a, b) { return a - b; });
-                var top = rows.length ? rows[0] : 0;
-                var bottom = rows.length ? rows[rows.length - 1] : 0;
-                var holes = 0;
-                for (var rr = top; rr <= bottom; rr++) {
-                    if (!seen[rr])
-                        holes++;
-                }
-                score += rows.length * 11;
-                if (top === 0) score += 38;
-                else score -= (top * 42);
-                score -= holes * 56;
-                if (rows.length > 6)
-                    score -= 180;
-                if (bottom > 5)
-                    score -= 220;
-                if (rows.length >= 5)
-                    score += 14;
-            }
-            var avgFill = cols.length > 0 ? ((gridPack && gridPack.cols ? gridPack.cols.reduce(function (s, c) { return s + (c.items ? c.items.length : 0); }, 0) : 0) / cols.length) : 0;
-            if (avgFill < 1.5)
-                score -= 120;
-            if (cols.length >= 3) score += 42;
-            if (cols.length >= 4) score += 36;
-            return score;
-        } catch (_) {
-            return -500;
-        }
-    }
-    function brBuildCandidateSeqForBoard(items, minX, maxX, minY, maxY, width, height, rowCount, colCount, textCount) {
-        try {
-            var src = (items || []).slice();
-            if (!src.length)
-                return { seq: '', seqLen: 0, rowCount: 0, colCount: 0, itemCount: 0, beadShapeScore: -600 };
-            var gridPack = brBuildGrid6xN(src);
-            var seq = brSanitizeSeq(brSequenceFromGrid(gridPack));
-            var beadShapeScore = brScoreGridBeadShape(gridPack);
-            return {
-                seq: seq,
-                seqLen: seq.length,
-                rowCount: Number(rowCount || 0),
-                colCount: Number(colCount || 0),
-                itemCount: src.length,
-                beadShapeScore: Number(beadShapeScore || 0)
-            };
-        } catch (_) {
-            return { seq: '', seqLen: 0, rowCount: 0, colCount: 0, itemCount: 0, beadShapeScore: -500 };
-        }
-    }
     function brPickBoard(markers, screenW, screenH) {
         var comps = brSplitComponents(markers);
         var best = null;
@@ -2960,24 +2904,10 @@
             if (height > 185) score -= 260;
             if (minX > screenW * 0.12) score -= 420;
             if (minY > screenH * 0.9) score -= 260;
-            var cand = brBuildCandidateSeqForBoard(comp, minX, maxX, minY, maxY, width, height, rowCount, colCount, textCount);
-            var continuityScore = brScoreBoardContinuity(cand.seq);
-            var beadShapeScore = Number(cand.beadShapeScore || 0);
-            if (!allowSmall && beadShapeScore <= -320)
-                continue;
-            score += continuityScore;
-            score += beadShapeScore;
             if (!best || score > best.score) {
                 best = {
                     items: comp,
                     score: score,
-                    baseScore: score - continuityScore - beadShapeScore,
-                    continuityScore: continuityScore,
-                    beadShapeScore: beadShapeScore,
-                    candidateSeq: String(cand.seq || ''),
-                    candidateSeqLen: Number(cand.seqLen || 0),
-                    candidateRows: Number(cand.rowCount || 0),
-                    candidateCols: Number(cand.colCount || 0),
                     minX: minX,
                     maxX: maxX,
                     minY: minY,
@@ -3313,13 +3243,9 @@
                 pdiag.boardFound = true;
                 pdiag.board = {
                     score: Number(board.score || 0),
-                    baseScore: Number(board.baseScore || 0),
-                    continuityScore: Number(board.continuityScore || 0),
-                    beadShapeScore: Number(board.beadShapeScore || 0),
                     itemCount: (board.items && board.items.length) ? board.items.length : 0,
                     rowCount: Number(board.rowCount || 0),
                     colCount: Number(board.colCount || 0),
-                    candidateSeqLen: Number(board.candidateSeqLen || 0),
                     minX: Number(board.minX || 0),
                     minY: Number(board.minY || 0),
                     width: Number(board.width || 0),
@@ -3328,9 +3254,8 @@
                 pdiag.reason = 'ok';
                 if (diagOut)
                     diagOut.profiles.push(pdiag);
-                if (!bestPack.board || Number(board.score || 0) > Number(bestPack.board.score || 0))
-                    bestPack = { board: board, markers: allMarkers, profile: p };
-                continue;
+                bestPack = { board: board, markers: allMarkers, profile: p };
+                break;
             }
             pdiag.reason = allMarkers.length ? 'marker-found-but-no-board' : 'no-marker';
             if (diagOut)
@@ -3356,23 +3281,11 @@
     var _domLastSeedStepAt = 0;
     var _domLastSeedStepVersion = 0;
     var _domLastSeedStepBuildId = 0;
-    var _domLastExtendStepBuildId = 0;
     var _cwSnapshotBuildId = 0;
     var _cwSnapshotBuildSource = '';
     var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
-    var _cwFrameHrefTag = (function () {
-        try {
-            var href = String(location && location.href || '');
-            if (!href)
-                return 'no-href';
-            return href.replace(/^https?:\/\//i, '').split('#')[0].split('?')[0];
-        } catch (_) {
-            return 'no-href';
-        }
-    })();
-    var _cwTickSessionId = _cwSeqInstanceId + '|' + _cwFrameHrefTag;
     var _cwSeqLastPubSyncAt = 0;
-    var _cwSeqScriptRev = 'SEQFIX-20260319-r16';
+    var _cwSeqScriptRev = 'SEQFIX-20260319-r20';
     var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
@@ -3404,7 +3317,6 @@
     function brResetSeedTracker() {
         _domResetSeedTargetRaw = '';
         _domResetSeedConsumedRaw = '';
-        _domLastExtendStepBuildId = 0;
         brResetActiveSeedTailTracker();
     }
     function brArmShoeResetByNoBoard(reason) {
@@ -3997,56 +3909,6 @@
             var activeHintKey = brBuildActiveSeedKey(activeHintTitle || managedTitle, activeHint);
             var activeHintAlreadyForced = !!(activeHintKey && _domRawStallLastActiveKey === activeHintKey);
             var managedNowEqPrev = String(_domBeadSeqManaged || '');
-            var rawEqPrevStreakNow = Number(_domRawEqPrevStreak || 0);
-            var rawEqPrevAgeMs = _domRawEqPrevFirstAt ? (nowEqPrevMs - Number(_domRawEqPrevFirstAt || 0)) : 0;
-            var managedAheadBy = Math.max(0, managedNowEqPrev.length - raw.length);
-            var allowStallShrinkRebase = !!(
-                !_domShoeResetPending &&
-                raw.length >= 8 &&
-                managedAheadBy >= 8 &&
-                rawEqPrevStreakNow >= 10 &&
-                rawEqPrevAgeMs >= 2500 &&
-                String(_cwSnapshotBuildSource || '') === 'push'
-            );
-            if (allowStallShrinkRebase) {
-                var beforeRebaseManaged = managedNowEqPrev;
-                _domBeadSeqManaged = limitSeq50(raw);
-                _domSeqVersion = Math.max(Number(_domSeqVersion || 0) + 1, String(_domBeadSeqManaged || '').length);
-                _domSeqEvent = 'rebase-stall-shrink';
-                _domSeqAppend = String(_domBeadSeqManaged || '');
-                _domShoeResetPending = false;
-                _domShoeResetAt = 0;
-                brResetSeedTracker();
-                _domRawEqPrevStreak = 0;
-                _domRawEqPrevFirstAt = 0;
-                _domRawEqPrevLastAt = 0;
-                _domRawStallLastActiveKey = '';
-                cwDbg('SEQFLOW', 'raw-stall-shrink-rebase', {
-                    raw: raw,
-                    rawLen: raw.length,
-                    prevRaw: prev,
-                    prevRawLen: prev.length,
-                    beforeManaged: beforeRebaseManaged,
-                    beforeManagedLen: beforeRebaseManaged.length,
-                    afterManaged: String(_domBeadSeqManaged || ''),
-                    afterManagedLen: String(_domBeadSeqManaged || '').length,
-                    managedAheadBy: managedAheadBy,
-                    rawEqPrevStreak: rawEqPrevStreakNow,
-                    rawEqPrevAgeMs: rawEqPrevAgeMs,
-                    seqVersion: Number(_domSeqVersion || 0),
-                    buildId: Number(_cwSnapshotBuildId || 0),
-                    buildSource: String(_cwSnapshotBuildSource || '')
-                }, 0, 'raw-stall-shrink-rebase|' + raw.length + '|' + beforeRebaseManaged.length + '|' + Number(_domSeqVersion || 0));
-                brSeqTrace('return-raw-stall-shrink-rebase', raw, prev, beforeState, {
-                    beforeManagedLen: beforeRebaseManaged.length,
-                    afterManagedLen: String(_domBeadSeqManaged || '').length,
-                    managedAheadBy: managedAheadBy,
-                    rawEqPrevStreak: rawEqPrevStreakNow,
-                    rawEqPrevAgeMs: rawEqPrevAgeMs
-                }, 0, 'return-raw-stall-shrink-rebase|' + raw.length + '|' + beforeRebaseManaged.length);
-                brPublishSeqState();
-                return _domBeadSeqManaged;
-            }
             var managedEndsWithActiveHint = !!(
                 activeHint &&
                 managedNowEqPrev.length >= activeHint.length &&
@@ -4179,82 +4041,10 @@
         _domRawStallLastActiveKey = '';
 
         if (raw.indexOf(prev) === 0) {
-            var extendDelta = raw.slice(prev.length);
-            if (!_domShoeResetPending && extendDelta.length > 1) {
-                var extendBuildSource = String(_cwSnapshotBuildSource || '');
-                var extendBuildId = Number(_cwSnapshotBuildId || 0);
-                if (extendBuildSource !== 'push') {
-                    _domSeqEvent = 'append-extend-wait-push';
-                    _domSeqAppend = '';
-                    cwDbg('SEQFLOW', 'append-extend-step-skip-nonpush', {
-                        buildId: extendBuildId,
-                        buildSource: extendBuildSource || 'unknown',
-                        raw: raw,
-                        prev: prev,
-                        delta: extendDelta,
-                        deltaLen: extendDelta.length,
-                        seqVersion: Number(_domSeqVersion || 0),
-                        managedLen: String(_domBeadSeqManaged || '').length
-                    }, 0, 'extend-step-skip-nonpush|' + extendBuildId + '|' + Number(_domSeqVersion || 0));
-                    brSeqTrace('return-extend-step-wait-nonpush', raw, prev, beforeState, {
-                        delta: extendDelta,
-                        deltaLen: extendDelta.length,
-                        buildId: extendBuildId,
-                        buildSource: extendBuildSource || 'unknown'
-                    }, 0, 'return-extend-step-wait-nonpush|' + raw.length + '|' + prev.length + '|' + extendBuildId);
-                    brPublishSeqState();
-                    return _domBeadSeqManaged;
-                }
-                if (extendBuildId > 0 && Number(_domLastExtendStepBuildId || 0) === extendBuildId) {
-                    _domSeqEvent = 'append-extend-build-lock';
-                    _domSeqAppend = '';
-                    cwDbg('SEQFLOW', 'append-extend-step-build-lock', {
-                        buildId: extendBuildId,
-                        raw: raw,
-                        prev: prev,
-                        delta: extendDelta,
-                        deltaLen: extendDelta.length,
-                        seqVersion: Number(_domSeqVersion || 0),
-                        managedLen: String(_domBeadSeqManaged || '').length
-                    }, 0, 'extend-step-build-lock|' + extendBuildId + '|' + Number(_domSeqVersion || 0));
-                    brSeqTrace('return-extend-step-build-lock', raw, prev, beforeState, {
-                        delta: extendDelta,
-                        deltaLen: extendDelta.length,
-                        buildId: extendBuildId
-                    }, 0, 'return-extend-step-build-lock|' + raw.length + '|' + prev.length + '|' + extendBuildId);
-                    brPublishSeqState();
-                    return _domBeadSeqManaged;
-                }
-                var extendStep = extendDelta.charAt(0);
-                brAppendManaged(extendStep, 'append-extend-step');
-                _domLastExtendStepBuildId = extendBuildId;
-                _domBeadSeqPrevRaw = prev + extendStep;
-                cwDbg('SEQFLOW', 'append-extend-step', {
-                    buildId: extendBuildId,
-                    buildSource: extendBuildSource || 'unknown',
-                    raw: raw,
-                    prev: prev,
-                    delta: extendDelta,
-                    step: extendStep,
-                    remain: extendDelta.slice(1),
-                    remainLen: Math.max(0, extendDelta.length - 1),
-                    seqVersion: Number(_domSeqVersion || 0),
-                    managedLen: String(_domBeadSeqManaged || '').length
-                }, 0, 'append-extend-step|' + extendBuildId + '|' + Number(_domSeqVersion || 0) + '|' + extendStep);
-                brSeqTrace('return-extend-step', raw, prev, beforeState, {
-                    delta: extendDelta,
-                    step: extendStep,
-                    remain: extendDelta.slice(1),
-                    remainLen: Math.max(0, extendDelta.length - 1),
-                    buildId: extendBuildId
-                }, 0, 'return-extend-step|' + raw.length + '|' + prev.length + '|' + extendBuildId);
-                brPublishSeqState();
-                return _domBeadSeqManaged;
-            }
-            brAppendManaged(extendDelta, 'append-extend');
+            brAppendManaged(raw.slice(prev.length), 'append-extend');
             _domBeadSeqPrevRaw = raw;
             brSeqTrace('return-extend', raw, prev, beforeState, {
-                delta: extendDelta
+                delta: raw.slice(prev.length)
             }, 0, 'return-extend|' + raw.length + '|' + prev.length);
             brPublishSeqState();
             return _domBeadSeqManaged;
@@ -4368,26 +4158,7 @@
                 return _domBeadSeqManaged;
             }
         }
-        var keepPrevRawOnJump = !!(
-            !_domShoeResetPending &&
-            prev &&
-            raw &&
-            prev.length >= 10 &&
-            (raw.length + 4) < prev.length
-        );
-        if (!keepPrevRawOnJump) {
-            _domBeadSeqPrevRaw = raw;
-        } else {
-            cwDbg('SEQFLOW', 'board-jump-hold-keep-prev-raw', {
-                prevRaw: prev,
-                raw: raw,
-                prevLen: prev.length,
-                rawLen: raw.length,
-                managedLen: managedNow.length,
-                seqVersion: Number(_domSeqVersion || 0),
-                seqEvent: String(_domSeqEvent || '')
-            }, 1200, 'board-jump-keep-prev|' + prev.length + '|' + raw.length + '|' + Number(_domSeqVersion || 0));
-        }
+        _domBeadSeqPrevRaw = raw;
         _domSeqEvent = 'board-jump-hold';
         _domSeqAppend = '';
         cwDbg('SEQ', 'board-jump-hold-managed', {
@@ -4569,11 +4340,6 @@
                 managedLen: (managed || '').length,
                 boardMeta: {
                     profile: Number(picked && picked.profile != null ? picked.profile : -1),
-                    pickScore: Number(board.score || 0),
-                    pickBaseScore: Number(board.baseScore || 0),
-                    pickContinuityScore: Number(board.continuityScore || 0),
-                    pickBeadShapeScore: Number(board.beadShapeScore || 0),
-                    pickCandidateSeqLen: Number(board.candidateSeqLen || 0),
                     items: (board.items && board.items.length) ? board.items.length : 0,
                     rowCount: Number(board.rowCount || 0),
                     colCount: Number(board.colCount || 0),
@@ -9279,10 +9045,12 @@
                 return failBet('bet target not found', { side: side });
             }
             var isDomMode = !__cw_hasCocos();
-            var X = isDomMode ? Math.floor(raw / 1000) : (raw - (raw % 1000));
+            // Contract mới: amount input là đơn vị phỉnh.
+            // DOM dùng trực tiếp theo mệnh giá phỉnh; non-DOM (Cocos) quy đổi về tiền thật x1000.
+            var X = isDomMode ? raw : (raw * 1000);
             if (isDomMode && X <= 0) {
-                console.warn('[cwBet++] amount quá nhỏ cho đơn vị chip DOM', { amount: raw });
-                return failBet('amount too small for dom chip units', { side: side, amount: raw, chipUnits: X });
+                console.warn('[cwBet++] mệnh giá chip DOM không hợp lệ', { amount: raw });
+                return failBet('invalid dom chip amount', { side: side, amount: raw, chipUnits: X });
             }
 
             var map = window.cwScanChips() || {};
@@ -9791,7 +9559,7 @@
 
     panel.querySelector('#bBetC').addEventListener('click', async function () {
         var n = parseFloat(document.getElementById('iStake').value || '1');
-        var amount = Math.max(0, Math.floor((isFinite(n) ? n : 1))) * 1000;
+        var amount = Math.max(0, Math.floor((isFinite(n) ? n : 1)));
         try {
             window.chrome && window.chrome.webview && window.chrome.webview.postMessage && window.chrome.webview.postMessage(JSON.stringify({
                     abx: 'cwBet',
@@ -9806,7 +9574,7 @@
     }, true);
     panel.querySelector('#bBetL').addEventListener('click', async function () {
         var n = parseFloat(document.getElementById('iStake').value || '1');
-        var amount = Math.max(0, Math.floor((isFinite(n) ? n : 1))) * 1000;
+        var amount = Math.max(0, Math.floor((isFinite(n) ? n : 1)));
         try {
             window.chrome && window.chrome.webview && window.chrome.webview.postMessage && window.chrome.webview.postMessage(JSON.stringify({
                     abx: 'cwBet',
@@ -9873,7 +9641,6 @@
                 try {
                     cwDbg('POST', 'safePost outgoing', {
                         abx: obj && obj.abx,
-                        session: obj && obj.session ? obj.session : '',
                         seqLen: obj && obj.seq ? String(obj.seq || '').length : 0,
                         seqVersion: obj && obj.seqVersion != null ? obj.seqVersion : null,
                         seqEvent: obj && obj.seqEvent ? obj.seqEvent : '',
@@ -9916,7 +9683,6 @@
                     return 'no-panel-snapshot';
                 var snap = {
                     abx: 'tick',
-                    session: _cwTickSessionId,
                     prog: cached.prog,
                     totals: cached.totals || null,
                     seq: String(cached.seq || ''),
@@ -9946,95 +9712,6 @@
         var _forcePushOnce = false;
         var _lastPullSeqVersion = 0;
         var _lastPushSeqVersion = 0;
-        function cwPushOwnerHost() {
-            try {
-                if (window.top && window.top.location && window.top.location.host === window.location.host)
-                    return window.top;
-            } catch (_) {}
-            return window;
-        }
-        function cwPushOwnerState(host) {
-            try {
-                if (!host.__cw_push_owner_state) {
-                    host.__cw_push_owner_state = {
-                        id: '',
-                        hb: 0,
-                        seqLen: 0,
-                        href: '',
-                        session: ''
-                    };
-                }
-                return host.__cw_push_owner_state;
-            } catch (_) {
-                return {
-                    id: '',
-                    hb: 0,
-                    seqLen: 0,
-                    href: '',
-                    session: ''
-                };
-            }
-        }
-        function cwTryClaimPushOwner(reason, localSeqLen) {
-            try {
-                var host = cwPushOwnerHost();
-                var st = cwPushOwnerState(host);
-                var now = Date.now();
-                var ownerId = String(st.id || '');
-                var ownerAge = now - Number(st.hb || 0);
-                var mineLen = Number(localSeqLen || 0);
-                var ownerLen = Number(st.seqLen || 0);
-                var stale = !ownerId || ownerAge > 1800;
-                var canStealLowQuality = (
-                    ownerId &&
-                    ownerId !== _cwSeqInstanceId &&
-                    ownerAge >= 600 &&
-                    ownerLen <= 0 &&
-                    mineLen >= 1
-                );
-                if (ownerId && ownerId !== _cwSeqInstanceId && !stale && !canStealLowQuality) {
-                    return false;
-                }
-                st.id = _cwSeqInstanceId;
-                st.hb = now;
-                st.seqLen = mineLen;
-                st.href = String(location && location.href || '');
-                st.session = _cwTickSessionId;
-                try { host.__cw_push_owner_state = st; } catch (_) {}
-                if (canStealLowQuality) {
-                    cwDbg('SEQPUSH', 'owner-claim-steal-low-quality', {
-                        reason: String(reason || ''),
-                        ownerLen: ownerLen,
-                        mineLen: mineLen,
-                        ownerAgeMs: ownerAge,
-                        instanceId: _cwSeqInstanceId,
-                        session: _cwTickSessionId
-                    }, 0, 'owner-steal|' + String(reason || '') + '|' + ownerLen + '|' + mineLen);
-                }
-                return true;
-            } catch (_) {
-                return true;
-            }
-        }
-        function cwReleasePushOwner(reason) {
-            try {
-                var host = cwPushOwnerHost();
-                var st = cwPushOwnerState(host);
-                if (String(st.id || '') !== _cwSeqInstanceId)
-                    return;
-                st.id = '';
-                st.hb = 0;
-                st.seqLen = 0;
-                st.href = '';
-                st.session = '';
-                try { host.__cw_push_owner_state = st; } catch (_) {}
-                cwDbg('SEQPUSH', 'owner-release', {
-                    reason: String(reason || ''),
-                    instanceId: _cwSeqInstanceId,
-                    session: _cwTickSessionId
-                }, 0, 'owner-release|' + String(reason || ''));
-            } catch (_) {}
-        }
 
         function shallowChanged(obj) {
             var s = '';
@@ -10262,7 +9939,6 @@
 
             return {
                 abx: 'tick',
-                session: _cwTickSessionId,
                 prog: p,
                 totals: t,
                 seq: seq,
@@ -10304,20 +9980,6 @@
                     tickMs = 120;
                 if (tickMs > 1000)
                     tickMs = 1000;
-                var preSeqLen = 0;
-                try {
-                    var preState = readSeqStateSafe();
-                    preSeqLen = String(preState && preState.seq || '').length;
-                } catch (_) {}
-                if (!cwTryClaimPushOwner('start', preSeqLen)) {
-                    cwDbg('SEQPUSH', 'start-skip-owner-busy', {
-                        tickMs: tickMs,
-                        instanceId: _cwSeqInstanceId,
-                        session: _cwTickSessionId,
-                        seqLen: preSeqLen
-                    }, 0, 'push-owner-busy|' + tickMs + '|' + preSeqLen);
-                    return 'owner-busy';
-                }
                 if (_pushTimer) {
                     clearInterval(_pushTimer);
                     _pushTimer = null;
@@ -10327,21 +9989,6 @@
                 cwDbg('PUSH', 'startPush', { tickMs: tickMs }, 0, 'startPush|' + tickMs);
                 _pushTimer = setInterval(function () {
                     var snap = buildSnapshotNow('push');
-                    var ownerSeqLen = snap && snap.seq ? String(snap.seq || '').length : 0;
-                    if (!cwTryClaimPushOwner('tick', ownerSeqLen)) {
-                        cwDbg('SEQPUSH', 'stop-lost-owner', {
-                            instanceId: _cwSeqInstanceId,
-                            session: _cwTickSessionId,
-                            seqLen: ownerSeqLen,
-                            seqVersion: snap && snap.seqVersion != null ? snap.seqVersion : null,
-                            seqEvent: snap && snap.seqEvent ? snap.seqEvent : ''
-                        }, 0, 'push-stop-lost-owner|' + ownerSeqLen + '|' + (snap && snap.seqVersion != null ? snap.seqVersion : 0));
-                        try {
-                            clearInterval(_pushTimer);
-                        } catch (_) {}
-                        _pushTimer = null;
-                        return;
-                    }
                     var ev = String(snap && snap.seqEvent ? snap.seqEvent : '');
                     if (/^append|^append-after-reset|^append-reset-seed/i.test(ev))
                         _forcePushOnce = true;
@@ -10426,7 +10073,6 @@
                 clearInterval(_pushTimer);
                 _pushTimer = null;
             }
-            cwReleasePushOwner('stopPush');
             cwDbg('PUSH', 'stopPush', null, 0, 'stopPush');
             return 'stopped';
         };
