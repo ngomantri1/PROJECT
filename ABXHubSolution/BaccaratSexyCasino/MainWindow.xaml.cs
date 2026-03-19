@@ -802,6 +802,9 @@ Ví dụ không hợp lệ:
         // File
         private readonly ConcurrentQueue<string> _fileLogQueue = new();
         private const int FILE_FLUSH_MS = 500;
+        private readonly ConcurrentQueue<string> _jsFileLogQueue = new();
+        private const long JS_FILE_MAX_BYTES = 20L * 1024L * 1024L; // 20MB
+        private const int JS_FILE_KEEP_ROTATED = 5;
 
         // Pump
         private CancellationTokenSource? _logPumpCts;
@@ -1187,6 +1190,46 @@ try{
         {
             _fileLogQueue.Enqueue(line);
         }
+        private void EnqueueJsFile(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                return;
+            _jsFileLogQueue.Enqueue(line);
+        }
+        private string GetJsLogFilePath()
+        {
+            return Path.Combine(_logDir, $"js-devtools-{DateTime.Today:yyyyMMdd}.log");
+        }
+        private static void RotateFileIfNeeded(string filePath, long maxBytes, int keepRotated)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(filePath) || maxBytes <= 0 || keepRotated <= 0)
+                    return;
+                var fi = new FileInfo(filePath);
+                if (!fi.Exists || fi.Length < maxBytes)
+                    return;
+
+                for (int i = keepRotated; i >= 1; i--)
+                {
+                    string src = (i == 1) ? filePath : (filePath + "." + (i - 1).ToString(CultureInfo.InvariantCulture));
+                    string dst = filePath + "." + i.ToString(CultureInfo.InvariantCulture);
+                    try
+                    {
+                        if (File.Exists(dst))
+                            File.Delete(dst);
+                    }
+                    catch { }
+                    try
+                    {
+                        if (File.Exists(src))
+                            File.Move(src, dst);
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
         private void StartLogPump()
         {
             if (_logPumpCts != null) return;
@@ -1253,6 +1296,21 @@ try{
                             {
                                 var f = Path.Combine(_logDir, $"{DateTime.Today:yyyyMMdd}.log");
                                 File.AppendAllText(f, sb.ToString(), Encoding.UTF8);
+                            }
+                        }
+                        if (!_jsFileLogQueue.IsEmpty)
+                        {
+                            var sbJs = new StringBuilder(8192);
+                            while (_jsFileLogQueue.TryDequeue(out var line))
+                            {
+                                sbJs.AppendLine(line);
+                                if (sbJs.Length > 64 * 1024) break; // flush chunk
+                            }
+                            if (sbJs.Length > 0)
+                            {
+                                var jsFile = GetJsLogFilePath();
+                                RotateFileIfNeeded(jsFile, JS_FILE_MAX_BYTES, JS_FILE_KEEP_ROTATED);
+                                File.AppendAllText(jsFile, sbJs.ToString(), Encoding.UTF8);
                             }
                         }
                     }
@@ -3294,8 +3352,9 @@ try{
         private async Task HandleIncomingWebMessageAsync(string msg, string source = "direct")
         {
             if (string.IsNullOrWhiteSpace(msg)) return;
-
-            EnqueueUi($"[JS] {msg}"); // chỉ hiển thị UI, không ghi ra file
+            bool isJsLogBatchRaw = msg.IndexOf("\"abx\":\"cwLogBatch\"", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!isJsLogBatchRaw)
+                EnqueueUi($"[JS] {msg}"); // chỉ hiển thị UI, không ghi ra file
 
             try
             {
@@ -3311,6 +3370,12 @@ try{
                     string val = root.TryGetProperty("value", out var vEl) ? vEl.ToString() : root.ToString();
                     if (_jsAwaiters.TryRemove(id, out var waiter))
                         waiter.TrySetResult(val);
+                    return;
+                }
+
+                if (abxStr == "cwLogBatch")
+                {
+                    IngestJsLogBatch(root, source);
                     return;
                 }
 
@@ -3746,6 +3811,85 @@ try{
             {
                 var preview = msg.Length > 240 ? msg[..240] : msg;
                 Log($"[DIAG][MSG][ERR] src={source} err={ex.GetType().Name}: {ex.Message} preview={preview.Replace('\r', ' ').Replace('\n', ' ')}");
+            }
+        }
+
+        private void IngestJsLogBatch(JsonElement root, string source)
+        {
+            try
+            {
+                static string OneLine(string? s, int maxLen)
+                {
+                    if (string.IsNullOrWhiteSpace(s))
+                        return "";
+                    var t = s.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ').Trim();
+                    return (t.Length > maxLen) ? (t.Substring(0, maxLen) + "...") : t;
+                }
+
+                static string CompactJson(JsonElement el, int maxLen)
+                {
+                    try
+                    {
+                        string raw = el.ValueKind == JsonValueKind.String
+                            ? (el.GetString() ?? "")
+                            : el.GetRawText();
+                        return OneLine(raw, maxLen);
+                    }
+                    catch
+                    {
+                        return "";
+                    }
+                }
+
+                static DateTime ReadLocalTime(long tsMs)
+                {
+                    if (tsMs <= 0) return DateTime.Now;
+                    try { return DateTimeOffset.FromUnixTimeMilliseconds(tsMs).LocalDateTime; }
+                    catch { return DateTime.Now; }
+                }
+
+                string session = root.TryGetProperty("session", out var sesEl) ? (sesEl.GetString() ?? "") : "";
+                string rev = root.TryGetProperty("rev", out var revEl) ? (revEl.GetString() ?? "") : "";
+                long dropped = GetJsonLongLoose(root, "dropped") ?? 0;
+                int count = 0;
+
+                if (root.TryGetProperty("items", out var itemsEl) && itemsEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in itemsEl.EnumerateArray())
+                    {
+                        count++;
+                        long tsMs = GetJsonLongLoose(item, "ts") ?? 0;
+                        string tag = item.TryGetProperty("tag", out var tagEl) ? (tagEl.GetString() ?? "") : "";
+                        string msg = item.TryGetProperty("msg", out var msgEl) ? (msgEl.GetString() ?? "") : "";
+                        string dataText = "";
+                        if (item.TryGetProperty("data", out var dataEl) &&
+                            dataEl.ValueKind != JsonValueKind.Null &&
+                            dataEl.ValueKind != JsonValueKind.Undefined)
+                        {
+                            dataText = CompactJson(dataEl, 1000);
+                        }
+
+                        var localTs = ReadLocalTime(tsMs);
+                        var line = $"[{localTs:HH:mm:ss.fff}] [CWDBG][{(string.IsNullOrWhiteSpace(tag) ? "-" : tag)}] {OneLine(msg, 600)}";
+                        if (!string.IsNullOrWhiteSpace(dataText))
+                            line += " | data=" + dataText;
+                        EnqueueJsFile(line);
+                    }
+                }
+
+                if (count > 0 || dropped > 0)
+                {
+                    var meta = $"[{DateTime.Now:HH:mm:ss.fff}] [CWDBG][BATCH] src={source} items={count} dropped={dropped}";
+                    if (!string.IsNullOrWhiteSpace(session))
+                        meta += " | session=" + OneLine(session, 80);
+                    if (!string.IsNullOrWhiteSpace(rev))
+                        meta += " | rev=" + OneLine(rev, 80);
+                    EnqueueJsFile(meta);
+                }
+            }
+            catch (Exception ex)
+            {
+                EnqueueJsFile($"[{DateTime.Now:HH:mm:ss.fff}] [CWDBG][INGEST_ERR] src={source} err={ex.GetType().Name}: {ex.Message}");
             }
         }
 
@@ -8221,7 +8365,8 @@ try{
                 {
                     var name = Path.GetFileName(f);
                     bool isTodayLog = name.Equals($"{today}.log", StringComparison.OrdinalIgnoreCase);
-                    if (!isTodayLog)
+                    bool isTodayJsLog = name.Equals($"js-devtools-{today}.log", StringComparison.OrdinalIgnoreCase);
+                    if (!isTodayLog && !isTodayJsLog)
                     {
                         try { File.Delete(f); } catch { /* ignore IO */ }
                     }

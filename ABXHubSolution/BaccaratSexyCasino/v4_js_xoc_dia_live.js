@@ -251,11 +251,31 @@
             window.__cw_debug_seq = 0;
         if (typeof window.__cw_debug_seq_detail === 'undefined')
             window.__cw_debug_seq_detail = 0;
+        // Bật log luồng đẩy seq lên host mặc định để tiện theo dõi sync.
+        if (typeof window.__cw_debug_seq_push === 'undefined')
+            window.__cw_debug_seq_push = 1;
+        // Ghi log JS về host/file theo lô để tránh copy DevTools nặng.
+        if (typeof window.__cw_file_log_enable === 'undefined')
+            window.__cw_file_log_enable = 1;
+        if (typeof window.__cw_file_log_push_only === 'undefined')
+            window.__cw_file_log_push_only = 1;
+        if (typeof window.__cw_file_log_flush_ms === 'undefined')
+            window.__cw_file_log_flush_ms = 350;
+        if (typeof window.__cw_file_log_batch_size === 'undefined')
+            window.__cw_file_log_batch_size = 60;
+        if (typeof window.__cw_file_log_max_queue === 'undefined')
+            window.__cw_file_log_max_queue = 1600;
+        // Mặc định không spam console, log sẽ đi file qua host.
+        if (typeof window.__cw_debug_seq_console === 'undefined')
+            window.__cw_debug_seq_console = 0;
         if (typeof window.__cw_debug_bet === 'undefined')
             window.__cw_debug_bet = 0;
     } catch (_) {}
     var _cwDbgBuf = [];
     var _cwDbgLast = Object.create(null);
+    var _cwFileLogQueue = [];
+    var _cwFileLogTimer = 0;
+    var _cwFileLogDropped = 0;
     var _cwSeqDiagState = {
         lastNoBoard: null,
         lastSourcePick: null,
@@ -307,9 +327,108 @@
         }
         return out;
     }
+    function cwSafeDataForHost(data) {
+        try {
+            if (data == null)
+                return null;
+            return JSON.parse(JSON.stringify(data));
+        } catch (_) {
+            try {
+                return {
+                    text: cwShort(String(data), 600)
+                };
+            } catch (_) {
+                return null;
+            }
+        }
+    }
+    function cwHostPost(payload) {
+        try {
+            var s = JSON.stringify(payload);
+            if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
+                window.chrome.webview.postMessage(s);
+                return true;
+            }
+            if (window.parent && window.parent !== window && typeof window.parent.postMessage === 'function') {
+                window.parent.postMessage(payload, '*');
+                return true;
+            }
+        } catch (_) {}
+        return false;
+    }
+    function cwQueueHostLog(rec, isPushTag) {
+        try {
+            var fileOn = (window.__cw_file_log_enable === 1 || window.__cw_file_log_enable === true);
+            if (!fileOn)
+                return;
+            var pushOnly = (window.__cw_file_log_push_only === 1 || window.__cw_file_log_push_only === true);
+            if (pushOnly && !isPushTag)
+                return;
+
+            var maxQ = Number(window.__cw_file_log_max_queue || 1600);
+            if (_cwFileLogQueue.length >= maxQ) {
+                _cwFileLogQueue.shift();
+                _cwFileLogDropped++;
+            }
+            _cwFileLogQueue.push({
+                ts: Number(rec.ts || Date.now()),
+                tag: String(rec.tag || ''),
+                msg: String(rec.msg || ''),
+                data: cwSafeDataForHost(rec.data)
+            });
+
+            if (!_cwFileLogTimer) {
+                var delay = Number(window.__cw_file_log_flush_ms || 350);
+                if (!(delay > 0))
+                    delay = 350;
+                _cwFileLogTimer = setTimeout(function () {
+                    _cwFileLogTimer = 0;
+                    cwFlushHostLogs();
+                }, delay);
+            }
+        } catch (_) {}
+    }
+    function cwFlushHostLogs() {
+        try {
+            if (!_cwFileLogQueue.length && !_cwFileLogDropped)
+                return;
+            var batchSize = Number(window.__cw_file_log_batch_size || 60);
+            if (!(batchSize > 0))
+                batchSize = 60;
+            var sent = 0;
+            while (_cwFileLogQueue.length > 0 && sent < 6) {
+                var items = _cwFileLogQueue.splice(0, batchSize);
+                var payload = {
+                    abx: 'cwLogBatch',
+                    ts: Date.now(),
+                    session: (typeof _cwTickSessionId !== 'undefined' ? String(_cwTickSessionId || '') : ''),
+                    rev: (typeof _cwSeqScriptRev !== 'undefined' ? String(_cwSeqScriptRev || '') : ''),
+                    dropped: _cwFileLogDropped,
+                    items: items
+                };
+                if (!cwHostPost(payload)) {
+                    // host chưa sẵn sàng -> trả lại queue để flush lần sau
+                    _cwFileLogQueue = items.concat(_cwFileLogQueue);
+                    return;
+                }
+                _cwFileLogDropped = 0;
+                sent++;
+            }
+            if (_cwFileLogQueue.length > 0 && !_cwFileLogTimer) {
+                _cwFileLogTimer = setTimeout(function () {
+                    _cwFileLogTimer = 0;
+                    cwFlushHostLogs();
+                }, Number(window.__cw_file_log_flush_ms || 350));
+            }
+        } catch (_) {}
+    }
     function cwDbg(tag, msg, data, throttleMs, key) {
         try {
-            if (!(window.__cw_debug_seq === 1 || window.__cw_debug_seq === true))
+            var seqOn = (window.__cw_debug_seq === 1 || window.__cw_debug_seq === true);
+            var pushOn = (window.__cw_debug_seq_push === 1 || window.__cw_debug_seq_push === true);
+            var t = String(tag || '').toUpperCase();
+            var isPushTag = (t === 'SEQPUSH' || t === 'PUSH' || t === 'POST');
+            if (!seqOn && !(pushOn && isPushTag))
                 return;
             var now = Date.now();
             var k = String(key || (tag + '|' + msg));
@@ -327,11 +446,15 @@
             _cwDbgBuf.push(rec);
             if (_cwDbgBuf.length > 600)
                 _cwDbgBuf.shift();
+            cwQueueHostLog(rec, isPushTag);
             try {
-                if (data != null)
-                    console.log('[CWDBG][' + rec.tag + '] ' + rec.msg, data);
-                else
-                    console.log('[CWDBG][' + rec.tag + '] ' + rec.msg);
+                var consoleOn = (window.__cw_debug_seq_console === 1 || window.__cw_debug_seq_console === true);
+                if (consoleOn) {
+                    if (data != null)
+                        console.log('[CWDBG][' + rec.tag + '] ' + rec.msg, data);
+                    else
+                        console.log('[CWDBG][' + rec.tag + '] ' + rec.msg);
+                }
             } catch (_) {}
         } catch (_) {}
     }
@@ -350,6 +473,14 @@
             _cwDbgBuf = [];
             _cwDbgLast = Object.create(null);
             return 'ok';
+        };
+        window.__cw_flush_file_logs = function () {
+            try {
+                cwFlushHostLogs();
+                return 'ok';
+            } catch (_) {
+                return 'err';
+            }
         };
         window.__cw_get_seq_diag_state = function () {
             return {
