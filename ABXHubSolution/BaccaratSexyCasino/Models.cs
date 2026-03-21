@@ -26,6 +26,7 @@ namespace BaccaratSexyCasino
         public string seq { get; set; }
         public long? seqVersion { get; set; }
         public string seqEvent { get; set; }
+        public string? seqSource { get; set; }
         public string? niSeq { get; set; }
         public long ts { get; set; }
         public string side { get; set; }
