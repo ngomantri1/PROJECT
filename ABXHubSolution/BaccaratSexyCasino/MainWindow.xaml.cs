@@ -3708,6 +3708,10 @@ try{
                             snap.niSeq = niSeqText;
                         }
                         catch { }
+                        lock (_roundStateLock)
+                        {
+                            ApplyNetworkSeqAuthorityLocked(snap);
+                        }
                         lock (_snapLock) _lastSnap = snap;
 
                         _ = Dispatcher.BeginInvoke(new Action(() =>
@@ -5247,8 +5251,7 @@ try{
             {
                 try
                 {
-                    CwSnapshot? currentSnap;
-                    lock (_snapLock) currentSnap = CloneSnapRaw(_lastSnap);
+                    var currentSnap = CloneAuthoritativeRawSnap();
 
                     string eventKey = $"{packet.TableId}|{packet.GameShoe}|{packet.GameRound}|{packet.WinnerCode}";
                     if (string.Equals(_netLastWinnerKey, eventKey, StringComparison.Ordinal))
@@ -5426,6 +5429,43 @@ try{
             snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
             snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
             snap.seqSource = "network";
+        }
+
+        private void ApplyNetworkSeqAuthorityLocked(CwSnapshot? snap)
+        {
+            if (snap == null) return;
+
+            if (!string.IsNullOrWhiteSpace(_netSeqDisplay))
+            {
+                snap.seq = _netSeqDisplay;
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                snap.seqSource = string.IsNullOrWhiteSpace(_netSeqSource) ? "network" : _netSeqSource;
+            }
+            else
+            {
+                snap.seq = FilterResultDisplaySeq(snap.seq);
+            }
+
+            snap.niSeq = _niSeq.ToString();
+        }
+
+        private CwSnapshot? CloneAuthoritativeRawSnap()
+        {
+            CwSnapshot? clone;
+            lock (_snapLock) clone = CloneSnapRaw(_lastSnap);
+            lock (_roundStateLock) ApplyNetworkSeqAuthorityLocked(clone);
+            return clone;
+        }
+
+        private CwSnapshot? CloneAuthoritativeTaskSnap()
+        {
+            CwSnapshot? clone;
+            lock (_snapLock) clone = CloneSnapForTasks(_lastSnap);
+            lock (_roundStateLock) ApplyNetworkSeqAuthorityLocked(clone);
+            if (clone != null)
+                clone.seq = FilterPlayableSeq(clone.seq);
+            return clone;
         }
 
         private bool ShouldLogPacketFrame(string kind, string? url, string payload, bool isBinary, out string preview, out string reason)
@@ -6594,8 +6634,7 @@ try{
             if (tickAge > TimeSpan.FromSeconds(6))
                 return (false, $"tick-stale age={tickAge.TotalSeconds:0.0}s");
 
-            CwSnapshot? snap;
-            lock (_snapLock) snap = _lastSnap;
+            var snap = CloneAuthoritativeRawSnap();
             bool hasSnapData =
                 snap?.prog.HasValue == true ||
                 !string.IsNullOrWhiteSpace(snap?.status) ||
@@ -6808,8 +6847,8 @@ try{
 
             return new GameContext
             {
-                GetSnap = () => { lock (_snapLock) return CloneSnapForTasks(_lastSnap); },
-                GetRawSnap = () => { lock (_snapLock) return _lastSnap; },
+                GetSnap = () => CloneAuthoritativeTaskSnap(),
+                GetRawSnap = () => CloneAuthoritativeRawSnap(),
                 TabId = tab.Id,
                 RunId = runId,
                 IsRunActive = () => tab.RunId == runId && tab.TaskCts != null && !tab.TaskCts.IsCancellationRequested && tab.IsRunning,
@@ -6928,8 +6967,7 @@ try{
                         : sideRaw.Equals("LE", StringComparison.OrdinalIgnoreCase) ? "LE"
                         : sideRaw.ToUpperInvariant();
             string tabKey = tabId ?? "";
-            CwSnapshot? issuedSnap;
-            lock (_snapLock) issuedSnap = _lastSnap;
+            var issuedSnap = CloneAuthoritativeRawSnap();
             var issuedSeqDisplay = issuedSnap?.seq ?? "";
             var issuedSeqCalc = FilterPlayableSeq(issuedSeqDisplay);
             long? issuedSeqVersion = issuedSnap?.seqVersion;
