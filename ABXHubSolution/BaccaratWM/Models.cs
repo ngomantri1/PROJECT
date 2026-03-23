@@ -1,0 +1,51 @@
+﻿using System;
+using System.Windows.Media;
+using System.Text.Json.Serialization;
+using BaccaratWM;
+
+namespace BaccaratWM
+{
+    public sealed class CwTotals
+    {
+        [JsonPropertyName("C")]
+        public long? P { get; set; }
+        [JsonPropertyName("L")]
+        public long? B { get; set; }
+        public long? A { get; set; }
+        public long? SD { get; set; }
+        public long? TT { get; set; }
+        public long? T3T { get; set; }
+        public long? T3D { get; set; }
+        public long? TD { get; set; }
+    }
+
+    public sealed class CwSnapshot
+    {
+        public string abx { get; set; }
+        public double? prog { get; set; }
+        public CwTotals totals { get; set; }
+        public string seq { get; set; }
+        public string? last { get; set; }
+        public string? niSeq { get; set; }
+        public long ts { get; set; }
+        public string side { get; set; }
+        public long? amount { get; set; }
+        public string error { get; set; }
+        public string session { get; set; }
+    }
+
+    public sealed class DecisionState
+    {
+        public int Step = 0;              // index chuỗi tiền (0-based)
+        public bool PreferLarger = true;  // true: chọn cửa tổng LỚN; false: tổng BÉ
+        public bool LastWin = false;
+        public string? PreviousBetSide = null; // "P"|"B"
+        public string? CurrentBetSide = null; // "P"|"B"
+        public string? CurrentOutcome = null; // "P"|"B"
+        public int MoneyChainIndex { get; set; }      // đang ở chuỗi thứ mấy (0-based)
+        public int MoneyChainStep { get; set; }       // đang ở mức thứ mấy trong chuỗi đó (0-based)
+        public long MoneyChainProfit { get; set; }    // tiền đã gom được ở chuỗi hiện tại
+
+    }
+
+}

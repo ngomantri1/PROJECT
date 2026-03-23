@@ -1,0 +1,9 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <BitmapImage x:Key="ImgPlayer" UriSource="/BaccaratWM;component/Assets/side/PLAYER.png" />
+    <BitmapImage x:Key="ImgBanker" UriSource="/BaccaratWM;component/Assets/side/BANKER.png" />
+    <BitmapImage x:Key="ImgTie" UriSource="/BaccaratWM;component/Assets/side/HOA.png" />
+    <BitmapImage x:Key="ImgTHANG" UriSource="/BaccaratWM;component/Assets/kq/THANG.png" />
+    <BitmapImage x:Key="ImgTHUA" UriSource="/BaccaratWM;component/Assets/kq/THUA.png" />
+    <BitmapImage x:Key="ImgHOA" UriSource="/BaccaratWM;component/Assets/kq/HOA.png" />
+    <!--  thêm các ảnh khác nếu có  -->
+</ResourceDictionary>

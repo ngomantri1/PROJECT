@@ -1,0 +1,15 @@
+﻿<Application
+    x:Class="BaccaratWM.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <!--  Dùng pack URI: pack://application:,,,/ + đường dẫn trong project  -->
+            <BitmapImage x:Key="ImgBanker" UriSource="pack://application:,,,/Assets/kq/BANKER.png" />
+            <BitmapImage x:Key="ImgPlayer" UriSource="pack://application:,,,/Assets/kq/PLAYER.png" />
+            <BitmapImage x:Key="ImgTHANG" UriSource="pack://application:,,,/Assets/kq/thang.png" />
+            <BitmapImage x:Key="ImgTHUA" UriSource="pack://application:,,,/Assets/kq/thua.png" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
