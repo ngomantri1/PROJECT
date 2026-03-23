@@ -1805,8 +1805,6 @@ Ví dụ không hợp lệ:
                 }
 
                 var popupRoomHost = ReferenceEquals(targetWeb, _popupWeb) && PopupHost?.Visibility == Visibility.Visible;
-                if (popupRoomHost)
-                    await TryRequestVisibleRoomPushAsync(targetWeb);
 
                 var js = @"(function(){
   try{
@@ -2017,7 +2015,7 @@ Ví dụ không hợp lệ:
 })();";
 
                 List<RoomEntry> list = new();
-                var roomSource = "dom";
+                var roomSource = "protocol21-mapped";
 
                 const int networkAttempts = 10;
                 for (int attempt = 0; attempt < networkAttempts; attempt++)
@@ -2029,33 +2027,10 @@ Ví dụ không hợp lệ:
                         break;
                     }
 
-                    if (popupRoomHost)
-                    {
-                        var direct = await TryCollectRoomsViaInjectedCollectorsAsync(targetWeb);
-                        if (direct.Rooms.Count > 0)
-                        {
-                            list = direct.Rooms;
-                            roomSource = direct.Source;
-                            break;
-                        }
-                    }
-
-                    if (TryGetLatestNetworkRooms(out var networkRooms, out var networkSource, TimeSpan.FromSeconds(25)))
-                    {
-                        var isTableUpdateFeed = networkSource.IndexOf("table_update", StringComparison.OrdinalIgnoreCase) >= 0;
-                        if (!popupRoomHost || isTableUpdateFeed)
-                        {
-                            list = networkRooms;
-                            roomSource = string.IsNullOrWhiteSpace(networkSource) ? "network" : ("network:" + networkSource);
-                            break;
-                        }
-                    }
-                    if (popupRoomHost && attempt == 2)
-                        await TryRequestVisibleRoomPushAsync(targetWeb);
                     await Task.Delay(350);
                 }
 
-                if (list.Count == 0)
+                if (list.Count == 0 && !popupRoomHost)
                 {
                     if (popupRoomHost && TryGetVisibleProtocol21Rooms(out var protocolRooms, out var protocolSource))
                     {
@@ -2063,15 +2038,6 @@ Ví dụ không hợp lệ:
                         roomSource = protocolSource;
                     }
 
-                    if (popupRoomHost)
-                    {
-                        var direct = await TryCollectRoomsViaInjectedCollectorsAsync(targetWeb);
-                        if (direct.Rooms.Count > 0)
-                        {
-                            list = direct.Rooms;
-                            roomSource = direct.Source;
-                        }
-                    }
 
                     const int maxAttempts = 15;
                     for (int attempt = 0; attempt < maxAttempts; attempt++)
@@ -2096,7 +2062,7 @@ Ví dụ không hợp lệ:
                     }
                 }
 
-                if (list.Count > 0 && roomSource.IndexOf("protocol21", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (!popupRoomHost && list.Count > 0 && roomSource.IndexOf("protocol21", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     var visibleRooms = await TryGetVisibleLobbyRoomsAsync(targetWeb);
                     if (visibleRooms.Count > 0)
@@ -2184,7 +2150,7 @@ Ví dụ không hợp lệ:
 
                 if (filtered.Count == 0)
                 {
-                    Log("[ROOM] Không tìm thấy bàn (DOM lobby chưa sẵn). Hãy thử bấm 'Lấy danh sách bàn' sau khi lobby load xong.");
+                    Log("[ROOM] Không tìm thấy bàn từ feed protocol35/protocol21. Hãy thử bấm 'Lấy danh sách bàn' sau khi sàn tải xong.");
                 }
                 else
                 {
