@@ -9141,7 +9141,7 @@
                     return;
                 const row = Number.isFinite(node.row) ? Math.round(node.row) : 0;
                 const col = Number.isFinite(node.col) ? Math.round(node.col) : 0;
-                const code = node.symbolCode || mapSymbolIdToCode(node.href) || null;
+                const code = node.code || node.symbolCode || mapSymbolIdToCode(node.href) || null;
                 const tieCount = node.tieCount || 0;
                 if (!code && !tieCount)
                     return;
@@ -9604,16 +9604,21 @@
                     .filter(key => key.split('|')[1] === tableId)
                     .forEach(key => serverStateById.delete(key));
                 const st = getPanelState(tableId);
-                if (st)
+                if (st) {
                     st.serverState = null;
+                    st.serverRouteKey = '';
+                }
                 return true;
             }
             const patchTableName = typeof patch.tableName === 'string' ? patch.tableName.trim() : '';
             const patchGameId = Number(patch.gameId);
+            const patchRouteKey = typeof patch.routeKey === 'string' ? patch.routeKey.trim() : '';
             const stateKey = buildServerStateKey(tableId, patchTableName, patchGameId);
             const next = Object.assign({}, serverStateById.get(stateKey) || {});
             if (Array.isArray(patch.history))
                 next.history = normalizeServerHistory(patch.history);
+            if (Array.isArray(patch.historyRaw))
+                next.historyRaw = normalizeHistoryRawNodes(patch.historyRaw);
             if (typeof patch.historyText === 'string')
                 next.historyText = patch.historyText.trim();
             if (typeof patch.text === 'string')
@@ -9655,13 +9660,19 @@
                 next.tableName = patchTableName;
             if (Number.isFinite(patchGameId) && patchGameId > 0)
                 next.gameId = patchGameId;
-            if (typeof patch.routeKey === 'string')
-                next.routeKey = patch.routeKey.trim();
+            if (patchRouteKey)
+                next.routeKey = patchRouteKey;
             serverStateById.set(stateKey, next);
             const st = getPanelState(tableId);
             if (st) {
-                const expectedKey = st.serverStateKey || buildServerStateKey(tableId, st.roomName || '', st.roomGameId || 0);
-                if (expectedKey === stateKey) {
+                const panelGameId = Number(st.roomGameId) || 0;
+                const incomingGameId = Number(next.gameId) || 0;
+                const gameMatches = !panelGameId || !incomingGameId || panelGameId === incomingGameId;
+                const routeMatches = !patchRouteKey || !st.serverRouteKey || st.serverRouteKey === patchRouteKey;
+                if (gameMatches && routeMatches) {
+                    st.serverStateKey = stateKey;
+                    if (patchRouteKey)
+                        st.serverRouteKey = patchRouteKey;
                     st.serverState = next;
                     try {
                         const room = { id: tableId, name: st.roomName || patchTableName || tableId };
@@ -10367,7 +10378,9 @@
                 const historyText = hasServerHistory && typeof serverState.historyText === 'string' && serverState.historyText.trim()
                     ? serverState.historyText.trim()
                     : (history && history.length ? history.join(' ') : '');
-                const historyRaw = [];
+                const historyRaw = serverState && Array.isArray(serverState.historyRaw)
+                    ? normalizeHistoryRawNodes(serverState.historyRaw)
+                    : [];
                 const stats = null;
                 const historySig = historyRaw.length
                     ? historyRaw.map(item => `${item.row},${item.col},${item.code || ''},${item.tieCount || 0}`).join('|')
@@ -10385,7 +10398,7 @@
                 const betChips = src ? readBetChips(src) : null;
                 const centerResult = serverState && typeof serverState.centerResult === 'string' && serverState.centerResult.trim()
                     ? serverState.centerResult.trim()
-                    : (src ? readCenterResultText(src) : '');
+                    : '';
                 const sig = [
                     room.id,
                     preferredCountdown ?? '',
@@ -11365,13 +11378,14 @@
             }
             applyPanelStatus(st, data, currentCountdown);
             const centerText = (data.centerResult || '').trim();
+            const centerSessionKey = (typeof data.sessionKey === 'string' ? data.sessionKey.trim() : '');
             const centerType = deriveCenterResultClass(centerText);
             const shouldShowCenter = !!centerText && !(
                 typeof data.countdown === 'number' &&
                 Number.isFinite(data.countdown) &&
                 data.countdown > 0
             );
-            const centerSig = centerText + '|' + centerType + '|' + (shouldShowCenter ? 'show' : 'hide');
+            const centerSig = centerSessionKey + '|' + centerText + '|' + centerType + '|' + (shouldShowCenter ? 'show' : 'hide');
             if (view.mapCenter && st.lastCenterResult !== centerSig) {
                 view.mapCenter.textContent = centerText;
                 view.mapCenter.style.display = shouldShowCenter ? 'flex' : 'none';
@@ -11746,11 +11760,13 @@
             const roomName = String(room && room.name || room && room.id || '').trim();
             const roomGameId = inferGameIdFromRoomName(roomName);
             const serverStateKey = buildServerStateKey(room.id, roomName, roomGameId);
+            const initialServerState = serverStateById.get(serverStateKey) || null;
             const st = {
                 id: room.id,
                 roomName,
                 roomGameId,
                 serverStateKey,
+                serverRouteKey: initialServerState && typeof initialServerState.routeKey === 'string' ? initialServerState.routeKey : '',
                 panel,
                 body,
                 head,
@@ -11762,7 +11778,7 @@
                 lastCountdownTimestamp: null,
                 betPlan: cachedPlan,
                 betStats: cachedStats,
-                serverState: serverStateById.get(serverStateKey) || null,
+                serverState: initialServerState,
                 view: {
                     countdownBadge,
                     countdownValue,

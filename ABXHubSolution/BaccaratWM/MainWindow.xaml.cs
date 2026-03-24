@@ -218,6 +218,7 @@ namespace BaccaratWM
             public int? KeyStatus { get; set; }
             public int? TableStatus { get; set; }
             public List<string> History { get; set; } = new();
+            public List<PopupRoadNode> HistoryRaw { get; set; } = new();
             public string HistoryText { get; set; } = "";
             public string CenterResult { get; set; } = "";
             public string Text { get; set; } = "";
@@ -227,6 +228,14 @@ namespace BaccaratWM
             public string LastPushSig { get; set; } = "";
             public DateTime LastUpdatedUtc { get; set; } = DateTime.MinValue;
             public DateTime LastHistoryUpdatedUtc { get; set; } = DateTime.MinValue;
+        }
+
+        private sealed class PopupRoadNode
+        {
+            public int Row { get; set; }
+            public int Col { get; set; }
+            public string Code { get; set; } = "";
+            public int TieCount { get; set; }
         }
 
         private const string AppLocalDirName = "BaccaratWM"; // đổi thành tên bạn muốn
@@ -6879,11 +6888,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     if (protocol == 26)
                     {
                         var history = ExtractHistoryTokensFromProtocol26(data);
+                        var historyRaw = ExtractHistoryRawNodesFromProtocol26(data);
                         if (history.Count == 0)
                             continue;
                         UpdatePopupServerRoadState(routeKey, resolvedId, resolvedName, gameId, state =>
                         {
                             state.History = history;
+                            state.HistoryRaw = historyRaw;
                             state.HistoryText = string.Join(" ", history);
                             if (string.IsNullOrWhiteSpace(state.Text) && !string.IsNullOrWhiteSpace(state.SessionKey))
                                 state.Text = "ID: " + state.SessionKey;
@@ -6900,6 +6911,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         UpdatePopupServerRoadState(routeKey, resolvedId, resolvedName, gameId, state =>
                         {
                             state.CenterResult = centerResult;
+                            state.Countdown = null;
+                            state.LastCountdownUpdatedUtc = DateTime.MinValue;
                         }, "protocol25");
                         continue;
                     }
@@ -6932,6 +6945,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             state.WantEnd = wantEnd;
                             if (isNewRound)
                             {
+                                state.CenterResult = "";
                                 state.Countdown = null;
                                 state.LastCountdownUpdatedUtc = DateTime.MinValue;
                             }
@@ -6949,6 +6963,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         UpdatePopupServerRoadState(routeKey, resolvedId, resolvedName, gameId, state =>
                         {
                             state.GameStage = gameStage;
+                            if (gameStage == 2 || gameStage == 3)
+                            {
+                                state.Countdown = null;
+                                state.LastCountdownUpdatedUtc = DateTime.MinValue;
+                            }
                         }, "protocol20");
                         continue;
                     }
@@ -7034,12 +7053,65 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return list;
         }
 
+        private static List<PopupRoadNode> ExtractHistoryRawNodesFromProtocol26(JsonElement data)
+        {
+            var list = new List<PopupRoadNode>();
+            if (!data.TryGetProperty("historyData", out var historyData) || historyData.ValueKind != JsonValueKind.Object)
+                return list;
+            if (!historyData.TryGetProperty("dataArr2", out var dataArr2) || dataArr2.ValueKind != JsonValueKind.Array)
+                return list;
+
+            var col = 0;
+            foreach (var colEl in dataArr2.EnumerateArray())
+            {
+                if (colEl.ValueKind != JsonValueKind.Array)
+                {
+                    col++;
+                    continue;
+                }
+
+                var row = 0;
+                foreach (var item in colEl.EnumerateArray())
+                {
+                    int result = 0;
+                    if (item.ValueKind == JsonValueKind.Number)
+                        result = item.GetInt32();
+                    else if (item.ValueKind == JsonValueKind.String)
+                        int.TryParse(item.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out result);
+
+                    var code = DecodeWmPrimaryRoadCode(result);
+                    var tieCount = (result & 4) != 0 ? 1 : 0;
+                    if (!string.IsNullOrWhiteSpace(code))
+                    {
+                        list.Add(new PopupRoadNode
+                        {
+                            Row = row,
+                            Col = col,
+                            Code = code,
+                            TieCount = tieCount
+                        });
+                    }
+                    row++;
+                }
+                col++;
+            }
+
+            return list;
+        }
+
         private static char? DecodeWmResultToken(int result)
         {
             if ((result & 4) != 0) return 'T';
             if ((result & 2) != 0) return 'P';
             if ((result & 1) != 0) return 'B';
             return null;
+        }
+
+        private static string DecodeWmPrimaryRoadCode(int result)
+        {
+            if ((result & 2) != 0) return "P";
+            if ((result & 1) != 0) return "B";
+            return "";
         }
 
         private static string MapWmResultDisplay(int result)
@@ -7111,6 +7183,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     state.KeyStatus?.ToString(CultureInfo.InvariantCulture) ?? "",
                     state.TableStatus?.ToString(CultureInfo.InvariantCulture) ?? "",
                     state.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? "",
+                    string.Join(";", state.HistoryRaw.Select(n => $"{n.Col},{n.Row},{n.Code},{n.TieCount}")),
                     state.HistoryText ?? ""
                 });
                 if (string.Equals(sig, state.LastPushSig, StringComparison.Ordinal))
@@ -7129,6 +7202,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     KeyStatus = state.KeyStatus,
                     TableStatus = state.TableStatus,
                     History = state.History.ToList(),
+                    HistoryRaw = state.HistoryRaw.Select(n => new PopupRoadNode
+                    {
+                        Row = n.Row,
+                        Col = n.Col,
+                        Code = n.Code,
+                        TieCount = n.TieCount
+                    }).ToList(),
                     HistoryText = state.HistoryText,
                     CenterResult = state.CenterResult,
                     Text = state.Text,
@@ -7157,6 +7237,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var patchJson = JsonSerializer.Serialize(new
                 {
                     history = state.History,
+                    historyRaw = state.HistoryRaw,
                     historyText = state.HistoryText,
                     countdown = state.Countdown,
                     countdownUpdatedUtc = state.LastCountdownUpdatedUtc > DateTime.MinValue ? state.LastCountdownUpdatedUtc : (DateTime?)null,
@@ -7194,6 +7275,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 KeyStatus = state.KeyStatus,
                 TableStatus = state.TableStatus,
                 History = state.History?.ToList() ?? new List<string>(),
+                HistoryRaw = state.HistoryRaw?.Select(n => new PopupRoadNode
+                {
+                    Row = n.Row,
+                    Col = n.Col,
+                    Code = n.Code,
+                    TieCount = n.TieCount
+                }).ToList() ?? new List<PopupRoadNode>(),
                 HistoryText = state.HistoryText,
                 CenterResult = state.CenterResult,
                 Text = state.Text,
