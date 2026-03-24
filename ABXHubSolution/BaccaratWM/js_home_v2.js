@@ -1628,7 +1628,7 @@
         maxRetries: 6,
         watchdogMs: 1000,
         maxWatchdogMiss: 2,
-        showPanel: false,
+        showPanel: true,
         autoRetryOnBoot: false
     };
 
@@ -2686,7 +2686,7 @@
             '  <button id="' + CFG.textsBtnId + '">TextMap</button>',
             '  <button id="' + CFG.closePopupBtnId + '">ClosePopup</button>',
             '  <button id="' + CFG.scanLinksBtnId + '">Scan200LinksMap</button>',
-            '  <button id="' + CFG.scanTextsBtnId + '">Scan200TextMap</button>',
+            '  <button id="' + CFG.scanTextsBtnId + '">Scan1000TextMap</button>',
             '  <button id="' + CFG.scanClosePopupBtnId + '">Scan200ClosePopup</button>',
             '  <button id="' + CFG.resultMapBtnId + '">ResultMap</button>',
             '  <button id="' + CFG.scanResultMapBtnId + '">Scan200ResultMap</button>',
@@ -3074,7 +3074,7 @@
         root.querySelector('#' + CFG.scanTextsBtnId).onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
-            scanTexts(500);
+            scanTexts(1000);
         };
         root.querySelector('#' + CFG.scanClosePopupBtnId).onclick = (e) => {
             e.preventDefault();
@@ -6564,6 +6564,7 @@
         const panelMap = new Map();
         const betPlanById = new Map();
         const betStatsById = new Map();
+        const serverStateById = new Map();
         const lastStateSig = new Map();
         const lastProfitById = new Map();
         const roomDomRegistry = new Map();
@@ -7560,6 +7561,69 @@
             'data-table'
         ];
 
+        function scoreDynamicCardRoot(root) {
+            if (!root || !(root instanceof Element))
+                return -1;
+            let score = 0;
+            let rect = null;
+            try { rect = root.getBoundingClientRect(); } catch (_) {}
+            if (rect) {
+                if (rect.width >= 180 && rect.height >= 120)
+                    score += 2;
+                if (rect.width >= 260 && rect.height >= 180)
+                    score += 2;
+                if (rect.width > window.innerWidth * 0.95 && rect.height > window.innerHeight * 0.8)
+                    score -= 4;
+            }
+            try {
+                if (getCardId(root))
+                    score += 3;
+            } catch (_) {}
+            try {
+                for (const sel of TITLE_SELECTORS) {
+                    const el = root.querySelector(sel);
+                    const txt = (el && el.textContent || '').trim();
+                    if (txt) {
+                        score += 5;
+                        break;
+                    }
+                }
+            } catch (_) {}
+            try {
+                const bigRoadCount = root.querySelectorAll('use[href*="bigroad"], use[xlink\\:href*="bigroad"]').length;
+                score += Math.min(10, bigRoadCount);
+            } catch (_) {}
+            try {
+                const markerCount = root.querySelectorAll('svg circle, svg rect, svg path, svg use, span[class*="r1_"], div[class*="vv_"]').length;
+                score += Math.min(8, Math.floor(markerCount / 4));
+            } catch (_) {}
+            try {
+                const txt = (root.textContent || '').toLowerCase();
+                if (txt.includes('player') || txt.includes('banker') || txt.includes('nguoi choi') || txt.includes('nha cai'))
+                    score += 2;
+            } catch (_) {}
+            return score;
+        }
+
+        function findDynamicCardRoot(node) {
+            if (!node || !(node instanceof Element))
+                return null;
+            let best = null;
+            let bestScore = -1;
+            let cur = node;
+            let depth = 0;
+            while (cur && depth < 10) {
+                const score = scoreDynamicCardRoot(cur);
+                if (score > bestScore) {
+                    best = cur;
+                    bestScore = score;
+                }
+                cur = cur.parentElement;
+                depth++;
+            }
+            return bestScore >= 6 ? best : null;
+        }
+
         function resolveCardRoot(node) {
             if (!node)
             return null;
@@ -7577,6 +7641,7 @@
                 node.closest('div.kx_ky') ||
                 node.closest('div.jF_jJ') ||
                 node.closest('.qW_rl') ||
+                findDynamicCardRoot(node) ||
                 node;
         }
 
@@ -8752,7 +8817,7 @@
                     return false;
             if (!root.contains(node))
                     return false;
-            if (node.closest('div.hC_hE') !== root)
+            if (resolveCardRoot(node) !== root)
                     return false;
             for (const hint of HISTORY_ZONE_HINTS) {
                 try {
@@ -8976,7 +9041,7 @@
                         }
             if (best.cells.length)
                 return best.cells;
-            const rowNodes = Array.from(root.querySelectorAll('div.ru_rv, div.mv_my, span.lP_lS, div.lP_lR')).filter(row => row && row.closest && row.closest('div.hC_hE') === root);
+            const rowNodes = Array.from(root.querySelectorAll('div.ru_rv, div.mv_my, span.lP_lS, div.lP_lR')).filter(row => row && resolveCardRoot(row) === root);
             const cells = [];
             const seenCols = new WeakSet();
             rowNodes.forEach((row, rowIndex) => {
@@ -9219,8 +9284,7 @@
         };
 
         window.__abxProbeSvgHistory = () => {
-            const selector = 'div.hC_hE.hC_hH';
-            const matches = Array.from(document.querySelectorAll(selector));
+            const matches = collectBaccarat3Cards();
             const tableNode = matches[0] || null;
             if (!tableNode) {
                 showTestAlert('Không tìm thấy Baccarat 3 trên trang.');
@@ -9258,6 +9322,43 @@
             showTestAlert(batch);
             return filtered;
             };
+
+        window.__abxProbeHistoryRoots = () => {
+            const seen = new WeakSet();
+            const candidates = [];
+            const push = (node, source) => {
+                const root = resolveCardRoot(node);
+                if (!root || seen.has(root))
+                    return;
+                seen.add(root);
+                const score = scoreDynamicCardRoot(root);
+                const rect = rectOf(root);
+                const title = getCardTitle(root);
+                const id = getCardId(root);
+                const bigRoad = root.querySelectorAll ? root.querySelectorAll('use[href*="bigroad"], use[xlink\\:href*="bigroad"]').length : 0;
+                candidates.push({
+                    root,
+                    source,
+                    score,
+                    id,
+                    title,
+                    rect,
+                    bigRoad,
+                    tail: cssTail(root)
+                });
+            };
+            try {
+                collectBaccarat3Cards().forEach(card => push(card, 'collectBaccarat3Cards'));
+                document.querySelectorAll('use[href*="bigroad"], use[xlink\\:href*="bigroad"], span.rY_sn, span.rW_sl, div.ls_by').forEach(node => push(node, 'dom-probe'));
+            } catch (_) {}
+            candidates.sort((a, b) => b.score - a.score);
+            const lines = candidates.slice(0, 12).map((it, idx) =>
+                `${idx + 1}. score=${it.score} bigroad=${it.bigRoad} id=${it.id || '(none)'} title=${it.title || '(none)'} rect=${it.rect.x},${it.rect.y},${it.rect.w},${it.rect.h} source=${it.source} tail=${it.tail}`
+            );
+            const payload = ['History root probe', '', ...lines].join('\n');
+            showTestAlert(payload);
+            return candidates;
+        };
 
         window.__abxDumpBigRoadSymbols = () => {
             const symbols = Array.from(document.querySelectorAll('symbol[id]'))
@@ -9393,8 +9494,7 @@
             const seen = new Set();
             const entries = [];
             cards.forEach(card => {
-                const root = card.closest && card.closest('div.hC_hE');
-                const container = root || card;
+                const container = resolveCardRoot(card) || card;
                 if (!container || seen.has(container))
                     return;
                 seen.add(container);
@@ -9443,6 +9543,139 @@
         function getPanelState(id) {
             return panelMap.get(id);
             }
+
+        function normalizeServerRoomName(value) {
+            try {
+                return String(value || '')
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .toLowerCase();
+            } catch (_) {
+                return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            }
+        }
+
+        function inferGameIdFromRoomName(name) {
+            const normalized = normalizeServerRoomName(name);
+            if (!normalized)
+                return 0;
+            if (normalized.includes('(sexy)bac') || normalized.includes('(speed)bac') || normalized.includes('(site)bac'))
+                return 101;
+            if (normalized.includes('d&t') || normalized.includes('rong ho'))
+                return 102;
+            if (normalized.includes('roulette'))
+                return 103;
+            if (normalized.includes('tai xiu'))
+                return 104;
+            if (normalized.includes('nguu nguu'))
+                return 105;
+            if (normalized.includes('fantan'))
+                return 107;
+            if (normalized.includes('(sexy)sd') || normalized.includes('xoc dia'))
+                return 108;
+            return 0;
+        }
+
+        function buildServerStateKey(id, roomName, gameId) {
+            const tableId = String(id || '').trim();
+            const resolvedGameId = Number.isFinite(Number(gameId)) && Number(gameId) > 0
+                ? Number(gameId)
+                : inferGameIdFromRoomName(roomName);
+            return `${resolvedGameId || 0}|${tableId}|${normalizeServerRoomName(roomName)}`;
+        }
+
+        function normalizeServerHistory(list) {
+            if (!Array.isArray(list))
+                return [];
+            return list
+                .map(item => String(item || '').trim().toUpperCase())
+                .map(item => (item === 'PLAYER' ? 'P' : item === 'BANKER' ? 'B' : item === 'TIE' ? 'T' : item))
+                .filter(item => item === 'P' || item === 'B' || item === 'T');
+        }
+
+        function setServerState(id, patch) {
+            const tableId = String(id || '').trim();
+            if (!tableId)
+                return false;
+            if (!patch || typeof patch !== 'object') {
+                Array.from(serverStateById.keys())
+                    .filter(key => key.split('|')[1] === tableId)
+                    .forEach(key => serverStateById.delete(key));
+                const st = getPanelState(tableId);
+                if (st)
+                    st.serverState = null;
+                return true;
+            }
+            const patchTableName = typeof patch.tableName === 'string' ? patch.tableName.trim() : '';
+            const patchGameId = Number(patch.gameId);
+            const stateKey = buildServerStateKey(tableId, patchTableName, patchGameId);
+            const next = Object.assign({}, serverStateById.get(stateKey) || {});
+            if (Array.isArray(patch.history))
+                next.history = normalizeServerHistory(patch.history);
+            if (typeof patch.historyText === 'string')
+                next.historyText = patch.historyText.trim();
+            if (typeof patch.text === 'string')
+                next.text = patch.text.trim();
+            if (typeof patch.centerResult === 'string')
+                next.centerResult = patch.centerResult.trim();
+            if (typeof patch.source === 'string')
+                next.source = patch.source.trim();
+            if (typeof patch.sessionKey === 'string') {
+                const incomingSessionKey = patch.sessionKey.trim();
+                if (incomingSessionKey && incomingSessionKey !== (next.sessionKey || '')) {
+                    delete next.countdown;
+                    delete next.countdownUpdatedAt;
+                }
+                next.sessionKey = incomingSessionKey;
+            }
+            if (typeof patch.gameStage === 'number' && Number.isFinite(patch.gameStage))
+                next.gameStage = Math.floor(patch.gameStage);
+            if (typeof patch.wantShuffle === 'boolean')
+                next.wantShuffle = patch.wantShuffle;
+            if (typeof patch.wantEnd === 'boolean')
+                next.wantEnd = patch.wantEnd;
+            if (typeof patch.keyStatus === 'number' && Number.isFinite(patch.keyStatus))
+                next.keyStatus = Math.floor(patch.keyStatus);
+            if (typeof patch.tableStatus === 'number' && Number.isFinite(patch.tableStatus))
+                next.tableStatus = Math.floor(patch.tableStatus);
+            if (Object.prototype.hasOwnProperty.call(patch, 'countdown') && (patch.countdown == null || !Number.isFinite(patch.countdown))) {
+                delete next.countdown;
+                delete next.countdownUpdatedAt;
+            }
+            if (typeof patch.countdown === 'number' && Number.isFinite(patch.countdown) && patch.countdown >= 0)
+                next.countdown = patch.countdown;
+            if (typeof patch.countdownUpdatedUtc === 'string') {
+                const ts = Date.parse(patch.countdownUpdatedUtc);
+                if (Number.isFinite(ts) && ts > 0)
+                    next.countdownUpdatedAt = ts;
+            }
+            if (patchTableName)
+                next.tableName = patchTableName;
+            if (Number.isFinite(patchGameId) && patchGameId > 0)
+                next.gameId = patchGameId;
+            if (typeof patch.routeKey === 'string')
+                next.routeKey = patch.routeKey.trim();
+            serverStateById.set(stateKey, next);
+            const st = getPanelState(tableId);
+            if (st) {
+                const expectedKey = st.serverStateKey || buildServerStateKey(tableId, st.roomName || '', st.roomGameId || 0);
+                if (expectedKey === stateKey) {
+                    st.serverState = next;
+                    try {
+                        const room = { id: tableId, name: st.roomName || patchTableName || tableId };
+                        const current = captureTableState(room);
+                        if (hasRenderableRoadData(current))
+                            renderPanelState(current);
+                        else
+                            renderSyncPlaceholder(st);
+                    } catch (_) {}
+                }
+            }
+            ensureStateTimer();
+            return true;
+        }
 
         function setCutValues(id, cutProfit, cutLoss) {
             const st = getPanelState(id);
@@ -9621,9 +9854,50 @@
             if (!root)
                 return null;
             try {
-                const node = root.querySelector('span.ya_ye.ya_yf, span.yw_yz.yw_yA.yw_yF, span.yw_yz.yw_yA');
-                if (node && parseCountdownValue(node.textContent) != null)
-                    return node;
+                const selectors = [
+                    'span.ya_ye.ya_yf',
+                    'span.yw_yz.yw_yA.yw_yF',
+                    'span.yw_yz.yw_yA',
+                    'span.yv_yy.yv_yz',
+                    'span.yv_yy.yv_yB',
+                    '[data-countdown]',
+                    '[class*=count]',
+                    '[class*=time]',
+                    '[class*=timer]'
+                ];
+                const rootRect = rectOf(root);
+                let best = null;
+                let bestScore = -1;
+                for (const sel of selectors) {
+                    let nodes = [];
+                    try { nodes = Array.from(root.querySelectorAll(sel)); } catch (_) {}
+                    for (const node of nodes) {
+                        if (!node)
+                            continue;
+                        const val = parseCountdownValue(node.textContent);
+                        if (val == null)
+                            continue;
+                        const rr = rectOf(node);
+                        let score = 0;
+                        if (rr.w >= 12 && rr.w <= 90)
+                            score += 4;
+                        if (rr.h >= 12 && rr.h <= 90)
+                            score += 4;
+                        if (rr.x >= rootRect.x + (rootRect.w * 0.68))
+                            score += 10;
+                        if (rr.y <= rootRect.y + (rootRect.h * 0.35))
+                            score += 10;
+                        const cls = getClassString(node);
+                        if (/[yt]v_|[yt]w_|ya_|count|time|timer/i.test(cls))
+                            score += 8;
+                        if (score > bestScore) {
+                            best = node;
+                            bestScore = score;
+                        }
+                    }
+                }
+                if (best)
+                    return best;
             } catch (_) {}
             return null;
         }
@@ -10067,52 +10341,54 @@
                 const st = getPanelState(room.id);
                 if (!st)
                     return null;
+                const roomName = room && room.name ? room.name : (st.roomName || room.id);
+                const roomGameId = st.roomGameId || inferGameIdFromRoomName(roomName);
+                const serverStateKey = st.serverStateKey || buildServerStateKey(room.id, roomName, roomGameId);
+                const serverState = st.serverState || serverStateById.get(serverStateKey) || null;
                 const candidate = st.resolve(room.id);
                 const src = candidate && candidate.isConnected ? candidate : findCardRootByName(room.id || room.name);
-                if (!src || !src.isConnected)
-                return null;
-                const countdownNode = findCountdownNode(src);
-                const countdown = parseCountdownValue((countdownNode && countdownNode.textContent) || '');
-                const info = '[HomeWatch countdown] ' + (room.name || room.id) + ' ' + (countdownNode ? (countdownNode.className || countdownNode.getAttribute('class')) : '(missing)') + ' ' + countdown;
-                logToOverlayConsole(info, 'info');
-                setOverlayLog(info);
-                const now = Date.now();
-                let countdownSync = countdown;
-                if (typeof countdown === 'number' && Number.isFinite(countdown) && countdown >= 0) {
-                    const lastVal = st.lastCountdownValue;
-                    const lastTs = st.lastCountdownTimestamp;
-                    if (typeof lastVal === 'number' && Number.isFinite(lastVal) && typeof lastTs === 'number' && lastTs > 0) {
-                        const elapsed = (now - lastTs) / 1000;
-                        if (Math.abs(lastVal - countdown) < 0.01) {
-                            countdownSync = Math.max(0, lastVal - elapsed);
-                        }
-                    }
+                if ((!src || !src.isConnected) && !serverState)
+                    return null;
+                const serverCountdown = (serverState && typeof serverState.countdown === 'number' && Number.isFinite(serverState.countdown) && serverState.countdown >= 0)
+                    ? serverState.countdown
+                    : null;
+                let countdownSource = '';
+                let preferredCountdown = null;
+                let preferredCountdownSync = null;
+                if (serverCountdown !== null) {
+                    countdownSource = 'server';
+                    preferredCountdown = serverCountdown;
+                    preferredCountdownSync = serverCountdown;
                 }
-                if (typeof countdown === 'number' && Number.isFinite(countdown) && countdown >= 0) {
-                    st.countdownMax = Math.max(st.countdownMax || countdown, countdown);
-            }
-                const statsNode = src.querySelector('div.np_nq:nth-of-type(2) div.np_nr');
-                const stats = parseStats(statsNode);
-                const history = parseHistory(src);
-                const historyText = history && history.length ? history.join(' ') : '';
-                const rawNodes = collectRawHistoryNodes(src);
-                const historyRaw = normalizeHistoryRawNodes(rawNodes);
+                const hasServerHistory = !!(serverState && Array.isArray(serverState.history) && serverState.history.length);
+                const history = hasServerHistory
+                    ? normalizeServerHistory(serverState.history)
+                    : [];
+                const historyText = hasServerHistory && typeof serverState.historyText === 'string' && serverState.historyText.trim()
+                    ? serverState.historyText.trim()
+                    : (history && history.length ? history.join(' ') : '');
+                const historyRaw = [];
+                const stats = null;
                 const historySig = historyRaw.length
                     ? historyRaw.map(item => `${item.row},${item.col},${item.code || ''},${item.tieCount || 0}`).join('|')
                     : history.join('|');
-                const text = (src.innerText || src.textContent || '').replace(/\s+/g, ' ').trim();
+                const text = serverState && typeof serverState.text === 'string' && serverState.text.trim()
+                    ? serverState.text.trim()
+                    : ((src && (src.innerText || src.textContent) || '').replace(/\s+/g, ' ').trim());
                 const profitRaw = deriveMoneyValue(text, [
                     'tong\\s*thang', 'tong\\s*thua', 'tong\\s*thang\\s*thua',
                     'tong\\s*thang\\/thua', 'thang\\s*thua', 'thang\\/thua'
                 ], '');
                 const profit = parseMoneyNumber(profitRaw);
-                const betAreas = collectBetAreas(src);
-                const betExtra = readBetExtra(src);
-                const betChips = readBetChips(src);
-                const centerResult = readCenterResultText(src);
+                const betAreas = src ? collectBetAreas(src) : null;
+                const betExtra = src ? readBetExtra(src) : null;
+                const betChips = src ? readBetChips(src) : null;
+                const centerResult = serverState && typeof serverState.centerResult === 'string' && serverState.centerResult.trim()
+                    ? serverState.centerResult.trim()
+                    : (src ? readCenterResultText(src) : '');
                 const sig = [
                     room.id,
-                    countdown ?? '',
+                    preferredCountdown ?? '',
                     stats?.total?.display || '',
                     historySig,
                     text.slice(0, 300)
@@ -10120,8 +10396,18 @@
                 return {
                     id: room.id,
                     name: room.name || room.id,
-                    countdown,
-                    countdownSync,
+                    sessionKey: serverState && typeof serverState.sessionKey === 'string' ? serverState.sessionKey : '',
+                    gameStage: serverState && typeof serverState.gameStage === 'number' ? serverState.gameStage : null,
+                    wantShuffle: !!(serverState && serverState.wantShuffle === true),
+                    wantEnd: !!(serverState && serverState.wantEnd === true),
+                    keyStatus: serverState && typeof serverState.keyStatus === 'number' ? serverState.keyStatus : null,
+                    tableStatus: serverState && typeof serverState.tableStatus === 'number' ? serverState.tableStatus : null,
+                    countdownUpdatedAt: serverState && typeof serverState.countdownUpdatedAt === 'number' && Number.isFinite(serverState.countdownUpdatedAt)
+                        ? serverState.countdownUpdatedAt
+                        : null,
+                    countdownSource,
+                    countdown: preferredCountdown,
+                    countdownSync: preferredCountdownSync,
                     text,
                     history,
                     historyText,
@@ -10192,6 +10478,8 @@
                     const elapsed = (Date.now() - (st.lastCountdownTimestamp || Date.now())) / 1000;
                     const current = Math.max(0, base - elapsed);
                     updateCountdownView(st, current);
+                    if (st.lastState)
+                        applyPanelStatus(st, st.lastState, current);
         }
             st.countdownLoopId = requestAnimationFrame(step);
             };
@@ -10238,6 +10526,123 @@
             return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
         }
 
+        function deriveStatusFromServer(data) {
+            const historyCount = Array.isArray(data && data.history) ? data.history.length : 0;
+            if (!historyCount)
+                return { text: 'Đang đồng bộ dữ liệu...', color: '#f59e0b' };
+            const gameStage = (data && typeof data.gameStage === 'number' && Number.isFinite(data.gameStage))
+                ? Math.floor(data.gameStage)
+                : null;
+            const countdown = (data && typeof data.countdown === 'number' && Number.isFinite(data.countdown) && data.countdown >= 0)
+                ? data.countdown
+                : null;
+            if (countdown !== null && countdown > 0)
+                return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
+            if (gameStage === 1)
+                return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
+            if (data && data.wantShuffle)
+                return { text: 'Đang xáo bài', color: '#f59e0b' };
+            if (gameStage === 0)
+                return { text: 'Đang xáo bài', color: '#f59e0b' };
+            if (gameStage === 3)
+                return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
+            if (data && data.wantEnd)
+                return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
+            return deriveStatusFromCountdown(countdown, data && data.stats || null, data && data.history || []);
+        }
+
+
+        function deriveStatusFromLiveState(data, liveCountdown) {
+            const historyCount = Array.isArray(data && data.history) ? data.history.length : 0;
+            if (!historyCount)
+                return { text: 'Đang đồng bộ dữ liệu...', color: '#f59e0b' };
+            const gameStage = (data && typeof data.gameStage === 'number' && Number.isFinite(data.gameStage))
+                ? Math.floor(data.gameStage)
+                : null;
+            const countdown = (typeof liveCountdown === 'number' && Number.isFinite(liveCountdown) && liveCountdown >= 0)
+                ? liveCountdown
+                : ((data && typeof data.countdown === 'number' && Number.isFinite(data.countdown) && data.countdown >= 0)
+                    ? data.countdown
+                    : null);
+            if (countdown !== null && countdown > 0)
+                return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
+            if (data && data.wantShuffle)
+                return { text: 'Đang xáo bài', color: '#f59e0b' };
+            if (gameStage === 0 || gameStage === 4)
+                return { text: 'Đang xáo bài', color: '#f59e0b' };
+            if (data && data.wantEnd)
+                return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
+            if (gameStage === 2 || gameStage === 3)
+                return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
+            if (countdown === null && gameStage === 1)
+                return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
+            return deriveStatusFromCountdown(countdown, data && data.stats || null, data && data.history || []);
+        }
+
+        function applyPanelStatus(st, data, liveCountdown) {
+            if (!st || !st.view)
+                return;
+            const view = st.view;
+            const statusInfo = deriveStatusFromLiveState(data, liveCountdown);
+            if (!view.statusLineValue || !statusInfo)
+                return;
+            if (st.lastStatusText !== statusInfo.text) {
+                view.statusLineValue.textContent = statusInfo.text;
+                st.lastStatusText = statusInfo.text;
+            }
+            if (st.lastStatusColor !== statusInfo.color) {
+                view.statusLineValue.style.color = statusInfo.color;
+                st.lastStatusColor = statusInfo.color;
+            }
+        }
+
+        function hasRenderableRoadData(data) {
+            if (!data || typeof data !== 'object')
+                return false;
+            if (Array.isArray(data.historyRaw) && data.historyRaw.length)
+                return true;
+            if (Array.isArray(data.history) && data.history.length)
+                return true;
+            return false;
+        }
+
+        function renderSyncPlaceholder(st) {
+            if (!st || !st.view)
+                return;
+            const view = st.view;
+            if (Array.isArray(view.mapCells)) {
+                view.mapCells.forEach(cell => {
+                    if (!cell)
+                        return;
+                    cell.className = 'rm-cell';
+                    cell.removeAttribute('data-code');
+                    cell.dataset.tie = '0';
+                    if (cell._tieCount)
+                        cell._tieCount.textContent = '';
+                });
+            }
+            if (view.mapCenter) {
+                view.mapCenter.textContent = '';
+                view.mapCenter.style.display = 'none';
+                view.mapCenter.classList.remove('result-player', 'result-banker', 'result-tie', 'is-pop', 'is-shimmer');
+            }
+            if (view.statsTotal)
+                view.statsTotal.textContent = '#0';
+            if (view.statsB)
+                view.statsB.textContent = '0';
+            if (view.statsP)
+                view.statsP.textContent = '0';
+            if (view.statsT)
+                view.statsT.textContent = '0';
+            if (view.statusLineValue) {
+                view.statusLineValue.textContent = 'Đang đồng bộ dữ liệu...';
+                view.statusLineValue.style.color = '#f59e0b';
+            }
+            st.lastStatusText = 'Đang đồng bộ dữ liệu...';
+            st.lastStatusColor = '#f59e0b';
+            st.lastCenterResult = '';
+            st.lastHistorySig = '';
+        }
 
         function deriveMetricInfo(text) {
             if (!text)
@@ -10742,10 +11147,44 @@
                 return;
             st.lastState = data;
             const view = st.view;
-            st.lastCountdownValue = (typeof data.countdown === 'number' && Number.isFinite(data.countdown) && data.countdown >= 0) ? data.countdown : null;
-            st.lastCountdownTimestamp = Date.now();
-            updateCountdownView(st, data.countdown);
-            startCountdownLoop(st);
+            let currentCountdown = null;
+            const nextCountdown = (typeof data.countdown === 'number' && Number.isFinite(data.countdown) && data.countdown >= 0)
+                ? Math.max(0, data.countdown)
+                : null;
+            const nextSessionKey = (typeof data.sessionKey === 'string' ? data.sessionKey.trim() : '');
+            const nextCountdownUpdatedAt = (typeof data.countdownUpdatedAt === 'number' && Number.isFinite(data.countdownUpdatedAt) && data.countdownUpdatedAt > 0)
+                ? data.countdownUpdatedAt
+                : null;
+            if (nextCountdown !== null) {
+                const lastSource = (typeof st.lastCountdownSourceValue === 'number' && Number.isFinite(st.lastCountdownSourceValue))
+                    ? st.lastCountdownSourceValue
+                    : null;
+                const isNewCountdownSession = !!(nextSessionKey && nextSessionKey !== (st.lastCountdownSessionKey || ''));
+                if (!Number.isFinite(st.countdownMax) || st.countdownMax <= 0 || lastSource === null || nextCountdown > lastSource + 0.001 || nextCountdown > st.countdownMax) {
+                    st.countdownMax = nextCountdown;
+                }
+                const hasNewCountdownTimestamp = !!(
+                    nextCountdownUpdatedAt &&
+                    (!st.lastCountdownTimestamp || nextCountdownUpdatedAt > (st.lastCountdownTimestamp + 50))
+                );
+                if (isNewCountdownSession || hasNewCountdownTimestamp || lastSource === null || Math.abs(lastSource - nextCountdown) > 0.001 || st.lastCountdownValue === null) {
+                    st.lastCountdownSourceValue = nextCountdown;
+                    st.lastCountdownValue = nextCountdown;
+                    st.lastCountdownTimestamp = nextCountdownUpdatedAt || Date.now();
+                    st.lastCountdownSessionKey = nextSessionKey || st.lastCountdownSessionKey || '';
+                }
+                const elapsed = (Date.now() - (st.lastCountdownTimestamp || Date.now())) / 1000;
+                currentCountdown = Math.max(0, (st.lastCountdownValue || 0) - elapsed);
+                updateCountdownView(st, currentCountdown);
+                startCountdownLoop(st);
+            } else {
+                st.lastCountdownSourceValue = null;
+                st.lastCountdownValue = null;
+                st.lastCountdownTimestamp = null;
+                st.lastCountdownSessionKey = nextSessionKey || '';
+                stopCountdownLoop(st);
+                updateCountdownView(st, null);
+            }
             const text = data.text || '';
             const betAreas = data.betAreas || null;
             const betExtra = data.betExtra || null;
@@ -10924,33 +11363,28 @@
                 updateBetItem(view.betTie, betAreas && betAreas.tie, 'Hòa');
                 updateBetItem(view.betBanker, betAreas && betAreas.banker, 'Nhà Cái');
             }
-            const statusInfo = deriveStatusFromCountdown(data.countdown, data.stats || null, data.history || []);
-            if (view.statusLineValue && statusInfo) {
-                if (st.lastStatusText !== statusInfo.text) {
-                    view.statusLineValue.textContent = statusInfo.text;
-                    st.lastStatusText = statusInfo.text;
-                }
-                if (st.lastStatusColor !== statusInfo.color) {
-                    view.statusLineValue.style.color = statusInfo.color;
-                    st.lastStatusColor = statusInfo.color;
-                }
-                }
+            applyPanelStatus(st, data, currentCountdown);
             const centerText = (data.centerResult || '').trim();
             const centerType = deriveCenterResultClass(centerText);
-            const centerSig = centerText + '|' + centerType;
+            const shouldShowCenter = !!centerText && !(
+                typeof data.countdown === 'number' &&
+                Number.isFinite(data.countdown) &&
+                data.countdown > 0
+            );
+            const centerSig = centerText + '|' + centerType + '|' + (shouldShowCenter ? 'show' : 'hide');
             if (view.mapCenter && st.lastCenterResult !== centerSig) {
                 view.mapCenter.textContent = centerText;
-                view.mapCenter.style.display = centerText ? 'flex' : 'none';
+                view.mapCenter.style.display = shouldShowCenter ? 'flex' : 'none';
                 view.mapCenter.classList.remove('result-player', 'result-banker', 'result-tie', 'is-pop', 'is-shimmer');
-                if (centerType)
+                if (shouldShowCenter && centerType)
                     view.mapCenter.classList.add('result-' + centerType);
-                if (centerText) {
+                if (shouldShowCenter && centerText) {
                     void view.mapCenter.offsetWidth;
                     view.mapCenter.classList.add('is-pop');
                     view.mapCenter.classList.add('is-shimmer');
-        }
+                }
                 st.lastCenterResult = centerSig;
-        }
+            }
             const chipSig = betChips ? ((betChips.player || '') + '|' + (betChips.banker || '')) : '';
             if (st.lastBetChipSig !== chipSig) {
                 st.lastBetChipSig = chipSig;
@@ -11139,7 +11573,7 @@
             statsT.className = 'stats-value stats-t';
             statsT.textContent = '0';
             statsGroupT.append(statsTdot, statsT);
-            statsRow.append(statsTotal, statsGroupP, statsGroupB, statsGroupT);
+            statsRow.append(statsTotal, statsGroupB, statsGroupP, statsGroupT);
 
             const mapRows = 6;
             const mapCols = 38;
@@ -11309,17 +11743,26 @@
 
             const cachedPlan = betPlanById.get(room.id) || null;
             const cachedStats = betStatsById.get(room.id) || null;
+            const roomName = String(room && room.name || room && room.id || '').trim();
+            const roomGameId = inferGameIdFromRoomName(roomName);
+            const serverStateKey = buildServerStateKey(room.id, roomName, roomGameId);
             const st = {
                 id: room.id,
+                roomName,
+                roomGameId,
+                serverStateKey,
                 panel,
                 body,
                 head,
                 countdownMax: null,
                 countdownLoopId: null,
                 lastCountdownValue: null,
+                lastCountdownSourceValue: null,
+                lastCountdownSessionKey: '',
                 lastCountdownTimestamp: null,
                 betPlan: cachedPlan,
                 betStats: cachedStats,
+                serverState: serverStateById.get(serverStateKey) || null,
                 view: {
                     countdownBadge,
                     countdownValue,
@@ -11392,6 +11835,13 @@
             placePanel(panel, idx);
             syncPanelMapGrid(st);
             resetWinLossTotals(st);
+            try {
+                const initial = captureTableState(room);
+                if (hasRenderableRoadData(initial))
+                    renderPanelState(initial);
+                else
+                    renderSyncPlaceholder(st);
+            } catch (_) {}
         }
 
         function placePanel(panel, idx, forceGrid = false) {
@@ -11677,6 +12127,7 @@
             setPlayState,
             setBetPlan,
             setBetStats,
+            setServerState,
             resolveRoomDom
         };
     })();

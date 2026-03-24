@@ -205,6 +205,30 @@ namespace BaccaratWM
             public int GroupType { get; set; } = -1;
         }
 
+        private sealed class PopupServerRoadState
+        {
+            public string RouteKey { get; set; } = "";
+            public string TableId { get; set; } = "";
+            public string TableName { get; set; } = "";
+            public int GameId { get; set; } = -1;
+            public string HostTag { get; set; } = "";
+            public int? GameStage { get; set; }
+            public bool? WantShuffle { get; set; }
+            public bool? WantEnd { get; set; }
+            public int? KeyStatus { get; set; }
+            public int? TableStatus { get; set; }
+            public List<string> History { get; set; } = new();
+            public string HistoryText { get; set; } = "";
+            public string CenterResult { get; set; } = "";
+            public string Text { get; set; } = "";
+            public string SessionKey { get; set; } = "";
+            public double? Countdown { get; set; }
+            public DateTime LastCountdownUpdatedUtc { get; set; } = DateTime.MinValue;
+            public string LastPushSig { get; set; } = "";
+            public DateTime LastUpdatedUtc { get; set; } = DateTime.MinValue;
+            public DateTime LastHistoryUpdatedUtc { get; set; } = DateTime.MinValue;
+        }
+
         private const string AppLocalDirName = "BaccaratWM"; // đổi thành tên bạn muốn
         // ====== App paths ======
         private readonly string _appDataDir;
@@ -239,6 +263,9 @@ namespace BaccaratWM
         private string _latestNetworkRoomsSig = "";
         private DateTime _lastTableUpdateAt = DateTime.MinValue;
         private readonly Dictionary<string, Protocol21RoomState> _protocol21Rooms = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, PopupServerRoadState> _popupServerRoadStates = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _popupPreferredRoadRouteByTableId = new(StringComparer.OrdinalIgnoreCase);
+        private readonly object _popupServerRoadGate = new();
         private readonly string[] _pktInterestingHints = new[] { "wss://", "websocket", "hytsocesk", "xoc", "live", "socket", "lobby", "baccarat", "game", "table", "multibaccarat", "pragmaticplaylive" };
 
         // ==== Auto-login watcher ====
@@ -1295,14 +1322,16 @@ Ví dụ không hợp lệ:
             {
                 try
                 {
-                    // Web là WebView2 của bạn trong XAML
-                    if (Web?.CoreWebView2 != null)
+                    var targetWeb = GetActiveRoomHostWebView();
+                    if (targetWeb?.CoreWebView2 != null)
                     {
-                        Web.CoreWebView2.OpenDevToolsWindow();
+                        var targetName = ReferenceEquals(targetWeb, _popupWeb) ? "PopupWeb" : "Web";
+                        Log("[DevTools] open on " + targetName + ": " + (targetWeb.Source?.ToString() ?? "(null)"));
+                        targetWeb.CoreWebView2.OpenDevToolsWindow();
                         e.Handled = true;
                     }
                 }
-            catch (Exception ex)
+                catch (Exception ex)
                 {
                     Log("[DevTools] " + ex.Message);
                 }
@@ -5278,6 +5307,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 _overlayActiveRooms.Clear();
                 foreach (var room in selectedRooms)
                     _overlayActiveRooms.Add(room.id);
+                await PushCachedPopupServerRoadStatesAsync(selectedRooms.Select(r => (r.id, r.name)));
                 await SyncTableCutValuesForRoomsAsync(selectedRooms.Select(r => r.id));
                 Log($"[TABLE] Tạo overlay cho {selectedRooms.Count} bàn.");
             }
@@ -6562,6 +6592,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                            var isBin = opcode != 1;
                            if (ShouldLogPacketPayload(url, "", payload, isBin))
                                LogPacket($"{scope}.WS.recv", url, PreviewPayload(payload, isBin), isBin);
+                           TryUpdateOverlayServerStateFromPayload(scope, "WS.recv", url, payload, isBin);
                            TryUpdateLatestNetworkRoomsFromPayload(scope, "WS.recv", url, payload, isBin);
                        }
                        catch (Exception ex) { Log($"[CDP {scope} wsRecv] " + ex.Message); }
@@ -6813,6 +6844,476 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
         }
 
+        private void TryUpdateOverlayServerStateFromPayload(string scope, string kind, string? url, string payload, bool isBinary)
+        {
+            if (!string.Equals(scope, "popup", StringComparison.OrdinalIgnoreCase))
+                return;
+            if (!string.Equals(kind, "WS.recv", StringComparison.OrdinalIgnoreCase))
+                return;
+            if (string.IsNullOrWhiteSpace(payload))
+                return;
+
+            var normalized = NormalizePacketPayload(payload, isBinary);
+            if (string.IsNullOrWhiteSpace(normalized))
+                return;
+
+            foreach (var candidate in ExtractPossibleJsonPayloads(normalized))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(candidate);
+                    var root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object)
+                        continue;
+                    var protocol = I(FindKnownString(root, new[] { "protocol" }, 0), -1);
+                    if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+                        continue;
+
+                    var gameId = I(FindKnownString(data, new[] { "gameID", "gameId" }, 1), -1);
+                    var tableId = FindKnownString(data, new[] { "groupID", "groupId" }, 1);
+                    if (gameId <= 0 || string.IsNullOrWhiteSpace(tableId))
+                        continue;
+                    if (!TryResolvePopupServerTable(gameId, tableId, url, out var routeKey, out var resolvedId, out var resolvedName))
+                        continue;
+
+                    if (protocol == 26)
+                    {
+                        var history = ExtractHistoryTokensFromProtocol26(data);
+                        if (history.Count == 0)
+                            continue;
+                        UpdatePopupServerRoadState(routeKey, resolvedId, resolvedName, gameId, state =>
+                        {
+                            state.History = history;
+                            state.HistoryText = string.Join(" ", history);
+                            if (string.IsNullOrWhiteSpace(state.Text) && !string.IsNullOrWhiteSpace(state.SessionKey))
+                                state.Text = "ID: " + state.SessionKey;
+                        }, "protocol26");
+                        continue;
+                    }
+
+                    if (protocol == 25)
+                    {
+                        var result = I(FindKnownString(data, new[] { "result" }, 1), 0);
+                        var centerResult = MapWmResultDisplay(result);
+                        if (string.IsNullOrWhiteSpace(centerResult))
+                            continue;
+                        UpdatePopupServerRoadState(routeKey, resolvedId, resolvedName, gameId, state =>
+                        {
+                            state.CenterResult = centerResult;
+                        }, "protocol25");
+                        continue;
+                    }
+
+                    if (protocol == 21)
+                    {
+                        var round = FindKnownString(data, new[] { "gameNoRound" }, 1);
+                        if (string.IsNullOrWhiteSpace(round))
+                            continue;
+                        int? keyStatus = null;
+                        if (data.TryGetProperty("keyStatus", out var ksEl) && ksEl.ValueKind == JsonValueKind.Number)
+                            keyStatus = ksEl.GetInt32();
+                        int? tableStatus = null;
+                        if (data.TryGetProperty("tableStatus", out var tsEl) && tsEl.ValueKind == JsonValueKind.Number)
+                            tableStatus = tsEl.GetInt32();
+                        bool? wantShuffle = null;
+                        if (data.TryGetProperty("bWantToShuffle", out var shuffleEl) && (shuffleEl.ValueKind == JsonValueKind.True || shuffleEl.ValueKind == JsonValueKind.False))
+                            wantShuffle = shuffleEl.GetBoolean();
+                        bool? wantEnd = null;
+                        if (data.TryGetProperty("bWantToEnd", out var endEl) && (endEl.ValueKind == JsonValueKind.True || endEl.ValueKind == JsonValueKind.False))
+                            wantEnd = endEl.GetBoolean();
+                        UpdatePopupServerRoadState(routeKey, resolvedId, resolvedName, gameId, state =>
+                        {
+                            var isNewRound = !string.Equals(state.SessionKey, round, StringComparison.OrdinalIgnoreCase);
+                            state.SessionKey = round;
+                            state.Text = "ID: " + round;
+                            state.KeyStatus = keyStatus;
+                            state.TableStatus = tableStatus;
+                            state.WantShuffle = wantShuffle;
+                            state.WantEnd = wantEnd;
+                            if (isNewRound)
+                            {
+                                state.Countdown = null;
+                                state.LastCountdownUpdatedUtc = DateTime.MinValue;
+                            }
+                        }, "protocol21");
+                        continue;
+                    }
+
+                    if (protocol == 20)
+                    {
+                        int? gameStage = null;
+                        if (data.TryGetProperty("gameStage", out var stageEl) && stageEl.ValueKind == JsonValueKind.Number)
+                            gameStage = stageEl.GetInt32();
+                        if (!gameStage.HasValue)
+                            continue;
+                        UpdatePopupServerRoadState(routeKey, resolvedId, resolvedName, gameId, state =>
+                        {
+                            state.GameStage = gameStage;
+                        }, "protocol20");
+                        continue;
+                    }
+
+                    if (protocol == 38)
+                    {
+                        double countdown = 0;
+                        if (data.TryGetProperty("timeMillisecond", out var msEl) && msEl.ValueKind == JsonValueKind.Number)
+                            countdown = Math.Max(0, msEl.GetDouble() / 1000.0);
+                        else if (data.TryGetProperty("betTimeCount", out var btEl) && btEl.ValueKind == JsonValueKind.Number)
+                            countdown = Math.Max(0, btEl.GetDouble());
+                        if (countdown <= 0)
+                            continue;
+                        UpdatePopupServerRoadState(routeKey, resolvedId, resolvedName, gameId, state =>
+                        {
+                            state.Countdown = countdown;
+                            state.LastCountdownUpdatedUtc = DateTime.UtcNow;
+                        }, "protocol38");
+                    }
+                }
+                catch { }
+            }
+        }
+
+        private static string GetPopupRoadHostTag(string? url)
+        {
+            var lowerUrl = (url ?? "").ToLowerInvariant();
+            if (lowerUrl.Contains("qqhrsbjx"))
+                return "qqhrsbjx";
+            if (lowerUrl.Contains("hip288"))
+                return "hip288";
+            return "popup";
+        }
+
+        private static string BuildPopupRoadRouteKey(string? url, int gameId, string tableId)
+        {
+            return $"{GetPopupRoadHostTag(url)}:{gameId}:{(tableId ?? "").Trim()}";
+        }
+
+        private bool TryResolvePopupServerTable(int gameId, string groupId, string? url, out string routeKey, out string tableId, out string tableName)
+        {
+            routeKey = "";
+            tableId = (groupId ?? "").Trim();
+            tableName = "";
+            if (string.IsNullOrWhiteSpace(tableId))
+                return false;
+            var localTableId = tableId;
+            routeKey = BuildPopupRoadRouteKey(url, gameId, localTableId);
+
+            lock (_roomFeedGate)
+            {
+                var match = _protocol21Rooms.Values.FirstOrDefault(r =>
+                    r.GameId == gameId &&
+                    string.Equals(r.Id, localTableId, StringComparison.OrdinalIgnoreCase));
+                if (match != null)
+                    tableName = match.Name ?? "";
+            }
+
+            if (string.IsNullOrWhiteSpace(tableName))
+                tableName = ResolveRoomName(localTableId);
+            if (string.IsNullOrWhiteSpace(tableName))
+                tableName = localTableId;
+            return true;
+        }
+
+        private static List<string> ExtractHistoryTokensFromProtocol26(JsonElement data)
+        {
+            var list = new List<string>();
+            if (!data.TryGetProperty("historyArr", out var historyArr) || historyArr.ValueKind != JsonValueKind.Array)
+                return list;
+
+            foreach (var item in historyArr.EnumerateArray())
+            {
+                int result = 0;
+                if (item.ValueKind == JsonValueKind.Number)
+                    result = item.GetInt32();
+                else if (item.ValueKind == JsonValueKind.String)
+                    int.TryParse(item.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out result);
+                var token = DecodeWmResultToken(result);
+                if (token.HasValue)
+                    list.Add(token.Value.ToString());
+            }
+            return list;
+        }
+
+        private static char? DecodeWmResultToken(int result)
+        {
+            if ((result & 4) != 0) return 'T';
+            if ((result & 2) != 0) return 'P';
+            if ((result & 1) != 0) return 'B';
+            return null;
+        }
+
+        private static string MapWmResultDisplay(int result)
+        {
+            var token = DecodeWmResultToken(result);
+            return token switch
+            {
+                'P' => "Người Chơi",
+                'B' => "Nhà Cái",
+                'T' => "Hòa",
+                _ => ""
+            };
+        }
+
+        private void UpdatePopupServerRoadState(string routeKey, string tableId, string tableName, int gameId, Action<PopupServerRoadState> apply, string source)
+        {
+            PopupServerRoadState snapshot;
+            var now = DateTime.UtcNow;
+            lock (_popupServerRoadGate)
+            {
+                if (!_popupServerRoadStates.TryGetValue(routeKey, out var state))
+                {
+                    state = new PopupServerRoadState
+                    {
+                        RouteKey = routeKey,
+                        TableId = tableId,
+                        TableName = tableName,
+                        GameId = gameId,
+                        HostTag = GetPopupRoadHostTag(routeKey)
+                    };
+                    _popupServerRoadStates[routeKey] = state;
+                }
+                else
+                {
+                    state.TableId = tableId;
+                    state.GameId = gameId;
+                    if (!string.IsNullOrWhiteSpace(tableName))
+                        state.TableName = tableName;
+                }
+
+                apply(state);
+                state.LastUpdatedUtc = now;
+                if (string.Equals(source, "protocol26", StringComparison.OrdinalIgnoreCase))
+                {
+                    state.LastHistoryUpdatedUtc = now;
+                    _popupPreferredRoadRouteByTableId[tableId] = routeKey;
+                }
+                else if (!_popupPreferredRoadRouteByTableId.ContainsKey(tableId))
+                {
+                    _popupPreferredRoadRouteByTableId[tableId] = routeKey;
+                }
+
+                if (_popupPreferredRoadRouteByTableId.TryGetValue(tableId, out var preferredRoute) &&
+                    !string.IsNullOrWhiteSpace(preferredRoute) &&
+                    !string.Equals(preferredRoute, routeKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                var sig = string.Join("|", new[]
+                {
+                    state.TableName ?? "",
+                    state.SessionKey ?? "",
+                    state.Text ?? "",
+                    state.CenterResult ?? "",
+                    state.GameStage?.ToString(CultureInfo.InvariantCulture) ?? "",
+                    state.WantShuffle?.ToString() ?? "",
+                    state.WantEnd?.ToString() ?? "",
+                    state.KeyStatus?.ToString(CultureInfo.InvariantCulture) ?? "",
+                    state.TableStatus?.ToString(CultureInfo.InvariantCulture) ?? "",
+                    state.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? "",
+                    state.HistoryText ?? ""
+                });
+                if (string.Equals(sig, state.LastPushSig, StringComparison.Ordinal))
+                    return;
+                state.LastPushSig = sig;
+                snapshot = new PopupServerRoadState
+                {
+                    RouteKey = state.RouteKey,
+                    TableId = state.TableId,
+                    TableName = state.TableName,
+                    GameId = state.GameId,
+                    HostTag = state.HostTag,
+                    GameStage = state.GameStage,
+                    WantShuffle = state.WantShuffle,
+                    WantEnd = state.WantEnd,
+                    KeyStatus = state.KeyStatus,
+                    TableStatus = state.TableStatus,
+                    History = state.History.ToList(),
+                    HistoryText = state.HistoryText,
+                    CenterResult = state.CenterResult,
+                    Text = state.Text,
+                    SessionKey = state.SessionKey,
+                    Countdown = state.Countdown,
+                    LastCountdownUpdatedUtc = state.LastCountdownUpdatedUtc,
+                    LastPushSig = state.LastPushSig,
+                    LastUpdatedUtc = state.LastUpdatedUtc,
+                    LastHistoryUpdatedUtc = state.LastHistoryUpdatedUtc
+                };
+            }
+
+            Log($"[ROADNET] {tableId} route={snapshot.RouteKey} source={source} hist={snapshot.HistoryText} center={snapshot.CenterResult} countdown={snapshot.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? ""}");
+            _ = Dispatcher.InvokeAsync(async () => await PushPopupServerRoadStateAsync(snapshot));
+        }
+
+        private async Task PushPopupServerRoadStateAsync(PopupServerRoadState state)
+        {
+            try
+            {
+                var targetWeb = GetActiveRoomHostWebView();
+                if (!ReferenceEquals(targetWeb, _popupWeb) || targetWeb?.CoreWebView2 == null)
+                    return;
+
+                var idJson = JsonSerializer.Serialize(state.TableId ?? "", LogJsonOptions);
+                var patchJson = JsonSerializer.Serialize(new
+                {
+                    history = state.History,
+                    historyText = state.HistoryText,
+                    countdown = state.Countdown,
+                    countdownUpdatedUtc = state.LastCountdownUpdatedUtc > DateTime.MinValue ? state.LastCountdownUpdatedUtc : (DateTime?)null,
+                    centerResult = state.CenterResult,
+                    text = state.Text,
+                    sessionKey = state.SessionKey,
+                    gameStage = state.GameStage,
+                    wantShuffle = state.WantShuffle,
+                    wantEnd = state.WantEnd,
+                    keyStatus = state.KeyStatus,
+                    tableStatus = state.TableStatus,
+                    source = "server",
+                    tableName = state.TableName,
+                    gameId = state.GameId,
+                    routeKey = state.RouteKey
+                }, LogJsonOptions);
+                var script = $"window.__abxTableOverlay && window.__abxTableOverlay.setServerState && window.__abxTableOverlay.setServerState({idJson}, {patchJson});";
+                await targetWeb.ExecuteScriptAsync(script);
+            }
+            catch { }
+        }
+
+        private static PopupServerRoadState ClonePopupServerRoadState(PopupServerRoadState state)
+        {
+            return new PopupServerRoadState
+            {
+                RouteKey = state.RouteKey,
+                TableId = state.TableId,
+                TableName = state.TableName,
+                GameId = state.GameId,
+                HostTag = state.HostTag,
+                GameStage = state.GameStage,
+                WantShuffle = state.WantShuffle,
+                WantEnd = state.WantEnd,
+                KeyStatus = state.KeyStatus,
+                TableStatus = state.TableStatus,
+                History = state.History?.ToList() ?? new List<string>(),
+                HistoryText = state.HistoryText,
+                CenterResult = state.CenterResult,
+                Text = state.Text,
+                SessionKey = state.SessionKey,
+                Countdown = state.Countdown,
+                LastCountdownUpdatedUtc = state.LastCountdownUpdatedUtc,
+                LastPushSig = state.LastPushSig,
+                LastUpdatedUtc = state.LastUpdatedUtc,
+                LastHistoryUpdatedUtc = state.LastHistoryUpdatedUtc
+            };
+        }
+
+        private static int ScorePopupServerRoadState(PopupServerRoadState? state)
+        {
+            if (state == null)
+                return int.MinValue;
+            var score = 0;
+            if (state.History != null && state.History.Count > 0)
+                score += 1000 + state.History.Count;
+            if (!string.IsNullOrWhiteSpace(state.HistoryText))
+                score += 100;
+            if (!string.IsNullOrWhiteSpace(state.CenterResult))
+                score += 10;
+            if (state.Countdown.HasValue && state.Countdown.Value > 0)
+                score += 5;
+            if (!string.IsNullOrWhiteSpace(state.SessionKey))
+                score += 2;
+            if (state.LastHistoryUpdatedUtc != DateTime.MinValue)
+            {
+                var age = (int)Math.Max(0, (DateTime.UtcNow - state.LastHistoryUpdatedUtc).TotalSeconds);
+                score += Math.Max(0, 300 - age);
+            }
+            return score;
+        }
+
+        private async Task PushCachedPopupServerRoadStatesAsync(IEnumerable<(string Id, string Name)> rooms)
+        {
+            try
+            {
+                var targets = rooms?
+                    .Select(r => ((r.Id ?? "").Trim(), (r.Name ?? "").Trim()))
+                    .Where(r => !string.IsNullOrWhiteSpace(r.Item1) || !string.IsNullOrWhiteSpace(r.Item2))
+                    .ToList() ?? new List<(string, string)>();
+                if (targets.Count == 0)
+                    return;
+
+                List<PopupServerRoadState> snapshots;
+                lock (_popupServerRoadGate)
+                {
+                    var picked = new List<PopupServerRoadState>();
+                    foreach (var target in targets)
+                    {
+                        var id = target.Item1;
+                        var name = target.Item2;
+                        var resolvedName = !string.IsNullOrWhiteSpace(id) ? ResolveRoomName(id) : "";
+                        var normName = TextNorm.U(name);
+                        var normResolvedName = TextNorm.U(resolvedName);
+
+                        PopupServerRoadState? best = null;
+                        if (!string.IsNullOrWhiteSpace(id) &&
+                            _popupPreferredRoadRouteByTableId.TryGetValue(id, out var preferredRoute) &&
+                            !string.IsNullOrWhiteSpace(preferredRoute) &&
+                            _popupServerRoadStates.TryGetValue(preferredRoute, out var preferred))
+                        {
+                            best = preferred;
+                        }
+
+                        if ((best == null || ScorePopupServerRoadState(best) <= 0) && !string.IsNullOrWhiteSpace(id))
+                        {
+                            foreach (var state in _popupServerRoadStates.Values)
+                            {
+                                if (state == null || !string.Equals(state.TableId, id, StringComparison.OrdinalIgnoreCase))
+                                    continue;
+                                if (best == null || ScorePopupServerRoadState(state) > ScorePopupServerRoadState(best))
+                                    best = state;
+                            }
+                        }
+
+                        if (best == null || ScorePopupServerRoadState(best) <= 0)
+                        {
+                            foreach (var state in _popupServerRoadStates.Values)
+                            {
+                                if (state == null)
+                                    continue;
+                                if (!string.IsNullOrWhiteSpace(name) && TextNorm.U(state.TableName) == normName)
+                                {
+                                    if (best == null || ScorePopupServerRoadState(state) > ScorePopupServerRoadState(best))
+                                        best = state;
+                                }
+                                if (!string.IsNullOrWhiteSpace(resolvedName) && TextNorm.U(state.TableName) == normResolvedName)
+                                {
+                                    if (best == null || ScorePopupServerRoadState(state) > ScorePopupServerRoadState(best))
+                                        best = state;
+                                }
+                            }
+                        }
+
+                        if (best != null)
+                            picked.Add(best);
+                    }
+
+                    snapshots = picked
+                        .GroupBy(s => s.TableId, StringComparer.OrdinalIgnoreCase)
+                        .Select(g => g.OrderByDescending(ScorePopupServerRoadState).First())
+                        .Select(ClonePopupServerRoadState)
+                        .ToList();
+                }
+
+                foreach (var snapshot in snapshots)
+                    await PushPopupServerRoadStateAsync(snapshot);
+
+                var targetDesc = string.Join(" | ", targets.Select(t => !string.IsNullOrWhiteSpace(t.Item2) ? t.Item2 : t.Item1));
+                Log($"[ROADNET] bootstrap cache -> overlay: matched={snapshots.Count}/{targets.Count} targets={targetDesc}");
+            }
+            catch (Exception ex)
+            {
+                Log("[ROADNET] bootstrap cache lỗi: " + ex.Message);
+            }
+        }
+
         private void ClearLatestNetworkRooms(string reason)
         {
             lock (_roomFeedGate)
@@ -6823,6 +7324,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 _latestNetworkRoomsSig = "";
                 _lastTableUpdateAt = DateTime.MinValue;
                 _protocol21Rooms.Clear();
+            }
+            lock (_popupServerRoadGate)
+            {
+                _popupServerRoadStates.Clear();
+                _popupPreferredRoadRouteByTableId.Clear();
             }
             Log("[ROOMNET] cleared: " + reason);
         }
@@ -7300,6 +7806,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (array.ValueKind != JsonValueKind.Array)
                 return false;
 
+            var pathUpper = TextNorm.U(path);
+            if (pathUpper.Contains("HISTORYDATA.RESULTOBJARR") || (pathUpper.Contains("RESULTOBJARR") && pathUpper.Contains("HISTORY")))
+                return false;
+
             foreach (var item in array.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.Object)
@@ -7319,7 +7829,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 return false;
 
             score = rooms.Count * 4;
-            var pathUpper = TextNorm.U(path);
             if (pathUpper.Contains("TABLE")) score += 8;
             if (pathUpper.Contains("ROOM")) score += 8;
             if (pathUpper.Contains("GAME")) score += 4;
