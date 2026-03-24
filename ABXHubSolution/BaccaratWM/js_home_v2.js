@@ -1628,7 +1628,7 @@
         maxRetries: 6,
         watchdogMs: 1000,
         maxWatchdogMiss: 2,
-        showPanel: true,
+        showPanel: false,
         autoRetryOnBoot: false
     };
 
@@ -7101,6 +7101,16 @@
                 overflow: hidden;
                 text-overflow: ellipsis;
                 text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+                isolation: isolate;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .map-center-label {
+                position: relative;
+                z-index: 1;
+                display: block;
+                width: 100%;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .map-center::after {
                 content: '';
@@ -7112,6 +7122,7 @@
                 background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
                 opacity: 0;
                 pointer-events: none;
+                z-index: 0;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .map-center.result-player {
                 background: linear-gradient(90deg, rgba(24,119,242,0) 0%, rgba(24,119,242,0.04) 3%, rgba(24,119,242,0.32) 18%, rgba(24,119,242,1) 50%, rgba(24,119,242,0.32) 82%, rgba(24,119,242,0.04) 97%, rgba(24,119,242,0) 100%);
@@ -7255,6 +7266,7 @@
                 align-items: center;
                 justify-content: center;
                 position: relative;
+                overflow: hidden;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-label {
                 width: 100%;
@@ -7264,6 +7276,11 @@
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-row .bet-label {
                 font-weight: 500;
                 color: rgba(255, 255, 255, 0.82);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-player .bet-label,
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-banker .bet-label {
+                padding-right: calc(16px * var(--panel-scale, 1));
+                box-sizing: border-box;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-extra {
                 position: absolute;
@@ -7294,6 +7311,33 @@
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-extra.banker {
                 left: calc(4px * var(--panel-scale, 1));
         }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-score {
+                position: absolute;
+                top: 50%;
+                display: none;
+                align-items: center;
+                justify-content: center;
+                font-size: calc(11px * var(--panel-scale, 1));
+                font-weight: 800;
+                line-height: 1;
+                color: #ffffff;
+                background: transparent;
+                border: none;
+                box-shadow: none;
+                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.38);
+                font-variant-numeric: tabular-nums;
+                pointer-events: none;
+                transform: translateY(-50%);
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-score.player {
+                right: calc(8px * var(--panel-scale, 1));
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-score.banker {
+                right: calc(8px * var(--panel-scale, 1));
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-score.is-blink {
+                animation: bet-extra-blink 0.9s ease-in-out 2;
+            }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-chip {
                 position: absolute;
                 top: calc(2px * var(--panel-scale, 1));
@@ -9625,6 +9669,18 @@
                 next.text = patch.text.trim();
             if (typeof patch.centerResult === 'string')
                 next.centerResult = patch.centerResult.trim();
+            if (Object.prototype.hasOwnProperty.call(patch, 'playerScore')) {
+                if (typeof patch.playerScore === 'number' && Number.isFinite(patch.playerScore) && patch.playerScore >= 0)
+                    next.playerScore = Math.max(0, Math.floor(patch.playerScore));
+                else
+                    delete next.playerScore;
+            }
+            if (Object.prototype.hasOwnProperty.call(patch, 'bankerScore')) {
+                if (typeof patch.bankerScore === 'number' && Number.isFinite(patch.bankerScore) && patch.bankerScore >= 0)
+                    next.bankerScore = Math.max(0, Math.floor(patch.bankerScore));
+                else
+                    delete next.bankerScore;
+            }
             if (typeof patch.source === 'string')
                 next.source = patch.source.trim();
             if (typeof patch.sessionKey === 'string') {
@@ -10399,6 +10455,12 @@
                 const centerResult = serverState && typeof serverState.centerResult === 'string' && serverState.centerResult.trim()
                     ? serverState.centerResult.trim()
                     : '';
+                const playerScore = serverState && typeof serverState.playerScore === 'number' && Number.isFinite(serverState.playerScore) && serverState.playerScore >= 0
+                    ? Math.max(0, Math.floor(serverState.playerScore))
+                    : null;
+                const bankerScore = serverState && typeof serverState.bankerScore === 'number' && Number.isFinite(serverState.bankerScore) && serverState.bankerScore >= 0
+                    ? Math.max(0, Math.floor(serverState.bankerScore))
+                    : null;
                 const sig = [
                     room.id,
                     preferredCountdown ?? '',
@@ -10431,6 +10493,8 @@
                     betAreas,
                     betExtra,
                     betChips,
+                    playerScore,
+                    bankerScore,
                     centerResult,
                     sig
                 };
@@ -10635,9 +10699,20 @@
                 });
             }
             if (view.mapCenter) {
-                view.mapCenter.textContent = '';
+                if (view.mapCenterLabel)
+                    view.mapCenterLabel.textContent = '';
+                else
+                    view.mapCenter.textContent = '';
                 view.mapCenter.style.display = 'none';
                 view.mapCenter.classList.remove('result-player', 'result-banker', 'result-tie', 'is-pop', 'is-shimmer');
+            }
+            if (view.betPlayerScore) {
+                view.betPlayerScore.textContent = '';
+                view.betPlayerScore.style.display = 'none';
+            }
+            if (view.betBankerScore) {
+                view.betBankerScore.textContent = '';
+                view.betBankerScore.style.display = 'none';
             }
             if (view.statsTotal)
                 view.statsTotal.textContent = '#0';
@@ -10655,6 +10730,7 @@
             st.lastStatusColor = '#f59e0b';
             st.lastCenterResult = '';
             st.lastHistorySig = '';
+            st.lastBetScoreSig = '';
         }
 
         function deriveMetricInfo(text) {
@@ -11052,6 +11128,42 @@
             }
             }
 
+        function applyBetScores(view, scores, st) {
+            if (!view)
+                return;
+            const playerVal = (scores && typeof scores.player === 'number' && Number.isFinite(scores.player) && scores.player >= 0)
+                ? Math.floor(scores.player).toString()
+                : '';
+            const bankerVal = (scores && typeof scores.banker === 'number' && Number.isFinite(scores.banker) && scores.banker >= 0)
+                ? Math.floor(scores.banker).toString()
+                : '';
+            const sig = playerVal + '|' + bankerVal;
+            const pulse = (el, nextValue) => {
+                if (!el)
+                    return;
+                const prevValue = (el.textContent || '').trim();
+                const shouldBlink = !!nextValue && nextValue !== prevValue;
+                el.textContent = nextValue;
+                el.style.display = nextValue ? 'flex' : 'none';
+                if (!shouldBlink)
+                    return;
+                el.classList.remove('is-blink');
+                void el.offsetWidth;
+                el.classList.add('is-blink');
+            };
+            if (!st || st.lastBetScoreSig !== sig) {
+                pulse(view.betPlayerScore, playerVal);
+                pulse(view.betBankerScore, bankerVal);
+                if (st)
+                    st.lastBetScoreSig = sig;
+                return;
+            }
+            if (view.betPlayerScore)
+                view.betPlayerScore.style.display = playerVal ? 'flex' : 'none';
+            if (view.betBankerScore)
+                view.betBankerScore.style.display = bankerVal ? 'flex' : 'none';
+        }
+
         function applyBetChips(view, betChips) {
             if (!view)
                 return;
@@ -11202,6 +11314,10 @@
             const betAreas = data.betAreas || null;
             const betExtra = data.betExtra || null;
             const betChips = data.betChips || null;
+            const betScores = {
+                player: (typeof data.playerScore === 'number' && Number.isFinite(data.playerScore) && data.playerScore >= 0) ? data.playerScore : null,
+                banker: (typeof data.bankerScore === 'number' && Number.isFinite(data.bankerScore) && data.bankerScore >= 0) ? data.bankerScore : null
+            };
             const historySig = data.historySig || '';
             const betPlan = st.betPlan || null;
             const planSideNorm = betPlan && betPlan.side ? betNormalizeSide(betPlan.side) : '';
@@ -11376,6 +11492,7 @@
                 updateBetItem(view.betTie, betAreas && betAreas.tie, 'Hòa');
                 updateBetItem(view.betBanker, betAreas && betAreas.banker, 'Nhà Cái');
             }
+            applyBetScores(view, betScores, st);
             applyPanelStatus(st, data, currentCountdown);
             const centerText = (data.centerResult || '').trim();
             const centerSessionKey = (typeof data.sessionKey === 'string' ? data.sessionKey.trim() : '');
@@ -11387,7 +11504,10 @@
             );
             const centerSig = centerSessionKey + '|' + centerText + '|' + centerType + '|' + (shouldShowCenter ? 'show' : 'hide');
             if (view.mapCenter && st.lastCenterResult !== centerSig) {
-                view.mapCenter.textContent = centerText;
+                if (view.mapCenterLabel)
+                    view.mapCenterLabel.textContent = centerText;
+                else
+                    view.mapCenter.textContent = centerText;
                 view.mapCenter.style.display = shouldShowCenter ? 'flex' : 'none';
                 view.mapCenter.classList.remove('result-player', 'result-banker', 'result-tie', 'is-pop', 'is-shimmer');
                 if (shouldShowCenter && centerType)
@@ -11552,6 +11672,9 @@
             countdownBadge.appendChild(countdownValue);
             const mapCenter = document.createElement('div');
             mapCenter.className = 'map-center';
+            const mapCenterLabel = document.createElement('span');
+            mapCenterLabel.className = 'map-center-label';
+            mapCenter.appendChild(mapCenterLabel);
             mapWrap.append(mapGrid, countdownBadge, mapCenter);
 
             const statsRow = document.createElement('div');
@@ -11706,6 +11829,9 @@
             const betPlayer = document.createElement('div');
             betPlayer.className = 'bet-item bet-player';
             betPlayer.textContent = 'Người Chơi';
+            const betPlayerScore = document.createElement('span');
+            betPlayerScore.className = 'bet-score player';
+            betPlayer.appendChild(betPlayerScore);
             const betPlayerExtra = document.createElement('span');
             betPlayerExtra.className = 'bet-extra player';
             betPlayer.appendChild(betPlayerExtra);
@@ -11721,6 +11847,9 @@
             const betBanker = document.createElement('div');
             betBanker.className = 'bet-item bet-banker';
             betBanker.textContent = 'Nhà Cái';
+            const betBankerScore = document.createElement('span');
+            betBankerScore.className = 'bet-score banker';
+            betBanker.appendChild(betBankerScore);
             const betBankerExtra = document.createElement('span');
             betBankerExtra.className = 'bet-extra banker';
             betBanker.appendChild(betBankerExtra);
@@ -11793,6 +11922,7 @@
                     mapRows,
                     mapCols,
                     mapCenter,
+                    mapCenterLabel,
                     statusGrid,
                     statusLine,
                     betRow,
@@ -11806,11 +11936,13 @@
                     cutProfitInput: cutProfitValue.value,
                     cutLossInput: cutLossValue.value,
                     betPlayer,
+                    betPlayerScore,
                     betPlayerExtra,
                     betPlayerChip,
                     betPlayerChipText,
                     betTie,
                     betBanker,
+                    betBankerScore,
                     betBankerExtra,
                     betBankerChip,
                     betBankerChipText,
@@ -11837,6 +11969,7 @@
                 lastWinAmountText: '0',
                 lastBetAmountText: '',
                 lastMoneyLevelText: '',
+                lastBetScoreSig: '',
                 lastState: null,
                 closed: false,
                 resolve: (id) => {

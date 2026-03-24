@@ -217,6 +217,9 @@ namespace BaccaratWM
             public bool? WantEnd { get; set; }
             public int? KeyStatus { get; set; }
             public int? TableStatus { get; set; }
+            public int? PlayerScore { get; set; }
+            public int? BankerScore { get; set; }
+            public Dictionary<int, int> CardValueByArea { get; set; } = new();
             public List<string> History { get; set; } = new();
             public List<PopupRoadNode> HistoryRaw { get; set; } = new();
             public string HistoryText { get; set; } = "";
@@ -6908,9 +6911,17 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         var centerResult = MapWmResultDisplay(result);
                         if (string.IsNullOrWhiteSpace(centerResult))
                             continue;
+                        int? playerScore = null;
+                        if (data.TryGetProperty("playerScore", out var playerScoreEl) && playerScoreEl.ValueKind == JsonValueKind.Number)
+                            playerScore = playerScoreEl.GetInt32();
+                        int? bankerScore = null;
+                        if (data.TryGetProperty("bankerScore", out var bankerScoreEl) && bankerScoreEl.ValueKind == JsonValueKind.Number)
+                            bankerScore = bankerScoreEl.GetInt32();
                         UpdatePopupServerRoadState(routeKey, resolvedId, resolvedName, gameId, state =>
                         {
                             state.CenterResult = centerResult;
+                            state.PlayerScore = playerScore;
+                            state.BankerScore = bankerScore;
                             state.Countdown = null;
                             state.LastCountdownUpdatedUtc = DateTime.MinValue;
                         }, "protocol25");
@@ -6946,10 +6957,37 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             if (isNewRound)
                             {
                                 state.CenterResult = "";
+                                state.PlayerScore = null;
+                                state.BankerScore = null;
+                                state.CardValueByArea.Clear();
                                 state.Countdown = null;
                                 state.LastCountdownUpdatedUtc = DateTime.MinValue;
                             }
                         }, "protocol21");
+                        continue;
+                    }
+
+                    if (protocol == 24)
+                    {
+                        if (gameId != 101)
+                            continue;
+                        int? cardArea = null;
+                        if (data.TryGetProperty("cardArea", out var cardAreaEl) && cardAreaEl.ValueKind == JsonValueKind.Number)
+                            cardArea = cardAreaEl.GetInt32();
+                        int? cardId = null;
+                        if (data.TryGetProperty("cardID", out var cardIdEl) && cardIdEl.ValueKind == JsonValueKind.Number)
+                            cardId = cardIdEl.GetInt32();
+                        if (!cardArea.HasValue || !cardId.HasValue || cardArea.Value < 1 || cardArea.Value > 6)
+                            continue;
+                        var point = DecodeWmBaccaratCardPoint(cardId.Value);
+                        if (!point.HasValue)
+                            continue;
+                        UpdatePopupServerRoadState(routeKey, resolvedId, resolvedName, gameId, state =>
+                        {
+                            state.CardValueByArea[cardArea.Value] = point.Value;
+                            state.PlayerScore = SumWmBaccaratScore(state.CardValueByArea, 1, 3, 5);
+                            state.BankerScore = SumWmBaccaratScore(state.CardValueByArea, 2, 4, 6);
+                        }, "protocol24");
                         continue;
                     }
 
@@ -7114,6 +7152,32 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return "";
         }
 
+        private static int? DecodeWmBaccaratCardPoint(int cardId)
+        {
+            if (cardId <= 0)
+                return null;
+            var rank = cardId % 20;
+            if (rank <= 0 || rank > 13)
+                return null;
+            return rank >= 10 ? 0 : rank;
+        }
+
+        private static int? SumWmBaccaratScore(Dictionary<int, int> cardsByArea, params int[] areas)
+        {
+            if (cardsByArea == null || cardsByArea.Count == 0 || areas == null || areas.Length == 0)
+                return null;
+            var total = 0;
+            var count = 0;
+            foreach (var area in areas)
+            {
+                if (!cardsByArea.TryGetValue(area, out var val))
+                    continue;
+                total += val;
+                count++;
+            }
+            return count > 0 ? total % 10 : (int?)null;
+        }
+
         private static string MapWmResultDisplay(int result)
         {
             var token = DecodeWmResultToken(result);
@@ -7182,6 +7246,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     state.WantEnd?.ToString() ?? "",
                     state.KeyStatus?.ToString(CultureInfo.InvariantCulture) ?? "",
                     state.TableStatus?.ToString(CultureInfo.InvariantCulture) ?? "",
+                    state.PlayerScore?.ToString(CultureInfo.InvariantCulture) ?? "",
+                    state.BankerScore?.ToString(CultureInfo.InvariantCulture) ?? "",
                     state.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? "",
                     string.Join(";", state.HistoryRaw.Select(n => $"{n.Col},{n.Row},{n.Code},{n.TieCount}")),
                     state.HistoryText ?? ""
@@ -7201,6 +7267,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     WantEnd = state.WantEnd,
                     KeyStatus = state.KeyStatus,
                     TableStatus = state.TableStatus,
+                    PlayerScore = state.PlayerScore,
+                    BankerScore = state.BankerScore,
+                    CardValueByArea = state.CardValueByArea.ToDictionary(kv => kv.Key, kv => kv.Value),
                     History = state.History.ToList(),
                     HistoryRaw = state.HistoryRaw.Select(n => new PopupRoadNode
                     {
@@ -7221,7 +7290,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 };
             }
 
-            Log($"[ROADNET] {tableId} route={snapshot.RouteKey} source={source} hist={snapshot.HistoryText} center={snapshot.CenterResult} countdown={snapshot.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? ""}");
+            Log($"[ROADNET] {tableId} route={snapshot.RouteKey} source={source} hist={snapshot.HistoryText} center={snapshot.CenterResult} scoreP={snapshot.PlayerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} scoreB={snapshot.BankerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} countdown={snapshot.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? ""}");
             _ = Dispatcher.InvokeAsync(async () => await PushPopupServerRoadStateAsync(snapshot));
         }
 
@@ -7249,6 +7318,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     wantEnd = state.WantEnd,
                     keyStatus = state.KeyStatus,
                     tableStatus = state.TableStatus,
+                    playerScore = state.PlayerScore,
+                    bankerScore = state.BankerScore,
                     source = "server",
                     tableName = state.TableName,
                     gameId = state.GameId,
@@ -7274,6 +7345,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 WantEnd = state.WantEnd,
                 KeyStatus = state.KeyStatus,
                 TableStatus = state.TableStatus,
+                PlayerScore = state.PlayerScore,
+                BankerScore = state.BankerScore,
+                CardValueByArea = state.CardValueByArea?.ToDictionary(kv => kv.Key, kv => kv.Value) ?? new Dictionary<int, int>(),
                 History = state.History?.ToList() ?? new List<string>(),
                 HistoryRaw = state.HistoryRaw?.Select(n => new PopupRoadNode
                 {
