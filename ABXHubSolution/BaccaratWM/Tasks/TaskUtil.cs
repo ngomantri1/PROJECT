@@ -16,6 +16,7 @@ namespace BaccaratWM.Tasks
         // Khóa chống bắn đúp: 3s kể từ lần place bet THÀNH CÔNG gần nhất
         private static readonly ConcurrentDictionary<string, long> _lastBetOkByTable = new ConcurrentDictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         private static readonly SemaphoreSlim _betQueue = new SemaphoreSlim(1, 1);
+        private static readonly ConcurrentDictionary<string, long> _lastWaitLogByTable = new ConcurrentDictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
         // (tuỳ chọn) reset khi dừng task
         public static void ClearBetCooldown() => _lastBetOkByTable.Clear();
@@ -107,8 +108,26 @@ namespace BaccaratWM.Tasks
                 ApplyGlobalResetIfNeeded(ctx);
                 var s = ctx.GetSnap?.Invoke();
                 double p = s?.prog ?? 0.0;
+                var tableId = ctx.TableId ?? "";
+                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                var lastLog = _lastWaitLogByTable.TryGetValue(tableId, out var prev) ? prev : 0;
+                if (now - lastLog >= 5000)
+                {
+                    _lastWaitLogByTable[tableId] = now;
+                    ctx.Log?.Invoke($"[WAIT] table={tableId} phase=bet-window prog={p:0.###} decision={ctx.DecisionPercent:0.###} session={(s?.session ?? "")} seqLen={(s?.seq?.Length ?? 0)} src={(s?.abx ?? "")}");
+                }
                 //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
                 if (p <= ctx.DecisionPercent && p > 0) break;
+
+                // WM popup-road feed hiện chỉ phản ánh "mở cửa cược" bằng countdown lớn (25/24...)
+                // rồi nhảy thẳng về 0 khi hết cửa, nên nếu tiếp tục chờ <= DecisionPercent
+                // thì task sẽ kẹt vĩnh viễn và không bao giờ tới PlaceBet().
+                if (string.Equals(s?.abx, "popup_road", StringComparison.OrdinalIgnoreCase) && p > 0)
+                {
+                    ctx.Log?.Invoke($"[WAIT] table={tableId} phase=bet-window popup-road-fallback prog={p:0.###} -> enter");
+                    break;
+                }
+
                 await Task.Delay(120, ct);
             }
         }
@@ -122,6 +141,14 @@ namespace BaccaratWM.Tasks
                 ApplyGlobalResetIfNeeded(ctx);
                 var s = ctx.GetSnap?.Invoke();
                 double p = s?.prog ?? 0.0;
+                var tableId = ctx.TableId ?? "";
+                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                var lastLog = _lastWaitLogByTable.TryGetValue(tableId, out var prev) ? prev : 0;
+                if (now - lastLog >= 5000)
+                {
+                    _lastWaitLogByTable[tableId] = now;
+                    ctx.Log?.Invoke($"[WAIT] table={tableId} phase=new-round prog={p:0.###} decision={ctx.DecisionPercent:0.###} session={(s?.session ?? "")} seqLen={(s?.seq?.Length ?? 0)} src={(s?.abx ?? "")}");
+                }
                 //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
                 if (p >= ctx.DecisionPercent) break;
                 await Task.Delay(120, ct);
@@ -165,12 +192,12 @@ namespace BaccaratWM.Tasks
             var js =
                 "(function(){try{" +
                 " if (typeof window.__cw_bet==='function'){" +
-                "   return window.__cw_bet(" + tableIdJson + ", " + sideJson + ", " + amount + ", " + virtualJs + ");" +
+                "   return window.__cw_bet(" + tableIdJson + ", " + sideJson + ", " + amount + ", " + virtualJs + ", true);" +
                 " } else { return 'no'; }" +
                 "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
             var r = await ctx.EvalJsAsync(js);
-            ctx.Log?.Invoke($"[BET-JS] result={r}");
+            ctx.Log?.Invoke($"[BET-JS] table={tableId} side={side} amount={amount} result={r}");
 
             // Chỉ coi là thành công khi JS trả về 'ok'
             bool ok = string.Equals(r, "ok", StringComparison.OrdinalIgnoreCase);
@@ -211,8 +238,8 @@ namespace BaccaratWM.Tasks
                         return null;
 
                     bool? win = IsWin(betSide, lastDigit);
-                    if (win.HasValue)
-                        await ctx.UiDispatcher.InvokeAsync(() => ctx.UiWinLoss?.Invoke(win.Value));
+                    ctx.Log?.Invoke($"[JUDGE] table={ctx.TableId ?? ""} baseSession={baseSession} curSession={curSession} bet={betSide} last={lastDigit} result={(win.HasValue ? (win.Value ? "win" : "loss") : "tie")}");
+                    await ctx.UiDispatcher.InvokeAsync(() => ctx.UiWinLoss?.Invoke(win));
                     // cộng tiền lũy kế: +amount khi thắng, -amount khi thua (đơn giản)
                     //TaskUtil.UiRoundAllowNextReset();
                     return win;

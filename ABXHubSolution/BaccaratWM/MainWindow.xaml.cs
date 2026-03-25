@@ -231,6 +231,7 @@ namespace BaccaratWM
             public string LastPushSig { get; set; } = "";
             public DateTime LastUpdatedUtc { get; set; } = DateTime.MinValue;
             public DateTime LastHistoryUpdatedUtc { get; set; } = DateTime.MinValue;
+            public string LastFinalizedSessionKey { get; set; } = "";
         }
 
         private sealed class PopupRoadNode
@@ -1651,6 +1652,32 @@ Ví dụ không hợp lệ:
             if (PopupHost?.Visibility == Visibility.Visible && _popupWeb?.CoreWebView2 != null)
                 return _popupWeb;
             return Web?.CoreWebView2 != null ? Web : null;
+        }
+
+        private async Task<bool> ExecuteOverlayScriptAsync(string script)
+        {
+            if (string.IsNullOrWhiteSpace(script))
+                return false;
+
+            var candidates = new List<WebView2?>();
+            var active = GetActiveRoomHostWebView();
+            if (active != null) candidates.Add(active);
+            if (!ReferenceEquals(Web, active)) candidates.Add(Web);
+            if (!ReferenceEquals(_popupWeb, active) && !ReferenceEquals(_popupWeb, Web)) candidates.Add(_popupWeb);
+
+            foreach (var web in candidates)
+            {
+                if (web?.CoreWebView2 == null)
+                    continue;
+                try
+                {
+                    await web.ExecuteScriptAsync(script);
+                    return true;
+                }
+                catch { }
+            }
+
+            return false;
         }
 
         private async Task TryRequestVisibleRoomPushAsync(WebView2? targetWeb)
@@ -3222,7 +3249,7 @@ Ví dụ không hợp lệ:
             return tableId;
         }
 
-        private static readonly Regex RoundIdRegex = new(@"\bID\s*:\s*(\d+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex RoundIdRegex = new(@"\b(?:ID|No)\s*:\s*(\d+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         private static char? NormalizeHistoryToken(string? token)
         {
@@ -3373,6 +3400,10 @@ Ví dụ không hợp lệ:
                         _ = PushBetPlanToOverlayAsync(tableId, "", 0, "");
                     }
                 }
+                else
+                {
+                    Log($"[HIST][MISS] table={tableId} session={sessionKey} result={lastToken.Value} source=popup-road");
+                }
             }
         }
 
@@ -3412,6 +3443,137 @@ Ví dụ không hợp lệ:
             }
         }
 
+        private bool TryGetPopupRoadSnapshot(string tableId, out CwSnapshot snap)
+        {
+            snap = new CwSnapshot
+            {
+                abx = "popup_road",
+                seq = "",
+                last = "",
+                session = "",
+                ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                prog = 0
+            };
+
+            if (string.IsNullOrWhiteSpace(tableId))
+                return false;
+
+            PopupServerRoadState? best = null;
+            lock (_popupServerRoadGate)
+            {
+                if (_popupPreferredRoadRouteByTableId.TryGetValue(tableId, out var preferredRoute) &&
+                    !string.IsNullOrWhiteSpace(preferredRoute) &&
+                    _popupServerRoadStates.TryGetValue(preferredRoute, out var preferred))
+                {
+                    best = preferred;
+                }
+
+                foreach (var state in _popupServerRoadStates.Values)
+                {
+                    if (state == null || !string.Equals(state.TableId, tableId, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (best == null || ScorePopupServerRoadState(state) > ScorePopupServerRoadState(best))
+                        best = state;
+                }
+
+                if (best == null)
+                    return false;
+
+                var historyTokens = new List<char>();
+                if (best.History != null)
+                {
+                    foreach (var item in best.History)
+                    {
+                        var token = NormalizeHistoryToken(item);
+                        if (token.HasValue)
+                            historyTokens.Add(token.Value);
+                    }
+                }
+
+                if (historyTokens.Count == 0 && !string.IsNullOrWhiteSpace(best.HistoryText))
+                {
+                    foreach (var part in best.HistoryText.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var token = NormalizeHistoryToken(part);
+                        if (token.HasValue)
+                            historyTokens.Add(token.Value);
+                    }
+                }
+
+                var historyPb = new string(historyTokens.Where(c => c == 'P' || c == 'B').ToArray());
+                var seqDigits = BuildSeqDigits(historyPb);
+                var lastToken = historyTokens.Count > 0 ? historyTokens[^1].ToString() : "";
+                var prog = best.Countdown.GetValueOrDefault() > 0 ? best.Countdown.GetValueOrDefault() : 0;
+
+                snap = new CwSnapshot
+                {
+                    abx = "popup_road",
+                    seq = seqDigits,
+                    last = lastToken,
+                    session = best.SessionKey ?? "",
+                    prog = prog,
+                    ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                };
+
+                return !string.IsNullOrWhiteSpace(snap.session)
+                    || !string.IsNullOrWhiteSpace(snap.seq)
+                    || (snap.prog.GetValueOrDefault() > 0);
+            }
+        }
+
+        private bool TryGetTaskSnapshot(string tableId, out CwSnapshot snap)
+        {
+            if (TryGetOverlaySnapshot(tableId, out snap))
+                return true;
+            if (TryGetPopupRoadSnapshot(tableId, out snap))
+                return true;
+
+            snap = new CwSnapshot
+            {
+                abx = "overlay_state",
+                seq = "",
+                last = "",
+                session = "",
+                ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                prog = 0
+            };
+            return false;
+        }
+
+        private static string GetLastPopupRoadResultToken(PopupServerRoadState? state)
+        {
+            if (state == null)
+                return "";
+
+            if (state.History != null)
+            {
+                for (int i = state.History.Count - 1; i >= 0; i--)
+                {
+                    var token = NormalizeHistoryToken(state.History[i]);
+                    if (token.HasValue)
+                        return token.Value.ToString();
+                }
+            }
+
+            if (state.HistoryRaw != null)
+            {
+                for (int i = state.HistoryRaw.Count - 1; i >= 0; i--)
+                {
+                    var node = state.HistoryRaw[i];
+                    if (node == null)
+                        continue;
+                    if (node.TieCount > 0)
+                        return "T";
+                    var token = NormalizeHistoryToken(node.Code);
+                    if (token.HasValue)
+                        return token.Value.ToString();
+                }
+            }
+
+            var centerToken = NormalizeHistoryToken(state.CenterResult);
+            return centerToken.HasValue ? centerToken.Value.ToString() : "";
+        }
+
         private async Task HandleTableFocusAsync(string tableId, string? tableName)
         {
             if (string.IsNullOrWhiteSpace(tableId)) return;
@@ -3436,34 +3598,35 @@ Ví dụ không hợp lệ:
 
         private async Task PushTableCutValuesToOverlayAsync(string tableId, double cutProfit, double cutLoss)
         {
-            if (Web?.CoreWebView2 == null || string.IsNullOrWhiteSpace(tableId)) return;
+            if (string.IsNullOrWhiteSpace(tableId)) return;
             var idJson = JsonSerializer.Serialize(tableId);
             var cp = cutProfit.ToString(CultureInfo.InvariantCulture);
             var cl = cutLoss.ToString(CultureInfo.InvariantCulture);
             var script = $"window.__abxTableOverlay && window.__abxTableOverlay.setCutValues && window.__abxTableOverlay.setCutValues({idJson}, {cp}, {cl});";
-            try { await Web.ExecuteScriptAsync(script); } catch { }
+            try { await ExecuteOverlayScriptAsync(script); } catch { }
         }
 
         private async Task PushBetPlanToOverlayAsync(string tableId, string? side, long amount, string? levelText)
         {
-            if (Web?.CoreWebView2 == null || string.IsNullOrWhiteSpace(tableId)) return;
+            if (string.IsNullOrWhiteSpace(tableId)) return;
             var idJson = JsonSerializer.Serialize(tableId);
             var sideJson = JsonSerializer.Serialize(side ?? "");
             var levelJson = JsonSerializer.Serialize(levelText ?? "");
             var amt = amount.ToString(CultureInfo.InvariantCulture);
             var script = $"window.__abxTableOverlay && window.__abxTableOverlay.setBetPlan && window.__abxTableOverlay.setBetPlan({idJson}, {sideJson}, {amt}, {levelJson});";
-            try { await Web.ExecuteScriptAsync(script); } catch { }
+            try { await ExecuteOverlayScriptAsync(script); } catch { }
         }
 
-        private async Task PushBetStatsToOverlayAsync(string tableId, long winAmount, int winCount, int lossCount)
+        private async Task PushBetStatsToOverlayAsync(string tableId, long winAmount, int winCount, int lossCount, string? outcome = null)
         {
-            if (Web?.CoreWebView2 == null || string.IsNullOrWhiteSpace(tableId)) return;
+            if (string.IsNullOrWhiteSpace(tableId)) return;
             var idJson = JsonSerializer.Serialize(tableId);
             var winAmt = winAmount.ToString(CultureInfo.InvariantCulture);
             var winC = winCount.ToString(CultureInfo.InvariantCulture);
             var lossC = lossCount.ToString(CultureInfo.InvariantCulture);
-            var script = $"window.__abxTableOverlay && window.__abxTableOverlay.setBetStats && window.__abxTableOverlay.setBetStats({idJson}, {winAmt}, {winC}, {lossC});";
-            try { await Web.ExecuteScriptAsync(script); } catch { }
+            var outcomeJson = JsonSerializer.Serialize(outcome ?? "");
+            var script = $"window.__abxTableOverlay && window.__abxTableOverlay.setBetStats && window.__abxTableOverlay.setBetStats({idJson}, {winAmt}, {winC}, {lossC}, {outcomeJson});";
+            try { await ExecuteOverlayScriptAsync(script); } catch { }
         }
 
         private async Task ShowCenterWebAlertAsync(string message)
@@ -3706,6 +3869,9 @@ Ví dụ không hợp lệ:
                                     }
                                     return;
                                 }
+
+                                if (TryHandleBetBridgeMessage(root))
+                                    return;
 
                                 if (!root.TryGetProperty("abx", out var abxEl)) return;
                                 var abxStr = abxEl.GetString() ?? "";
@@ -5230,8 +5396,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 try { StopTableTask(id); } catch { }
             }
 
-            var targetWeb = GetActiveRoomHostWebView();
-            if (targetWeb?.CoreWebView2 == null)
+            if (GetActiveRoomHostWebView()?.CoreWebView2 == null && Web?.CoreWebView2 == null && _popupWeb?.CoreWebView2 == null)
             {
                 Log("[TABLE] WebView chưa sẵn sàng.");
                 return;
@@ -5241,7 +5406,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 var idsJson = JsonSerializer.Serialize(ids);
                 var script = $"(function(){{ if (!window.__abxTableOverlay || !window.__abxTableOverlay.close) return; var ids = {idsJson}; ids.forEach(function(id){{ try{{ window.__abxTableOverlay.close(id); }}catch(e){{}} }}); }})();";
-                await targetWeb.ExecuteScriptAsync(script);
+                await ExecuteOverlayScriptAsync(script);
                 Log($"[TABLE] Đã đóng overlay {ids.Count} bàn.");
             }
             catch (Exception ex)
@@ -5252,8 +5417,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private async void BtnResetOverlay_Click(object sender, RoutedEventArgs e)
         {
-            var targetWeb = GetActiveRoomHostWebView();
-            if (targetWeb?.CoreWebView2 == null)
+            if (GetActiveRoomHostWebView()?.CoreWebView2 == null && Web?.CoreWebView2 == null && _popupWeb?.CoreWebView2 == null)
             {
                 Log("[TABLE] WebView chưa sẵn sàng.");
                 return;
@@ -5261,7 +5425,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             try
             {
-                await targetWeb.ExecuteScriptAsync("window.__abxTableOverlay && window.__abxTableOverlay.reset();");
+                await ExecuteOverlayScriptAsync("window.__abxTableOverlay && window.__abxTableOverlay.reset();");
                 Log("[TABLE] Reset layout overlay.");
             }
             catch (Exception ex)
@@ -5299,8 +5463,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (createdAny)
                 _ = TriggerTableSettingsSaveDebouncedAsync();
 
-            var targetWeb = GetActiveRoomHostWebView();
-            if (targetWeb?.CoreWebView2 == null)
+            if (GetActiveRoomHostWebView()?.CoreWebView2 == null && Web?.CoreWebView2 == null && _popupWeb?.CoreWebView2 == null)
             {
                 Log("[TABLE] WebView chưa sẵn sàng.");
                 return;
@@ -5315,7 +5478,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var script = $"window.__abxTableOverlay && window.__abxTableOverlay.openRooms({roomsJson}, {optionsJson});";
             try
             {
-                await targetWeb.ExecuteScriptAsync(script);
+                await ExecuteOverlayScriptAsync(script);
                 _overlayActiveRooms.Clear();
                 foreach (var room in selectedRooms)
                     _overlayActiveRooms.Add(room.id);
@@ -5576,8 +5739,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private async Task SyncSelectedRoomsPinsAsync(bool force = false)
         {
             if (!_uiReady) return;
-            var targetWeb = GetActiveRoomHostWebView();
-            if (targetWeb?.CoreWebView2 == null) return;
+            if (Web?.CoreWebView2 == null) return;
 
             var sig = BuildRoomsSignature(_selectedRooms);
             if (!force && string.Equals(sig, _lastPinSyncSignature, StringComparison.Ordinal))
@@ -5586,14 +5748,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
             _lastPinSyncSignature = sig;
             var roomsJson = JsonSerializer.Serialize(_selectedRooms.ToList());
             var script = $"window.__abxTableOverlay && window.__abxTableOverlay.pinRooms({roomsJson});";
-            await targetWeb.ExecuteScriptAsync(script);
+            await ExecuteOverlayScriptAsync(script);
         }
 
         private async Task ScrollRoomIntoViewAsync(string? roomName)
         {
             if (!_uiReady) return;
-            var targetWeb = GetActiveRoomHostWebView();
-            if (targetWeb?.CoreWebView2 == null) return;
+            if (GetActiveRoomHostWebView()?.CoreWebView2 == null && Web?.CoreWebView2 == null && _popupWeb?.CoreWebView2 == null) return;
             var name = (roomName ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(name))
                 return;
@@ -5602,7 +5763,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var script = $"window.__abxTableOverlay && window.__abxTableOverlay.scrollToRoom({nameJson});";
             try
             {
-                await targetWeb.ExecuteScriptAsync(script);
+                await ExecuteOverlayScriptAsync(script);
             }
             catch (Exception ex)
             {
@@ -5613,12 +5774,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private async Task ScrollLobbyTopAsync(string reason)
         {
             if (!_uiReady) return;
-            var targetWeb = GetActiveRoomHostWebView();
-            if (targetWeb?.CoreWebView2 == null) return;
+            if (GetActiveRoomHostWebView()?.CoreWebView2 == null && Web?.CoreWebView2 == null && _popupWeb?.CoreWebView2 == null) return;
             var script = "window.__abxTableOverlay && window.__abxTableOverlay.scrollToTop && window.__abxTableOverlay.scrollToTop({behavior:'auto'});";
             try
             {
-                await targetWeb.ExecuteScriptAsync(script);
+                await ExecuteOverlayScriptAsync(script);
             }
             catch (Exception ex)
             {
@@ -6040,6 +6200,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var root = parsedDoc.RootElement.Clone();
                 if (TryPublishRoomsFromTableUpdate(root, "popup/webmsg"))
                     return;
+                if (TryHandleBetBridgeMessage(root))
+                    return;
             }
             catch (Exception ex)
             {
@@ -6301,6 +6463,87 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 return false;
             }
+        }
+
+        private bool TryHandleBetBridgeMessage(JsonElement root)
+        {
+            if (!root.TryGetProperty("abx", out var abxEl))
+                return false;
+
+            var abxStr = abxEl.GetString() ?? "";
+            if (abxStr == "bet")
+            {
+                string tableId = root.TryGetProperty("tableId", out var tidEl) ? (tidEl.GetString() ?? "") : "";
+                if (string.IsNullOrWhiteSpace(tableId) && root.TryGetProperty("id", out var idEl2))
+                    tableId = idEl2.GetString() ?? "";
+                string tableName = root.TryGetProperty("name", out var tnameEl) ? (tnameEl.GetString() ?? "") : "";
+                if (string.IsNullOrWhiteSpace(tableName) && !string.IsNullOrWhiteSpace(tableId))
+                    tableName = ResolveRoomName(tableId);
+
+                string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
+                long amount = root.TryGetProperty("amount", out var ae) ? ReadJsonLong(ae) : 0;
+                string side = NormalizeSide(sideRaw);
+                if (string.IsNullOrWhiteSpace(side))
+                    side = sideRaw.ToUpperInvariant();
+
+                var sig = $"{tableId}|{side}|{amount}";
+                var nowMs = Environment.TickCount64;
+                if (sig == _lastBetSig && (nowMs - _lastBetSigAtMs) < 500)
+                {
+                    Log($"[HIST][SKIP] duplicate table={tableId} side={side} amount={amount:N0} deltaMs={nowMs - _lastBetSigAtMs}");
+                    return true;
+                }
+                _lastBetSig = sig;
+                _lastBetSigAtMs = nowMs;
+
+                var tableIdLog = string.IsNullOrWhiteSpace(tableId) ? "?" : tableId;
+                Log($"[BET] {tableIdLog} {side} {amount:N0}");
+
+                double accNow = 0;
+                try { accNow = ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
+
+                _pendingRow = new BetRow
+                {
+                    At = DateTime.Now,
+                    Game = "Baccarat WM",
+                    Table = tableName,
+                    Stake = amount,
+                    Side = side,
+                    Result = "-",
+                    WinLose = "-",
+                    Account = accNow
+                };
+
+                if (!string.IsNullOrWhiteSpace(tableId))
+                {
+                    lock (_pendingBetGate)
+                    {
+                        if (_pendingBetsByTable.TryGetValue(tableId, out var prev) && prev != null)
+                            Log($"[HIST][REPLACE] table={tableId} prevSide={prev.Side} prevStake={prev.Stake:N0} newSide={side} newStake={amount:N0}");
+                        _pendingBetsByTable[tableId] = _pendingRow;
+                    }
+                }
+
+                _betAll.Insert(0, _pendingRow);
+                if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
+                Log($"[HIST][ADD] table={tableIdLog} name={tableName} side={side} amount={amount:N0} total={_betAll.Count}");
+                if (_autoFollowNewest)
+                    ShowFirstPage();
+                else
+                    RefreshCurrentPage();
+                return true;
+            }
+
+            if (abxStr == "bet_error")
+            {
+                string side = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "?") : "?";
+                long amount = root.TryGetProperty("amount", out var ae) ? ReadJsonLong(ae) : 0;
+                string error = root.TryGetProperty("error", out var ee) ? (ee.GetString() ?? "") : "";
+                Log($"[BET][ERR] {side} {amount} :: {error}");
+                return true;
+            }
+
+            return false;
         }
 
         private void ClosePopupHost()
@@ -7193,6 +7436,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private void UpdatePopupServerRoadState(string routeKey, string tableId, string tableName, int gameId, Action<PopupServerRoadState> apply, string source)
         {
             PopupServerRoadState snapshot;
+            bool shouldFinalize = false;
+            string finalizeToken = "";
             var now = DateTime.UtcNow;
             lock (_popupServerRoadGate)
             {
@@ -7216,6 +7461,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         state.TableName = tableName;
                 }
 
+                var prevSessionKey = state.SessionKey;
                 apply(state);
                 state.LastUpdatedUtc = now;
                 if (string.Equals(source, "protocol26", StringComparison.OrdinalIgnoreCase))
@@ -7226,6 +7472,18 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 else if (!_popupPreferredRoadRouteByTableId.ContainsKey(tableId))
                 {
                     _popupPreferredRoadRouteByTableId[tableId] = routeKey;
+                }
+
+                if (!string.IsNullOrWhiteSpace(state.SessionKey) &&
+                    !string.Equals(prevSessionKey, state.SessionKey, StringComparison.Ordinal) &&
+                    !string.Equals(state.LastFinalizedSessionKey, state.SessionKey, StringComparison.Ordinal))
+                {
+                    finalizeToken = GetLastPopupRoadResultToken(state);
+                    if (!string.IsNullOrWhiteSpace(finalizeToken))
+                    {
+                        state.LastFinalizedSessionKey = state.SessionKey;
+                        shouldFinalize = true;
+                    }
                 }
 
                 if (_popupPreferredRoadRouteByTableId.TryGetValue(tableId, out var preferredRoute) &&
@@ -7286,8 +7544,39 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     LastCountdownUpdatedUtc = state.LastCountdownUpdatedUtc,
                     LastPushSig = state.LastPushSig,
                     LastUpdatedUtc = state.LastUpdatedUtc,
-                    LastHistoryUpdatedUtc = state.LastHistoryUpdatedUtc
+                    LastHistoryUpdatedUtc = state.LastHistoryUpdatedUtc,
+                    LastFinalizedSessionKey = state.LastFinalizedSessionKey
                 };
+            }
+
+            if (shouldFinalize && !string.IsNullOrWhiteSpace(tableId) && !string.IsNullOrWhiteSpace(finalizeToken))
+            {
+                double accNow = 0;
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(_gameBalance))
+                        accNow = ParseMoneyOrZero(_gameBalance);
+                    else
+                        accNow = ParseMoneyOrZero(LblAmount?.Text ?? "0");
+                }
+                catch { /* ignore parse */ }
+
+                if (TryPopPendingBet(tableId, out var row))
+                {
+                    if (accNow <= 0 && row.Account > 0)
+                        accNow = row.Account;
+                    Log($"[ROAD-FINAL] table={tableId} session={snapshot.SessionKey} result={finalizeToken} source={source}");
+                    FinalizeBetRow(row, finalizeToken, accNow);
+                    ApplyBetStatsForTable(tableId, row);
+                    var st = GetOrCreateTableTaskState(tableId);
+                    st.LastBetAmount = 0;
+                    st.LastBetLevelText = "";
+                    _ = PushBetPlanToOverlayAsync(tableId, "", 0, "");
+                }
+                else
+                {
+                    Log($"[HIST][MISS] table={tableId} session={snapshot.SessionKey} result={finalizeToken} source={source}");
+                }
             }
 
             Log($"[ROADNET] {tableId} route={snapshot.RouteKey} source={source} hist={snapshot.HistoryText} center={snapshot.CenterResult} scoreP={snapshot.PlayerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} scoreB={snapshot.BankerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} countdown={snapshot.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? ""}");
@@ -7298,8 +7587,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             try
             {
-                var targetWeb = GetActiveRoomHostWebView();
-                if (!ReferenceEquals(targetWeb, _popupWeb) || targetWeb?.CoreWebView2 == null)
+                if (GetActiveRoomHostWebView()?.CoreWebView2 == null && Web?.CoreWebView2 == null && _popupWeb?.CoreWebView2 == null)
                     return;
 
                 var idJson = JsonSerializer.Serialize(state.TableId ?? "", LogJsonOptions);
@@ -7326,7 +7614,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     routeKey = state.RouteKey
                 }, LogJsonOptions);
                 var script = $"window.__abxTableOverlay && window.__abxTableOverlay.setServerState && window.__abxTableOverlay.setServerState({idJson}, {patchJson});";
-                await targetWeb.ExecuteScriptAsync(script);
+                await ExecuteOverlayScriptAsync(script);
             }
             catch { }
         }
@@ -7364,7 +7652,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 LastCountdownUpdatedUtc = state.LastCountdownUpdatedUtc,
                 LastPushSig = state.LastPushSig,
                 LastUpdatedUtc = state.LastUpdatedUtc,
-                LastHistoryUpdatedUtc = state.LastHistoryUpdatedUtc
+                LastHistoryUpdatedUtc = state.LastHistoryUpdatedUtc,
+                LastFinalizedSessionKey = state.LastFinalizedSessionKey
             };
         }
 
@@ -8774,6 +9063,39 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }).Task.Unwrap();
         }
 
+        private Task<string> EvalJsActiveRoomHostLockedAsync(string js)
+        {
+            return Dispatcher.InvokeAsync(async () =>
+            {
+                await _domActionLock.WaitAsync();
+                try
+                {
+                    var candidates = new List<WebView2?>();
+                    var active = GetActiveRoomHostWebView();
+                    if (active != null) candidates.Add(active);
+                    if (!ReferenceEquals(Web, active)) candidates.Add(Web);
+                    if (!ReferenceEquals(_popupWeb, active) && !ReferenceEquals(_popupWeb, Web)) candidates.Add(_popupWeb);
+
+                    foreach (var web in candidates)
+                    {
+                        if (web?.CoreWebView2 == null)
+                            continue;
+                        try
+                        {
+                            return await web.ExecuteScriptAsync(js);
+                        }
+                        catch { }
+                    }
+
+                    return "";
+                }
+                finally
+                {
+                    _domActionLock.Release();
+                }
+            }).Task.Unwrap();
+        }
+
         private static int ResolveStakeLevelIndex(long[] seq, int currentIndex, long stake)
         {
             if (seq.Length == 0)
@@ -8935,7 +9257,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 TableId = tableId,
                 GetSnap = () =>
                 {
-                    if (TryGetOverlaySnapshot(tableId, out var snap))
+                    if (TryGetTaskSnapshot(tableId, out var snap))
                         return snap;
                     return new CwSnapshot
                     {
@@ -8946,7 +9268,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                     };
                 },
-                EvalJsAsync = EvalJsLockedAsync,
+                EvalJsAsync = EvalJsActiveRoomHostLockedAsync,
                 Log = s => Log(s),
 
                 StakeSeq = stakeSeq,
@@ -9068,6 +9390,16 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (string.Equals(check, "ok", StringComparison.OrdinalIgnoreCase))
                     break;
                 await Task.Delay(200, ct);
+            }
+
+            try
+            {
+                var snap = ctx.GetSnap?.Invoke();
+                Log($"[TASKDBG] table={setting.Id} strategy={task.DisplayName} snapSrc={snap?.abx ?? ""} session={snap?.session ?? ""} seqLen={snap?.seq?.Length ?? 0} prog={snap?.prog?.ToString() ?? ""}");
+            }
+            catch (Exception ex)
+            {
+                Log($"[TASKDBG] table={setting.Id} snapshot error: {ex.Message}");
             }
 
             await task.RunAsync(ctx, ct);
@@ -9221,13 +9553,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private async Task SetOverlayPlayStateAsync(string tableId, bool isRunning)
         {
-            if (Web?.CoreWebView2 == null || string.IsNullOrWhiteSpace(tableId))
+            if (string.IsNullOrWhiteSpace(tableId))
                 return;
 
             var idJson = JsonSerializer.Serialize(tableId);
             var flag = isRunning ? "true" : "false";
             var script = $"window.__abxTableOverlay && window.__abxTableOverlay.setPlayState && window.__abxTableOverlay.setPlayState({idJson}, {flag});";
-            try { await EvalJsLockedAsync(script); } catch { }
+            try { await ExecuteOverlayScriptAsync(script); } catch { }
         }
 
         private async Task ToggleTablePlayAsync(string tableId, string? tableName = null)
@@ -9740,7 +10072,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 ids = _tableTasks.Keys.ToList();
             }
-
             try
             {
                 if (!string.IsNullOrWhiteSpace(reason))
@@ -10623,6 +10954,43 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private async Task<string> LoadHomeJsAsync()
         {
+            var diskCandidates = new List<string>();
+            try
+            {
+                void AddCandidate(string? dir)
+                {
+                    if (string.IsNullOrWhiteSpace(dir))
+                        return;
+                    var path = Path.Combine(dir, "js_home_v2.js");
+                    if (!diskCandidates.Any(x => string.Equals(x, path, StringComparison.OrdinalIgnoreCase)))
+                        diskCandidates.Add(path);
+                }
+
+                AddCandidate(AppContext.BaseDirectory);
+                AddCandidate(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location));
+                AddCandidate(Path.GetDirectoryName(Assembly.GetEntryAssembly()?.Location));
+                AddCandidate(Environment.CurrentDirectory);
+            }
+            catch { }
+
+            foreach (var diskPath in diskCandidates)
+            {
+                try
+                {
+                    if (!File.Exists(diskPath))
+                        continue;
+
+                    var text = RemoveUtf8Bom(await File.ReadAllTextAsync(diskPath, Encoding.UTF8));
+                    Log($"[Bridge] Loaded HOME JS from disk: {diskPath} (len={text.Length})");
+                    if (!string.IsNullOrWhiteSpace(text))
+                        return text;
+                    Log("[Bridge] HOME JS on disk is empty: " + diskPath);
+                }
+                catch (Exception ex)
+                {
+                    Log("[Bridge] Read HOME JS on disk failed: " + diskPath + " :: " + ex.Message);
+                }
+            }
             // Ưu tiên đọc file ngoài (cùng thư mục exe) để thay nóng không cần rebuild
             try
             {
@@ -10929,13 +11297,29 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     var typeBet = (await EvalJsLockedAsync("typeof window.__cw_bet"))?.Trim('"');
                     bool hasBet = string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase);
 
-                    // 2) Đã có dữ liệu overlay theo bàn chưa (seq + sessionKey)
+                    // 2) Đã có dữ liệu state theo bàn chưa (overlay hoặc popup server road)
                     bool hasState = false;
                     lock (_tableOverlayGate)
                     {
                         if (_tableOverlayStates.TryGetValue(tableId, out var st))
                         {
                             hasState = !string.IsNullOrWhiteSpace(st.SessionKey);
+                        }
+                    }
+                    if (!hasState)
+                    {
+                        lock (_popupServerRoadGate)
+                        {
+                            foreach (var state in _popupServerRoadStates.Values)
+                            {
+                                if (!string.Equals(state.TableId, tableId, StringComparison.OrdinalIgnoreCase))
+                                    continue;
+                                if (!string.IsNullOrWhiteSpace(state.SessionKey))
+                                {
+                                    hasState = true;
+                                    break;
+                                }
+                            }
                         }
                     }
 
@@ -11440,14 +11824,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (string.IsNullOrWhiteSpace(s)) return "";
             var value = ParseMoneyOrZero(s);
             if (value <= 0) return s;
-
-            var hasThousandsGroup = Regex.IsMatch(s, @"\d[.,]\d{3}(?:[.,]\d{3})+");
-            if (!hasThousandsGroup && value < 1000)
-            {
-                var scaled = Math.Round(value * 1000);
-                return ((long)scaled).ToString("N0", CultureInfo.InvariantCulture);
-            }
-
             return s;
         }
 
@@ -11759,6 +12135,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
 
             row.Account = balanceAfter;
+            Log($"[HIST][FINAL] table={row.Table} side={row.Side} stake={row.Stake:N0} result={row.Result} wl={row.WinLose} account={row.Account:0.##}");
             try { AppendBetCsv(row); } catch { /* ignore IO */ }
 
             if (_autoFollowNewest)
@@ -11797,6 +12174,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var result = NormalizeSide(row.Result ?? "");
             var isTie = IsTieResult(row.Result ?? "");
             long winAmount = 0;
+            string outcome = isTie ? "tie" : "";
             var counted = false;
             if (!isTie && !string.IsNullOrWhiteSpace(side) && !string.IsNullOrWhiteSpace(result))
             {
@@ -11804,19 +12182,21 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 {
                     winAmount = ComputeWinAmount(row.Stake, side);
                     state.WinCount++;
+                    outcome = "win";
                     counted = true;
                 }
                 else
                 {
                     winAmount = -Math.Abs(row.Stake);
                     state.LossCount++;
+                    outcome = "loss";
                     counted = true;
                 }
             }
             if (counted)
                 state.WinTotalOverlay += winAmount;
             state.LastWinAmount = winAmount;
-            _ = PushBetStatsToOverlayAsync(tableId, state.WinTotalOverlay, state.WinCount, state.LossCount);
+            _ = PushBetStatsToOverlayAsync(tableId, state.WinTotalOverlay, state.WinCount, state.LossCount, outcome);
         }
 
 
@@ -11911,6 +12291,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 _betAll.Clear();
                 _betAll.AddRange(tmp.OrderByDescending(r => r.At).Take(maxTotal));
+                Log($"[HIST][LOAD] files={files.Count} rows={_betAll.Count} max={maxTotal}");
                 // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
                 if (_autoFollowNewest)
                 {
@@ -12020,8 +12401,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 // CSV đơn giản, At lưu ISO để dễ parse
                 var accountText = r.Account.ToString("0.##", CultureInfo.InvariantCulture);
                 sw.WriteLine($"{r.At:O},{r.Game},{r.Table},{r.Stake},{r.Side},{r.Result},{r.WinLose},{accountText}");
+                Log($"[HIST][CSV] file={Path.GetFileName(file)} table={r.Table} side={r.Side} stake={r.Stake:N0} result={r.Result} wl={r.WinLose}");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log("[HIST][CSV][ERR] " + ex.Message);
+            }
         }
 
         private async void MainWindow_Loaded(object? sender, RoutedEventArgs e)

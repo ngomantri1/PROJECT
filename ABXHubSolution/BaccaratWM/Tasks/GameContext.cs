@@ -65,7 +65,7 @@ namespace BaccaratWM.Tasks
         public Action<string>? UiSetSide;     // "P"/"B"
         public Action<double>? UiSetStake;    // tiền đang đánh
         public Action<double>? UiAddWin;      // cộng/trừ tiền thắng lũy kế
-        public Action<bool>? UiWinLoss;       // true = win, false = loss
+        public Action<bool?>? UiWinLoss;      // true = win, false = loss, null = tie/unknown
     }
 }
 
