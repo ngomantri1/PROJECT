@@ -226,6 +226,12 @@ namespace BaccaratWM
             public string CenterResult { get; set; } = "";
             public string Text { get; set; } = "";
             public string SessionKey { get; set; } = "";
+            public double? BetPlayer { get; set; }
+            public double? BetBanker { get; set; }
+            public double? BetTie { get; set; }
+            public double? TableBetPlayer { get; set; }
+            public double? TableBetBanker { get; set; }
+            public double? TableBetTie { get; set; }
             public double? Countdown { get; set; }
             public DateTime LastCountdownUpdatedUtc { get; set; } = DateTime.MinValue;
             public string LastPushSig { get; set; } = "";
@@ -3459,9 +3465,11 @@ Ví dụ không hợp lệ:
                 return false;
 
             PopupServerRoadState? best = null;
+            var expectedGameId = InferGameIdFromRoomName(ResolveRoomName(tableId));
             lock (_popupServerRoadGate)
             {
-                if (_popupPreferredRoadRouteByTableId.TryGetValue(tableId, out var preferredRoute) &&
+                if (expectedGameId > 0 &&
+                    _popupPreferredRoadRouteByTableId.TryGetValue(BuildPopupPreferredRoadKey(expectedGameId, tableId), out var preferredRoute) &&
                     !string.IsNullOrWhiteSpace(preferredRoute) &&
                     _popupServerRoadStates.TryGetValue(preferredRoute, out var preferred))
                 {
@@ -3471,6 +3479,8 @@ Ví dụ không hợp lệ:
                 foreach (var state in _popupServerRoadStates.Values)
                 {
                     if (state == null || !string.Equals(state.TableId, tableId, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (expectedGameId > 0 && state.GameId > 0 && state.GameId != expectedGameId)
                         continue;
                     if (best == null || ScorePopupServerRoadState(state) > ScorePopupServerRoadState(best))
                         best = state;
@@ -7203,10 +7213,69 @@ private async Task<CancellationTokenSource> DebounceAsync(
                                 state.PlayerScore = null;
                                 state.BankerScore = null;
                                 state.CardValueByArea.Clear();
+                                state.BetPlayer = null;
+                                state.BetBanker = null;
+                                state.BetTie = null;
+                                state.TableBetPlayer = null;
+                                state.TableBetBanker = null;
+                                state.TableBetTie = null;
                                 state.Countdown = null;
                                 state.LastCountdownUpdatedUtc = DateTime.MinValue;
                             }
                         }, "protocol21");
+                        continue;
+                    }
+
+                    if (protocol == 22)
+                    {
+                        if (gameId != 101)
+                            continue;
+                        if (!data.TryGetProperty("betArr", out var betArrEl) || betArrEl.ValueKind != JsonValueKind.Array)
+                            continue;
+
+                        double banker = 0;
+                        double player = 0;
+                        double tie = 0;
+                        foreach (var item in betArrEl.EnumerateArray())
+                        {
+                            if (item.ValueKind != JsonValueKind.Object)
+                                continue;
+                            int betArea = 0;
+                            if (item.TryGetProperty("betArea", out var areaEl) && areaEl.ValueKind == JsonValueKind.Number)
+                                betArea = areaEl.GetInt32();
+                            if (betArea <= 0)
+                                continue;
+                            double addBetMoney = 0;
+                            if (item.TryGetProperty("addBetMoney", out var moneyEl) && moneyEl.ValueKind == JsonValueKind.Number)
+                            {
+                                try { addBetMoney = moneyEl.GetDouble(); }
+                                catch { addBetMoney = 0; }
+                            }
+                            if (addBetMoney <= 0)
+                                continue;
+                            switch (betArea)
+                            {
+                                case 1:
+                                    banker += addBetMoney;
+                                    break;
+                                case 2:
+                                    player += addBetMoney;
+                                    break;
+                                case 3:
+                                    tie += addBetMoney;
+                                    break;
+                            }
+                        }
+
+                        if (banker <= 0 && player <= 0 && tie <= 0)
+                            continue;
+
+                        UpdatePopupServerRoadState(routeKey, resolvedId, resolvedName, gameId, state =>
+                        {
+                            state.BetBanker = banker > 0 ? banker : null;
+                            state.BetPlayer = player > 0 ? player : null;
+                            state.BetTie = tie > 0 ? tie : null;
+                        }, "protocol22");
                         continue;
                     }
 
@@ -7253,6 +7322,49 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         continue;
                     }
 
+                    if (protocol == 33)
+                    {
+                        if (gameId != 101)
+                            continue;
+                        if (!data.TryGetProperty("dtNowBet", out var nowBetEl) || nowBetEl.ValueKind != JsonValueKind.Object)
+                            continue;
+
+                        double? banker = null;
+                        double? player = null;
+                        double? tie = null;
+
+                        static double? ReadBetAreaValue(JsonElement obj, string key)
+                        {
+                            if (!obj.TryGetProperty(key, out var item) || item.ValueKind != JsonValueKind.Object)
+                                return null;
+                            if (!item.TryGetProperty("value", out var valueEl) || valueEl.ValueKind != JsonValueKind.Number)
+                                return null;
+                            try
+                            {
+                                return valueEl.GetDouble();
+                            }
+                            catch
+                            {
+                                return null;
+                            }
+                        }
+
+                        banker = ReadBetAreaValue(nowBetEl, "1");
+                        player = ReadBetAreaValue(nowBetEl, "2");
+                        tie = ReadBetAreaValue(nowBetEl, "3");
+
+                        if (!banker.HasValue && !player.HasValue && !tie.HasValue)
+                            continue;
+
+                        UpdatePopupServerRoadState(routeKey, resolvedId, resolvedName, gameId, state =>
+                        {
+                            state.TableBetBanker = banker;
+                            state.TableBetPlayer = player;
+                            state.TableBetTie = tie;
+                        }, "protocol33");
+                        continue;
+                    }
+
                     if (protocol == 38)
                     {
                         double countdown = 0;
@@ -7286,6 +7398,33 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private static string BuildPopupRoadRouteKey(string? url, int gameId, string tableId)
         {
             return $"{GetPopupRoadHostTag(url)}:{gameId}:{(tableId ?? "").Trim()}";
+        }
+
+        private static string BuildPopupPreferredRoadKey(int gameId, string tableId)
+        {
+            return $"{gameId}:{(tableId ?? "").Trim()}";
+        }
+
+        private static int InferGameIdFromRoomName(string? name)
+        {
+            var normalized = TextNorm.U(name ?? "");
+            if (string.IsNullOrWhiteSpace(normalized))
+                return 0;
+            if (normalized.Contains("(SEXY)BAC") || normalized.Contains("(SPEED)BAC") || normalized.Contains("(SITE)BAC"))
+                return 101;
+            if (normalized.Contains("RONG HO") || normalized.Contains("D&T"))
+                return 102;
+            if (normalized.Contains("ROULETTE"))
+                return 103;
+            if (normalized.Contains("TAI XIU"))
+                return 104;
+            if (normalized.Contains("NGUU NGUU"))
+                return 105;
+            if (normalized.Contains("FANTAN"))
+                return 107;
+            if (normalized.Contains("(SEXY)SD") || normalized.Contains("XOC DIA"))
+                return 108;
+            return 0;
         }
 
         private bool TryResolvePopupServerTable(int gameId, string groupId, string? url, out string routeKey, out string tableId, out string tableName)
@@ -7464,14 +7603,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var prevSessionKey = state.SessionKey;
                 apply(state);
                 state.LastUpdatedUtc = now;
+                var preferredKey = BuildPopupPreferredRoadKey(gameId, tableId);
                 if (string.Equals(source, "protocol26", StringComparison.OrdinalIgnoreCase))
                 {
                     state.LastHistoryUpdatedUtc = now;
-                    _popupPreferredRoadRouteByTableId[tableId] = routeKey;
+                    _popupPreferredRoadRouteByTableId[preferredKey] = routeKey;
                 }
-                else if (!_popupPreferredRoadRouteByTableId.ContainsKey(tableId))
+                else if (!_popupPreferredRoadRouteByTableId.ContainsKey(preferredKey))
                 {
-                    _popupPreferredRoadRouteByTableId[tableId] = routeKey;
+                    _popupPreferredRoadRouteByTableId[preferredKey] = routeKey;
                 }
 
                 if (!string.IsNullOrWhiteSpace(state.SessionKey) &&
@@ -7486,7 +7626,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     }
                 }
 
-                if (_popupPreferredRoadRouteByTableId.TryGetValue(tableId, out var preferredRoute) &&
+                if (_popupPreferredRoadRouteByTableId.TryGetValue(preferredKey, out var preferredRoute) &&
                     !string.IsNullOrWhiteSpace(preferredRoute) &&
                     !string.Equals(preferredRoute, routeKey, StringComparison.OrdinalIgnoreCase))
                 {
@@ -7506,6 +7646,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     state.TableStatus?.ToString(CultureInfo.InvariantCulture) ?? "",
                     state.PlayerScore?.ToString(CultureInfo.InvariantCulture) ?? "",
                     state.BankerScore?.ToString(CultureInfo.InvariantCulture) ?? "",
+                    state.BetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? "",
+                    state.BetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? "",
+                    state.BetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? "",
+                    state.TableBetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? "",
+                    state.TableBetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? "",
+                    state.TableBetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? "",
                     state.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? "",
                     string.Join(";", state.HistoryRaw.Select(n => $"{n.Col},{n.Row},{n.Code},{n.TieCount}")),
                     state.HistoryText ?? ""
@@ -7540,6 +7686,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     CenterResult = state.CenterResult,
                     Text = state.Text,
                     SessionKey = state.SessionKey,
+                    BetPlayer = state.BetPlayer,
+                    BetBanker = state.BetBanker,
+                    BetTie = state.BetTie,
+                    TableBetPlayer = state.TableBetPlayer,
+                    TableBetBanker = state.TableBetBanker,
+                    TableBetTie = state.TableBetTie,
                     Countdown = state.Countdown,
                     LastCountdownUpdatedUtc = state.LastCountdownUpdatedUtc,
                     LastPushSig = state.LastPushSig,
@@ -7579,7 +7731,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 }
             }
 
-            Log($"[ROADNET] {tableId} route={snapshot.RouteKey} source={source} hist={snapshot.HistoryText} center={snapshot.CenterResult} scoreP={snapshot.PlayerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} scoreB={snapshot.BankerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} countdown={snapshot.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? ""}");
+            Log($"[ROADNET] {tableId} route={snapshot.RouteKey} source={source} hist={snapshot.HistoryText} center={snapshot.CenterResult} scoreP={snapshot.PlayerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} scoreB={snapshot.BankerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} botBetP={snapshot.BetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} botBetT={snapshot.BetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} botBetB={snapshot.BetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetP={snapshot.TableBetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetT={snapshot.TableBetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetB={snapshot.TableBetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} countdown={snapshot.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? ""}");
             _ = Dispatcher.InvokeAsync(async () => await PushPopupServerRoadStateAsync(snapshot));
         }
 
@@ -7608,6 +7760,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     tableStatus = state.TableStatus,
                     playerScore = state.PlayerScore,
                     bankerScore = state.BankerScore,
+                    betPlayer = state.BetPlayer,
+                    betBanker = state.BetBanker,
+                    betTie = state.BetTie,
+                    tableBetPlayer = state.TableBetPlayer,
+                    tableBetBanker = state.TableBetBanker,
+                    tableBetTie = state.TableBetTie,
                     source = "server",
                     tableName = state.TableName,
                     gameId = state.GameId,
@@ -7648,6 +7806,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 CenterResult = state.CenterResult,
                 Text = state.Text,
                 SessionKey = state.SessionKey,
+                BetPlayer = state.BetPlayer,
+                BetBanker = state.BetBanker,
+                BetTie = state.BetTie,
+                TableBetPlayer = state.TableBetPlayer,
+                TableBetBanker = state.TableBetBanker,
+                TableBetTie = state.TableBetTie,
                 Countdown = state.Countdown,
                 LastCountdownUpdatedUtc = state.LastCountdownUpdatedUtc,
                 LastPushSig = state.LastPushSig,
@@ -7702,10 +7866,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         var resolvedName = !string.IsNullOrWhiteSpace(id) ? ResolveRoomName(id) : "";
                         var normName = TextNorm.U(name);
                         var normResolvedName = TextNorm.U(resolvedName);
+                        var expectedGameId = InferGameIdFromRoomName(!string.IsNullOrWhiteSpace(name) ? name : resolvedName);
 
                         PopupServerRoadState? best = null;
                         if (!string.IsNullOrWhiteSpace(id) &&
-                            _popupPreferredRoadRouteByTableId.TryGetValue(id, out var preferredRoute) &&
+                            expectedGameId > 0 &&
+                            _popupPreferredRoadRouteByTableId.TryGetValue(BuildPopupPreferredRoadKey(expectedGameId, id), out var preferredRoute) &&
                             !string.IsNullOrWhiteSpace(preferredRoute) &&
                             _popupServerRoadStates.TryGetValue(preferredRoute, out var preferred))
                         {
@@ -7717,6 +7883,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             foreach (var state in _popupServerRoadStates.Values)
                             {
                                 if (state == null || !string.Equals(state.TableId, id, StringComparison.OrdinalIgnoreCase))
+                                    continue;
+                                if (expectedGameId > 0 && state.GameId > 0 && state.GameId != expectedGameId)
                                     continue;
                                 if (best == null || ScorePopupServerRoadState(state) > ScorePopupServerRoadState(best))
                                     best = state;

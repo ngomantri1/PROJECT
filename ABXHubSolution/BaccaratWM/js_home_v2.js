@@ -1451,6 +1451,8 @@
                 return String(chips.player || '').trim();
             if (side === 'banker' && chips && chips.banker)
                 return String(chips.banker || '').trim();
+            if (side === 'tie' && chips && chips.tie)
+                return String(chips.tie || '').trim();
         } catch (_) {}
         try {
             const extra = readBetExtra(root);
@@ -1458,6 +1460,8 @@
                 return String(extra.player || '').trim();
             if (side === 'banker' && extra && extra.banker)
                 return String(extra.banker || '').trim();
+            if (side === 'tie' && extra && extra.tie)
+                return String(extra.tie || '').trim();
         } catch (_) {}
         return '';
     }
@@ -1466,9 +1470,13 @@
         try {
             const chips = readBetChips(root);
             const extra = readBetExtra(root);
-            return side === 'player'
-                ? String(chips.player || extra.player || '').trim()
-                : String(chips.banker || extra.banker || '').trim();
+            if (side === 'player')
+                return String(chips.player || extra.player || '').trim();
+            if (side === 'banker')
+                return String(chips.banker || extra.banker || '').trim();
+            if (side === 'tie')
+                return String(chips.tie || extra.tie || '').trim();
+            return '';
         } catch (_) {
             return '';
         }
@@ -7837,7 +7845,7 @@
                 background: #f7f8fa;
                 border: 1px solid #e4e6eb;
                 border-radius: calc(8px * var(--panel-scale, 1));
-                padding: calc(4px * var(--panel-scale, 1)) calc(6px * var(--panel-scale, 1));
+                padding: calc(12px * var(--panel-scale, 1)) calc(6px * var(--panel-scale, 1)) calc(6px * var(--panel-scale, 1));
                 font-size: calc(9px * var(--panel-scale, 1));
                 font-weight: 600;
                 text-align: center;
@@ -7850,27 +7858,48 @@
                 overflow: hidden;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-label {
-                width: 100%;
+                position: absolute;
+                left: 50%;
+                bottom: calc(5px * var(--panel-scale, 1));
+                transform: translateX(-50%);
+                width: calc(100% - calc(12px * var(--panel-scale, 1)));
                 text-align: center;
                 pointer-events: none;
+                z-index: 1;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-row .bet-label {
                 font-weight: 500;
                 color: rgba(255, 255, 255, 0.82);
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-player .bet-label,
-            #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-banker .bet-label {
-                padding-right: calc(16px * var(--panel-scale, 1));
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-banker .bet-label,
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-tie .bet-label {
+                padding-right: 0;
                 box-sizing: border-box;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-extra {
                 position: absolute;
-                top: calc(2px * var(--panel-scale, 1));
-                font-size: calc(11px * var(--panel-scale, 1));
+                top: calc(3px * var(--panel-scale, 1));
+                left: 50%;
+                transform: translateX(-50%);
+                min-width: calc(22px * var(--panel-scale, 1));
+                padding: calc(1px * var(--panel-scale, 1)) calc(5px * var(--panel-scale, 1));
+                border-radius: calc(999px * var(--panel-scale, 1));
+                font-size: calc(7px * var(--panel-scale, 1));
                 font-weight: 700;
                 color: #ffffff;
                 line-height: 1;
                 display: none;
+                align-items: center;
+                justify-content: center;
+                background: rgba(255, 255, 255, 0.16);
+                backdrop-filter: blur(calc(2px * var(--panel-scale, 1)));
+                z-index: 4;
+            }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-extra.player,
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-extra.tie,
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-extra.banker {
+                display: none !important;
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-extra.is-blink {
                 animation: bet-extra-blink 0.9s ease-in-out 2;
@@ -7886,12 +7915,6 @@
                     opacity: 1;
             }
             }
-            #${OVERLAY_ID} .${PANEL_CLASS} .bet-extra.player {
-                right: calc(4px * var(--panel-scale, 1));
-            }
-            #${OVERLAY_ID} .${PANEL_CLASS} .bet-extra.banker {
-                left: calc(4px * var(--panel-scale, 1));
-        }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-score {
                 position: absolute;
                 top: 50%;
@@ -7921,21 +7944,23 @@
             }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-chip {
                 position: absolute;
-                top: calc(2px * var(--panel-scale, 1));
-                left: calc(4px * var(--panel-scale, 1));
-                width: calc(18px * var(--panel-scale, 1));
-                height: calc(18px * var(--panel-scale, 1));
+                top: 50%;
+                left: calc(9px * var(--panel-scale, 1));
+                transform: translateY(-50%);
+                width: calc(19px * var(--panel-scale, 1));
+                height: calc(19px * var(--panel-scale, 1));
                 border-radius: 999px;
                 background: #fbbf24;
                 color: #ffffff;
-                font-size: calc(12px * var(--panel-scale, 1));
+                font-size: calc(10px * var(--panel-scale, 1));
                 font-weight: 600;
                 display: none;
                 align-items: center;
                 justify-content: center;
                 line-height: 1;
                 pointer-events: none;
-        }
+                z-index: 3;
+            }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-chip .chip-text {
                 display: flex;
                 align-items: center;
@@ -7945,10 +7970,9 @@
                 line-height: 1;
                 text-align: center;
                 }
-            #${OVERLAY_ID} .${PANEL_CLASS} .bet-chip.banker {
-                left: auto;
-                right: calc(4px * var(--panel-scale, 1));
-                }
+            #${OVERLAY_ID} .${PANEL_CLASS} .bet-chip.tie {
+                background: #fbbf24;
+            }
             #${OVERLAY_ID} .${PANEL_CLASS} .bet-item.bet-player {
                 background: #1454b8;
                 border-color: #1454b8;
@@ -10262,6 +10286,42 @@
                 else
                     delete next.bankerScore;
             }
+            if (Object.prototype.hasOwnProperty.call(patch, 'betPlayer')) {
+                if (typeof patch.betPlayer === 'number' && Number.isFinite(patch.betPlayer) && patch.betPlayer >= 0)
+                    next.betPlayer = patch.betPlayer;
+                else
+                    delete next.betPlayer;
+            }
+            if (Object.prototype.hasOwnProperty.call(patch, 'betBanker')) {
+                if (typeof patch.betBanker === 'number' && Number.isFinite(patch.betBanker) && patch.betBanker >= 0)
+                    next.betBanker = patch.betBanker;
+                else
+                    delete next.betBanker;
+            }
+            if (Object.prototype.hasOwnProperty.call(patch, 'betTie')) {
+                if (typeof patch.betTie === 'number' && Number.isFinite(patch.betTie) && patch.betTie >= 0)
+                    next.betTie = patch.betTie;
+                else
+                    delete next.betTie;
+            }
+            if (Object.prototype.hasOwnProperty.call(patch, 'tableBetPlayer')) {
+                if (typeof patch.tableBetPlayer === 'number' && Number.isFinite(patch.tableBetPlayer) && patch.tableBetPlayer >= 0)
+                    next.tableBetPlayer = patch.tableBetPlayer;
+                else
+                    delete next.tableBetPlayer;
+            }
+            if (Object.prototype.hasOwnProperty.call(patch, 'tableBetBanker')) {
+                if (typeof patch.tableBetBanker === 'number' && Number.isFinite(patch.tableBetBanker) && patch.tableBetBanker >= 0)
+                    next.tableBetBanker = patch.tableBetBanker;
+                else
+                    delete next.tableBetBanker;
+            }
+            if (Object.prototype.hasOwnProperty.call(patch, 'tableBetTie')) {
+                if (typeof patch.tableBetTie === 'number' && Number.isFinite(patch.tableBetTie) && patch.tableBetTie >= 0)
+                    next.tableBetTie = patch.tableBetTie;
+                else
+                    delete next.tableBetTie;
+            }
             if (typeof patch.source === 'string')
                 next.source = patch.source.trim();
             if (typeof patch.sessionKey === 'string') {
@@ -10592,7 +10652,7 @@
 
         function readBetExtra(root) {
             if (!root)
-                return { player: '', banker: '' };
+                return { player: '', banker: '', tie: '' };
             const extractBestNumericMatch = (text) => {
                 const matches = String(text || '').match(/-?\d[\d.,]*/g);
                 if (!matches)
@@ -10689,15 +10749,18 @@
             };
             const playerResult = readVisibleText('span.rc_re.rc_rg, .kI_kN span.rx_ry.rx_rz, .kI_kN span.rx_ry');
             const bankerResult = readVisibleText('span.rc_re.rc_rf, .kI_kO span.rx_ry.rx_rz, .kI_kO span.rx_ry');
-            if (playerResult || bankerResult) {
+            const tieResult = readFromArea('2');
+            if (playerResult || bankerResult || tieResult) {
                 return {
                     player: playerResult || '',
-                    banker: bankerResult || ''
+                    banker: bankerResult || '',
+                    tie: tieResult || ''
                 };
             }
             return {
                 player: readText('span.re_rf.re_rh') || readFromArea('0'),
-                banker: readText('span.re_rf.re_rg') || readFromArea('1')
+                banker: readText('span.re_rf.re_rg') || readFromArea('1'),
+                tie: readFromArea('2')
             };
             }
 
@@ -10795,13 +10858,14 @@
 
         function readBetChips(root) {
             if (!root)
-                return { player: '', banker: '' };
+                return { player: '', banker: '', tie: '' };
             try {
                 const nodes = betCollectChipNodesInRoot(root);
                 if (nodes.length) {
                     const centers = betGetBetCenters(root);
                     let playerVal = '';
                     let bankerVal = '';
+                    let tieVal = '';
                     for (const el of nodes) {
                         const text = (el && el.textContent || '').trim();
                         if (!text || betLabelToAmount(text) <= 0)
@@ -10812,9 +10876,11 @@
                             playerVal = betPickMaxText(playerVal, text);
                         else if (side === 'banker')
                             bankerVal = betPickMaxText(bankerVal, text);
+                        else if (side === 'tie')
+                            tieVal = betPickMaxText(tieVal, text);
                     }
-                    if (playerVal || bankerVal)
-                        return { player: playerVal, banker: bankerVal };
+                    if (playerVal || bankerVal || tieVal)
+                        return { player: playerVal, banker: bankerVal, tie: tieVal };
                 }
             } catch (_) {}
             try {
@@ -10855,6 +10921,7 @@
                 if (nodes.length) {
                     let playerVal = '';
                     let bankerVal = '';
+                    let tieVal = '';
                     for (const el of nodes) {
                         if (!el)
                             continue;
@@ -10868,9 +10935,11 @@
                             playerVal = betPickMaxText(playerVal, text);
                         else if (side === 'banker')
                             bankerVal = betPickMaxText(bankerVal, text);
+                        else if (side === 'tie')
+                            tieVal = betPickMaxText(tieVal, text);
                     }
-                    if (playerVal || bankerVal)
-                        return { player: playerVal, banker: bankerVal };
+                    if (playerVal || bankerVal || tieVal)
+                        return { player: playerVal, banker: bankerVal, tie: tieVal };
                 }
             } catch (_) {}
             const readChip = (selector, scope) => {
@@ -10893,11 +10962,13 @@
             };
             const areaPlayer = readChipFromArea('0');
             const areaBanker = readChipFromArea('1');
-            if (areaPlayer || areaBanker)
-                return { player: areaPlayer, banker: areaBanker };
+            const areaTie = readChipFromArea('2');
+            if (areaPlayer || areaBanker || areaTie)
+                return { player: areaPlayer, banker: areaBanker, tie: areaTie };
             return {
                 player: readChip('.kU_kZ .wo_wq, .kU_kZ .v0_wa, .kU_kZ .vb_ve, [data-betcode="0"] .wo_wq, [data-betcode="0"] .v0_wa, [data-betcode="0"] .vb_ve, .qC_lC.qC_q0 .wo_wq, .qC_lC.qC_q0 .v0_wa, .qC_lC.qC_q0 .vb_ve, .kI_kN .vb_ve, .qX_lc.qX_rt .vb_ve'),
-                banker: readChip('.kU_k0 .wo_wq, .kU_k0 .v0_wa, .kU_k0 .vb_ve, [data-betcode="1"] .wo_wq, [data-betcode="1"] .v0_wa, [data-betcode="1"] .vb_ve, .qC_lC.qC_q1 .wo_wq, .qC_lC.qC_q1 .v0_wa, .qC_lC.qC_q1 .vb_ve, .kI_kO .vb_ve, .qX_lc.qX_ru .vb_ve')
+                banker: readChip('.kU_k0 .wo_wq, .kU_k0 .v0_wa, .kU_k0 .vb_ve, [data-betcode="1"] .wo_wq, [data-betcode="1"] .v0_wa, [data-betcode="1"] .vb_ve, .qC_lC.qC_q1 .wo_wq, .qC_lC.qC_q1 .v0_wa, .qC_lC.qC_q1 .vb_ve, .kI_kO .vb_ve, .qX_lc.qX_ru .vb_ve'),
+                tie: readChip('[data-betcode="2"] .wo_wq, [data-betcode="2"] .v0_wa, [data-betcode="2"] .vb_ve, .qC_lC.qC_qN .wo_wq, .qC_lC.qC_qN .v0_wa, .qC_lC.qC_qN .vb_ve')
             };
         }
 
@@ -11045,8 +11116,25 @@
                 ], '');
                 const profit = parseMoneyNumber(profitRaw);
                 const betAreas = src ? collectBetAreas(src) : null;
-                const betExtra = src ? readBetExtra(src) : null;
-                const betChips = src ? readBetChips(src) : null;
+                const domBetExtra = src ? readBetExtra(src) : null;
+                const domBetChips = src ? readBetChips(src) : null;
+                const serverBetExtra = serverState
+                    ? {
+                        player: formatBetAreaAmountValue(
+                            Number.isFinite(serverState.betPlayer) ? serverState.betPlayer : serverState.tableBetPlayer
+                        ),
+                        banker: formatBetAreaAmountValue(
+                            Number.isFinite(serverState.betBanker) ? serverState.betBanker : serverState.tableBetBanker
+                        ),
+                        tie: formatBetAreaAmountValue(
+                            Number.isFinite(serverState.betTie) ? serverState.betTie : serverState.tableBetTie
+                        )
+                    }
+                    : null;
+                const betExtra = ((serverBetExtra && (serverBetExtra.player || serverBetExtra.banker || serverBetExtra.tie))
+                    ? serverBetExtra
+                    : domBetExtra);
+                const betChips = domBetChips;
                 const centerResult = serverState && typeof serverState.centerResult === 'string' && serverState.centerResult.trim()
                     ? serverState.centerResult.trim()
                     : '';
@@ -11061,6 +11149,12 @@
                     preferredCountdown ?? '',
                     stats?.total?.display || '',
                     historySig,
+                    serverState && Number.isFinite(serverState.betPlayer) ? serverState.betPlayer : '',
+                    serverState && Number.isFinite(serverState.betTie) ? serverState.betTie : '',
+                    serverState && Number.isFinite(serverState.betBanker) ? serverState.betBanker : '',
+                    serverState && Number.isFinite(serverState.tableBetPlayer) ? serverState.tableBetPlayer : '',
+                    serverState && Number.isFinite(serverState.tableBetTie) ? serverState.tableBetTie : '',
+                    serverState && Number.isFinite(serverState.tableBetBanker) ? serverState.tableBetBanker : '',
                     text.slice(0, 300)
                 ].join('|');
                 return {
@@ -11385,9 +11479,9 @@ function deriveWinLoseColor(text) {
                 || (betAreas.tie && betAreas.tie.active)));
             if (areaActive)
                 return true;
-            if (betChips && (betChips.player || betChips.banker))
+            if (betChips && (betChips.player || betChips.banker || betChips.tie))
                 return true;
-            if (betExtra && (betExtra.player || betExtra.banker))
+            if (betExtra && (betExtra.player || betExtra.banker || betExtra.tie))
                 return true;
             return false;
         }
@@ -11404,6 +11498,9 @@ function deriveWinLoseColor(text) {
             if (betChips) {
                 const hasPlayer = !!betChips.player;
                 const hasBanker = !!betChips.banker;
+                const hasTie = !!betChips.tie;
+                if (hasTie && !hasPlayer && !hasBanker)
+                    return 'HÒA';
                 if (hasPlayer && !hasBanker)
                     return 'PLAYER';
                 if (hasBanker && !hasPlayer)
@@ -11704,13 +11801,14 @@ function deriveWinLoseColor(text) {
                     return;
             const playerVal = (betExtra && betExtra.player) ? betExtra.player : '';
             const bankerVal = (betExtra && betExtra.banker) ? betExtra.banker : '';
+            const tieVal = (betExtra && betExtra.tie) ? betExtra.tie : '';
             const pulse = (el, nextValue) => {
                 if (!el)
                 return;
                 const prevValue = (el.textContent || '').trim();
                 const shouldBlink = nextValue && nextValue !== prevValue;
                 el.textContent = nextValue;
-                el.style.display = nextValue ? 'block' : 'none';
+                el.style.display = nextValue ? 'flex' : 'none';
                 if (!shouldBlink)
                 return;
                 el.classList.remove('is-blink');
@@ -11726,6 +11824,11 @@ function deriveWinLoseColor(text) {
                 if (!view.betBankerExtra.isConnected && view.betBanker)
                     view.betBanker.appendChild(view.betBankerExtra);
                 pulse(view.betBankerExtra, bankerVal);
+            }
+            if (view.betTieExtra) {
+                if (!view.betTieExtra.isConnected && view.betTie)
+                    view.betTie.appendChild(view.betTieExtra);
+                pulse(view.betTieExtra, tieVal);
             }
             }
 
@@ -11770,6 +11873,7 @@ function deriveWinLoseColor(text) {
                 return;
             const playerVal = (betChips && betChips.player) ? betChips.player : '';
             const bankerVal = (betChips && betChips.banker) ? betChips.banker : '';
+            const tieVal = (betChips && betChips.tie) ? betChips.tie : '';
             if (view.betPlayerChip) {
                 if (view.betPlayerChipText)
                     view.betPlayerChipText.textContent = playerVal;
@@ -11784,6 +11888,13 @@ function deriveWinLoseColor(text) {
                     view.betBankerChip.textContent = bankerVal;
                 view.betBankerChip.style.display = bankerVal ? 'flex' : 'none';
                 }
+            if (view.betTieChip) {
+                if (view.betTieChipText)
+                    view.betTieChipText.textContent = tieVal;
+                else
+                    view.betTieChip.textContent = tieVal;
+                view.betTieChip.style.display = tieVal ? 'flex' : 'none';
+            }
                 }
 
         function formatBetPlanAmount(value) {
@@ -11794,6 +11905,18 @@ function deriveWinLoseColor(text) {
                 return '';
             const rounded = Math.round(num);
             return rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        }
+
+        function formatBetAreaAmountValue(value) {
+            if (value === null || value === undefined)
+                return '';
+            const num = Number(value);
+            if (!Number.isFinite(num) || num <= 0)
+                return '';
+            const rounded = Math.round(num);
+            if (Math.abs(num - rounded) < 0.01)
+                return rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            return num.toFixed(2).replace(/\.00$/, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
         }
 
         function formatBetPlanDoor(side) {
@@ -11913,8 +12036,8 @@ function deriveWinLoseColor(text) {
             }
             const text = data.text || '';
             const betAreas = data.betAreas || null;
-            const betExtra = data.betExtra || null;
-            const betChips = data.betChips || null;
+            const rawBetExtra = data.betExtra || null;
+            const rawBetChips = data.betChips || null;
             const betScores = {
                 player: (typeof data.playerScore === 'number' && Number.isFinite(data.playerScore) && data.playerScore >= 0) ? data.playerScore : null,
                 banker: (typeof data.bankerScore === 'number' && Number.isFinite(data.bankerScore) && data.bankerScore >= 0) ? data.bankerScore : null
@@ -11927,6 +12050,21 @@ function deriveWinLoseColor(text) {
             const planLevelText = (betPlan && betPlan.levelText) ? String(betPlan.levelText).trim() : '';
             const planActive = !!(planSideNorm || planAmountText || planLevelText);
             const planSig = planActive ? (planSideNorm + '|' + planAmountText + '|' + planLevelText) : '';
+            const planBetAmounts = {
+                player: planActive && planSideNorm === 'player' ? (planAmountText || '') : '',
+                banker: planActive && planSideNorm === 'banker' ? (planAmountText || '') : '',
+                tie: planActive && planSideNorm === 'tie' ? (planAmountText || '') : ''
+            };
+            const betExtra = {
+                player: (rawBetExtra && rawBetExtra.player) ? rawBetExtra.player : planBetAmounts.player,
+                banker: (rawBetExtra && rawBetExtra.banker) ? rawBetExtra.banker : planBetAmounts.banker,
+                tie: (rawBetExtra && rawBetExtra.tie) ? rawBetExtra.tie : planBetAmounts.tie
+            };
+            const betChips = {
+                player: (rawBetChips && rawBetChips.player) ? rawBetChips.player : planBetAmounts.player,
+                banker: (rawBetChips && rawBetChips.banker) ? rawBetChips.banker : planBetAmounts.banker,
+                tie: (rawBetChips && rawBetChips.tie) ? rawBetChips.tie : planBetAmounts.tie
+            };
             const winLoseText = deriveWinLoseValue(text);
             let resolvedWinLoseText = winLoseText;
             let resolvedWinLoseColor = deriveWinLoseColor(winLoseText);
@@ -12120,13 +12258,14 @@ function deriveWinLoseColor(text) {
                 }
                 st.lastCenterResult = centerSig;
             }
-            const chipSig = betChips ? ((betChips.player || '') + '|' + (betChips.banker || '')) : '';
+            const chipSig = betChips ? ((betChips.player || '') + '|' + (betChips.tie || '') + '|' + (betChips.banker || '')) : '';
             if (st.lastBetChipSig !== chipSig) {
                 st.lastBetChipSig = chipSig;
                 applyBetChips(view, betChips);
         }
-            const extraSig = betExtra ? ((betExtra.player || '') + '|' + (betExtra.banker || '')) : '';
+            const extraSig = betExtra ? ((betExtra.player || '') + '|' + (betExtra.tie || '') + '|' + (betExtra.banker || '')) : '';
             const needExtraAttach = (view.betPlayerExtra && !view.betPlayerExtra.isConnected)
+                || (view.betTieExtra && !view.betTieExtra.isConnected)
                 || (view.betBankerExtra && !view.betBankerExtra.isConnected);
             if (st.lastBetExtraSig !== extraSig || needExtraAttach) {
                 st.lastBetExtraSig = extraSig;
@@ -12445,6 +12584,15 @@ function deriveWinLoseColor(text) {
             const betTie = document.createElement('div');
             betTie.className = 'bet-item bet-tie';
             betTie.textContent = 'Hòa';
+            const betTieExtra = document.createElement('span');
+            betTieExtra.className = 'bet-extra tie';
+            betTie.appendChild(betTieExtra);
+            const betTieChip = document.createElement('span');
+            betTieChip.className = 'bet-chip tie';
+            const betTieChipText = document.createElement('span');
+            betTieChipText.className = 'chip-text';
+            betTieChip.appendChild(betTieChipText);
+            betTie.appendChild(betTieChip);
             const betBanker = document.createElement('div');
             betBanker.className = 'bet-item bet-banker';
             betBanker.textContent = 'Nhà Cái';
@@ -12542,6 +12690,9 @@ function deriveWinLoseColor(text) {
                     betPlayerChip,
                     betPlayerChipText,
                     betTie,
+                    betTieExtra,
+                    betTieChip,
+                    betTieChipText,
                     betBanker,
                     betBankerScore,
                     betBankerExtra,
