@@ -386,6 +386,8 @@ namespace BaccaratWM
 
         private int _roomListLoading = 0;
         private DateTime _roomListLastLoaded = DateTime.MinValue;
+        private int _roomFeedRefreshPending = 0;
+        private DateTime _lastRoomFeedRefreshAt = DateTime.MinValue;
 
         private readonly ObservableCollection<RoomOption> _roomOptions = new();
         public ObservableCollection<RoomOption> RoomOptions => _roomOptions;
@@ -8325,6 +8327,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private void PublishLatestNetworkRooms(List<RoomEntry> rooms, string source)
         {
             var sig = string.Join("|", rooms.Select(r => $"{r.Id}::{r.Name}"));
+            var changed = false;
             lock (_roomFeedGate)
             {
                 var currentPriority = GetRoomFeedPriority(_latestNetworkRoomsSource);
@@ -8337,9 +8340,63 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 _latestNetworkRoomsAt = DateTime.UtcNow;
                 _latestNetworkRoomsSource = source;
                 _latestNetworkRoomsSig = sig;
+                changed = true;
             }
 
             Log("[ROOMNET] rooms=" + rooms.Count + " source=" + source + " sample=" + Sample(rooms.Select(r => r.Name), 6));
+            if (changed)
+                ScheduleRoomListRefreshFromNetworkFeed(source, rooms.Count);
+        }
+
+        private void ScheduleRoomListRefreshFromNetworkFeed(string source, int roomCount)
+        {
+            try
+            {
+                if (roomCount <= 0)
+                    return;
+                var priority = GetRoomFeedPriority(source);
+                if (priority < 2)
+                    return;
+
+                var now = DateTime.UtcNow;
+                var hasUiRooms = false;
+                try
+                {
+                    hasUiRooms = _roomList.Count > 0 && _roomOptions.Count > 0;
+                }
+                catch { }
+
+                var immediate = !hasUiRooms || (now - _roomListLastLoaded) > TimeSpan.FromSeconds(2);
+                var minGap = immediate ? TimeSpan.FromMilliseconds(120) : TimeSpan.FromMilliseconds(600);
+                var due = immediate ? TimeSpan.Zero : TimeSpan.FromMilliseconds(250);
+
+                if (_roomListLoading == 0 && (now - _lastRoomFeedRefreshAt) >= minGap)
+                {
+                    _lastRoomFeedRefreshAt = now;
+                    _ = Dispatcher.InvokeAsync(async () => await RefreshRoomListAsync());
+                    return;
+                }
+
+                if (Interlocked.Exchange(ref _roomFeedRefreshPending, 1) == 1)
+                    return;
+
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        if (due > TimeSpan.Zero)
+                            await Task.Delay(due);
+                        _lastRoomFeedRefreshAt = DateTime.UtcNow;
+                        await Dispatcher.InvokeAsync(async () => await RefreshRoomListAsync());
+                    }
+                    catch { }
+                    finally
+                    {
+                        Interlocked.Exchange(ref _roomFeedRefreshPending, 0);
+                    }
+                });
+            }
+            catch { }
         }
 
         private static int GetRoomFeedPriority(string? source)
