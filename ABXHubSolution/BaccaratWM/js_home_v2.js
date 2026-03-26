@@ -2142,12 +2142,46 @@
         return extractLabeledMoney(raw, 'tong cuoc');
     }
 
+    function readGameUsernameText() {
+        try {
+            if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
+                const abs = findByTail(ABS_USERNAME_TAIL);
+                const v = abs && (abs.value != null ? String(abs.value) : (abs.textContent || '')).trim();
+                if (isLikelyUsername(v))
+                    return v;
+            }
+
+            const cand = document.querySelectorAll([
+                'header .user-logged .base-dropdown-header__user__name',
+                '.menu-account__info--user .display-name .full-name span',
+                '.menu-account__info--user .username .full-name span',
+                '.user-logged__info .user__name',
+                '.user-logged__info .base-dropdown-header__user__name',
+                '.base-dropdown-header__user__name',
+                '.full-name',
+                '.display-name'
+            ].join(','));
+
+            for (const el of cand) {
+                const txt = textOf(el).replace(/\s+/g, ' ').trim();
+                if (isLikelyUsername(txt))
+                    return txt;
+            }
+        } catch (_) {}
+        return '';
+    }
+
     function pushGameMoneyIfChanged(balanceVal, totalBetVal, source) {
         const b = String(balanceVal || '').trim();
         const t = String(totalBetVal || '').trim();
-        if (!b && !t)
+        const u = String(readGameUsernameText() || '').trim();
+        if (!b && !t && !u)
             return;
         let changed = false;
+        if (u && window.__abx_last_game_username !== u) {
+            window.__abx_last_game_username = u;
+            changed = true;
+        }
         if (b && window.__abx_last_game_balance !== b) {
             window.__abx_last_game_balance = b;
             changed = true;
@@ -2158,7 +2192,7 @@
         }
         if (!changed)
             return;
-        const payload = { abx: 'game_balance', ui: 'game', balance: b, total_bet: t, source: source || '', tail: GAME_BALANCE_TAIL, ts: Date.now() };
+        const payload = { abx: 'game_balance', ui: 'game', username: u, balance: b, total_bet: t, source: source || '', tail: GAME_BALANCE_TAIL, ts: Date.now() };
         try { window.chrome?.webview?.postMessage?.(payload); } catch (_) {}
         try { if (window.top && window.top !== window) window.top.postMessage(payload, '*'); } catch (_) {}
     }
@@ -10495,7 +10529,7 @@
                             else if (nextLosses > prevLosses)
                                 outcome = 'loss';
                             else
-                                outcome = 'tie';
+                                outcome = '';
                         }
                     }
 
@@ -11276,10 +11310,29 @@
                 return 'Bắt đầu đặt cược';
         }
 
-        function deriveStatusFromCountdown(countdown, stats, history) {
+        function countRenderableHistoryTotal(history, historyRaw) {
+            const list = Array.isArray(history) ? history : [];
+            if (list.length)
+                return list.length;
+            const raw = Array.isArray(historyRaw) ? historyRaw : [];
+            if (!raw.length)
+                return 0;
+            let total = 0;
+            raw.forEach((node) => {
+                if (!node || typeof node !== 'object')
+                    return;
+                if (node.code === 'P' || node.code === 'B' || node.code === 'T')
+                    total += 1;
+                const tieCount = Number.isFinite(node.tieCount) ? Math.max(0, Math.floor(node.tieCount)) : 0;
+                total += tieCount;
+            });
+            return total || raw.length;
+        }
+
+        function deriveStatusFromCountdown(countdown, stats, history, historyRaw) {
             const total = (stats && stats.total && Number.isFinite(stats.total.value))
                 ? stats.total.value
-                : (Array.isArray(history) ? history.length : 0);
+                : countRenderableHistoryTotal(history, historyRaw);
             const normalized = (typeof countdown === 'number' && Number.isFinite(countdown) && countdown >= 0)
                 ? countdown
                 : null;
@@ -11293,8 +11346,14 @@
         }
 
         function deriveStatusFromServer(data) {
-            const historyCount = Array.isArray(data && data.history) ? data.history.length : 0;
-            if (!historyCount)
+            const historyCount = countRenderableHistoryTotal(
+                data && data.history || [],
+                data && data.historyRaw || []
+            );
+            const pendingGameStage = (data && typeof data.gameStage === 'number' && Number.isFinite(data.gameStage))
+                ? Math.floor(data.gameStage)
+                : null;
+            if (!historyCount && !(data && data.wantShuffle) && pendingGameStage !== 0)
                 return { text: 'Đang đồng bộ dữ liệu...', color: '#f59e0b' };
             const gameStage = (data && typeof data.gameStage === 'number' && Number.isFinite(data.gameStage))
                 ? Math.floor(data.gameStage)
@@ -11302,7 +11361,7 @@
             const countdown = (data && typeof data.countdown === 'number' && Number.isFinite(data.countdown) && data.countdown >= 0)
                 ? data.countdown
                 : null;
-            if (countdown !== null && countdown > 0)
+            if (countdown !== null && countdown > 0 && !(data && data.wantShuffle) && gameStage !== 0)
                 return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
             if (gameStage === 1)
                 return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
@@ -11314,13 +11373,19 @@
                 return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
             if (data && data.wantEnd)
                 return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
-            return deriveStatusFromCountdown(countdown, data && data.stats || null, data && data.history || []);
+            return deriveStatusFromCountdown(countdown, data && data.stats || null, data && data.history || [], data && data.historyRaw || []);
         }
 
 
         function deriveStatusFromLiveState(data, liveCountdown) {
-            const historyCount = Array.isArray(data && data.history) ? data.history.length : 0;
-            if (!historyCount)
+            const historyCount = countRenderableHistoryTotal(
+                data && data.history || [],
+                data && data.historyRaw || []
+            );
+            const pendingGameStage = (data && typeof data.gameStage === 'number' && Number.isFinite(data.gameStage))
+                ? Math.floor(data.gameStage)
+                : null;
+            if (!historyCount && !(data && data.wantShuffle) && pendingGameStage !== 0 && pendingGameStage !== 4)
                 return { text: 'Đang đồng bộ dữ liệu...', color: '#f59e0b' };
             const gameStage = (data && typeof data.gameStage === 'number' && Number.isFinite(data.gameStage))
                 ? Math.floor(data.gameStage)
@@ -11330,7 +11395,7 @@
                 : ((data && typeof data.countdown === 'number' && Number.isFinite(data.countdown) && data.countdown >= 0)
                     ? data.countdown
                     : null);
-            if (countdown !== null && countdown > 0)
+            if (countdown !== null && countdown > 0 && !(data && data.wantShuffle) && gameStage !== 0 && gameStage !== 4)
                 return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
             if (data && data.wantShuffle)
                 return { text: 'Đang xáo bài', color: '#f59e0b' };
@@ -11342,7 +11407,7 @@
                 return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
             if (countdown === null && gameStage === 1)
                 return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
-            return deriveStatusFromCountdown(countdown, data && data.stats || null, data && data.history || []);
+            return deriveStatusFromCountdown(countdown, data && data.stats || null, data && data.history || [], data && data.historyRaw || []);
         }
 
         function applyPanelStatus(st, data, liveCountdown) {
@@ -11744,18 +11809,36 @@ function deriveWinLoseColor(text) {
             applyResultMapGrid(view, grid);
             }
 
-        function summarizeHistoryStats(history, stats) {
+        function summarizeHistoryStats(history, stats, historyRaw) {
             const counts = { total: 0, player: 0, banker: 0, tie: 0 };
             const list = Array.isArray(history) ? history : [];
-            list.forEach((token) => {
-                if (token === 'P')
-                    counts.player += 1;
-                else if (token === 'B')
-                    counts.banker += 1;
-                else if (token === 'T')
-                    counts.tie += 1;
+            if (list.length) {
+                list.forEach((token) => {
+                    if (token === 'P')
+                        counts.player += 1;
+                    else if (token === 'B')
+                        counts.banker += 1;
+                    else if (token === 'T')
+                        counts.tie += 1;
                 });
-            counts.total = list.length;
+                counts.total = list.length;
+            } else {
+                const raw = Array.isArray(historyRaw) ? historyRaw : [];
+                raw.forEach((node) => {
+                    if (!node || typeof node !== 'object')
+                        return;
+                    if (node.code === 'P')
+                        counts.player += 1;
+                    else if (node.code === 'B')
+                        counts.banker += 1;
+                    else if (node.code === 'T')
+                        counts.tie += 1;
+                    const tieCount = Number.isFinite(node.tieCount) ? Math.max(0, Math.floor(node.tieCount)) : 0;
+                    counts.tie += tieCount;
+                    counts.total += tieCount;
+                });
+                counts.total += counts.player + counts.banker;
+            }
             if (stats) {
                 if (stats.total && Number.isFinite(stats.total.value))
                     counts.total = stats.total.value;
@@ -12065,9 +12148,8 @@ function deriveWinLoseColor(text) {
                 banker: (rawBetChips && rawBetChips.banker) ? rawBetChips.banker : planBetAmounts.banker,
                 tie: (rawBetChips && rawBetChips.tie) ? rawBetChips.tie : planBetAmounts.tie
             };
-            const winLoseText = deriveWinLoseValue(text);
-            let resolvedWinLoseText = winLoseText;
-            let resolvedWinLoseColor = deriveWinLoseColor(winLoseText);
+            let resolvedWinLoseText = '--';
+            let resolvedWinLoseColor = '';
             const applyStickyText = (el, value, lastKey) => {
                 if (!el || !st)
                     return;
@@ -12105,7 +12187,17 @@ function deriveWinLoseColor(text) {
                         st.lastWinAmountText = winText;
                     }
                 }
-                if (st.lastBetOutcome && st.lastBetOutcomeSig === statsSig) {
+                const outcome = String(betStats.outcome || st.lastBetOutcome || '').trim().toLowerCase();
+                if (outcome === 'win') {
+                    resolvedWinLoseText = 'THẮNG';
+                    resolvedWinLoseColor = '#22c55e';
+                } else if (outcome === 'loss') {
+                    resolvedWinLoseText = 'THUA';
+                    resolvedWinLoseColor = '#ef4444';
+                } else if (outcome === 'tie') {
+                    resolvedWinLoseText = 'HÒA';
+                    resolvedWinLoseColor = '#f59e0b';
+                } else if (false && st.lastBetOutcome && st.lastBetOutcomeSig === statsSig) {
                     if (st.lastBetOutcome === 'win') {
                         resolvedWinLoseText = 'THẮNG';
                         resolvedWinLoseColor = '#22c55e';
@@ -12117,10 +12209,19 @@ function deriveWinLoseColor(text) {
                         resolvedWinLoseColor = '#f59e0b';
                     }
                 }
-            } else {
-                updateWinLossTotals(st, winLoseText, historySig);
+            } else if (st.lastBetOutcome) {
+                if (st.lastBetOutcome === 'win') {
+                    resolvedWinLoseText = 'THẮNG';
+                    resolvedWinLoseColor = '#22c55e';
+                } else if (st.lastBetOutcome === 'loss') {
+                    resolvedWinLoseText = 'THUA';
+                    resolvedWinLoseColor = '#ef4444';
+                } else if (st.lastBetOutcome === 'tie') {
+                    resolvedWinLoseText = 'HÒA';
+                    resolvedWinLoseColor = '#f59e0b';
+                }
             }
-            if ((!resolvedWinLoseText || resolvedWinLoseText === '--') && st.lastWinLoseText) {
+            if ((!resolvedWinLoseText || resolvedWinLoseText === '--') && st.lastWinLoseText && st.lastWinLoseText !== '--') {
                 resolvedWinLoseText = st.lastWinLoseText;
                 resolvedWinLoseColor = st.lastWinLoseColor || resolvedWinLoseColor;
             } else if (resolvedWinLoseText && resolvedWinLoseText !== '--' && !resolvedWinLoseColor) {
@@ -12218,7 +12319,7 @@ function deriveWinLoseColor(text) {
                         st.lastWinAmountText = derivedWin;
                     }
                 }
-                const statCounts = summarizeHistoryStats(data.history || [], data.stats || null);
+                const statCounts = summarizeHistoryStats(data.history || [], data.stats || null, data.historyRaw || []);
                 if (view.statsTotal)
                     view.statsTotal.textContent = '#' + String(statCounts.total || 0);
                 if (view.statsP)
@@ -12385,16 +12486,32 @@ function deriveWinLoseColor(text) {
             const btnPlay = document.createElement('button');
             btnPlay.className = 'play-btn';
             btnPlay.textContent = 'Play';
-            btnPlay.addEventListener('pointerdown', (e) => e.stopPropagation());
-            btnPlay.addEventListener('mousedown', (e) => e.stopPropagation());
-            btnPlay.addEventListener('click', () => {
+            const sendPlayRequest = () => {
                 try {
                     const st = getPanelState(room.id);
                     if (st)
                         resetWinLossTotals(st);
-                    window.chrome?.webview?.postMessage?.({ overlay: 'table', event: 'play', id: room.id });
+                    window.chrome?.webview?.postMessage?.({
+                        overlay: 'table',
+                        event: 'play',
+                        id: room.id,
+                        name: room.name || ''
+                    });
+                    try {
+                        if (window.top && window.top !== window) {
+                            window.top.postMessage({
+                                overlay: 'table',
+                                event: 'play',
+                                id: room.id,
+                                name: room.name || ''
+                            }, '*');
+                        }
+                    } catch (_) {}
                 } catch (_) {}
-            });
+            };
+            btnPlay.addEventListener('pointerdown', (e) => e.stopPropagation());
+            btnPlay.addEventListener('mousedown', (e) => e.stopPropagation());
+            btnPlay.addEventListener('click', sendPlayRequest);
             actions.append(btnPlay);
             head.append(title, actions);
 

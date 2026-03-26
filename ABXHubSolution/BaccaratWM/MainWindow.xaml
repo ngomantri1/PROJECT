@@ -1009,22 +1009,7 @@
                             Visibility="Collapsed">
                             <StackPanel>
                                 <Grid Margin="0,0,0,10" VerticalAlignment="Center">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-
                                     <TextBlock Style="{StaticResource SectionTitle}" Text="Chiến lược &amp; Chuỗi tiền" />
-                                    <Button
-                                        x:Name="BtnGoHome"
-                                        Grid.Column="1"
-                                        MinWidth="150"
-                                        Margin="12,0,0,0"
-                                        Padding="12,8"
-                                        HorizontalAlignment="Right"
-                                        Click="BtnGoHome_Click"
-                                        Content="Quay về trang chủ"
-                                        Style="{StaticResource PrimaryButton}" />
                                 </Grid>
 
                                 <Grid>

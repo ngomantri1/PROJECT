@@ -357,16 +357,22 @@ namespace BaccaratWM
         private DateTime _homeUsernameAt = DateTime.MinValue;
         private string? _homeBalance;
         private DateTime _homeBalanceAt = DateTime.MinValue; // mốc thời gian bắt được
+        private string? _gameUsername;
+        private DateTime _gameUsernameAt = DateTime.MinValue;
+        private DateTime _lastGameUsernameProbeAt = DateTime.MinValue;
+        private int _gameUsernameProbeBusy = 0;
         private string? _gameBalance;
         private DateTime _gameBalanceAt = DateTime.MinValue;
         private string? _gameTotalBet;
         private DateTime _gameTotalBetAt = DateTime.MinValue;
         private string _lastHomeTickSig = "";
+        private string _lastDashboardAccountSig = "";
         private bool _homeLoggedIn = false; // chỉ true khi phát hiện có nút Đăng xuất (đã login)
         private bool _navModeHooked = false;   // đã gắn handler NavigationCompleted để cập nhật UI nhanh về Home?
 
 
 
+        private bool _manualDashboardOpened = false;
         private readonly SemaphoreSlim _cfgWriteGate = new(1, 1);// Khoá ghi config để không bao giờ ghi song song
                                                                  // --- UI mode monitor ---
         private DateTime _lastGameTickUtc = DateTime.MinValue;
@@ -768,7 +774,8 @@ Ví dụ không hợp lệ:
         private const bool SHOW_PACKET_LINES_IN_UI = false;
         private const int PACKET_UI_SAMPLE_EVERY_N = 2;
         private int _pktUiSample = 0;
-        private bool _lockJsRegistered = false;
+        private bool _mainLockJsRegistered = false;
+        private bool _popupLockJsRegistered = false;
         // Map ảnh cho từng ký tự
         private readonly Dictionary<char, ImageSource> _seqIconMap = new();
 
@@ -1530,8 +1537,8 @@ Ví dụ không hợp lệ:
         {
             try
             {
-                var showPanels = isGame || _runExpiresAt != null;
-                var showTrialBadge = showPanels && IsTrialModeRequestedOrActive();
+                var showTrialBadge = IsTrialModeRequestedOrActive();
+                var showPanels = _manualDashboardOpened;
 
                 if (showPanels)
                 {
@@ -1621,8 +1628,7 @@ Ví dụ không hợp lệ:
 
         private void RecomputeUiMode()
         {
-            var nextIsGame = GetIsGameByUrlFallback(); // quyết định UI thuần theo URL
-            ApplyUiMode(nextIsGame);
+            return;
         }
 
 
@@ -1649,10 +1655,7 @@ Ví dụ không hợp lệ:
 
         private void ApplyUiMode(bool isGame)
         {
-            SetModeUi(isGame);
-
-            if (!isGame && BtnVaoXocDia != null && !Equals(BtnVaoXocDia.Content as string, "Đăng Nhập Tool"))
-                BtnVaoXocDia.Content = "Đăng Nhập Tool";
+            SetModeUi(false);
         }
 
         private WebView2? GetActiveRoomHostWebView()
@@ -1679,8 +1682,12 @@ Ví dụ không hợp lệ:
                     continue;
                 try
                 {
-                    await web.ExecuteScriptAsync(script);
-                    return true;
+                    var scriptJson = JsonSerializer.Serialize(script);
+                    var wrapped = $"(function(){{try{{return !!eval({scriptJson});}}catch(_ ){{return false;}}}})();";
+                    var res = await web.ExecuteScriptAsync(wrapped);
+                    var ok = string.Equals((res ?? "").Trim(), "true", StringComparison.OrdinalIgnoreCase);
+                    if (ok)
+                        return true;
                 }
                 catch { }
             }
@@ -2915,7 +2922,7 @@ Ví dụ không hợp lệ:
             if (LblStatTotalBet != null)
                 LblStatTotalBet.Text = s.TotalBetAmount.ToString("N0");
             if (LblStatTotalProfit != null)
-                LblStatTotalProfit.Text = _winTotal.ToString("N0");
+                LblStatTotalProfit.Text = s.TotalProfit.ToString("N0");
         }
 
         private TabStats BuildAggregatedStats()
@@ -2926,6 +2933,7 @@ Ví dụ không hợp lệ:
                 agg.TotalWinCount += stats.TotalWinCount;
                 agg.TotalLossCount += stats.TotalLossCount;
                 agg.TotalBetAmount += stats.TotalBetAmount;
+                agg.TotalProfit += stats.TotalProfit;
                 if (stats.MaxWinStreak > agg.MaxWinStreak)
                     agg.MaxWinStreak = stats.MaxWinStreak;
                 if (stats.MaxLossStreak > agg.MaxLossStreak)
@@ -3535,10 +3543,30 @@ Ví dụ không hợp lệ:
 
         private bool TryGetTaskSnapshot(string tableId, out CwSnapshot snap)
         {
-            if (TryGetOverlaySnapshot(tableId, out snap))
+            var hasOverlay = TryGetOverlaySnapshot(tableId, out var overlaySnap);
+            var hasPopupRoad = TryGetPopupRoadSnapshot(tableId, out var popupRoadSnap);
+
+            // Overlay state is useful for rendered history/session, but its countdown is often 0
+            // while popup-road still has the real open-bet countdown. Prefer popup-road whenever it
+            // can drive the wait gate, otherwise keep the richer overlay snapshot.
+            if (hasPopupRoad && popupRoadSnap.prog.GetValueOrDefault() > 0 &&
+                (!hasOverlay || overlaySnap.prog.GetValueOrDefault() <= 0))
+            {
+                snap = popupRoadSnap;
                 return true;
-            if (TryGetPopupRoadSnapshot(tableId, out snap))
+            }
+
+            if (hasOverlay)
+            {
+                snap = overlaySnap;
                 return true;
+            }
+
+            if (hasPopupRoad)
+            {
+                snap = popupRoadSnap;
+                return true;
+            }
 
             snap = new CwSnapshot
             {
@@ -3782,105 +3810,8 @@ Ví dụ không hợp lệ:
                             //EnqueueUi($"[JS] {display}"); // chỉ hiển thị UI, không ghi ra file
                             var root = parsedDoc.RootElement.Clone();
 
-                                if (root.TryGetProperty("overlay", out var overlayEl) &&
-                                    string.Equals(overlayEl.GetString(), "table", StringComparison.OrdinalIgnoreCase) &&
-                                    root.TryGetProperty("event", out var eventEl))
-                                {
-                                    var ev = (eventEl.GetString() ?? "").ToLowerInvariant();
-                                    if (ev == "closed" && root.TryGetProperty("id", out var overlayIdEl))
-                                    {
-                                        OnTableClosed(overlayIdEl.GetString() ?? "");
-                                    }
-                                    if (ev == "focus" && root.TryGetProperty("id", out var focusIdEl))
-                                    {
-                                        var id = focusIdEl.GetString() ?? "";
-                                        var name = root.TryGetProperty("name", out var nameEl) ? (nameEl.GetString() ?? "") : "";
-                                        await HandleTableFocusAsync(id, name);
-                                    }
-                                    if (ev == "play" && root.TryGetProperty("id", out var playIdEl))
-                                    {
-                                        var id = playIdEl.GetString() ?? "";
-                                        var name = root.TryGetProperty("name", out var nameEl2) ? (nameEl2.GetString() ?? "") : "";
-                                        await ToggleTablePlayAsync(id, name);
-                                    }
-                                    if (ev == "state")
-                                    {
-                                        if (root.TryGetProperty("tables", out var tablesEl) &&
-                                            tablesEl.ValueKind == JsonValueKind.Array)
-                                        {
-                                            foreach (var it in tablesEl.EnumerateArray())
-                                            {
-                                                var id = it.TryGetProperty("id", out var idElState) ? (idElState.GetString() ?? "") : "";
-                                                if (string.IsNullOrWhiteSpace(id)) continue;
-                                                var name = it.TryGetProperty("name", out var nElState) ? (nElState.GetString() ?? "") : "";
-                                                var text = it.TryGetProperty("text", out var textEl) ? (textEl.GetString() ?? "") : "";
-                                                var historyText = it.TryGetProperty("historyText", out var htEl) ? (htEl.GetString() ?? "") : "";
-                                                var historyEl = it.TryGetProperty("history", out var hEl) ? hEl : default;
-
-                                                double countdown = 0;
-                                                if (it.TryGetProperty("countdown", out var cEl))
-                                                {
-                                                    if (cEl.ValueKind == JsonValueKind.Number)
-                                                        countdown = cEl.GetDouble();
-                                                    else if (cEl.ValueKind == JsonValueKind.String &&
-                                                             double.TryParse(cEl.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var cval))
-                                                        countdown = cval;
-                                                }
-
-                                                UpdateOverlayStateFromJs(id, name, text, historyEl, historyText, countdown);
-                                            }
-                                        }
-                                        return;
-                                    }
-                                    if (ev == "profit")
-                                    {
-                                        if (root.TryGetProperty("tables", out var tablesEl) &&
-                                            tablesEl.ValueKind == JsonValueKind.Array)
-                                        {
-                                            foreach (var it in tablesEl.EnumerateArray())
-                                            {
-                                                var id = it.TryGetProperty("id", out var idElProfit) ? (idElProfit.GetString() ?? "") : "";
-                                                var name = it.TryGetProperty("name", out var nEl) ? (nEl.GetString() ?? "") : "";
-                                                if (!it.TryGetProperty("profit", out var pEl)) continue;
-                                                var profit = ReadJsonMoney(pEl);
-                                                ApplyProfitUpdate(id, name, profit);
-                                            }
-                                        }
-                                        else if (root.TryGetProperty("id", out var pIdEl) &&
-                                                 root.TryGetProperty("profit", out var pValEl))
-                                        {
-                                            var id = pIdEl.GetString() ?? "";
-                                            var name = root.TryGetProperty("name", out var nEl2) ? (nEl2.GetString() ?? "") : "";
-                                            var profit = ReadJsonMoney(pValEl);
-                                            ApplyProfitUpdate(id, name, profit);
-                                        }
-                                        return;
-                                    }
-                                    if (ev == "blur")
-                                    {
-                                        ClearActiveTableFocus();
-                                    }
+                                if (await TryHandleOverlayBridgeMessageAsync(root))
                                     return;
-                                }
-
-                                if (root.TryGetProperty("overlay", out var pinOverlayEl) &&
-                                    string.Equals(pinOverlayEl.GetString(), "pin", StringComparison.OrdinalIgnoreCase) &&
-                                    root.TryGetProperty("event", out var pinEventEl))
-                                {
-                                    var ev = (pinEventEl.GetString() ?? "").ToLowerInvariant();
-                                    if (ev == "pinlist" && root.TryGetProperty("ids", out var idsEl) &&
-                                        idsEl.ValueKind == JsonValueKind.Array)
-                                    {
-                                        var list = new List<string>();
-                                        foreach (var it in idsEl.EnumerateArray())
-                                        {
-                                            if (it.ValueKind == JsonValueKind.String)
-                                                list.Add(it.GetString() ?? "");
-                                        }
-                                        await ApplyPinnedRoomsFromWebAsync(list);
-                                    }
-                                    return;
-                                }
 
                                 if (TryHandleBetBridgeMessage(root))
                                     return;
@@ -3895,7 +3826,18 @@ Ví dụ không hợp lệ:
                                 var isGameBalanceMsg = string.Equals(abxStr, "game_balance", StringComparison.OrdinalIgnoreCase);
 
 
-                                if (!string.IsNullOrWhiteSpace(uname))
+                                if (!string.IsNullOrWhiteSpace(uname) && (isGameUi || isGameBalanceMsg))
+                                {
+                                    var normalizedGame = uname.Trim();
+                                    if (!string.IsNullOrWhiteSpace(normalizedGame) && !string.Equals(_gameUsername, normalizedGame, StringComparison.Ordinal))
+                                        _gameUsername = normalizedGame;
+                                    _gameUsernameAt = DateTime.UtcNow;
+                                    _ = Dispatcher.BeginInvoke(new Action(() =>
+                                    {
+                                        RefreshDashboardAccountUi(uname, null, "game-username");
+                                    }));
+                                }
+                                else if (!string.IsNullOrWhiteSpace(uname))
                                 {
                                     var normalized = uname.Trim().ToLowerInvariant();
                                     if (_homeUsername != normalized)
@@ -3912,8 +3854,7 @@ Ví dụ không hợp lệ:
                                     _homeUsernameAt = DateTime.UtcNow;
                                     _ = Dispatcher.BeginInvoke(new Action(() =>
                                     {
-                                        if (LblUserName != null)
-                                            LblUserName.Text = uname;
+                                        RefreshDashboardAccountUi(uname, null, "home-username");
                                     }));
                                 }
                                 var bal = root.TryGetProperty("balance", out var bEl)
@@ -3933,9 +3874,10 @@ Ví dụ không hợp lệ:
                                             }
                                             _ = Dispatcher.BeginInvoke(new Action(() =>
                                             {
-                                                if (LblAmount != null)
-                                                    LblAmount.Text = balText;
+                                                RefreshDashboardAccountUi(null, null, "game-balance");
                                             }));
+                                            if (string.IsNullOrWhiteSpace(_gameUsername))
+                                                _ = TryRefreshGameUsernameFromActiveHostAsync("probe-game-user");
                                         }
                                     }
                                     else
@@ -3953,8 +3895,7 @@ Ví dụ không hợp lệ:
 
                                         _ = Dispatcher.BeginInvoke(new Action(() =>
                                         {
-                                            if (LblAmount != null)
-                                                LblAmount.Text = balText;
+                                            RefreshDashboardAccountUi(uname, null, "home-balance");
                                         }));
                                     }
                                 }
@@ -4082,30 +4023,14 @@ Ví dụ không hợp lệ:
                                                         if (PrgBet != null) PrgBet.Value = 0;
                                                         if (LblProg != null) LblProg.Text = "-";
                                                     }
-                                                    //Cập nhật Tên nhân vật
-                                                    if (LblUserName != null && !string.IsNullOrWhiteSpace(uname)) LblUserName.Text = uname;
+                                                    var amt = snap?.totals?.A;
+                                                    RefreshDashboardAccountUi(uname, amt, "tick");
                                                     // Kết quả gần nhất từ chuỗi seq
                                                     var seqStrLocal = snap.seq ?? "";
                                                     char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
                                                     var kq = (last == '0' || last == '2' || last == '4') ? "P"
                                                              : (last == '1' || last == '3') ? "B" : "";
                                                     SetLastResultUI(kq);
-
-                                                    // Tổng tiền
-                                                    var amt = snap?.totals?.A;
-                                                    var hasFreshGameBalance = !string.IsNullOrWhiteSpace(_gameBalance) &&
-                                                                              (DateTime.UtcNow - _gameBalanceAt) <= TimeSpan.FromSeconds(10);
-                                                    if (LblAmount != null)
-                                                    {
-                                                        if (hasFreshGameBalance)
-                                                            LblAmount.Text = _gameBalance;
-                                                        else if (!string.IsNullOrWhiteSpace(_homeBalance))
-                                                            LblAmount.Text = _homeBalance;
-                                                        else if (amt.HasValue)
-                                                            LblAmount.Text = amt.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
-                                                        else
-                                                            LblAmount.Text = "-";
-                                                    }
 
                                                     var hasFreshGameTotalBet = !string.IsNullOrWhiteSpace(_gameTotalBet) &&
                                                                                (DateTime.UtcNow - _gameTotalBetAt) <= TimeSpan.FromSeconds(10);
@@ -4343,6 +4268,18 @@ Ví dụ không hợp lệ:
                                     }
 
                                     var homeBal = root.TryGetProperty("balance", out var homeBalEl) ? (homeBalEl.GetString() ?? "") : "";
+                                    if (!string.IsNullOrWhiteSpace(homeBal))
+                                    {
+                                        var homeBalVal = ParseMoneyOrZero(homeBal);
+                                        var homeBalText = (homeBalVal > 0 || homeBal.Trim() == "0")
+                                            ? ((long)homeBalVal).ToString("N0", CultureInfo.InvariantCulture)
+                                            : homeBal.Trim();
+                                        if (_homeBalance != homeBalText)
+                                        {
+                                            _homeBalance = homeBalText;
+                                            _homeBalanceAt = DateTime.UtcNow;
+                                        }
+                                    }
                                     var href = root.TryGetProperty("href", out var hEl) ? (hEl.GetString() ?? "") : "";
                                     var title = root.TryGetProperty("title", out var titleEl) ? (titleEl.GetString() ?? "") : "";
                                     var sig = $"{homeUname}|{homeBal}|{href}";
@@ -4356,8 +4293,7 @@ Ví dụ không hợp lệ:
                                     {
                                         await Dispatcher.InvokeAsync(() =>
                                         {
-                                            if (LblUserName != null && !string.IsNullOrWhiteSpace(homeUname)) LblUserName.Text = homeUname;
-                                            if (LblAmount != null) LblAmount.Text = homeBal;
+                                            RefreshDashboardAccountUi(homeUname, null, "home_tick");
                                         });
 
                                         try
@@ -5239,27 +5175,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
             await NavigateIfNeededAsync(T(TxtUrl).Trim());
         }
 
-        private async void BtnGoHome_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                ClosePopupHost();
-
-                // Reset force-lobby guard when returning to home
-                _lastForcedLobbyUrl = null;
-
-                var home = (_cfg?.Url ?? DEFAULT_URL)?.Trim();
-                if (string.IsNullOrWhiteSpace(home))
-                    home = DEFAULT_URL;
-                home = NormalizePreferredStartupUrl(home);
-
-                await NavigateIfNeededAsync(home);
-            }
-            catch (Exception ex)
-            {
-                Log("[GoHome] " + ex.Message);
-            }
-        }
         private void Exit_Click(object sender, RoutedEventArgs e) => Close();
         private void StartLoop_Click(object sender, RoutedEventArgs e)
         {
@@ -6201,7 +6116,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             Log("[PopupWeb] bridge registered");
         }
 
-        private void PopupWeb_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+        private async void PopupWeb_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
             JsonDocument? parsedDoc = null;
             try
@@ -6211,6 +6126,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 var root = parsedDoc.RootElement.Clone();
                 if (TryPublishRoomsFromTableUpdate(root, "popup/webmsg"))
+                    return;
+                if (await TryHandleOverlayBridgeMessageAsync(root))
                     return;
                 if (TryHandleBetBridgeMessage(root))
                     return;
@@ -6281,6 +6198,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 await InjectOnPopupDocAsync();
+                Dispatcher.BeginInvoke(new Action(ApplyMouseShieldFromCheck));
             }
             catch (Exception ex)
             {
@@ -6386,7 +6304,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var src = _popupWeb?.CoreWebView2?.Source ?? "";
                 Log("[PopupWeb] NavigationCompleted: " + (e.IsSuccess ? "OK" : ("Err " + e.WebErrorStatus)) + " | " + src);
                 if (e.IsSuccess)
+                {
                     await InjectOnPopupDocAsync();
+                    Dispatcher.BeginInvoke(new Action(ApplyMouseShieldFromCheck));
+                }
             }
             catch (Exception ex)
             {
@@ -6552,6 +6473,94 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 long amount = root.TryGetProperty("amount", out var ae) ? ReadJsonLong(ae) : 0;
                 string error = root.TryGetProperty("error", out var ee) ? (ee.GetString() ?? "") : "";
                 Log($"[BET][ERR] {side} {amount} :: {error}");
+                return true;
+            }
+
+            return false;
+        }
+
+        private async Task<bool> TryHandleOverlayBridgeMessageAsync(JsonElement root)
+        {
+            if (root.TryGetProperty("overlay", out var overlayEl) &&
+                string.Equals(overlayEl.GetString(), "table", StringComparison.OrdinalIgnoreCase) &&
+                root.TryGetProperty("event", out var eventEl))
+            {
+                var ev = (eventEl.GetString() ?? "").ToLowerInvariant();
+                if (ev == "closed" && root.TryGetProperty("id", out var overlayIdEl))
+                {
+                    OnTableClosed(overlayIdEl.GetString() ?? "");
+                }
+                if (ev == "focus" && root.TryGetProperty("id", out var focusIdEl))
+                {
+                    var id = focusIdEl.GetString() ?? "";
+                    var name = root.TryGetProperty("name", out var nameEl) ? (nameEl.GetString() ?? "") : "";
+                    await HandleTableFocusAsync(id, name);
+                }
+                if (ev == "play" && root.TryGetProperty("id", out var playIdEl))
+                {
+                    var id = playIdEl.GetString() ?? "";
+                    var name = root.TryGetProperty("name", out var nameEl2) ? (nameEl2.GetString() ?? "") : "";
+                    Log("[OVERLAY] play click id=" + id + " name=" + name);
+                    await ToggleTablePlayAsync(id, name);
+                }
+                if (ev == "state")
+                {
+                    if (root.TryGetProperty("tables", out var tablesEl) &&
+                        tablesEl.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var it in tablesEl.EnumerateArray())
+                        {
+                            var id = it.TryGetProperty("id", out var idElState) ? (idElState.GetString() ?? "") : "";
+                            if (string.IsNullOrWhiteSpace(id)) continue;
+                            var name = it.TryGetProperty("name", out var nElState) ? (nElState.GetString() ?? "") : "";
+                            var text = it.TryGetProperty("text", out var textEl) ? (textEl.GetString() ?? "") : "";
+                            var historyText = it.TryGetProperty("historyText", out var htEl) ? (htEl.GetString() ?? "") : "";
+                            var historyEl = it.TryGetProperty("history", out var hEl) ? hEl : default;
+
+                            double countdown = 0;
+                            if (it.TryGetProperty("countdown", out var cEl))
+                            {
+                                if (cEl.ValueKind == JsonValueKind.Number)
+                                    countdown = cEl.GetDouble();
+                                else if (cEl.ValueKind == JsonValueKind.String &&
+                                         double.TryParse(cEl.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var cval))
+                                    countdown = cval;
+                            }
+
+                            UpdateOverlayStateFromJs(id, name, text, historyEl, historyText, countdown);
+                        }
+                    }
+                    return true;
+                }
+                if (ev == "profit")
+                {
+                    // Ignore overlay text-derived profit snapshots.
+                    // Current-run profit is tracked from finalized bet results in C# and is more reliable.
+                    return true;
+                }
+                if (ev == "blur")
+                {
+                    ClearActiveTableFocus();
+                }
+                return true;
+            }
+
+            if (root.TryGetProperty("overlay", out var pinOverlayEl) &&
+                string.Equals(pinOverlayEl.GetString(), "pin", StringComparison.OrdinalIgnoreCase) &&
+                root.TryGetProperty("event", out var pinEventEl))
+            {
+                var ev = (pinEventEl.GetString() ?? "").ToLowerInvariant();
+                if (ev == "pinlist" && root.TryGetProperty("ids", out var idsEl) &&
+                    idsEl.ValueKind == JsonValueKind.Array)
+                {
+                    var list = new List<string>();
+                    foreach (var it in idsEl.EnumerateArray())
+                    {
+                        if (it.ValueKind == JsonValueKind.String)
+                            list.Add(it.GetString() ?? "");
+                    }
+                    await ApplyPinnedRoomsFromWebAsync(list);
+                }
                 return true;
             }
 
@@ -7136,6 +7145,66 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
                         continue;
 
+                    if (protocol == 30)
+                    {
+                        var balanceRaw = data.TryGetProperty("balance", out var balanceEl30)
+                            ? (balanceEl30.ValueKind == JsonValueKind.Number ? balanceEl30.GetRawText() : (balanceEl30.GetString() ?? ""))
+                            : "";
+                        var balanceText = NormalizeWmServerBalanceText(balanceRaw);
+                        if (!string.IsNullOrWhiteSpace(balanceText))
+                        {
+                            _gameBalance = balanceText;
+                            _gameBalanceAt = DateTime.UtcNow;
+                            _ = Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                RefreshDashboardAccountUi(null, null, "protocol30");
+                            }));
+                            _ = TryRefreshGameUsernameFromActiveHostAsync("probe-game-user");
+                        }
+                        continue;
+                    }
+
+                    if (protocol == 23)
+                    {
+                        var gameUser = FindKnownString(data, new[] { "userName", "account" }, 1).Trim();
+                        var balanceRaw = data.TryGetProperty("balance", out var balanceEl23)
+                            ? (balanceEl23.ValueKind == JsonValueKind.Number ? balanceEl23.GetRawText() : (balanceEl23.GetString() ?? ""))
+                            : "";
+                        var balanceText = NormalizeWmServerBalanceText(balanceRaw);
+                        var totalBetRaw = data.TryGetProperty("totalBetMoney", out var totalBetEl23)
+                            ? (totalBetEl23.ValueKind == JsonValueKind.Number ? totalBetEl23.GetRawText() : (totalBetEl23.GetString() ?? ""))
+                            : "";
+                        var totalBetText = NormalizeWmServerBalanceText(totalBetRaw);
+
+                        if (!string.IsNullOrWhiteSpace(gameUser))
+                        {
+                            _gameUsername = gameUser;
+                            _gameUsernameAt = DateTime.UtcNow;
+                        }
+                        if (!string.IsNullOrWhiteSpace(balanceText))
+                        {
+                            _gameBalance = balanceText;
+                            _gameBalanceAt = DateTime.UtcNow;
+                        }
+                        if (!string.IsNullOrWhiteSpace(totalBetText))
+                        {
+                            _gameTotalBet = totalBetText;
+                            _gameTotalBetAt = DateTime.UtcNow;
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(gameUser) || !string.IsNullOrWhiteSpace(balanceText))
+                        {
+                            _ = Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                RefreshDashboardAccountUi(gameUser, null, "protocol23");
+                            }));
+                        }
+                        else
+                        {
+                            _ = TryRefreshGameUsernameFromActiveHostAsync("probe-game-user");
+                        }
+                    }
+
                     var gameId = I(FindKnownString(data, new[] { "gameID", "gameId" }, 1), -1);
                     var tableId = FindKnownString(data, new[] { "groupID", "groupId" }, 1);
                     if (gameId <= 0 || string.IsNullOrWhiteSpace(tableId))
@@ -7147,8 +7216,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     {
                         var history = ExtractHistoryTokensFromProtocol26(data);
                         var historyRaw = ExtractHistoryRawNodesFromProtocol26(data);
-                        if (history.Count == 0)
-                            continue;
                         UpdatePopupServerRoadState(routeKey, resolvedId, resolvedName, gameId, state =>
                         {
                             state.History = history;
@@ -7203,12 +7270,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         UpdatePopupServerRoadState(routeKey, resolvedId, resolvedName, gameId, state =>
                         {
                             var isNewRound = !string.Equals(state.SessionKey, round, StringComparison.OrdinalIgnoreCase);
+                            var shouldClearRoad = wantShuffle == true || string.Equals(round, "0", StringComparison.OrdinalIgnoreCase);
                             state.SessionKey = round;
                             state.Text = "ID: " + round;
                             state.KeyStatus = keyStatus;
                             state.TableStatus = tableStatus;
                             state.WantShuffle = wantShuffle;
                             state.WantEnd = wantEnd;
+                            if (shouldClearRoad)
+                            {
+                                state.History.Clear();
+                                state.HistoryRaw.Clear();
+                                state.HistoryText = "";
+                            }
                             if (isNewRound)
                             {
                                 state.CenterResult = "";
@@ -7733,7 +7807,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 }
             }
 
-            Log($"[ROADNET] {tableId} route={snapshot.RouteKey} source={source} hist={snapshot.HistoryText} center={snapshot.CenterResult} scoreP={snapshot.PlayerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} scoreB={snapshot.BankerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} botBetP={snapshot.BetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} botBetT={snapshot.BetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} botBetB={snapshot.BetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetP={snapshot.TableBetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetT={snapshot.TableBetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetB={snapshot.TableBetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} countdown={snapshot.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? ""}");
+            Log($"[ROADNET] {tableId} route={snapshot.RouteKey} source={source} hist={snapshot.HistoryText} center={snapshot.CenterResult} shuffle={(snapshot.WantShuffle == true ? "1" : "0")} scoreP={snapshot.PlayerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} scoreB={snapshot.BankerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} botBetP={snapshot.BetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} botBetT={snapshot.BetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} botBetB={snapshot.BetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetP={snapshot.TableBetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetT={snapshot.TableBetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetB={snapshot.TableBetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} countdown={snapshot.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? ""}");
             _ = Dispatcher.InvokeAsync(async () => await PushPopupServerRoadStateAsync(snapshot));
         }
 
@@ -8883,6 +8957,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             try
             {
+                _manualDashboardOpened = true;
+                SetModeUi(true);
                 _cfg.UseTrial = false;
                 if (ChkTrial != null) ChkTrial.IsChecked = false;
                 await SaveConfigAsync();
@@ -8903,6 +8979,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             try
             {
+                _manualDashboardOpened = true;
+                SetModeUi(true);
                 _cfg.UseTrial = true;
                 if (ChkTrial != null) ChkTrial.IsChecked = true;
                 await SaveConfigAsync();
@@ -9321,6 +9399,82 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }).Task.Unwrap();
         }
 
+        private async Task TryRefreshGameUsernameFromActiveHostAsync(string source)
+        {
+            if (!string.IsNullOrWhiteSpace(_gameUsername))
+                return;
+            if (Interlocked.Exchange(ref _gameUsernameProbeBusy, 1) == 1)
+                return;
+            try
+            {
+                var now = DateTime.UtcNow;
+                if ((now - _lastGameUsernameProbeAt) < TimeSpan.FromSeconds(2))
+                    return;
+                _lastGameUsernameProbeAt = now;
+
+                const string js = @"
+(function(){
+  try{
+    const vis=el=>{ if(!el) return false; const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
+                    return r.width>4 && r.height>4 && cs.display!=='none' && cs.visibility!=='hidden'; };
+    const textOf=el=>{ try{return (el.innerText||el.textContent||'').replace(/\s+/g,' ').trim();}catch(_){ return ''; } };
+    const isCandidate=t=>{
+      t=String(t||'').replace(/\s+/g,' ').trim();
+      if(!t) return false;
+      const low=t.toLowerCase();
+      if(/vndk|so du|balance|vip|wm casino|casino|baccarat|dang nhap|login|quang cao|pho bien|thoi gian|tat ca|don gian/.test(low)) return false;
+      if(t.length < 4 || t.length > 40) return false;
+      return /^[a-z0-9][a-z0-9._-]{3,}$/i.test(t);
+    };
+    const sels = [
+      '.user-logged__info .base-dropdown-header__user__name',
+      '.base-dropdown-header__user__name',
+      '.user__name',
+      '.menu-account__info--user .display-name .full-name span',
+      '.menu-account__info--user .username .full-name span',
+      '[data-username]',
+      '[data-user]'
+    ];
+    for (const sel of sels){
+      try{
+        const el=document.querySelector(sel);
+        const t=textOf(el) || ((el && (el.getAttribute('data-username') || el.getAttribute('data-user'))) || '').trim();
+        if(isCandidate(t)) return t;
+      }catch(_){}
+    }
+    const roots = document.querySelectorAll('.user-logged, .logined_wrap, .base-dropdown-header, button.btn.btn-secondary');
+    for(const root of roots){
+      const nodes = root.querySelectorAll('span,p,div,b,strong');
+      for(const el of nodes){
+        if(!vis(el)) continue;
+        const t=textOf(el);
+        if(isCandidate(t)) return t;
+      }
+    }
+    return '';
+  }catch(e){ return ''; }
+})();";
+
+                var raw = await EvalJsActiveRoomHostLockedAsync(js);
+                if (string.IsNullOrWhiteSpace(raw))
+                    return;
+                if (raw.Length >= 2 && raw[0] == '"')
+                    raw = Regex.Unescape(raw).Trim('"');
+                var username = raw.Trim();
+                if (string.IsNullOrWhiteSpace(username))
+                    return;
+
+                _gameUsername = username;
+                _gameUsernameAt = DateTime.UtcNow;
+                await Dispatcher.InvokeAsync(() => RefreshDashboardAccountUi(username, null, source));
+            }
+            catch { }
+            finally
+            {
+                Interlocked.Exchange(ref _gameUsernameProbeBusy, 0);
+            }
+        }
+
         private static int ResolveStakeLevelIndex(long[] seq, int currentIndex, long stake)
         {
             if (seq.Length == 0)
@@ -9608,14 +9762,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private async Task RunTableTaskAsync(TableSetting setting, TableTaskState state, IBetTask task, CancellationToken ct)
         {
             var ctx = BuildContextForTable(setting, state);
-            for (int i = 0; i < 25; i++)
-            {
-                ct.ThrowIfCancellationRequested();
-                var check = await ctx.EvalJsAsync("(function(){return (typeof window.__cw_bet==='function')?'ok':'no';})()");
-                if (string.Equals(check, "ok", StringComparison.OrdinalIgnoreCase))
-                    break;
-                await Task.Delay(200, ct);
-            }
 
             try
             {
@@ -9793,10 +9939,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var state = GetOrCreateTableTaskState(tableId, tableName);
             if (IsTableRunning(state))
             {
+                Log("[OVERLAY] toggle stop table=" + tableId);
                 StopTableTask(tableId, "manual");
                 return;
             }
 
+            Log("[OVERLAY] toggle start table=" + tableId + " name=" + (tableName ?? ""));
             await StartTableTaskAsync(tableId, tableName);
         }
 
@@ -10198,6 +10346,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 state.WinTotalFromJs = 0;
                 state.HasJsProfit = false;
                 state.WinTotalOverlay = 0;
+                state.WinCount = 0;
+                state.LossCount = 0;
+                state.LastWinAmount = 0;
                 state.MoneyChainIndex = 0;
                     state.MoneyChainStep = 0;
                     state.MoneyChainProfit = 0;
@@ -10207,6 +10358,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 RecomputeGlobalWinTotal();
                 if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
+                _ = PushBetStatsToOverlayAsync(tableId, 0, 0, 0);
 
                 if (!HasRunningTasks())
                 {
@@ -10570,22 +10722,22 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private async void ApplyMouseShieldFromCheck()
         {
             bool locked = (ChkLockMouse?.IsChecked == true);
+            bool popupVisible = PopupHost?.Visibility == Visibility.Visible && _popupWeb?.CoreWebView2 != null;
+            var popupWeb = popupVisible ? _popupWeb : null;
 
             try
             {
                 // Chỉ chạy khi WebView2 đã sẵn sàng
-                if (Web?.CoreWebView2 == null)
+                if (Web?.CoreWebView2 == null && popupWeb?.CoreWebView2 == null)
                 {
-                    if (MouseShield != null)
-                        MouseShield.Visibility = locked ? Visibility.Visible : Visibility.Collapsed;
                     return;
                 }
 
                 await EnsureMouseLockScriptAsync(); // đảm bảo có __abx_lockMouse trong trang
 
                 // Khoá/mở chuột bằng overlay bên trong DOM (an toàn trên VPS/RDP)
-                await Web.ExecuteScriptAsync(
-                    $"window.__abx_lockMouse && window.__abx_lockMouse({(locked ? "true" : "false")});");
+                await SetMouseLockAsync(Web, false);
+                await SetMouseLockAsync(popupWeb, locked);
             }
             catch (Exception ex)
             {
@@ -10594,11 +10746,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             // (tuỳ chọn) overlay WPF để hiển thị tooltip/cursor trên app
             if (MouseShield != null)
-                MouseShield.Visibility = locked ? Visibility.Visible : Visibility.Collapsed;
+                MouseShield.Visibility = (locked && popupVisible) ? Visibility.Visible : Visibility.Collapsed;
 
             // ❗ Quan trọng: KHÔNG đụng Web.IsEnabled để tránh crash WebView2 trên VPS/RDP
             if (Web != null)
-                Web.IsHitTestVisible = !locked;
+                Web.IsHitTestVisible = true;
+            if (_popupWeb != null)
+                _popupWeb.IsHitTestVisible = !(locked && popupVisible);
         }
 
 
@@ -10619,6 +10773,72 @@ private async Task<CancellationTokenSource> DebounceAsync(
             Log("[UI] Khoá chuột web: OFF");
         }
 
+
+        private async Task SetMouseLockAsync(WebView2? web, bool locked)
+        {
+            if (web?.CoreWebView2 == null) return;
+            await EnsureMouseLockScriptAsync(web);
+            await web.ExecuteScriptAsync(
+                $"window.__abx_lockMouse && window.__abx_lockMouse({(locked ? "true" : "false")});");
+        }
+
+        private async Task EnsureMouseLockScriptAsync(WebView2? targetWeb)
+        {
+            if (targetWeb?.CoreWebView2 == null) return;
+            if (ReferenceEquals(targetWeb, Web))
+                await EnsureMouseLockScriptAsync();
+            else if (ReferenceEquals(targetWeb, _popupWeb))
+            {
+                const string LOCK_JS = @"
+(function(){
+  try{
+    const KEY = '__abx_mouse_lock_div__';
+    function ensureCss(){
+      try{
+        const id='__abx_lock_css';
+        if(document.getElementById(id)) return;
+        const st=document.createElement('style'); st.id=id;
+        st.textContent = `
+          #${KEY} {
+            position: fixed; inset: 0; z-index: 2147483647;
+            background: rgba(0,0,0,0);
+            pointer-events: auto;
+          }`;
+        (document.head || document.documentElement).appendChild(st);
+      }catch(_){}
+    }
+    function add(){
+      try{
+        ensureCss();
+        if(document.getElementById(KEY)) return true;
+        const d = document.createElement('div');
+        d.id = KEY; d.setAttribute('role','presentation');
+        d.title = 'Dang khoa chuot';
+        const stop = e => { e.stopPropagation(); e.preventDefault(); };
+        ['click','mousedown','mouseup','pointerdown','pointerup','wheel','touchstart','touchend','contextmenu']
+          .forEach(t => d.addEventListener(t, stop, {capture:true}));
+        (document.body || document.documentElement).appendChild(d);
+        return true;
+      }catch(e){ return 'err:'+e; }
+    }
+    function remove(){
+      try{ const d=document.getElementById(KEY); if(d) d.remove(); return true; }
+      catch(e){ return 'err:'+e; }
+    }
+    window.__abx_lockMouse = function(on){
+      try{ return on ? add() : remove(); } catch(e){ return 'err:'+e; }
+    };
+  }catch(_){} 
+})();";
+
+                if (!_popupLockJsRegistered)
+                {
+                    await targetWeb.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(LOCK_JS);
+                    _popupLockJsRegistered = true;
+                }
+                await targetWeb.ExecuteScriptAsync(LOCK_JS);
+            }
+        }
 
         private async Task EnsureMouseLockScriptAsync()
         {
@@ -10667,10 +10887,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
 })();";
 
             // Đăng ký cho mọi document trong tương lai (1 lần)
-            if (!_lockJsRegistered)
+            if (!_mainLockJsRegistered)
             {
                 await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(LOCK_JS);
-                _lockJsRegistered = true;
+                _mainLockJsRegistered = true;
             }
             // Tiêm ngay cho document hiện tại
             await Web.ExecuteScriptAsync(LOCK_JS);
@@ -12042,6 +12262,21 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return m.Success ? m.Groups[1].Value.Trim() : "";
         }
 
+        private static string NormalizeWmServerBalanceText(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return "";
+            var s = raw.Replace("\u00A0", " ").Trim();
+            if (double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var invVal))
+                return invVal.ToString("0.00", CultureInfo.InvariantCulture);
+            if (double.TryParse(s, NumberStyles.Any, CultureInfo.GetCultureInfo("vi-VN"), out var viVal))
+                return viVal.ToString("0.00", CultureInfo.InvariantCulture);
+            var val = ParseMoneyOrZero(s);
+            if (s.Contains('.') || s.Contains(','))
+                return val.ToString("0.00", CultureInfo.InvariantCulture);
+            return ((long)val).ToString("N0", CultureInfo.InvariantCulture);
+        }
+
         private static string NormalizeGameTotalBetText(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return "";
@@ -12050,6 +12285,44 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var value = ParseMoneyOrZero(s);
             if (value <= 0) return s;
             return s;
+        }
+
+        private string GetDashboardUsernameText(string? fallback = null)
+        {
+            if (!string.IsNullOrWhiteSpace(_gameUsername))
+                return _gameUsername!;
+            if (!string.IsNullOrWhiteSpace(_homeUsername))
+                return _homeUsername!;
+            return (fallback ?? "").Trim();
+        }
+
+        private string GetDashboardBalanceText(double? fallback = null)
+        {
+            if (!string.IsNullOrWhiteSpace(_gameBalance))
+                return _gameBalance!;
+            if (!string.IsNullOrWhiteSpace(_homeBalance))
+                return _homeBalance!;
+            if (fallback.HasValue)
+                return fallback.Value.ToString("N0", CultureInfo.InvariantCulture);
+            return "-";
+        }
+
+        private void RefreshDashboardAccountUi(string? usernameFallback = null, double? balanceFallback = null, string source = "")
+        {
+            var usernameText = GetDashboardUsernameText(usernameFallback);
+            var balanceText = GetDashboardBalanceText(balanceFallback);
+
+            if (LblUserName != null && !string.IsNullOrWhiteSpace(usernameText))
+                LblUserName.Text = usernameText;
+            if (LblAmount != null)
+                LblAmount.Text = balanceText;
+
+            var sig = $"{usernameText}|{balanceText}|{source}";
+            if (!string.Equals(_lastDashboardAccountSig, sig, StringComparison.Ordinal))
+            {
+                _lastDashboardAccountSig = sig;
+                Log($"[ACCUI] source={source} user={usernameText} balance={balanceText} gameUser={_gameUsername} gameBal={_gameBalance} homeUser={_homeUsername} homeBal={_homeBalance}");
+            }
         }
 
         // Gán UI từ config (gọi ở nơi bạn đã áp config ra UI, ví dụ sau LoadConfig)
