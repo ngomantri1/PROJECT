@@ -680,6 +680,7 @@ Ví dụ không hợp lệ:
             public int StartInProgress;
             public string LastBetSide = "";
             public long LastBetAmount;
+            public long RunTotalBet;
             public string LastBetLevelText = "";
             public int WinCount;
             public int LossCount;
@@ -6432,6 +6433,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var tableIdLog = string.IsNullOrWhiteSpace(tableId) ? "?" : tableId;
                 Log($"[BET] {tableIdLog} {side} {amount:N0}");
 
+                if (!string.IsNullOrWhiteSpace(tableId))
+                {
+                    var taskState = GetOrCreateTableTaskState(tableId, tableName);
+                    taskState.RunTotalBet += Math.Max(0, amount);
+                    _ = Dispatcher.BeginInvoke(new Action(RefreshRuntimeStatusTotalsUi));
+                }
+
                 double accNow = 0;
                 try { accNow = ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
 
@@ -9586,6 +9594,36 @@ private async Task<CancellationTokenSource> DebounceAsync(
             _winTotal = total;
         }
 
+        private void RefreshRuntimeStatusTotalsUi()
+        {
+            long runtimeTotalBet = 0;
+            lock (_tableTasksGate)
+            {
+                foreach (var kv in _tableTasks)
+                {
+                    var state = kv.Value;
+                    if (state?.Cts == null) continue;
+                    if (state.Cts.IsCancellationRequested) continue;
+                    runtimeTotalBet += Math.Max(0, state.RunTotalBet);
+                }
+            }
+
+            if (LblTotalStake != null)
+            {
+                if (runtimeTotalBet > 0)
+                    LblTotalStake.Text = runtimeTotalBet.ToString("N0");
+                else
+                {
+                    var hasFreshGameTotalBet = !string.IsNullOrWhiteSpace(_gameTotalBet) &&
+                                               (DateTime.UtcNow - _gameTotalBetAt) <= TimeSpan.FromSeconds(10);
+                    LblTotalStake.Text = hasFreshGameTotalBet ? _gameTotalBet : "0";
+                }
+            }
+
+            if (LblWin != null)
+                LblWin.Text = _winTotal.ToString("N0");
+        }
+
         private void CheckTableCutAndStopIfNeeded(TableSetting setting, TableTaskState state)
         {
             if (setting == null || state == null) return;
@@ -9744,7 +9782,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         state.WinTotal += net;
                     try { MoneyHelper.NotifyTempProfit(moneyStrategyId, net); } catch { }
                     RecomputeGlobalWinTotal();
-                    if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
+                    RefreshRuntimeStatusTotalsUi();
                     CheckTableCutAndStopIfNeeded(setting, state);
                     CheckCutAndStopIfNeeded();
                     CheckWinGeTotalBetResetIfNeeded();
@@ -9753,6 +9791,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 UiWinLoss = s => Dispatcher.Invoke(() =>
                 {
                     UpdateTableStatsWinLoss(state, s);
+                    var outcome = s.HasValue
+                        ? (s.Value ? "win" : "loss")
+                        : "tie";
+                    _ = PushBetStatsToOverlayAsync(tableId, state.WinTotalOverlay, state.WinCount, state.LossCount, outcome);
                     if (!IsActiveTable(tableId)) return;
                     SetWinLossUI(s);
                 }),
@@ -10349,6 +10391,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 state.WinCount = 0;
                 state.LossCount = 0;
                 state.LastWinAmount = 0;
+                state.RunTotalBet = 0;
                 state.MoneyChainIndex = 0;
                     state.MoneyChainStep = 0;
                     state.MoneyChainProfit = 0;
@@ -10357,7 +10400,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     state.HoldWinTotalSkipLogged = false;
 
                 RecomputeGlobalWinTotal();
-                if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
+                RefreshRuntimeStatusTotalsUi();
                 _ = PushBetStatsToOverlayAsync(tableId, 0, 0, 0);
 
                 if (!HasRunningTasks())
@@ -12545,6 +12588,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             state.WinCount = 0;
                             state.LossCount = 0;
                             state.LastWinAmount = 0;
+                            state.RunTotalBet = 0;
                             _ = PushBetStatsToOverlayAsync(state.TableId, 0, 0, 0);
 
                             var tableSetting = FindTableSetting(state.TableId);

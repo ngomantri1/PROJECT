@@ -11811,7 +11811,12 @@ function deriveWinLoseColor(text) {
 
         function summarizeHistoryStats(history, stats, historyRaw) {
             const counts = { total: 0, player: 0, banker: 0, tie: 0 };
-            const list = Array.isArray(history) ? history : [];
+            let list = Array.isArray(history) ? history.filter(Boolean) : [];
+            if (!list.length) {
+                const raw = Array.isArray(historyRaw) ? historyRaw : [];
+                if (raw.length)
+                    list = buildHistoryFromRawNodes(raw);
+            }
             if (list.length) {
                 list.forEach((token) => {
                     if (token === 'P')
@@ -11822,22 +11827,6 @@ function deriveWinLoseColor(text) {
                         counts.tie += 1;
                 });
                 counts.total = list.length;
-            } else {
-                const raw = Array.isArray(historyRaw) ? historyRaw : [];
-                raw.forEach((node) => {
-                    if (!node || typeof node !== 'object')
-                        return;
-                    if (node.code === 'P')
-                        counts.player += 1;
-                    else if (node.code === 'B')
-                        counts.banker += 1;
-                    else if (node.code === 'T')
-                        counts.tie += 1;
-                    const tieCount = Number.isFinite(node.tieCount) ? Math.max(0, Math.floor(node.tieCount)) : 0;
-                    counts.tie += tieCount;
-                    counts.total += tieCount;
-                });
-                counts.total += counts.player + counts.banker;
             }
             if (stats) {
                 if (stats.total && Number.isFinite(stats.total.value))
@@ -12332,6 +12321,15 @@ function deriveWinLoseColor(text) {
                 updateBetItem(view.betTie, betAreas && betAreas.tie, 'Hòa');
                 updateBetItem(view.betBanker, betAreas && betAreas.banker, 'Nhà Cái');
             }
+            const statCounts = summarizeHistoryStats(data.history || [], data.stats || null, data.historyRaw || []);
+            if (view.statsTotal)
+                view.statsTotal.textContent = '#' + String(statCounts.total || 0);
+            if (view.statsP)
+                view.statsP.textContent = String(statCounts.player || 0);
+            if (view.statsB)
+                view.statsB.textContent = String(statCounts.banker || 0);
+            if (view.statsT)
+                view.statsT.textContent = String(statCounts.tie || 0);
             applyBetScores(view, betScores, st);
             applyPanelStatus(st, data, currentCountdown);
             const centerText = (data.centerResult || '').trim();
