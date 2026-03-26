@@ -667,6 +667,8 @@ Ví dụ không hợp lệ:
             public string TableName { get; set; } = "";
             public CancellationTokenSource? Cts;
             public IBetTask? Task;
+            public bool AutoStartRequested;
+            public int DeferredStartScheduled;
             public DecisionState Decision = new();
             public bool Cooldown;
             public int StakeLevelIndexForUi = -1;
@@ -9942,12 +9944,121 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return false;
         }
 
+        private bool HasActiveTableRequests()
+        {
+            lock (_tableTasksGate)
+            {
+                foreach (var state in _tableTasks.Values)
+                {
+                    if (state == null)
+                        continue;
+                    if (IsTableRunning(state) || state.AutoStartRequested)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool HasRunnableTableGameData(string tableId, out CwSnapshot snap)
+        {
+            if (TryGetPopupRoadSnapshot(tableId, out var popupSnap))
+            {
+                var popupSeqLen = popupSnap.seq?.Length ?? 0;
+                var popupHasHistory = popupSeqLen > 0 || !string.IsNullOrWhiteSpace(popupSnap.last);
+                if (!string.IsNullOrWhiteSpace(popupSnap.session) && popupHasHistory)
+                {
+                    snap = popupSnap;
+                    return true;
+                }
+            }
+
+            if (TryGetOverlaySnapshot(tableId, out var overlaySnap))
+            {
+                var overlaySeqLen = overlaySnap.seq?.Length ?? 0;
+                var overlayHasHistory = overlaySeqLen > 0 || !string.IsNullOrWhiteSpace(overlaySnap.last);
+                if (!string.IsNullOrWhiteSpace(overlaySnap.session) && overlayHasHistory)
+                {
+                    snap = overlaySnap;
+                    return true;
+                }
+            }
+
+            snap = new CwSnapshot
+            {
+                abx = "overlay_state",
+                seq = "",
+                last = "",
+                session = "",
+                ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                prog = 0
+            };
+            return false;
+        }
+
+        private bool ShouldKeepDeferredStart(TableTaskState state)
+        {
+            if (state == null || string.IsNullOrWhiteSpace(state.TableId))
+                return false;
+            if (!state.AutoStartRequested)
+                return false;
+            if (IsTableRunning(state))
+                return false;
+            if (!_overlayActiveRooms.Contains(state.TableId))
+                return false;
+            return true;
+        }
+
+        private void ScheduleDeferredTableStart(TableTaskState state, string? tableName, bool skipGlobalChecks)
+        {
+            if (state == null || string.IsNullOrWhiteSpace(state.TableId))
+                return;
+            if (Interlocked.Exchange(ref state.DeferredStartScheduled, 1) == 1)
+                return;
+
+            var tableId = state.TableId;
+            Log($"[TASK] defer start until synced: {tableId}");
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    while (true)
+                    {
+                        await Task.Delay(1500);
+
+                        if (!ShouldKeepDeferredStart(state))
+                            return;
+
+                        if (!HasRunnableTableGameData(tableId, out var readySnap))
+                            continue;
+
+                        Log($"[TASK] synced -> auto start table={tableId} src={readySnap.abx} session={readySnap.session} seqLen={readySnap.seq?.Length ?? 0} prog={readySnap.prog?.ToString() ?? ""}");
+                        await Dispatcher.InvokeAsync(async () =>
+                        {
+                            if (ShouldKeepDeferredStart(state))
+                                await StartTableTaskAsync(tableId, tableName, skipGlobalChecks);
+                        });
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log("[TASK] deferred start error " + tableId + ": " + ex.Message);
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref state.DeferredStartScheduled, 0);
+                }
+            });
+        }
+
         private void UpdateRunAllButtonState()
         {
             if (BtnRunAllTables == null) return;
 
-            var anyRunning = HasRunningTasks();
-            if (anyRunning)
+            var anyActive = HasActiveTableRequests();
+            if (anyActive)
             {
                 BtnRunAllTables.Content = "Dừng chạy tất cả";
                 var danger = TryFindResource("DangerButton") as Style;
@@ -9961,7 +10072,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
 
             BtnRunAllTables.IsEnabled = true;
-            SetPlayButtonState(anyRunning);
+            SetPlayButtonState(anyActive);
         }
 
         private async Task SetOverlayPlayStateAsync(string tableId, bool isRunning)
@@ -9987,6 +10098,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
 
             Log("[OVERLAY] toggle start table=" + tableId + " name=" + (tableName ?? ""));
+            state.AutoStartRequested = true;
             await StartTableTaskAsync(tableId, tableName);
         }
 
@@ -10365,6 +10477,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     }
                 }
 
+                state.AutoStartRequested = true;
+                _ = SetOverlayPlayStateAsync(tableId, true);
+                UpdateRunAllButtonState();
+
                 await EvalJsLockedAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[CW] ensure push 240ms");
 
@@ -10376,7 +10492,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     ready = await WaitForBridgeAndGameDataAsync(tableId, 15000);
                     if (!ready)
                     {
-                        Log("[DEC] data still not ready, skip start.");
+                        Log("[DEC] data still syncing, defer start.");
+                        ScheduleDeferredTableStart(state, tableName, skipGlobalChecks);
                         return;
                     }
                 }
@@ -10438,6 +10555,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         else
                             Log("[Task] completed");
 
+                        state.AutoStartRequested = false;
                         _ = SetOverlayPlayStateAsync(tableId, false);
                         RecomputeGlobalWinTotal();
                         if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
@@ -10449,6 +10567,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
             catch (Exception ex)
             {
+                if (!IsTableRunning(state) && Interlocked.CompareExchange(ref state.DeferredStartScheduled, 0, 0) == 0)
+                {
+                    state.AutoStartRequested = false;
+                    _ = SetOverlayPlayStateAsync(tableId, false);
+                    UpdateRunAllButtonState();
+                }
                 Log("[StartTableTask] " + ex.Message);
             }
             finally
@@ -10472,6 +10596,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 return;
 
             try { state.Cts?.Cancel(); } catch { }
+            state.AutoStartRequested = false;
             state.HasJsProfit = false;
             state.WinTotalFromJs = 0;
             state.WinTotal = 0;
@@ -10522,6 +10647,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 return;
 
             try { state.Cts?.Cancel(); } catch { }
+            state.AutoStartRequested = false;
 
             if (!string.IsNullOrWhiteSpace(reason))
                 Log("[TASK] stop " + reason);
@@ -11777,6 +11903,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var t0 = DateTime.UtcNow;
             bool lastHasBet = false;
             bool lastHasState = false;
+            string lastSrc = "";
+            string lastSession = "";
+            int lastSeqLen = 0;
+            double lastProg = 0;
             while ((DateTime.UtcNow - t0).TotalMilliseconds < timeoutMs)
             {
                 try
@@ -11786,33 +11916,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     bool hasBet = string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase);
 
                     // 2) Đã có dữ liệu state theo bàn chưa (overlay hoặc popup server road)
-                    bool hasState = false;
-                    lock (_tableOverlayGate)
-                    {
-                        if (_tableOverlayStates.TryGetValue(tableId, out var st))
-                        {
-                            hasState = !string.IsNullOrWhiteSpace(st.SessionKey);
-                        }
-                    }
-                    if (!hasState)
-                    {
-                        lock (_popupServerRoadGate)
-                        {
-                            foreach (var state in _popupServerRoadStates.Values)
-                            {
-                                if (!string.Equals(state.TableId, tableId, StringComparison.OrdinalIgnoreCase))
-                                    continue;
-                                if (!string.IsNullOrWhiteSpace(state.SessionKey))
-                                {
-                                    hasState = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                    bool hasState = HasRunnableTableGameData(tableId, out var snap);
 
                     lastHasBet = hasBet;
                     lastHasState = hasState;
+                    lastSrc = snap.abx ?? "";
+                    lastSession = snap.session ?? "";
+                    lastSeqLen = snap.seq?.Length ?? 0;
+                    lastProg = snap.prog.GetValueOrDefault();
                     if (hasBet && hasState)
                         return true;
                 }
@@ -11820,7 +11931,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 await Task.Delay(300);
             }
-            Log($"[DEC] data not ready (bet={lastHasBet}, state={lastHasState}).");
+            Log($"[DEC] data not ready (bet={lastHasBet}, state={lastHasState}, src={lastSrc}, session={lastSession}, seqLen={lastSeqLen}, prog={lastProg:0.###}).");
             return false;
         }
 
