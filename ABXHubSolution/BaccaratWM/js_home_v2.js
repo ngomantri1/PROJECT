@@ -10296,6 +10296,7 @@
             const patchTableName = typeof patch.tableName === 'string' ? patch.tableName.trim() : '';
             const patchGameId = Number(patch.gameId);
             const patchRouteKey = typeof patch.routeKey === 'string' ? patch.routeKey.trim() : '';
+            const patchSessionKey = typeof patch.sessionKey === 'string' ? patch.sessionKey.trim() : '';
             const stateKey = buildServerStateKey(tableId, patchTableName, patchGameId);
             const next = Object.assign({}, serverStateById.get(stateKey) || {});
             if (Array.isArray(patch.history))
@@ -10400,7 +10401,9 @@
                 const incomingGameId = Number(next.gameId) || 0;
                 const gameMatches = !panelGameId || !incomingGameId || panelGameId === incomingGameId;
                 const routeMatches = !patchRouteKey || !st.serverRouteKey || st.serverRouteKey === patchRouteKey;
-                if (gameMatches && routeMatches) {
+                const sessionChanged = !!(patchSessionKey && st.serverState && typeof st.serverState.sessionKey === 'string' && st.serverState.sessionKey.trim() && st.serverState.sessionKey.trim() !== patchSessionKey);
+                const allowRouteSwap = !st.serverRouteKey || !patchRouteKey || st.serverRouteKey === patchRouteKey || sessionChanged;
+                if (gameMatches && (routeMatches || allowRouteSwap)) {
                     st.serverStateKey = stateKey;
                     if (patchRouteKey)
                         st.serverRouteKey = patchRouteKey;
@@ -10417,6 +10420,10 @@
                             renderPanelState(current);
                         else if (!st.hasRoadSynced)
                             renderSyncPlaceholder(st);
+                    } catch (_) {}
+                } else if (patchRouteKey && st.serverRouteKey && st.serverRouteKey !== patchRouteKey) {
+                    try {
+                        logBetWarn('reject route mismatch tableId=' + tableId + ' boundRoute=' + st.serverRouteKey + ' patchRoute=' + patchRouteKey + ' session=' + (patchSessionKey || ''));
                     } catch (_) {}
                 }
             }
@@ -11357,44 +11364,11 @@
         }
             if (!total) {
                 return { text: 'Đang xáo bài', color: '#f59e0b' };
-        }
+            }
             return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
         }
 
-        function deriveStatusFromServer(data) {
-            const historyCount = countRenderableHistoryTotal(
-                data && data.history || [],
-                data && data.historyRaw || []
-            );
-            const gameStage = (data && typeof data.gameStage === 'number' && Number.isFinite(data.gameStage))
-                ? Math.floor(data.gameStage)
-                : null;
-            const countdown = (data && typeof data.countdown === 'number' && Number.isFinite(data.countdown) && data.countdown >= 0)
-                ? data.countdown
-                : null;
-            const isBettingOpen = countdown !== null && countdown > 0;
-            if (isBettingOpen)
-                return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
-            if (gameStage === 1)
-                return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
-            if (data && data.wantShuffle)
-                return { text: 'Đang xáo bài', color: '#f59e0b' };
-            if (gameStage === 0 || gameStage === 4)
-                return { text: 'Đang xáo bài', color: '#f59e0b' };
-            if (gameStage === 2 || gameStage === 3)
-                return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
-            if (data && data.wantEnd)
-                return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
-            if (!historyCount) {
-                if (st && st.hasRoadSynced)
-                    return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
-                return { text: 'Đang đồng bộ dữ liệu...', color: '#f59e0b' };
-            }
-            return deriveStatusFromCountdown(countdown, data && data.stats || null, data && data.history || [], data && data.historyRaw || []);
-        }
-
-
-        function deriveStatusFromLiveState(data, liveCountdown, st) {
+        function derivePanelStatusInfo(data, liveCountdown, st) {
             const historyCount = countRenderableHistoryTotal(
                 data && data.history || [],
                 data && data.historyRaw || []
@@ -11408,29 +11382,36 @@
                 : ((data && typeof data.countdown === 'number' && Number.isFinite(data.countdown) && data.countdown >= 0)
                     ? data.countdown
                     : null);
-            if (st && !st.hasRoadSynced && !historyCount)
-                return { text: 'Đang đồng bộ dữ liệu...', color: '#f59e0b' };
-            const isBettingOpen = countdown !== null && countdown > 0;
-            if (isBettingOpen)
-                return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
+            const countdownActive = countdown !== null && countdown > 0;
             const pendingShuffleForSession = !!(st
                 && st.pendingShuffleReset
                 && (!st.pendingShuffleSessionKey || !sessionKey || st.pendingShuffleSessionKey === sessionKey));
-            if (data && data.wantShuffle)
-                return { text: 'Đang xáo bài', color: '#f59e0b' };
-            if (pendingShuffleForSession)
-                return { text: 'Đang xáo bài', color: '#f59e0b' };
-            if (gameStage === 0 || gameStage === 4)
-                return { text: 'Đang xáo bài', color: '#f59e0b' };
-            if (data && data.wantEnd)
-                return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
-            if (gameStage === 2 || gameStage === 3)
-                return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
-            if (gameStage === 1)
-                return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
+            const wantsShuffle = !!(data && data.wantShuffle);
+            const wantsEnd = !!(data && data.wantEnd);
+            const isResultPhase = wantsEnd || gameStage === 2 || gameStage === 3;
+            const isShufflePhase = wantsShuffle || pendingShuffleForSession || gameStage === 0 || gameStage === 4;
+            if (st && !st.hasRoadSynced && !historyCount)
+                return { phase: 'sync', text: 'Đang đồng bộ dữ liệu...', color: '#f59e0b' };
+            if (isResultPhase)
+                return { phase: 'result', text: 'Đợi kết quả chia bài', color: '#ef4444' };
+            if (countdownActive || gameStage === 1)
+                return { phase: 'betting', text: 'Bắt đầu đặt cược', color: '#22c55e' };
+            if (isShufflePhase)
+                return { phase: 'shuffle', text: 'Đang xáo bài', color: '#f59e0b' };
             if (!historyCount)
-                return { text: 'Đang đồng bộ dữ liệu...', color: '#f59e0b' };
-            return deriveStatusFromCountdown(countdown, data && data.stats || null, data && data.history || [], data && data.historyRaw || []);
+                return { phase: st && st.hasRoadSynced ? 'result' : 'sync', text: st && st.hasRoadSynced ? 'Đợi kết quả chia bài' : 'Đang đồng bộ dữ liệu...', color: st && st.hasRoadSynced ? '#ef4444' : '#f59e0b' };
+            const fallback = deriveStatusFromCountdown(countdown, data && data.stats || null, data && data.history || [], data && data.historyRaw || []);
+            return { phase: fallback.text === 'Bắt đầu đặt cược' ? 'betting' : (fallback.text === 'Đang xáo bài' ? 'shuffle' : 'result'), text: fallback.text, color: fallback.color };
+        }
+
+        function deriveStatusFromServer(data) {
+            return derivePanelStatusInfo(data, null, null);
+        }
+
+
+        function deriveStatusFromLiveState(data, liveCountdown, st) {
+            const statusInfo = derivePanelStatusInfo(data, liveCountdown, st);
+            return { text: statusInfo.text, color: statusInfo.color, phase: statusInfo.phase };
         }
 
         function applyPanelStatus(st, data, liveCountdown) {

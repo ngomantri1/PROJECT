@@ -7919,8 +7919,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         var id = target.Item1;
                         var name = target.Item2;
                         var resolvedName = !string.IsNullOrWhiteSpace(id) ? ResolveRoomName(id) : "";
-                        var normName = TextNorm.U(name);
-                        var normResolvedName = TextNorm.U(resolvedName);
                         var expectedGameId = InferGameIdFromRoomName(!string.IsNullOrWhiteSpace(name) ? name : resolvedName);
 
                         PopupServerRoadState? best = null;
@@ -7946,26 +7944,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             }
                         }
 
-                        if (best == null || ScorePopupServerRoadState(best) <= 0)
-                        {
-                            foreach (var state in _popupServerRoadStates.Values)
-                            {
-                                if (state == null)
-                                    continue;
-                                if (!string.IsNullOrWhiteSpace(name) && TextNorm.U(state.TableName) == normName)
-                                {
-                                    if (best == null || ScorePopupServerRoadState(state) > ScorePopupServerRoadState(best))
-                                        best = state;
-                                }
-                                if (!string.IsNullOrWhiteSpace(resolvedName) && TextNorm.U(state.TableName) == normResolvedName)
-                                {
-                                    if (best == null || ScorePopupServerRoadState(state) > ScorePopupServerRoadState(best))
-                                        best = state;
-                                }
-                            }
-                        }
-
-                        if (best != null)
+                        if (best != null && ScorePopupServerRoadState(best) > 0)
                             picked.Add(best);
                     }
 
