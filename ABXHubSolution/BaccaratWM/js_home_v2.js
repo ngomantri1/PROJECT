@@ -10408,9 +10408,14 @@
                     try {
                         const room = { id: tableId, name: st.roomName || patchTableName || tableId };
                         const current = captureTableState(room);
-                        if (hasRenderableRoadData(current))
+                        const holdShuffleReset = !!(current
+                            && current.wantShuffle
+                            && typeof current.countdown === 'number'
+                            && Number.isFinite(current.countdown)
+                            && current.countdown > 0);
+                        if (current && (hasRenderableRoadData(current) || holdShuffleReset || st.hasRoadSynced))
                             renderPanelState(current);
-                        else
+                        else if (!st.hasRoadSynced)
                             renderSyncPlaceholder(st);
                     } catch (_) {}
                 }
@@ -10451,7 +10456,7 @@
                 btn.textContent = 'Dừng';
             } else {
                 btn.classList.remove('is-running');
-                btn.textContent = 'Play';
+                btn.textContent = 'Chạy';
         }
             return true;
         }
@@ -10472,8 +10477,19 @@
             else
                 betPlanById.delete(tableId);
             const st = getPanelState(tableId);
-            if (st)
+            if (st) {
                 st.betPlan = plan;
+                if (plan) {
+                    st.lastBetOutcome = '';
+                    st.lastBetOutcomeSig = '';
+                    st.lastWinLoseText = '';
+                    st.lastWinLoseColor = '';
+                    if (st.view && st.view.winLoseValue) {
+                        st.view.winLoseValue.textContent = '--';
+                        st.view.winLoseValue.style.color = '';
+                    }
+                }
+            }
             return true;
         }
 
@@ -11350,54 +11366,59 @@
                 data && data.history || [],
                 data && data.historyRaw || []
             );
-            const pendingGameStage = (data && typeof data.gameStage === 'number' && Number.isFinite(data.gameStage))
-                ? Math.floor(data.gameStage)
-                : null;
-            if (!historyCount && !(data && data.wantShuffle) && pendingGameStage !== 0)
-                return { text: 'Đang đồng bộ dữ liệu...', color: '#f59e0b' };
             const gameStage = (data && typeof data.gameStage === 'number' && Number.isFinite(data.gameStage))
                 ? Math.floor(data.gameStage)
                 : null;
             const countdown = (data && typeof data.countdown === 'number' && Number.isFinite(data.countdown) && data.countdown >= 0)
                 ? data.countdown
                 : null;
-            if (countdown !== null && countdown > 0 && !(data && data.wantShuffle) && gameStage !== 0)
+            const isBettingOpen = countdown !== null && countdown > 0;
+            if (isBettingOpen)
                 return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
             if (gameStage === 1)
                 return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
             if (data && data.wantShuffle)
                 return { text: 'Đang xáo bài', color: '#f59e0b' };
-            if (gameStage === 0)
+            if (gameStage === 0 || gameStage === 4)
                 return { text: 'Đang xáo bài', color: '#f59e0b' };
-            if (gameStage === 3)
+            if (gameStage === 2 || gameStage === 3)
                 return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
             if (data && data.wantEnd)
                 return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
+            if (!historyCount) {
+                if (st && st.hasRoadSynced)
+                    return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
+                return { text: 'Đang đồng bộ dữ liệu...', color: '#f59e0b' };
+            }
             return deriveStatusFromCountdown(countdown, data && data.stats || null, data && data.history || [], data && data.historyRaw || []);
         }
 
 
-        function deriveStatusFromLiveState(data, liveCountdown) {
+        function deriveStatusFromLiveState(data, liveCountdown, st) {
             const historyCount = countRenderableHistoryTotal(
                 data && data.history || [],
                 data && data.historyRaw || []
             );
-            const pendingGameStage = (data && typeof data.gameStage === 'number' && Number.isFinite(data.gameStage))
-                ? Math.floor(data.gameStage)
-                : null;
-            if (!historyCount && !(data && data.wantShuffle) && pendingGameStage !== 0 && pendingGameStage !== 4)
-                return { text: 'Đang đồng bộ dữ liệu...', color: '#f59e0b' };
             const gameStage = (data && typeof data.gameStage === 'number' && Number.isFinite(data.gameStage))
                 ? Math.floor(data.gameStage)
                 : null;
+            const sessionKey = (data && typeof data.sessionKey === 'string' ? data.sessionKey.trim() : '');
             const countdown = (typeof liveCountdown === 'number' && Number.isFinite(liveCountdown) && liveCountdown >= 0)
                 ? liveCountdown
                 : ((data && typeof data.countdown === 'number' && Number.isFinite(data.countdown) && data.countdown >= 0)
                     ? data.countdown
                     : null);
-            if (countdown !== null && countdown > 0 && !(data && data.wantShuffle) && gameStage !== 0 && gameStage !== 4)
+            if (st && !st.hasRoadSynced && !historyCount)
+                return { text: 'Đang đồng bộ dữ liệu...', color: '#f59e0b' };
+            const isBettingOpen = countdown !== null && countdown > 0;
+            if (isBettingOpen)
                 return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
+            const pendingShuffleForSession = !!(st
+                && st.pendingShuffleReset
+                && (!st.pendingShuffleSessionKey || !sessionKey || st.pendingShuffleSessionKey === sessionKey));
             if (data && data.wantShuffle)
+                return { text: 'Đang xáo bài', color: '#f59e0b' };
+            if (pendingShuffleForSession)
                 return { text: 'Đang xáo bài', color: '#f59e0b' };
             if (gameStage === 0 || gameStage === 4)
                 return { text: 'Đang xáo bài', color: '#f59e0b' };
@@ -11405,8 +11426,10 @@
                 return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
             if (gameStage === 2 || gameStage === 3)
                 return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
-            if (countdown === null && gameStage === 1)
+            if (gameStage === 1)
                 return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
+            if (!historyCount)
+                return { text: 'Đang đồng bộ dữ liệu...', color: '#f59e0b' };
             return deriveStatusFromCountdown(countdown, data && data.stats || null, data && data.history || [], data && data.historyRaw || []);
         }
 
@@ -11414,7 +11437,7 @@
             if (!st || !st.view)
                 return;
             const view = st.view;
-            const statusInfo = deriveStatusFromLiveState(data, liveCountdown);
+            const statusInfo = deriveStatusFromLiveState(data, liveCountdown, st);
             if (!view.statusLineValue || !statusInfo)
                 return;
             if (st.lastStatusText !== statusInfo.text) {
@@ -11437,7 +11460,7 @@
             return false;
         }
 
-        function renderSyncPlaceholder(st) {
+        function renderSyncPlaceholder(st, showSync = true) {
             if (!st || !st.view)
                 return;
             const view = st.view;
@@ -11476,12 +11499,14 @@
                 view.statsP.textContent = '0';
             if (view.statsT)
                 view.statsT.textContent = '0';
-            if (view.statusLineValue) {
+            if (view.statusLineValue && showSync) {
                 view.statusLineValue.textContent = 'Đang đồng bộ dữ liệu...';
                 view.statusLineValue.style.color = '#f59e0b';
             }
-            st.lastStatusText = 'Đang đồng bộ dữ liệu...';
-            st.lastStatusColor = '#f59e0b';
+            if (showSync) {
+                st.lastStatusText = 'Đang đồng bộ dữ liệu...';
+                st.lastStatusColor = '#f59e0b';
+            }
             st.lastCenterResult = '';
             st.lastHistorySig = '';
             st.lastBetScoreSig = '';
@@ -12114,8 +12139,32 @@ function deriveWinLoseColor(text) {
                 player: (typeof data.playerScore === 'number' && Number.isFinite(data.playerScore) && data.playerScore >= 0) ? data.playerScore : null,
                 banker: (typeof data.bankerScore === 'number' && Number.isFinite(data.bankerScore) && data.bankerScore >= 0) ? data.bankerScore : null
             };
+            const sessionKey = nextSessionKey || '';
+            const wantsShuffleNow = !!(data && data.wantShuffle);
+            const countdownActiveNow = currentCountdown !== null && currentCountdown > 0;
+            if (wantsShuffleNow && countdownActiveNow) {
+                if (!st.pendingShuffleSessionKey || st.pendingShuffleSessionKey === sessionKey) {
+                    st.pendingShuffleSessionKey = sessionKey || st.pendingShuffleSessionKey || '';
+                    st.pendingShuffleReset = true;
+                }
+            }
+            const pendingShuffleForSession = !!(st.pendingShuffleReset
+                && (!st.pendingShuffleSessionKey || !sessionKey || st.pendingShuffleSessionKey === sessionKey));
+            const shouldDeferShuffleReset = pendingShuffleForSession && countdownActiveNow;
+            const shouldFlushShuffleReset = pendingShuffleForSession && !countdownActiveNow;
+            const statusInfoNow = deriveStatusFromLiveState(data, currentCountdown, st);
+            const shouldClearBetPlan = statusInfoNow && statusInfoNow.text === 'Đang xáo bài' && !shouldDeferShuffleReset;
+            if (shouldClearBetPlan) {
+                st.betPlan = null;
+                st.lastBetPlanSig = '';
+            }
             const historySig = data.historySig || '';
-            const betPlan = st.betPlan || null;
+            if (!st.hasRoadSynced) {
+                const hasRoadNow = !!(historySig || (Array.isArray(data.historyRaw) && data.historyRaw.length) || (Array.isArray(data.history) && data.history.length));
+                if (hasRoadNow)
+                    st.hasRoadSynced = true;
+            }
+            const betPlan = shouldClearBetPlan ? null : (st.betPlan || null);
             const planSideNorm = betPlan && betPlan.side ? betNormalizeSide(betPlan.side) : '';
             const planDoorLabel = betPlan && betPlan.side ? formatBetPlanDoor(betPlan.side) : '';
             const planAmountText = formatBetPlanAmount(betPlan && betPlan.amount);
@@ -12127,16 +12176,20 @@ function deriveWinLoseColor(text) {
                 banker: planActive && planSideNorm === 'banker' ? (planAmountText || '') : '',
                 tie: planActive && planSideNorm === 'tie' ? (planAmountText || '') : ''
             };
-            const betExtra = {
-                player: (rawBetExtra && rawBetExtra.player) ? rawBetExtra.player : planBetAmounts.player,
-                banker: (rawBetExtra && rawBetExtra.banker) ? rawBetExtra.banker : planBetAmounts.banker,
-                tie: (rawBetExtra && rawBetExtra.tie) ? rawBetExtra.tie : planBetAmounts.tie
-            };
-            const betChips = {
-                player: (rawBetChips && rawBetChips.player) ? rawBetChips.player : planBetAmounts.player,
-                banker: (rawBetChips && rawBetChips.banker) ? rawBetChips.banker : planBetAmounts.banker,
-                tie: (rawBetChips && rawBetChips.tie) ? rawBetChips.tie : planBetAmounts.tie
-            };
+            const betExtra = planActive
+                ? {
+                    player: (rawBetExtra && rawBetExtra.player) ? rawBetExtra.player : planBetAmounts.player,
+                    banker: (rawBetExtra && rawBetExtra.banker) ? rawBetExtra.banker : planBetAmounts.banker,
+                    tie: (rawBetExtra && rawBetExtra.tie) ? rawBetExtra.tie : planBetAmounts.tie
+                }
+                : { player: '', banker: '', tie: '' };
+            const betChips = planActive
+                ? {
+                    player: (rawBetChips && rawBetChips.player) ? rawBetChips.player : planBetAmounts.player,
+                    banker: (rawBetChips && rawBetChips.banker) ? rawBetChips.banker : planBetAmounts.banker,
+                    tie: (rawBetChips && rawBetChips.tie) ? rawBetChips.tie : planBetAmounts.tie
+                }
+                : { player: '', banker: '', tie: '' };
             let resolvedWinLoseText = '--';
             let resolvedWinLoseColor = '';
             const applyStickyText = (el, value, lastKey) => {
@@ -12160,6 +12213,15 @@ function deriveWinLoseColor(text) {
                     el.textContent = '--';
                 }
             };
+            const clearBetDisplay = () => {
+                st.lastBetDoorColor = '';
+                if (view.betDoorValue) {
+                    view.betDoorValue.textContent = '--';
+                    view.betDoorValue.style.color = '';
+                }
+                applyBetChips(view, { player: '', banker: '', tie: '' });
+                applyBetExtra(view, { player: '', banker: '', tie: '' });
+            };
             const betStats = st.betStats || null;
             const statsSig = betStats
                 ? String(betStats.winCount || 0) + '|' + String(betStats.lossCount || 0) + '|' + String(betStats.winAmount || 0) + '|' + String(betStats.outcome || '')
@@ -12176,7 +12238,7 @@ function deriveWinLoseColor(text) {
                         st.lastWinAmountText = winText;
                     }
                 }
-                const outcome = String(betStats.outcome || st.lastBetOutcome || '').trim().toLowerCase();
+                const outcome = String(st.lastBetOutcome || '').trim().toLowerCase();
                 if (outcome === 'win') {
                     resolvedWinLoseText = 'THẮNG';
                     resolvedWinLoseColor = '#22c55e';
@@ -12186,17 +12248,6 @@ function deriveWinLoseColor(text) {
                 } else if (outcome === 'tie') {
                     resolvedWinLoseText = 'HÒA';
                     resolvedWinLoseColor = '#f59e0b';
-                } else if (false && st.lastBetOutcome && st.lastBetOutcomeSig === statsSig) {
-                    if (st.lastBetOutcome === 'win') {
-                        resolvedWinLoseText = 'THẮNG';
-                        resolvedWinLoseColor = '#22c55e';
-                    } else if (st.lastBetOutcome === 'loss') {
-                        resolvedWinLoseText = 'THUA';
-                        resolvedWinLoseColor = '#ef4444';
-                    } else if (st.lastBetOutcome === 'tie') {
-                        resolvedWinLoseText = 'HÒA';
-                        resolvedWinLoseColor = '#f59e0b';
-                    }
                 }
             } else if (st.lastBetOutcome) {
                 if (st.lastBetOutcome === 'win') {
@@ -12250,19 +12301,23 @@ function deriveWinLoseColor(text) {
                         }
                     }
                 } else {
-                    const hasBet = hasAnyBet(betAreas, betExtra, betChips);
+                    const hasBet = planActive && hasAnyBet(betAreas, betExtra, betChips);
+                    if (!hasBet)
+                        clearBetDisplay();
                     if (view.betDoorValue)
                         view.betDoorValue.textContent = hasBet
                             ? deriveBetDoorValue(text, betAreas, betChips)
                             : '--';
-                    if (view.betAmountValue)
-                        applyStickyText(view.betAmountValue,
-                            hasBet ? deriveMoneyValue(text, ['tien\\s*cuoc', 'cuoc\\s*tien']) : '',
-                            'lastBetAmountText');
-                    if (view.moneyLevelValue)
-                        applyStickyText(view.moneyLevelValue,
-                            hasBet ? deriveMoneyValue(text, ['muc\\s*tien', 'muc\\s*cuoc', 'limit']) : '',
-                            'lastMoneyLevelText');
+                    if (hasBet) {
+                        if (view.betAmountValue)
+                            applyStickyText(view.betAmountValue,
+                                deriveMoneyValue(text, ['tien\\s*cuoc', 'cuoc\\s*tien']),
+                                'lastBetAmountText');
+                        if (view.moneyLevelValue)
+                            applyStickyText(view.moneyLevelValue,
+                                deriveMoneyValue(text, ['muc\\s*tien', 'muc\\s*cuoc', 'limit']),
+                                'lastMoneyLevelText');
+                    }
                     if (view.betDoorValue) {
                         const doorColor = deriveBetDoorColor(view.betDoorValue.textContent);
                         if (st.lastBetDoorColor !== doorColor) {
@@ -12273,53 +12328,64 @@ function deriveWinLoseColor(text) {
                 }
             }
             if (st.lastHistorySig !== historySig) {
-                st.lastHistorySig = historySig;
-                if (data.historyRaw && data.historyRaw.length) {
-                    renderResultMapFromRaw(view, data.historyRaw);
-                } else {
-                    renderResultMap(view, data.history || []);
-            }
-                const hasBet = hasAnyBet(betAreas, betExtra, betChips);
-                if (view.betDoorValue)
-                    view.betDoorValue.textContent = planActive
-                        ? (planDoorLabel || '--')
-                        : (hasBet ? deriveBetDoorValue(text, betAreas, betChips) : '--');
-                if (view.betAmountValue)
-                    applyStickyText(view.betAmountValue,
-                        planActive ? (planAmountText || '') : (hasBet ? deriveMoneyValue(text, ['tien\\s*cuoc', 'cuoc\\s*tien']) : ''),
-                        'lastBetAmountText');
-                if (view.moneyLevelValue)
-                    applyStickyText(view.moneyLevelValue,
-                        planActive ? (planLevelText || '') : (hasBet ? deriveMoneyValue(text, ['muc\\s*tien', 'muc\\s*cuoc', 'limit']) : ''),
-                        'lastMoneyLevelText');
-                if (view.betDoorValue) {
-                    const doorColor = deriveBetDoorColor(view.betDoorValue.textContent);
-                    if (st.lastBetDoorColor !== doorColor) {
-                        view.betDoorValue.style.color = doorColor || '';
-                        st.lastBetDoorColor = doorColor;
+                if (!(shouldDeferShuffleReset && !historySig)) {
+                    st.lastHistorySig = historySig;
+                    if (data.historyRaw && data.historyRaw.length) {
+                        renderResultMapFromRaw(view, data.historyRaw);
+                    } else {
+                        renderResultMap(view, data.history || []);
                     }
-                }
-                if (view.winAmountValue && !betStats) {
-                    const derivedWin = hasBet
-                        ? deriveMoneyValue(text, ['tien\\s*thang', 'thang\\s*tien', 'tien\\s*thuong'])
-                        : '';
-                    if (derivedWin && derivedWin !== '--' && derivedWin !== st.lastWinAmountText) {
-                        view.winAmountValue.textContent = derivedWin;
-                        st.lastWinAmountText = derivedWin;
+                    const hasBet = planActive && hasAnyBet(betAreas, betExtra, betChips);
+                    if (!hasBet)
+                        clearBetDisplay();
+                    if (view.betDoorValue)
+                        view.betDoorValue.textContent = planActive
+                            ? (planDoorLabel || '--')
+                            : (hasBet ? deriveBetDoorValue(text, betAreas, betChips) : '--');
+                    if (planActive) {
+                        if (view.betAmountValue)
+                            applyStickyText(view.betAmountValue, planAmountText || '', 'lastBetAmountText');
+                        if (view.moneyLevelValue)
+                            applyStickyText(view.moneyLevelValue, planLevelText || '', 'lastMoneyLevelText');
+                    } else if (hasBet) {
+                        if (view.betAmountValue)
+                            applyStickyText(view.betAmountValue,
+                                deriveMoneyValue(text, ['tien\\s*cuoc', 'cuoc\\s*tien']),
+                                'lastBetAmountText');
+                        if (view.moneyLevelValue)
+                            applyStickyText(view.moneyLevelValue,
+                                deriveMoneyValue(text, ['muc\\s*tien', 'muc\\s*cuoc', 'limit']),
+                                'lastMoneyLevelText');
                     }
+                    if (view.betDoorValue) {
+                        const doorColor = deriveBetDoorColor(view.betDoorValue.textContent);
+                        if (st.lastBetDoorColor !== doorColor) {
+                            view.betDoorValue.style.color = doorColor || '';
+                            st.lastBetDoorColor = doorColor;
+                        }
+                    }
+                    if (view.winAmountValue && !betStats) {
+                        const derivedWin = hasBet
+                            ? deriveMoneyValue(text, ['tien\\s*thang', 'thang\\s*tien', 'tien\\s*thuong'])
+                            : '';
+                        if (derivedWin && derivedWin !== '--' && derivedWin !== st.lastWinAmountText) {
+                            view.winAmountValue.textContent = derivedWin;
+                            st.lastWinAmountText = derivedWin;
+                        }
+                    }
+                    const statCounts = summarizeHistoryStats(data.history || [], data.stats || null, data.historyRaw || []);
+                    if (view.statsTotal)
+                        view.statsTotal.textContent = '#' + String(statCounts.total || 0);
+                    if (view.statsP)
+                        view.statsP.textContent = String(statCounts.player || 0);
+                    if (view.statsB)
+                        view.statsB.textContent = String(statCounts.banker || 0);
+                    if (view.statsT)
+                        view.statsT.textContent = String(statCounts.tie || 0);
+                    updateBetItem(view.betPlayer, betAreas && betAreas.player, 'Người Chơi');
+                    updateBetItem(view.betTie, betAreas && betAreas.tie, 'Hòa');
+                    updateBetItem(view.betBanker, betAreas && betAreas.banker, 'Nhà Cái');
                 }
-                const statCounts = summarizeHistoryStats(data.history || [], data.stats || null, data.historyRaw || []);
-                if (view.statsTotal)
-                    view.statsTotal.textContent = '#' + String(statCounts.total || 0);
-                if (view.statsP)
-                    view.statsP.textContent = String(statCounts.player || 0);
-                if (view.statsB)
-                    view.statsB.textContent = String(statCounts.banker || 0);
-                if (view.statsT)
-                    view.statsT.textContent = String(statCounts.tie || 0);
-                updateBetItem(view.betPlayer, betAreas && betAreas.player, 'Người Chơi');
-                updateBetItem(view.betTie, betAreas && betAreas.tie, 'Hòa');
-                updateBetItem(view.betBanker, betAreas && betAreas.banker, 'Nhà Cái');
             }
             const statCounts = summarizeHistoryStats(data.history || [], data.stats || null, data.historyRaw || []);
             if (view.statsTotal)
@@ -12370,6 +12436,25 @@ function deriveWinLoseColor(text) {
                 st.lastBetExtraSig = extraSig;
                 applyBetExtra(view, betExtra);
         }
+            if (shouldFlushShuffleReset && st.lastShuffleClearedSessionKey !== sessionKey) {
+                st.lastShuffleClearedSessionKey = sessionKey;
+                st.pendingShuffleReset = false;
+                st.pendingShuffleSessionKey = '';
+                st.betPlan = null;
+                st.lastBetPlanSig = '';
+                if (typeof requestAnimationFrame === 'function') {
+                    requestAnimationFrame(() => {
+                        try {
+                            if (st && st.view && st.lastShuffleClearedSessionKey === sessionKey)
+                                renderSyncPlaceholder(st, false);
+                        } catch (_) {}
+                    });
+                } else {
+                    try {
+                        renderSyncPlaceholder(st, false);
+                    } catch (_) {}
+                }
+            }
         }
 
         function pushStateIfChanged(states) {
@@ -12483,7 +12568,7 @@ function deriveWinLoseColor(text) {
             actions.className = 'actions';
             const btnPlay = document.createElement('button');
             btnPlay.className = 'play-btn';
-            btnPlay.textContent = 'Play';
+            btnPlay.textContent = 'Chạy';
             const sendPlayRequest = () => {
                 try {
                     const st = getPanelState(room.id);
@@ -12769,6 +12854,10 @@ function deriveWinLoseColor(text) {
                 lastCountdownSourceValue: null,
                 lastCountdownSessionKey: '',
                 lastCountdownTimestamp: null,
+                hasRoadSynced: false,
+                pendingShuffleReset: false,
+                pendingShuffleSessionKey: '',
+                lastShuffleClearedSessionKey: '',
                 betPlan: cachedPlan,
                 betStats: cachedStats,
                 serverState: initialServerState,
@@ -12853,6 +12942,8 @@ function deriveWinLoseColor(text) {
             resetWinLossTotals(st);
             try {
                 const initial = captureTableState(room);
+                if (hasRenderableRoadData(initial))
+                    st.hasRoadSynced = true;
                 if (hasRenderableRoadData(initial))
                     renderPanelState(initial);
                 else

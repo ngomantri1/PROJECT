@@ -74,12 +74,25 @@ namespace BaccaratWM.Tasks
 
 
         // Gọi khi đã có countdown (giây) để reset đúng 1 lần
-        public static void UiRoundMaybeReset(double p, double decisionPercent)
+        public static void UiRoundMaybeReset(GameContext? ctx, double p, double decisionPercent)
         {
             if (_uiRoundResetDone) return;
             if (p >= decisionPercent)
             {
                 _uiRoundResetDone = true;
+                if (ctx != null)
+                {
+                    try
+                    {
+                        ctx.UiDispatcher.InvokeAsync(() =>
+                        {
+                            ctx.UiSetSide?.Invoke("");
+                            ctx.UiSetStake?.Invoke(0);
+                            ctx.UiWinLoss?.Invoke(null);
+                        }, DispatcherPriority.Render);
+                    }
+                    catch { }
+                }
                 UiResetRoundControls();
             }
         }
@@ -116,7 +129,7 @@ namespace BaccaratWM.Tasks
                     _lastWaitLogByTable[tableId] = now;
                     ctx.Log?.Invoke($"[WAIT] table={tableId} phase=bet-window prog={p:0.###} decision={ctx.DecisionPercent:0.###} session={(s?.session ?? "")} seqLen={(s?.seq?.Length ?? 0)} src={(s?.abx ?? "")}");
                 }
-                //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
+                TaskUtil.UiRoundMaybeReset(ctx, p, ctx.DecisionPercent);
                 if (p <= ctx.DecisionPercent && p > 0) break;
 
                 // WM popup-road feed hiện chỉ phản ánh "mở cửa cược" bằng countdown lớn (25/24...)
@@ -149,7 +162,7 @@ namespace BaccaratWM.Tasks
                     _lastWaitLogByTable[tableId] = now;
                     ctx.Log?.Invoke($"[WAIT] table={tableId} phase=new-round prog={p:0.###} decision={ctx.DecisionPercent:0.###} session={(s?.session ?? "")} seqLen={(s?.seq?.Length ?? 0)} src={(s?.abx ?? "")}");
                 }
-                //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
+                TaskUtil.UiRoundMaybeReset(ctx, p, ctx.DecisionPercent);
                 if (p >= ctx.DecisionPercent) break;
                 await Task.Delay(120, ct);
             }
@@ -189,23 +202,24 @@ namespace BaccaratWM.Tasks
                 var virtualJs = isVirtual ? "true" : "false";
 
             // GỌI __cw_bet AN TOÀN (giữ nguyên như code hiện tại)
-            var js =
-                "(function(){try{" +
-                " if (typeof window.__cw_bet==='function'){" +
-                "   return window.__cw_bet(" + tableIdJson + ", " + sideJson + ", " + amount + ", " + virtualJs + ", true);" +
-                " } else { return 'no'; }" +
-                "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
+                var js =
+                    "(function(){try{" +
+                    " if (typeof window.__cw_bet==='function'){" +
+                    "   return window.__cw_bet(" + tableIdJson + ", " + sideJson + ", " + amount + ", " + virtualJs + ", true);" +
+                    " } else { return 'no'; }" +
+                    "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
-            var r = await ctx.EvalJsAsync(js);
-            ctx.Log?.Invoke($"[BET-JS] table={tableId} side={side} amount={amount} result={r}");
+                var r = await ctx.EvalJsAsync(js);
+                ctx.Log?.Invoke($"[BET-JS] table={tableId} side={side} amount={amount} result={r}");
 
-            // Chỉ coi là thành công khi JS trả về 'ok'
-            bool ok = string.Equals(r, "ok", StringComparison.OrdinalIgnoreCase);
+                // C# gọi được __cw_bet(...) thì coi như bet thành công.
+                // Chỉ fail khi không có hàm để gọi.
+                var ok = !string.Equals(r, "no", StringComparison.OrdinalIgnoreCase);
 
-            if (ok)
-                _lastBetOkByTable[tableId] = now; // kích hoạt khoá 3s
+                if (ok)
+                    _lastBetOkByTable[tableId] = now; // kích hoạt khoá 3s
 
-            return ok;
+                return ok;
             }
             finally
             {

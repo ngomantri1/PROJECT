@@ -716,12 +716,15 @@ Ví dụ không hợp lệ:
         {
             public DateTime At { get; set; }                 // Thời gian đặt
             public string Game { get; set; } = "Xóc đĩa live";
+            public string TableId { get; set; } = "";
             public string Table { get; set; } = "";          // Bàn chơi
             public long Stake { get; set; }                  // Tiền cược
             public string Side { get; set; } = "";           // P/B
             public string Result { get; set; } = "";         // Kết quả P/B
             public string WinLose { get; set; } = "";        // "Thắng"/"Thua"
             public double Account { get; set; }                // Số dư sau ván
+            public int PendingGameId { get; set; } = 0;
+            public string PendingKey { get; set; } = "";
         }
 
         public static class SharedIcons
@@ -3405,7 +3408,8 @@ Ví dụ không hợp lệ:
                 }
                 catch { /* ignore parse */ }
 
-                if (TryPopPendingBet(tableId, out var row))
+                var expectedGameId = InferExpectedGameIdByTable(tableId);
+                if (TryPopPendingBet(tableId, expectedGameId, out var row, strictGame: expectedGameId > 0))
                 {
                     if (accNow <= 0 && row.Account > 0)
                         accNow = row.Account;
@@ -3421,7 +3425,7 @@ Ví dụ không hợp lệ:
                 }
                 else
                 {
-                    Log($"[HIST][MISS] table={tableId} session={sessionKey} result={lastToken.Value} source=popup-road");
+                    Log($"[HIST][MISS] table={tableId} game={expectedGameId} session={sessionKey} result={lastToken.Value} source=popup-road");
                 }
             }
         }
@@ -4104,71 +4108,6 @@ Ví dụ không hợp lệ:
                                     _ = Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(true)));
                                     return;
                                 }
-
-                                // 3) bet ok → tạo dòng placeholder (Result/WinLose = "-") và SHOW TRANG 1
-                                if (abxStr == "bet")
-                                {
-                                    string tableId = root.TryGetProperty("tableId", out var tidEl) ? (tidEl.GetString() ?? "") : "";
-                                    if (string.IsNullOrWhiteSpace(tableId) && root.TryGetProperty("id", out var idEl2))
-                                        tableId = idEl2.GetString() ?? "";
-                                    string tableName = root.TryGetProperty("name", out var tnameEl) ? (tnameEl.GetString() ?? "") : "";
-                                    if (string.IsNullOrWhiteSpace(tableName) && !string.IsNullOrWhiteSpace(tableId))
-                                        tableName = ResolveRoomName(tableId);
-
-                                    string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
-                                    long amount = root.TryGetProperty("amount", out var ae) ? ReadJsonLong(ae) : 0;
-                                    string side = NormalizeSide(sideRaw);
-                                    if (string.IsNullOrWhiteSpace(side))
-                                        side = sideRaw.ToUpperInvariant();
-
-                                    var sig = $"{tableId}|{side}|{amount}";
-                                    var nowMs = Environment.TickCount64;
-                                    if (sig == _lastBetSig && (nowMs - _lastBetSigAtMs) < 500)
-                                        return;
-                                    _lastBetSig = sig;
-                                    _lastBetSigAtMs = nowMs;
-
-                                    var tableIdLog = string.IsNullOrWhiteSpace(tableId) ? "?" : tableId;
-                                    Log($"[BET] {tableIdLog} {side} {amount:N0}");
-
-                                    double accNow = 0;
-                                    try { accNow = ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
-
-                                    _pendingRow = new BetRow
-                                    {
-                                        At = DateTime.Now,
-                                        Game = "Xóc đĩa live",
-                                        Table = tableName,
-                                        Stake = amount,
-                                        Side = side,
-                                        Result = "-",
-                                        WinLose = "-",
-                                        Account = accNow
-                                    };
-
-                                    // MỚI NHẤT Ở ĐẦU DANH SÁCH (trang 1)
-                                    if (!string.IsNullOrWhiteSpace(tableId))
-                                    {
-                                        lock (_pendingBetGate)
-                                        {
-                                            _pendingBetsByTable[tableId] = _pendingRow;
-                                        }
-                                    }
-
-                                    _betAll.Insert(0, _pendingRow);
-                                    if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
-                                    // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
-                                    if (_autoFollowNewest)
-                                    {
-                                        ShowFirstPage();
-                                    }
-                                    else
-                                    {
-                                        RefreshCurrentPage();   // (mục 3 bên dưới)
-                                    }
-                                    return;
-                                }
-
 
                                 // 4) bet_error
                                 if (abxStr == "bet_error")
@@ -6415,6 +6354,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 string tableName = root.TryGetProperty("name", out var tnameEl) ? (tnameEl.GetString() ?? "") : "";
                 if (string.IsNullOrWhiteSpace(tableName) && !string.IsNullOrWhiteSpace(tableId))
                     tableName = ResolveRoomName(tableId);
+                var expectedGameId = InferExpectedGameIdByTable(tableId, tableName);
+                var pendingKey = BuildPendingBetKey(expectedGameId, tableId);
+                if (string.IsNullOrWhiteSpace(pendingKey) && !string.IsNullOrWhiteSpace(tableId))
+                    pendingKey = tableId.Trim();
 
                 string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
                 long amount = root.TryGetProperty("amount", out var ae) ? ReadJsonLong(ae) : 0;
@@ -6449,27 +6392,30 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 {
                     At = DateTime.Now,
                     Game = "Baccarat WM",
+                    TableId = tableId,
                     Table = tableName,
                     Stake = amount,
                     Side = side,
                     Result = "-",
                     WinLose = "-",
-                    Account = accNow
+                    Account = accNow,
+                    PendingGameId = expectedGameId,
+                    PendingKey = pendingKey
                 };
 
-                if (!string.IsNullOrWhiteSpace(tableId))
+                if (!string.IsNullOrWhiteSpace(pendingKey))
                 {
                     lock (_pendingBetGate)
                     {
-                        if (_pendingBetsByTable.TryGetValue(tableId, out var prev) && prev != null)
-                            Log($"[HIST][REPLACE] table={tableId} prevSide={prev.Side} prevStake={prev.Stake:N0} newSide={side} newStake={amount:N0}");
-                        _pendingBetsByTable[tableId] = _pendingRow;
+                        if (_pendingBetsByTable.TryGetValue(pendingKey, out var prev) && prev != null)
+                            Log($"[HIST][REPLACE] table={tableId} key={pendingKey} prevSide={prev.Side} prevStake={prev.Stake:N0} newSide={side} newStake={amount:N0}");
+                        _pendingBetsByTable[pendingKey] = _pendingRow;
                     }
                 }
 
                 _betAll.Insert(0, _pendingRow);
                 if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
-                Log($"[HIST][ADD] table={tableIdLog} name={tableName} side={side} amount={amount:N0} total={_betAll.Count}");
+                Log($"[HIST][ADD] table={tableIdLog} game={expectedGameId} key={pendingKey} name={tableName} side={side} amount={amount:N0} total={_betAll.Count}");
                 if (_autoFollowNewest)
                     ShowFirstPage();
                 else
@@ -7513,6 +7459,22 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return 0;
         }
 
+        private static string BuildPendingBetKey(int gameId, string tableId)
+        {
+            var tid = (tableId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(tid))
+                return "";
+            return gameId > 0 ? $"{gameId}:{tid}" : tid;
+        }
+
+        private int InferExpectedGameIdByTable(string tableId, string? tableName = null)
+        {
+            if (string.IsNullOrWhiteSpace(tableId))
+                return 0;
+            var name = !string.IsNullOrWhiteSpace(tableName) ? tableName : ResolveRoomName(tableId);
+            return InferGameIdFromRoomName(name);
+        }
+
         private bool TryResolvePopupServerTable(int gameId, string groupId, string? url, out string routeKey, out string tableId, out string tableName)
         {
             routeKey = "";
@@ -7787,6 +7749,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 };
             }
 
+            var expectedGameId = InferExpectedGameIdByTable(tableId);
+            if (expectedGameId > 0 && snapshot.GameId > 0 && snapshot.GameId != expectedGameId)
+            {
+                Log($"[ROADNET][SKIP-GAME] table={tableId} expectedGame={expectedGameId} gotGame={snapshot.GameId} route={snapshot.RouteKey} source={source}");
+                return;
+            }
+
             if (shouldFinalize && !string.IsNullOrWhiteSpace(tableId) && !string.IsNullOrWhiteSpace(finalizeToken))
             {
                 double accNow = 0;
@@ -7799,11 +7768,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 }
                 catch { /* ignore parse */ }
 
-                if (TryPopPendingBet(tableId, out var row))
+                if (TryPopPendingBet(tableId, expectedGameId, out var row, strictGame: expectedGameId > 0))
                 {
                     if (accNow <= 0 && row.Account > 0)
                         accNow = row.Account;
-                    Log($"[ROAD-FINAL] table={tableId} session={snapshot.SessionKey} result={finalizeToken} source={source}");
+                    Log($"[ROAD-FINAL] table={tableId} game={snapshot.GameId} session={snapshot.SessionKey} result={finalizeToken} source={source}");
                     FinalizeBetRow(row, finalizeToken, accNow);
                     ApplyBetStatsForTable(tableId, row);
                     var st = GetOrCreateTableTaskState(tableId);
@@ -7813,7 +7782,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 }
                 else
                 {
-                    Log($"[HIST][MISS] table={tableId} session={snapshot.SessionKey} result={finalizeToken} source={source}");
+                    Log($"[HIST][MISS] table={tableId} expectedGame={expectedGameId} game={snapshot.GameId} session={snapshot.SessionKey} result={finalizeToken} source={source}");
                 }
             }
 
@@ -12751,17 +12720,38 @@ private async Task<CancellationTokenSource> DebounceAsync(
         }
 
         private bool TryPopPendingBet(string tableId, out BetRow row)
+            => TryPopPendingBet(tableId, 0, out row, strictGame: false);
+
+        private bool TryPopPendingBet(string tableId, int expectedGameId, out BetRow row, bool strictGame = true)
         {
             row = null!;
             if (string.IsNullOrWhiteSpace(tableId)) return false;
 
             lock (_pendingBetGate)
             {
+                if (expectedGameId <= 0)
+                    expectedGameId = InferExpectedGameIdByTable(tableId);
+
+                if (expectedGameId > 0)
+                {
+                    var strictKey = BuildPendingBetKey(expectedGameId, tableId);
+                    if (!string.IsNullOrWhiteSpace(strictKey) &&
+                        _pendingBetsByTable.TryGetValue(strictKey, out row!))
+                    {
+                        _pendingBetsByTable.Remove(strictKey);
+                        goto POPPED;
+                    }
+
+                    if (strictGame)
+                        return false;
+                }
+
                 if (!_pendingBetsByTable.TryGetValue(tableId, out row!))
                     return false;
                 _pendingBetsByTable.Remove(tableId);
             }
 
+        POPPED:
             if (ReferenceEquals(_pendingRow, row))
                 _pendingRow = null;
 
