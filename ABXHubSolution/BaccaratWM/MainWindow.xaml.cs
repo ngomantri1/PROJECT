@@ -12854,9 +12854,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 RefreshCurrentPage();   // (mục 3 bên dưới)
             }
 
-            if (!string.IsNullOrWhiteSpace(_activeTableId))
+            if (!string.IsNullOrWhiteSpace(_pendingRow.Table) || !string.IsNullOrWhiteSpace(_activeTableId))
             {
-                ApplyBetStatsForTable(_activeTableId, _pendingRow);
+                var statTableId = !string.IsNullOrWhiteSpace(_pendingRow.Table) ? _pendingRow.Table : _activeTableId;
+                if (!string.IsNullOrWhiteSpace(statTableId))
+                {
+                    if (!string.Equals(statTableId, _activeTableId, StringComparison.OrdinalIgnoreCase))
+                        Log($"[HIST][STAT-MAP] active={_activeTableId} rowTable={_pendingRow.Table} use={statTableId}");
+                    ApplyBetStatsForTable(statTableId, _pendingRow);
+                }
             }
 
             _pendingRow = null; // sẵn sàng ván tiếp theo

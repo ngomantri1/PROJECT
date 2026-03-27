@@ -12127,14 +12127,18 @@ function deriveWinLoseColor(text) {
                 if (!st.pendingShuffleSessionKey || st.pendingShuffleSessionKey === sessionKey) {
                     st.pendingShuffleSessionKey = sessionKey || st.pendingShuffleSessionKey || '';
                     st.pendingShuffleReset = true;
+                    st.pendingShuffleSawResult = false;
                 }
             }
             const pendingShuffleForSession = !!(st.pendingShuffleReset
                 && (!st.pendingShuffleSessionKey || !sessionKey || st.pendingShuffleSessionKey === sessionKey));
-            const shouldDeferShuffleReset = pendingShuffleForSession && countdownActiveNow;
-            const shouldFlushShuffleReset = pendingShuffleForSession && !countdownActiveNow;
             const statusInfoNow = deriveStatusFromLiveState(data, currentCountdown, st);
-            const shouldClearBetPlan = statusInfoNow && statusInfoNow.text === 'Đang xáo bài' && !shouldDeferShuffleReset;
+            const currentIsResultPhase = !!(statusInfoNow && statusInfoNow.phase === 'result');
+            if (pendingShuffleForSession && currentIsResultPhase)
+                st.pendingShuffleSawResult = true;
+            const shouldDeferShuffleReset = pendingShuffleForSession && (!st.pendingShuffleSawResult || countdownActiveNow);
+            const shouldFlushShuffleReset = pendingShuffleForSession && st.pendingShuffleSawResult && statusInfoNow && statusInfoNow.phase === 'shuffle' && !countdownActiveNow;
+            const shouldClearBetPlan = shouldFlushShuffleReset;
             if (shouldClearBetPlan) {
                 st.betPlan = null;
                 st.lastBetPlanSig = '';
@@ -12421,6 +12425,7 @@ function deriveWinLoseColor(text) {
                 st.lastShuffleClearedSessionKey = sessionKey;
                 st.pendingShuffleReset = false;
                 st.pendingShuffleSessionKey = '';
+                st.pendingShuffleSawResult = false;
                 st.betPlan = null;
                 st.lastBetPlanSig = '';
                 if (typeof requestAnimationFrame === 'function') {
@@ -12552,9 +12557,6 @@ function deriveWinLoseColor(text) {
             btnPlay.textContent = 'Chạy';
             const sendPlayRequest = () => {
                 try {
-                    const st = getPanelState(room.id);
-                    if (st)
-                        resetWinLossTotals(st);
                     window.chrome?.webview?.postMessage?.({
                         overlay: 'table',
                         event: 'play',
@@ -12838,6 +12840,7 @@ function deriveWinLoseColor(text) {
                 hasRoadSynced: false,
                 pendingShuffleReset: false,
                 pendingShuffleSessionKey: '',
+                pendingShuffleSawResult: false,
                 lastShuffleClearedSessionKey: '',
                 betPlan: cachedPlan,
                 betStats: cachedStats,
