@@ -771,7 +771,10 @@ Ví dụ không hợp lệ:
 
         // File
         private readonly ConcurrentQueue<string> _fileLogQueue = new();
-        private const int FILE_FLUSH_MS = 500;
+        private const int FILE_FLUSH_MS = 800;
+        private readonly bool _enableVerboseDebugLogs = false;
+        private readonly ConcurrentDictionary<string, long> _logThrottleTicks = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, string> _logLastSignature = new(StringComparer.OrdinalIgnoreCase);
 
         // Pump
         private CancellationTokenSource? _logPumpCts;
@@ -1528,12 +1531,39 @@ Ví dụ không hợp lệ:
             EnqueueFile(line);
         }
 
+        private void LogDebug(string msg)
+        {
+            if (_enableVerboseDebugLogs)
+                Log(msg);
+        }
+
+        private void LogThrottled(string key, string msg, int intervalMs)
+        {
+            var now = Environment.TickCount64;
+            var last = _logThrottleTicks.TryGetValue(key, out var prev) ? prev : 0;
+            if (now - last < intervalMs)
+                return;
+            _logThrottleTicks[key] = now;
+            Log(msg);
+        }
+
+        private void LogChangedOrThrottled(string key, string signature, string msg, int intervalMs)
+        {
+            var now = Environment.TickCount64;
+            var last = _logThrottleTicks.TryGetValue(key, out var prev) ? prev : 0;
+            var lastSig = _logLastSignature.TryGetValue(key, out var prevSig) ? prevSig : "";
+            if (string.Equals(lastSig, signature, StringComparison.Ordinal) && now - last < intervalMs)
+                return;
+
+            _logThrottleTicks[key] = now;
+            _logLastSignature[key] = signature;
+            Log(msg);
+        }
+
         private bool HasAnyWebTick()
         {
             bool hasGame = _lastGameTickUtc != DateTime.MinValue;
             bool hasHome = _lastHomeTickUtc != DateTime.MinValue;
-
-            Log($"[HasAnyWebTick] hasGame={hasGame} ({_lastGameTickUtc:O}), hasHome={hasHome} ({_lastHomeTickUtc:O})");
 
             return hasGame || hasHome;
         }
@@ -1850,7 +1880,7 @@ Ví dụ không hợp lệ:
                             msg += " err=" + err;
                         parts.Add(msg);
                     }
-                    Log("[ROOMDBG][DirectCollect] " + string.Join(" | ", parts.Take(8)));
+                    LogDebug("[ROOMDBG][DirectCollect] " + string.Join(" | ", parts.Take(8)));
                 }
 
                 if (rooms.Count == 0)
@@ -2180,7 +2210,7 @@ Ví dụ không hợp lệ:
                             .Cast<RoomEntry>()
                             .ToList();
 
-                        Log($"[ROOMDBG][VisibleFilter] protocol21 raw={list.Count} visible={visibleRooms.Count} matched={matched.Count} sample={Sample(matched.Select(r => r.Name))}");
+                        LogDebug($"[ROOMDBG][VisibleFilter] protocol21 raw={list.Count} visible={visibleRooms.Count} matched={matched.Count} sample={Sample(matched.Select(r => r.Name))}");
                         if (matched.Count > 0)
                         {
                             list = matched;
@@ -2229,13 +2259,13 @@ Ví dụ không hợp lệ:
 
                 var filtered = clean.Where(room => !IsLobbyNoiseName(room.Name)).ToList();
                 if (clean.Count != filtered.Count)
-                    Log($"[ROOMDBG][RefreshRoomList] filtered out {clean.Count - filtered.Count} noise names");
+                    LogDebug($"[ROOMDBG][RefreshRoomList] filtered out {clean.Count - filtered.Count} noise names");
                 string Sample(IEnumerable<string> xs, int take = 6)
                 {
                     var arr = xs?.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).Take(take).ToArray() ?? Array.Empty<string>();
                     return arr.Length == 0 ? "(rỗng)" : string.Join(" | ", arr);
                 }
-                Log($"[ROOMDBG][RefreshRoomList] source={roomSource} clean={filtered.Count} sample={Sample(filtered.Select(r => r.Name))}");
+                LogDebug($"[ROOMDBG][RefreshRoomList] source={roomSource} clean={filtered.Count} sample={Sample(filtered.Select(r => r.Name))}");
 
                 if (filtered.Count == 0)
                 {
@@ -2270,7 +2300,7 @@ Ví dụ không hợp lệ:
                         {
                             accepted = false;
                             var reason = !inLobby ? "không phải lobby Pragmatic" : "không thấy Baccarat";
-                            Log($"[ROOMDBG][RefreshRoomList] skip clean={filtered.Count} reason={reason} src={src}");
+                            LogDebug($"[ROOMDBG][RefreshRoomList] skip clean={filtered.Count} reason={reason} src={src}");
                             return;
                         }
 
@@ -3383,7 +3413,7 @@ Ví dụ không hợp lệ:
                 var logSig = $"{state.SessionKey}|{state.HistoryPB}|{state.Countdown:0.###}";
                 if (logSig != state.LastLogSig)
                 {
-                    Log($"[SEQ] {tableId} id={state.SessionKey} raw={state.HistoryRaw} pb={state.HistoryPB} countdown={state.Countdown:0.###}");
+                    LogDebug($"[SEQ] {tableId} id={state.SessionKey} raw={state.HistoryRaw} pb={state.HistoryPB} countdown={state.Countdown:0.###}");
                     state.LastLogSig = logSig;
                 }
 
@@ -4228,7 +4258,7 @@ Ví dụ không hợp lệ:
                                     if (!string.Equals(_lastHomeTickSig, sig, StringComparison.Ordinal))
                                     {
                                         _lastHomeTickSig = sig;
-                                        Log($"[HomeTick] user={homeUname} | balance={homeBal} | href={href} | title={title}");
+                                        LogChangedOrThrottled("HOME_TICK", $"{homeUname}|{homeBal}|{href}|{title}", $"[HomeTick] user={homeUname} | balance={homeBal} | href={href} | title={title}", 30000);
                                     }
 
                                     try
@@ -5489,7 +5519,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var roomSet = new HashSet<string>(_roomList.Select(r => r.Id), StringComparer.OrdinalIgnoreCase);
                 var missing = _selectedRooms.Where(n => !roomSet.Contains(n)).ToArray();
                 var selectedInOptions = _roomOptions.Count(it => it.IsSelected);
-                Log("[ROOMDBG][RebuildRoomOptions] roomList=" + _roomList.Count +
+                LogDebug("[ROOMDBG][RebuildRoomOptions] roomList=" + _roomList.Count +
                     " selectedRooms=" + _selectedRooms.Count +
                     " selectedOptions=" + selectedInOptions +
                     " roomSample=" + roomSample +
@@ -7752,7 +7782,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var expectedGameId = InferExpectedGameIdByTable(tableId);
             if (expectedGameId > 0 && snapshot.GameId > 0 && snapshot.GameId != expectedGameId)
             {
-                Log($"[ROADNET][SKIP-GAME] table={tableId} expectedGame={expectedGameId} gotGame={snapshot.GameId} route={snapshot.RouteKey} source={source}");
+                LogThrottled($"ROADNET_SKIP:{tableId}:{snapshot.GameId}:{snapshot.RouteKey}", $"[ROADNET][SKIP-GAME] table={tableId} expectedGame={expectedGameId} gotGame={snapshot.GameId} route={snapshot.RouteKey} source={source}", 10000);
                 return;
             }
 
@@ -7786,7 +7816,23 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 }
             }
 
-            Log($"[ROADNET] {tableId} route={snapshot.RouteKey} source={source} hist={snapshot.HistoryText} center={snapshot.CenterResult} shuffle={(snapshot.WantShuffle == true ? "1" : "0")} scoreP={snapshot.PlayerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} scoreB={snapshot.BankerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} botBetP={snapshot.BetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} botBetT={snapshot.BetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} botBetB={snapshot.BetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetP={snapshot.TableBetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetT={snapshot.TableBetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetB={snapshot.TableBetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} countdown={snapshot.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? ""}");
+            var roadSig = string.Join("|",
+                snapshot.RouteKey ?? "",
+                source ?? "",
+                snapshot.HistoryText ?? "",
+                snapshot.CenterResult ?? "",
+                snapshot.WantShuffle == true ? "1" : "0",
+                snapshot.PlayerScore?.ToString(CultureInfo.InvariantCulture) ?? "",
+                snapshot.BankerScore?.ToString(CultureInfo.InvariantCulture) ?? "",
+                snapshot.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? "",
+                snapshot.TableBetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? "",
+                snapshot.TableBetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? "",
+                snapshot.TableBetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? "");
+            LogChangedOrThrottled(
+                $"ROADNET:{tableId}",
+                roadSig,
+                $"[ROADNET] {tableId} route={snapshot.RouteKey} source={source} hist={snapshot.HistoryText} center={snapshot.CenterResult} shuffle={(snapshot.WantShuffle == true ? "1" : "0")} scoreP={snapshot.PlayerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} scoreB={snapshot.BankerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} botBetP={snapshot.BetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} botBetT={snapshot.BetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} botBetB={snapshot.BetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetP={snapshot.TableBetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetT={snapshot.TableBetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetB={snapshot.TableBetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} countdown={snapshot.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? ""}",
+                4000);
             _ = Dispatcher.InvokeAsync(async () => await PushPopupServerRoadStateAsync(snapshot));
         }
 
@@ -9778,11 +9824,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 var snap = ctx.GetSnap?.Invoke();
-                Log($"[TASKDBG] table={setting.Id} strategy={task.DisplayName} snapSrc={snap?.abx ?? ""} session={snap?.session ?? ""} seqLen={snap?.seq?.Length ?? 0} prog={snap?.prog?.ToString() ?? ""}");
+                LogDebug($"[TASKDBG] table={setting.Id} strategy={task.DisplayName} snapSrc={snap?.abx ?? ""} session={snap?.session ?? ""} seqLen={snap?.seq?.Length ?? 0} prog={snap?.prog?.ToString() ?? ""}");
             }
             catch (Exception ex)
             {
-                Log($"[TASKDBG] table={setting.Id} snapshot error: {ex.Message}");
+                LogDebug($"[TASKDBG] table={setting.Id} snapshot error: {ex.Message}");
             }
 
             await task.RunAsync(ctx, ct);
@@ -10058,9 +10104,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             if (string.IsNullOrWhiteSpace(tableId)) return;
             var state = GetOrCreateTableTaskState(tableId, tableName);
-            if (IsTableRunning(state))
+            if (IsTableRunning(state) || state.AutoStartRequested)
             {
-                Log("[OVERLAY] toggle stop table=" + tableId);
+                Log("[OVERLAY] toggle stop table=" + tableId + (IsTableRunning(state) ? "" : " (pending-sync)"));
                 StopTableTask(tableId, "manual");
                 return;
             }
@@ -10452,19 +10498,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 await EvalJsLockedAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[CW] ensure push 240ms");
 
-                var ready = await WaitForBridgeAndGameDataAsync(tableId, 15000);
-                if (!ready)
+                if (!HasRunnableTableGameData(tableId, out var readySnap))
                 {
-                    Log("[DEC] data not ready, retry push.");
-                    await EvalJsLockedAsync("window.__cw_startPush && window.__cw_startPush(240);");
-                    ready = await WaitForBridgeAndGameDataAsync(tableId, 15000);
-                    if (!ready)
-                    {
-                        Log("[DEC] data still syncing, defer start.");
-                        ScheduleDeferredTableStart(state, tableName, skipGlobalChecks);
-                        return;
-                    }
+                    Log($"[TASK] waiting sync before start: table={tableId}");
+                    ScheduleDeferredTableStart(state, tableName, skipGlobalChecks);
+                    return;
                 }
+
+                Log($"[TASK] start with synced data: table={tableId} src={readySnap.abx} session={readySnap.session} seqLen={readySnap.seq?.Length ?? 0} prog={readySnap.prog?.ToString() ?? ""}");
 
                 state.Decision = new DecisionState();
                 state.Cooldown = false;
@@ -10713,7 +10754,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (Interlocked.Exchange(ref _runAllInProgress, 1) == 1) return;
             try
             {
-                if (HasRunningTasks())
+                if (HasActiveTableRequests())
                 {
                     StopAllTables("manual");
                     return;

@@ -12343,8 +12343,13 @@ function deriveWinLoseColor(text) {
                     }
                 }
             }
+            const shouldKeepPreviousRoadInResultPhase = !!(
+                currentIsResultPhase &&
+                !historySig &&
+                st.lastHistorySig
+            );
             if (st.lastHistorySig !== historySig) {
-                if (!(shouldDeferShuffleReset && !historySig)) {
+                if (!(shouldDeferShuffleReset && !historySig) && !shouldKeepPreviousRoadInResultPhase) {
                     st.lastHistorySig = historySig;
                     if (data.historyRaw && data.historyRaw.length) {
                         renderResultMapFromRaw(view, data.historyRaw);
