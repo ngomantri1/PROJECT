@@ -1206,24 +1206,26 @@
                 selected: (selected && selected.selected) || null
             });
         } catch (_) {}
-        try {
-            console.log('[BET-WM] target click', {
-                rootId: (root && root.id) || '',
-                targetId: (target && target.id) || ''
-            });
-        } catch (_) {}
-        betDispatchClickAtPoint(target);
-        await new Promise(r => setTimeout(r, 260));
-        try {
-            console.log('[BET-WM] confirm click', {
-                rootId: (root && root.id) || '',
-                confirmId: (confirmBtn && confirmBtn.id) || ''
-            });
-        } catch (_) {}
-        betDispatchClickAtPoint(confirmBtn);
-        await new Promise(r => setTimeout(r, 240));
-        return true;
-    }
+          try {
+              console.log('[BET-WM] target click', {
+                  rootId: (root && root.id) || '',
+                  targetId: (target && target.id) || ''
+              });
+          } catch (_) {}
+          if (!betTryClickDirect(target, logBetWarn, 'target'))
+              return false;
+          await new Promise(r => setTimeout(r, 260));
+          try {
+              console.log('[BET-WM] confirm click', {
+                  rootId: (root && root.id) || '',
+                  confirmId: (confirmBtn && confirmBtn.id) || ''
+              });
+          } catch (_) {}
+          if (!betTryClickDirect(confirmBtn, logBetWarn, 'confirm'))
+              return false;
+          await new Promise(r => setTimeout(r, 240));
+          return true;
+      }
 
     async function betExecuteMultiAbxStyleAsync(amountValue, root, side, logBetWarn) {
         const s = betNormalizeSide(side);
@@ -1281,27 +1283,27 @@
             });
         } catch (_) {}
         await new Promise(r => setTimeout(r, 450));
-        try {
-            console.log('[BET-WM] target click', {
-                rootId: (root && root.id) || '',
-                targetId: (target && target.id) || ''
-            });
-        } catch (_) {}
-        if (!betDispatchClickAtPoint(target))
-            return false;
-        await new Promise(r => setTimeout(r, 260));
-        await new Promise(r => setTimeout(r, 350));
-        try {
-            console.log('[BET-WM] confirm click', {
-                rootId: (root && root.id) || '',
-                confirmId: (confirmBtn && confirmBtn.id) || ''
-            });
-        } catch (_) {}
-        if (!betDispatchClickAtPoint(confirmBtn))
-            return false;
-        await new Promise(r => setTimeout(r, 220));
-        return true;
-    }
+          try {
+              console.log('[BET-WM] target click', {
+                  rootId: (root && root.id) || '',
+                  targetId: (target && target.id) || ''
+              });
+          } catch (_) {}
+          if (!betTryClickDirect(target, logBetWarn, 'target'))
+              return false;
+          await new Promise(r => setTimeout(r, 260));
+          await new Promise(r => setTimeout(r, 350));
+          try {
+              console.log('[BET-WM] confirm click', {
+                  rootId: (root && root.id) || '',
+                  confirmId: (confirmBtn && confirmBtn.id) || ''
+              });
+          } catch (_) {}
+          if (!betTryClickDirect(confirmBtn, logBetWarn, 'confirm'))
+              return false;
+          await new Promise(r => setTimeout(r, 220));
+          return true;
+      }
 
     function betWaitBetConfirmAsync(root, side, beforeVal, beforeSideVal, beforeCount, beforeActive, timeoutMs) {
         const end = Date.now() + (Number(timeoutMs) || 0);
@@ -1740,9 +1742,9 @@
         return false;
     }
 
-    function betDispatchClickAtPoint(target) {
-        if (!target || !target.getBoundingClientRect)
-            return false;
+      function betDispatchClickAtPoint(target) {
+          if (!target || !target.getBoundingClientRect)
+              return false;
         const doc = target.ownerDocument || document;
         const win = doc.defaultView || window;
         const r = target.getBoundingClientRect();
@@ -1815,9 +1817,35 @@
                 setTimeout(() => {
                     peeled.reverse().forEach(k => { try { k.node.style.pointerEvents = k.prevPE; } catch (_) {} });
                 }, 0);
-        }
-        return true;
-    }
+          }
+          return true;
+      }
+
+      function betTryClickDirect(target, logBetWarn, label) {
+          if (!target)
+              return false;
+          try {
+              if (betDispatchClickAtPoint(target))
+                  return true;
+          } catch (_) {}
+          try {
+              if (betDispatchClickOnce(target, 'click', { noScroll: true }))
+                  return true;
+          } catch (_) {}
+          try {
+              if (betDispatchClickOnce(target, 'mouse', { noScroll: true }))
+                  return true;
+          } catch (_) {}
+          try {
+              if (betDispatchClickOnce(target, 'point', { noScroll: true }))
+                  return true;
+          } catch (_) {}
+          try {
+              if (typeof logBetWarn === 'function')
+                  logBetWarn((label || 'click') + ' click failed targetId=' + ((target && target.id) || ''));
+          } catch (_) {}
+          return false;
+      }
 
     function betShowToast(msg, ttlMs) {
         try {
@@ -1905,6 +1933,8 @@
             if (forcedLevel1 > 0)
                 amountValue = forcedLevel1;
 
+            logBetWarn('start tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue + ' virtual=' + (isVirtual === true));
+
             if (id && sideLabel) {
                 if (isVirtual === true) {
                     sendOnce(id, sideLabel, amountValue);
@@ -1919,6 +1949,7 @@
                     logBetWarn('root not found for tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue);
                     return 'err:root';
                 }
+                logBetWarn('root ok for tableId=' + id + ' rootId=' + ((root && root.id) || '') + ' visible=' + betIsVisible(root) + ' multi=' + betIsMultiBetRoot(root));
                 const targetTail = s === 'player' ? BET_PLAYER_TAIL : BET_BANKER_TAIL;
                 const selector = s === 'player'
                     ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt'
@@ -1937,13 +1968,12 @@
                 }
                 if (!target) {
                     logBetWarn('target not found for tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue);
+                    return 'err:target';
                 }
                 const rootDoc = root ? (root.ownerDocument || document) : document;
-                if (!target) {
-                    logBetWarn('target not found for tableId=' + id + ' side=' + sideLabel);
-                    return 'err:target';
-                } else {
-                    const useMultiFlow = !!(root && betIsMultiBetRoot(root) && betFindMultiTargetByRoot(root, s));
+                const useMultiFlow = !!(root && betIsMultiBetRoot(root) && betFindMultiTargetByRoot(root, s));
+                logBetWarn('target ok tableId=' + id + ' targetId=' + ((target && target.id) || '') + ' useMulti=' + useMultiFlow);
+                {
                     const clickTarget =
                         (useMultiFlow ? target : (
                             target.closest('.kU_kV') ||
@@ -1958,6 +1988,7 @@
                         logBetWarn('cannot build chip plan amount=' + amountValue + ' remaining=' + planResult.remaining);
                         return 'err:plan';
                     }
+                    logBetWarn('plan ok tableId=' + id + ' steps=' + planResult.plan.length + ' remaining=' + planResult.remaining + ' multi=' + useMultiFlow);
                     const stakeRoot = betResolveStakeRoot(clickTarget, root) || root;
                     const runBetTask = async () => {
                         try {

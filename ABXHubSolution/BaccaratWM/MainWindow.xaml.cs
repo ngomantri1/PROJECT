@@ -9337,17 +9337,37 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     if (!ReferenceEquals(Web, active)) candidates.Add(Web);
                     if (!ReferenceEquals(_popupWeb, active) && !ReferenceEquals(_popupWeb, Web)) candidates.Add(_popupWeb);
 
+                    var isBetCall = !string.IsNullOrWhiteSpace(js) &&
+                        (js.IndexOf("__cw_bet", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         js.IndexOf("__cw_forceStakeLevel1", StringComparison.OrdinalIgnoreCase) >= 0);
+                    string DescribeWebView(WebView2? web)
+                    {
+                        if (web == null) return "null";
+                        if (ReferenceEquals(web, _popupWeb)) return "PopupWeb";
+                        if (ReferenceEquals(web, Web)) return "Web";
+                        return "OtherWeb";
+                    }
+                    if (isBetCall)
+                    {
+                        Log($"[JSHOST][TRY] active={DescribeWebView(active)} candidates={string.Join(',', candidates.Select(DescribeWebView))}");
+                    }
+
                     foreach (var web in candidates)
                     {
                         if (web?.CoreWebView2 == null)
                             continue;
                         try
                         {
-                            return await web.ExecuteScriptAsync(js);
+                            var result = await web.ExecuteScriptAsync(js);
+                            if (isBetCall)
+                                Log($"[JSHOST][OK] selected={DescribeWebView(web)}");
+                            return result;
                         }
                         catch { }
                     }
 
+                    if (isBetCall)
+                        Log("[JSHOST][FAIL] no webview could execute bet script");
                     return "";
                 }
                 finally
