@@ -18,7 +18,7 @@ namespace BaccaratWM.Tasks
         private static readonly SemaphoreSlim _betQueue = new SemaphoreSlim(1, 1);
         private static readonly ConcurrentDictionary<string, long> _lastWaitLogByTable = new ConcurrentDictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
-        // (tuỳ chọn) reset khi dừng task
+        // (tùy chọn) reset khi dừng task
         public static void ClearBetCooldown() => _lastBetOkByTable.Clear();
 
         public static string ParityCharToSide(char ch) => (ch == 'P') ? "P" : "B";
@@ -191,9 +191,9 @@ namespace BaccaratWM.Tasks
             {
                 var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 var last = _lastBetOkByTable.TryGetValue(tableId, out var lastMs) ? lastMs : 0;
-                if (now - last < 3000)  // 3 giây khoá sau lần bet OK gần nhất
+                if (now - last < 1200)
                 {
-                    ctx.Log?.Invoke($"[BET] cooldown 3s active, skip ({3000 - (now - last)}ms left)");
+                    ctx.Log?.Invoke($"[BET] cooldown 1.2s active, skip ({1200 - (now - last)}ms left)");
                     return false;
                 }
 
@@ -217,7 +217,7 @@ namespace BaccaratWM.Tasks
                 var ok = !string.Equals(r, "no", StringComparison.OrdinalIgnoreCase);
 
                 if (ok)
-                    _lastBetOkByTable[tableId] = now; // kích hoạt khoá 3s
+                    _lastBetOkByTable[tableId] = now; // kích hoạt khóa 1.2s
 
                 return ok;
             }
@@ -231,7 +231,7 @@ namespace BaccaratWM.Tasks
 
         public static async Task<bool?> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSession, CancellationToken ct)
         {
-            // chờ seq tăng độ dài → có kết quả mới
+            // chờ seq tăng độ dài -> có kết quả mới
             while (true)
             {
                 ct.ThrowIfCancellationRequested();

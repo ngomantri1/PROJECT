@@ -1058,7 +1058,7 @@
         let idx = 0;
         let currentChipValue = null;
         let chipRetry = 0;
-        const CHIP_SWITCH_DELAY = 240;
+        const CHIP_SWITCH_DELAY = 120;
         const BET_CLICK_DELAY = 160;
         const CHIP_DOUBLE_CLICK_GAP = 80;
         const CHIP_VERIFY_RETRY = 3;
@@ -1139,9 +1139,9 @@
             return { ok: false, token: '' };
         const token = betParseMultiChipTokenFromNode(chipNode);
         betDispatchClickAtPoint(chipNode);
-        await new Promise(r => setTimeout(r, 220));
+        await new Promise(r => setTimeout(r, 120));
         betDispatchClickAtPoint(chipNode);
-        await new Promise(r => setTimeout(r, 220));
+        await new Promise(r => setTimeout(r, 120));
         const selected = betGetSelectedChipAmount(doc);
         return { ok: selected == null || selected === value, token, selected };
     }
@@ -1174,12 +1174,12 @@
             } catch (_) {}
             for (let i = 0; i < item.count; i++) {
                 betDispatchClickAtPoint(target);
-                await new Promise(r => setTimeout(r, 260));
+                await new Promise(r => setTimeout(r, 120));
             }
         }
-        await new Promise(r => setTimeout(r, 350));
+        await new Promise(r => setTimeout(r, 150));
         betDispatchClickAtPoint(confirmBtn);
-        await new Promise(r => setTimeout(r, 240));
+        await new Promise(r => setTimeout(r, 120));
         return true;
     }
 
@@ -1214,7 +1214,7 @@
           } catch (_) {}
           if (!betTryClickDirect(target, logBetWarn, 'target'))
               return false;
-          await new Promise(r => setTimeout(r, 260));
+          await new Promise(r => setTimeout(r, 120));
           try {
               console.log('[BET-WM] confirm click', {
                   rootId: (root && root.id) || '',
@@ -1223,7 +1223,7 @@
           } catch (_) {}
           if (!betTryClickDirect(confirmBtn, logBetWarn, 'confirm'))
               return false;
-          await new Promise(r => setTimeout(r, 240));
+          await new Promise(r => setTimeout(r, 120));
           return true;
       }
 
@@ -1265,9 +1265,9 @@
             });
         } catch (_) {}
         betDispatchClickAtPoint(chipNode);
-        await new Promise(r => setTimeout(r, 220));
+        await new Promise(r => setTimeout(r, 120));
         betDispatchClickAtPoint(chipNode);
-        await new Promise(r => setTimeout(r, 220));
+        await new Promise(r => setTimeout(r, 120));
         const selected = betGetSelectedChipAmount(chipDoc);
         if (selected != null && selected !== amountValue) {
             if (typeof logBetWarn === 'function')
@@ -1282,7 +1282,7 @@
                 selected
             });
         } catch (_) {}
-        await new Promise(r => setTimeout(r, 450));
+        await new Promise(r => setTimeout(r, 180));
           try {
               console.log('[BET-WM] target click', {
                   rootId: (root && root.id) || '',
@@ -1291,8 +1291,8 @@
           } catch (_) {}
           if (!betTryClickDirect(target, logBetWarn, 'target'))
               return false;
-          await new Promise(r => setTimeout(r, 260));
-          await new Promise(r => setTimeout(r, 350));
+          await new Promise(r => setTimeout(r, 120));
+          await new Promise(r => setTimeout(r, 150));
           try {
               console.log('[BET-WM] confirm click', {
                   rootId: (root && root.id) || '',
@@ -1301,7 +1301,7 @@
           } catch (_) {}
           if (!betTryClickDirect(confirmBtn, logBetWarn, 'confirm'))
               return false;
-          await new Promise(r => setTimeout(r, 220));
+          await new Promise(r => setTimeout(r, 120));
           return true;
       }
 
