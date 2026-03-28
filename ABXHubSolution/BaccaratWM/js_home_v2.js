@@ -1904,9 +1904,10 @@
                 return;
             try {
                 const payload = { abx: 'bet', tableId: id, side: sideLabel, amount: amountValue };
-                window.chrome?.webview?.postMessage?.(payload);
+                const payloadJson = JSON.stringify(payload);
+                window.chrome?.webview?.postMessage?.(payloadJson);
                 if (window.top && window.top !== window && typeof window.top.postMessage === 'function')
-                    window.top.postMessage(payload, '*');
+                    window.top.postMessage(payloadJson, '*');
             } catch (_) {}
         };
         const logBetWarn = (msg) => {

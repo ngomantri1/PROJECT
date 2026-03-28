@@ -422,7 +422,7 @@ namespace BaccaratWM
 
         // 3) Giữ pending bet để chờ kết quả
         private BetRow? _pendingRow;
-        private readonly Dictionary<string, BetRow> _pendingBetsByTable = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Queue<BetRow>> _pendingBetsByTable = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _pendingBetGate = new();
         private string _lastBetSig = "";
         private long _lastBetSigAtMs = 0;
@@ -771,8 +771,10 @@ Ví dụ không hợp lệ:
 
         // File
         private readonly ConcurrentQueue<string> _fileLogQueue = new();
-        private const int FILE_FLUSH_MS = 800;
+        private const int FILE_FLUSH_MS = 1200;
         private readonly bool _enableVerboseDebugLogs = false;
+        private readonly bool _enableHistMissLogs = false;
+        private readonly bool _enableRoadnetInfoLogs = false;
         private readonly ConcurrentDictionary<string, long> _logThrottleTicks = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, string> _logLastSignature = new(StringComparer.OrdinalIgnoreCase);
 
@@ -1558,6 +1560,16 @@ Ví dụ không hợp lệ:
             _logThrottleTicks[key] = now;
             _logLastSignature[key] = signature;
             Log(msg);
+        }
+
+        private void LogHistoryMiss(string tableId, int expectedGameId, int gameId, string? sessionKey, string? result, string source)
+        {
+            if (!_enableHistMissLogs)
+                return;
+            var key = $"HISTMISS:{source}:{tableId}";
+            var signature = $"{expectedGameId}|{gameId}|{sessionKey}|{result}";
+            var msg = $"[HIST][MISS] table={tableId} expectedGame={expectedGameId} game={gameId} session={sessionKey} result={result} source={source}";
+            LogChangedOrThrottled(key, signature, msg, 4000);
         }
 
         private bool HasAnyWebTick()
@@ -3455,7 +3467,7 @@ Ví dụ không hợp lệ:
                 }
                 else
                 {
-                    Log($"[HIST][MISS] table={tableId} game={expectedGameId} session={sessionKey} result={lastToken.Value} source=popup-road");
+                    LogHistoryMiss(tableId, expectedGameId, expectedGameId, sessionKey, lastToken.Value.ToString(), "popup-road");
                 }
             }
         }
@@ -6437,9 +6449,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 {
                     lock (_pendingBetGate)
                     {
-                        if (_pendingBetsByTable.TryGetValue(pendingKey, out var prev) && prev != null)
-                            Log($"[HIST][REPLACE] table={tableId} key={pendingKey} prevSide={prev.Side} prevStake={prev.Stake:N0} newSide={side} newStake={amount:N0}");
-                        _pendingBetsByTable[pendingKey] = _pendingRow;
+                        if (!_pendingBetsByTable.TryGetValue(pendingKey, out var queue) || queue == null)
+                        {
+                            queue = new Queue<BetRow>();
+                            _pendingBetsByTable[pendingKey] = queue;
+                        }
+                        queue.Enqueue(_pendingRow);
+                        Log($"[HIST][QUEUE] table={tableId} key={pendingKey} side={side} stake={amount:N0} size={queue.Count}");
                     }
                 }
 
@@ -7782,7 +7798,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var expectedGameId = InferExpectedGameIdByTable(tableId);
             if (expectedGameId > 0 && snapshot.GameId > 0 && snapshot.GameId != expectedGameId)
             {
-                LogThrottled($"ROADNET_SKIP:{tableId}:{snapshot.GameId}:{snapshot.RouteKey}", $"[ROADNET][SKIP-GAME] table={tableId} expectedGame={expectedGameId} gotGame={snapshot.GameId} route={snapshot.RouteKey} source={source}", 10000);
+                if (_enableRoadnetInfoLogs)
+                    LogThrottled($"ROADNET_SKIP:{tableId}:{snapshot.GameId}:{snapshot.RouteKey}", $"[ROADNET][SKIP-GAME] table={tableId} expectedGame={expectedGameId} gotGame={snapshot.GameId} route={snapshot.RouteKey} source={source}", 30000);
                 return;
             }
 
@@ -7812,7 +7829,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 }
                 else
                 {
-                    Log($"[HIST][MISS] table={tableId} expectedGame={expectedGameId} game={snapshot.GameId} session={snapshot.SessionKey} result={finalizeToken} source={source}");
+                    LogHistoryMiss(tableId, expectedGameId, snapshot.GameId, snapshot.SessionKey, finalizeToken, source);
                 }
             }
 
@@ -7828,11 +7845,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 snapshot.TableBetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? "",
                 snapshot.TableBetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? "",
                 snapshot.TableBetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? "");
-            LogChangedOrThrottled(
-                $"ROADNET:{tableId}",
-                roadSig,
-                $"[ROADNET] {tableId} route={snapshot.RouteKey} source={source} hist={snapshot.HistoryText} center={snapshot.CenterResult} shuffle={(snapshot.WantShuffle == true ? "1" : "0")} scoreP={snapshot.PlayerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} scoreB={snapshot.BankerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} botBetP={snapshot.BetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} botBetT={snapshot.BetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} botBetB={snapshot.BetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetP={snapshot.TableBetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetT={snapshot.TableBetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetB={snapshot.TableBetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} countdown={snapshot.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? ""}",
-                4000);
+            if (_enableRoadnetInfoLogs)
+            {
+                LogChangedOrThrottled(
+                    $"ROADNET:{tableId}",
+                    roadSig,
+                    $"[ROADNET] {tableId} route={snapshot.RouteKey} source={source} hist={snapshot.HistoryText} center={snapshot.CenterResult} shuffle={(snapshot.WantShuffle == true ? "1" : "0")} scoreP={snapshot.PlayerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} scoreB={snapshot.BankerScore?.ToString(CultureInfo.InvariantCulture) ?? ""} botBetP={snapshot.BetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} botBetT={snapshot.BetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} botBetB={snapshot.BetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetP={snapshot.TableBetPlayer?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetT={snapshot.TableBetTie?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} tableBetB={snapshot.TableBetBanker?.ToString("0.##", CultureInfo.InvariantCulture) ?? ""} countdown={snapshot.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? ""}",
+                    8000);
+            }
             _ = Dispatcher.InvokeAsync(async () => await PushPopupServerRoadStateAsync(snapshot));
         }
 
@@ -8005,11 +8025,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     await PushPopupServerRoadStateAsync(snapshot);
 
                 var targetDesc = string.Join(" | ", targets.Select(t => !string.IsNullOrWhiteSpace(t.Item2) ? t.Item2 : t.Item1));
-                Log($"[ROADNET] bootstrap cache -> overlay: matched={snapshots.Count}/{targets.Count} targets={targetDesc}");
+                if (_enableRoadnetInfoLogs)
+                    LogThrottled("ROADNET_BOOTSTRAP", $"[ROADNET] bootstrap cache -> overlay: matched={snapshots.Count}/{targets.Count} targets={targetDesc}", 30000);
             }
             catch (Exception ex)
             {
-                Log("[ROADNET] bootstrap cache lỗi: " + ex.Message);
+                if (_enableRoadnetInfoLogs)
+                    LogThrottled("ROADNET_BOOTSTRAP_ERR", "[ROADNET] bootstrap cache lỗi: " + ex.Message, 30000);
             }
         }
 
@@ -12776,9 +12798,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 {
                     var strictKey = BuildPendingBetKey(expectedGameId, tableId);
                     if (!string.IsNullOrWhiteSpace(strictKey) &&
-                        _pendingBetsByTable.TryGetValue(strictKey, out row!))
+                        TryDequeuePendingBetLocked(strictKey, out row))
                     {
-                        _pendingBetsByTable.Remove(strictKey);
                         goto POPPED;
                     }
 
@@ -12786,15 +12807,28 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         return false;
                 }
 
-                if (!_pendingBetsByTable.TryGetValue(tableId, out row!))
+                if (!TryDequeuePendingBetLocked(tableId, out row))
                     return false;
-                _pendingBetsByTable.Remove(tableId);
             }
 
         POPPED:
             if (ReferenceEquals(_pendingRow, row))
                 _pendingRow = null;
 
+            return row != null;
+        }
+
+        private bool TryDequeuePendingBetLocked(string key, out BetRow row)
+        {
+            row = null!;
+            if (string.IsNullOrWhiteSpace(key))
+                return false;
+            if (!_pendingBetsByTable.TryGetValue(key, out var queue) || queue == null || queue.Count <= 0)
+                return false;
+
+            row = queue.Dequeue();
+            if (queue.Count <= 0)
+                _pendingBetsByTable.Remove(key);
             return row != null;
         }
 
