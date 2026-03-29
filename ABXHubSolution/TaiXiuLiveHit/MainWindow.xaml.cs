@@ -653,6 +653,8 @@ Ví dụ không hợp lệ:
         private bool _homeAutoLoginDone = false;
         private bool _homeAutoPlayDone = false;
         private CancellationTokenSource? _leaseHbCts;
+        private CancellationTokenSource? _bridgeProbeCts;
+        private string _lastBridgeProbeState = "";
 
 
 
@@ -1252,6 +1254,37 @@ Ví dụ không hợp lệ:
                                     string val = root.TryGetProperty("value", out var vEl) ? vEl.ToString() : root.ToString();
                                     if (_jsAwaiters.TryRemove(id, out var waiter))
                                         waiter.TrySetResult(val);
+                                    return;
+                                }
+
+                                if (abxStr == "js_loaded")
+                                {
+                                    Log("[Bridge] app-js loaded in page");
+                                    return;
+                                }
+
+                                if (abxStr == "tick_error")
+                                {
+                                    string error = root.TryGetProperty("error", out var er1) ? (er1.GetString() ?? "unknown") : "unknown";
+                                    Log("[Bridge][tick_error] " + error);
+                                    return;
+                                }
+
+                                if (abxStr == "cw_diag")
+                                {
+                                    string where = root.TryGetProperty("where", out var w1) ? (w1.GetString() ?? "") : "";
+                                    string reason = root.TryGetProperty("reason", out var r1) ? (r1.GetString() ?? "") : "";
+                                    string host = root.TryGetProperty("host", out var h1) ? (h1.GetString() ?? "") : "";
+                                    string href = root.TryGetProperty("href", out var h2) ? (h2.GetString() ?? "") : "";
+                                    string hasCc = root.TryGetProperty("hasCc", out var c1) ? c1.ToString() : "?";
+                                    string hasDir = root.TryGetProperty("hasDirector", out var d1) ? d1.ToString() : "?";
+                                    string hasScene = root.TryGetProperty("hasScene", out var s1) ? s1.ToString() : "?";
+                                    string hasGetScene = root.TryGetProperty("hasGetScene", out var g1) ? g1.ToString() : "?";
+                                    string seqLen = root.TryGetProperty("seqLen", out var q1) ? q1.ToString() : "?";
+                                    string noProgCount = root.TryGetProperty("noProgCount", out var n1) ? n1.ToString() : "";
+                                    string noTotalsCount = root.TryGetProperty("noTotalsCount", out var n2) ? n2.ToString() : "";
+
+                                    Log($"[BridgeDiag] where={where} reason={reason} host={host} cc={hasCc} dir={hasDir} getScene={hasGetScene} scene={hasScene} seqLen={seqLen} noProg={noProgCount} noTotals={noTotalsCount} href={href}");
                                     return;
                                 }
 
@@ -4588,6 +4621,171 @@ Ví dụ không hợp lệ:
             _homeAutoPlayDone = false;
         }
 
+        private sealed class BridgeProbeState
+        {
+            public string Host { get; init; } = "";
+            public string Href { get; init; } = "";
+            public bool HasCc { get; init; }
+            public bool HasDirector { get; init; }
+            public bool HasGetScene { get; init; }
+            public bool HasScene { get; init; }
+            public bool HasBet { get; init; }
+            public bool HasPush { get; init; }
+            public bool HasProg { get; init; }
+            public int SeqLen { get; init; }
+        }
+
+        private async Task<BridgeProbeState?> ProbeBridgeStateAsync()
+        {
+            if (Web?.CoreWebView2 == null) return null;
+
+            const string JS = @"
+(function(){
+  try{
+    var hasCc = !!window.cc;
+    var hasDirector = !!(window.cc && window.cc.director);
+    var hasGetScene = !!(window.cc && window.cc.director && typeof window.cc.director.getScene === 'function');
+    var hasScene = false;
+    try{ hasScene = !!(hasGetScene && window.cc.director.getScene()); }catch(_){}
+    var hasBet = (typeof window.__cw_bet === 'function');
+    var hasPush = (typeof window.__cw_startPush === 'function');
+    var seq = (typeof window.__cw_lastSeq === 'string') ? window.__cw_lastSeq : '';
+    var hasProg = (typeof window.__cw_lastProg === 'number');
+    return {
+      host: String(location.host || ''),
+      href: String(location.href || ''),
+      hasCc: hasCc,
+      hasDirector: hasDirector,
+      hasGetScene: hasGetScene,
+      hasScene: hasScene,
+      hasBet: hasBet,
+      hasPush: hasPush,
+      hasProg: hasProg,
+      seqLen: seq.length
+    };
+  }catch(e){
+    return { error: String(e && e.message || e) };
+  }
+})();";
+
+            var json = await Web.CoreWebView2.ExecuteScriptAsync(JS);
+            if (string.IsNullOrWhiteSpace(json)) return null;
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return null;
+
+            if (root.TryGetProperty("error", out var errEl))
+            {
+                Log("[BridgeProbe] js error: " + (errEl.GetString() ?? "unknown"));
+                return null;
+            }
+
+            static bool GetBool(JsonElement e, string name)
+                => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
+            static int GetInt(JsonElement e, string name)
+                => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : 0;
+            static string GetStr(JsonElement e, string name)
+                => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? (v.GetString() ?? "") : "";
+
+            return new BridgeProbeState
+            {
+                Host = GetStr(root, "host"),
+                Href = GetStr(root, "href"),
+                HasCc = GetBool(root, "hasCc"),
+                HasDirector = GetBool(root, "hasDirector"),
+                HasGetScene = GetBool(root, "hasGetScene"),
+                HasScene = GetBool(root, "hasScene"),
+                HasBet = GetBool(root, "hasBet"),
+                HasPush = GetBool(root, "hasPush"),
+                HasProg = GetBool(root, "hasProg"),
+                SeqLen = GetInt(root, "seqLen")
+            };
+        }
+
+        private void StartBridgeProbeLoopForDoc(string docKey)
+        {
+            try { _bridgeProbeCts?.Cancel(); } catch { }
+            _bridgeProbeCts = new CancellationTokenSource();
+            var cts = _bridgeProbeCts;
+            _lastBridgeProbeState = "";
+
+            _ = Task.Run(async () =>
+            {
+                bool ready = false;
+                try
+                {
+                    for (int i = 1; i <= 50; i++)
+                    {
+                        cts.Token.ThrowIfCancellationRequested();
+
+                        var probe = await Dispatcher.InvokeAsync(() => ProbeBridgeStateAsync()).Task.Unwrap();
+                        if (probe == null)
+                        {
+                            if (i == 1 || i % 5 == 0)
+                                Log($"[BridgeProbe] doc={docKey} try={i} probe=null");
+                            await Task.Delay(700, cts.Token);
+                            continue;
+                        }
+
+                        string state =
+                            $"host={probe.Host} cc={(probe.HasCc ? 1 : 0)} dir={(probe.HasDirector ? 1 : 0)} getScene={(probe.HasGetScene ? 1 : 0)} scene={(probe.HasScene ? 1 : 0)} bet={(probe.HasBet ? 1 : 0)} push={(probe.HasPush ? 1 : 0)} prog={(probe.HasProg ? 1 : 0)} seqLen={probe.SeqLen}";
+
+                        if (i == 1 || i % 5 == 0 || !string.Equals(state, _lastBridgeProbeState, StringComparison.Ordinal))
+                            Log($"[BridgeProbe] doc={docKey} try={i} {state}");
+                        _lastBridgeProbeState = state;
+
+                        if (!probe.HasBet || !probe.HasPush)
+                        {
+                            if (!string.IsNullOrEmpty(_appJs))
+                            {
+                                try
+                                {
+                                    await Dispatcher.InvokeAsync(() => Web.CoreWebView2.ExecuteScriptAsync(_appJs)).Task.Unwrap();
+                                    Log($"[BridgeProbe] reinject appJs (try={i})");
+                                }
+                                catch (Exception ex)
+                                {
+                                    Log("[BridgeProbe] reinject appJs error: " + ex.Message);
+                                }
+                            }
+                        }
+
+                        if (probe.HasPush)
+                        {
+                            try
+                            {
+                                await Dispatcher.InvokeAsync(() => Web.CoreWebView2.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);")).Task.Unwrap();
+                            }
+                            catch (Exception ex)
+                            {
+                                Log("[BridgeProbe] startPush error: " + ex.Message);
+                            }
+                        }
+
+                        if (probe.HasBet && probe.HasPush && (probe.HasScene || probe.SeqLen > 0 || probe.HasProg))
+                        {
+                            Log($"[BridgeProbe] READY doc={docKey} after {i} checks");
+                            ready = true;
+                            break;
+                        }
+
+                        await Task.Delay(700, cts.Token);
+                    }
+                }
+                catch (TaskCanceledException) { }
+                catch (Exception ex)
+                {
+                    Log("[BridgeProbe] loop error: " + ex.Message);
+                }
+                finally
+                {
+                    if (!ready && !cts.IsCancellationRequested)
+                        Log($"[BridgeProbe] doc={docKey} timeout (bridge not fully ready)");
+                }
+            }, cts.Token);
+        }
+
 
 
         private async Task InjectOnNewDocAsync()
@@ -4623,6 +4821,7 @@ Ví dụ không hợp lệ:
 
                 _lastDocKey = key;
                 Log("[Bridge] Injected on current doc, key=" + key);
+                StartBridgeProbeLoopForDoc(key);
             }
 
 
@@ -4725,27 +4924,43 @@ Ví dụ không hợp lệ:
         private async Task<bool> WaitForBridgeAndGameDataAsync(int timeoutMs = 20000)
         {
             var t0 = DateTime.UtcNow;
+            int loop = 0;
             while ((DateTime.UtcNow - t0).TotalMilliseconds < timeoutMs)
             {
+                loop++;
                 try
                 {
                     // 1) __cw_bet có chưa
                     var typeBet = (await Web.ExecuteScriptAsync("typeof window.__cw_bet"))?.Trim('"');
                     bool hasBet = string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase);
 
-                    // 2) Cocos có chưa
+                    // 2) __cw_startPush có chưa
+                    var typePush = (await Web.ExecuteScriptAsync("typeof window.__cw_startPush"))?.Trim('"');
+                    bool hasPush = string.Equals(typePush, "function", StringComparison.OrdinalIgnoreCase);
+
+                    // 3) Cocos có chưa
                     var cocosJson = await Web.ExecuteScriptAsync(
-                        "(function(){try{return !!(window.cc && cc.director && cc.director.getScene);}catch(e){return false;}})()");
+                        "(function(){try{return !!(window.cc && window.cc.director && window.cc.director.getScene);}catch(e){return false;}})()");
                     bool hasCocos = bool.TryParse(cocosJson, out var b) && b;
 
-                    // 3) Đã có tick chưa (ít nhất 1 ký tự seq)
-                    bool hasTick = false;
+                    // 4) Đã có tick chưa (ít nhất 1 ký tự seq hoặc có prog)
+                    bool hasSeq = false;
+                    bool hasProg = false;
                     lock (_snapLock)
                     {
-                        hasTick = _lastSnap?.seq != null && _lastSnap.seq.Length > 0;
+                        hasSeq = _lastSnap?.seq != null && _lastSnap.seq.Length > 0;
+                        hasProg = _lastSnap?.prog != null;
                     }
 
-                    if (hasBet && hasTick)
+                    if (loop == 1 || loop % 8 == 0)
+                    {
+                        Log($"[BridgeReady] try={loop} bet={(hasBet ? 1 : 0)} push={(hasPush ? 1 : 0)} cocos={(hasCocos ? 1 : 0)} seq={(hasSeq ? 1 : 0)} prog={(hasProg ? 1 : 0)}");
+                    }
+
+                    // Nới điều kiện:
+                    // - trước đây: hasBet + hasTick(seq)
+                    // - mới: hasBet + hasPush + (hasSeq || hasProg || hasCocos)
+                    if (hasBet && hasPush && (hasSeq || hasProg || hasCocos))
                         return true;
                 }
                 catch { /* tiếp tục đợi */ }
@@ -5272,6 +5487,9 @@ Ví dụ không hợp lệ:
 
             try { _stakeCts?.Cancel(); } catch { }
             _stakeCts = null;
+
+            try { _bridgeProbeCts?.Cancel(); } catch { }
+            _bridgeProbeCts = null;
 
             try { _autoLoginWatchCts?.Cancel(); } catch { }
             _autoLoginWatchCts = null;

@@ -63,6 +63,27 @@
     // SỬA: không được đụng trực tiếp biến global cc khi cc chưa tồn tại,
     // luôn đi qua window.cc để tránh ReferenceError khi inject sớm.
     if (!window.cc || !window.cc.director || !window.cc.director.getScene) {
+        try {
+            var diag = {
+                abx: 'cw_diag',
+                where: 'bootstrap',
+                reason: 'cc_not_ready',
+                hasCc: !!window.cc,
+                hasDirector: !!(window.cc && window.cc.director),
+                hasGetScene: !!(window.cc && window.cc.director && window.cc.director.getScene),
+                host: String(location.host || ''),
+                href: String(location.href || ''),
+                ts: Date.now()
+            };
+            if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
+                window.chrome.webview.postMessage(JSON.stringify(diag));
+            } else {
+                try {
+                    parent.postMessage(diag, '*');
+                } catch (_) {}
+            }
+            console.warn('[CW][DIAG] cc not ready at bootstrap', diag);
+        } catch (_) {}
         return;
     }
 
@@ -2404,6 +2425,8 @@
     var _lastStatus = '';
     var _lastSeq = '';
     var _lastSession = '';
+    var _diagNoProgCount = 0;
+    var _diagNoTotalsCount = 0;
 
     function shallowChanged(obj) {
         var s = '';
@@ -2769,6 +2792,45 @@
                     username: (typeof readUsernameSafe === 'function') ? readUsernameSafe() : '',
                     ts: Date.now()
                 };
+
+                if (!(typeof p === 'number' && !isNaN(p))) {
+                    _diagNoProgCount++;
+                    if (_diagNoProgCount === 1 || _diagNoProgCount % 20 === 0) {
+                        safePost({
+                            abx: 'cw_diag',
+                            where: 'push',
+                            reason: 'progress_null',
+                            noProgCount: _diagNoProgCount,
+                            hasCc: !!window.cc,
+                            hasDirector: !!(window.cc && window.cc.director),
+                            hasScene: !!(window.cc && window.cc.director && window.cc.director.getScene && window.cc.director.getScene()),
+                            seqLen: seq ? seq.length : 0,
+                            host: String(location.host || ''),
+                            href: String(location.href || ''),
+                            ts: Date.now()
+                        });
+                    }
+                } else {
+                    _diagNoProgCount = 0;
+                }
+
+                if (!snap.totals) {
+                    _diagNoTotalsCount++;
+                    if (_diagNoTotalsCount === 1 || _diagNoTotalsCount % 20 === 0) {
+                        safePost({
+                            abx: 'cw_diag',
+                            where: 'push',
+                            reason: 'totals_null',
+                            noTotalsCount: _diagNoTotalsCount,
+                            seqLen: seq ? seq.length : 0,
+                            host: String(location.host || ''),
+                            href: String(location.href || ''),
+                            ts: Date.now()
+                        });
+                    }
+                } else {
+                    _diagNoTotalsCount = 0;
+                }
 
                 if (shallowChanged(snap)) {
                     // Log trạng thái + thời gian
