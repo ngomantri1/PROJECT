@@ -1011,6 +1011,24 @@
             }
         } catch (_) {}
     }
+    function domGetSameOriginRoot(win) {
+        var cur = win || window;
+        try {
+            while (cur && cur.parent && cur.parent !== cur) {
+                var p = cur.parent;
+                try {
+                    var d = p.document;
+                    if (!d || !d.documentElement)
+                        break;
+                    cur = p;
+                    continue;
+                } catch (_) {
+                    break;
+                }
+            }
+        } catch (_) {}
+        return cur || win || window;
+    }
     function domGetContext(force) {
         var now = Date.now();
         if (!force && _domCtxCache.ctx && (now - _domCtxCache.at) < 1200)
@@ -2066,7 +2084,7 @@
     }
     function domFindTopHudSnapshot() {
         try {
-            var rootWin = window.top || window;
+            var rootWin = domGetSameOriginRoot(window);
             var contexts = [];
             domWalkContexts(rootWin, 'top', 0, 0, contexts, []);
             function pickAccount(rows) {
@@ -2224,6 +2242,94 @@
             };
         }
     }
+    function domFindGameAccountSnapshot() {
+        try {
+            var rootWin = domGetSameOriginRoot(window);
+            var contexts = [];
+            domWalkContexts(rootWin, 'top', 0, 0, contexts, []);
+            function isLikelyGameHref(href) {
+                var h = String(href || '').toLowerCase();
+                if (!h)
+                    return false;
+                if (h.indexOf('/player/') !== -1)
+                    return true;
+                if (h.indexOf('singlebactable.jsp') !== -1)
+                    return true;
+                if (h.indexOf('gamehall.jsp') !== -1)
+                    return true;
+                if (h.indexOf('webmain.jsp') !== -1)
+                    return true;
+                return false;
+            }
+            var best = {
+                account: null,
+                source: null
+            };
+            var bestScore = -1;
+            for (var ci = 0; ci < contexts.length; ci++) {
+                var ctx = contexts[ci];
+                if (!ctx || !ctx.doc)
+                    continue;
+                var href = String(ctx.href || '').toLowerCase();
+                if (!isLikelyGameHref(href))
+                    continue;
+                var doc = ctx.doc;
+                var view = ctx.win || window;
+                var topBand = Math.max(140, Math.min(220, ((view && view.innerHeight) || 900) * 0.22));
+                var nodes = [];
+                try {
+                    nodes = doc.querySelectorAll('span,div,p,a,b,strong,label,li,td');
+                } catch (_) {
+                    nodes = [];
+                }
+                for (var i = 0; i < nodes.length && i < 12000; i++) {
+                    var el = nodes[i];
+                    if (!el)
+                        continue;
+                    var txt = domCollapse(el.innerText || el.textContent || '');
+                    if (!txt || txt.length > 180)
+                        continue;
+                    if (/(nhap de bat dau chat|b[aă]t d[aà]u chat|chat|gift|x\s*\d+|❤|❤️)/i.test(txt))
+                        continue;
+                    var token = domExtractAccountToken(txt);
+                    if (!token)
+                        continue;
+                    var score = 0;
+                    if (/^(plyr|player|user|usr)/i.test(token))
+                        score += 260;
+                    if (/\d/.test(token))
+                        score += 80;
+                    if (href.indexOf('singlebactable.jsp') !== -1)
+                        score += 220;
+                    else if (href.indexOf('gamehall.jsp') !== -1)
+                        score += 180;
+                    else if (href.indexOf('webmain.jsp') !== -1)
+                        score += 120;
+                    try {
+                        var r = el.getBoundingClientRect();
+                        if (r && r.top >= 0 && r.top <= topBand)
+                            score += 120;
+                    } catch (_) {}
+                    var norm = domNorm(txt);
+                    if (domHasBalanceLabel(norm) || /(tai khoan|so du|balance)/.test(norm))
+                        score += 120;
+                    if (score > bestScore) {
+                        bestScore = score;
+                        best = {
+                            account: token,
+                            source: String(ctx.source || '')
+                        };
+                    }
+                }
+            }
+            return best;
+        } catch (_) {
+            return {
+                account: null,
+                source: null
+            };
+        }
+    }
     function domFindHudSnapshot() {
         try {
             var ctx = domGetContext();
@@ -2241,6 +2347,13 @@
                 }
                 if (topHud.source)
                     hud.source = topHud.source;
+                if (!hud.account) {
+                    var gameAcc = domFindGameAccountSnapshot();
+                    if (gameAcc && gameAcc.account)
+                        hud.account = String(gameAcc.account || '');
+                    if (!hud.source && gameAcc && gameAcc.source)
+                        hud.source = String(gameAcc.source || '');
+                }
             } catch (_) {}
             return {
                 account: hud.account || null,
@@ -10194,7 +10307,7 @@
                     seq: String(cached.seq || ''),
                     seqVersion: Number(cached.seqVersion || 0),
                     seqEvent: String(cached.seqEvent || ''),
-                    username: cached.username || '',
+                    username: (cached && cached.totals && cached.totals.N != null) ? String(cached.totals.N || '') : '',
                     status: String(cached.status || ''),
                     ts: Date.now(),
                     origin: 'canvas-panel'
@@ -10464,9 +10577,7 @@
 
             var uname = '';
             try {
-                if (cached && cached.username != null)
-                    uname = String(cached.username || '');
-                if (!uname && t && t.N != null)
+                if (t && t.N != null)
                     uname = String(t.N || '');
             } catch (_) {}
 

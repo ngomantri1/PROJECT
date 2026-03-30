@@ -1168,8 +1168,7 @@ try{
           var seq = snap ? String(snap.seq || '') : '';
           var uname = '';
           try{
-            if (snap && snap.username != null) uname = String(snap.username || '');
-            if (!uname && t && t.N != null) uname = String(t.N || '');
+            if (t && t.N != null) uname = String(t.N || '');
           }catch(_){}
           var hasSeq = !!(seq && String(seq).trim());
           var hasHud = !!(uname || (t && t.A != null));
@@ -3481,8 +3480,23 @@ try{
 
                         string statusRaw = GetJsonStringLoose(jrootTick, "status") ?? "";
                         string statusUi = statusRaw;
-                        if (statusUi.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase))
-                            statusUi = "Baccarat" + statusUi.Substring("Baccarat DOM".Length);
+                        if (statusRaw.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var p = snap?.prog;
+                            if (p.HasValue)
+                            {
+                                var pv = p.Value;
+                                if (pv <= 0.5) statusUi = "Đang mở bài";
+                                else if (pv <= 1.5) statusUi = "Tạm ngừng đặt cược";
+                                else if (pv <= 5.5) statusUi = "Nắm giữ cơ hội này nhé";
+                                else if (pv <= 18.5) statusUi = "Chúc may mắn";
+                                else statusUi = "Bắt đầu đặt cược";
+                            }
+                            else
+                            {
+                                statusUi = "";
+                            }
+                        }
                         var seqDisplayRaw = snap.seq ?? "";
                         var totalsNow = snap.totals;
                         bool hasSeqData = seqDisplayRaw.Any(ch =>
@@ -3533,10 +3547,10 @@ try{
 
                         try
                         {
-                            var userVal = snap.username ?? "";
+                            var userVal = (snap?.totals?.N ?? "").Trim();
                             if (!string.IsNullOrWhiteSpace(userVal))
                             {
-                                var normalized = userVal.Trim().ToLowerInvariant();
+                                var normalized = userVal.ToLowerInvariant();
                                 _homeUsername = normalized;
                                 _homeUsernameAt = DateTime.UtcNow;
 
@@ -3793,11 +3807,9 @@ try{
                                 if (LblUserName != null)
                                 {
                                     var name = ((snap?.totals?.N ?? "").Trim());
-                                    if (string.IsNullOrWhiteSpace(name))
-                                        name = (snap?.username ?? "").Trim();
                                     if (!string.IsNullOrWhiteSpace(name))
                                         LblUserName.Text = name;
-                                    else if (string.IsNullOrWhiteSpace(LblUserName.Text))
+                                    else
                                         LblUserName.Text = "-";
                                 }
 
@@ -3896,27 +3908,11 @@ try{
                             }
                         }
                     }
-
-                    var bal = root.TryGetProperty("balance", out var bEl) ? (bEl.GetString() ?? "") : "";
-
                     try
                     {
                         await Dispatcher.InvokeAsync(() =>
                         {
-                            if (LblUserName != null)
-                            {
-                                if (!string.IsNullOrWhiteSpace(uname))
-                                    LblUserName.Text = uname;
-                                else if (string.IsNullOrWhiteSpace(LblUserName.Text))
-                                    LblUserName.Text = "-";
-                            }
-                            if (LblAmount != null)
-                            {
-                                if (!string.IsNullOrWhiteSpace(bal))
-                                    LblAmount.Text = bal;
-                                else if (string.IsNullOrWhiteSpace(LblAmount.Text))
-                                    LblAmount.Text = "-";
-                            }
+                            // Không cho phép home_tick đẩy Username/Số dư lên UI game.
                         });
 
                         try
@@ -8340,13 +8336,11 @@ try{
             }
 
             var issuedName = (issuedSnap?.totals?.N ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(issuedName))
-                issuedName = (issuedSnap?.username ?? "").Trim();
             if (LblUserName != null)
             {
                 if (!string.IsNullOrWhiteSpace(issuedName))
                     LblUserName.Text = issuedName;
-                else if (string.IsNullOrWhiteSpace(LblUserName.Text))
+                else
                     LblUserName.Text = "-";
             }
 
