@@ -898,6 +898,10 @@ Ví dụ không hợp lệ:
         private string? _popupLastDocKey;
         private WebView2? _popupWeb;
         private int _popupTickPullBusy = 0;
+        private readonly object _playerFlowCacheLock = new();
+        private string _lastPlayerFlowGameUrl = "";
+        private DateTime _lastPlayerFlowGameAtUtc = DateTime.MinValue;
+        private string _lastPlayerFlowSourceHost = "";
         private const string Wv2ZipResNameX64 = "BaccaratSexyCasino.ThirdParty.WebView2Fixed_win-x64.zip";
         // Thư mục cache bền vững cho runtime (không bị dọn như %TEMP%)
         private static string Wv2BaseDir =>
@@ -2463,6 +2467,17 @@ try{
 
                 if (needNav)
                 {
+                    var oldHost = TryExtractHost(Web.Source?.ToString());
+                    var newHost = target.Host ?? "";
+                    if (_popupWeb != null)
+                        ClosePopupHost();
+                    if (!string.Equals(oldHost, newHost, StringComparison.OrdinalIgnoreCase))
+                    {
+                        ResetPlayerFlowGameCache("main-host-change");
+                        _lastGameTickUtc = DateTime.MinValue;
+                        lock (_snapLock) { _lastSnap = null; }
+                    }
+
                     _lastGameUrl = target.ToString();
                     var tcs = new TaskCompletionSource<bool>();
                     void Handler(object? s, CoreWebView2NavigationCompletedEventArgs e)
@@ -2959,6 +2974,8 @@ try{
 
                 // WebView2 ready (giữ hook cũ của bạn)
                 await EnsureWebReadyAsync();
+                await EnsureBridgeRegisteredAsync();
+                await InjectOnNewDocAsync();
 
                 //StartAutoLoginWatcher();
 
@@ -3051,6 +3068,18 @@ try{
                 if (!e.IsSuccess) return;
 
                 // BỔ SUNG: đảm bảo cầu nối và tiêm nếu doc mới
+                _ = Dispatcher.InvokeAsync(async () =>
+                {
+                    try
+                    {
+                        await EnsureBridgeRegisteredAsync();
+                        await InjectOnNewDocAsync();
+                    }
+                    catch (Exception exBridge)
+                    {
+                        Log("[Web_NavigationCompleted.Bridge] " + exBridge.Message);
+                    }
+                });
 
                 // HÀNH VI CŨ
                 _ = AutoFillLoginAsync();
@@ -5600,6 +5629,7 @@ try{
                         _pktLastPreviewByKey[dedupeKey] = dedupeVal;
                         LogPacket("HTTP.resp/player-flow", url, "status=" + status, false);
                     }
+                    RememberPlayerFlowGameUrl(url);
                 }
 
                 if (!IsInterestingHttpUrl(url)) return;
@@ -6349,20 +6379,59 @@ try{
 
                 await EnsureToolBridgeInjectedAsync();
                 await LogBridgeProbeAsync("vao-after-ensure");
-                await LogHostLaunchProbeAsync("vao-before-click");
-
-                var gameReady = await WaitForBetGameUrlAsync(2500);
-                if (!gameReady)
-                    gameReady = await WaitForGameSignalAsync(1200);
-
-                if (!gameReady && IsCurrentHostVipbet389())
+                bool gameReady = false;
+                if (HasRecentGameSignal(out var warmReason))
                 {
-                    var preReloadRes = await ForceReloadLikelyGameIframeAsync();
-                    Log("[VaoXocDia] pre-click-reload-frame: " + preReloadRes);
-                    await LogHostLaunchProbeAsync("vao-after-preclick-reload");
+                    gameReady = true;
+                    Log("[VaoXocDia] existing game signal: " + warmReason);
+                }
+
+                if (!gameReady)
+                {
+                    await LogHostLaunchProbeAsync("vao-before-click");
+                    if (IsCurrentHostAllowUnboundHistory())
+                    {
+                        var existingReArmed = ReArmExistingMainFrames("vao-wrapper-precheck");
+                        if (existingReArmed > 0)
+                            await WaitForGameSignalAsync(900);
+                    }
+
                     gameReady = await WaitForBetGameUrlAsync(2500);
                     if (!gameReady)
-                        gameReady = await WaitForGameSignalAsync(2000);
+                        gameReady = await WaitForGameSignalAsync(1200);
+
+                    if (!gameReady && IsCurrentHostAllowUnboundHistory())
+                    {
+                        var routedByFlowCache = await TryRouteRecentPlayerFlowGameToPopupAsync(300);
+                        if (routedByFlowCache)
+                        {
+                            gameReady = await WaitForBetGameUrlAsync(8000);
+                            if (!gameReady)
+                                gameReady = await WaitForGameSignalAsync(3000);
+                            if (gameReady)
+                                Log("[VaoXocDia] ready via cached player-flow game url.");
+                        }
+                    }
+
+                    if (!gameReady && IsCurrentHostAllowUnboundHistory())
+                    {
+                        var reArmBeforeReload = ReArmExistingMainFrames("vao-wrapper-pre-reload");
+                        if (reArmBeforeReload > 0)
+                            gameReady = await WaitForGameSignalAsync(1500);
+
+                        if (gameReady)
+                            Log("[VaoXocDia] wrapper re-arm existing frame ready.");
+                    }
+
+                    if (!gameReady && IsCurrentHostAllowUnboundHistory())
+                    {
+                        var preReloadRes = await ForceReloadLikelyGameIframeAsync();
+                        Log("[VaoXocDia] pre-click-reload-frame: " + preReloadRes);
+                        await LogHostLaunchProbeAsync("vao-after-preclick-reload");
+                        gameReady = await WaitForBetGameUrlAsync(2500);
+                        if (!gameReady)
+                            gameReady = await WaitForGameSignalAsync(2200);
+                    }
                 }
 
                 if (!gameReady)
@@ -6976,11 +7045,24 @@ try{
 
         private WebView2? GetBetWebView()
         {
-            if (_popupWeb?.CoreWebView2 != null)
+            if (IsPopupBetViewActive())
                 return _popupWeb;
             if (Web?.CoreWebView2 != null)
                 return Web;
+            if (_popupWeb?.CoreWebView2 != null)
+                return _popupWeb;
             return null;
+        }
+
+        private bool IsPopupBetViewActive()
+        {
+            if (_popupWeb?.CoreWebView2 == null)
+                return false;
+            if (PopupHost?.Visibility == Visibility.Visible)
+                return true;
+            if (Web != null && Web.Visibility != Visibility.Visible)
+                return true;
+            return false;
         }
 
         private string GetBetWebViewName(WebView2? view)
@@ -7096,6 +7178,149 @@ try{
                 url.IndexOf("/player/gamehall.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 url.IndexOf("/player/singlebactable.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 url.IndexOf("/error?", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string TryExtractHost(string? rawUrl)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(rawUrl))
+                    return "";
+                return Uri.TryCreate(rawUrl, UriKind.Absolute, out var u) ? (u.Host ?? "") : "";
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private string GetCurrentMainHost()
+        {
+            try
+            {
+                var src = Web?.CoreWebView2?.Source ?? Web?.Source?.ToString() ?? "";
+                return TryExtractHost(src);
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private void ResetPlayerFlowGameCache(string reason)
+        {
+            string prevUrl;
+            DateTime prevAt;
+            lock (_playerFlowCacheLock)
+            {
+                prevUrl = _lastPlayerFlowGameUrl;
+                prevAt = _lastPlayerFlowGameAtUtc;
+                _lastPlayerFlowGameUrl = "";
+                _lastPlayerFlowGameAtUtc = DateTime.MinValue;
+                _lastPlayerFlowSourceHost = "";
+            }
+
+            if (!string.IsNullOrWhiteSpace(prevUrl))
+            {
+                var age = prevAt == DateTime.MinValue ? "-" : (DateTime.UtcNow - prevAt).TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) + "s";
+                Log("[PlayerFlowCache] cleared reason=" + reason + " | age=" + age + " | prev=" + Shrink(prevUrl, 220));
+            }
+        }
+
+        private void RememberPlayerFlowGameUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return;
+            if (!IsLikelyBetGameReadyUrl(url))
+                return;
+
+            var now = DateTime.UtcNow;
+            var sourceHost = GetCurrentMainHost();
+            if (string.IsNullOrWhiteSpace(sourceHost))
+                sourceHost = TryExtractHost(url);
+
+            string prevUrl;
+            lock (_playerFlowCacheLock)
+            {
+                prevUrl = _lastPlayerFlowGameUrl;
+                _lastPlayerFlowGameUrl = url.Trim();
+                _lastPlayerFlowGameAtUtc = now;
+                _lastPlayerFlowSourceHost = sourceHost;
+            }
+
+            if (!string.Equals(prevUrl, url, StringComparison.OrdinalIgnoreCase))
+            {
+                Log("[PlayerFlowCache] game-url=" + Shrink(url, 260) + " | host=" + (string.IsNullOrWhiteSpace(sourceHost) ? "-" : sourceHost));
+            }
+        }
+
+        private bool TryGetRecentPlayerFlowGameUrl(int maxAgeSeconds, out string url, out string reason)
+        {
+            url = "";
+            reason = "empty";
+
+            string cachedUrl;
+            DateTime cachedAt;
+            string cachedHost;
+            lock (_playerFlowCacheLock)
+            {
+                cachedUrl = _lastPlayerFlowGameUrl;
+                cachedAt = _lastPlayerFlowGameAtUtc;
+                cachedHost = _lastPlayerFlowSourceHost;
+            }
+
+            if (string.IsNullOrWhiteSpace(cachedUrl))
+            {
+                reason = "empty";
+                return false;
+            }
+
+            var age = cachedAt == DateTime.MinValue ? TimeSpan.MaxValue : (DateTime.UtcNow - cachedAt);
+            if (age > TimeSpan.FromSeconds(Math.Max(1, maxAgeSeconds)))
+            {
+                reason = "stale age=" + age.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) + "s";
+                return false;
+            }
+
+            var currentHost = GetCurrentMainHost();
+            if (!string.IsNullOrWhiteSpace(cachedHost) &&
+                !string.IsNullOrWhiteSpace(currentHost) &&
+                !string.Equals(cachedHost, currentHost, StringComparison.OrdinalIgnoreCase))
+            {
+                reason = "host-mismatch cached=" + cachedHost + " current=" + currentHost;
+                return false;
+            }
+
+            url = cachedUrl;
+            reason = "ok age=" + age.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) + "s";
+            return true;
+        }
+
+        private async Task<bool> TryRouteRecentPlayerFlowGameToPopupAsync(int maxAgeSeconds = 300)
+        {
+            if (!TryGetRecentPlayerFlowGameUrl(maxAgeSeconds, out var entryUrl, out var cacheReason))
+            {
+                Log("[VaoXocDia] player-flow cache miss: " + cacheReason);
+                return false;
+            }
+
+            var popup = await EnsurePopupWebReadyAsync();
+            if (popup?.CoreWebView2 == null)
+            {
+                Log("[VaoXocDia] player-flow cache route: popup web not ready.");
+                return false;
+            }
+
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (Web != null) Web.Visibility = Visibility.Collapsed;
+                if (PopupHost != null) PopupHost.Visibility = Visibility.Visible;
+                popup.CoreWebView2.Navigate(entryUrl);
+                popup.Focus();
+            });
+
+            Log("[VaoXocDia] player-flow cache routed popup to: " + entryUrl);
+            return true;
         }
 
         private const string HostLaunchProbeScript = @"
@@ -7225,10 +7450,12 @@ try{
                 snap?.prog.HasValue == true ||
                 !string.IsNullOrWhiteSpace(snap?.status) ||
                 !string.IsNullOrWhiteSpace(snap?.seq);
-            if (hasSnapData)
+            if (hasSnapData &&
+                _lastGameTickUtc != DateTime.MinValue &&
+                tickAge <= TimeSpan.FromSeconds(15))
             {
                 var seqLen = snap?.seq?.Length ?? 0;
-                reason = $"snap seqLen={seqLen} status={(string.IsNullOrWhiteSpace(snap?.status) ? "-" : "y")}";
+                reason = $"snap seqLen={seqLen} tickAge={tickAge.TotalSeconds:0.0}s";
                 return true;
             }
             return false;
@@ -7267,19 +7494,53 @@ try{
     for (var i=0;i<els.length;i++){
       var el = els[i];
       var src = String((el.getAttribute('src') || el.src || '')).trim();
-      if (!src) continue;
-      var u = src.toLowerCase();
       var s = 0;
+      var u = src.toLowerCase();
+      if (!src || src === 'about:blank') {
+        try{
+          var r0 = el.getBoundingClientRect();
+          if (r0.width > 360 && r0.height > 220){
+            try{
+              // Khung cross-origin lớn nhưng src rỗng: thường là wrapper game.
+              var _x = el.contentWindow.location.href;
+            }catch(_){
+              s += 45;
+            }
+          }
+        }catch(_){}
+      }
+      if (u){
+        if (u.indexOf('recaptcha') >= 0) continue;
+        if (u.indexOf('google.com/recaptcha') >= 0) continue;
+        if (u.indexOf('doubleclick') >= 0) continue;
+        if (u.indexOf('googletagmanager') >= 0) continue;
+      }
       if (u.indexOf('/player/login/apilogin') >= 0) s += 100;
       if (u.indexOf('/player/gamehall.jsp') >= 0) s += 90;
       if (u.indexOf('/player/singlebactable.jsp') >= 0) s += 80;
       if (u.indexOf('/player/webmain.jsp') >= 0) s += 70;
       if (u.indexOf('usplaynet.com') >= 0) s += 30;
       if (u.indexOf('balikko.com') >= 0) s += 20;
+      if (u.indexOf('restula.com') >= 0) s += 20;
+      if (u.indexOf('atllat.com') >= 0) s += 20;
+      if (u.indexOf('bpweb.') >= 0) s += 20;
+      try{
+        var r = el.getBoundingClientRect();
+        if (r.width > 260 && r.height > 180) s += 6;
+      }catch(_){}
       if (s > bestScore){ bestScore = s; best = el; bestSrc = src; }
     }
     if (!best) return 'no-candidate';
-    if (!bestSrc) return 'no-src';
+    if (bestScore < 25) return 'no-likely-candidate';
+    if (!bestSrc || bestSrc === 'about:blank'){
+      try{
+        if (best.contentWindow && best.contentWindow.location && best.contentWindow.location.reload){
+          best.contentWindow.location.reload();
+          return 'reloaded:contentWindow';
+        }
+      }catch(_){}
+      return 'no-src';
+    }
     try{
       best.setAttribute('src', 'about:blank');
       best.src = 'about:blank';
@@ -7747,6 +8008,12 @@ try{
                     return await target.ExecuteScriptAsync(js);
 
                 var frames = GetMainArmedFramesSnapshot();
+                if (frames.Count == 0 && IsCurrentHostAllowUnboundHistory())
+                {
+                    var reArmed = ReArmExistingMainFrames("exec-bridge-wrapper");
+                    if (reArmed > 0)
+                        frames = GetMainArmedFramesSnapshot();
+                }
                 string firstFrameRaw = "";
                 string firstFrameOk = "";
 
@@ -9428,6 +9695,8 @@ try{
             await LogBridgeProbeAsync("ensure-before");
             await EnsureBridgeRegisteredAsync();
             await InjectOnNewDocAsync();
+            if (IsCurrentHostAllowUnboundHistory())
+                ReArmExistingMainFrames("ensure-tool-wrapper");
             if (_popupWeb != null)
             {
                 try
@@ -9572,6 +9841,85 @@ try{
             return null;
         }
 
+        private List<CoreWebView2Frame> GetMainExistingFramesSnapshot()
+        {
+            var frames = new List<CoreWebView2Frame>();
+            try
+            {
+                if (Web?.CoreWebView2 == null)
+                    return frames;
+
+                var seen = new HashSet<ulong>();
+                void AddFrame(CoreWebView2Frame? frame)
+                {
+                    if (frame == null) return;
+                    var id = TryGetFrameIdSafe(frame);
+                    if (id > 0)
+                    {
+                        if (!seen.Add(id)) return;
+                        _mainFrameRefs[id] = frame;
+                    }
+                    else if (frames.Contains(frame))
+                    {
+                        return;
+                    }
+                    frames.Add(frame);
+                }
+
+                var core = Web.CoreWebView2;
+                var t = core.GetType();
+
+                var pFrames = t.GetProperty("Frames", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                if (pFrames?.GetValue(core) is System.Collections.IEnumerable ieFrames)
+                {
+                    foreach (var obj in ieFrames)
+                        AddFrame(obj as CoreWebView2Frame);
+                }
+
+                var mGetFrames = t.GetMethod("GetFrames", BindingFlags.Public | BindingFlags.Instance, binder: null, types: Type.EmptyTypes, modifiers: null);
+                if (mGetFrames?.Invoke(core, null) is System.Collections.IEnumerable ieFramesByMethod)
+                {
+                    foreach (var obj in ieFramesByMethod)
+                        AddFrame(obj as CoreWebView2Frame);
+                }
+
+                foreach (var kv in _mainFrameRefs.ToArray())
+                    AddFrame(kv.Value);
+
+                foreach (var id in _mainFrameBridgeArmed.Keys.ToArray())
+                {
+                    if (id == 0 || seen.Contains(id))
+                        continue;
+                    AddFrame(TryGetFrameByIdSafe(id));
+                }
+            }
+            catch { }
+
+            return frames;
+        }
+
+        private int ReArmExistingMainFrames(string stage)
+        {
+            int armed = 0;
+            try
+            {
+                var frames = GetMainExistingFramesSnapshot();
+                foreach (var frame in frames)
+                {
+                    ArmMainFrameBridge(frame, stage);
+                    armed++;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[Bridge.ReArmExisting] stage=" + stage + " | " + ex.Message);
+            }
+
+            if (armed > 0)
+                Log("[Bridge] Re-armed existing frames (" + stage + ") | count=" + armed);
+            return armed;
+        }
+
         private void Frame_DOMContentLoaded_Bridge(object? sender, CoreWebView2DOMContentLoadedEventArgs e)
         {
             try
@@ -9634,6 +9982,7 @@ try{
         private async Task TryPullPopupTickFallbackAsync()
         {
             if (_popupWeb?.CoreWebView2 == null) return;
+            if (!IsPopupBetViewActive()) return;
             var age = DateTime.UtcNow - _lastGameTickUtc;
             if (age <= TimeSpan.FromSeconds(1.2)) return;
             if (Interlocked.Exchange(ref _popupTickPullBusy, 1) == 1) return;
