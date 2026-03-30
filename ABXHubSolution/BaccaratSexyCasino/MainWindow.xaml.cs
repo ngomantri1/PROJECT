@@ -867,6 +867,7 @@ Ví dụ không hợp lệ:
         private readonly LinkedList<string> _uiLines = new(); // buffer giữ tối đa N dòng
         private const int UI_MAX_LINES = 1000;
         private const int UI_FLUSH_MS = 300;
+        private const bool COMPACT_RUNTIME_LOG = true;
 
         // File
         private readonly ConcurrentQueue<string> _fileLogQueue = new();
@@ -1386,14 +1387,6 @@ try{
             if (string.IsNullOrWhiteSpace(msg))
                 return false;
 
-            // Confirm diag: giữ lại after_click, bỏ ready/before để giảm spam.
-            if (msg.StartsWith("[DIAG][CONFIRM]", StringComparison.Ordinal))
-            {
-                if (msg.Contains("stage=ready", StringComparison.Ordinal) ||
-                    msg.Contains("stage=before_click", StringComparison.Ordinal))
-                    return true;
-            }
-
             bool HitThrottle(string key, int ms)
             {
                 var now = Environment.TickCount64;
@@ -1403,14 +1396,50 @@ try{
                 return false;
             }
 
+            bool isErrorLike =
+                msg.IndexOf("[ERR]", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                msg.IndexOf(" err=", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                msg.IndexOf(" error", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                msg.IndexOf("failed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                msg.IndexOf("exception", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            if (COMPACT_RUNTIME_LOG && !isErrorLike)
+            {
+                if (msg.StartsWith("[BridgeProbe]", StringComparison.Ordinal) ||
+                    msg.StartsWith("[BridgeProbe][Frame]", StringComparison.Ordinal) ||
+                    msg.StartsWith("[HostLaunchProbe]", StringComparison.Ordinal))
+                    return true;
+
+                if (msg.StartsWith("[TickDiag]", StringComparison.Ordinal))
+                    return HitThrottle("TICK_DIAG", 10000);
+
+                if (msg.StartsWith("[SEQ][RX]", StringComparison.Ordinal))
+                    return HitThrottle("SEQ_RX", 4000);
+
+                if (msg.StartsWith("[NETSEQ][RESYNC]", StringComparison.Ordinal) ||
+                    msg.StartsWith("[NETSEQ][JS-AHEAD]", StringComparison.Ordinal) ||
+                    msg.StartsWith("[NETSEQ][SNAP-OVERRIDE]", StringComparison.Ordinal) ||
+                    msg.StartsWith("[NETSEQ][BOOT]", StringComparison.Ordinal) ||
+                    msg.StartsWith("[NETSEQ][JS-STALE]", StringComparison.Ordinal))
+                    return HitThrottle("NETSEQ_NOISY", 8000);
+            }
+
+            // Confirm diag: giữ lại after_click, bỏ ready/before để giảm spam.
+            if (msg.StartsWith("[DIAG][CONFIRM]", StringComparison.Ordinal))
+            {
+                if (msg.Contains("stage=ready", StringComparison.Ordinal) ||
+                    msg.Contains("stage=before_click", StringComparison.Ordinal))
+                    return true;
+            }
+
             if (msg.StartsWith("[SEQ][UNLOCK][HOLD]", StringComparison.Ordinal))
-                return HitThrottle("SEQ_UNL_HOLD", 1200);
+                return COMPACT_RUNTIME_LOG ? true : HitThrottle("SEQ_UNL_HOLD", 1200);
             if (msg.StartsWith("[SEQ][UNLOCK] ", StringComparison.Ordinal))
-                return HitThrottle("SEQ_UNL", 700);
+                return HitThrottle("SEQ_UNL", COMPACT_RUNTIME_LOG ? 3000 : 700);
             if (msg.StartsWith("[SEQ][GATE] ", StringComparison.Ordinal))
-                return HitThrottle("SEQ_GATE", 700);
+                return HitThrottle("SEQ_GATE", COMPACT_RUNTIME_LOG ? 2500 : 700);
             if (msg.StartsWith("[BET][HIST][CHECK][ROW]", StringComparison.Ordinal))
-                return HitThrottle("BET_HIST_ROW", 700);
+                return HitThrottle("BET_HIST_ROW", COMPACT_RUNTIME_LOG ? 3000 : 700);
 
             return false;
         }
@@ -5593,6 +5622,32 @@ try{
 
         private void LogPacket(string kind, string? url, string preview, bool isBinary)
         {
+            if (COMPACT_RUNTIME_LOG)
+            {
+                var payload = preview ?? "";
+                bool packetErrorLike =
+                    payload.IndexOf("error", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    payload.IndexOf("exception", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    payload.IndexOf("status=4", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    payload.IndexOf("status=5", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                if (!packetErrorLike &&
+                    (kind.StartsWith("WS.recv/", StringComparison.Ordinal) ||
+                     kind.StartsWith("WS.send/", StringComparison.Ordinal)))
+                {
+                    if (payload.IndexOf("countOnline", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        LooksLikeHeartbeat(payload))
+                        return;
+
+                    var wsKey = "PKT_WS_" + kind;
+                    var now = Environment.TickCount64;
+                    var last = _logThrottleLastMs.TryGetValue(wsKey, out var v) ? v : 0;
+                    if ((now - last) < 3000)
+                        return;
+                    _logThrottleLastMs[wsKey] = now;
+                }
+            }
+
             var line = $"[PKT] {DateTime.Now:HH:mm:ss} {kind} {url ?? ""}\n      {preview}";
             // Ghi file luôn (không chặn)
             EnqueueFile(line);
