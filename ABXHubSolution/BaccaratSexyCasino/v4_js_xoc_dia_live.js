@@ -131,14 +131,38 @@
     }
     function __cw_isGamePopupPage() {
         try {
-            if (!__cw_isTopDocument())
-                return false;
             var href = String(location.href || '').toLowerCase();
             var path = String(location.pathname || '').toLowerCase();
-            if (path.indexOf('/player/webmain.jsp') >= 0)
+
+            var isWebMain =
+                path.indexOf('/player/webmain.jsp') >= 0 ||
+                href.indexOf('/player/webmain.jsp') >= 0;
+            var isSingleBac =
+                path.indexOf('/player/singlebactable.jsp') >= 0 ||
+                href.indexOf('/player/singlebactable.jsp') >= 0;
+            var isGameHall =
+                path.indexOf('/player/gamehall.jsp') >= 0 ||
+                href.indexOf('/player/gamehall.jsp') >= 0;
+            var isApiLogin =
+                path.indexOf('/player/login/apilogin') >= 0 ||
+                href.indexOf('/player/login/apilogin') >= 0;
+
+            // Cho phép webMain cả top document và iframe (vipbet389 thường chạy trong iframe).
+            if (isWebMain)
                 return true;
-            if (href.indexOf('/player/webmain.jsp') >= 0)
+
+            // Mở rộng: cho phép boot trực tiếp trong frame game.
+            if (isSingleBac)
                 return true;
+
+            // Một số site bọc game qua gameHall frame cùng provider.
+            if (isGameHall && !__cw_isTopDocument())
+                return true;
+
+            // vipbet389 có thể giữ URL apiLogin trong iframe nhưng render game nội bộ theo flow SPA.
+            if (isApiLogin && !__cw_isTopDocument())
+                return true;
+
             return false;
         } catch (_) {
             return false;
@@ -1927,6 +1951,15 @@
             return domCollapse(m[1]);
         return '';
     }
+    function domExtractAccountToken(txt) {
+        var s = domCollapse(txt || '');
+        if (!s)
+            return '';
+        var m = s.match(/(?:^|[^a-z0-9_])((?:plyr|player|user|usr)[a-z0-9_]{3,})(?:[^a-z0-9_]|$)/i);
+        if (m && m[1])
+            return String(m[1] || '').trim();
+        return '';
+    }
     function domIsStrictHudBalanceText(txt) {
         var s = domCollapse(txt).replace(/[₫$€£¥]/g, '').replace(/\s+/g, '');
         if (!s)
@@ -1971,12 +2004,9 @@
             var row = rows[i] || {};
             var txt = domCollapse(row.text || row.txt || '');
             var norm = domNorm(txt);
-            if (!account && /^plyr[a-z0-9_]+/i.test(txt)) {
-                account = txt;
-                accountRow = row;
-            }
-            if (!account && /^(player|user|usr)[a-z0-9_]+/i.test(txt)) {
-                account = txt;
+            var accToken = domExtractAccountToken(txt);
+            if (!account && accToken) {
+                account = accToken;
                 accountRow = row;
             }
 
@@ -1997,8 +2027,9 @@
                 var row2 = rows[j] || {};
                 var txt2 = domCollapse(row2.text || row2.txt || '');
                 var norm2 = domNorm(txt2);
-                if (!account && /^(plyr|player|user|usr)[a-z0-9_]{3,}/i.test(txt2)) {
-                    account = txt2;
+                var accToken2 = domExtractAccountToken(txt2);
+                if (!account && accToken2) {
+                    account = accToken2;
                     accountRow = row2;
                 }
                 if (balance == null) {
@@ -2042,7 +2073,8 @@
                 var list = [];
                 for (var ai = 0; ai < rows.length; ai++) {
                     var rt = domCollapse(rows[ai].text || rows[ai].txt || '');
-                    if (!/^(plyr|player|user|usr)[a-z0-9_]{3,}$/i.test(rt))
+                    var token = domExtractAccountToken(rt);
+                    if (!token)
                         continue;
                     var score = 100;
                     if ((rows[ai].y || 0) <= 30)
@@ -2053,13 +2085,14 @@
                         score += 10;
                     list.push({
                         row: rows[ai],
+                        account: token,
                         score: score
                     });
                 }
                 list.sort(function (a, b) {
                     return b.score - a.score || a.row.y - b.row.y || a.row.x - b.row.x;
                 });
-                return list.length ? list[0].row : null;
+                return list.length ? list[0] : null;
             }
             function pickBalance(rows, account) {
                 var list = [];
@@ -2145,10 +2178,11 @@
                 if (!ctx || !ctx.doc)
                     continue;
                 var rows = domCollectTopHudRows(ctx, 160);
-                var acc = pickAccount(rows);
-                var bal = pickBalance(rows, acc);
+                var accPick = pickAccount(rows);
+                var accRow = accPick ? accPick.row : null;
+                var bal = pickBalance(rows, accRow);
                 var hud = {
-                    account: acc ? acc.text : null,
+                    account: accPick ? (accPick.account || null) : null,
                     balance: bal ? bal.money : null,
                     rawBalance: bal ? (bal.row.text || bal.row.txt || null) : null
                 };

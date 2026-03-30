@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -353,6 +353,7 @@ namespace BaccaratSexyCasino
         private readonly ConcurrentDictionary<string, string> _wsUrlByRequestId = new();
         private readonly ConcurrentDictionary<string, string> _pktLastPreviewByKey = new();
         private readonly ConcurrentDictionary<string, byte> _recordedValidBetKeys = new();
+        private readonly ConcurrentDictionary<string, byte> _bridgeProbeSeen = new();
         private readonly string[] _pktInterestingHints = new[] { "wss://", "websocket", "hytsocesk", "xoc", "live", "socket" };
         private readonly string[] _pktPayloadInterestingHints = new[] { "result", "winner", "banker", "player", "tie", "road", "history", "countdown", "status", "settle", "open", "close", "\"b\"", "\"p\"", "\"t\"" };
         private readonly string[] _httpInterestingHints = new[] { "/player/query/", "querywebgamehallroad", "queryenablefunctionforwebsite", "hallroad", "road", "result", "winner", "history" };
@@ -423,10 +424,13 @@ namespace BaccaratSexyCasino
 
         private string? _topForwardId, _appJsRegId;           // id script TOP_FORWARD
         private bool _frameHooked;               // đã gắn FrameCreated?
+        private bool _frameNavHooked;            // đã gắn FrameNavigationStarting/Completed?
         private string? _lastDocKey;             // key document hiện tại (performance.timeOrigin)
                                                  // Bridge đăng ký toàn cục
         private string? _autoStartId;        // id script FRAME_AUTOSTART (đăng ký toàn cục)
         private bool _domHooked;             // đã gắn DOMContentLoaded cho top chưa
+        private readonly ConcurrentDictionary<ulong, byte> _mainFrameBridgeArmed = new();
+        private readonly ConcurrentDictionary<ulong, CoreWebView2Frame> _mainFrameRefs = new();
 
         // === License/Trial run state ===
 
@@ -505,6 +509,8 @@ namespace BaccaratSexyCasino
                                                                  // --- UI mode monitor ---
         private DateTime _lastGameTickUtc = DateTime.MinValue;
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
+        private DateTime _lastTickDiagLogUtc = DateTime.MinValue;
+        private DateTime _lastGameHintDiagLogUtc = DateTime.MinValue;
         private bool _isGameUi = false;              // trạng thái UI hiện hành
         private System.Windows.Threading.DispatcherTimer? _uiModeTimer;
         private int _gameNavWatchdogGen = 0;         // phân thế hệ cho watchdog navigation
@@ -3382,6 +3388,7 @@ try{
                 _popupLastDocKey = key;
                 Log("[PopupWeb] bridge injected, key=" + key);
                 Log("[PopupWeb] ensure push 240ms (singleBac only)");
+                await LogBridgeProbeOnWebViewAsync(_popupWeb, "popup-doc-injected", "PopupWeb");
             }
         }
 
@@ -3748,12 +3755,21 @@ try{
 
                                 var amt = snap?.totals?.A;
                                 if (LblAmount != null)
-                                    LblAmount.Text = amt.HasValue
-                                        ? amt.Value.ToString("#,0.##", CultureInfo.InvariantCulture) : "-";
+                                {
+                                    if (amt.HasValue)
+                                        LblAmount.Text = amt.Value.ToString("#,0.##", CultureInfo.InvariantCulture);
+                                    else if (string.IsNullOrWhiteSpace(LblAmount.Text))
+                                        LblAmount.Text = "-";
+                                }
                                 if (LblUserName != null)
                                 {
-                                    var name = snap?.totals?.N ?? "";
-                                    LblUserName.Text = !string.IsNullOrWhiteSpace(name) ? name : "-";
+                                    var name = ((snap?.totals?.N ?? "").Trim());
+                                    if (string.IsNullOrWhiteSpace(name))
+                                        name = (snap?.username ?? "").Trim();
+                                    if (!string.IsNullOrWhiteSpace(name))
+                                        LblUserName.Text = name;
+                                    else if (string.IsNullOrWhiteSpace(LblUserName.Text))
+                                        LblUserName.Text = "-";
                                 }
 
                                 UpdateSeqUI(snap.seq ?? "");
@@ -3777,12 +3793,25 @@ try{
                     }
 
                     _lastGameTickUtc = DateTime.UtcNow;
+                    if ((_lastGameTickUtc - _lastTickDiagLogUtc) > TimeSpan.FromSeconds(2))
+                    {
+                        _lastTickDiagLogUtc = _lastGameTickUtc;
+                        var seqLen = snap?.seq?.Length ?? 0;
+                        var statusDiag = string.IsNullOrWhiteSpace(snap?.status) ? "-" : Shrink(snap?.status, 72);
+                        var progDiag = snap?.prog?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-";
+                        Log($"[TickDiag] src={source} | prog={progDiag} | seqLen={seqLen} | status={statusDiag}");
+                    }
                     return;
                 }
 
                 if (abxStr == "game_hint")
                 {
                     _lastGameTickUtc = DateTime.UtcNow;
+                    if ((_lastGameTickUtc - _lastGameHintDiagLogUtc) > TimeSpan.FromSeconds(2))
+                    {
+                        _lastGameHintDiagLogUtc = _lastGameTickUtc;
+                        Log($"[TickDiag] src={source} | abx=game_hint");
+                    }
                     _ = Dispatcher.BeginInvoke(new Action(() => ApplyUiMode(true)));
                     return;
                 }
@@ -3845,8 +3874,20 @@ try{
                     {
                         await Dispatcher.InvokeAsync(() =>
                         {
-                            if (LblUserName != null) LblUserName.Text = uname;
-                            if (LblAmount != null) LblAmount.Text = bal;
+                            if (LblUserName != null)
+                            {
+                                if (!string.IsNullOrWhiteSpace(uname))
+                                    LblUserName.Text = uname;
+                                else if (string.IsNullOrWhiteSpace(LblUserName.Text))
+                                    LblUserName.Text = "-";
+                            }
+                            if (LblAmount != null)
+                            {
+                                if (!string.IsNullOrWhiteSpace(bal))
+                                    LblAmount.Text = bal;
+                                else if (string.IsNullOrWhiteSpace(LblAmount.Text))
+                                    LblAmount.Text = "-";
+                            }
                         });
 
                         try
@@ -3854,7 +3895,7 @@ try{
                             var jsLogged = @"
 (function(){
   try{
-    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}}; 
+    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[đĐ]/g,'d');}catch(_){return String(s||'').replace(/[đĐ]/g,'d');}};
     const low=s=>rm(String(s||'').trim().toLowerCase());
     const vis=el=>{if(!el)return false; const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
                    return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
@@ -4157,6 +4198,7 @@ try{
                 f.DOMContentLoaded += Frame_DOMContentLoaded_Bridge;
                 f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
                 Log("[PopupWeb] frame bridge armed.");
+                ProbeFrameBridgeAsync(f, "PopupWeb", "frame-created");
             }
             catch (Exception ex)
             {
@@ -4214,6 +4256,13 @@ try{
                 Log("[PopupWeb] NavigationCompleted: " + (e.IsSuccess ? "OK" : ("Err " + e.WebErrorStatus)) + " | " + src);
                 _betWebNavigatingSinceUtc = DateTime.MinValue;
                 _betWebLastNavDoneUtc = DateTime.UtcNow;
+                if (TryParseProviderErrorUrl(src, out var providerStatus, out var providerDesc, out var providerExternal))
+                {
+                    Log("[PopupWeb][ProviderError] status=" +
+                        (string.IsNullOrWhiteSpace(providerStatus) ? "-" : providerStatus) +
+                        " | desc=" + (string.IsNullOrWhiteSpace(providerDesc) ? "-" : providerDesc) +
+                        " | external=" + (string.IsNullOrWhiteSpace(providerExternal) ? "-" : providerExternal));
+                }
                 if (e.IsSuccess)
                 {
                     if (!IsLikelyBetGameUrl(src))
@@ -5537,9 +5586,23 @@ try{
             try
             {
                 var url = e?.Request?.Uri ?? "";
-                if (!IsInterestingHttpUrl(url)) return;
                 var response = e?.Response;
                 if (response == null) return;
+
+                if (IsPlayerFlowUrl(url))
+                {
+                    var status = response.StatusCode;
+                    var dedupeKey = "HTTP.player-flow|" + url;
+                    var dedupeVal = status.ToString(CultureInfo.InvariantCulture);
+                    if (!_pktLastPreviewByKey.TryGetValue(dedupeKey, out var prev) ||
+                        !string.Equals(prev, dedupeVal, StringComparison.Ordinal))
+                    {
+                        _pktLastPreviewByKey[dedupeKey] = dedupeVal;
+                        LogPacket("HTTP.resp/player-flow", url, "status=" + status, false);
+                    }
+                }
+
+                if (!IsInterestingHttpUrl(url)) return;
 
                 string body = "";
                 try
@@ -5677,10 +5740,10 @@ try{
             await EnsureWebReadyAsync();
 
             // 1) Thử bấm trực tiếp anchor/button có text "xóc đĩa" (khử dấu)
-            const string clickTitleJs = @"
+    const string clickTitleJs = @"
 (function(){
   try{
-    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}};
+    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[đĐ]/g,'d');}catch(_){return String(s||'').replace(/[đĐ]/g,'d');}};
     const low=s=>rm(String(s||'').trim().toLowerCase());
     const vis=el=>{ if(!el) return false;
       const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
@@ -5701,25 +5764,50 @@ try{
       try{ top.click(); }catch(_){}
     }
 
-    // Quét các anchor/button
-    const cands = qa('a,button,[role=""button""],.btn,.base-button,.el-button,.v-btn, .item-live a, .item-live .title, .item-live');
+    // Quét các anchor/button, chấm điểm để tránh bấm nhầm card promo dài.
+    const cands = qa('a,button,[role=""button""],.btn,.base-button,.el-button,.v-btn,.item-live a,.item-live .title,.item-live,[class*=""title""]');
+    const picks = [];
     for(const el of cands){
       const txt = low(el.textContent || el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '');
-      if (!txt) continue;
-      // cần đồng thời có 'xoc' và 'dia'
-      if (txt.includes('xoc') && txt.includes('dia') && vis(el)){
-        fire(el);
-        return 'clicked';
-      }
+      if (!txt || !vis(el)) continue;
+      const hasXocDia = (txt.includes('xoc') && txt.includes('dia'));
+      const hasBaccarat = txt.includes('baccarat') || txt.includes('single bac') || txt.includes('singlebac');
+      if (!hasXocDia && !hasBaccarat) continue;
+      const cls = low(el.className || '');
+      let score = 0;
+      if (/xoc\s*dia/.test(txt)) score += 90;
+      if (hasBaccarat) score += 70;
+      if (txt.includes('live')) score += 15;
+      if (txt.length <= 24) score += 35;
+      else if (txt.length <= 60) score += 10;
+      else score -= 30;
+      if (txt.includes('hoan tra') || txt.includes('toi da') || txt.includes('%')) score -= 60;
+      if (cls.includes('item-live')) score += 35;
+      if (cls.includes('title')) score += 20;
+      if (cls.includes('home-popular')) score -= 90;
+      if (el.closest && el.closest('.livestream-section__live,.item-live')) score += 35;
+      picks.push({ el, txt, cls, score });
     }
-    return 'no-title';
+    if (!picks.length) return 'no-title';
+    picks.sort((a,b)=>b.score-a.score);
+    const best = picks[0];
+    if (best.score < 45){
+      const weakOk = best.score >= -35 && (best.txt.includes('baccarat') || (best.txt.includes('xoc') && best.txt.includes('dia')));
+      if (weakOk){
+        fire(best.el);
+        return 'clicked-weak|score=' + best.score + '|txt=' + best.txt.slice(0,80) + '|cls=' + best.cls.slice(0,80);
+      }
+      return 'no-strong-title|score=' + best.score + '|txt=' + best.txt.slice(0,80) + '|cls=' + best.cls.slice(0,80);
+    }
+    fire(best.el);
+    return 'clicked|score=' + best.score + '|txt=' + best.txt.slice(0,80) + '|cls=' + best.cls.slice(0,80);
   }catch(e){ return 'err:'+ (e && e.message || e); }
 })();";
             try
             {
                 var r = await ExecJsAsyncStr(clickTitleJs);
                 Log("[ClickXocDiaTitle/anchor] " + r);
-                if (r == "clicked") return "clicked";
+                if (r.StartsWith("clicked", StringComparison.OrdinalIgnoreCase)) return "clicked";
             }
             catch (Exception ex)
             {
@@ -5766,7 +5854,69 @@ try{
                 Log("[ClickXocDiaTitle/find index ERR] " + ex.Message);
             }
 
-            // 3) Fallback cuối: mở item index 1 (giống VaoXocDia_Click đang dùng)
+            // 3) Fallback riêng cho vipbet: card home-popular thường là điểm mở provider.
+            if (IsCurrentHostVipbet389())
+            {
+                const string clickVipbetCardJs = @"
+(function(){
+  try{
+    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[đĐ]/g,'d');}catch(_){return String(s||'').replace(/[đĐ]/g,'d');}};
+    const low=s=>rm(String(s||'').trim().toLowerCase());
+    const vis=el=>{
+      if(!el) return false;
+      const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
+      return r.width>10 && r.height>10 && cs.display!=='none' && cs.visibility!=='hidden' && cs.pointerEvents!=='none';
+    };
+    const fire=el=>{
+      try{ el.scrollIntoView({block:'center', inline:'center'}); }catch(_){}
+      const r=el.getBoundingClientRect();
+      const cx=Math.max(0, Math.floor(r.left+r.width/2));
+      const cy=Math.max(0, Math.floor(r.top+r.height/2));
+      const top=document.elementFromPoint(cx,cy) || el;
+      const seq=['pointerover','mouseover','pointerenter','mouseenter','pointerdown','mousedown','pointerup','mouseup','click'];
+      for(const t of seq){ top.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,clientX:cx,clientY:cy,view:window})); }
+      try{ top.click(); }catch(_){}
+    };
+    const roots = Array.from(document.querySelectorAll('a.home-popular__game,.home-popular__game,a[class*=""home-popular__game""],[class*=""home-popular__game""]'));
+    const picks = [];
+    for(const el of roots){
+      if(!vis(el)) continue;
+      const txt = low(el.textContent || el.innerText || el.getAttribute('title') || el.getAttribute('aria-label') || '');
+      const anc = (el.closest && el.closest('a[href]')) || (el.tagName==='A' ? el : null);
+      const href = low((anc && anc.getAttribute('href')) || '');
+      let score = 0;
+      if (txt.includes('xoc') && txt.includes('dia')) score += 95;
+      if (txt.includes('baccarat') || txt.includes('single bac') || txt.includes('sexyco')) score += 75;
+      if (txt.includes('rong ho') || txt.includes('ngau ham')) score += 35;
+      if (txt.includes('live')) score += 12;
+      if (href.includes('baccarat') || href.includes('casino') || href.includes('live')) score += 20;
+      if (txt.includes('hoan tra') || txt.includes('toi da') || txt.includes('khuyen mai') || txt.includes('%')) score -= 25;
+      picks.push({el, score, txt:txt.slice(0,90), href:href.slice(0,120)});
+    }
+    if(!picks.length) return 'vipbet-no-card';
+    picks.sort((a,b)=>b.score-a.score);
+    const best = picks[0];
+    fire(best.el);
+    return 'clicked-vipbet|score=' + best.score + '|txt=' + best.txt + '|href=' + best.href;
+  }catch(e){
+    return 'vipbet-err:' + ((e && e.message) ? e.message : String(e));
+  }
+})();";
+
+                try
+                {
+                    var vipRes = await ExecJsAsyncStr(clickVipbetCardJs);
+                    Log("[ClickXocDiaTitle/vipbet-card] " + vipRes);
+                    if (vipRes.StartsWith("clicked", StringComparison.OrdinalIgnoreCase))
+                        return "clicked";
+                }
+                catch (Exception ex)
+                {
+                    Log("[ClickXocDiaTitle/vipbet-card ERR] " + ex.Message);
+                }
+            }
+
+            // 4) Fallback cuối: mở item index 1 (giống VaoXocDia_Click đang dùng)
             try
             {
                 var res2 = await OpenLiveItemImmediatelyAsync(1, timeoutMs);
@@ -5778,6 +5928,177 @@ try{
             catch (Exception ex)
             {
                 Log("[ClickXocDiaTitle/fallback ERR] " + ex.Message);
+                return "err:" + ex.Message;
+            }
+        }
+
+        private bool IsCurrentHostVipbet389()
+        {
+            try
+            {
+                var src = GetBetWebViewSource(Web);
+                if (string.IsNullOrWhiteSpace(src))
+                    src = Web?.CoreWebView2?.Source ?? "";
+                return src.IndexOf("vipbet389.com", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool IsCurrentHostAllowUnboundHistory()
+        {
+            try
+            {
+                var src = GetBetWebViewSource(Web);
+                if (string.IsNullOrWhiteSpace(src))
+                    src = Web?.CoreWebView2?.Source ?? "";
+                if (string.IsNullOrWhiteSpace(src))
+                    return false;
+
+                return src.IndexOf("vipbet389.com", StringComparison.OrdinalIgnoreCase) >= 0
+                    || src.IndexOf("rr5309.com", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private async Task<bool> DispatchTrustedMouseClickAsync(CoreWebView2 core, int x, int y)
+        {
+            try
+            {
+                var xSafe = Math.Max(0, x);
+                var ySafe = Math.Max(0, y);
+                await core.CallDevToolsProtocolMethodAsync(
+                    "Input.dispatchMouseEvent",
+                    JsonSerializer.Serialize(new { type = "mouseMoved", x = xSafe, y = ySafe, button = "none", buttons = 1 }));
+                await core.CallDevToolsProtocolMethodAsync(
+                    "Input.dispatchMouseEvent",
+                    JsonSerializer.Serialize(new { type = "mousePressed", x = xSafe, y = ySafe, button = "left", buttons = 1, clickCount = 1 }));
+                await core.CallDevToolsProtocolMethodAsync(
+                    "Input.dispatchMouseEvent",
+                    JsonSerializer.Serialize(new { type = "mouseReleased", x = xSafe, y = ySafe, button = "left", buttons = 0, clickCount = 1 }));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log("[TrustedClick] " + ex.Message);
+                return false;
+            }
+        }
+
+        private async Task<string> TryTrustedClickLaunchTargetsAsync(int maxClicks = 5)
+        {
+            try
+            {
+                if (Web?.CoreWebView2 == null)
+                    return "web-null";
+
+                const string planJs = @"
+(function(){
+  try{
+    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[đĐ]/g,'d');}catch(_){return String(s||'').replace(/[đĐ]/g,'d');}};
+    const low=s=>rm(String(s||'').trim().toLowerCase());
+    const vis=el=>{
+      if(!el) return false;
+      const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
+      return r.width>6 && r.height>6 && cs.display!=='none' && cs.visibility!=='hidden' && cs.pointerEvents!=='none';
+    };
+    const center=el=>{
+      const r=el.getBoundingClientRect();
+      return { x:Math.round(r.left + r.width/2), y:Math.round(r.top + r.height/2), w:Math.round(r.width), h:Math.round(r.height) };
+    };
+    const out = { points:[], info:{}, err:'' };
+
+    const cands = Array.from(document.querySelectorAll('a,button,[role=""button""],.item-live,.item-live .title,[class*=""title""],[class*=""game""],[class*=""table""]'));
+    const picks = [];
+    for (const el of cands){
+      if (!vis(el)) continue;
+      const txt = low(el.textContent || el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '');
+      if (!txt) continue;
+      const hasXocDia = txt.includes('xoc') && txt.includes('dia');
+      const hasBaccarat = txt.includes('baccarat') || txt.includes('single bac') || txt.includes('singlebac');
+      if (!hasXocDia && !hasBaccarat) continue;
+      const cls = low(el.className || '');
+      let score = 0;
+      if (hasXocDia) score += 90;
+      if (hasBaccarat) score += 70;
+      if (txt.includes('live')) score += 20;
+      if (cls.includes('item-live')) score += 40;
+      if (el.closest && el.closest('.livestream-section__live,.item-live')) score += 35;
+      if (txt.includes('hoan tra') || txt.includes('toi da') || txt.includes('%')) score -= 60;
+      if (cls.includes('home-popular')) score -= 90;
+      picks.push({ el:el, txt:txt.slice(0,80), score:score });
+    }
+    picks.sort((a,b)=>b.score-a.score);
+    for (let i=0;i<picks.length && out.points.length<2;i++){
+      const p = picks[i];
+      if (p.score < 45) continue;
+      const c = center(p.el);
+      out.points.push({ x:c.x, y:c.y, label:'card:' + p.txt, score:p.score });
+    }
+
+    const frame = Array.from(document.querySelectorAll('iframe,frame')).find(el=>{
+      try{
+        const src = low(el.getAttribute('src') || el.src || '');
+        if (!src.includes('/player/login/apilogin')) return false;
+        return vis(el);
+      }catch(_){ return false; }
+    });
+    if (frame){
+      const r = frame.getBoundingClientRect();
+      out.info.apiLoginFrame = { x:Math.round(r.left), y:Math.round(r.top), w:Math.round(r.width), h:Math.round(r.height) };
+      out.points.push({ x:Math.round(r.left + Math.max(26, r.width * 0.50)), y:Math.round(r.top + Math.max(30, r.height * 0.14)), label:'iframe-top', score:58 });
+      out.points.push({ x:Math.round(r.left + r.width/2), y:Math.round(r.top + r.height/2), label:'iframe-center', score:55 });
+      out.points.push({ x:Math.round(r.left + Math.max(26, r.width * 0.78)), y:Math.round(r.top + Math.max(30, r.height * 0.30)), label:'iframe-right', score:52 });
+      out.points.push({ x:Math.round(r.left + Math.max(24, r.width*0.22)), y:Math.round(r.top + Math.max(24, r.height*0.22)), label:'iframe-inner', score:45 });
+    }
+
+    const seen = {};
+    out.points = out.points.filter(p=>{
+      const k = p.x + ',' + p.y;
+      if (seen[k]) return false;
+      seen[k] = 1;
+      return true;
+    });
+
+    return JSON.stringify(out);
+  }catch(e){
+    return JSON.stringify({ points:[], err:String((e&&e.message)?e.message:e) });
+  }
+})();";
+
+                var plan = await ExecJsAsyncStr(planJs);
+                if (string.IsNullOrWhiteSpace(plan))
+                    return "plan-empty";
+
+                using var doc = JsonDocument.Parse(plan);
+                if (!doc.RootElement.TryGetProperty("points", out var pointsEl) || pointsEl.ValueKind != JsonValueKind.Array)
+                    return "plan-no-points";
+
+                int clicked = 0;
+                int tried = 0;
+                foreach (var point in pointsEl.EnumerateArray())
+                {
+                    if (tried >= maxClicks) break;
+                    if (!point.TryGetProperty("x", out var xEl) || !point.TryGetProperty("y", out var yEl))
+                        continue;
+
+                    var x = (int)Math.Round(xEl.GetDouble());
+                    var y = (int)Math.Round(yEl.GetDouble());
+                    tried++;
+                    var ok = await DispatchTrustedMouseClickAsync(Web.CoreWebView2, x, y);
+                    if (ok) clicked++;
+                    await Task.Delay(160);
+                }
+
+                return $"clicked={clicked}/{tried} | plan={Shrink(plan, 280)}";
+            }
+            catch (Exception ex)
+            {
                 return "err:" + ex.Message;
             }
         }
@@ -6027,6 +6348,99 @@ try{
                     return;
 
                 await EnsureToolBridgeInjectedAsync();
+                await LogBridgeProbeAsync("vao-after-ensure");
+                await LogHostLaunchProbeAsync("vao-before-click");
+
+                var gameReady = await WaitForBetGameUrlAsync(2500);
+                if (!gameReady)
+                    gameReady = await WaitForGameSignalAsync(1200);
+
+                if (!gameReady && IsCurrentHostVipbet389())
+                {
+                    var preReloadRes = await ForceReloadLikelyGameIframeAsync();
+                    Log("[VaoXocDia] pre-click-reload-frame: " + preReloadRes);
+                    await LogHostLaunchProbeAsync("vao-after-preclick-reload");
+                    gameReady = await WaitForBetGameUrlAsync(2500);
+                    if (!gameReady)
+                        gameReady = await WaitForGameSignalAsync(2000);
+                }
+
+                if (!gameReady)
+                {
+                    var clickRes = await ClickXocDiaTitleAsync(12000);
+                    Log("[VaoXocDia] click-title: " + clickRes);
+                    await LogHostLaunchProbeAsync("vao-after-click");
+                    _ = TraceHostLaunchAfterClickAsync("vao-post-click-trace", 12000, 1500);
+                    gameReady = await WaitForBetGameUrlAsync(8000);
+                    if (!gameReady)
+                        gameReady = await WaitForGameSignalAsync(3000);
+                }
+
+                if (!gameReady && IsCurrentHostVipbet389())
+                {
+                    var trustedClickRes = await TryTrustedClickLaunchTargetsAsync(6);
+                    Log("[VaoXocDia] trusted-click: " + trustedClickRes);
+                    await LogHostLaunchProbeAsync("vao-after-trusted-click");
+                    _ = TraceHostLaunchAfterClickAsync("vao-post-trusted-click", 8000, 1200);
+                    gameReady = await WaitForBetGameUrlAsync(4000);
+                    if (!gameReady)
+                        gameReady = await WaitForGameSignalAsync(2500);
+                }
+
+                if (!gameReady)
+                {
+                    var reloadRes = await ForceReloadLikelyGameIframeAsync();
+                    Log("[VaoXocDia] force-reload-frame: " + reloadRes);
+                    await LogHostLaunchProbeAsync("vao-after-force-reload");
+                    _ = TraceHostLaunchAfterClickAsync("vao-post-reload-trace", 8000, 1500);
+                    gameReady = await WaitForBetGameUrlAsync(6000);
+                    if (!gameReady)
+                        gameReady = await WaitForGameSignalAsync(5000);
+                }
+
+                if (!gameReady)
+                {
+                    var routed = await TryRouteHostIframeToPopupAsync();
+                    if (routed)
+                        gameReady = await WaitForBetGameUrlAsync(20000);
+                    if (!gameReady)
+                        gameReady = await WaitForGameSignalAsync(5000);
+                }
+
+                if (!gameReady)
+                {
+                    var betSrc = GetBetWebViewSource(GetBetWebView());
+                    if (TryParseProviderErrorUrl(betSrc, out var providerStatus, out var providerDesc, out var providerExternal))
+                    {
+                        Log("[VaoXocDia][provider-error] status=" +
+                            (string.IsNullOrWhiteSpace(providerStatus) ? "-" : providerStatus) +
+                            " | desc=" + (string.IsNullOrWhiteSpace(providerDesc) ? "-" : providerDesc) +
+                            " | external=" + (string.IsNullOrWhiteSpace(providerExternal) ? "-" : providerExternal));
+                    }
+                    else if (IsLikelyBetGatewayUrl(betSrc))
+                    {
+                        Log("[VaoXocDia] still on gateway login URL (not game-ready): " + betSrc);
+                    }
+                }
+
+                if (gameReady)
+                {
+                    await EnsureToolBridgeInjectedAsync();
+                    await LogBridgeProbeAsync("vao-game-ready");
+                    var betWeb = GetBetWebView();
+                    Log("[VaoXocDia] game context ready on " + GetBetWebViewName(betWeb) + " | " + GetBetWebViewSource(betWeb));
+                }
+                else
+                {
+                    await LogHostLaunchProbeAsync("vao-not-ready-final");
+                    await LogBridgeProbeAsync("vao-game-not-ready");
+                    var tickAge = (_lastGameTickUtc == DateTime.MinValue) ? -1 : (DateTime.UtcNow - _lastGameTickUtc).TotalSeconds;
+                    var snap = CloneAuthoritativeRawSnap();
+                    Log("[VaoXocDia] no-data-signal | tickAge=" + (tickAge < 0 ? "-" : tickAge.ToString("0.0", CultureInfo.InvariantCulture) + "s") +
+                        " | seqLen=" + (snap?.seq?.Length ?? 0) +
+                        " | status=" + (string.IsNullOrWhiteSpace(snap?.status) ? "-" : Shrink(snap?.status, 80)));
+                    Log("[VaoXocDia] game context still not ready after click + iframe fallback.");
+                }
             }
             catch (Exception ex)
             {
@@ -6196,8 +6610,11 @@ try{
                 _webHooked = false;
                 _webMsgHooked = false;
                 _frameHooked = false;
+                _frameNavHooked = false;
                 _domHooked = false;
                 _navModeHooked = false;
+                _mainFrameBridgeArmed.Clear();
+                _mainFrameRefs.Clear();
 
                 try { await DeleteDirectoryWithRetryAsync(Wv2UserDataDir); }
                 catch (Exception ex) { Log("[WV2] Delete user-data failed: " + ex.Message); }
@@ -6589,6 +7006,11 @@ try{
 
         private static bool IsLikelyBetGameUrl(string? rawUrl)
         {
+            return IsLikelyBetGameReadyUrl(rawUrl) || IsLikelyBetGatewayUrl(rawUrl);
+        }
+
+        private static bool IsLikelyBetGameReadyUrl(string? rawUrl)
+        {
             if (string.IsNullOrWhiteSpace(rawUrl))
                 return false;
             if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var u))
@@ -6596,9 +7018,389 @@ try{
             var host = (u.Host ?? "").ToLowerInvariant();
             if (host.StartsWith("bpweb.") || host.StartsWith("games."))
                 return true;
-            if (u.AbsolutePath.IndexOf("/player/webMain.jsp", StringComparison.OrdinalIgnoreCase) >= 0)
+            var path = u.AbsolutePath ?? "";
+            if (path.IndexOf("/player/webMain.jsp", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (path.IndexOf("/player/singleBacTable.jsp", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (path.IndexOf("/player/gamehall.jsp", StringComparison.OrdinalIgnoreCase) >= 0)
                 return true;
             return false;
+        }
+
+        private static bool IsLikelyBetGatewayUrl(string? rawUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rawUrl))
+                return false;
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var u))
+                return false;
+            var path = u.AbsolutePath ?? "";
+            if (path.IndexOf("/player/login/apiLogin", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            return false;
+        }
+
+        private static bool TryParseProviderErrorUrl(string? rawUrl, out string status, out string desc, out string externalUrl)
+        {
+            status = "";
+            desc = "";
+            externalUrl = "";
+            if (string.IsNullOrWhiteSpace(rawUrl))
+                return false;
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var u))
+                return false;
+
+            var path = u.AbsolutePath ?? "";
+            if (path.IndexOf("/error", StringComparison.OrdinalIgnoreCase) < 0)
+                return false;
+
+            status = GetQueryParamValue(u, "status");
+            desc = GetQueryParamValue(u, "desc");
+            externalUrl = GetQueryParamValue(u, "externalUrl");
+            return true;
+        }
+
+        private static string GetQueryParamValue(Uri u, string key)
+        {
+            try
+            {
+                var q = u.Query ?? "";
+                if (string.IsNullOrWhiteSpace(q))
+                    return "";
+                if (q.StartsWith("?", StringComparison.Ordinal))
+                    q = q.Substring(1);
+                var segs = q.Split('&', StringSplitOptions.RemoveEmptyEntries);
+                for (var i = 0; i < segs.Length; i++)
+                {
+                    var part = segs[i];
+                    var idx = part.IndexOf('=');
+                    var k = idx >= 0 ? part.Substring(0, idx) : part;
+                    var v = idx >= 0 ? part.Substring(idx + 1) : "";
+                    k = Uri.UnescapeDataString((k ?? "").Replace('+', ' '));
+                    if (!string.Equals(k, key, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    return Uri.UnescapeDataString((v ?? "").Replace('+', ' '));
+                }
+            }
+            catch { }
+            return "";
+        }
+
+        private static bool IsPlayerFlowUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return false;
+            return
+                url.IndexOf("/player/login/apilogin", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                url.IndexOf("/player/webmain.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                url.IndexOf("/player/gamehall.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                url.IndexOf("/player/singlebactable.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                url.IndexOf("/error?", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private const string HostLaunchProbeScript = @"
+(function(){
+  try{
+    function norm(s){ try{ return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[đĐ]/g,'d'); }catch(_){ return String(s||'').replace(/[đĐ]/g,'d'); } }
+    function low(s){ return norm(String(s||'').trim().toLowerCase()); }
+    var out = {
+      href: String(location.href||''),
+      ready: String(document.readyState||''),
+      frameCount: 0,
+      hasApiLogin: false,
+      hasWebMain: false,
+      hasGameHall: false,
+      hasSingleBac: false,
+      frames: [],
+      xocDiaHits: []
+    };
+    var frames = Array.from(document.querySelectorAll('iframe,frame'));
+    out.frameCount = frames.length;
+    for (var i=0;i<frames.length;i++){
+      var el = frames[i];
+      var src = String((el.getAttribute('src') || el.src || '')).trim();
+      var l = src.toLowerCase();
+      if (l.indexOf('/player/login/apilogin') >= 0) out.hasApiLogin = true;
+      if (l.indexOf('/player/webmain.jsp') >= 0) out.hasWebMain = true;
+      if (l.indexOf('/player/gamehall.jsp') >= 0) out.hasGameHall = true;
+      if (l.indexOf('/player/singlebactable.jsp') >= 0) out.hasSingleBac = true;
+      out.frames.push({ i:i, src:src });
+    }
+    var cands = Array.from(document.querySelectorAll('a,button,[role=""button""],.item-live,.item-live .title,.livestream-section__live .item-live'));
+    for (var j=0;j<cands.length && out.xocDiaHits.length<6;j++){
+      var c = cands[j];
+      var txt = low(c.textContent || c.innerText || c.getAttribute('title') || c.getAttribute('aria-label') || '');
+      if (!txt) continue;
+      if (txt.indexOf('xoc') >= 0 && txt.indexOf('dia') >= 0){
+        var r = c.getBoundingClientRect();
+        var anc = (c.closest && c.closest('a[href]')) || (String(c.tagName||'').toUpperCase()==='A' ? c : null);
+        out.xocDiaHits.push({
+          tag: String(c.tagName || ''),
+          txt: txt.slice(0, 80),
+          vis: (r.width > 4 && r.height > 4),
+          cls: String(c.className || '').slice(0, 80),
+          href: anc ? String(anc.getAttribute('href') || '').slice(0, 160) : ''
+        });
+      }
+    }
+    return JSON.stringify(out);
+  }catch(e){
+    return JSON.stringify({ err: String((e && e.message) ? e.message : e) });
+  }
+})();";
+
+        private async Task<string> GetHostLaunchProbePayloadAsync()
+        {
+            try
+            {
+                var payload = await ExecJsAsyncStr(HostLaunchProbeScript);
+                return string.IsNullOrWhiteSpace(payload) ? "{}" : Shrink(payload, 1600);
+            }
+            catch (Exception ex)
+            {
+                return "{\"err\":\"" + Shrink(ex.Message, 180).Replace("\"", "'") + "\"}";
+            }
+        }
+
+        private async Task LogHostLaunchProbeAsync(string stage)
+        {
+            try
+            {
+                var payload = await GetHostLaunchProbePayloadAsync();
+                var key = "HostLaunchProbe|" + stage + "|" + payload;
+                if (_bridgeProbeSeen.TryAdd(key, 1))
+                    Log("[HostLaunchProbe] stage=" + stage + " | " + payload);
+            }
+            catch (Exception ex)
+            {
+                Log("[HostLaunchProbe] stage=" + stage + " | err=" + ex.Message);
+            }
+        }
+
+        private async Task TraceHostLaunchAfterClickAsync(string stage, int totalMs = 12000, int stepMs = 1500)
+        {
+            try
+            {
+                string last = "";
+                int unchanged = 0;
+                var t0 = DateTime.UtcNow;
+                while ((DateTime.UtcNow - t0).TotalMilliseconds < totalMs)
+                {
+                    var payload = await GetHostLaunchProbePayloadAsync();
+                    var elapsed = (int)(DateTime.UtcNow - t0).TotalMilliseconds;
+                    if (!string.Equals(payload, last, StringComparison.Ordinal))
+                    {
+                        last = payload;
+                        unchanged = 0;
+                        Log($"[HostLaunchProbe] stage={stage} | t={elapsed}ms | {payload}");
+                    }
+                    else
+                    {
+                        unchanged++;
+                        if (unchanged % 4 == 0)
+                            Log($"[HostLaunchProbe] stage={stage} | t={elapsed}ms | unchanged x{unchanged}");
+                    }
+                    await Task.Delay(stepMs);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[HostLaunchProbe] trace err: " + ex.Message);
+            }
+        }
+
+        private bool HasRecentGameSignal(out string reason)
+        {
+            reason = "none";
+            var now = DateTime.UtcNow;
+            var tickAge = now - _lastGameTickUtc;
+            if (_lastGameTickUtc != DateTime.MinValue && tickAge <= TimeSpan.FromSeconds(4))
+            {
+                reason = $"tick-age={tickAge.TotalSeconds:0.0}s";
+                return true;
+            }
+
+            var snap = CloneAuthoritativeRawSnap();
+            bool hasSnapData =
+                snap?.prog.HasValue == true ||
+                !string.IsNullOrWhiteSpace(snap?.status) ||
+                !string.IsNullOrWhiteSpace(snap?.seq);
+            if (hasSnapData)
+            {
+                var seqLen = snap?.seq?.Length ?? 0;
+                reason = $"snap seqLen={seqLen} status={(string.IsNullOrWhiteSpace(snap?.status) ? "-" : "y")}";
+                return true;
+            }
+            return false;
+        }
+
+        private async Task<bool> WaitForGameSignalAsync(int timeoutMs = 6000)
+        {
+            var t0 = DateTime.UtcNow;
+            while ((DateTime.UtcNow - t0).TotalMilliseconds < timeoutMs)
+            {
+                if (HasRecentGameSignal(out _))
+                    return true;
+                await Task.Delay(250);
+            }
+            if (HasRecentGameSignal(out var reason))
+            {
+                Log("[WaitForGameSignal] became-ready-at-timeout-edge | " + reason);
+                return true;
+            }
+            Log("[WaitForGameSignal] timeout=" + timeoutMs + "ms");
+            return false;
+        }
+
+        private async Task<string> ForceReloadLikelyGameIframeAsync()
+        {
+            try
+            {
+                if (Web?.CoreWebView2 == null)
+                    return "web-null";
+                const string js = @"
+(function(){
+  try{
+    var els = Array.from(document.querySelectorAll('iframe,frame'));
+    if (!els.length) return 'no-frame';
+    var best = null, bestScore = -1, bestSrc = '';
+    for (var i=0;i<els.length;i++){
+      var el = els[i];
+      var src = String((el.getAttribute('src') || el.src || '')).trim();
+      if (!src) continue;
+      var u = src.toLowerCase();
+      var s = 0;
+      if (u.indexOf('/player/login/apilogin') >= 0) s += 100;
+      if (u.indexOf('/player/gamehall.jsp') >= 0) s += 90;
+      if (u.indexOf('/player/singlebactable.jsp') >= 0) s += 80;
+      if (u.indexOf('/player/webmain.jsp') >= 0) s += 70;
+      if (u.indexOf('usplaynet.com') >= 0) s += 30;
+      if (u.indexOf('balikko.com') >= 0) s += 20;
+      if (s > bestScore){ bestScore = s; best = el; bestSrc = src; }
+    }
+    if (!best) return 'no-candidate';
+    if (!bestSrc) return 'no-src';
+    try{
+      best.setAttribute('src', 'about:blank');
+      best.src = 'about:blank';
+    }catch(_){}
+    setTimeout(function(){
+      try{
+        best.setAttribute('src', bestSrc);
+        best.src = bestSrc;
+      }catch(_){}
+    }, 80);
+    return 'reloaded:' + bestSrc;
+  }catch(e){
+    return 'err:' + ((e && e.message) ? e.message : String(e));
+  }
+})();";
+                var res = await Web.ExecuteScriptAsync(js);
+                var text = (JsonSerializer.Deserialize<string>(res) ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(text)) text = "reload-null";
+                Log("[ForceReloadIframe] " + text);
+                return text;
+            }
+            catch (Exception ex)
+            {
+                Log("[ForceReloadIframe] " + ex.Message);
+                return "err:" + ex.Message;
+            }
+        }
+
+        private async Task<bool> WaitForBetGameUrlAsync(int timeoutMs = 12000)
+        {
+            var t0 = DateTime.UtcNow;
+            while ((DateTime.UtcNow - t0).TotalMilliseconds < timeoutMs)
+            {
+                var bet = GetBetWebView();
+                var src = GetBetWebViewSource(bet);
+                if (IsLikelyBetGameReadyUrl(src))
+                    return true;
+                await Task.Delay(300);
+            }
+            try
+            {
+                var bet = GetBetWebView();
+                Log("[WaitForBetGameUrl] timeout=" + timeoutMs + "ms | bet=" + GetBetWebViewName(bet) + " | src=" + GetBetWebViewSource(bet));
+                await LogHostLaunchProbeAsync("wait-timeout");
+            }
+            catch { }
+            return false;
+        }
+
+        private async Task<string> GetBestGameIframeUrlFromHostAsync()
+        {
+            try
+            {
+                if (Web?.CoreWebView2 == null) return "";
+                const string js = @"
+(function(){
+  try{
+    var els = Array.from(document.querySelectorAll('iframe,frame'));
+    var best = '';
+    var bestScore = -1;
+    for (var i=0;i<els.length;i++){
+      var el = els[i];
+      var src = String((el && (el.src || el.getAttribute('src'))) || '').trim();
+      if (!src) continue;
+      var u = src.toLowerCase();
+      var s = 0;
+      if (u.indexOf('/player/singlebactable.jsp') >= 0) s += 100;
+      if (u.indexOf('/player/webmain.jsp') >= 0) s += 90;
+      if (u.indexOf('/player/gamehall.jsp') >= 0) s += 80;
+      if (u.indexOf('/player/login/apilogin') >= 0) s += 70;
+      if (u.indexOf('bpweb.') >= 0) s += 40;
+      if (u.indexOf('usplaynet.com') >= 0) s += 30;
+      if (u.indexOf('balikko.com') >= 0) s += 30;
+      if (u.indexOf('barppat.com') >= 0) s += 30;
+      if (s > bestScore){ bestScore = s; best = src; }
+    }
+    return best || '';
+  }catch(_){ return ''; }
+})();";
+                var raw = await Web.ExecuteScriptAsync(js);
+                return (JsonSerializer.Deserialize<string>(raw) ?? "").Trim();
+            }
+            catch (Exception ex)
+            {
+                Log("[VaoXocDia][iframe-url] " + ex.Message);
+                return "";
+            }
+        }
+
+        private async Task<bool> TryRouteHostIframeToPopupAsync()
+        {
+            var entryUrl = await GetBestGameIframeUrlFromHostAsync();
+            if (string.IsNullOrWhiteSpace(entryUrl))
+            {
+                Log("[VaoXocDia] iframe fallback: no candidate iframe url.");
+                return false;
+            }
+
+            if (IsLikelyBetGatewayUrl(entryUrl))
+            {
+                Log("[VaoXocDia] iframe fallback: candidate is gateway apiLogin, skip popup routing to avoid provider token mismatch.");
+                return false;
+            }
+
+            var popup = await EnsurePopupWebReadyAsync();
+            if (popup?.CoreWebView2 == null)
+            {
+                Log("[VaoXocDia] iframe fallback: popup web not ready.");
+                return false;
+            }
+
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (Web != null) Web.Visibility = Visibility.Collapsed;
+                if (PopupHost != null) PopupHost.Visibility = Visibility.Visible;
+                popup.CoreWebView2.Navigate(entryUrl);
+                popup.Focus();
+            });
+
+            Log("[VaoXocDia] iframe fallback routed popup to: " + entryUrl);
+            return true;
         }
 
         private (bool ok, string reason) GetBetPipeReadyState(StrategyTabState tab, long runId)
@@ -6627,10 +7429,21 @@ try{
             if (betWeb?.CoreWebView2 == null)
                 return (false, "bet-web-null");
             var src = GetBetWebViewSource(betWeb);
-            if (!IsLikelyBetGameUrl(src))
-                return (false, $"bet-src-not-game src={src}");
-
             var tickAge = now - _lastGameTickUtc;
+            bool srcGameReady = IsLikelyBetGameReadyUrl(src);
+            if (!srcGameReady && tickAge > TimeSpan.FromSeconds(6))
+                return (false, $"bet-src-not-game src={src}");
+            if (!srcGameReady && tickAge <= TimeSpan.FromSeconds(6))
+            {
+                var nowMs = Environment.TickCount64;
+                var lastMs = _logThrottleLastMs.TryGetValue("BETPIPE_ALLOW_TICK", out var lv) ? lv : 0;
+                if ((nowMs - lastMs) >= 1500)
+                {
+                    _logThrottleLastMs["BETPIPE_ALLOW_TICK"] = nowMs;
+                    Log("[BetPipe] allow-by-recent-tick | src=" + src + " | tickAge=" + tickAge.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) + "s");
+                }
+            }
+
             if (tickAge > TimeSpan.FromSeconds(6))
                 return (false, $"tick-stale age={tickAge.TotalSeconds:0.0}s");
 
@@ -6750,6 +7563,172 @@ try{
             }
         }
 
+        private static string BridgeProbeScript => @"
+(function(){
+  try{
+    function safe(fn, def){ try{ return fn(); }catch(_){ return def; } }
+    function t(v){ return typeof v; }
+    var href = safe(function(){ return String(location.href||''); }, '');
+    var out = {
+      href: href,
+      top: safe(function(){ return (window.top===window)?1:0; }, -1),
+      hasWV: safe(function(){ return !!(window.chrome && window.chrome.webview && window.chrome.webview.postMessage); }, false),
+      cmdHooked: safe(function(){ return window.__cw_cmd_hooked; }, null),
+      waiting: safe(function(){ return window.__cw_waiting_v4; }, null),
+      nsType: safe(function(){ return t(window['__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2']); }, 'undefined'),
+      read: safe(function(){ return t(window.__cw_readSnapshot); }, 'undefined'),
+      start: safe(function(){ return t(window.__cw_startPush); }, 'undefined'),
+      bet: safe(function(){ return t(window.__cw_bet); }, 'undefined'),
+      hasCC: safe(function(){ return !!(window.cc && cc.director && cc.director.getScene); }, false),
+      frameCount: safe(function(){ return (window.frames && window.frames.length) || 0; }, 0),
+      frames: []
+    };
+    try{
+      var els = Array.from(document.querySelectorAll('iframe,frame'));
+      for (var i=0;i<els.length;i++){
+        var el = els[i];
+        var row = { i:i, srcAttr:String(el.getAttribute('src')||''), sameOrigin:null, href:'', read:'', start:'', bet:'', err:'' };
+        try{
+          var w = el.contentWindow;
+          row.href = String((w.location && w.location.href) || '');
+          row.sameOrigin = true;
+          row.read = t(w.__cw_readSnapshot);
+          row.start = t(w.__cw_startPush);
+          row.bet = t(w.__cw_bet);
+        }catch(e){
+          row.sameOrigin = false;
+          row.err = String((e && e.message) ? e.message : e);
+        }
+        out.frames.push(row);
+      }
+    }catch(_){}
+    return JSON.stringify(out);
+  }catch(e){
+    return JSON.stringify({ err:String((e&&e.message)?e.message:e) });
+  }
+})();";
+
+        private async Task LogBridgeProbeOnWebViewAsync(WebView2? view, string stage, string owner)
+        {
+            try
+            {
+                if (view?.CoreWebView2 == null)
+                {
+                    Log($"[BridgeProbe] stage={stage} | owner={owner} | core=null");
+                    return;
+                }
+                var raw = await view.ExecuteScriptAsync(BridgeProbeScript);
+                var payload = JsonSerializer.Deserialize<string>(raw) ?? raw ?? "";
+                payload = Shrink(payload, 1200);
+                var key = $"{owner}|{stage}|{payload}";
+                if (_bridgeProbeSeen.TryAdd(key, 1))
+                    Log($"[BridgeProbe] stage={stage} | owner={owner} | {payload}");
+            }
+            catch (Exception ex)
+            {
+                Log($"[BridgeProbe] stage={stage} | owner={owner} | err={ex.Message}");
+            }
+        }
+
+        private async Task LogBridgeProbeAsync(string stage)
+        {
+            await Dispatcher.InvokeAsync(async () =>
+            {
+                var bet = GetBetWebView();
+                await LogBridgeProbeOnWebViewAsync(bet, stage + "-bet", GetBetWebViewName(bet));
+                if (!ReferenceEquals(bet, Web))
+                    await LogBridgeProbeOnWebViewAsync(Web, stage + "-main", "Web");
+                if (!ReferenceEquals(bet, _popupWeb))
+                    await LogBridgeProbeOnWebViewAsync(_popupWeb, stage + "-popup", "PopupWeb");
+            }).Task.Unwrap();
+        }
+
+        private void ProbeFrameBridgeAsync(CoreWebView2Frame frame, string owner, string stage)
+        {
+            _ = Dispatcher.InvokeAsync(async () =>
+            {
+                try
+                {
+                    if (frame == null) return;
+                    var raw = await frame.ExecuteScriptAsync(BridgeProbeScript);
+                    var payload = JsonSerializer.Deserialize<string>(raw) ?? raw ?? "";
+                    payload = Shrink(payload, 900);
+                    var key = $"{owner}|{stage}|{payload}";
+                    if (_bridgeProbeSeen.TryAdd(key, 1))
+                        Log($"[BridgeProbe][Frame] owner={owner} | stage={stage} | {payload}");
+                }
+                catch (Exception ex)
+                {
+                    Log($"[BridgeProbe][Frame] owner={owner} | stage={stage} | err={ex.Message}");
+                }
+            }).Task.Unwrap();
+        }
+
+        private List<(ulong id, CoreWebView2Frame frame)> GetMainArmedFramesSnapshot()
+        {
+            var frames = new List<(ulong id, CoreWebView2Frame frame)>();
+            try
+            {
+                foreach (var id in _mainFrameBridgeArmed.Keys.OrderByDescending(v => v))
+                {
+                    if (_mainFrameRefs.TryGetValue(id, out var fRef) && fRef != null)
+                    {
+                        frames.Add((id, fRef));
+                        continue;
+                    }
+
+                    var f = TryGetFrameByIdSafe(id);
+                    if (f != null)
+                    {
+                        _mainFrameRefs[id] = f;
+                        frames.Add((id, f));
+                    }
+                }
+            }
+            catch { }
+            return frames;
+        }
+
+        private static bool IsBridgeCommandScript(string js)
+        {
+            return !string.IsNullOrWhiteSpace(js) &&
+                   js.IndexOf("__cw_", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string NormalizeJsEvalResult(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return "";
+
+            var trimmed = raw.Trim();
+            try
+            {
+                var s = JsonSerializer.Deserialize<string>(trimmed);
+                if (s != null)
+                    return s.Trim();
+            }
+            catch { }
+
+            return trimmed.Trim().Trim('"');
+        }
+
+        private static bool IsBridgeFailureResult(string normalized)
+        {
+            var t = (normalized ?? "").Trim();
+            if (string.IsNullOrEmpty(t))
+                return true;
+
+            var lower = t.ToLowerInvariant();
+            return lower == "undefined" ||
+                   lower == "null" ||
+                   lower == "no" ||
+                   lower == "{}" ||
+                   lower == "[]" ||
+                   lower == "false" ||
+                   lower.StartsWith("fail:", StringComparison.Ordinal) ||
+                   lower.StartsWith("err:", StringComparison.Ordinal);
+        }
+
         private Task<string> ExecuteOnBetWebAsync(string js)
         {
             return Dispatcher.InvokeAsync(async () =>
@@ -6764,7 +7743,48 @@ try{
                 if (target?.CoreWebView2 == null)
                     return "";
 
-                return await target.ExecuteScriptAsync(js);
+                if (!IsBridgeCommandScript(js))
+                    return await target.ExecuteScriptAsync(js);
+
+                var frames = GetMainArmedFramesSnapshot();
+                string firstFrameRaw = "";
+                string firstFrameOk = "";
+
+                // Với bridge script, ưu tiên chạy trên frame đã armed (vipbet dùng game trong cross-origin frame).
+                foreach (var item in frames)
+                {
+                    try
+                    {
+                        var frameRaw = await item.frame.ExecuteScriptAsync(js);
+                        if (string.IsNullOrWhiteSpace(firstFrameRaw))
+                            firstFrameRaw = frameRaw;
+
+                        var frameNorm = NormalizeJsEvalResult(frameRaw);
+                        if (!IsBridgeFailureResult(frameNorm))
+                        {
+                            firstFrameOk = frameRaw;
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+
+                // Đồng thời vẫn chạy top để giữ tương thích các host cũ chạy game trực tiếp trên top doc.
+                string topRaw = "";
+                try
+                {
+                    topRaw = await target.ExecuteScriptAsync(js);
+                }
+                catch { }
+
+                var topNorm = NormalizeJsEvalResult(topRaw);
+                if (!IsBridgeFailureResult(topNorm))
+                    return topRaw;
+                if (!string.IsNullOrWhiteSpace(firstFrameOk))
+                    return firstFrameOk;
+                if (!string.IsNullOrWhiteSpace(firstFrameRaw))
+                    return firstFrameRaw;
+                return topRaw;
             }).Task.Unwrap();
         }
 
@@ -7039,12 +8059,6 @@ try{
 
             Log($"[BET] {side} {amount:N0} | round={roundId}");
 
-            if (!hasIssuedContext || isTableSwitchResetIssue)
-            {
-                Log($"[BET][HIST][SKIP] reason={(isTableSwitchResetIssue ? "table-switch-reset" : "unbound-context")} | at={DateTime.Now:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqEvt={(string.IsNullOrWhiteSpace(issuedSeqEvent) ? "-" : issuedSeqEvent)}");
-                return;
-            }
-
             betTab ??= ResolveBetTab(tabId);
             if (betTab != null)
             {
@@ -7058,10 +8072,48 @@ try{
                 RecordValidBet(betTab, amount);
             }
 
+            var issuedName = (issuedSnap?.totals?.N ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(issuedName))
+                issuedName = (issuedSnap?.username ?? "").Trim();
+            if (LblUserName != null)
+            {
+                if (!string.IsNullOrWhiteSpace(issuedName))
+                    LblUserName.Text = issuedName;
+                else if (string.IsNullOrWhiteSpace(LblUserName.Text))
+                    LblUserName.Text = "-";
+            }
+
             double accNow = issuedSnap?.totals?.A ?? 0;
             if (accNow <= 0)
             {
                 try { accNow = ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
+            }
+            if (LblAmount != null)
+            {
+                if (accNow > 0)
+                    LblAmount.Text = accNow.ToString("#,0.##", CultureInfo.InvariantCulture);
+                else if (string.IsNullOrWhiteSpace(LblAmount.Text))
+                    LblAmount.Text = "-";
+            }
+
+            bool allowUnboundHistory = IsCurrentHostAllowUnboundHistory();
+            if (!hasIssuedContext || isTableSwitchResetIssue)
+            {
+                Log($"[BET][HIST][SKIP] reason={(isTableSwitchResetIssue ? "table-switch-reset" : "unbound-context")} | at={DateTime.Now:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqEvt={(string.IsNullOrWhiteSpace(issuedSeqEvent) ? "-" : issuedSeqEvent)}");
+                if (!allowUnboundHistory || isTableSwitchResetIssue)
+                    return;
+
+                if (issuedObservedRound <= 0)
+                {
+                    issuedObservedRound = issuedSeqDisplay.Length > 0
+                        ? issuedSeqDisplay.Length
+                        : roundId;
+                }
+
+                if (issuedTableId <= 0 && TryInferTableIdFromStatus(issuedSnap?.status, out var inferredTableId))
+                    issuedTableId = inferredTableId;
+
+                Log($"[BET][HIST][BYPASS] reason=wrapper-allow-unbound | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqLen={issuedSeqDisplay.Length}");
             }
 
             var row = new BetRow
@@ -7228,17 +8280,25 @@ try{
                 }
 
                 ResetSeqSyncState("play-start", clearPendingRows: false, forceLog: true);
+                await LogBridgeProbeAsync("play-start-pre-ensure");
                 await EnsureToolBridgeInjectedAsync();
+                await LogBridgeProbeAsync("play-start-post-ensure");
 
                 var betWeb = GetBetWebView();
                 var typeBetJson = await ExecuteOnBetWebAsync("typeof window.__cw_bet");
                 var typeBet = typeBetJson?.Trim('"');
+                var armedFrameCount = GetMainArmedFramesSnapshot().Count;
+                Log("[PlayStart] betType=" + (string.IsNullOrWhiteSpace(typeBet) ? "-" : typeBet) +
+                    " | armedFrames=" + armedFrameCount +
+                    " | betWeb=" + GetBetWebViewName(betWeb) +
+                    " | src=" + GetBetWebViewSource(betWeb));
                 if (!string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
                 {
+                    await LogBridgeProbeAsync("play-missing-bet-before-reinject");
                     Log("[DEC] Chưa thấy bridge JS (__cw_bet) → tự động 'Xóc Đĩa Live' và inject.");
                     if (_popupWeb?.CoreWebView2 != null)
                     {
-                        Log($"[DEC] ChÆ°a tháº¥y bridge JS (__cw_bet) trÃªn {GetBetWebViewName(betWeb)} | {GetBetWebViewSource(betWeb)} â†’ reinject popup.");
+                        Log($"[DEC] Missing bridge JS (__cw_bet) on {GetBetWebViewName(betWeb)} | {GetBetWebViewSource(betWeb)} -> reinject popup.");
                         await InjectOnPopupDocAsync();
                     }
                     else
@@ -7263,24 +8323,29 @@ try{
                     }
                     if (!string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
                     {
+                        await LogBridgeProbeAsync("play-missing-bet-timeout");
                         Log("[DEC] Không thể vào bàn/tiêm JS trong thời gian chờ. Vui lòng thử lại.");
                         return;
                     }
+                    await LogBridgeProbeAsync("play-missing-bet-recovered");
                 }
 
                 // Bật kênh push (idempotent)
                 await ExecuteOnBetWebAsync("window.__cw_startPush && window.__cw_startPush(240);");
                 Log("[CW] ensure push 240ms");
+                await LogBridgeProbeAsync("play-after-start-push");
 
                 // 🔒 MỚI: Chờ đủ bridge + Cocos + tick để tránh nổ IndexOutOfRange trong task
                 var ready = await WaitForBridgeAndGameDataAsync(15000);
                 if (!ready)
                 {
+                    await LogBridgeProbeAsync("play-wait1-timeout");
                     Log("[DEC] Dữ liệu chưa sẵn sàng (bridge/cocos/tick). Thử gia hạn push & chờ thêm.");
                     await ExecuteOnBetWebAsync("window.__cw_startPush && window.__cw_startPush(240);");
                     ready = await WaitForBridgeAndGameDataAsync(15000);
                     if (!ready)
                     {
+                        await LogBridgeProbeAsync("play-wait2-timeout");
                         Log("[DEC] Vẫn chưa có dữ liệu, tạm hoãn khởi động chiến lược.");
                         return;
                     }
@@ -8309,6 +9374,13 @@ try{
                 _frameHooked = true;
             }
 
+            if (!_frameNavHooked)
+            {
+                Web.CoreWebView2.FrameNavigationStarting += CoreWebView2_FrameNavigationStarting_Bridge;
+                Web.CoreWebView2.FrameNavigationCompleted += CoreWebView2_FrameNavigationCompleted_Bridge;
+                _frameNavHooked = true;
+            }
+
             if (!_domHooked)
             {
                 Web.CoreWebView2.DOMContentLoaded += async (_, __) =>
@@ -8353,6 +9425,7 @@ try{
         private async Task EnsureToolBridgeInjectedAsync()
         {
             await EnsureWebReadyAsync();
+            await LogBridgeProbeAsync("ensure-before");
             await EnsureBridgeRegisteredAsync();
             await InjectOnNewDocAsync();
             if (_popupWeb != null)
@@ -8369,6 +9442,7 @@ try{
             }
             var target = GetBetWebView();
             Log("[Bridge] Explicit tool injection requested on " + GetBetWebViewName(target) + " | " + GetBetWebViewSource(target));
+            await LogBridgeProbeAsync("ensure-after");
         }
 
 
@@ -8376,18 +9450,7 @@ try{
         {
             try
             {
-                var f = e.Frame;
-
-                // Tiêm ngay (idempotent)
-                _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = f.ExecuteScriptAsync(_appJs);
-                _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
-                Log("[Bridge] Frame injected + autostart armed.");
-
-                // Hook lifecycle của CHÍNH frame này
-                f.DOMContentLoaded += Frame_DOMContentLoaded_Bridge;
-                f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
+                ArmMainFrameBridge(e.Frame, "frame-created");
             }
             catch (Exception ex)
             {
@@ -8395,6 +9458,95 @@ try{
             }
         }
 
+        private void CoreWebView2_FrameNavigationStarting_Bridge(object? sender, CoreWebView2NavigationStartingEventArgs e)
+        {
+            try
+            {
+                var frameId = TryGetFrameIdSafe(e);
+                if (frameId == 0) return;
+                var frame = TryGetFrameByIdSafe(frameId);
+                if (frame == null) return;
+                ArmMainFrameBridge(frame, "frame-nav-start");
+            }
+            catch (Exception ex)
+            {
+                Log("[Bridge.FrameNavStarting] " + ex.Message);
+            }
+        }
+
+        private void CoreWebView2_FrameNavigationCompleted_Bridge(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+        {
+            try
+            {
+                var frameId = TryGetFrameIdSafe(e);
+                if (frameId == 0) return;
+                var frame = TryGetFrameByIdSafe(frameId);
+                if (frame == null) return;
+                ArmMainFrameBridge(frame, "frame-nav-done");
+            }
+            catch (Exception ex)
+            {
+                Log("[Bridge.FrameNavCompleted] " + ex.Message);
+            }
+        }
+
+        private void ArmMainFrameBridge(CoreWebView2Frame frame, string stage)
+        {
+            if (frame == null) return;
+            try
+            {
+                _ = frame.ExecuteScriptAsync(FRAME_SHIM);
+                if (!string.IsNullOrEmpty(_appJs))
+                    _ = frame.ExecuteScriptAsync(_appJs);
+                _ = frame.ExecuteScriptAsync(FRAME_AUTOSTART);
+                _ = frame.ExecuteScriptAsync(START_PUSH_NOW);
+
+                var frameId = TryGetFrameIdSafe(frame);
+                if (frameId > 0)
+                    _mainFrameRefs[frameId] = frame;
+
+                var shouldAttachHandlers = frameId == 0 || _mainFrameBridgeArmed.TryAdd(frameId, 1);
+                if (shouldAttachHandlers)
+                {
+                    frame.WebMessageReceived += MainFrame_WebMessageReceived_Bridge;
+                    frame.DOMContentLoaded += Frame_DOMContentLoaded_Bridge;
+                    frame.NavigationCompleted += Frame_NavigationCompleted_Bridge;
+                }
+
+                if (frameId > 0)
+                    Log("[Bridge] Frame armed (" + stage + ") | id=" + frameId);
+                else
+                    Log("[Bridge] Frame armed (" + stage + ")");
+
+                ProbeFrameBridgeAsync(frame, "Web", stage);
+            }
+            catch (Exception ex)
+            {
+                Log("[Bridge.ArmFrame] stage=" + stage + " | " + ex.Message);
+            }
+        }
+
+        private static ulong TryGetFrameIdSafe(object? source)
+        {
+            try
+            {
+                if (source == null) return 0;
+                var t = source.GetType();
+                var p = t.GetProperty("FrameId", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                if (p == null) return 0;
+                var raw = p.GetValue(source);
+                if (raw == null) return 0;
+                if (raw is ulong u) return u;
+                if (raw is long l && l > 0) return (ulong)l;
+                if (raw is int i && i > 0) return (ulong)i;
+                var s = Convert.ToString(raw, CultureInfo.InvariantCulture);
+                return ulong.TryParse(s, out var parsed) ? parsed : 0;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
 
         private CoreWebView2Frame? TryGetFrameByIdSafe(ulong frameId)
         {
@@ -8434,6 +9586,7 @@ try{
                 _ = f.ExecuteScriptAsync(START_PUSH_NOW);
 
                 Log("[Bridge] Frame DOMContentLoaded -> reinjected + autostart.");
+                ProbeFrameBridgeAsync(f, "Frame", "dom-content-loaded");
             }
             catch (Exception ex)
             {
@@ -8456,10 +9609,25 @@ try{
                 _ = f.ExecuteScriptAsync(START_PUSH_NOW);
 
                 Log("[Bridge] Frame NavigationCompleted -> reinjected + autostart.");
+                ProbeFrameBridgeAsync(f, "Frame", "nav-completed");
             }
             catch (Exception ex)
             {
                 Log("[Bridge.Frame NavigationCompleted] " + ex.Message);
+            }
+        }
+
+        private async void MainFrame_WebMessageReceived_Bridge(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+        {
+            try
+            {
+                var msg = e.TryGetWebMessageAsString() ?? "";
+                if (string.IsNullOrWhiteSpace(msg)) return;
+                await HandleIncomingWebMessageAsync(msg, "main-frame");
+            }
+            catch (Exception ex)
+            {
+                Log("[MainFrame.WebMessageReceived] " + ex);
             }
         }
 
@@ -8488,6 +9656,10 @@ try{
         private async Task<bool> WaitForBridgeAndGameDataAsync(int timeoutMs = 20000)
         {
             var t0 = DateTime.UtcNow;
+            string lastTypeBet = "";
+            bool lastHasTick = false;
+            int lastSeqLen = 0;
+            string lastStatus = "";
             while ((DateTime.UtcNow - t0).TotalMilliseconds < timeoutMs)
             {
                 try
@@ -8495,15 +9667,19 @@ try{
                     // 1) __cw_bet có chưa
                     var typeBet = (await ExecuteOnBetWebAsync("typeof window.__cw_bet"))?.Trim('"');
                     bool hasBet = string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase);
+                    lastTypeBet = typeBet ?? "";
 
                     // 2) Đã có tick chưa (ít nhất có seq hoặc status)
                     bool hasTick = false;
                     lock (_snapLock)
                     {
+                        lastSeqLen = _lastSnap?.seq?.Length ?? 0;
+                        lastStatus = _lastSnap?.status ?? "";
                         hasTick =
                             (_lastSnap?.seq != null && _lastSnap.seq.Length > 0) ||
                             !string.IsNullOrWhiteSpace(_lastSnap?.status);
                     }
+                    lastHasTick = hasTick;
 
                     if (hasBet && hasTick)
                         return true;
@@ -8512,6 +9688,8 @@ try{
 
                 await Task.Delay(300);
             }
+            Log($"[BridgeWait] timeout={timeoutMs}ms | betType={(string.IsNullOrWhiteSpace(lastTypeBet) ? "<empty>" : lastTypeBet)} | hasTick={(lastHasTick ? 1 : 0)} | seqLen={lastSeqLen} | status={(string.IsNullOrWhiteSpace(lastStatus) ? "-" : Shrink(lastStatus, 80))}");
+            await LogBridgeProbeAsync("wait-timeout");
             return false;
         }
 
@@ -8834,7 +10012,10 @@ try{
             _webHooked = false;
             _webMsgHooked = false;
             _frameHooked = false;
+            _frameNavHooked = false;
             _domHooked = false;
+            _mainFrameBridgeArmed.Clear();
+            _mainFrameRefs.Clear();
         }
 
 
