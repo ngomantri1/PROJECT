@@ -22,6 +22,7 @@ using System.Windows.Documents;
 using System.Reflection;
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Runtime.CompilerServices;
 using Microsoft.Web.WebView2.Wpf;  // <-- cái này để có CoreWebView2Creation
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -431,6 +432,8 @@ namespace BaccaratSexyCasino
         private bool _domHooked;             // đã gắn DOMContentLoaded cho top chưa
         private readonly ConcurrentDictionary<ulong, byte> _mainFrameBridgeArmed = new();
         private readonly ConcurrentDictionary<ulong, CoreWebView2Frame> _mainFrameRefs = new();
+        private readonly ConcurrentDictionary<int, string> _frameInjectedDocKeys = new();
+        private int _popupInjectBusy = 0;
 
         // === License/Trial run state ===
 
@@ -717,6 +720,13 @@ Ví dụ không hợp lệ:
             /// <summary>Đường dẫn file lưu trạng thái AI n-gram (JSON). Bỏ trống => dùng mặc định %LOCALAPPDATA%\Automino\ai\ngram_state_v1.json</summary>
             public string AiNGramStatePath { get; set; } = "";
 
+            // Runtime profile
+            // Performance: ưu tiên mượt, giảm debug/tap.
+            // Debug: bật đầy đủ tap/log để chẩn đoán.
+            public string RuntimeProfile { get; set; } = "Performance";
+            public int PushIntervalMs { get; set; } = 360;
+            public bool EnablePerfTimingLog { get; set; } = true;
+
 
 
 
@@ -868,6 +878,16 @@ Ví dụ không hợp lệ:
         private const int UI_MAX_LINES = 1000;
         private const int UI_FLUSH_MS = 300;
         private const bool COMPACT_RUNTIME_LOG = true;
+        // Perf defaults: giảm tải bridge/network tap trong runtime bình thường.
+        private const int CW_PUSH_MS_DEFAULT = 360;
+        private const int CW_PUSH_MS_DEBUG_DEFAULT = 240;
+        private bool _enableCdpNetworkTap = false;
+        private bool _enableHttpResponseBodyTap = false;
+        private bool _enableJsFileLog = false;
+        private bool _enableJsPushDebug = false;
+        private bool _enablePerfTimingLog = true;
+        private int _cwPushMs = CW_PUSH_MS_DEFAULT;
+        private DateTime _lastPerfRuntimeLogUtc = DateTime.MinValue;
 
         // File
         private readonly ConcurrentQueue<string> _fileLogQueue = new();
@@ -966,11 +986,34 @@ Ví dụ không hợp lệ:
     var key = String((performance && performance.timeOrigin) || Date.now());
     if (window.__cw_autostart_key === key) return;
     window.__cw_autostart_key = key;
+    function __abxCanStartInWindow(w){
+      try{
+        if (!w) return false;
+        if (w.__abx_force_push_start === 1 || w.__abx_force_push_start === true) return true;
+        var href = String((w.location && w.location.href) || '');
+        if (/singleBacTable\.jsp/i.test(href)) return true;
+        if (/\/player\/webMain\.jsp/i.test(href)) return true;
+        if (/\/player\/gamehall\.jsp/i.test(href)) return true;
+        if (/\/player\/login\/apiLogin/i.test(href)) return true;
+        if (typeof w.__cw_isGamePopupPage === 'function'){
+          try{ if (w.__cw_isGamePopupPage()) return true; }catch(_){}
+        }
+        if (typeof w.__cw_hasCocos === 'function'){
+          try{ if (w.__cw_hasCocos()) return true; }catch(_){}
+        }
+      }catch(_){}
+      return false;
+    }
+    function __abxPushMs(){
+      var ms = Number(window.__abx_push_ms || 360);
+      if (!(ms >= 180 && ms <= 1000)) ms = 360;
+      return ms;
+    }
     var delay=300, tries=0;
     (function tick(){
       try{
-        if (window.__cw_startPush){
-          try{ window.__cw_startPush(240); }catch(_){}
+        if (window.__cw_startPush && __abxCanStartInWindow(window)){
+          try{ window.__cw_startPush(__abxPushMs()); }catch(_){}
           return;
         }
       }catch(_){}
@@ -982,17 +1025,40 @@ Ví dụ không hợp lệ:
 
         private const string START_PUSH_NOW = @"
   try{
-    try{
-      if (window.__cw_startPush){
-        window.__cw_startPush(240);
+    function __abxCanStartInWindow(w){
+      try{
+        if (!w) return false;
+        if (w.__abx_force_push_start === 1 || w.__abx_force_push_start === true) return true;
+        var href = String((w.location && w.location.href) || '');
+        if (/singleBacTable\.jsp/i.test(href)) return true;
+        if (/\/player\/webMain\.jsp/i.test(href)) return true;
+        if (/\/player\/gamehall\.jsp/i.test(href)) return true;
+        if (/\/player\/login\/apiLogin/i.test(href)) return true;
+        if (typeof w.__cw_isGamePopupPage === 'function'){
+          try{ if (w.__cw_isGamePopupPage()) return true; }catch(_){}
+        }
+        if (typeof w.__cw_hasCocos === 'function'){
+          try{ if (w.__cw_hasCocos()) return true; }catch(_){}
+        }
+      }catch(_){}
+      return false;
+    }
+    function __abxPushMs(){
+      var ms = Number(window.__abx_push_ms || 360);
+      if (!(ms >= 180 && ms <= 1000)) ms = 360;
+      return ms;
+    }
+  try{
+      if (window.__cw_startPush && __abxCanStartInWindow(window)){
+        window.__cw_startPush(__abxPushMs());
     }
   }catch(_){}
   try{
     for (var i=0;i<window.frames.length;i++){
       try{
         var w = window.frames[i];
-        if (w && w.__cw_startPush){
-          w.__cw_startPush(240);
+        if (w && w.__cw_startPush && __abxCanStartInWindow(w)){
+          w.__cw_startPush(__abxPushMs());
         }
       }catch(_){}
     }
@@ -1005,6 +1071,11 @@ Ví dụ không hợp lệ:
     var key = String((performance && performance.timeOrigin) || Date.now());
     if (window.__cw_popup_autostart_key === key) return;
     window.__cw_popup_autostart_key = key;
+    function __abxPushMs(){
+      var ms = Number(window.__abx_push_ms || 360);
+      if (!(ms >= 180 && ms <= 1000)) ms = 360;
+      return ms;
+    }
     var delay=250, tries=0;
     (function tick(){
       try{
@@ -1012,8 +1083,12 @@ Ví dụ không hợp lệ:
           try{
             var w = window.frames[i];
             var href = String((w.location && w.location.href) || '');
-            if (/singleBacTable\.jsp/i.test(href) && w.__cw_startPush){
-              try{ w.__cw_startPush(240); }catch(_){}
+            if ((/singleBacTable\.jsp/i.test(href) ||
+                 /\/player\/webMain\.jsp/i.test(href) ||
+                 /\/player\/gamehall\.jsp/i.test(href) ||
+                 /\/player\/login\/apiLogin/i.test(href)) &&
+                w.__cw_startPush){
+              try{ w.__cw_startPush(__abxPushMs()); }catch(_){}
               return;
             }
           }catch(_){}
@@ -1027,13 +1102,22 @@ Ví dụ không hợp lệ:
 
         private const string POPUP_TOP_START_PUSH_SINGLE_BAC = @"
 try{
+  function __abxPushMs(){
+    var ms = Number(window.__abx_push_ms || 360);
+    if (!(ms >= 180 && ms <= 1000)) ms = 360;
+    return ms;
+  }
   try{
     for (var i=0;i<window.frames.length;i++){
       try{
         var w = window.frames[i];
         var href = String((w.location && w.location.href) || '');
-        if (/singleBacTable\.jsp/i.test(href) && w && w.__cw_startPush){
-          w.__cw_startPush(240);
+        if ((/singleBacTable\.jsp/i.test(href) ||
+             /\/player\/webMain\.jsp/i.test(href) ||
+             /\/player\/gamehall\.jsp/i.test(href) ||
+             /\/player\/login\/apiLogin/i.test(href)) &&
+            w && w.__cw_startPush){
+          w.__cw_startPush(__abxPushMs());
         }
       }catch(_){}
     }
@@ -1697,6 +1781,7 @@ try{
                 _cfg = _activeTab.Config;
                 _rootCfg.SelectedTabId = _activeTab.Id;
                 SyncGlobalFieldsFromActive();
+                ApplyRuntimeProfileFromConfig(log: true);
 
                 if (StrategyTabList != null)
                 {
@@ -1833,7 +1918,10 @@ try{
             return new AppConfig
             {
                 TabId = Guid.NewGuid().ToString("N"),
-                TabName = $"Chiến lược {index}"
+                TabName = $"Chiến lược {index}",
+                RuntimeProfile = "Performance",
+                PushIntervalMs = CW_PUSH_MS_DEFAULT,
+                EnablePerfTimingLog = true
             };
         }
 
@@ -1849,6 +1937,130 @@ try{
             dest.TrialUntil = src.TrialUntil;
             dest.TrialSessionKey = src.TrialSessionKey;
             dest.AiNGramStatePath = src.AiNGramStatePath;
+            dest.RuntimeProfile = src.RuntimeProfile;
+            dest.PushIntervalMs = src.PushIntervalMs;
+            dest.EnablePerfTimingLog = src.EnablePerfTimingLog;
+        }
+
+        private static string NormalizeRuntimeProfile(string? profile)
+        {
+            var p = (profile ?? "").Trim().ToLowerInvariant();
+            if (p == "debug") return "Debug";
+            return "Performance";
+        }
+
+        private static int ClampPushIntervalMs(int ms)
+        {
+            if (ms < 180) ms = 180;
+            if (ms > 1000) ms = 1000;
+            return ms;
+        }
+
+        private void ApplyRuntimeProfileFromConfig(bool log = false)
+        {
+            if (_cfg == null) return;
+
+            var profile = NormalizeRuntimeProfile(_cfg.RuntimeProfile);
+            _cfg.RuntimeProfile = profile;
+
+            bool isDebug = string.Equals(profile, "Debug", StringComparison.OrdinalIgnoreCase);
+            int desiredPush = _cfg.PushIntervalMs > 0
+                ? _cfg.PushIntervalMs
+                : (isDebug ? CW_PUSH_MS_DEBUG_DEFAULT : CW_PUSH_MS_DEFAULT);
+            _cwPushMs = ClampPushIntervalMs(desiredPush);
+            _cfg.PushIntervalMs = _cwPushMs;
+
+            _enableCdpNetworkTap = isDebug;
+            _enableHttpResponseBodyTap = isDebug;
+            _enableJsFileLog = isDebug;
+            _enableJsPushDebug = isDebug;
+            _enablePerfTimingLog = isDebug || _cfg.EnablePerfTimingLog;
+
+            if (log)
+            {
+                Log($"[RuntimeProfile] profile={profile} | pushMs={_cwPushMs} | cdp={(_enableCdpNetworkTap ? 1 : 0)} | httpTap={(_enableHttpResponseBodyTap ? 1 : 0)} | jsFileLog={(_enableJsFileLog ? 1 : 0)} | jsPushDbg={(_enableJsPushDebug ? 1 : 0)} | perfLog={(_enablePerfTimingLog ? 1 : 0)}");
+            }
+
+            if (_enableCdpNetworkTap)
+            {
+                if (Web?.CoreWebView2 != null)
+                    _ = EnableCdpNetworkTapAsync();
+                if (_popupWeb?.CoreWebView2 != null)
+                    _ = EnableCdpNetworkTapAsync(_popupWeb.CoreWebView2, "popup");
+            }
+
+            if (Web?.CoreWebView2 != null || _popupWeb?.CoreWebView2 != null)
+                _ = ApplyRuntimePerfToBetWebAsync();
+        }
+
+        private async Task ApplyRuntimePerfToBetWebAsync()
+        {
+            try
+            {
+                var js = $@"
+(function(){{
+  try {{
+    function applyOne(w) {{
+      try {{
+        if (!w) return;
+        w.__abx_push_ms = {_cwPushMs};
+        w.__abx_perf_mode = {(_enableJsPushDebug ? 0 : 1)};
+        w.__cw_file_log_enable = {(_enableJsFileLog ? 1 : 0)};
+        w.__cw_debug_seq_push = {(_enableJsPushDebug ? 1 : 0)};
+        w.__cw_debug_seq = {(_enableJsPushDebug ? 1 : 0)};
+        w.__cw_panel_autostart = {(_enableJsPushDebug ? 1 : 0)};
+      }} catch(_e) {{}}
+    }}
+    applyOne(window);
+    try {{ if (window.top && window.top !== window) applyOne(window.top); }} catch(_t) {{}}
+    try {{ if (window.parent && window.parent !== window) applyOne(window.parent); }} catch(_p) {{}}
+    try {{
+      var fr = window.frames || [];
+      for (var i=0; i<fr.length; i++) {{
+        try {{ applyOne(fr[i]); }} catch(_f) {{}}
+      }}
+    }} catch(_fr) {{}}
+    return 'ok';
+  }} catch(e) {{
+    return 'err:' + (e && e.message ? e.message : String(e));
+  }}
+}})();";
+                var res = (await ExecuteOnBetWebAsync(js))?.Trim('"') ?? "";
+                Log("[RuntimeProfile] apply-js => " + (string.IsNullOrWhiteSpace(res) ? "<empty>" : res));
+            }
+            catch (Exception ex)
+            {
+                Log("[RuntimeProfile] apply-js err: " + ex.Message);
+            }
+        }
+
+        private void MaybeLogPerfMessage(
+            string abx,
+            string source,
+            int msgLen,
+            long parseMs,
+            long totalMs,
+            long jsBuildMs = -1,
+            long jsTotalsMs = -1,
+            long jsSeqMs = -1,
+            long jsProgMs = -1,
+            int jsPerfMode = -1)
+        {
+            if (!_enablePerfTimingLog) return;
+
+            var now = DateTime.UtcNow;
+            bool slow = totalMs >= 35 || parseMs >= 10 || jsBuildMs >= 80 || jsTotalsMs >= 35 || jsSeqMs >= 20;
+            if (!slow && (now - _lastPerfRuntimeLogUtc) < TimeSpan.FromSeconds(8))
+                return;
+            _lastPerfRuntimeLogUtc = now;
+
+            var profile = _cfg?.RuntimeProfile ?? "Performance";
+            var jsCost = jsBuildMs >= 0 ? jsBuildMs.ToString(CultureInfo.InvariantCulture) : "-";
+            var jsTotals = jsTotalsMs >= 0 ? jsTotalsMs.ToString(CultureInfo.InvariantCulture) : "-";
+            var jsSeq = jsSeqMs >= 0 ? jsSeqMs.ToString(CultureInfo.InvariantCulture) : "-";
+            var jsProg = jsProgMs >= 0 ? jsProgMs.ToString(CultureInfo.InvariantCulture) : "-";
+            var jsMode = jsPerfMode >= 0 ? jsPerfMode.ToString(CultureInfo.InvariantCulture) : "-";
+            Log($"[PERF][MSG] abx={abx} | src={source} | len={msgLen} | parseMs={parseMs} | totalMs={totalMs} | jsBuildMs={jsCost} | jsTotalsMs={jsTotals} | jsSeqMs={jsSeq} | jsProgMs={jsProg} | jsPerfMode={jsMode} | pushMs={_cwPushMs} | profile={profile}");
         }
 
         private void SyncGlobalFieldsFromActive()
@@ -1973,6 +2185,10 @@ try{
             cfg.MoneyStrategy = GetMoneyStrategyFromUI();
             if (ChkS7ResetOnProfit != null)
                 cfg.S7ResetOnProfit = (ChkS7ResetOnProfit.IsChecked == true);
+
+            cfg.RuntimeProfile = NormalizeRuntimeProfile(cfg.RuntimeProfile);
+            cfg.PushIntervalMs = _cwPushMs;
+            cfg.EnablePerfTimingLog = _enablePerfTimingLog;
         }
 
         private void UpdateAddTabUi()
@@ -2089,6 +2305,7 @@ try{
 
             _activeTab = tab;
             _cfg = tab.Config;
+            ApplyRuntimeProfileFromConfig(log: true);
             _rootCfg.SelectedTabId = tab.Id;
             if (StrategyTabList != null && StrategyTabList.SelectedItem != tab)
             {
@@ -2670,7 +2887,8 @@ try{
                 Web.CoreWebView2.WebResourceResponseReceived += CoreWebView2_WebResourceResponseReceived;
 
                 // Bật CDP network tap (không cần await)
-                _ = EnableCdpNetworkTapAsync();
+                if (_enableCdpNetworkTap)
+                    _ = EnableCdpNetworkTapAsync();
 
                 // Cập nhật nền ngay theo trạng thái hiện tại (trắng khi chưa nhập URL, trong suốt khi đã điều hướng)
                 _ = ApplyBackgroundForStateAsync();
@@ -3398,7 +3616,8 @@ try{
             {
                 popupWeb.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
                 popupWeb.CoreWebView2.WebResourceResponseReceived += CoreWebView2_WebResourceResponseReceived;
-                _ = EnableCdpNetworkTapAsync(popupWeb.CoreWebView2, "popup");
+                if (_enableCdpNetworkTap)
+                    _ = EnableCdpNetworkTapAsync(popupWeb.CoreWebView2, "popup");
                 _popupWebMsgHooked = true;
                 Log("[PopupWeb] WebMessageReceived hooked");
             }
@@ -3412,9 +3631,12 @@ try{
             {
                 try
                 {
-                    popupWeb.CoreWebView2.OpenDevToolsWindow();
-                    _popupDevToolsOpened = true;
-                    Log("[PopupWeb] DevTools opened");
+                    if (_enableJsPushDebug)
+                    {
+                        popupWeb.CoreWebView2.OpenDevToolsWindow();
+                        _popupDevToolsOpened = true;
+                        Log("[PopupWeb] DevTools opened");
+                    }
                 }
                 catch { }
             }
@@ -3425,27 +3647,36 @@ try{
         private async Task InjectOnPopupDocAsync()
         {
             if (_popupWeb?.CoreWebView2 == null) return;
+            if (Interlocked.Exchange(ref _popupInjectBusy, 1) == 1) return;
 
-            string key = "";
             try
             {
-                var json = await _popupWeb.CoreWebView2.ExecuteScriptAsync(
-                    "(function(){try{return String(performance.timeOrigin)}catch(_){return String(Date.now())}})()");
-                key = JsonSerializer.Deserialize<string>(json) ?? "";
-            }
-            catch { }
+                string key = "";
+                try
+                {
+                    var json = await _popupWeb.CoreWebView2.ExecuteScriptAsync(
+                        "(function(){try{return String(performance.timeOrigin)}catch(_){return String(Date.now())}})()");
+                    key = JsonSerializer.Deserialize<string>(json) ?? "";
+                }
+                catch { }
 
-            if (!string.IsNullOrEmpty(key) && key != _popupLastDocKey)
+                if (!string.IsNullOrEmpty(key) && key != _popupLastDocKey)
+                {
+                    await _popupWeb.CoreWebView2.ExecuteScriptAsync(TOP_FORWARD);
+                    if (!string.IsNullOrEmpty(_appJs))
+                        await _popupWeb.CoreWebView2.ExecuteScriptAsync(_appJs);
+                    await _popupWeb.CoreWebView2.ExecuteScriptAsync(POPUP_TOP_AUTOSTART_SINGLE_BAC);
+                    await _popupWeb.CoreWebView2.ExecuteScriptAsync(POPUP_TOP_START_PUSH_SINGLE_BAC);
+                    _popupLastDocKey = key;
+                    await ApplyRuntimePerfToBetWebAsync();
+                    Log("[PopupWeb] bridge injected, key=" + key);
+                    Log($"[PopupWeb] ensure push {_cwPushMs}ms (singleBac only)");
+                    await LogBridgeProbeOnWebViewAsync(_popupWeb, "popup-doc-injected", "PopupWeb");
+                }
+            }
+            finally
             {
-                await _popupWeb.CoreWebView2.ExecuteScriptAsync(TOP_FORWARD);
-                if (!string.IsNullOrEmpty(_appJs))
-                    await _popupWeb.CoreWebView2.ExecuteScriptAsync(_appJs);
-                await _popupWeb.CoreWebView2.ExecuteScriptAsync(POPUP_TOP_AUTOSTART_SINGLE_BAC);
-                await _popupWeb.CoreWebView2.ExecuteScriptAsync(POPUP_TOP_START_PUSH_SINGLE_BAC);
-                _popupLastDocKey = key;
-                Log("[PopupWeb] bridge injected, key=" + key);
-                Log("[PopupWeb] ensure push 240ms (singleBac only)");
-                await LogBridgeProbeOnWebViewAsync(_popupWeb, "popup-doc-injected", "PopupWeb");
+                Interlocked.Exchange(ref _popupInjectBusy, 0);
             }
         }
 
@@ -3466,17 +3697,37 @@ try{
         private async Task HandleIncomingWebMessageAsync(string msg, string source = "direct")
         {
             if (string.IsNullOrWhiteSpace(msg)) return;
+            var perfSw = Stopwatch.StartNew();
+            long parseMs = -1;
+            long jsBuildMs = -1;
+            long jsTotalsMs = -1;
+            long jsSeqMs = -1;
+            long jsProgMs = -1;
+            int jsPerfMode = -1;
+            string perfAbx = "raw";
             bool isJsLogBatchRaw = msg.IndexOf("\"abx\":\"cwLogBatch\"", StringComparison.OrdinalIgnoreCase) >= 0;
-            if (!isJsLogBatchRaw)
+            bool isTickRaw = msg.IndexOf("\"abx\":\"tick\"", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!isJsLogBatchRaw && !isTickRaw)
                 EnqueueUi($"[JS] {msg}"); // chỉ hiển thị UI, không ghi ra file
 
             try
             {
+                var parseSw = Stopwatch.StartNew();
                 using var doc = JsonDocument.Parse(msg);
+                parseMs = parseSw.ElapsedMilliseconds;
                 var root = doc.RootElement;
 
                 if (!root.TryGetProperty("abx", out var abxEl)) return;
                 var abxStr = abxEl.GetString() ?? "";
+                perfAbx = abxStr;
+                if (string.Equals(abxStr, "tick", StringComparison.OrdinalIgnoreCase))
+                {
+                    jsBuildMs = GetJsonLongLoose(root, "jsBuildMs") ?? -1;
+                    jsTotalsMs = GetJsonLongLoose(root, "jsTotalsMs") ?? -1;
+                    jsSeqMs = GetJsonLongLoose(root, "jsSeqMs") ?? -1;
+                    jsProgMs = GetJsonLongLoose(root, "jsProgMs") ?? -1;
+                    jsPerfMode = (int)(GetJsonLongLoose(root, "jsPerfMode") ?? -1);
+                }
 
                 if (abxStr == "result" && root.TryGetProperty("id", out var idEl))
                 {
@@ -3979,6 +4230,20 @@ try{
                 var preview = msg.Length > 240 ? msg[..240] : msg;
                 Log($"[DIAG][MSG][ERR] src={source} err={ex.GetType().Name}: {ex.Message} preview={preview.Replace('\r', ' ').Replace('\n', ' ')}");
             }
+            finally
+            {
+                MaybeLogPerfMessage(
+                    perfAbx,
+                    source,
+                    msg.Length,
+                    parseMs,
+                    perfSw.ElapsedMilliseconds,
+                    jsBuildMs,
+                    jsTotalsMs,
+                    jsSeqMs,
+                    jsProgMs,
+                    jsPerfMode);
+            }
         }
 
         private void IngestJsLogBatch(JsonElement root, string source)
@@ -4076,7 +4341,12 @@ try{
                     side = GetJsonStringLoose(root, "side") ?? "",
                     error = GetJsonStringLoose(root, "error") ?? "",
                     session = GetJsonStringLoose(root, "session") ?? "",
-                    ts = GetJsonLongLoose(root, "ts") ?? 0
+                    ts = GetJsonLongLoose(root, "ts") ?? 0,
+                    jsBuildMs = GetJsonLongLoose(root, "jsBuildMs"),
+                    jsTotalsMs = GetJsonLongLoose(root, "jsTotalsMs"),
+                    jsSeqMs = GetJsonLongLoose(root, "jsSeqMs"),
+                    jsProgMs = GetJsonLongLoose(root, "jsProgMs"),
+                    jsPerfMode = (int?)GetJsonLongLoose(root, "jsPerfMode")
                 };
 
                 if (root.TryGetProperty("amount", out var amountEl))
@@ -4244,13 +4514,9 @@ try{
             {
                 var f = e.Frame;
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = f.ExecuteScriptAsync(_appJs);
-                _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
-                _ = f.ExecuteScriptAsync(START_PUSH_NOW);
                 f.WebMessageReceived += PopupFrame_WebMessageReceived;
-                f.DOMContentLoaded += Frame_DOMContentLoaded_Bridge;
                 f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
+                _ = InjectGameBridgeOnFrameIfNeededAsync(f, "frame-created-probe");
                 Log("[PopupWeb] frame bridge armed.");
                 ProbeFrameBridgeAsync(f, "PopupWeb", "frame-created");
             }
@@ -5683,6 +5949,7 @@ try{
                     RememberPlayerFlowGameUrl(url);
                 }
 
+                if (!_enableHttpResponseBodyTap) return;
                 if (!IsInterestingHttpUrl(url)) return;
 
                 string body = "";
@@ -6735,6 +7002,7 @@ try{
                 _navModeHooked = false;
                 _mainFrameBridgeArmed.Clear();
                 _mainFrameRefs.Clear();
+                _frameInjectedDocKeys.Clear();
 
                 try { await DeleteDirectoryWithRetryAsync(Wv2UserDataDir); }
                 catch (Exception ex) { Log("[WV2] Delete user-data failed: " + ex.Message); }
@@ -8646,9 +8914,10 @@ try{
                     await LogBridgeProbeAsync("play-missing-bet-recovered");
                 }
 
+                await ApplyRuntimePerfToBetWebAsync();
                 // Bật kênh push (idempotent)
-                await ExecuteOnBetWebAsync("window.__cw_startPush && window.__cw_startPush(240);");
-                Log("[CW] ensure push 240ms");
+                await ExecuteOnBetWebAsync($"window.__cw_startPush && window.__cw_startPush({_cwPushMs});");
+                Log($"[CW] ensure push {_cwPushMs}ms");
                 await LogBridgeProbeAsync("play-after-start-push");
 
                 // 🔒 MỚI: Chờ đủ bridge + Cocos + tick để tránh nổ IndexOutOfRange trong task
@@ -8657,7 +8926,8 @@ try{
                 {
                     await LogBridgeProbeAsync("play-wait1-timeout");
                     Log("[DEC] Dữ liệu chưa sẵn sàng (bridge/cocos/tick). Thử gia hạn push & chờ thêm.");
-                    await ExecuteOnBetWebAsync("window.__cw_startPush && window.__cw_startPush(240);");
+                    await ApplyRuntimePerfToBetWebAsync();
+                    await ExecuteOnBetWebAsync($"window.__cw_startPush && window.__cw_startPush({_cwPushMs});");
                     ready = await WaitForBridgeAndGameDataAsync(15000);
                     if (!ready)
                     {
@@ -8793,7 +9063,7 @@ try{
                 if (activeTab == null) return;
 
                 StopTask(activeTab);
-                _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
+                _ = Web?.ExecuteScriptAsync($"window.__cw_startPush && window.__cw_startPush({_cwPushMs});");
 
                 if (!IsAnyTabRunning())
                 {
@@ -9813,12 +10083,6 @@ try{
             if (frame == null) return;
             try
             {
-                _ = frame.ExecuteScriptAsync(FRAME_SHIM);
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = frame.ExecuteScriptAsync(_appJs);
-                _ = frame.ExecuteScriptAsync(FRAME_AUTOSTART);
-                _ = frame.ExecuteScriptAsync(START_PUSH_NOW);
-
                 var frameId = TryGetFrameIdSafe(frame);
                 if (frameId > 0)
                     _mainFrameRefs[frameId] = frame;
@@ -9826,8 +10090,8 @@ try{
                 var shouldAttachHandlers = frameId == 0 || _mainFrameBridgeArmed.TryAdd(frameId, 1);
                 if (shouldAttachHandlers)
                 {
+                    _ = frame.ExecuteScriptAsync(FRAME_SHIM);
                     frame.WebMessageReceived += MainFrame_WebMessageReceived_Bridge;
-                    frame.DOMContentLoaded += Frame_DOMContentLoaded_Bridge;
                     frame.NavigationCompleted += Frame_NavigationCompleted_Bridge;
                 }
 
@@ -9837,6 +10101,7 @@ try{
                     Log("[Bridge] Frame armed (" + stage + ")");
 
                 ProbeFrameBridgeAsync(frame, "Web", stage);
+                _ = InjectGameBridgeOnFrameIfNeededAsync(frame, stage + "-probe");
             }
             catch (Exception ex)
             {
@@ -9977,12 +10242,6 @@ try{
                 if (f == null) return;
 
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = f.ExecuteScriptAsync(_appJs);
-                _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
-                _ = f.ExecuteScriptAsync(START_PUSH_NOW);
-
-                Log("[Bridge] Frame DOMContentLoaded -> reinjected + autostart.");
                 ProbeFrameBridgeAsync(f, "Frame", "dom-content-loaded");
             }
             catch (Exception ex)
@@ -9991,22 +10250,110 @@ try{
             }
         }
 
-        private void Frame_NavigationCompleted_Bridge(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+        private sealed class FrameDocProbe
+        {
+            public string Href { get; set; } = "";
+            public string DocKey { get; set; } = "";
+            public bool HasCocos { get; set; }
+        }
+
+        private static bool IsLikelyGameFrameHref(string? hrefRaw)
+        {
+            var href = (hrefRaw ?? "").Trim();
+            if (href.Length == 0) return false;
+            return
+                href.IndexOf("singleBacTable.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                href.IndexOf("webMain.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                href.IndexOf("/player/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                href.IndexOf("xoc", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                href.IndexOf("baccarat", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                href.IndexOf("table", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private async Task<FrameDocProbe?> ReadFrameDocProbeAsync(CoreWebView2Frame frame)
+        {
+            try
+            {
+                var raw = await frame.ExecuteScriptAsync(
+                    "(function(){try{" +
+                    "var href=String(location.href||'');" +
+                    "var key=String((performance&&performance.timeOrigin)||Date.now());" +
+                    "var hasCC=!!(window.cc&&cc.director&&cc.director.getScene);" +
+                    "return JSON.stringify({href:href,key:key,hasCC:hasCC});" +
+                    "}catch(_){return JSON.stringify({href:'',key:'',hasCC:false});}})();");
+                var json = JsonSerializer.Deserialize<string>(raw) ?? "";
+                if (string.IsNullOrWhiteSpace(json))
+                    return null;
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                bool hasCC = false;
+                if (root.TryGetProperty("hasCC", out var hasCcEl))
+                {
+                    if (hasCcEl.ValueKind == JsonValueKind.True) hasCC = true;
+                    else if (hasCcEl.ValueKind == JsonValueKind.Number && hasCcEl.TryGetInt32(out var ncc)) hasCC = ncc != 0;
+                    else if (hasCcEl.ValueKind == JsonValueKind.String)
+                    {
+                        var scc = hasCcEl.GetString() ?? "";
+                        hasCC = string.Equals(scc, "true", StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(scc, "1", StringComparison.OrdinalIgnoreCase);
+                    }
+                }
+                return new FrameDocProbe
+                {
+                    Href = GetJsonStringLoose(root, "href") ?? "",
+                    DocKey = GetJsonStringLoose(root, "key") ?? "",
+                    HasCocos = hasCC
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private async Task<bool> InjectGameBridgeOnFrameIfNeededAsync(CoreWebView2Frame frame, string stage)
+        {
+            var probe = await ReadFrameDocProbeAsync(frame);
+            if (probe == null) return false;
+
+            bool looksGame = probe.HasCocos || IsLikelyGameFrameHref(probe.Href);
+            if (!looksGame)
+                return false;
+
+            var frameRefKey = RuntimeHelpers.GetHashCode(frame);
+            var docKey = string.IsNullOrWhiteSpace(probe.DocKey)
+                ? ("no-dockey|" + (probe.Href ?? ""))
+                : probe.DocKey;
+            if (_frameInjectedDocKeys.TryGetValue(frameRefKey, out var lastKey) &&
+                string.Equals(lastKey, docKey, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            _frameInjectedDocKeys[frameRefKey] = docKey;
+            _ = frame.ExecuteScriptAsync(FRAME_SHIM);
+            if (!string.IsNullOrEmpty(_appJs))
+                _ = frame.ExecuteScriptAsync(_appJs);
+            _ = frame.ExecuteScriptAsync(FRAME_AUTOSTART);
+            _ = frame.ExecuteScriptAsync(START_PUSH_NOW);
+
+            var hrefLog = probe.Href ?? "";
+            if (hrefLog.Length > 160)
+                hrefLog = hrefLog.Substring(0, 160) + "...";
+            Log("[Bridge] Frame " + stage + " -> injected game frame + autostart. | href=" + hrefLog);
+            ProbeFrameBridgeAsync(frame, "Frame", stage + "-inject");
+            return true;
+        }
+
+        private async void Frame_NavigationCompleted_Bridge(object? sender, CoreWebView2NavigationCompletedEventArgs e)
         {
             try
             {
                 if (!e.IsSuccess) return;
                 var f = sender as CoreWebView2Frame;
                 if (f == null) return;
-
-                _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = f.ExecuteScriptAsync(_appJs);
-                _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
-                _ = f.ExecuteScriptAsync(START_PUSH_NOW);
-
-                Log("[Bridge] Frame NavigationCompleted -> reinjected + autostart.");
-                ProbeFrameBridgeAsync(f, "Frame", "nav-completed");
+                await InjectGameBridgeOnFrameIfNeededAsync(f, "nav-completed");
             }
             catch (Exception ex)
             {
@@ -10414,6 +10761,7 @@ try{
             _domHooked = false;
             _mainFrameBridgeArmed.Clear();
             _mainFrameRefs.Clear();
+            _frameInjectedDocKeys.Clear();
         }
 
 
@@ -11178,7 +11526,12 @@ try{
                 error = snap.error,
                 session = snap.session,
                 username = snap.username,
-                status = snap.status
+                status = snap.status,
+                jsBuildMs = snap.jsBuildMs,
+                jsTotalsMs = snap.jsTotalsMs,
+                jsSeqMs = snap.jsSeqMs,
+                jsProgMs = snap.jsProgMs,
+                jsPerfMode = snap.jsPerfMode
             };
         }
 
@@ -11201,7 +11554,12 @@ try{
                 error = snap.error,
                 session = snap.session,
                 username = snap.username,
-                status = snap.status
+                status = snap.status,
+                jsBuildMs = snap.jsBuildMs,
+                jsTotalsMs = snap.jsTotalsMs,
+                jsSeqMs = snap.jsSeqMs,
+                jsProgMs = snap.jsProgMs,
+                jsPerfMode = snap.jsPerfMode
             };
         }
 

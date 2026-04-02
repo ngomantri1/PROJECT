@@ -35,6 +35,11 @@ namespace BaccaratSexyCasino
         public string session { get; set; }
         public string username { get; set; }
         public string status { get; set; }
+        public long? jsBuildMs { get; set; }
+        public long? jsProgMs { get; set; }
+        public long? jsTotalsMs { get; set; }
+        public long? jsSeqMs { get; set; }
+        public int? jsPerfMode { get; set; }
     }
 
     public sealed class DecisionState
