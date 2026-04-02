@@ -10838,6 +10838,33 @@
                 }
             }
 
+            var useTotalsCache = perfMode &&
+                                 buildSource === 'push' &&
+                                 _abxSnapCache.totalsAt > 0 &&
+                                 (nowTs - _abxSnapCache.totalsAt) < totalsCacheMs;
+            var useSeqCache = perfMode &&
+                              buildSource === 'push' &&
+                              _abxSnapCache.seqAt > 0 &&
+                              (nowTs - _abxSnapCache.seqAt) < seqCacheMs;
+            if (perfMode &&
+                buildSource === 'push' &&
+                !_forcePushOnce &&
+                !useTotalsCache &&
+                !useSeqCache) {
+                var totalsAge = _abxSnapCache.totalsAt > 0 ? (nowTs - _abxSnapCache.totalsAt) : 999999;
+                var seqAge = _abxSnapCache.seqAt > 0 ? (nowTs - _abxSnapCache.seqAt) : 999999;
+                var hasTotalsFallback = !!(_abxSnapCache.totals || (cached && cached.totals) || (S && S._lastTotals));
+                var hasSeqFallback = !!(_abxSnapCache.seqState || (cached && cached.seq) || (S && S.seq) || window.__cw_seq);
+                var preferTotalsRefresh = betHot || (progNum != null && progNum <= 6.5);
+                var canDeferTotals = hasTotalsFallback && totalsAge < (totalsCacheMs + 2600);
+                var canDeferSeq = hasSeqFallback && seqAge < (seqCacheMs + 2200);
+                // Tránh dồn 2 phép quét nặng vào cùng tick -> giảm spike jsBuildMs.
+                if (preferTotalsRefresh && canDeferSeq) {
+                    useSeqCache = true;
+                } else if (!preferTotalsRefresh && canDeferTotals) {
+                    useTotalsCache = true;
+                }
+            }
             try {
                 if (cached && cached.totals)
                     t = normalizeTotalsSnapshot(cached.totals);
@@ -10846,10 +10873,6 @@
                 if (!t && S && S._lastTotals)
                     t = normalizeTotalsSnapshot(S._lastTotals);
             } catch (_) {}
-            var useTotalsCache = perfMode &&
-                                 buildSource === 'push' &&
-                                 _abxSnapCache.totalsAt > 0 &&
-                                 (nowTs - _abxSnapCache.totalsAt) < totalsCacheMs;
             if (useTotalsCache) {
                 t = normalizeTotalsSnapshot(_abxSnapCache.totals) || t;
             } else {
@@ -10873,10 +10896,6 @@
             } catch (_) {}
             try {
                 var seqState = null;
-                var useSeqCache = perfMode &&
-                                  buildSource === 'push' &&
-                                  _abxSnapCache.seqAt > 0 &&
-                                  (nowTs - _abxSnapCache.seqAt) < seqCacheMs;
                 if (useSeqCache) {
                     seqState = _abxSnapCache.seqState;
                 } else {
@@ -10901,7 +10920,17 @@
                     seq = seqFresh;
                 }
             } else if (!seq) {
-                seq = readSeqSafe();
+                try {
+                    if (window.__cw_seq)
+                        seq = String(window.__cw_seq || '');
+                } catch (_) {}
+                if (!seq) {
+                    try {
+                        seq = String(_domBeadSeqManaged || '');
+                    } catch (_) {
+                        seq = '';
+                    }
+                }
             }
             if (!seqVersion) {
                 try {

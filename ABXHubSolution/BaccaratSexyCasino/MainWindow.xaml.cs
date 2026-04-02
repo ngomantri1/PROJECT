@@ -433,6 +433,7 @@ namespace BaccaratSexyCasino
         private readonly ConcurrentDictionary<ulong, byte> _mainFrameBridgeArmed = new();
         private readonly ConcurrentDictionary<ulong, CoreWebView2Frame> _mainFrameRefs = new();
         private readonly ConcurrentDictionary<int, string> _frameInjectedDocKeys = new();
+        private DateTime _lastMainFramesRearmUtc = DateTime.MinValue;
         private int _popupInjectBusy = 0;
 
         // === License/Trial run state ===
@@ -7893,11 +7894,18 @@ try{
             var t0 = DateTime.UtcNow;
             while ((DateTime.UtcNow - t0).TotalMilliseconds < timeoutMs)
             {
+                if (HasRecentGameSignal(out _))
+                    return true;
                 var bet = GetBetWebView();
                 var src = GetBetWebViewSource(bet);
                 if (IsLikelyBetGameReadyUrl(src))
                     return true;
                 await Task.Delay(300);
+            }
+            if (HasRecentGameSignal(out var reason))
+            {
+                Log("[WaitForBetGameUrl] became-ready-at-timeout-edge | " + reason);
+                return true;
             }
             try
             {
@@ -8239,7 +8247,14 @@ try{
                 }
                 catch (Exception ex)
                 {
-                    Log($"[BridgeProbe][Frame] owner={owner} | stage={stage} | err={ex.Message}");
+                    if (IsDisposedFrameException(ex))
+                    {
+                        DropMainFrameRef(frame);
+                        return;
+                    }
+                    var key = $"{owner}|{stage}|err:{ex.Message}";
+                    if (_bridgeProbeSeen.TryAdd(key, 1))
+                        Log($"[BridgeProbe][Frame] owner={owner} | stage={stage} | err={ex.Message}");
                 }
             }).Task.Unwrap();
         }
@@ -8352,7 +8367,14 @@ try{
                             break;
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        if (IsDisposedFrameException(ex))
+                        {
+                            _mainFrameRefs.TryRemove(item.id, out _);
+                            _mainFrameBridgeArmed.TryRemove(item.id, out _);
+                        }
+                    }
                 }
 
                 // Đồng thời vẫn chạy top để giữ tương thích các host cũ chạy game trực tiếp trên top doc.
@@ -10088,6 +10110,11 @@ try{
                     _mainFrameRefs[frameId] = frame;
 
                 var shouldAttachHandlers = frameId == 0 || _mainFrameBridgeArmed.TryAdd(frameId, 1);
+                var stageNeedsProbe =
+                    stage.IndexOf("nav", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    stage.IndexOf("created", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    stage.IndexOf("probe", StringComparison.OrdinalIgnoreCase) >= 0;
+                var runProbe = shouldAttachHandlers || stageNeedsProbe;
                 if (shouldAttachHandlers)
                 {
                     _ = frame.ExecuteScriptAsync(FRAME_SHIM);
@@ -10095,18 +10122,52 @@ try{
                     frame.NavigationCompleted += Frame_NavigationCompleted_Bridge;
                 }
 
-                if (frameId > 0)
-                    Log("[Bridge] Frame armed (" + stage + ") | id=" + frameId);
-                else
-                    Log("[Bridge] Frame armed (" + stage + ")");
+                if (shouldAttachHandlers || stageNeedsProbe)
+                {
+                    if (frameId > 0)
+                        Log("[Bridge] Frame armed (" + stage + ") | id=" + frameId);
+                    else
+                        Log("[Bridge] Frame armed (" + stage + ")");
+                }
 
-                ProbeFrameBridgeAsync(frame, "Web", stage);
-                _ = InjectGameBridgeOnFrameIfNeededAsync(frame, stage + "-probe");
+                if (runProbe)
+                {
+                    ProbeFrameBridgeAsync(frame, "Web", stage);
+                    _ = InjectGameBridgeOnFrameIfNeededAsync(frame, stage + "-probe");
+                }
             }
             catch (Exception ex)
             {
+                if (IsDisposedFrameException(ex))
+                {
+                    DropMainFrameRef(frame);
+                    return;
+                }
                 Log("[Bridge.ArmFrame] stage=" + stage + " | " + ex.Message);
             }
+        }
+
+        private static bool IsDisposedFrameException(Exception ex)
+        {
+            var msg = ex?.Message ?? "";
+            return
+                msg.IndexOf("cannot be accessed after the WebView2 control is disposed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                msg.IndexOf("objectdisposed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                msg.IndexOf("disposed object", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void DropMainFrameRef(CoreWebView2Frame? frame)
+        {
+            try
+            {
+                var id = TryGetFrameIdSafe(frame);
+                if (id > 0)
+                {
+                    _mainFrameRefs.TryRemove(id, out _);
+                    _mainFrameBridgeArmed.TryRemove(id, out _);
+                }
+            }
+            catch { }
         }
 
         private static ulong TryGetFrameIdSafe(object? source)
@@ -10198,13 +10259,50 @@ try{
                 }
 
                 foreach (var kv in _mainFrameRefs.ToArray())
-                    AddFrame(kv.Value);
+                {
+                    var id = kv.Key;
+                    if (id == 0)
+                    {
+                        AddFrame(kv.Value);
+                        continue;
+                    }
+
+                    var live = TryGetFrameByIdSafe(id);
+                    if (live != null)
+                    {
+                        _mainFrameRefs[id] = live;
+                        AddFrame(live);
+                    }
+                    else
+                    {
+                        // Một số host/frame cross-origin có thể không resolve lại được bằng id trong vài nhịp.
+                        // Giữ reference cũ để ExecuteOnBetWebAsync vẫn có frame fallback chạy __cw_*.
+                        AddFrame(kv.Value);
+                    }
+                }
 
                 foreach (var id in _mainFrameBridgeArmed.Keys.ToArray())
                 {
                     if (id == 0 || seen.Contains(id))
                         continue;
-                    AddFrame(TryGetFrameByIdSafe(id));
+                    var live = TryGetFrameByIdSafe(id);
+                    if (live != null)
+                    {
+                        _mainFrameRefs[id] = live;
+                        AddFrame(live);
+                    }
+                    else
+                    {
+                        if (_mainFrameRefs.TryGetValue(id, out var cached) && cached != null)
+                        {
+                            AddFrame(cached);
+                        }
+                        else
+                        {
+                            _mainFrameRefs.TryRemove(id, out _);
+                            _mainFrameBridgeArmed.TryRemove(id, out _);
+                        }
+                    }
                 }
             }
             catch { }
@@ -10214,6 +10312,17 @@ try{
 
         private int ReArmExistingMainFrames(string stage)
         {
+            var st = (stage ?? "").Trim();
+            if (st.StartsWith("ensure-tool-wrapper", StringComparison.OrdinalIgnoreCase) ||
+                st.StartsWith("exec-bridge-wrapper", StringComparison.OrdinalIgnoreCase))
+            {
+                var now = DateTime.UtcNow;
+                if ((now - _lastMainFramesRearmUtc).TotalMilliseconds < 1200 &&
+                    !_mainFrameBridgeArmed.IsEmpty)
+                    return 0;
+                _lastMainFramesRearmUtc = now;
+            }
+
             int armed = 0;
             try
             {
@@ -10306,8 +10415,10 @@ try{
                     HasCocos = hasCC
                 };
             }
-            catch
+            catch (Exception ex)
             {
+                if (IsDisposedFrameException(ex))
+                    DropMainFrameRef(frame);
                 return null;
             }
         }
