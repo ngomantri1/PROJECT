@@ -5595,7 +5595,12 @@ Ví dụ không hợp lệ:
             try
             {
                 var lic = await FetchLicenseAsync(username);
-                if (lic == null || string.IsNullOrWhiteSpace(lic.exp) || string.IsNullOrWhiteSpace(lic.pass) ||
+                if (lic == null)
+                {
+                    Log("[LicenseCheck] fetch unavailable (temporary). Keep current session.");
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(lic.exp) || string.IsNullOrWhiteSpace(lic.pass) ||
                     !DateTimeOffset.TryParse(lic.exp, out var expUtc))
                 {
                     Log("[LicenseCheck] invalid license payload");

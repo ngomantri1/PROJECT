@@ -4319,7 +4319,12 @@ Ví dụ không hợp lệ:
             try
             {
                 var lic = await FetchLicenseAsync(username);
-                if (lic == null || !DateTimeOffset.TryParse(lic.exp, out var expUtc))
+                if (lic == null)
+                {
+                    Log("[LicenseCheck] fetch unavailable (temporary). Keep current session.");
+                    return;
+                }
+                if (!DateTimeOffset.TryParse(lic.exp, out var expUtc))
                 {
                     Log("[LicenseCheck] invalid license payload");
                     await Dispatcher.InvokeAsync(() =>
