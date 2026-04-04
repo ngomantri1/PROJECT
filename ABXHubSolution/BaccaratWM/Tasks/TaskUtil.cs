@@ -198,6 +198,7 @@ namespace BaccaratWM.Tasks
                 }
 
                 var tableIdJson = JsonSerializer.Serialize(tableId);
+                var tableNameJson = JsonSerializer.Serialize(ctx.TableName ?? "");
                 var sideJson = JsonSerializer.Serialize(side ?? "");
                 var virtualJs = isVirtual ? "true" : "false";
 
@@ -205,7 +206,7 @@ namespace BaccaratWM.Tasks
                 var js =
                     "(function(){try{" +
                     " if (typeof window.__cw_bet==='function'){" +
-                    "   return window.__cw_bet(" + tableIdJson + ", " + sideJson + ", " + amount + ", " + virtualJs + ", true);" +
+                    "   return window.__cw_bet(" + tableIdJson + ", " + sideJson + ", " + amount + ", " + virtualJs + ", true, " + tableNameJson + ");" +
                     " } else { return 'no'; }" +
                     "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 

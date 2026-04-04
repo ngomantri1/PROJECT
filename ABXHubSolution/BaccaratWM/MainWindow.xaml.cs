@@ -248,6 +248,21 @@ namespace BaccaratWM
             public int TieCount { get; set; }
         }
 
+        private sealed class FrameNetTapChunkBuffer
+        {
+            public string Scope { get; set; } = "";
+            public string Kind { get; set; } = "";
+            public string Href { get; set; } = "";
+            public string Host { get; set; } = "";
+            public string FrameName { get; set; } = "";
+            public string Title { get; set; } = "";
+            public string Ts { get; set; } = "";
+            public int Total { get; set; }
+            public int ValueLength { get; set; }
+            public string?[] Parts { get; set; } = Array.Empty<string?>();
+            public DateTime LastUpdatedUtc { get; set; } = DateTime.UtcNow;
+        }
+
         private const string AppLocalDirName = "BaccaratWM"; // đổi thành tên bạn muốn
         // ====== App paths ======
         private readonly string _appDataDir;
@@ -273,19 +288,49 @@ namespace BaccaratWM
         private bool _cdpNetworkOnMain = false;
         private bool _cdpNetworkOnPopup = false;
         private readonly ConcurrentDictionary<string, string> _wsUrlByRequestId = new();
+        private readonly ConcurrentDictionary<string, string> _reqUrlByRequestId = new();
+        private readonly ConcurrentDictionary<string, string> _reqFrameIdByRequestId = new();
         private readonly ConcurrentDictionary<string, string> _respUrlByRequestId = new();
         private readonly ConcurrentDictionary<string, string> _respMimeByRequestId = new();
+        private readonly ConcurrentDictionary<string, string> _respEncodingByRequestId = new();
+        private readonly ConcurrentDictionary<string, string> _respContentLengthByRequestId = new();
+        private readonly ConcurrentDictionary<string, byte> _wmRelayHostHints = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, string> _cdpFrameUrlById = new();
+        private readonly ConcurrentDictionary<string, string> _cdpFrameNameById = new();
+        private readonly ConcurrentDictionary<string, string> _cdpFrameParentById = new();
+        private readonly object _wmTraceGate = new();
+        private long _wmTraceSeq = 0;
+        private string _wmTraceId = "";
+        private DateTime _wmTraceStartedUtc = DateTime.MinValue;
+        private string _wmTraceStartReason = "";
+        private string _wmTraceStartUrl = "";
+        private string _wmLastLaunchRequestSummary = "";
+        private string _wmLastLaunchResponseSummary = "";
         private readonly object _roomFeedGate = new();
+        private readonly object _frameNetTapChunkGate = new();
         private List<RoomEntry> _latestNetworkRooms = new();
         private DateTime _latestNetworkRoomsAt = DateTime.MinValue;
         private string _latestNetworkRoomsSource = "";
         private string _latestNetworkRoomsSig = "";
         private DateTime _lastTableUpdateAt = DateTime.MinValue;
         private readonly Dictionary<string, Protocol21RoomState> _protocol21Rooms = new(StringComparer.OrdinalIgnoreCase);
+        private List<RoomEntry> _bufferedWrappedProtocol21Rooms = new();
+        private string _bufferedWrappedProtocol21Source = "";
+        private DateTime _bufferedWrappedProtocol21At = DateTime.MinValue;
+        private int _bufferedWrappedProtocol21Version = 0;
+        private bool _wrappedProtocol21SnapshotPublished = false;
+        private int _wrappedProtocol21LastPublishedCount = 0;
+        private DateTime _wrappedProtocol21LastPublishedAt = DateTime.MinValue;
+        private readonly Dictionary<string, FrameNetTapChunkBuffer> _frameNetTapChunks = new(StringComparer.Ordinal);
         private readonly Dictionary<string, PopupServerRoadState> _popupServerRoadStates = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _popupPreferredRoadRouteByTableId = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _popupServerRoadGate = new();
-        private readonly string[] _pktInterestingHints = new[] { "wss://", "websocket", "hytsocesk", "xoc", "live", "socket", "lobby", "baccarat", "game", "table", "multibaccarat", "pragmaticplaylive" };
+        private readonly string[] _pktInterestingHints = new[]
+        {
+            "wss://", "websocket", "hytsocesk", "xoc", "live", "socket",
+            "lobby", "baccarat", "game", "table", "multibaccarat", "pragmaticplaylive",
+            "m8810.com", "wmvn.", "co=wm", "iframe_109", "iframe_101", "protocol21", "protocol35"
+        };
 
         // ==== Auto-login watcher ====
         private CancellationTokenSource? _autoLoginWatchCts;
@@ -344,6 +389,8 @@ namespace BaccaratWM
         private System.Threading.Timer? _expireTimer;      // timer tick mỗi giây để cập nhật đếm ngược
         private DateTimeOffset? _runExpiresAt;             // mốc hết hạn của phiên đang chạy (trial hoặc license)
         private string _expireMode = "";                   // "trial" | "license"
+        private DateTimeOffset? _lastKnownLicenseUntilUtc;
+        private string _lastKnownLicenseUser = "";
         private string _leaseClientId = "";
         private string _deviceId = "";
         private string _trialKey = "";
@@ -581,6 +628,8 @@ Ví dụ không hợp lệ:
             public string LastHomeUsername { get; set; } = "";
             public string TrialUntil { get; set; } = "";
             public string TrialSessionKey { get; set; } = "";
+            public string LicenseUser { get; set; } = "";
+            public string LicenseUntil { get; set; } = "";
             public int BetStrategyIndex { get; set; } = 4; // mặc định "5. Theo cầu trước thông minh"
             public string BetSeq { get; set; } = "";       // giá trị ô "CHUỖI CẦU"
             public string BetPatterns { get; set; } = "";  // giá trị ô "CÁC THẾ CẦU"
@@ -600,7 +649,7 @@ Ví dụ không hợp lệ:
             public Dictionary<string, string> StakeCsvByMoney { get; set; } = new();
             public List<string> SelectedRooms { get; set; } = new();
 
-            /// <summary>Du?ng d?n file luu tr?ng th?i AI n-gram (JSON). B? tr?ng => d-ng m?c d?nh %LOCALAPPDATA%\Automino\ai_gram_state_v1.json</summary>
+            /// <summary>Đường dẫn file lưu trạng thái AI n-gram (JSON). Bỏ trống => dùng mặc định %LOCALAPPDATA%\Automino\ai_gram_state_v1.json</summary>
             public string AiNGramStatePath { get; set; } = "";
 
 
@@ -849,6 +898,307 @@ Ví dụ không hợp lệ:
         }catch(_){}
       }, true);
     }catch(_){}
+    try{
+      if (!window.__abxNetTap) {
+        var tap = { fetch: [], xhr: [], ws: [], coreWs: [], xhrRsp: [], wsSend: [], wsRecv: [] };
+        var sentTap = { fetch: '', xhr: '', ws: '', coreWs: '', xhrRsp: '', wsSend: '', wsRecv: '' };
+        var tapChunkSeq = 0;
+        function clipTap(v, max){
+          try{ v = String(v || ''); }catch(_){ v = ''; }
+          max = max || 220;
+          return v.length > max ? v.slice(0, max) : v;
+        }
+        function wmTapLimit(kind, value){
+          try{
+            var s = String(value || '');
+            var isProtocol35 = /(^|[^A-Za-z0-9_])""?protocol""?\s*:\s*35\b/i.test(s);
+            if (isProtocol35)
+              return (kind === 'wsRecv' || kind === 'xhrRsp') ? 520000 : 48000;
+            if (/qqhrsbjx|wmgsvn|Gateway\.php|(^|[^A-Za-z0-9_])""?protocol""?\s*:\s*(20|21|24|25|26|33|38|70|999)\b/i.test(s))
+              return (kind === 'wsRecv' || kind === 'xhrRsp') ? 180000 : 36000;
+          }catch(_){}
+          return 6000;
+        }
+        function summarizeBinaryBytes(bytes, max){
+          max = max || 220;
+          try{
+            var len = bytes && typeof bytes.length === 'number' ? bytes.length : 0;
+            if (!len) return '[bytes 0]';
+            var take = Math.min(len, 24);
+            var hex = [];
+            var ascii = [];
+            for (var i = 0; i < take; i++) {
+              var b = bytes[i] & 255;
+              var hx = b.toString(16);
+              if (hx.length < 2) hx = '0' + hx;
+              hex.push(hx);
+              ascii.push((b >= 32 && b <= 126) ? String.fromCharCode(b) : '.');
+            }
+            var sig = '';
+            if (len >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) sig = 'gzip';
+            else if (len >= 2 && bytes[0] === 0x78 && (bytes[1] === 0x01 || bytes[1] === 0x5e || bytes[1] === 0x9c || bytes[1] === 0xda)) sig = 'zlib';
+            else if (len >= 4 && bytes[0] === 0x28 && bytes[1] === 0xb5 && bytes[2] === 0x2f && bytes[3] === 0xfd) sig = 'zstd';
+            else if (len >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) sig = 'utf8bom';
+            else {
+              var printable = 0;
+              for (var j = 0; j < take; j++) {
+                var c = bytes[j] & 255;
+                if (c === 9 || c === 10 || c === 13 || (c >= 32 && c <= 126)) printable++;
+              }
+              if (printable >= Math.max(6, Math.floor(take * 0.7))) sig = 'textish';
+              else sig = 'binary';
+            }
+            if (sig === 'textish') {
+              try{
+                if (typeof TextDecoder !== 'undefined') {
+                  var decoded = new TextDecoder('utf-8').decode(bytes);
+                  decoded = clipTap(decoded, max);
+                  if (decoded) return decoded;
+                }
+              }catch(_){}
+            }
+            var text = '[arraybuffer len=' + len + ' sig=' + sig + ' hex=' + hex.join(' ') + ' ascii=' + ascii.join('') + ']';
+            return clipTap(text, max);
+          }catch(_){ return '[arraybuffer]'; }
+        }
+        function summarizeTapData(data, max){
+          max = max || 220;
+          try{
+            if (typeof data === 'string') return clipTap(data, max);
+            if (typeof data === 'number' || typeof data === 'boolean') return String(data);
+            if (!data) return '';
+            if (typeof ArrayBuffer !== 'undefined' && data instanceof ArrayBuffer)
+              return summarizeBinaryBytes(new Uint8Array(data), max);
+            if (typeof ArrayBuffer !== 'undefined' && typeof ArrayBuffer.isView === 'function' && ArrayBuffer.isView(data))
+              return summarizeBinaryBytes(new Uint8Array(data.buffer || data, data.byteOffset || 0, data.byteLength || data.length || 0), max);
+            if (typeof Blob !== 'undefined' && data instanceof Blob)
+              return '[blob ' + (data.size || 0) + ']';
+            return clipTap(JSON.stringify(data), max);
+          }catch(_){
+            try{ return clipTap(String(data), max); }catch(__){ return ''; }
+          }
+        }
+        function shouldKeepTapPayload(text){
+          try{
+            var s = String(text || '');
+            if (!s) return false;
+            return /qqhrsbjx|wmgsvn|Gateway\.php|protocol|table|group|room|game|baccarat|百家乐|status|shoe/i.test(s);
+          }catch(_){ return false; }
+        }
+        function postTapPayload(payload){
+          try{
+            var text = JSON.stringify(payload);
+            if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
+              try { window.chrome.webview.postMessage(text); } catch(_){}
+            }
+            try { parent.postMessage(payload, '*'); } catch(_){}
+            try { if (window.top && window.top !== parent) window.top.postMessage(payload, '*'); } catch(_){}
+          }catch(_){}
+        }
+        function emitTap(kind, value, maxLen){
+          try{
+            var s = clipTap(value, maxLen || 220);
+            if (!s) return;
+            if (sentTap && sentTap[kind] === s) return;
+            sentTap[kind] = s;
+            var basePayload = {
+              ui: 'frame',
+              kind: String(kind || ''),
+              href: clipTap((location && location.href) || '', 260),
+              host: clipTap((location && location.host) || '', 120),
+              frame_name: clipTap(window.name || '', 120),
+              title: clipTap((document && document.title) || '', 120),
+              ts: Date.now()
+            };
+            if (s.length > 12000) {
+              var chunkSize = s.length > 120000 ? 24000 : 12000;
+              var total = Math.ceil(s.length / chunkSize);
+              var msgId = String(basePayload.ts) + '_' + String(++tapChunkSeq) + '_' + String(kind || '');
+              for (var i = 0; i < total; i++) {
+                var chunkPayload = {
+                  abx: 'frame_net_tap_chunk',
+                  ui: basePayload.ui,
+                  kind: basePayload.kind,
+                  href: basePayload.href,
+                  host: basePayload.host,
+                  frame_name: basePayload.frame_name,
+                  title: basePayload.title,
+                  ts: basePayload.ts,
+                  msg_id: msgId,
+                  chunk_index: i,
+                  chunk_total: total,
+                  value_len: s.length,
+                  value: s.slice(i * chunkSize, Math.min(s.length, (i + 1) * chunkSize))
+                };
+                postTapPayload(chunkPayload);
+              }
+              return;
+            }
+            var payload = {
+              abx: 'frame_net_tap',
+              ui: basePayload.ui,
+              kind: basePayload.kind,
+              value: s,
+              href: basePayload.href,
+              host: basePayload.host,
+              frame_name: basePayload.frame_name,
+              title: basePayload.title,
+              ts: basePayload.ts
+            };
+            postTapPayload(payload);
+          }catch(_){}
+        }
+        function pushTap(kind, value, maxLen){
+          try{
+            var arr = tap && tap[kind];
+            if (!arr) return;
+            var limit = maxLen || wmTapLimit(kind, value);
+            var s = clipTap(value, limit);
+            if (!s) return;
+            if (arr.length && arr[arr.length - 1] === s) return;
+            arr.push(s);
+            if (arr.length > 8) arr.shift();
+            emitTap(kind, s, limit);
+          }catch(_){}
+        }
+        window.__abxNetTap = tap;
+        window.__abxNetTapPush = pushTap;
+        try{
+          if (typeof window.fetch === 'function' && !window.__abxFetchTap) {
+            window.__abxFetchTap = 1;
+            var __origFetch = window.fetch.bind(window);
+            window.fetch = function(input, init){
+              try{
+                var method = (init && init.method) ? String(init.method) : 'GET';
+                var url = '';
+                try{ url = typeof input === 'string' ? input : ((input && input.url) ? input.url : ''); }catch(_){}
+                pushTap('fetch', method + ' ' + url);
+              }catch(_){}
+              return __origFetch.apply(this, arguments);
+            };
+          }
+        }catch(_){}
+        try{
+          if (window.XMLHttpRequest && window.XMLHttpRequest.prototype && !window.__abxXhrTap) {
+            window.__abxXhrTap = 1;
+            var __xhrOpen = window.XMLHttpRequest.prototype.open;
+            var __xhrSend = window.XMLHttpRequest.prototype.send;
+            window.XMLHttpRequest.prototype.open = function(method, url){
+              try{
+                this.__abxTapMethod = String(method || 'GET');
+                this.__abxTapUrl = String(url || '');
+              }catch(_){}
+              return __xhrOpen.apply(this, arguments);
+            };
+            window.XMLHttpRequest.prototype.send = function(){
+              try{
+                pushTap('xhr', String(this.__abxTapMethod || 'GET') + ' ' + String(this.__abxTapUrl || ''));
+                if (!this.__abxTapLoadHooked) {
+                  this.__abxTapLoadHooked = 1;
+                  this.addEventListener('loadend', function(){
+                    try{
+                      var u = String(this.__abxTapUrl || '');
+                      var body = '';
+                      try{
+                        if (this.responseType === '' || this.responseType === 'text' || this.responseType === 'json') {
+                          var bodyMax = 520000;
+                          if (typeof this.responseText === 'string' && this.responseText)
+                            body = summarizeTapData(this.responseText, bodyMax);
+                          else if (this.responseType === 'json' && this.response)
+                            body = summarizeTapData(this.response, bodyMax);
+                        } else {
+                          body = '[' + String(this.responseType || 'binary') + ']';
+                        }
+                      }catch(_){}
+                      var msg = String(this.__abxTapMethod || 'GET') + ' ' + u + ' status=' + String(this.status || 0);
+                      if (shouldKeepTapPayload(msg + ' ' + body))
+                        pushTap('xhrRsp', msg + ' ' + body, wmTapLimit('xhrRsp', msg + ' ' + body));
+                    }catch(_){}
+                  }, { once: true });
+                }
+              }catch(_){}
+              return __xhrSend.apply(this, arguments);
+            };
+          }
+        }catch(_){}
+        try{
+          if (window.WebSocket && !window.__abxWsTap) {
+            window.__abxWsTap = 1;
+            var __OrigWebSocket = window.WebSocket;
+            var __WrappedWebSocket = function(url, protocols){
+              var __abxWsUrl = '';
+              try{
+                __abxWsUrl = String(url || '');
+                pushTap('ws', __abxWsUrl);
+              }catch(_){}
+              var socket = arguments.length >= 2 ? new __OrigWebSocket(url, protocols) : new __OrigWebSocket(url);
+              try{
+                if (socket && !socket.__abxTapHooked) {
+                  socket.__abxTapHooked = 1;
+                  var __origSend = socket.send;
+                  socket.send = function(data){
+                    try{
+                      var sendText = summarizeTapData(data, 24000);
+                      var msg = __abxWsUrl + ' <-send- ' + sendText;
+                      if (shouldKeepTapPayload(msg))
+                        pushTap('wsSend', msg, wmTapLimit('wsSend', msg));
+                    }catch(_){}
+                    return __origSend.apply(this, arguments);
+                  };
+                  socket.addEventListener('message', function(ev){
+                    try{
+                      var recvText = summarizeTapData(ev && ev.data, 520000);
+                      var msg = __abxWsUrl + ' <-recv- ' + recvText;
+                      if (shouldKeepTapPayload(msg))
+                        pushTap('wsRecv', msg, wmTapLimit('wsRecv', msg));
+                    }catch(_){}
+                  });
+                }
+              }catch(_){}
+              return socket;
+            };
+            __WrappedWebSocket.prototype = __OrigWebSocket.prototype;
+            try{ Object.setPrototypeOf(__WrappedWebSocket, __OrigWebSocket); }catch(_){}
+            try{ __WrappedWebSocket.CONNECTING = __OrigWebSocket.CONNECTING; }catch(_){}
+            try{ __WrappedWebSocket.OPEN = __OrigWebSocket.OPEN; }catch(_){}
+            try{ __WrappedWebSocket.CLOSING = __OrigWebSocket.CLOSING; }catch(_){}
+            try{ __WrappedWebSocket.CLOSED = __OrigWebSocket.CLOSED; }catch(_){}
+            window.WebSocket = __WrappedWebSocket;
+          }
+        }catch(_){}
+        try{
+          if (!window.__abxCoreWsTapTimer) {
+            window.__abxCoreWsTapTimer = setInterval(function(){
+              try{
+                var core = window.CoreWebSocket;
+                if (!core || typeof core.CreateNew !== 'function' || core.__abxCreateNewTap) return;
+                var __origCreateNew = core.CreateNew;
+                core.CreateNew = function(){
+                  try{
+                    var args = [];
+                    for (var i = 0; i < arguments.length && i < 6; i++) {
+                      try{
+                        var arg = arguments[i];
+                        if (typeof arg === 'string' || typeof arg === 'number' || typeof arg === 'boolean')
+                          args.push(String(arg));
+                        else if (arg && typeof arg === 'object')
+                          args.push(JSON.stringify(arg).slice(0, 160));
+                        else
+                          args.push(String(arg));
+                      }catch(_){}
+                    }
+                    pushTap('coreWs', args.join(' | '));
+                  }catch(_){}
+                  return __origCreateNew.apply(this, arguments);
+                };
+                core.__abxCreateNewTap = 1;
+                pushTap('coreWs', 'hooked');
+              }catch(_){}
+            }, 500);
+          }
+        }catch(_){}
+      }
+    }catch(_){}
   }catch(_){}
 })();";
 
@@ -894,6 +1244,7 @@ Ví dụ không hợp lệ:
     var timerId = 0;
     var observer = null;
     var pending = 0;
+    var lastCollectDiag = null;
 
     function cleanText(value){
       return String(value || '').replace(/\s+/g, ' ').trim();
@@ -923,43 +1274,54 @@ Ví dụ không hợp lệ:
       }
     }
 
-    function looksLikeRoomName(value){
+    function isLobbyCategoryNoise(value){
+      var key = normText(value).replace(/[_|\/\\:+-]+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!key) return true;
+      return /^(casino|esports|lotto|other|poker|slot|slots|sports|the thao|da ga)$/.test(key);
+    }
+
+    var ROOM_PATTERNS = [
+      /\((?:sexy|speed|site)\)\s*bac\s*(?:\d{1,3}|[a-z])\b/i,
+      /\((?:sexy|speed|site)\)\s*sd\s*(?:\d{1,3}|[a-z])\b/i,
+      /\((?:sexy|speed|site)\)\s*d&?t\s*(?:\d{1,3}|[a-z])\b/i,
+      /\b(?:speed\s*)?baccarat\s*(?:\d{1,3}|[a-z])\b/i,
+      /\bbac\s*(?:\d{1,3}|[a-z])\b/i,
+      /\brong\s*ho\s*\d{1,3}\b/i,
+      /\broulette\s*\d{1,3}\b/i,
+      /\btai\s*xiu\s*\d{1,3}\b/i,
+      /\bnguu\s*nguu\s*\d{1,3}\b/i,
+      /\bfantan\s*\d{1,3}\b/i,
+      /\bxoc\s*dia\s*\d{1,3}\b/i
+    ];
+
+    function matchRoomPattern(value){
       var text = cleanText(value);
-      if (!text || text.length < 3 || text.length > 40) return false;
+      if (!text || text.length < 3 || text.length > 64) return '';
+      if (isLobbyCategoryNoise(text)) return '';
       var norm = normText(text);
-      if (!norm) return false;
-      if (/^no\s*:/.test(norm)) return false;
-      if (/^(player|banker|tie|good trend|next p|next b|di vao|xu ly|quyet toan|settings?|options?)$/.test(norm)) return false;
-      if (/^(so|b|p|t)\s*\d+$/i.test(text)) return false;
-      if (/^\d+\s*-\s*\d+k$/i.test(text)) return false;
-      if (/\d{6,}/.test(norm)) return false;
-      if (/(sexy|bac|rong ho|roulette|tai xiu|nguu nguu|fantan|xoc dia|d&t|sd)/.test(norm)) return true;
-      return /[a-zA-Z\u00C0-\u1EF9]/.test(text);
+      if (!norm) return '';
+      if (/^no\s*:/.test(norm)) return '';
+      if (/^(player|banker|tie|good trend|next p|next b|di vao|xu ly|quyet toan|settings?|options?)$/.test(norm)) return '';
+      if (/^(so|b|p|t)\s*\d+$/i.test(text)) return '';
+      if (/^\d+\s*-\s*\d+k$/i.test(text)) return '';
+      if (/\d{6,}/.test(norm)) return '';
+      var candidates = [text, norm];
+      for (var c = 0; c < candidates.length; c++) {
+        var src = candidates[c];
+        for (var i = 0; i < ROOM_PATTERNS.length; i++) {
+          var m = src.match(ROOM_PATTERNS[i]);
+          if (m && m[0]) return cleanText(m[0]);
+        }
+      }
+      return '';
+    }
+
+    function looksLikeRoomName(value){
+      return !!matchRoomPattern(value);
     }
 
     function extractRoomNameFromText(value){
-      var text = cleanText(value);
-      if (!text) return '';
-      var norm = normText(text);
-      if (!norm) return '';
-      var patterns = [
-        /\((?:sexy|speed)\)\s*bac\s*\d+/i,
-        /\((?:sexy|speed)\)\s*sd\s*\d+/i,
-        /\((?:sexy|speed)\)\s*d&?t\s*\d+/i,
-        /rong\s*ho\s*\d+/i,
-        /roulette\s*\d+/i,
-        /tai\s*xiu\s*\d+/i,
-        /nguu\s*nguu\s*\d+/i,
-        /fantan\s*\d+/i,
-        /xoc\s*dia\s*\d+/i,
-        /bac\s*\d+/i
-      ];
-      for (var i = 0; i < patterns.length; i++) {
-        var m = norm.match(patterns[i]);
-        if (!m || !m[0]) continue;
-        return cleanText(m[0]);
-      }
-      return looksLikeRoomName(text) ? text : '';
+      return matchRoomPattern(value);
     }
 
     function rootOf(node){
@@ -1003,17 +1365,72 @@ Ví dụ không hợp lệ:
       var rooms = [];
       var seen = new Set();
       var roots = new Set();
-      function addRoomName(name){
-        var roomName = extractRoomNameFromText(name);
-        if (!roomName) return;
+      var scopeHost = '';
+      var scopeHref = '';
+      try { scopeHost = String(location.host || '').toLowerCase(); } catch(_) {}
+      try { scopeHref = String(location.href || '').toLowerCase(); } catch(_) {}
+      var scopeIsWm = false;
+      try{
+        scopeIsWm =
+          /(?:^|\.)m8810\.com$/i.test(scopeHost) ||
+          /wmvn\./i.test(scopeHost) ||
+          /[?&]co=wm(?:&|$)/i.test(scopeHref) ||
+          /iframe_10(?:1|9)/i.test(scopeHref);
+      }catch(_){}
+      var diag = {
+        host: scopeHost,
+        scopeWm: scopeIsWm ? 1 : 0,
+        rootMatches: 0,
+        titleMatches: 0,
+        roots: 0,
+        fallback: 0,
+        fallbackAllowed: 0,
+        fallbackHits: 0,
+        fallbackScan: 0,
+        dropEmpty: 0,
+        dropNoise: 0,
+        dropNoPattern: 0,
+        dropDup: 0,
+        sampleDrop: [],
+        rooms: 0,
+        sample: []
+      };
+      function addRoomName(name, fromFallback){
+        var raw = cleanText(name);
+        if (!raw) {
+          diag.dropEmpty++;
+          return;
+        }
+        if (isLobbyCategoryNoise(raw)) {
+          diag.dropNoise++;
+          if (diag.sampleDrop.length < 6) diag.sampleDrop.push(raw);
+          return;
+        }
+        var roomName = extractRoomNameFromText(raw);
+        if (!roomName) {
+          diag.dropNoPattern++;
+          if (diag.sampleDrop.length < 6) diag.sampleDrop.push(raw);
+          return;
+        }
         var key = normText(roomName);
-        if (!key || seen.has(key)) return;
+        if (!key) {
+          diag.dropNoPattern++;
+          if (diag.sampleDrop.length < 6) diag.sampleDrop.push(raw);
+          return;
+        }
+        if (seen.has(key)) {
+          diag.dropDup++;
+          return;
+        }
         seen.add(key);
         rooms.push({ id: roomName, name: roomName });
+        if (fromFallback) diag.fallbackHits++;
+        if (diag.sample.length < 6) diag.sample.push(roomName);
       }
 
       try{
         document.querySelectorAll(ROOT_SELECTOR).forEach(function(card){
+          diag.rootMatches++;
           if (card) roots.add(card);
         });
       }catch(_){}
@@ -1021,33 +1438,46 @@ Ví dụ không hợp lệ:
       try{
         TITLE_SELECTORS.forEach(function(sel){
           document.querySelectorAll(sel).forEach(function(node){
+            diag.titleMatches++;
             var card = rootOf(node);
             if (card) roots.add(card);
           });
         });
       }catch(_){}
 
+      diag.roots = roots.size || 0;
       roots.forEach(function(card){
         try{
           if (!isVisible(card)) return;
           var name = readTitle(card);
-          addRoomName(name);
+          addRoomName(name, false);
         }catch(_){}
       });
 
       if (!rooms.length) {
-        try{
-          document.querySelectorAll('span,div,small,button').forEach(function(node){
-            if (!node || (node.children && node.children.length > 0)) return;
-            if (!isVisible(node)) return;
-            addRoomName(node.textContent || '');
-          });
-        }catch(_){}
+        diag.fallback = 1;
+        var allowFallback = !!scopeIsWm || diag.roots > 0 || diag.titleMatches > 0;
+        diag.fallbackAllowed = allowFallback ? 1 : 0;
+        if (allowFallback) {
+          try{
+            var scanned = 0;
+            document.querySelectorAll('span,div,small,button').forEach(function(node){
+              if (scanned >= 1800) return;
+              scanned++;
+              if (!node || (node.children && node.children.length > 0)) return;
+              if (!isVisible(node)) return;
+              addRoomName(node.textContent || '', true);
+            });
+            diag.fallbackScan = scanned;
+          }catch(_){}
+        }
       }
 
       rooms.sort(function(a, b){
         return a.name.localeCompare(b.name);
       });
+      diag.rooms = rooms.length;
+      lastCollectDiag = diag;
       return rooms;
     }
 
@@ -1064,9 +1494,11 @@ Ví dụ không hợp lệ:
           abx: 'table_update',
           ui: 'game',
           source: 'visible_cards',
+          source_detail: (lastCollectDiag && lastCollectDiag.fallback) ? 'visible_cards/fallback_textnodes' : 'visible_cards/root_cards',
           href: String(location.href || ''),
           title: String(document.title || ''),
           tables: rooms,
+          diag: lastCollectDiag,
           ts: now
         };
         var text = JSON.stringify(payload);
@@ -1562,6 +1994,919 @@ Ví dụ không hợp lệ:
             Log(msg);
         }
 
+        private string GetWebDebugScope(WebView2? targetWeb)
+        {
+            try
+            {
+                if (targetWeb != null && ReferenceEquals(targetWeb, _popupWeb))
+                    return "popup";
+            }
+            catch { }
+            return "main";
+        }
+
+        private string BeginWmTrace(string reason, string? url = null, string? scope = null, string? frameId = null)
+        {
+            lock (_wmTraceGate)
+            {
+                var seq = Interlocked.Increment(ref _wmTraceSeq);
+                _wmTraceId = $"wm-{DateTime.Now:HHmmss}-{seq.ToString("D3", CultureInfo.InvariantCulture)}";
+                _wmTraceStartedUtc = DateTime.UtcNow;
+                _wmTraceStartReason = (reason ?? "").Trim();
+                _wmTraceStartUrl = (url ?? "").Trim();
+                var detail =
+                    $"reason={ClipForLog(_wmTraceStartReason, 64)} scope={ClipForLog(scope, 24)} " +
+                    $"frameId={ClipForLog(frameId, 48)} url={ClipForLog(_wmTraceStartUrl, 180)}";
+                Log($"[WM_TRACE] trace={_wmTraceId} t=+0ms stage=start {detail}");
+                return _wmTraceId;
+            }
+        }
+
+        private string EnsureWmTrace(string reason, string? url = null, string? scope = null, string? frameId = null, bool forceNew = false)
+        {
+            lock (_wmTraceGate)
+            {
+                if (!forceNew && !string.IsNullOrWhiteSpace(_wmTraceId))
+                    return _wmTraceId;
+            }
+
+            return BeginWmTrace(reason, url, scope, frameId);
+        }
+
+        private void LogWmTrace(string stage, string detail, string? dedupeKey = null, int intervalMs = 1200, bool force = false)
+        {
+            string traceId;
+            DateTime startedUtc;
+            lock (_wmTraceGate)
+            {
+                traceId = _wmTraceId;
+                startedUtc = _wmTraceStartedUtc;
+            }
+
+            if (string.IsNullOrWhiteSpace(traceId))
+            {
+                traceId = EnsureWmTrace("auto", null, null, null, false);
+                lock (_wmTraceGate)
+                    startedUtc = _wmTraceStartedUtc;
+            }
+
+            var elapsedMs = startedUtc == DateTime.MinValue
+                ? 0
+                : Math.Max(0, (long)(DateTime.UtcNow - startedUtc).TotalMilliseconds);
+            var msg = $"[WM_TRACE] trace={traceId} t=+{elapsedMs}ms stage={stage} {detail}";
+            if (force)
+            {
+                Log(msg);
+                return;
+            }
+
+            var key = "WM_TRACE:" + traceId + ":" + (string.IsNullOrWhiteSpace(dedupeKey) ? stage : dedupeKey);
+            LogChangedOrThrottled(key, detail, msg, intervalMs);
+        }
+
+        private string BuildWmFrameSummary(string scope)
+        {
+            try
+            {
+                var prefix = scope + "|";
+                var keys = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var key in _cdpFrameUrlById.Keys)
+                    if (key.StartsWith(prefix, StringComparison.Ordinal))
+                        keys.Add(key);
+                foreach (var key in _cdpFrameNameById.Keys)
+                    if (key.StartsWith(prefix, StringComparison.Ordinal))
+                        keys.Add(key);
+
+                var items = new List<string>();
+                foreach (var key in keys)
+                {
+                    var frameId = key.Substring(prefix.Length);
+                    _cdpFrameNameById.TryGetValue(key, out var name);
+                    _cdpFrameUrlById.TryGetValue(key, out var url);
+                    var interesting =
+                        IsWmUrl(url) ||
+                        (!string.IsNullOrWhiteSpace(url) && url.IndexOf("rr5309.com", StringComparison.OrdinalIgnoreCase) >= 0) ||
+                        (!string.IsNullOrWhiteSpace(name) &&
+                         (name.IndexOf("iframe_101", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          name.IndexOf("iframe_109", StringComparison.OrdinalIgnoreCase) >= 0));
+                    if (!interesting)
+                        continue;
+
+                    items.Add($"{ClipForLog(frameId, 10)}:{ClipForLog(name, 16)}:{ClipForLog(url, 90)}");
+                }
+
+                if (items.Count == 0)
+                    return "";
+
+                return string.Join(" | ", items
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                    .Take(6));
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private string BuildWmWebSocketSummary()
+        {
+            try
+            {
+                var items = _wsUrlByRequestId.Values
+                    .Where(v => !string.IsNullOrWhiteSpace(v))
+                    .Select(v => v.Trim())
+                    .Where(v =>
+                        v.StartsWith("wss://", StringComparison.OrdinalIgnoreCase) ||
+                        v.StartsWith("ws://", StringComparison.OrdinalIgnoreCase))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Select(v =>
+                    {
+                        try
+                        {
+                            if (Uri.TryCreate(v, UriKind.Absolute, out var uri))
+                                return uri.Host + uri.AbsolutePath;
+                        }
+                        catch { }
+                        return ClipForLog(v, 90);
+                    })
+                    .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
+                    .Take(6)
+                    .ToArray();
+                return items.Length == 0 ? "" : string.Join(" | ", items);
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private void LogWmSessionSummary(string stage, string scope, string? currentUrl = null, bool force = false)
+        {
+            string traceId;
+            string startReason;
+            string startUrl;
+            lock (_wmTraceGate)
+            {
+                traceId = _wmTraceId;
+                startReason = _wmTraceStartReason;
+                startUrl = _wmTraceStartUrl;
+            }
+
+            if (string.IsNullOrWhiteSpace(traceId))
+                traceId = EnsureWmTrace("session-summary", currentUrl, scope);
+
+            int latestRooms;
+            int protocolCache;
+            string latestSource;
+            lock (_roomFeedGate)
+            {
+                latestRooms = _latestNetworkRooms.Count;
+                protocolCache = _protocol21Rooms.Count;
+                latestSource = _latestNetworkRoomsSource;
+            }
+
+            var frames = BuildWmFrameSummary(scope);
+            var websockets = BuildWmWebSocketSummary();
+            var detail =
+                $"trace={traceId} stage={stage} scope={ClipForLog(scope, 24)} " +
+                $"startReason={ClipForLog(startReason, 48)} startUrl={ClipForLog(startUrl, 180)} " +
+                $"currentUrl={ClipForLog(currentUrl, 180)} latestRooms={latestRooms} protocolCache={protocolCache} " +
+                $"latestSource={ClipForLog(latestSource, 120)} launchReq={ClipForLog(_wmLastLaunchRequestSummary, 220)} " +
+                $"launch={ClipForLog(_wmLastLaunchResponseSummary, 220)} ws={ClipForLog(websockets, 220)} frames={ClipForLog(frames, 260)}";
+            var msg = "[WM_DIAG][SessionSummary] " + detail;
+            if (force)
+            {
+                Log(msg);
+            }
+            else
+            {
+                LogChangedOrThrottled("WM_DIAG_SESSION_SUMMARY:" + traceId + ":" + stage, detail, msg, 800);
+            }
+
+            LogWmTrace(
+                "session.summary",
+                $"stage={stage} scope={ClipForLog(scope, 24)} latestRooms={latestRooms} protocolCache={protocolCache} latestSource={ClipForLog(latestSource, 120)} ws={ClipForLog(websockets, 120)}",
+                "session.summary:" + stage,
+                300,
+                force: true);
+        }
+
+        private static string ClipForLog(string? text, int max = 220)
+        {
+            var s = (text ?? "").Replace("\r", " ").Replace("\n", " ").Trim();
+            if (s.Length <= max) return s;
+            return s.Substring(0, max) + "...";
+        }
+
+        private static string ClipTailForLog(string? text, int max = 220)
+        {
+            var s = (text ?? "").Replace("\r", " ").Replace("\n", " ").Trim();
+            if (s.Length <= max) return s;
+            return "..." + s.Substring(Math.Max(0, s.Length - max), Math.Min(max, s.Length));
+        }
+
+        private static string ComputeShortSha1(string text)
+        {
+            try
+            {
+                var data = Encoding.UTF8.GetBytes(text ?? "");
+                var hash = SHA1.HashData(data);
+                var hex = Convert.ToHexString(hash);
+                return hex.Length > 12 ? hex.Substring(0, 12) : hex;
+            }
+            catch
+            {
+                return "NA";
+            }
+        }
+
+        private void LogHomeJsSignatureIfAny()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(_homeJs))
+                {
+                    LogThrottled("HOME_JS_EMPTY", "[Bridge] HOME JS active is EMPTY.", 15000);
+                    return;
+                }
+
+                var hash = ComputeShortSha1(_homeJs);
+                var sig = $"{_homeJs.Length}|{hash}";
+                LogChangedOrThrottled(
+                    "HOME_JS_SIG",
+                    sig,
+                    $"[Bridge] HOME JS active len={_homeJs.Length} sha1={hash}",
+                    60000);
+            }
+            catch { }
+        }
+
+        private async Task LogFrameCollectorDiagAsync(CoreWebView2Frame? frame, string phase, string? navUri = null)
+        {
+            try
+            {
+                if (frame == null) return;
+                const string js = @"(function(){
+  try{
+    var out = {
+      host:'', href:'', title:'', ready:'',
+      chrome:0, hwCollect:0, hwStart:0, gpCollect:0, gpPush:0,
+      hwCount:-1, gpCount:-1, startRet:'', gpPushRet:'',
+      hwSample:'', gpSample:'', hwErr:'', gpErr:'', startErr:'', gpPushErr:'',
+      isWm:0, topPost:0, parentPost:0,
+      winName:'', docLang:'',
+      ifrCount:0, ifrSample:'',
+      ifrProbe:'', ifrProbeJson:[], ifrProbeErr:'',
+      scriptCount:0, htmlLen:0, bodyTextLen:0, bodySample:'',
+      hasGData:0, hasLobbyNet:0, hasCoreWs:0,
+      gDataKeys:'', dtGameIDKeys:'', lobbyNetKeys:'', coreWsKeys:'',
+      wsUrlSample:'', resSample:'', lobbyNetSample:'',
+      netTapFetch:'', netTapXhr:'', netTapWs:'', netTapCoreWs:'',
+      netTapXhrRsp:'', netTapWsSend:'', netTapWsRecv:''
+    };
+    function clipText(s, max){
+      try{ s = String(s || ''); }catch(_){ s = ''; }
+      max = max || 120;
+      return s.length > max ? s.slice(0, max) : s;
+    }
+    function objKeys(x, max){
+      try{ return (x && typeof x === 'object') ? Object.keys(x).slice(0, max || 8).join(',') : ''; }catch(_){ return ''; }
+    }
+    function collectUrlHints(x, max){
+      try{
+        if (!x || typeof x !== 'object') return '';
+        var out2 = [], seen2 = {};
+        function add(v){
+          try{
+            var s = String(v || '').trim();
+            if (!s) return;
+            if (!/wss?:|socket|protocol|m8810|wmvn|lobby|table|room|game|api/i.test(s)) return;
+            if (seen2[s]) return;
+            seen2[s] = 1;
+            out2.push(clipText(s, 120));
+          }catch(_){}
+        }
+        Object.keys(x).slice(0, 20).forEach(function(k){
+          var v = null;
+          try{ v = x[k]; }catch(_){ return; }
+          if (typeof v === 'string') { add(k + '=' + v); return; }
+          if (!v || typeof v !== 'object') return;
+          ['url','wsUrl','socketUrl','host','path','uri'].forEach(function(name){
+            try{
+              if (typeof v[name] === 'string') add(k + '.' + name + '=' + v[name]);
+            }catch(_){}
+          });
+        });
+        return out2.slice(0, max || 4).join(' | ');
+      }catch(_){ return ''; }
+    }
+    function sampleObject(x, depth){
+      function walk(v, d){
+        if (v == null) return null;
+        if (typeof v === 'string') return clipText(v, 80);
+        if (typeof v === 'number' || typeof v === 'boolean') return v;
+        if (d <= 0) return typeof v;
+        if (Array.isArray(v)) return v.slice(0, 4).map(function(it){ return walk(it, d - 1); });
+        if (typeof v !== 'object') return String(v);
+        var out3 = {};
+        Object.keys(v).slice(0, 8).forEach(function(k){
+          try{ out3[k] = walk(v[k], d - 1); }catch(_){}
+        });
+        return out3;
+      }
+      try{
+        var normalized = walk(x, depth || 2);
+        var text = JSON.stringify(normalized);
+        return clipText(text || '', 240);
+      }catch(_){ return ''; }
+    }
+    function collectTapJoin(w, kind, max){
+      try{
+        var arr = w && w.__abxNetTap && Array.isArray(w.__abxNetTap[kind]) ? w.__abxNetTap[kind] : [];
+        return arr.slice(Math.max(0, arr.length - (max || 4))).join(' | ');
+      }catch(_){ return ''; }
+    }
+    function collectResourceSample(w){
+      try{
+        var perf = w && w.performance && typeof w.performance.getEntriesByType === 'function'
+          ? w.performance.getEntriesByType('resource')
+          : [];
+        var list = [], seen = {};
+        for (var i = 0; i < perf.length && i < 240; i++) {
+          var entry = perf[i];
+          var name = '';
+          try{ name = String((entry && entry.name) || '').trim(); }catch(_){}
+          if (!name) continue;
+          if (!/m8810|wmvn|protocol|socket|websocket|lobby|table|room|game|api/i.test(name)) continue;
+          if (seen[name]) continue;
+          seen[name] = 1;
+          list.push(clipText(name, 120));
+          if (list.length >= 6) break;
+        }
+        return list.join(' | ');
+      }catch(_){ return ''; }
+    }
+    try{ out.host = String(location.host || ''); }catch(_){}
+    try{ out.href = String(location.href || ''); }catch(_){}
+    try{ out.title = String(document.title || ''); }catch(_){}
+    try{ out.ready = String(document.readyState || ''); }catch(_){}
+    try{ out.winName = String(window.name || ''); }catch(_){}
+    try{ out.docLang = String((document.documentElement && document.documentElement.lang) || ''); }catch(_){}
+    try{ out.isWm = (/m8810\.com$/i.test(out.host || '') || /wmvn\./i.test(out.host || '')) ? 1 : 0; }catch(_){}
+    try{ out.chrome = (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') ? 1 : 0; }catch(_){}
+    try{ out.topPost = (window.top && typeof window.top.postMessage === 'function') ? 1 : 0; }catch(_){}
+    try{ out.parentPost = (window.parent && typeof window.parent.postMessage === 'function') ? 1 : 0; }catch(_){}
+    try{ out.scriptCount = (document.scripts && document.scripts.length) ? document.scripts.length : 0; }catch(_){}
+    try{ out.htmlLen = (document.documentElement && document.documentElement.outerHTML) ? document.documentElement.outerHTML.length : 0; }catch(_){}
+    try{
+      var bodyText = '';
+      if (document.body) bodyText = String(document.body.innerText || document.body.textContent || '');
+      bodyText = bodyText ? bodyText.replace(/\s+/g,' ').trim() : '';
+      out.bodyTextLen = bodyText.length;
+      out.bodySample = bodyText.slice(0, 240);
+    }catch(_){}
+    try{
+      var ifs = Array.prototype.slice.call(document.querySelectorAll('iframe') || []);
+      out.ifrCount = ifs.length;
+      out.ifrSample = ifs.slice(0,4).map(function(f){
+        try{
+          var src = String((f && f.getAttribute && f.getAttribute('src')) || (f && f.src) || '').trim();
+          if (src.length > 120) src = src.slice(0, 120);
+          var idn = String((f && (f.id || f.name)) || '').trim();
+          return (idn ? (idn + ':') : '') + src;
+        }catch(_){ return ''; }
+      }).filter(function(v){ return !!v; }).join(' | ');
+    }catch(_){}
+    try{
+      var probeLines = [];
+      var probeItems = [];
+      var ROOM_HINT_RE = /\((?:sexy|speed|site)\)\s*(?:bac|sd|d&?t)\s*(?:\d{1,3}|[a-z])\b|\b(?:speed\s*)?baccarat\s*(?:\d{1,3}|[a-z])\b|\bbac\s*(?:\d{1,3}|[a-z])\b|\brong\s*ho\s*\d{1,3}\b|\broulette\s*\d{1,3}\b|\btai\s*xiu\s*\d{1,3}\b|\bnguu\s*nguu\s*\d{1,3}\b|\bfantan\s*\d{1,3}\b|\bxoc\s*dia\s*\d{1,3}\b/i;
+      var probeIframes = Array.prototype.slice.call(document.querySelectorAll('iframe') || []).slice(0, 4);
+      probeIframes.forEach(function(f, idx){
+        var part = [];
+        var item = {
+          index: idx,
+          id: '',
+          src: '',
+          cw: 0,
+          cross: 0,
+          err: '',
+          host: '',
+          ready: '',
+          href: '',
+          title: '',
+          scriptCount: 0,
+          htmlLen: 0,
+          bodyTextLen: 0,
+          bodySample: '',
+          hw: 0,
+          hwCount: -1,
+          hwSample: '',
+          hwErr: '',
+          gp: 0,
+          gpCount: -1,
+          gpSample: '',
+          gpErr: '',
+          roomHintCount: 0,
+          roomHintSample: '',
+          hasGData: 0,
+          hasLobbyNet: 0,
+          hasCoreWs: 0,
+          gDataKeys: '',
+          dtGameIDKeys: '',
+          lobbyNetKeys: '',
+          coreWsKeys: '',
+          wsUrlSample: '',
+          resSample: '',
+          lobbyNetSample: '',
+          netTapFetch: '',
+          netTapXhr: '',
+          netTapWs: '',
+          netTapCoreWs: '',
+          netTapXhrRsp: '',
+          netTapWsSend: '',
+          netTapWsRecv: ''
+        };
+        var idn = '';
+        var src = '';
+        try{ idn = String((f && (f.id || f.name)) || ('#' + idx)); }catch(_){}
+        try{ src = String((f && f.getAttribute && f.getAttribute('src')) || (f && f.src) || ''); }catch(_){}
+        if (src.length > 120) src = src.slice(0, 120);
+        item.id = idn;
+        item.src = src;
+        part.push('id=' + idn);
+        part.push('src=' + src);
+        try{
+          var w = f && f.contentWindow ? f.contentWindow : null;
+          if (!w) {
+            item.cw = 0;
+            part.push('cw=0');
+            probeLines.push(part.join(','));
+            probeItems.push(item);
+            return;
+          }
+          item.cw = 1;
+          part.push('cw=1');
+          var href2 = '';
+          var host2 = '';
+          var ready2 = '';
+          try{ href2 = String((w.location && w.location.href) || ''); }catch(_){}
+          try{ host2 = String((w.location && w.location.host) || ''); }catch(_){}
+          try{ ready2 = String((w.document && w.document.readyState) || ''); }catch(_){}
+          if (href2.length > 120) href2 = href2.slice(0, 120);
+          item.host = host2;
+          item.ready = ready2;
+          item.href = href2;
+          part.push('host=' + host2);
+          part.push('ready=' + ready2);
+          part.push('href=' + href2);
+
+          var hw = 0, gp = 0, hwCount2 = -1, gpCount2 = -1, hasGData2 = 0, hasLobbyNet2 = 0, hasCoreWs2 = 0;
+          var gData2 = null, dtGameID2 = null, lobbyNet2 = null;
+          var hwSample2 = '', gpSample2 = '', hwErr2 = '', gpErr2 = '';
+          try{ hw = (typeof w.__abx_hw_collectTables === 'function') ? 1 : 0; }catch(_){}
+          try{ gp = (w.__abxGameRoomPusher && typeof w.__abxGameRoomPusher.collect === 'function') ? 1 : 0; }catch(_){}
+          try{ hasGData2 = (w.gData && typeof w.gData === 'object') ? 1 : 0; }catch(_){}
+          try{ hasLobbyNet2 = (w.gData && w.gData.dtGameID && (w.gData.dtGameID.lobbyNet || w.gData.dtGameID.bacNet)) ? 1 : 0; }catch(_){}
+          try{ hasCoreWs2 = (w.CoreWebSocket && typeof w.CoreWebSocket.CreateNew === 'function') ? 1 : 0; }catch(_){}
+          try{ gData2 = (w.gData && typeof w.gData === 'object') ? w.gData : null; }catch(_){}
+          try{ dtGameID2 = (gData2 && gData2.dtGameID && typeof gData2.dtGameID === 'object') ? gData2.dtGameID : null; }catch(_){}
+          try{ lobbyNet2 = dtGameID2 ? (dtGameID2.lobbyNet || dtGameID2.bacNet || null) : null; }catch(_){}
+          item.hw = hw;
+          item.gp = gp;
+          item.hasGData = hasGData2;
+          item.hasLobbyNet = hasLobbyNet2;
+          item.hasCoreWs = hasCoreWs2;
+          item.gDataKeys = objKeys(gData2, 10);
+          item.dtGameIDKeys = objKeys(dtGameID2, 10);
+          item.lobbyNetKeys = objKeys(lobbyNet2, 10);
+          item.coreWsKeys = objKeys(w.CoreWebSocket, 10);
+          item.wsUrlSample = collectUrlHints(lobbyNet2, 4);
+          item.resSample = collectResourceSample(w);
+          item.lobbyNetSample = sampleObject(lobbyNet2, 2);
+          item.netTapFetch = collectTapJoin(w, 'fetch', 4);
+          item.netTapXhr = collectTapJoin(w, 'xhr', 4);
+          item.netTapWs = collectTapJoin(w, 'ws', 4);
+          item.netTapCoreWs = collectTapJoin(w, 'coreWs', 4);
+          item.netTapXhrRsp = collectTapJoin(w, 'xhrRsp', 3);
+          item.netTapWsSend = collectTapJoin(w, 'wsSend', 3);
+          item.netTapWsRecv = collectTapJoin(w, 'wsRecv', 3);
+          try{ item.title = String((w.document && w.document.title) || ''); }catch(_){}
+          try{ item.scriptCount = (w.document && w.document.scripts && w.document.scripts.length) ? w.document.scripts.length : 0; }catch(_){}
+          try{ item.htmlLen = (w.document && w.document.documentElement && w.document.documentElement.outerHTML) ? w.document.documentElement.outerHTML.length : 0; }catch(_){}
+          try{
+            var bodyText2 = '';
+            if (w.document && w.document.body) bodyText2 = String(w.document.body.innerText || w.document.body.textContent || '');
+            bodyText2 = bodyText2 ? bodyText2.replace(/\s+/g,' ').trim() : '';
+            item.bodyTextLen = bodyText2.length;
+            item.bodySample = bodyText2.slice(0, 240);
+          }catch(_){}
+          try{
+            if (hw) {
+              var hwd = w.__abx_hw_collectTables();
+              var hwt = Array.isArray(hwd) ? hwd : (hwd && Array.isArray(hwd.tables) ? hwd.tables : []);
+              hwCount2 = (hwt || []).length;
+              hwSample2 = (hwt || []).map(function(t){
+                try{ return String((t && (t.name || t.id)) || '').trim(); }catch(_){ return ''; }
+              }).filter(function(v){ return !!v; }).slice(0,3).join(' | ');
+            }
+          }catch(err3){
+            hwErr2 = String((err3 && err3.message) || err3 || '');
+          }
+          try{
+            if (gp) {
+              var gpd = w.__abxGameRoomPusher.collect();
+              var gpt = Array.isArray(gpd) ? gpd : (gpd && Array.isArray(gpd.tables) ? gpd.tables : []);
+              gpCount2 = (gpt || []).length;
+              gpSample2 = (gpt || []).map(function(t){
+                try{ return String((t && (t.name || t.id)) || '').trim(); }catch(_){ return ''; }
+              }).filter(function(v){ return !!v; }).slice(0,3).join(' | ');
+            }
+          }catch(err4){
+            gpErr2 = String((err4 && err4.message) || err4 || '');
+          }
+          item.hwCount = hwCount2;
+          item.gpCount = gpCount2;
+          item.hwSample = hwSample2;
+          item.gpSample = gpSample2;
+          item.hwErr = hwErr2;
+          item.gpErr = gpErr2;
+          try{
+            var hintSeen = {};
+            var hintList = [];
+            var hintNodes = w.document ? w.document.querySelectorAll('span,div,small,button,a') : [];
+            for (var h = 0; h < hintNodes.length && h < 220; h++) {
+              var node2 = hintNodes[h];
+              if (!node2) continue;
+              if (node2.children && node2.children.length > 0) continue;
+              var text2 = String(node2.textContent || '').replace(/\s+/g,' ').trim();
+              if (!text2) continue;
+              var m2 = text2.match(ROOM_HINT_RE);
+              if (!m2 || !m2[0]) continue;
+              var key2 = m2[0].toLowerCase();
+              if (hintSeen[key2]) continue;
+              hintSeen[key2] = 1;
+              hintList.push(m2[0]);
+              if (hintList.length >= 4) break;
+            }
+            item.roomHintCount = hintList.length;
+            item.roomHintSample = hintList.join(' | ');
+          }catch(_){}
+          part.push('hw=' + hw + '/' + hwCount2);
+          if (hwSample2) part.push('hwSample=' + hwSample2.slice(0, 60));
+          if (hwErr2) part.push('hwErr=' + hwErr2.slice(0, 60));
+          part.push('gp=' + gp + '/' + gpCount2);
+          if (gpSample2) part.push('gpSample=' + gpSample2.slice(0, 60));
+          if (gpErr2) part.push('gpErr=' + gpErr2.slice(0, 60));
+          if (item.roomHintCount > 0) part.push('hint=' + item.roomHintCount + '/' + item.roomHintSample.slice(0, 60));
+          part.push('gData=' + hasGData2);
+          part.push('lobbyNet=' + hasLobbyNet2);
+          part.push('coreWs=' + hasCoreWs2);
+          if (item.dtGameIDKeys) part.push('dtKeys=' + item.dtGameIDKeys.slice(0, 80));
+          if (item.lobbyNetKeys) part.push('netKeys=' + item.lobbyNetKeys.slice(0, 80));
+          if (item.wsUrlSample) part.push('ws=' + item.wsUrlSample.slice(0, 80));
+          if (item.netTapWs) part.push('tapWs=' + item.netTapWs.slice(0, 80));
+          if (item.netTapXhrRsp) part.push('tapXhrRsp=' + item.netTapXhrRsp.slice(0, 80));
+          if (item.netTapWsSend) part.push('tapWsSend=' + item.netTapWsSend.slice(0, 80));
+          if (item.netTapWsRecv) part.push('tapWsRecv=' + item.netTapWsRecv.slice(0, 80));
+          if (item.netTapCoreWs) part.push('tapCore=' + item.netTapCoreWs.slice(0, 80));
+          if (item.resSample) part.push('res=' + item.resSample.slice(0, 80));
+        }catch(err2){
+          item.cross = 1;
+          item.err = String((err2 && err2.message) || err2 || '');
+          part.push('cross=1');
+          part.push('err=' + item.err);
+        }
+        probeLines.push(part.join(','));
+        probeItems.push(item);
+      });
+      out.ifrProbe = probeLines.join(' || ');
+      out.ifrProbeJson = probeItems;
+    }catch(err){
+      out.ifrProbeErr = String((err && err.message) || err || '');
+    }
+    try{ out.hwCollect = (typeof window.__abx_hw_collectTables === 'function') ? 1 : 0; }catch(_){}
+    try{ out.hwStart = (typeof window.__abx_hw_startTablePush === 'function') ? 1 : 0; }catch(_){}
+    try{ out.gpCollect = (window.__abxGameRoomPusher && typeof window.__abxGameRoomPusher.collect === 'function') ? 1 : 0; }catch(_){}
+    try{ out.gpPush = (window.__abxGameRoomPusher && typeof window.__abxGameRoomPusher.pushNow === 'function') ? 1 : 0; }catch(_){}
+    try{ out.hasGData = (window.gData && typeof window.gData === 'object') ? 1 : 0; }catch(_){}
+    try{ out.hasLobbyNet = (window.gData && window.gData.dtGameID && (window.gData.dtGameID.lobbyNet || window.gData.dtGameID.bacNet)) ? 1 : 0; }catch(_){}
+    try{ out.hasCoreWs = (window.CoreWebSocket && typeof window.CoreWebSocket.CreateNew === 'function') ? 1 : 0; }catch(_){}
+    try{
+      var gData = (window.gData && typeof window.gData === 'object') ? window.gData : null;
+      var dtGameID = (gData && gData.dtGameID && typeof gData.dtGameID === 'object') ? gData.dtGameID : null;
+      var lobbyNet = dtGameID ? (dtGameID.lobbyNet || dtGameID.bacNet || null) : null;
+      out.gDataKeys = objKeys(gData, 10);
+      out.dtGameIDKeys = objKeys(dtGameID, 10);
+      out.lobbyNetKeys = objKeys(lobbyNet, 10);
+      out.coreWsKeys = objKeys(window.CoreWebSocket, 10);
+      out.wsUrlSample = collectUrlHints(lobbyNet, 4);
+      out.resSample = collectResourceSample(window);
+      out.lobbyNetSample = sampleObject(lobbyNet, 2);
+      out.netTapFetch = collectTapJoin(window, 'fetch', 4);
+      out.netTapXhr = collectTapJoin(window, 'xhr', 4);
+      out.netTapWs = collectTapJoin(window, 'ws', 4);
+      out.netTapCoreWs = collectTapJoin(window, 'coreWs', 4);
+      out.netTapXhrRsp = collectTapJoin(window, 'xhrRsp', 3);
+      out.netTapWsSend = collectTapJoin(window, 'wsSend', 3);
+      out.netTapWsRecv = collectTapJoin(window, 'wsRecv', 3);
+    }catch(_){}
+    try{
+      if (out.hwCollect) {
+        var hw = window.__abx_hw_collectTables();
+        var hwTables = Array.isArray(hw) ? hw : (hw && Array.isArray(hw.tables) ? hw.tables : []);
+        var hwNames = (hwTables || []).map(function(t){
+          try{ return String((t && (t.name || t.id)) || '').trim(); }catch(_){ return ''; }
+        }).filter(function(v){ return !!v; });
+        out.hwCount = hwNames.length;
+        out.hwSample = hwNames.slice(0,3).join(' | ');
+      }
+    }catch(err){ out.hwErr = String((err && err.message) || err || ''); }
+    try{
+      if (out.gpCollect) {
+        var gp = window.__abxGameRoomPusher.collect();
+        var gpTables = Array.isArray(gp) ? gp : (gp && Array.isArray(gp.tables) ? gp.tables : []);
+        var gpNames = (gpTables || []).map(function(t){
+          try{ return String((t && (t.name || t.id)) || '').trim(); }catch(_){ return ''; }
+        }).filter(function(v){ return !!v; });
+        out.gpCount = gpNames.length;
+        out.gpSample = gpNames.slice(0,3).join(' | ');
+      }
+    }catch(err){ out.gpErr = String((err && err.message) || err || ''); }
+    try{
+      if (out.hwStart) out.startRet = String(window.__abx_hw_startTablePush(1500));
+    }catch(err){ out.startErr = String((err && err.message) || err || ''); }
+    try{
+      if (out.gpPush && out.isWm) out.gpPushRet = String(window.__abxGameRoomPusher.pushNow());
+    }catch(err){ out.gpPushErr = String((err && err.message) || err || ''); }
+    return JSON.stringify(out);
+  }catch(err){
+    return JSON.stringify({ err: String((err && err.message) || err || '') });
+  }
+})();";
+
+                var raw = await frame.ExecuteScriptAsync(js);
+                var payload = JsonSerializer.Deserialize<string>(raw) ?? raw ?? "";
+                if (string.IsNullOrWhiteSpace(payload))
+                {
+                    LogThrottled($"WM_DIAG_EMPTY:{phase}", $"[WM_DIAG][{phase}] empty payload.", 4000);
+                    return;
+                }
+
+                using var doc = JsonDocument.Parse(payload);
+                var root = doc.RootElement;
+                string S(string name)
+                {
+                    try
+                    {
+                        return root.TryGetProperty(name, out var el) ? (el.GetString() ?? "") : "";
+                    }
+                    catch { return ""; }
+                }
+                int N(string name)
+                {
+                    try
+                    {
+                        if (!root.TryGetProperty(name, out var el)) return 0;
+                        if (el.ValueKind == JsonValueKind.Number) return el.GetInt32();
+                        if (el.ValueKind == JsonValueKind.String && int.TryParse(el.GetString(), out var n)) return n;
+                        return 0;
+                    }
+                    catch { return 0; }
+                }
+
+                var host = S("host");
+                var href = S("href");
+                var ready = S("ready");
+                var hwErr = S("hwErr");
+                var gpErr = S("gpErr");
+                var startErr = S("startErr");
+                var gpPushErr = S("gpPushErr");
+                var bodySample = S("bodySample");
+                var ifrSample = S("ifrSample");
+                var ifrProbe = S("ifrProbe");
+                var ifrProbeErr = S("ifrProbeErr");
+                var gDataKeys = S("gDataKeys");
+                var dtGameIDKeys = S("dtGameIDKeys");
+                var lobbyNetKeys = S("lobbyNetKeys");
+                var coreWsKeys = S("coreWsKeys");
+                var wsUrlSample = S("wsUrlSample");
+                var resSample = S("resSample");
+                var lobbyNetSample = S("lobbyNetSample");
+                var netTapFetch = S("netTapFetch");
+                var netTapXhr = S("netTapXhr");
+                var netTapWs = S("netTapWs");
+                var netTapCoreWs = S("netTapCoreWs");
+                var netTapXhrRsp = S("netTapXhrRsp");
+                var netTapWsSend = S("netTapWsSend");
+                var netTapWsRecv = S("netTapWsRecv");
+                var diagScope = phase.StartsWith("Popup", StringComparison.OrdinalIgnoreCase) ? "popup" : "main";
+                RememberWmRelayCandidatesFromTap(diagScope, href, netTapFetch, netTapXhr, netTapWs, null, href);
+                var nav = string.IsNullOrWhiteSpace(navUri) ? "" : $" nav={ClipForLog(navUri, 120)}";
+                var sig = string.Join("|", new[]
+                {
+                    phase, host, ready,
+                    N("chrome").ToString(), N("hwCollect").ToString(), N("hwStart").ToString(),
+                    N("gpCollect").ToString(), N("gpPush").ToString(),
+                    N("hwCount").ToString(), N("gpCount").ToString(),
+                    S("startRet"), S("gpPushRet"), N("isWm").ToString(),
+                    S("hwSample"), S("gpSample"),
+                    N("topPost").ToString(), N("parentPost").ToString(),
+                    N("ifrCount").ToString(), N("scriptCount").ToString(), N("bodyTextLen").ToString(),
+                    N("hasGData").ToString(), N("hasLobbyNet").ToString(), N("hasCoreWs").ToString(),
+                    S("winName"), S("docLang"),
+                    hwErr, gpErr, startErr, gpPushErr,
+                    ifrProbe, ifrProbeErr,
+                    gDataKeys, dtGameIDKeys, lobbyNetKeys, coreWsKeys, wsUrlSample, resSample,
+                    lobbyNetSample, netTapFetch, netTapXhr, netTapWs, netTapCoreWs, netTapXhrRsp, netTapWsSend, netTapWsRecv
+                });
+                var msg =
+                    $"[WM_DIAG][{phase}] host={host} ready={ready} chrome={N("chrome")} " +
+                    $"hwCollect={N("hwCollect")} hwStart={N("hwStart")} gpCollect={N("gpCollect")} gpPush={N("gpPush")} " +
+                    $"hwCount={N("hwCount")} gpCount={N("gpCount")} isWm={N("isWm")} startRet={S("startRet")} gpPushRet={S("gpPushRet")} " +
+                    $"hwSample={ClipForLog(S("hwSample"), 80)} gpSample={ClipForLog(S("gpSample"), 80)} topPost={N("topPost")} parentPost={N("parentPost")} " +
+                    $"ifrCount={N("ifrCount")} scriptCount={N("scriptCount")} bodyTextLen={N("bodyTextLen")} htmlLen={N("htmlLen")} " +
+                    $"hasGData={N("hasGData")} hasLobbyNet={N("hasLobbyNet")} hasCoreWs={N("hasCoreWs")} " +
+                    $"win={ClipForLog(S("winName"), 40)} lang={ClipForLog(S("docLang"), 16)} " +
+                    $"gDataKeys={ClipForLog(gDataKeys, 120)} dtGameIDKeys={ClipForLog(dtGameIDKeys, 120)} lobbyNetKeys={ClipForLog(lobbyNetKeys, 120)} coreWsKeys={ClipForLog(coreWsKeys, 120)} " +
+                    $"wsUrlSample={ClipForLog(wsUrlSample, 180)} resSample={ClipForLog(resSample, 180)} lobbyNetSample={ClipForLog(lobbyNetSample, 180)} " +
+                    $"tapFetch={ClipForLog(netTapFetch, 180)} tapXhr={ClipForLog(netTapXhr, 180)} tapWs={ClipForLog(netTapWs, 180)} tapCoreWs={ClipForLog(netTapCoreWs, 180)} " +
+                    $"tapXhrRsp={ClipForLog(netTapXhrRsp, 180)} tapWsSend={ClipForLog(netTapWsSend, 180)} tapWsRecv={ClipForLog(netTapWsRecv, 180)} " +
+                    $"hwErr={ClipForLog(hwErr, 80)} gpErr={ClipForLog(gpErr, 80)} startErr={ClipForLog(startErr, 80)} gpPushErr={ClipForLog(gpPushErr, 80)} " +
+                    $"href={ClipForLog(href, 160)} bodySample={ClipForLog(bodySample, 120)} ifrSample={ClipForLog(ifrSample, 120)} " +
+                    $"ifrProbe={ClipForLog(ifrProbe, 220)} ifrProbeErr={ClipForLog(ifrProbeErr, 80)}{nav}";
+                LogChangedOrThrottled($"WM_DIAG_FRAME:{phase}", sig, msg, 3000);
+
+                if (N("isWm") == 1 && N("gpCollect") == 1)
+                {
+                    var wmSig = $"{host}|{N("gpCount")}|{S("gpPushRet")}|{S("gpSample")}|{S("gpErr")}|{S("gpPushErr")}|{N("ifrCount")}|{N("hasGData")}|{N("hasLobbyNet")}|{N("hasCoreWs")}";
+                    var wmMsg = $"[WM_DIAG][WMFrame] phase={phase} host={host} gpCount={N("gpCount")} gpPushRet={S("gpPushRet")} gpSample={ClipForLog(S("gpSample"), 120)} gpErr={ClipForLog(S("gpErr"), 80)} gpPushErr={ClipForLog(S("gpPushErr"), 80)} ifrCount={N("ifrCount")} hasGData={N("hasGData")} hasLobbyNet={N("hasLobbyNet")} hasCoreWs={N("hasCoreWs")} bodyTextLen={N("bodyTextLen")} href={ClipForLog(href, 160)}";
+                    LogChangedOrThrottled("WM_DIAG_WM_FRAME", wmSig, wmMsg, 3000);
+                    if (N("gpCount") <= 0)
+                    {
+                        var wmEmptySig = $"{host}|{phase}|{ready}|{N("ifrCount")}|{N("scriptCount")}|{N("bodyTextLen")}|{N("hasGData")}|{N("hasLobbyNet")}|{N("hasCoreWs")}|{S("title")}|{bodySample}|{ifrSample}";
+                        var wmEmptyMsg =
+                            $"[WM_DIAG][WMNoRoom] phase={phase} host={host} ready={ready} title={ClipForLog(S("title"), 80)} " +
+                            $"gpCount={N("gpCount")} gpPushRet={S("gpPushRet")} ifrCount={N("ifrCount")} scriptCount={N("scriptCount")} " +
+                            $"bodyTextLen={N("bodyTextLen")} hasGData={N("hasGData")} hasLobbyNet={N("hasLobbyNet")} hasCoreWs={N("hasCoreWs")} " +
+                            $"href={ClipForLog(href, 160)} bodySample={ClipForLog(bodySample, 160)} ifrSample={ClipForLog(ifrSample, 160)} " +
+                            $"ifrProbe={ClipForLog(ifrProbe, 240)} ifrProbeErr={ClipForLog(ifrProbeErr, 80)}";
+                        LogChangedOrThrottled("WM_DIAG_WM_EMPTY", wmEmptySig, wmEmptyMsg, 2000);
+
+                        if (N("ifrCount") > 0)
+                        {
+                            var iframeSig = $"{host}|{phase}|{N("ifrCount")}|{ClipForLog(ifrProbe, 180)}|{ClipForLog(ifrProbeErr, 80)}";
+                            var iframeMsg =
+                                $"[WM_DIAG][WMIframeProbe] phase={phase} host={host} ifrCount={N("ifrCount")} " +
+                                $"ifrSample={ClipForLog(ifrSample, 180)} ifrProbe={ClipForLog(ifrProbe, 260)} ifrProbeErr={ClipForLog(ifrProbeErr, 100)}";
+                            LogChangedOrThrottled("WM_DIAG_WM_IFRAME_PROBE", iframeSig, iframeMsg, 2000);
+
+                            if (root.TryGetProperty("ifrProbeJson", out var ifrProbeJsonEl) && ifrProbeJsonEl.ValueKind == JsonValueKind.Array)
+                            {
+                                static string ElS(JsonElement obj, string name)
+                                {
+                                    try
+                                    {
+                                        return obj.TryGetProperty(name, out var el) ? (el.GetString() ?? "") : "";
+                                    }
+                                    catch { return ""; }
+                                }
+                                static int ElN(JsonElement obj, string name, int def = 0)
+                                {
+                                    try
+                                    {
+                                        if (!obj.TryGetProperty(name, out var el)) return def;
+                                        if (el.ValueKind == JsonValueKind.Number) return el.GetInt32();
+                                        if (el.ValueKind == JsonValueKind.String && int.TryParse(el.GetString(), out var n)) return n;
+                                        return def;
+                                    }
+                                    catch { return def; }
+                                }
+
+                                foreach (var iframeEl in ifrProbeJsonEl.EnumerateArray())
+                                {
+                                    if (iframeEl.ValueKind != JsonValueKind.Object)
+                                        continue;
+
+                                    var iframeIndex = ElN(iframeEl, "index", -1);
+                                    var iframeId = ElS(iframeEl, "id");
+                                    var iframeHost = ElS(iframeEl, "host");
+                                    var iframeReady = ElS(iframeEl, "ready");
+                                    var iframeTitle = ElS(iframeEl, "title");
+                                     var iframeHref = ElS(iframeEl, "href");
+                                    var iframeBodySample = ElS(iframeEl, "bodySample");
+                                    var iframeHwSample = ElS(iframeEl, "hwSample");
+                                    var iframeGpSample = ElS(iframeEl, "gpSample");
+                                    var iframeRoomHint = ElS(iframeEl, "roomHintSample");
+                                    var iframeErr = ElS(iframeEl, "err");
+                                    var iframeHwErr = ElS(iframeEl, "hwErr");
+                                     var iframeGpErr = ElS(iframeEl, "gpErr");
+                                     RememberWmRelayCandidatesFromTap(diagScope, iframeHref, ElS(iframeEl, "netTapFetch"), ElS(iframeEl, "netTapXhr"), ElS(iframeEl, "netTapWs"), null, iframeHref);
+                                     var iframeDetailSig = string.Join("|", new[]
+                                    {
+                                        phase,
+                                        host,
+                                        iframeIndex.ToString(CultureInfo.InvariantCulture),
+                                        iframeId,
+                                        iframeHost,
+                                        iframeReady,
+                                        ElN(iframeEl, "cw").ToString(CultureInfo.InvariantCulture),
+                                        ElN(iframeEl, "cross").ToString(CultureInfo.InvariantCulture),
+                                        ElN(iframeEl, "hw").ToString(CultureInfo.InvariantCulture),
+                                        ElN(iframeEl, "hwCount", -1).ToString(CultureInfo.InvariantCulture),
+                                        ElN(iframeEl, "gp").ToString(CultureInfo.InvariantCulture),
+                                        ElN(iframeEl, "gpCount", -1).ToString(CultureInfo.InvariantCulture),
+                                        ElN(iframeEl, "roomHintCount").ToString(CultureInfo.InvariantCulture),
+                                        ElN(iframeEl, "hasGData").ToString(CultureInfo.InvariantCulture),
+                                        ElN(iframeEl, "hasLobbyNet").ToString(CultureInfo.InvariantCulture),
+                                        ElN(iframeEl, "hasCoreWs").ToString(CultureInfo.InvariantCulture),
+                                        iframeHwSample,
+                                        iframeGpSample,
+                                        iframeRoomHint,
+                                        ElS(iframeEl, "gDataKeys"),
+                                        ElS(iframeEl, "dtGameIDKeys"),
+                                         ElS(iframeEl, "lobbyNetKeys"),
+                                         ElS(iframeEl, "coreWsKeys"),
+                                         ElS(iframeEl, "wsUrlSample"),
+                                         ElS(iframeEl, "resSample"),
+                                         ElS(iframeEl, "lobbyNetSample"),
+                                         ElS(iframeEl, "netTapFetch"),
+                                         ElS(iframeEl, "netTapXhr"),
+                                         ElS(iframeEl, "netTapWs"),
+                                         ElS(iframeEl, "netTapCoreWs"),
+                                         ElS(iframeEl, "netTapXhrRsp"),
+                                         ElS(iframeEl, "netTapWsSend"),
+                                         ElS(iframeEl, "netTapWsRecv"),
+                                         iframeBodySample,
+                                         iframeErr,
+                                         iframeHwErr,
+                                        iframeGpErr
+                                    });
+                                    var iframeDetailMsg =
+                                        $"[WM_DIAG][WMIframeDetail] phase={phase} host={host} idx={iframeIndex} id={ClipForLog(iframeId, 32)} " +
+                                        $"cw={ElN(iframeEl, "cw")} cross={ElN(iframeEl, "cross")} ready={ClipForLog(iframeReady, 24)} title={ClipForLog(iframeTitle, 80)} " +
+                                        $"hw={ElN(iframeEl, "hw")}/{ElN(iframeEl, "hwCount", -1)} gp={ElN(iframeEl, "gp")}/{ElN(iframeEl, "gpCount", -1)} " +
+                                        $"hint={ElN(iframeEl, "roomHintCount")} gData={ElN(iframeEl, "hasGData")} lobbyNet={ElN(iframeEl, "hasLobbyNet")} coreWs={ElN(iframeEl, "hasCoreWs")} " +
+                                         $"scriptCount={ElN(iframeEl, "scriptCount")} bodyTextLen={ElN(iframeEl, "bodyTextLen")} htmlLen={ElN(iframeEl, "htmlLen")} " +
+                                         $"src={ClipForLog(ElS(iframeEl, "src"), 160)} href={ClipForLog(iframeHref, 160)} " +
+                                         $"gDataKeys={ClipForLog(ElS(iframeEl, "gDataKeys"), 100)} dtGameIDKeys={ClipForLog(ElS(iframeEl, "dtGameIDKeys"), 100)} " +
+                                         $"lobbyNetKeys={ClipForLog(ElS(iframeEl, "lobbyNetKeys"), 100)} coreWsKeys={ClipForLog(ElS(iframeEl, "coreWsKeys"), 100)} " +
+                                         $"wsUrlSample={ClipForLog(ElS(iframeEl, "wsUrlSample"), 140)} resSample={ClipForLog(ElS(iframeEl, "resSample"), 140)} lobbyNetSample={ClipForLog(ElS(iframeEl, "lobbyNetSample"), 160)} " +
+                                         $"tapFetch={ClipForLog(ElS(iframeEl, "netTapFetch"), 140)} tapXhr={ClipForLog(ElS(iframeEl, "netTapXhr"), 140)} tapWs={ClipForLog(ElS(iframeEl, "netTapWs"), 140)} tapCoreWs={ClipForLog(ElS(iframeEl, "netTapCoreWs"), 140)} " +
+                                         $"tapXhrRsp={ClipForLog(ElS(iframeEl, "netTapXhrRsp"), 140)} tapWsSend={ClipForLog(ElS(iframeEl, "netTapWsSend"), 140)} tapWsRecv={ClipForLog(ElS(iframeEl, "netTapWsRecv"), 140)} " +
+                                         $"hwSample={ClipForLog(iframeHwSample, 120)} gpSample={ClipForLog(iframeGpSample, 120)} " +
+                                         $"roomHint={ClipForLog(iframeRoomHint, 120)} bodySample={ClipForLog(iframeBodySample, 140)} " +
+                                         $"err={ClipForLog(iframeErr, 80)} hwErr={ClipForLog(iframeHwErr, 80)} gpErr={ClipForLog(iframeGpErr, 80)}";
+                                    LogChangedOrThrottled($"WM_DIAG_WM_IFRAME_DETAIL:{phase}:{iframeIndex}", iframeDetailSig, iframeDetailMsg, 1500);
+                                }
+                            }
+                        }
+
+                        var bodySignal = (S("title") + " " + bodySample + " " + href);
+                        if (bodySignal.IndexOf("原网址维护中", StringComparison.OrdinalIgnoreCase) >= 0
+                            || bodySignal.IndexOf("kx55588.com", StringComparison.OrdinalIgnoreCase) >= 0
+                            || bodySignal.IndexOf("kx66699.com", StringComparison.OrdinalIgnoreCase) >= 0
+                            || bodySignal.IndexOf("maintenance", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            var maintSig = $"{host}|{phase}|{S("title")}|{bodySample}";
+                            var maintMsg =
+                                $"[WM_DIAG][WMMaintenanceGate] phase={phase} host={host} title={ClipForLog(S("title"), 80)} " +
+                                $"href={ClipForLog(href, 160)} bodySample={ClipForLog(bodySample, 180)}";
+                            LogChangedOrThrottled("WM_DIAG_WM_MAINT", maintSig, maintMsg, 1500);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogThrottled($"WM_DIAG_FRAME_ERR:{phase}", $"[WM_DIAG][{phase}] probe error: {ex.Message}", 5000);
+            }
+        }
+
+        private void ScheduleDelayedFrameDiag(CoreWebView2Frame? frame, string basePhase, string? navUri = null)
+        {
+            try
+            {
+                if (frame == null || Dispatcher == null) return;
+                Dispatcher.BeginInvoke(new Action(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(1200);
+                        await LogFrameCollectorDiagAsync(frame, basePhase + "+1200", navUri);
+                        await Task.Delay(2800);
+                        await LogFrameCollectorDiagAsync(frame, basePhase + "+4000", navUri);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogThrottled($"WM_DIAG_DELAY_ERR:{basePhase}", $"[WM_DIAG][{basePhase}] delayed probe error: {ex.Message}", 5000);
+                    }
+                }));
+            }
+            catch { }
+        }
+
         private void LogHistoryMiss(string tableId, int expectedGameId, int gameId, string? sessionKey, string? result, string source)
         {
             if (!_enableHistMissLogs)
@@ -1892,7 +3237,12 @@ Ví dụ không hợp lệ:
                             msg += " err=" + err;
                         parts.Add(msg);
                     }
-                    LogDebug("[ROOMDBG][DirectCollect] " + string.Join(" | ", parts.Take(8)));
+                    var summary = string.Join(" | ", parts.Take(8));
+                    LogChangedOrThrottled(
+                        "ROOM_DIRECT_COLLECT",
+                        summary,
+                        "[WM_DIAG][DirectCollect] " + summary,
+                        5000);
                 }
 
                 if (rooms.Count == 0)
@@ -1936,6 +3286,37 @@ Ví dụ không hợp lệ:
                 }
 
                 var popupRoomHost = ReferenceEquals(targetWeb, _popupWeb) && PopupHost?.Visibility == Visibility.Visible;
+                var traceScope = GetWebDebugScope(targetWeb);
+                string targetUrl = "";
+                try
+                {
+                    targetUrl = targetWeb.CoreWebView2?.Source ?? targetWeb.Source?.ToString() ?? "";
+                }
+                catch { }
+
+                if (userTriggered)
+                {
+                    EnsureWmTrace("refresh-click", targetUrl, traceScope);
+                    LogWmTrace(
+                        "refresh.begin",
+                        $"trigger=user scope={traceScope} popup={(popupRoomHost ? 1 : 0)} url={ClipForLog(targetUrl, 180)} latestSource={ClipForLog(_latestNetworkRoomsSource, 100)} protocolCache={_protocol21Rooms.Count}",
+                        "refresh.begin",
+                        300,
+                        force: true);
+                    if (!IsLikelyWmRoomFeedSource(_latestNetworkRoomsSource) && _protocol21Rooms.Count == 0)
+                    {
+                        var mismatch =
+                            $"[WM_DIAG][RefreshSourceMismatch] scope={traceScope} url={ClipForLog(targetUrl, 180)} " +
+                            $"latestSource={ClipForLog(_latestNetworkRoomsSource, 220)} latestRooms={_latestNetworkRooms.Count} protocolCache={_protocol21Rooms.Count}";
+                        LogChangedOrThrottled("WM_DIAG_REFRESH_SOURCE_MISMATCH", mismatch, mismatch, 800);
+                        LogWmTrace(
+                            "refresh.source-mismatch",
+                            $"scope={traceScope} latestSource={ClipForLog(_latestNetworkRoomsSource, 180)} latestRooms={_latestNetworkRooms.Count} protocolCache={_protocol21Rooms.Count}",
+                            "refresh.source-mismatch",
+                            300,
+                            force: true);
+                    }
+                }
 
                 var js = @"(function(){
   try{
@@ -2146,30 +3527,55 @@ Ví dụ không hợp lệ:
 })();";
 
                 List<RoomEntry> list = new();
-                var roomSource = "protocol21-mapped";
+                var roomSource = "";
 
                 const int networkAttempts = 10;
                 for (int attempt = 0; attempt < networkAttempts; attempt++)
                 {
-                    if (popupRoomHost && TryGetVisibleProtocol21Rooms(out var seededRooms, out var seededSource))
+                    if (TryGetLatestNetworkRooms(out var latestRooms, out var latestSource, TimeSpan.FromSeconds(30)) &&
+                        IsLikelyWmRoomFeedSource(latestSource) &&
+                        latestRooms.Count > 0)
+                    {
+                        list = latestRooms;
+                        roomSource = latestSource;
+                        LogDebug($"[ROOMDBG][RefreshRoomList] latest-seed attempt={attempt + 1} popup={(popupRoomHost ? 1 : 0)} source={roomSource} count={list.Count} sample={Sample(list.Select(r => r.Name))}");
+                        break;
+                    }
+
+                    if (TryGetVisibleProtocol21Rooms(out var seededRooms, out var seededSource))
                     {
                         list = seededRooms;
                         roomSource = seededSource;
+                        LogDebug($"[ROOMDBG][RefreshRoomList] protocol-seed attempt={attempt + 1} popup={(popupRoomHost ? 1 : 0)} count={list.Count} sample={Sample(list.Select(r => r.Name))}");
                         break;
                     }
 
                     await Task.Delay(350);
                 }
 
-                if (list.Count == 0 && !popupRoomHost)
+                if (userTriggered)
                 {
-                    if (popupRoomHost && TryGetVisibleProtocol21Rooms(out var protocolRooms, out var protocolSource))
+                    int protocolCacheCount;
+                    string protocolCacheSample;
+                    lock (_roomFeedGate)
                     {
-                        list = protocolRooms;
-                        roomSource = protocolSource;
+                        protocolCacheCount = _protocol21Rooms.Count;
+                        protocolCacheSample = string.Join(" | ", _protocol21Rooms.Values
+                            .Where(r => !string.IsNullOrWhiteSpace(r.Name))
+                            .OrderBy(r => r.Sort <= 0 ? int.MaxValue : r.Sort)
+                            .ThenBy(r => BuildRoomDisplaySortKey(r.Name), StringComparer.Ordinal)
+                            .Select(r => r.Name)
+                            .Take(6));
                     }
 
+                    var cacheMsg =
+                        $"[WM_DIAG][RefreshProtocol21Cache] scope={traceScope} popup={(popupRoomHost ? 1 : 0)} " +
+                        $"seeded={list.Count} cache={protocolCacheCount} roomSource={ClipForLog(roomSource, 120)} sample={ClipForLog(protocolCacheSample, 220)}";
+                    LogChangedOrThrottled("WM_DIAG_REFRESH_PROTOCOL21_CACHE", cacheMsg, cacheMsg, 500);
+                }
 
+                if (list.Count == 0)
+                {
                     const int maxAttempts = 15;
                     for (int attempt = 0; attempt < maxAttempts; attempt++)
                     {
@@ -2185,7 +3591,7 @@ Ví dụ không hợp lệ:
                         await Task.Delay(600); // chờ DOM lobby load
                     }
 
-                    if (list.Count == 0 && popupRoomHost)
+                    if (list.Count == 0)
                     {
                         list = await TryGetVisibleLobbyRoomsAsync(targetWeb);
                         if (list.Count > 0)
@@ -2277,11 +3683,28 @@ Ví dụ không hợp lệ:
                     var arr = xs?.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).Take(take).ToArray() ?? Array.Empty<string>();
                     return arr.Length == 0 ? "(rỗng)" : string.Join(" | ", arr);
                 }
+                if (string.IsNullOrWhiteSpace(roomSource))
+                    roomSource = "none";
+
                 LogDebug($"[ROOMDBG][RefreshRoomList] source={roomSource} clean={filtered.Count} sample={Sample(filtered.Select(r => r.Name))}");
+                if (userTriggered)
+                {
+                    LogWmTrace(
+                        "refresh.result",
+                        $"scope={traceScope} source={ClipForLog(roomSource, 120)} rooms={filtered.Count} sample={ClipForLog(Sample(filtered.Select(r => r.Name), 6), 180)}",
+                        "refresh.result",
+                        300,
+                        force: true);
+                }
 
                 if (filtered.Count == 0)
                 {
                     Log("[ROOM] Không tìm thấy bàn từ feed protocol35/protocol21. Hãy thử bấm 'Lấy danh sách bàn' sau khi sàn tải xong.");
+                    if (userTriggered)
+                    {
+                        LogWmTrace("refresh.empty", $"scope={traceScope} source={ClipForLog(roomSource, 120)}", "refresh.empty", 300, force: true);
+                        LogWmSessionSummary("refresh.empty", traceScope, targetUrl, force: true);
+                    }
                 }
                 else
                 {
@@ -2289,6 +3712,7 @@ Ví dụ không hợp lệ:
                     bool changed = false;
                     var src = targetWeb?.CoreWebView2?.Source ?? targetWeb?.Source?.ToString() ?? "";
                     var srcLower = src.ToLowerInvariant();
+                    var protocol35Feed = roomSource.IndexOf("protocol35", StringComparison.OrdinalIgnoreCase) >= 0;
                     var protocol21Feed = roomSource.IndexOf("protocol21", StringComparison.OrdinalIgnoreCase) >= 0;
                     var tableUpdateFeed = roomSource.IndexOf("table_update", StringComparison.OrdinalIgnoreCase) >= 0;
                     var popupVisibleDomFeed = popupRoomHost &&
@@ -2299,7 +3723,7 @@ Ví dụ không hợp lệ:
                         srcLower.Contains("/lobby2") ||
                         (srcLower.Contains("/desktop/") && srcLower.Contains("multibaccarat"));
                     var inLobby = srcLower.Contains("pragmaticplaylive") && pathLooksLikeLobby;
-                    var looksLikeBaccarat = filtered.Any(n => TextNorm.U(n.Name).Contains("BACCARAT"));
+                    var looksLikeBaccarat = filtered.Any(n => LooksLikeBaccaratRoom(n.Name) || LooksLikeBaccaratRoom(n.Id));
                     if (!looksLikeBaccarat)
                         looksLikeBaccarat = filtered.Any(n => (n.Id ?? "").StartsWith("TileHeight-", StringComparison.OrdinalIgnoreCase));
                     if (!looksLikeBaccarat && inLobby && filtered.Count >= 10)
@@ -2308,7 +3732,7 @@ Ví dụ không hợp lệ:
 
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        if (!protocol21Feed && !tableUpdateFeed && !popupVisibleDomFeed && (!inLobby || !looksLikeBaccarat))
+                        if (!protocol35Feed && !protocol21Feed && !tableUpdateFeed && !popupVisibleDomFeed && (!inLobby || !looksLikeBaccarat))
                         {
                             accepted = false;
                             var reason = !inLobby ? "không phải lobby Pragmatic" : "không thấy Baccarat";
@@ -2362,6 +3786,8 @@ Ví dụ không hợp lệ:
                         if (userTriggered)
                         {
                             var sample = string.Join(" | ", filtered.Select(r => r.Name).Take(6));
+                            LogWmTrace("refresh.reject", $"scope={traceScope} source={ClipForLog(roomSource, 120)} src={ClipForLog(src, 180)} sample={ClipForLog(sample, 180)}", "refresh.reject", 300, force: true);
+                            LogWmSessionSummary("refresh.reject", traceScope, src, force: true);
                             Log("[ROOM] Bỏ qua danh sách (không phải lobby Baccarat): " + sample);
                         }
                         return;
@@ -2374,12 +3800,22 @@ Ví dụ không hợp lệ:
                     }
 
                     Log($"[ROOM] Đã lấy {filtered.Count} bàn.");
+                    if (userTriggered)
+                    {
+                        LogWmTrace("refresh.accept", $"scope={traceScope} source={ClipForLog(roomSource, 120)} rooms={filtered.Count}", "refresh.accept", 300, force: true);
+                        LogWmSessionSummary("refresh.accept", traceScope, src, force: true);
+                    }
                     _roomListLastLoaded = DateTime.UtcNow;
                 }
                 }
             catch (Exception ex)
             {
                 Log("[ROOM] Lỗi khi lấy danh sách bàn: " + ex.Message);
+                if (userTriggered)
+                {
+                    LogWmTrace("refresh.error", $"error={ClipForLog(ex.Message, 220)}", "refresh.error", 300, force: true);
+                    LogWmSessionSummary("refresh.error", GetWebDebugScope(GetActiveRoomHostWebView()), null, force: true);
+                }
             }
             finally
             {
@@ -2396,6 +3832,8 @@ Ví dụ không hợp lệ:
             if (lower.StartsWith("group ")) return true;
             if (lower.StartsWith("group-")) return true;
             if (lower.StartsWith("ellipse")) return true;
+            if (lower == "casino" || lower == "esports" || lower == "lotto" || lower == "other" || lower == "poker")
+                return true;
             return false;
         }
 
@@ -2597,6 +4035,23 @@ Ví dụ không hợp lệ:
                     : _cfg.LeaseClientId;
                 EnsureDeviceId();
                 EnsureTrialKey();
+                try
+                {
+                    var cachedUser = (_cfg.LicenseUser ?? "").Trim().ToLowerInvariant();
+                    if (!string.IsNullOrWhiteSpace(cachedUser)
+                        && DateTimeOffset.TryParse(_cfg.LicenseUntil, out var cachedUntilUtc)
+                        && cachedUntilUtc > DateTimeOffset.UtcNow)
+                    {
+                        _lastKnownLicenseUser = cachedUser;
+                        _lastKnownLicenseUntilUtc = cachedUntilUtc;
+                    }
+                    else
+                    {
+                        _lastKnownLicenseUser = "";
+                        _lastKnownLicenseUntilUtc = null;
+                    }
+                }
+                catch { }
 
                 if (string.IsNullOrWhiteSpace(_cfg.Url))
                     _cfg.Url = DEFAULT_URL;
@@ -3546,7 +5001,21 @@ Ví dụ không hợp lệ:
                 }
 
                 if (best == null)
+                {
+                    var overlayActive = _overlayActiveRooms.Contains(tableId) ? 1 : 0;
+                    var selected = _selectedRooms.Contains(tableId) ? 1 : 0;
+                    var stateCount = _popupServerRoadStates.Count;
+                    var sample = string.Join(" | ", _popupServerRoadStates.Values
+                        .Where(s => s != null)
+                        .Take(4)
+                        .Select(s => $"{s.TableId}/{s.GameId}/{s.RouteKey}"));
+                    var sig = $"{tableId}|g={expectedGameId}|overlay={overlayActive}|sel={selected}|states={stateCount}|sample={sample}";
+                    var msg =
+                        $"[WM_DIAG][PopupRoadSnapshotMiss] table={ClipForLog(tableId, 48)} expectedGame={expectedGameId} overlayActive={overlayActive} " +
+                        $"selected={selected} states={stateCount} sample={ClipForLog(sample, 200)}";
+                    LogChangedOrThrottled("WM_DIAG_POPUP_ROAD_SNAPSHOT_MISS", sig, msg, 1500);
                     return false;
+                }
 
                 var historyTokens = new List<char>();
                 if (best.History != null)
@@ -3679,6 +5148,7 @@ Ví dụ không hợp lệ:
             var setting = GetOrCreateTableSetting(tableId, tableName, out created);
             _activeTableId = setting.Id;
             ApplyTableSettingToUi(setting);
+            await ScrollRoomIntoViewAsync(setting.Name);
             UpdateStatsUi(GetOrCreateTableTaskState(setting.Id, setting.Name));
             await PushTableCutValuesToOverlayAsync(setting.Id, setting.CutProfit, setting.CutLoss);
             if (created)
@@ -3789,6 +5259,308 @@ Ví dụ không hợp lệ:
             return trimmed.Length > 0 && (trimmed[0] == '{' || trimmed[0] == '[');
         }
 
+        private bool TryHandleFrameNetTapMessage(JsonElement root, string scope)
+        {
+            try
+            {
+                if (!root.TryGetProperty("abx", out var abxEl))
+                    return false;
+
+                var abx = (abxEl.GetString() ?? "").Trim();
+                if (string.Equals(abx, "frame_net_tap_chunk", StringComparison.OrdinalIgnoreCase))
+                    return TryHandleFrameNetTapChunkMessage(root, scope);
+                if (!string.Equals(abx, "frame_net_tap", StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                var kind = root.TryGetProperty("kind", out var kindEl) ? (kindEl.GetString() ?? "").Trim() : "";
+                var value = root.TryGetProperty("value", out var valueEl) ? (valueEl.GetString() ?? "").Trim() : "";
+                var href = root.TryGetProperty("href", out var hrefEl) ? (hrefEl.GetString() ?? "").Trim() : "";
+                var host = root.TryGetProperty("host", out var hostEl) ? (hostEl.GetString() ?? "").Trim() : "";
+                var frameName = root.TryGetProperty("frame_name", out var frameNameEl) ? (frameNameEl.GetString() ?? "").Trim() : "";
+                var title = root.TryGetProperty("title", out var titleEl) ? (titleEl.GetString() ?? "").Trim() : "";
+                var ts = root.TryGetProperty("ts", out var tsEl) ? tsEl.ToString() : "";
+
+                return HandleFrameNetTapPayload(scope, kind, value, href, host, frameName, title, ts);
+            }
+            catch (Exception ex)
+            {
+                LogThrottled("WM_DIAG_FRAME_RUNTIME_NET_ERR", "[WM_DIAG][FrameRuntimeNet] error=" + ClipForLog(ex.Message, 220), 2000);
+                return true;
+            }
+        }
+
+        private bool TryHandleFrameNetTapChunkMessage(JsonElement root, string scope)
+        {
+            try
+            {
+                var msgId = root.TryGetProperty("msg_id", out var msgIdEl) ? (msgIdEl.GetString() ?? "").Trim() : "";
+                var kind = root.TryGetProperty("kind", out var kindEl) ? (kindEl.GetString() ?? "").Trim() : "";
+                var href = root.TryGetProperty("href", out var hrefEl) ? (hrefEl.GetString() ?? "").Trim() : "";
+                var host = root.TryGetProperty("host", out var hostEl) ? (hostEl.GetString() ?? "").Trim() : "";
+                var frameName = root.TryGetProperty("frame_name", out var frameNameEl) ? (frameNameEl.GetString() ?? "").Trim() : "";
+                var title = root.TryGetProperty("title", out var titleEl) ? (titleEl.GetString() ?? "").Trim() : "";
+                var ts = root.TryGetProperty("ts", out var tsEl) ? tsEl.ToString() : "";
+                var chunk = root.TryGetProperty("value", out var valueEl) ? (valueEl.GetString() ?? "") : "";
+                var chunkIndex = root.TryGetProperty("chunk_index", out var idxEl) ? I(idxEl.ToString(), -1) : -1;
+                var chunkTotal = root.TryGetProperty("chunk_total", out var totalEl) ? I(totalEl.ToString(), -1) : -1;
+                var valueLen = root.TryGetProperty("value_len", out var lenEl) ? I(lenEl.ToString(), 0) : 0;
+                if (string.IsNullOrWhiteSpace(msgId) || string.IsNullOrWhiteSpace(kind) || chunkIndex < 0 || chunkTotal <= 0 || chunkIndex >= chunkTotal)
+                    return true;
+
+                var key = scope + "|" + msgId;
+                string? assembled = null;
+                lock (_frameNetTapChunkGate)
+                {
+                    var staleAt = DateTime.UtcNow.AddMinutes(-2);
+                    var staleKeys = _frameNetTapChunks
+                        .Where(kv => kv.Value.LastUpdatedUtc < staleAt)
+                        .Select(kv => kv.Key)
+                        .ToList();
+                    foreach (var staleKey in staleKeys)
+                        _frameNetTapChunks.Remove(staleKey);
+
+                    if (!_frameNetTapChunks.TryGetValue(key, out var buffer) || buffer.Total != chunkTotal)
+                    {
+                        buffer = new FrameNetTapChunkBuffer
+                        {
+                            Scope = scope,
+                            Kind = kind,
+                            Href = href,
+                            Host = host,
+                            FrameName = frameName,
+                            Title = title,
+                            Ts = ts,
+                            Total = chunkTotal,
+                            ValueLength = valueLen,
+                            Parts = new string?[chunkTotal],
+                            LastUpdatedUtc = DateTime.UtcNow
+                        };
+                        _frameNetTapChunks[key] = buffer;
+                    }
+
+                    buffer.LastUpdatedUtc = DateTime.UtcNow;
+                    buffer.Kind = kind;
+                    buffer.Href = href;
+                    buffer.Host = host;
+                    buffer.FrameName = frameName;
+                    buffer.Title = title;
+                    buffer.Ts = ts;
+                    if (valueLen > 0)
+                        buffer.ValueLength = valueLen;
+                    buffer.Parts[chunkIndex] = chunk;
+
+                    if (buffer.Parts.All(p => p != null))
+                    {
+                        assembled = string.Concat(buffer.Parts!);
+                        _frameNetTapChunks.Remove(key);
+                    }
+                }
+
+                if (assembled == null)
+                    return true;
+
+                var chunkMsg =
+                    $"[WM_DIAG][FrameRuntimeChunk] scope={scope} kind={ClipForLog(kind, 24)} msg={ClipForLog(msgId, 48)} " +
+                    $"chunks={chunkTotal} len={assembled.Length}/{valueLen} href={ClipForLog(href, 180)}";
+                LogChangedOrThrottled("WM_DIAG_FRAME_RUNTIME_CHUNK:" + ClipForLog(key, 96), chunkMsg, chunkMsg, 800);
+                return HandleFrameNetTapPayload(scope, kind, assembled, href, host, frameName, title, ts);
+            }
+            catch (Exception ex)
+            {
+                LogThrottled("WM_DIAG_FRAME_RUNTIME_CHUNK_ERR", "[WM_DIAG][FrameRuntimeChunk] error=" + ClipForLog(ex.Message, 220), 2000);
+                return true;
+            }
+        }
+
+        private bool HandleFrameNetTapPayload(string scope, string kind, string value, string href, string host, string frameName, string title, string ts)
+        {
+            var frameHintParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(frameName))
+                frameHintParts.Add("name=" + frameName);
+            if (!string.IsNullOrWhiteSpace(host))
+                frameHintParts.Add("host=" + host);
+            if (!string.IsNullOrWhiteSpace(href))
+                frameHintParts.Add("href=" + href);
+            var frameHint = frameHintParts.Count > 0 ? string.Join(", ", frameHintParts) : href;
+
+            var tapFetch = string.Equals(kind, "fetch", StringComparison.OrdinalIgnoreCase) ? value : null;
+            var tapXhr = string.Equals(kind, "xhr", StringComparison.OrdinalIgnoreCase) ? value : null;
+            var tapWs = string.Equals(kind, "ws", StringComparison.OrdinalIgnoreCase) ? value : null;
+            RememberWmRelayCandidatesFromTap(scope, href, tapFetch, tapXhr, tapWs, null, frameHint);
+
+            var runtimePayloadFed = TryFeedRuntimeTapPayloadToRoomParser(scope, kind, href, value);
+
+            var interesting =
+                IsWmUrl(href) ||
+                IsWmUrl(value) ||
+                IsWmRelayUrl(value) ||
+                host.IndexOf("qqhrsbjx.com", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                host.IndexOf("m8810.com", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            var msg =
+                $"[WM_DIAG][FrameRuntimeNet] scope={scope} kind={ClipForLog(kind, 24)} " +
+                $"frame={ClipForLog(frameHint, 220)} title={ClipForLog(title, 80)} " +
+                $"value={ClipForLog(value, 220)} ts={ClipForLog(ts, 32)}";
+
+            if (interesting)
+            {
+                EnsureWmTrace("frame-runtime-net", value, scope);
+                LogWmTrace(
+                    "frame.runtime-net",
+                    $"scope={scope} kind={ClipForLog(kind, 24)} frame={ClipForLog(frameHint, 180)} value={ClipForLog(value, 180)}",
+                    "frame.runtime-net:" + ClipForLog(kind + "|" + value, 96),
+                    800);
+                LogChangedOrThrottled(
+                    "WM_DIAG_FRAME_RUNTIME_NET:" + ClipForLog(scope + "|" + kind + "|" + value, 160),
+                    msg,
+                    msg,
+                    800);
+            }
+            else
+            {
+                LogChangedOrThrottled(
+                    "WM_DIAG_FRAME_RUNTIME_NET_OTHER:" + ClipForLog(scope + "|" + kind + "|" + value, 160),
+                    msg,
+                    msg,
+                    2500);
+            }
+
+            if (runtimePayloadFed)
+            {
+                LogChangedOrThrottled(
+                    "WM_DIAG_FRAME_RUNTIME_PAYLOAD_OK:" + ClipForLog(scope + "|" + kind + "|" + value, 160),
+                    value,
+                    $"[WM_DIAG][FrameRuntimePayload] scope={scope} kind={ClipForLog(kind, 24)} value={ClipForLog(value, 220)}",
+                    800);
+            }
+
+            return true;
+        }
+
+        private bool TryFeedRuntimeTapPayloadToRoomParser(string scope, string kind, string href, string value)
+        {
+            try
+            {
+                if (!string.Equals(kind, "wsRecv", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(kind, "xhrRsp", StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                var raw = (value ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(raw))
+                    return false;
+
+                var jsonStart = raw.IndexOf('{');
+                if (jsonStart < 0)
+                    jsonStart = raw.IndexOf('[');
+                if (jsonStart < 0)
+                    return false;
+
+                var payload = raw.Substring(jsonStart).Trim();
+                if (!LooksLikeJson(payload))
+                    return false;
+
+                var packetUrl = href;
+                var urlMatch = Regex.Match(raw, @"(?<u>wss?://[^\s]+|https?://[^\s]+)", RegexOptions.IgnoreCase);
+                if (urlMatch.Success)
+                    packetUrl = urlMatch.Groups["u"].Value;
+
+                int beforeProtocolCache;
+                int beforeLatestRooms;
+                string beforeLatestSource;
+                lock (_roomFeedGate)
+                {
+                    beforeProtocolCache = _protocol21Rooms.Count;
+                    beforeLatestRooms = _latestNetworkRooms.Count;
+                    beforeLatestSource = _latestNetworkRoomsSource;
+                }
+
+                EnsureWmTrace("frame-runtime-payload", packetUrl, scope);
+                LogWmTrace(
+                    "frame.runtime-payload",
+                    $"scope={scope} kind={ClipForLog(kind, 24)} url={ClipForLog(packetUrl, 180)} payload={ClipForLog(payload, 180)}",
+                    "frame.runtime-payload:" + ClipForLog(kind + "|" + packetUrl + "|" + payload, 96),
+                    600);
+
+                TryUpdateOverlayServerStateFromPayload(scope, "FRAME." + kind, packetUrl, payload, false);
+                TryUpdateLatestNetworkRoomsFromPayload(scope, "FRAME." + kind, packetUrl, payload, false, null);
+
+                int afterProtocolCache;
+                int afterLatestRooms;
+                string afterLatestSource;
+                lock (_roomFeedGate)
+                {
+                    afterProtocolCache = _protocol21Rooms.Count;
+                    afterLatestRooms = _latestNetworkRooms.Count;
+                    afterLatestSource = _latestNetworkRoomsSource;
+                }
+
+                if (payload.IndexOf("\"protocol\":21", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    payload.IndexOf("\"protocol\":35", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    beforeProtocolCache != afterProtocolCache ||
+                    beforeLatestRooms != afterLatestRooms ||
+                    !string.Equals(beforeLatestSource, afterLatestSource, StringComparison.Ordinal))
+                {
+                    var parserKind = NormalizeProtocolFeedKind("FRAME." + kind);
+                    var msg =
+                        $"[WM_DIAG][FrameRuntimeParser] scope={scope} kind={kind} parserKind={parserKind} url={ClipForLog(packetUrl, 180)} " +
+                        $"protocolCache={beforeProtocolCache}->{afterProtocolCache} latestRooms={beforeLatestRooms}->{afterLatestRooms} " +
+                        $"latestSource={ClipForLog(beforeLatestSource, 120)}=>{ClipForLog(afterLatestSource, 120)} payload={ClipForLog(payload, 180)}";
+                    LogChangedOrThrottled("WM_DIAG_FRAME_RUNTIME_PARSER", msg, msg, 800);
+                }
+
+                if (payload.IndexOf("\"protocol\":21", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    beforeProtocolCache == afterProtocolCache)
+                {
+                    var missDetail = DescribeProtocol21RuntimeMiss(payload);
+                    if (!string.IsNullOrWhiteSpace(missDetail))
+                    {
+                        var parserKind = NormalizeProtocolFeedKind("FRAME." + kind);
+                        var missMsg =
+                            $"[WM_DIAG][Protocol21RuntimeMiss] scope={scope} kind={kind} parserKind={parserKind} " +
+                            $"url={ClipForLog(packetUrl, 180)} cache={beforeProtocolCache}->{afterProtocolCache} detail={ClipForLog(missDetail, 240)}";
+                        LogChangedOrThrottled("WM_DIAG_PROTOCOL21_RUNTIME_MISS", missMsg, missMsg, 800);
+                    }
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogThrottled("WM_DIAG_FRAME_RUNTIME_PAYLOAD_ERR", "[WM_DIAG][FrameRuntimePayload] error=" + ClipForLog(ex.Message, 220), 2000);
+                return false;
+            }
+        }
+
+        private string DescribeProtocol21RuntimeMiss(string payload)
+        {
+            try
+            {
+                foreach (var candidate in ExtractPossibleJsonPayloads(payload))
+                {
+                    using var doc = JsonDocument.Parse(candidate);
+                    var root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object)
+                        continue;
+
+                    var protocol = I(FindKnownString(root, new[] { "protocol" }, 0), -1);
+                    if (protocol != 21)
+                        continue;
+
+                    if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+                        return "protocol21:data=missing";
+
+                    var keys = string.Join(",", data.EnumerateObject().Select(p => p.Name).Take(12));
+                    var desc = DescribeProtocol21Candidate(data);
+                    return $"{desc},keys={keys}";
+                }
+            }
+            catch (Exception ex)
+            {
+                return "error=" + ClipForLog(ex.Message, 120);
+            }
+
+            return "";
+        }
+
         // ====== WebView2 ======
         private async Task EnsureWebReadyAsync()
         {
@@ -3852,12 +5624,46 @@ Ví dụ không hợp lệ:
                             if (!TryPrepareWebMessage(e, out var display, out parsedDoc))
                             {
                                 if (!string.IsNullOrWhiteSpace(display))
-                                    //EnqueueUi($"[JS] {display}");
+                                {
+                                    var text = ClipForLog(display, 180);
+                                    LogChangedOrThrottled(
+                                        "WM_DIAG_NON_JSON",
+                                        $"{display.Length}|{text}",
+                                        $"[WM_DIAG][WebMsgDrop] non-json len={display.Length} text={text}",
+                                        5000);
+                                }
                                 return;
                             }
 
                             //EnqueueUi($"[JS] {display}"); // chỉ hiển thị UI, không ghi ra file
                             var root = parsedDoc.RootElement.Clone();
+
+                                if (TryPublishRoomsFromTableUpdate(root, "main/webmsg"))
+                                    return;
+
+                                if (TryHandleFrameNetTapMessage(root, "main"))
+                                    return;
+
+                                if (root.TryGetProperty("abx", out var diagAbxEl))
+                                {
+                                    var diagAbx = (diagAbxEl.GetString() ?? "").Trim();
+                                    if (string.Equals(diagAbx, "table_update", StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(diagAbx, "game_hint", StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(diagAbx, "frame_net_tap", StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(diagAbx, "raw", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        var diagUi = root.TryGetProperty("ui", out var diagUiEl) ? (diagUiEl.GetString() ?? "") : "";
+                                        var diagSrc = root.TryGetProperty("source", out var diagSrcEl) ? (diagSrcEl.GetString() ?? "") : "";
+                                        var diagCount = root.TryGetProperty("tables", out var tablesEl) && tablesEl.ValueKind == JsonValueKind.Array
+                                            ? tablesEl.GetArrayLength()
+                                            : 0;
+                                        var sig = $"{diagAbx}|{diagUi}|{diagSrc}|{diagCount}";
+                                        var msg = $"[WM_DIAG][WebMsg] abx={diagAbx} ui={diagUi} source={diagSrc} tables={diagCount}";
+                                        LogChangedOrThrottled("WM_DIAG_WEBMSG:" + diagAbx, sig, msg, 4000);
+                                    }
+                                }
+
+                                LogBetBridgeDiagnostic(root, "main");
 
                                 if (await TryHandleOverlayBridgeMessageAsync(root))
                                     return;
@@ -4411,7 +6217,7 @@ Ví dụ không hợp lệ:
     var cookiesLen=-1;
     try{ cookiesLen=String(d.cookie||'').length; }catch(_){}
     var bodyStyle=null;
-    try{ bodyStyle=b?getComputedStyle(b):null; }catch(_){}
+    try{ bodyStyle=b ? getComputedStyle(b) : null; }catch(_){}
     var frameHref='', frameTitle='', frameTextSample='', frameError='';
     var frameBodyLen=0, frameTextLen=0;
     try{
@@ -6083,6 +7889,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (_popupWeb?.CoreWebView2 == null) return;
 
             _homeJs ??= await LoadHomeJsAsync();
+            LogHomeJsSignatureIfAny();
 
             await _popupWeb.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(TOP_FORWARD);
 
@@ -6111,6 +7918,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var root = parsedDoc.RootElement.Clone();
                 if (TryPublishRoomsFromTableUpdate(root, "popup/webmsg"))
                     return;
+                if (TryHandleFrameNetTapMessage(root, "popup"))
+                    return;
+                LogBetBridgeDiagnostic(root, "popup");
+
                 if (await TryHandleOverlayBridgeMessageAsync(root))
                     return;
                 if (TryHandleBetBridgeMessage(root))
@@ -6166,7 +7977,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     _ = f.ExecuteScriptAsync(_homeJs);
                 _ = f.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
+                _ = f.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
                 Log("[PopupWeb] frame injected + autostart armed.");
+                _ = LogFrameCollectorDiagAsync(f, "PopupFrameCreated");
 
                 f.DOMContentLoaded += PopupFrame_DOMContentLoaded_Bridge;
                 f.NavigationCompleted += PopupFrame_NavigationCompleted_Bridge;
@@ -6204,7 +8017,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     _ = f.ExecuteScriptAsync(_homeJs);
                 _ = f.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
+                _ = f.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
                 Log("[PopupWeb] frame DOMContentLoaded -> reinjected + autostart.");
+                _ = LogFrameCollectorDiagAsync(f, "PopupFrameDOMContentLoaded");
             }
             catch (Exception ex)
             {
@@ -6216,9 +8031,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             try
             {
-                if (!e.IsSuccess) return;
                 var f = sender as CoreWebView2Frame;
                 if (f == null) return;
+                if (!e.IsSuccess)
+                {
+                    Log($"[PopupWeb] frame NavigationCompleted error: id={f.Name} webError={e.WebErrorStatus}");
+                    return;
+                }
 
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 if (!string.IsNullOrEmpty(_appJs))
@@ -6227,7 +8046,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     _ = f.ExecuteScriptAsync(_homeJs);
                 _ = f.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
+                _ = f.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
                 Log("[PopupWeb] frame NavigationCompleted -> reinjected + autostart.");
+                _ = LogFrameCollectorDiagAsync(f, "PopupFrameNavigationCompleted");
+                ScheduleDelayedFrameDiag(f, "PopupFrameNavigationCompleted");
             }
             catch (Exception ex)
             {
@@ -6346,33 +8168,191 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (!root.TryGetProperty("tables", out var tablesEl) || tablesEl.ValueKind != JsonValueKind.Array)
                     return false;
 
-                var rooms = new List<RoomEntry>();
+                static string JoinSample(IEnumerable<string> values, int take = 6)
+                {
+                    var arr = values
+                        .Where(v => !string.IsNullOrWhiteSpace(v))
+                        .Select(v => v.Trim())
+                        .Take(take)
+                        .ToArray();
+                    return arr.Length == 0 ? "(none)" : string.Join(" | ", arr);
+                }
+
+                var payloadSource = root.TryGetProperty("source", out var srcEl) ? (srcEl.GetString() ?? "").Trim() : "";
+                var payloadDetail = root.TryGetProperty("source_detail", out var srcDetailEl) ? (srcDetailEl.GetString() ?? "").Trim() : "";
+                var payloadUi = root.TryGetProperty("ui", out var uiEl) ? (uiEl.GetString() ?? "").Trim() : "";
+                var href = root.TryGetProperty("href", out var hrefEl) ? (hrefEl.GetString() ?? "").Trim() : "";
+                var title = root.TryGetProperty("title", out var titleEl) ? (titleEl.GetString() ?? "").Trim() : "";
+                var host = "";
+                var path = "";
+                if (!string.IsNullOrWhiteSpace(href) && Uri.TryCreate(href, UriKind.Absolute, out var hrefUri))
+                {
+                    host = hrefUri.Host ?? "";
+                    path = hrefUri.AbsolutePath ?? "";
+                }
+
+                var rawCount = 0;
+                var emptyCount = 0;
+                var noiseCount = 0;
+                var nonBaccaratCount = 0;
+                var baccaratLikeCount = 0;
+                var rawSample = new List<string>();
+                var noiseSample = new List<string>();
+                var nonBaccaratSample = new List<string>();
+                var mapped = new List<RoomEntry>();
                 foreach (var it in tablesEl.EnumerateArray())
                 {
+                    rawCount++;
                     var id = it.TryGetProperty("id", out var idEl) ? (idEl.GetString() ?? "").Trim() : "";
                     var name = it.TryGetProperty("name", out var nameEl) ? (nameEl.GetString() ?? "").Trim() : "";
                     if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(id))
+                    {
+                        emptyCount++;
                         continue;
+                    }
                     if (string.IsNullOrWhiteSpace(id))
                         id = name;
                     if (string.IsNullOrWhiteSpace(name))
                         name = id;
-                    rooms.Add(new RoomEntry { Id = id, Name = name });
+
+                    if (rawSample.Count < 8)
+                        rawSample.Add(name);
+
+                    if (IsLobbyNoiseName(name))
+                    {
+                        noiseCount++;
+                        if (noiseSample.Count < 8)
+                            noiseSample.Add(name);
+                        continue;
+                    }
+
+                    if (LooksLikeBaccaratRoom(name) || LooksLikeBaccaratRoom(id))
+                        baccaratLikeCount++;
+                    else
+                    {
+                        nonBaccaratCount++;
+                        if (nonBaccaratSample.Count < 8)
+                            nonBaccaratSample.Add(name);
+                    }
+
+                    mapped.Add(new RoomEntry { Id = id, Name = name });
                 }
 
-                rooms = rooms
+                var beforeDedup = mapped.Count;
+                var rooms = mapped
                     .Where(r => !string.IsNullOrWhiteSpace(r.Name))
-                    .Where(r => !IsLobbyNoiseName(r.Name))
                     .GroupBy(r => string.IsNullOrWhiteSpace(r.Id) ? r.Name : r.Id, StringComparer.OrdinalIgnoreCase)
                     .Select(g => g.First())
                     .OrderBy(r => BuildRoomDisplaySortKey(r.Name), StringComparer.Ordinal)
                     .ToList();
+                var dedupDropped = Math.Max(0, beforeDedup - rooms.Count);
+
+                string diagInfo = "";
+                bool diagFallback = false;
+                int diagRoots = -1;
+                int diagRootMatches = -1;
+                int diagTitleMatches = -1;
+                if (root.TryGetProperty("diag", out var diagEl) && diagEl.ValueKind == JsonValueKind.Object)
+                {
+                    var fallback = diagEl.TryGetProperty("fallback", out var fEl) ? fEl.ToString() : "";
+                    var fallbackAllowed = diagEl.TryGetProperty("fallbackAllowed", out var faEl) ? faEl.ToString() : "";
+                    var fallbackHits = diagEl.TryGetProperty("fallbackHits", out var fhEl) ? fhEl.ToString() : "";
+                    var fallbackScan = diagEl.TryGetProperty("fallbackScan", out var fsEl) ? fsEl.ToString() : "";
+                    var roots = diagEl.TryGetProperty("roots", out var rootsEl) ? rootsEl.ToString() : "";
+                    var rootMatches = diagEl.TryGetProperty("rootMatches", out var rmEl) ? rmEl.ToString() : "";
+                    var titleMatches = diagEl.TryGetProperty("titleMatches", out var tmEl) ? tmEl.ToString() : "";
+                    var scopeWm = diagEl.TryGetProperty("scopeWm", out var swEl) ? swEl.ToString() : "";
+                    var dropNoise = diagEl.TryGetProperty("dropNoise", out var dnEl) ? dnEl.ToString() : "";
+                    var dropNoPattern = diagEl.TryGetProperty("dropNoPattern", out var dnpEl) ? dnpEl.ToString() : "";
+                    var dropDup = diagEl.TryGetProperty("dropDup", out var ddEl) ? ddEl.ToString() : "";
+                    var sampleDrop = diagEl.TryGetProperty("sampleDrop", out var sdEl) ? ClipForLog(sdEl.ToString(), 120) : "";
+                    diagFallback = fallback == "1" || fallback.Equals("true", StringComparison.OrdinalIgnoreCase);
+                    _ = int.TryParse(roots, out diagRoots);
+                    _ = int.TryParse(rootMatches, out diagRootMatches);
+                    _ = int.TryParse(titleMatches, out diagTitleMatches);
+                    diagInfo =
+                        $" diag[fallback={fallback},fallbackAllowed={fallbackAllowed},fallbackHits={fallbackHits},fallbackScan={fallbackScan},scopeWm={scopeWm},roots={roots},rootMatches={rootMatches},titleMatches={titleMatches},dropNoise={dropNoise},dropNoPattern={dropNoPattern},dropDup={dropDup},sampleDrop={sampleDrop}]";
+                }
+
+                var sig = string.Join("|", new[]
+                {
+                    source,
+                    payloadSource,
+                    payloadDetail,
+                    payloadUi,
+                    host,
+                    path,
+                    rawCount.ToString(),
+                    mapped.Count.ToString(),
+                    rooms.Count.ToString(),
+                    noiseCount.ToString(),
+                    nonBaccaratCount.ToString(),
+                    baccaratLikeCount.ToString(),
+                    dedupDropped.ToString(),
+                    JoinSample(rawSample, 4),
+                    JoinSample(nonBaccaratSample, 4),
+                    JoinSample(noiseSample, 4)
+                });
+                LogChangedOrThrottled(
+                    "WM_DIAG_TABLE_UPDATE:" + source,
+                    sig,
+                    $"[WM_DIAG][TableUpdate] source={source} payloadSource={payloadSource} detail={payloadDetail} ui={payloadUi} host={host} path={path} raw={rawCount} mapped={mapped.Count} dedupDrop={dedupDropped} final={rooms.Count} empty={emptyCount} noiseDrop={noiseCount} nonBac={nonBaccaratCount} bacLike={baccaratLikeCount} sampleRaw={JoinSample(rawSample)} sampleNonBac={JoinSample(nonBaccaratSample)} sampleNoise={JoinSample(noiseSample)} title={ClipForLog(title, 80)}{diagInfo}",
+                    2500);
+
+                if (diagFallback &&
+                    payloadSource.Equals("visible_cards", StringComparison.OrdinalIgnoreCase) &&
+                    payloadDetail.IndexOf("fallback_textnodes", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    host.IndexOf("m8810.com", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    var warnSig = $"{host}|{path}|{rawCount}|{rooms.Count}|{diagRoots}|{diagRootMatches}|{diagTitleMatches}|{JoinSample(rawSample, 3)}";
+                    LogChangedOrThrottled(
+                        "WM_DIAG_TABLE_SCOPE_WARN",
+                        warnSig,
+                        $"[WM_DIAG][TableScopeWarn] fallback_textnodes on non-WM host={host} path={path} roots={diagRoots} rootMatches={diagRootMatches} titleMatches={diagTitleMatches} raw={rawCount} final={rooms.Count} sampleRaw={JoinSample(rawSample, 6)}",
+                        2500);
+                }
+
+                var isVisibleCards = payloadSource.Equals("visible_cards", StringComparison.OrdinalIgnoreCase);
+                var isFallbackTextNodes = payloadDetail.IndexOf("fallback_textnodes", StringComparison.OrdinalIgnoreCase) >= 0;
+                var isWmHost = host.IndexOf("m8810.com", StringComparison.OrdinalIgnoreCase) >= 0 || host.IndexOf("wmvn.", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (isVisibleCards && isFallbackTextNodes && !isWmHost)
+                {
+                    if (baccaratLikeCount <= 0)
+                    {
+                        LogChangedOrThrottled(
+                            "WM_DIAG_TABLE_DROP_NON_WM_FALLBACK",
+                            $"{host}|{path}|{rawCount}|{rooms.Count}|{JoinSample(rawSample, 4)}",
+                            $"[WM_DIAG][TableUpdateDrop] reason=non_wm_fallback_no_bac host={host} path={path} raw={rawCount} final={rooms.Count} nonBac={nonBaccaratCount} sampleRaw={JoinSample(rawSample, 6)}",
+                            1500);
+                        return false;
+                    }
+
+                    var beforeStrict = rooms.Count;
+                    rooms = rooms
+                        .Where(r => LooksLikeBaccaratRoom(r.Name) || LooksLikeBaccaratRoom(r.Id))
+                        .ToList();
+                    var droppedStrict = Math.Max(0, beforeStrict - rooms.Count);
+                    if (droppedStrict > 0)
+                    {
+                        LogChangedOrThrottled(
+                            "WM_DIAG_TABLE_DROP_NON_WM_FALLBACK_PARTIAL",
+                            $"{host}|{path}|{beforeStrict}|{rooms.Count}|{droppedStrict}|{JoinSample(rawSample, 4)}",
+                            $"[WM_DIAG][TableUpdateDrop] reason=non_wm_fallback_filter host={host} path={path} before={beforeStrict} after={rooms.Count} dropped={droppedStrict}",
+                            1500);
+                    }
+                }
 
                 if (rooms.Count == 0)
                     return false;
 
                 _lastTableUpdateAt = DateTime.UtcNow;
-                Log("[ROOMMSG] table_update rooms=" + rooms.Count + " source=" + source + " sample=" + Sample(rooms.Select(r => r.Name), 6));
+                Log("[ROOMMSG] table_update rooms=" + rooms.Count + " source=" + source + " payloadSource=" + payloadSource + " host=" + host + " sample=" + Sample(rooms.Select(r => r.Name), 6));
+                EnsureWmTrace("table-update", href, source, null);
+                LogWmTrace(
+                    "table_update",
+                    $"source={source} payloadSource={payloadSource} host={host} final={rooms.Count} raw={rawCount} nonBac={nonBaccaratCount} noise={noiseCount} sample={ClipForLog(Sample(rooms.Select(r => r.Name), 6), 180)}",
+                    "table_update:" + source,
+                    1200);
                 PublishLatestNetworkRooms(rooms, $"{source} via table_update");
                 return true;
             }
@@ -6479,6 +8459,68 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
 
             return false;
+        }
+
+        private void LogBetBridgeDiagnostic(JsonElement root, string scope)
+        {
+            try
+            {
+                if (!root.TryGetProperty("abx", out var abxEl))
+                    return;
+
+                var abx = (abxEl.GetString() ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(abx))
+                    return;
+
+                if (string.Equals(abx, "bet", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(abx, "bet_error", StringComparison.OrdinalIgnoreCase))
+                {
+                    var tableId = root.TryGetProperty("tableId", out var tidEl) ? (tidEl.GetString() ?? "") : "";
+                    if (string.IsNullOrWhiteSpace(tableId) && root.TryGetProperty("id", out var idEl))
+                        tableId = idEl.GetString() ?? "";
+                    var name = root.TryGetProperty("name", out var nameEl) ? (nameEl.GetString() ?? "") : "";
+                    var side = root.TryGetProperty("side", out var sideEl) ? (sideEl.GetString() ?? "") : "";
+                    var amount = root.TryGetProperty("amount", out var amountEl) ? ReadJsonLong(amountEl) : 0;
+                    var src = root.TryGetProperty("source", out var srcEl) ? (srcEl.GetString() ?? "") : "";
+                    var ui = root.TryGetProperty("ui", out var uiEl) ? (uiEl.GetString() ?? "") : "";
+                    Log($"[BETDIAG][BridgeRx] scope={scope} abx={abx} table={tableId} name={ClipForLog(name, 80)} side={side} amount={amount:N0} ui={ui} source={src}");
+                    return;
+                }
+
+                if (string.Equals(abx, "bet_diag", StringComparison.OrdinalIgnoreCase))
+                {
+                    var stage = root.TryGetProperty("stage", out var stageEl) ? (stageEl.GetString() ?? "") : "";
+                    var tableId = root.TryGetProperty("tableId", out var tidEl) ? (tidEl.GetString() ?? "") : "";
+                    var name = root.TryGetProperty("name", out var nameEl) ? (nameEl.GetString() ?? "") : "";
+                    var side = root.TryGetProperty("side", out var sideEl) ? (sideEl.GetString() ?? "") : "";
+                    var amount = root.TryGetProperty("amount", out var amountEl) ? ReadJsonLong(amountEl) : 0;
+                    var rootId = root.TryGetProperty("rootId", out var rootIdEl) ? (rootIdEl.GetString() ?? "") : "";
+                    var targetId = root.TryGetProperty("targetId", out var targetIdEl) ? (targetIdEl.GetString() ?? "") : "";
+                    var confirmId = root.TryGetProperty("confirmId", out var confirmIdEl) ? (confirmIdEl.GetString() ?? "") : "";
+                    var msg = root.TryGetProperty("msg", out var msgEl) ? (msgEl.GetString() ?? "") : "";
+                    var ok = root.TryGetProperty("ok", out var okEl)
+                        ? (okEl.ValueKind == JsonValueKind.Number ? okEl.GetRawText() : (okEl.GetString() ?? ""))
+                        : "";
+                    Log($"[BETDIAG][{ClipForLog(stage, 32)}] scope={scope} table={tableId} name={ClipForLog(name, 80)} side={side} amount={amount:N0} ok={ok} root={ClipForLog(rootId, 72)} target={ClipForLog(targetId, 72)} confirm={ClipForLog(confirmId, 72)} msg={ClipForLog(msg, 180)}");
+                    return;
+                }
+
+                if (string.Equals(abx, "console", StringComparison.OrdinalIgnoreCase))
+                {
+                    var msg = root.TryGetProperty("message", out var msgEl) ? (msgEl.GetString() ?? "") : "";
+                    if (string.IsNullOrWhiteSpace(msg))
+                        return;
+                    if (msg.IndexOf("[BET", StringComparison.OrdinalIgnoreCase) < 0 &&
+                        msg.IndexOf("[bet]", StringComparison.OrdinalIgnoreCase) < 0)
+                        return;
+                    var level = root.TryGetProperty("level", out var levelEl) ? (levelEl.GetString() ?? "") : "";
+                    Log($"[BETDIAG][Console] scope={scope} level={level} msg={ClipForLog(msg, 220)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[BETDIAG][LogError] " + ex.Message);
+            }
         }
 
         private async Task<bool> TryHandleOverlayBridgeMessageAsync(JsonElement root)
@@ -6835,10 +8877,38 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 await core.CallDevToolsProtocolMethodAsync("Network.enable", "{}");
+                try
+                {
+                    await core.CallDevToolsProtocolMethodAsync("Page.enable", "{}");
+                }
+                catch (Exception ex)
+                {
+                    Log($"[CDP] Page.enable failed ({scope}): " + ex.Message);
+                }
+
                 if (string.Equals(scope, "popup", StringComparison.OrdinalIgnoreCase))
                     _cdpNetworkOnPopup = true;
                 else
                     _cdpNetworkOnMain = true;
+
+                core.GetDevToolsProtocolEventReceiver("Page.frameNavigated")
+                   .DevToolsProtocolEventReceived += (s, e) =>
+                   {
+                       try
+                       {
+                           using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
+                           var root = doc.RootElement;
+                           if (!root.TryGetProperty("frame", out var frameEl) || frameEl.ValueKind != JsonValueKind.Object)
+                               return;
+
+                           var frameId = frameEl.TryGetProperty("id", out var idEl) ? (idEl.GetString() ?? "") : "";
+                           var parentFrameId = frameEl.TryGetProperty("parentId", out var parentEl) ? (parentEl.GetString() ?? "") : "";
+                           var url = frameEl.TryGetProperty("url", out var urlEl) ? (urlEl.GetString() ?? "") : "";
+                           var name = frameEl.TryGetProperty("name", out var nameEl) ? (nameEl.GetString() ?? "") : "";
+                           RememberCdpFrameInfo(scope, frameId, url, name, parentFrameId, "Page.frameNavigated");
+                       }
+                       catch (Exception ex) { Log($"[CDP {scope} frameNavigated] " + ex.Message); }
+                   };
 
                 core.GetDevToolsProtocolEventReceiver("Network.webSocketCreated")
                    .DevToolsProtocolEventReceived += (s, e) =>
@@ -6849,8 +8919,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
                            var root = doc.RootElement;
                            var reqId = root.GetProperty("requestId").GetString() ?? "";
                            var url = root.TryGetProperty("url", out var u) ? (u.GetString() ?? "") : "";
+                           _reqFrameIdByRequestId.TryGetValue(scope + "|" + reqId, out var frameId);
+                           var frameHint = DescribeCdpFrame(scope, frameId);
                            if (!string.IsNullOrEmpty(reqId)) _wsUrlByRequestId[scope + "|" + reqId] = url;
-                           if (IsInteresting(url)) LogPacket($"{scope}.WS.created", url, "", false);
+                           if (IsInteresting(url)) LogPacket($"{scope}.WS.created", url, $"frameId={frameId} frame={frameHint}", false);
+                           if (IsInteresting(url))
+                           {
+                               EnsureWmTrace("ws-created", url, scope, frameId);
+                               LogWmTrace("ws.created", $"scope={scope} url={ClipForLog(url, 180)} requestId={ClipForLog(reqId, 48)} frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frameHint, 180)}", "ws.created:" + ClipForLog(url, 80), 1200);
+                           }
                        }
                        catch (Exception ex) { Log($"[CDP {scope} wsCreated] " + ex.Message); }
                    };
@@ -6864,14 +8941,16 @@ private async Task<CancellationTokenSource> DebounceAsync(
                            var root = doc.RootElement;
                            var reqId = root.GetProperty("requestId").GetString() ?? "";
                            _wsUrlByRequestId.TryGetValue(scope + "|" + reqId, out var url);
+                           _reqFrameIdByRequestId.TryGetValue(scope + "|" + reqId, out var frameId);
                            var resp = root.GetProperty("response");
                            var payload = resp.TryGetProperty("payloadData", out var pd) ? (pd.GetString() ?? "") : "";
                            var opcode = resp.TryGetProperty("opcode", out var op) ? op.GetInt32() : 1;
                            var isBin = opcode != 1;
                            if (ShouldLogPacketPayload(url, "", payload, isBin))
                                LogPacket($"{scope}.WS.recv", url, PreviewPayload(payload, isBin), isBin);
+                           LogWmPacketDiagIfNeeded(scope, "WS.recv", url, "", payload, isBin, frameId, DescribeCdpFrame(scope, frameId));
                            TryUpdateOverlayServerStateFromPayload(scope, "WS.recv", url, payload, isBin);
-                           TryUpdateLatestNetworkRoomsFromPayload(scope, "WS.recv", url, payload, isBin);
+                           TryUpdateLatestNetworkRoomsFromPayload(scope, "WS.recv", url, payload, isBin, frameId);
                        }
                        catch (Exception ex) { Log($"[CDP {scope} wsRecv] " + ex.Message); }
                    };
@@ -6885,14 +8964,44 @@ private async Task<CancellationTokenSource> DebounceAsync(
                            var root = doc.RootElement;
                            var reqId = root.GetProperty("requestId").GetString() ?? "";
                            _wsUrlByRequestId.TryGetValue(scope + "|" + reqId, out var url);
+                           _reqFrameIdByRequestId.TryGetValue(scope + "|" + reqId, out var frameId);
                            var resp = root.GetProperty("response");
                            var payload = resp.TryGetProperty("payloadData", out var pd) ? (pd.GetString() ?? "") : "";
                            var opcode = resp.TryGetProperty("opcode", out var op) ? op.GetInt32() : 1;
                            var isBin = opcode != 1;
                            if (ShouldLogPacketPayload(url, "", payload, isBin))
                                LogPacket($"{scope}.WS.send", url, PreviewPayload(payload, isBin), isBin);
+                           LogWmPacketDiagIfNeeded(scope, "WS.send", url, "", payload, isBin, frameId, DescribeCdpFrame(scope, frameId));
                        }
-                       catch (Exception ex) { Log($"[CDP {scope} wsSend] " + ex.Message); }
+                        catch (Exception ex) { Log($"[CDP {scope} wsSend] " + ex.Message); }
+                    };
+
+                core.GetDevToolsProtocolEventReceiver("Network.requestWillBeSent")
+                   .DevToolsProtocolEventReceived += (s, e) =>
+                   {
+                       try
+                       {
+                           using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
+                           var root = doc.RootElement;
+                           var reqId = root.GetProperty("requestId").GetString() ?? "";
+                           var req = root.TryGetProperty("request", out var reqEl) ? reqEl : default;
+                           var url = req.ValueKind == JsonValueKind.Object && req.TryGetProperty("url", out var u) ? (u.GetString() ?? "") : "";
+                           var type = root.TryGetProperty("type", out var t) ? (t.GetString() ?? "") : "";
+                           var frameId = root.TryGetProperty("frameId", out var f) ? (f.GetString() ?? "") : "";
+                           if (!string.IsNullOrWhiteSpace(reqId))
+                           {
+                               _reqUrlByRequestId[scope + "|" + reqId] = url;
+                               _reqFrameIdByRequestId[scope + "|" + reqId] = frameId;
+                           }
+                           RememberCdpFrameInfo(scope, frameId, url, null, null, "Network.requestWillBeSent");
+                           var frameHint = DescribeCdpFrame(scope, frameId);
+                           if (string.Equals(type, "WebSocket", StringComparison.OrdinalIgnoreCase))
+                               LogPacket($"{scope}.WS.handshake", url, $"frameId={frameId} frame={frameHint}", false);
+                           if (IsWmUrl(url) || IsWmFrameHint(frameHint) || IsLaunchGameUrl(url))
+                               LogPacket($"{scope}.WM.request", url, $"type={type} frameId={frameId} frame={frameHint}", false);
+                           LogLaunchGameRequestDiagIfNeeded(scope, url, req, frameId, frameHint);
+                       }
+                       catch (Exception ex) { Log($"[CDP {scope} requestWillBeSent] " + ex.Message); }
                    };
 
                 core.GetDevToolsProtocolEventReceiver("Network.responseReceived")
@@ -6904,19 +9013,32 @@ private async Task<CancellationTokenSource> DebounceAsync(
                            var root = doc.RootElement;
                            var reqId = root.GetProperty("requestId").GetString() ?? "";
                            var resp = root.GetProperty("response");
-                           var url = resp.TryGetProperty("url", out var u) ? (u.GetString() ?? "") : "";
-                           var mime = resp.TryGetProperty("mimeType", out var m) ? (m.GetString() ?? "") : "";
-                           var status = resp.TryGetProperty("status", out var st) ? st.ToString() : "";
-                           if (!string.IsNullOrEmpty(reqId))
-                           {
-                               _respUrlByRequestId[scope + "|" + reqId] = url;
-                               _respMimeByRequestId[scope + "|" + reqId] = mime;
-                           }
-                           if (IsInteresting(url) || IsInterestingMime(mime))
-                               LogPacket($"{scope}.HTTP.response", url, $"status={status} mime={mime}", false);
-                       }
-                       catch (Exception ex) { Log($"[CDP {scope} responseReceived] " + ex.Message); }
-                   };
+                            var url = resp.TryGetProperty("url", out var u) ? (u.GetString() ?? "") : "";
+                            var mime = resp.TryGetProperty("mimeType", out var m) ? (m.GetString() ?? "") : "";
+                            var status = resp.TryGetProperty("status", out var st) ? st.ToString() : "";
+                            var type = root.TryGetProperty("type", out var ty) ? (ty.GetString() ?? "") : "";
+                            var protocol = resp.TryGetProperty("protocol", out var pr) ? (pr.GetString() ?? "") : "";
+                            var fromDisk = resp.TryGetProperty("fromDiskCache", out var fd) && fd.ValueKind == JsonValueKind.True ? "1" : "0";
+                            var headersEl = resp.TryGetProperty("headers", out var hdrEl) ? hdrEl : default;
+                            var contentEncoding = TryGetHeaderValue(headersEl, "content-encoding") ?? "";
+                            var contentLength = TryGetHeaderValue(headersEl, "content-length") ?? "";
+                            if (!string.IsNullOrEmpty(reqId))
+                            {
+                                _respUrlByRequestId[scope + "|" + reqId] = url;
+                                _respMimeByRequestId[scope + "|" + reqId] = mime;
+                                _respEncodingByRequestId[scope + "|" + reqId] = contentEncoding;
+                                _respContentLengthByRequestId[scope + "|" + reqId] = contentLength;
+                            }
+                            _reqFrameIdByRequestId.TryGetValue(scope + "|" + reqId, out var frameId);
+                            RememberCdpFrameInfo(scope, frameId, url, null, null, "Network.responseReceived");
+                            var frameHint = DescribeCdpFrame(scope, frameId);
+                            if (IsInteresting(url) || IsInterestingMime(mime))
+                                LogPacket($"{scope}.HTTP.response", url, $"status={status} mime={mime} ce={contentEncoding} len={contentLength}", false);
+                            if (IsWmUrl(url) || IsWmFrameHint(frameHint) || IsLaunchGameUrl(url))
+                                LogPacket($"{scope}.WM.response", url, $"status={status} mime={mime} ce={contentEncoding} len={contentLength} type={type} protocol={protocol} fromDisk={fromDisk} frameId={frameId} frame={frameHint}", false);
+                        }
+                        catch (Exception ex) { Log($"[CDP {scope} responseReceived] " + ex.Message); }
+                    };
 
                 core.GetDevToolsProtocolEventReceiver("Network.loadingFinished")
                    .DevToolsProtocolEventReceived += async (s, e) =>
@@ -6929,6 +9051,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
                            var key = scope + "|" + reqId;
                            _respUrlByRequestId.TryGetValue(key, out var url);
                            _respMimeByRequestId.TryGetValue(key, out var mime);
+                           _respEncodingByRequestId.TryGetValue(key, out var contentEncoding);
+                           _respContentLengthByRequestId.TryGetValue(key, out var contentLength);
+                           _reqFrameIdByRequestId.TryGetValue(key, out var frameId);
                            if (!ShouldFetchResponseBody(url, mime))
                                return;
 
@@ -6939,18 +9064,41 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                            using var bodyDoc = JsonDocument.Parse(bodyRaw);
                            var bodyRoot = bodyDoc.RootElement;
-                           var body = bodyRoot.TryGetProperty("body", out var bodyEl) ? (bodyEl.GetString() ?? "") : "";
+                           var rawBody = bodyRoot.TryGetProperty("body", out var bodyEl) ? (bodyEl.GetString() ?? "") : "";
                            var base64Encoded = bodyRoot.TryGetProperty("base64Encoded", out var b64El) && b64El.ValueKind == JsonValueKind.True;
-                           if (base64Encoded)
-                           {
-                               try { body = Encoding.UTF8.GetString(Convert.FromBase64String(body)); } catch { }
-                           }
+                           var body = NormalizePacketPayload(rawBody, base64Encoded, contentEncoding);
 
-                           if (ShouldLogPacketPayload(url, mime, body, false))
-                               LogPacket($"{scope}.HTTP.body", url, PreviewPayload(body, false), false);
-                           TryUpdateLatestNetworkRoomsFromPayload(scope, "HTTP.body", url, body, false);
+                           if (ShouldLogPacketPayload(url, mime, rawBody, base64Encoded, contentEncoding))
+                               LogPacket($"{scope}.HTTP.body", url, PreviewPayload(rawBody, base64Encoded, contentEncoding), base64Encoded);
+                           var frameHint = DescribeCdpFrame(scope, frameId);
+                           LogHttpBodyCodecDiagIfNeeded(scope, "HTTP.body", url, mime, rawBody, base64Encoded, contentEncoding, contentLength, frameId, frameHint);
+                           LogWmPacketDiagIfNeeded(scope, "HTTP.body", url, mime, body, false, frameId, frameHint);
+                           LogLaunchGameDiagIfNeeded(scope, "HTTP.body", url, body, frameId, frameHint);
+                           TryUpdateLatestNetworkRoomsFromPayload(scope, "HTTP.body", url, body, false, frameId);
                        }
-                       catch (Exception ex) { Log($"[CDP {scope} loadingFinished] " + ex.Message); }
+                        catch (Exception ex) { Log($"[CDP {scope} loadingFinished] " + ex.Message); }
+                    };
+
+                core.GetDevToolsProtocolEventReceiver("Network.loadingFailed")
+                   .DevToolsProtocolEventReceived += (s, e) =>
+                   {
+                       try
+                       {
+                           using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
+                           var root = doc.RootElement;
+                           var reqId = root.TryGetProperty("requestId", out var idEl) ? (idEl.GetString() ?? "") : "";
+                           var key = scope + "|" + reqId;
+                           _respUrlByRequestId.TryGetValue(key, out var respUrl);
+                           _reqUrlByRequestId.TryGetValue(key, out var reqUrl);
+                           var url = string.IsNullOrWhiteSpace(respUrl) ? (reqUrl ?? "") : respUrl;
+                           var err = root.TryGetProperty("errorText", out var errEl) ? (errEl.GetString() ?? "") : "";
+                           var blocked = root.TryGetProperty("blockedReason", out var br) ? (br.GetString() ?? "") : "";
+                           var canceled = root.TryGetProperty("canceled", out var c) && c.ValueKind == JsonValueKind.True ? "1" : "0";
+                           var type = root.TryGetProperty("type", out var ty) ? (ty.GetString() ?? "") : "";
+                           if (IsInteresting(url) || IsWmUrl(url))
+                               LogPacket($"{scope}.HTTP.fail", url, $"error={err} blocked={blocked} canceled={canceled} type={type}", false);
+                       }
+                       catch (Exception ex) { Log($"[CDP {scope} loadingFailed] " + ex.Message); }
                    };
 
                 Log($"[CDP] Network tap enabled ({scope})");
@@ -6986,9 +9134,171 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private bool IsInteresting(string? url)
         {
             if (string.IsNullOrWhiteSpace(url)) return true;
+            if (IsWmUrl(url)) return true;
             foreach (var hint in _pktInterestingHints)
                 if (url.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0) return true;
             return false;
+        }
+
+        private bool IsKnownWmRelayHost(string? host)
+        {
+            var text = (host ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(text))
+                return false;
+            if (text.IndexOf("qqhrsbjx.com", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            return _wmRelayHostHints.ContainsKey(text);
+        }
+
+        private bool IsWmRelayUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return false;
+            if (url.IndexOf("/api/web/Gateway.php", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                return IsKnownWmRelayHost(uri.Host);
+            return url.IndexOf("qqhrsbjx.com", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private bool IsWmUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return false;
+            return url.IndexOf("m8810.com", StringComparison.OrdinalIgnoreCase) >= 0
+                   || url.IndexOf("wmvn.", StringComparison.OrdinalIgnoreCase) >= 0
+                   || url.IndexOf("co=wm", StringComparison.OrdinalIgnoreCase) >= 0
+                   || url.IndexOf("iframe_109", StringComparison.OrdinalIgnoreCase) >= 0
+                   || url.IndexOf("iframe_101", StringComparison.OrdinalIgnoreCase) >= 0
+                   || IsWmRelayUrl(url);
+        }
+
+        private bool IsLaunchGameUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return false;
+            return url.IndexOf("/wps/game/launchGame", StringComparison.OrdinalIgnoreCase) >= 0
+                   || url.IndexOf("/api/user/launch-game", StringComparison.OrdinalIgnoreCase) >= 0
+                   || url.IndexOf("/launch-game", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void RememberWmRelayCandidatesFromTap(string scope, string? ownerUrl, string? tapFetch, string? tapXhr, string? tapWs, string? frameId = null, string? frameHint = null)
+        {
+            try
+            {
+                var ownerHost = "";
+                if (Uri.TryCreate(ownerUrl ?? "", UriKind.Absolute, out var ownerUri))
+                    ownerHost = ownerUri.Host;
+
+                void remember(string kind, string? text)
+                {
+                    var raw = (text ?? "").Trim();
+                    if (string.IsNullOrWhiteSpace(raw))
+                        return;
+
+                    foreach (Match m in Regex.Matches(raw, @"(?<u>wss?://[^\s|]+|https?://[^\s|]+)", RegexOptions.IgnoreCase))
+                    {
+                        var candidateUrl = m.Groups["u"].Value;
+                        if (string.IsNullOrWhiteSpace(candidateUrl))
+                            continue;
+                        if (!Uri.TryCreate(candidateUrl, UriKind.Absolute, out var candidateUri))
+                            continue;
+
+                        var host = candidateUri.Host;
+                        if (string.IsNullOrWhiteSpace(host))
+                            continue;
+                        if (string.Equals(host, ownerHost, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        if (host.IndexOf("ipify.org", StringComparison.OrdinalIgnoreCase) >= 0)
+                            continue;
+                        if (host.IndexOf("google.com", StringComparison.OrdinalIgnoreCase) >= 0)
+                            continue;
+
+                        if (_wmRelayHostHints.TryAdd(host, 1))
+                        {
+                            frameHint ??= DescribeCdpFrame(scope, frameId);
+                            var msg =
+                                $"[WM_DIAG][WmRelayCandidate] scope={scope} kind={kind} frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frameHint, 220)} " +
+                                $"owner={ClipForLog(ownerUrl, 180)} host={ClipForLog(host, 80)} url={ClipForLog(candidateUrl, 220)}";
+                            LogChangedOrThrottled("WM_DIAG_WM_RELAY_CANDIDATE:" + host, msg, msg, 1200);
+                            EnsureWmTrace("wm-relay-candidate", candidateUrl, scope, frameId);
+                            LogWmTrace(
+                                "wm-relay-candidate",
+                                $"scope={scope} kind={kind} host={ClipForLog(host, 80)} url={ClipForLog(candidateUrl, 180)} owner={ClipForLog(ownerUrl, 140)}",
+                                "wm-relay-candidate:" + host,
+                                1200);
+                        }
+                    }
+                }
+
+                remember("fetch", tapFetch);
+                remember("xhr", tapXhr);
+                remember("ws", tapWs);
+            }
+            catch { }
+        }
+
+        private bool IsWmFrameHint(string? frameHint)
+        {
+            if (string.IsNullOrWhiteSpace(frameHint))
+                return false;
+            return IsWmUrl(frameHint);
+        }
+
+        private string DescribeCdpFrame(string scope, string? frameId)
+        {
+            if (string.IsNullOrWhiteSpace(frameId))
+                return "";
+
+            var key = scope + "|" + frameId;
+            _cdpFrameNameById.TryGetValue(key, out var name);
+            _cdpFrameUrlById.TryGetValue(key, out var url);
+            _cdpFrameParentById.TryGetValue(key, out var parentId);
+
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(name))
+                parts.Add("name=" + name);
+            if (!string.IsNullOrWhiteSpace(url))
+                parts.Add("url=" + ClipForLog(url, 120));
+            if (!string.IsNullOrWhiteSpace(parentId))
+                parts.Add("parent=" + ClipForLog(parentId, 24));
+            return string.Join(",", parts);
+        }
+
+        private void RememberCdpFrameInfo(string scope, string? frameId, string? url, string? name = null, string? parentFrameId = null, string? reason = null)
+        {
+            if (string.IsNullOrWhiteSpace(frameId))
+                return;
+
+            var key = scope + "|" + frameId;
+            if (!string.IsNullOrWhiteSpace(url))
+                _cdpFrameUrlById[key] = url;
+            if (!string.IsNullOrWhiteSpace(name))
+                _cdpFrameNameById[key] = name;
+            if (!string.IsNullOrWhiteSpace(parentFrameId))
+                _cdpFrameParentById[key] = parentFrameId;
+
+            var frameHint = DescribeCdpFrame(scope, frameId);
+            var looksInteresting =
+                IsWmUrl(url) ||
+                (!string.IsNullOrWhiteSpace(url) && url.IndexOf("rr5309.com", StringComparison.OrdinalIgnoreCase) >= 0) ||
+                (!string.IsNullOrWhiteSpace(name) &&
+                 (name.IndexOf("iframe_101", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                  name.IndexOf("iframe_109", StringComparison.OrdinalIgnoreCase) >= 0));
+            if (!looksInteresting)
+                return;
+
+            var sig = $"{scope}|{frameId}|{reason}|{name}|{url}|{parentFrameId}";
+            var msg =
+                $"[WM_DIAG][FrameMap] scope={scope} reason={ClipForLog(reason, 48)} frameId={ClipForLog(frameId, 48)} " +
+                $"parent={ClipForLog(parentFrameId, 48)} name={ClipForLog(name, 48)} url={ClipForLog(url, 180)} frame={ClipForLog(frameHint, 220)}";
+            LogChangedOrThrottled("WM_DIAG_FRAME_MAP:" + scope + ":" + frameId, sig, msg, 1200);
+            EnsureWmTrace("frame-map", url, scope, frameId);
+            LogWmTrace(
+                "frame.map",
+                $"scope={scope} reason={ClipForLog(reason, 48)} frameId={ClipForLog(frameId, 48)} name={ClipForLog(name, 48)} parent={ClipForLog(parentFrameId, 48)} url={ClipForLog(url, 180)}",
+                "frame.map:" + frameId,
+                1200);
         }
 
         private bool IsInterestingMime(string? mime)
@@ -6998,18 +9308,223 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return mime.Contains("json") || mime.Contains("javascript") || mime.Contains("text/plain") || mime.Contains("octet-stream");
         }
 
+        private bool IsNoisyBinaryMime(string? mime)
+        {
+            var lower = (mime ?? "").Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(lower))
+                return false;
+
+            return lower.StartsWith("image/")
+                || lower.StartsWith("audio/")
+                || lower.StartsWith("video/")
+                || lower.StartsWith("font/")
+                || lower.Contains("woff")
+                || lower.Contains("woff2")
+                || lower.Contains("ttf")
+                || lower.Contains("otf")
+                || lower.Contains("application/pdf")
+                || lower.Contains("application/zip")
+                || lower.Contains("application/x-protobuf")
+                || lower.Contains("application/wasm");
+        }
+
+        private string TryGetHeaderValue(JsonElement headersEl, string headerName)
+        {
+            try
+            {
+                if (headersEl.ValueKind != JsonValueKind.Object || string.IsNullOrWhiteSpace(headerName))
+                    return "";
+
+                foreach (var prop in headersEl.EnumerateObject())
+                {
+                    if (string.Equals(prop.Name, headerName, StringComparison.OrdinalIgnoreCase))
+                        return JsonElementToString(prop.Value);
+                }
+            }
+            catch { }
+
+            return "";
+        }
+
+        private static bool LooksLikeZlibPacket(byte[] bytes)
+        {
+            if (bytes == null || bytes.Length < 2)
+                return false;
+
+            return bytes[0] == 0x78 && (bytes[1] == 0x01 || bytes[1] == 0x5E || bytes[1] == 0x9C || bytes[1] == 0xDA);
+        }
+
+        private bool LooksLikeTextPayload(string? text)
+        {
+            var raw = (text ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(raw))
+                return false;
+
+            var sample = raw.Length > 512 ? raw.Substring(0, 512) : raw;
+            var controlCount = sample.Count(ch => char.IsControl(ch) && ch != '\r' && ch != '\n' && ch != '\t');
+            if (controlCount > Math.Max(3, sample.Length / 20))
+                return false;
+
+            var lower = sample.TrimStart().ToLowerInvariant();
+            return lower.StartsWith("{")
+                || lower.StartsWith("[")
+                || lower.StartsWith("<")
+                || lower.Contains("\"protocol\"")
+                || lower.Contains("\"gameid\"")
+                || lower.Contains("\"groupid\"")
+                || lower.Contains("<html")
+                || lower.Contains("<!doctype")
+                || lower.Contains("baccarat")
+                || lower.Contains("multibaccarat");
+        }
+
+        private bool TryInflatePayloadBytes(byte[] input, string? contentEncoding, out byte[] output, out string codec)
+        {
+            output = Array.Empty<byte>();
+            codec = "";
+            if (input == null || input.Length == 0)
+                return false;
+
+            var hints = new List<string>();
+            var lower = (contentEncoding ?? "").Trim().ToLowerInvariant();
+            if (!string.IsNullOrWhiteSpace(lower))
+                hints.AddRange(lower.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            if (input.Length >= 2 && input[0] == 0x1F && input[1] == 0x8B)
+                hints.Add("gzip");
+            if (LooksLikeZlibPacket(input))
+                hints.Add("deflate");
+
+            foreach (var hint in hints.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    using var source = new MemoryStream(input);
+                    Stream stream = hint.Contains("gzip", StringComparison.OrdinalIgnoreCase)
+                        ? new GZipStream(source, CompressionMode.Decompress, leaveOpen: false)
+                        : hint.Contains("br", StringComparison.OrdinalIgnoreCase)
+                            ? new BrotliStream(source, CompressionMode.Decompress, leaveOpen: false)
+                            : new DeflateStream(source, CompressionMode.Decompress, leaveOpen: false);
+                    using var target = new MemoryStream();
+                    stream.CopyTo(target);
+                    output = target.ToArray();
+                    codec = hint.Contains("gzip", StringComparison.OrdinalIgnoreCase)
+                        ? "gzip"
+                        : hint.Contains("br", StringComparison.OrdinalIgnoreCase)
+                            ? "br"
+                            : "deflate";
+                    return output.Length > 0;
+                }
+                catch { }
+            }
+
+            return false;
+        }
+
+        private bool TryDecodePayloadBytesToText(byte[] input, string? contentEncoding, out string text, out string codec)
+        {
+            text = "";
+            codec = "";
+            if (input == null || input.Length == 0)
+                return false;
+
+            if (TryInflatePayloadBytes(input, contentEncoding, out var inflated, out var inflatedCodec))
+            {
+                try
+                {
+                    var inflatedText = Encoding.UTF8.GetString(inflated);
+                    if (LooksLikeTextPayload(inflatedText))
+                    {
+                        text = inflatedText.Trim();
+                        codec = inflatedCodec + "->utf8";
+                        return true;
+                    }
+                }
+                catch { }
+            }
+
+            try
+            {
+                var utf8 = Encoding.UTF8.GetString(input);
+                if (LooksLikeTextPayload(utf8))
+                {
+                    text = utf8.Trim();
+                    codec = "utf8";
+                    return true;
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        private string DetectPayloadCodec(string payload, bool isBinary, string? contentEncoding = null)
+        {
+            var details = new List<string>();
+            if (!string.IsNullOrWhiteSpace(contentEncoding))
+                details.Add("ce=" + ClipForLog(contentEncoding, 24));
+            if (!isBinary)
+            {
+                details.Add("txt");
+                return string.Join(" ", details);
+            }
+
+            details.Add("b64");
+            if (!LooksLikeBase64Packet(payload))
+                return string.Join(" ", details);
+
+            try
+            {
+                var bytes = Convert.FromBase64String(payload);
+                details.Add("bytes=" + bytes.Length.ToString(CultureInfo.InvariantCulture));
+                if (TryDecodePayloadBytesToText(bytes, contentEncoding, out _, out var codec) && !string.IsNullOrWhiteSpace(codec))
+                    details.Add("codec=" + codec);
+                else if (TryInflatePayloadBytes(bytes, contentEncoding, out _, out var compressedCodec) && !string.IsNullOrWhiteSpace(compressedCodec))
+                    details.Add("codec=" + compressedCodec);
+                else if (bytes.Length >= 4 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47)
+                    details.Add("magic=png");
+                else if (bytes.Length >= 4 && bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x38)
+                    details.Add("magic=gif");
+                else if (bytes.Length >= 4 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46)
+                    details.Add("magic=riff");
+                else if (bytes.Length >= 2 && bytes[0] == 0x1F && bytes[1] == 0x8B)
+                    details.Add("magic=gzip");
+            }
+            catch
+            {
+                details.Add("decode=fail");
+            }
+
+            return string.Join(" ", details);
+        }
+
         private bool ShouldFetchResponseBody(string? url, string? mime)
         {
             if (string.IsNullOrWhiteSpace(url)) return false;
-            if (IsInteresting(url) && IsInterestingMime(mime)) return true;
             var lower = url.ToLowerInvariant();
+            var lowMime = (mime ?? "").ToLowerInvariant();
+            var wmUrl = IsWmUrl(url);
+            if (!wmUrl && IsNoisyBinaryMime(lowMime))
+                return false;
+            if (wmUrl)
+            {
+                if (lowMime.Contains("html") || lowMime.Contains("json") || lowMime.Contains("text/plain") || lowMime.Contains("javascript"))
+                    return true;
+                if (lowMime.Contains("octet-stream"))
+                    return true;
+                if (lower.Contains("protocol21") || lower.Contains("protocol35") || lower.Contains("table"))
+                    return true;
+                return false;
+            }
+            if (IsInteresting(url) && IsInterestingMime(mime)) return true;
             return lower.Contains("lobby") || lower.Contains("table") || lower.Contains("baccarat") || lower.Contains("game");
         }
 
-        private bool ShouldLogPacketPayload(string? url, string? mime, string payload, bool isBinary)
+        private bool ShouldLogPacketPayload(string? url, string? mime, string payload, bool isBinary, string? contentEncoding = null)
         {
             if (string.IsNullOrWhiteSpace(payload)) return false;
-            var lower = NormalizePacketPayload(payload, isBinary).ToLowerInvariant();
+            if (!IsWmUrl(url) && IsNoisyBinaryMime(mime))
+                return false;
+            var lower = NormalizePacketPayload(payload, isBinary, contentEncoding).ToLowerInvariant();
             if (string.IsNullOrWhiteSpace(lower))
                 return IsInteresting(url);
             if (lower.Contains("baccarat") || lower.Contains("\"table") || lower.Contains("\"game") || lower.Contains("\"room") || lower.Contains("multibaccarat"))
@@ -7017,45 +9532,41 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return IsInteresting(url) || IsInterestingMime(mime);
         }
 
-        private string PreviewPayload(string payload, bool isBinary)
+        private string PreviewPayload(string payload, bool isBinary, string? contentEncoding = null)
         {
             if (string.IsNullOrEmpty(payload)) return "";
             try
             {
-                var normalized = NormalizePacketPayload(payload, isBinary);
+                var normalized = NormalizePacketPayload(payload, isBinary, contentEncoding);
                 if (!isBinary)
                 {
                     var s = normalized.Trim();
                     if (s.StartsWith("{") || s.StartsWith("["))
                     {
-                        if (s.Length > 2000) s = s.Substring(0, 2000) + "…";
+                        if (s.Length > 2000) s = s.Substring(0, 2000) + "...";
                         return s;
                     }
-                    if (s.Length > 2000) s = s.Substring(0, 2000) + "…";
+                    if (s.Length > 2000) s = s.Substring(0, 2000) + "...";
                     return s;
                 }
                 if (!string.IsNullOrWhiteSpace(normalized) && normalized != payload)
                 {
                     var s = normalized.Trim();
-                    if (s.Length > 2000) s = s.Substring(0, 2000) + "â€¦";
+                    if (s.Length > 2000) s = s.Substring(0, 2000) + "...";
                     return s;
                 }
-                var bytes = Encoding.UTF8.GetBytes(payload);
-                int n = Math.Min(bytes.Length, 64);
-                var sb = new StringBuilder(n * 3);
-                for (int i = 0; i < n; i++) sb.Append(bytes[i].ToString("X2")).Append(' ');
-                if (bytes.Length > n) sb.Append("…");
-                return "BIN[" + bytes.Length + "]: " + sb.ToString();
+                var codec = DetectPayloadCodec(payload, isBinary, contentEncoding);
+                return "BIN[" + payload.Length + "] " + codec;
             }
             catch
             {
                 var s = payload;
-                if (s.Length > 2000) s = s.Substring(0, 2000) + "…";
+                if (s.Length > 2000) s = s.Substring(0, 2000) + "...";
                 return s;
             }
         }
 
-        private string NormalizePacketPayload(string payload, bool isBinary)
+        private string NormalizePacketPayload(string payload, bool isBinary, string? contentEncoding = null)
         {
             var raw = (payload ?? "").Trim();
             if (string.IsNullOrWhiteSpace(raw))
@@ -7066,7 +9577,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 return raw;
             try
             {
-                return Encoding.UTF8.GetString(Convert.FromBase64String(raw));
+                var bytes = Convert.FromBase64String(raw);
+                if (TryDecodePayloadBytesToText(bytes, contentEncoding, out var text, out _)
+                    && LooksLikeTextPayload(text))
+                    return text;
+                return raw;
             }
             catch
             {
@@ -7085,6 +9600,325 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 return false;
             }
             return true;
+        }
+
+        private bool LooksLikeWmPacketPayload(string payload, bool isBinary)
+        {
+            var lower = NormalizePacketPayload(payload, isBinary).ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(lower))
+                return false;
+            return lower.Contains("\"protocol\"")
+                   || lower.Contains("\"groupid\"")
+                   || lower.Contains("\"gameid\"")
+                   || lower.Contains("\"grouparr\"")
+                   || lower.Contains("\"gamearr\"")
+                   || lower.Contains("\"tablesort\"")
+                   || lower.Contains("\"tablestatus\"")
+                   || lower.Contains("lobbynet")
+                   || lower.Contains("bacnet");
+        }
+
+        private string DescribeWmPacketPayload(string payload, bool isBinary)
+        {
+            var normalized = NormalizePacketPayload(payload, isBinary);
+            if (string.IsNullOrWhiteSpace(normalized))
+                return "";
+
+            var details = new List<string>();
+            foreach (var candidate in ExtractPossibleJsonPayloads(normalized).Take(6))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(candidate);
+                    var root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object)
+                        continue;
+
+                    var protocol = I(FindKnownString(root, new[] { "protocol" }, 0), -1);
+                    if (protocol <= 0)
+                        continue;
+
+                    if (root.TryGetProperty("data", out var dataEl) && dataEl.ValueKind == JsonValueKind.Object)
+                    {
+                        var gameId = FindKnownString(dataEl, new[] { "gameID", "gameId" }, 1);
+                        var groupId = FindKnownString(dataEl, new[] { "groupID", "groupId" }, 1);
+                        var groupType = FindKnownString(dataEl, new[] { "groupType", "tableType" }, 1);
+                        var tableStatus = FindKnownString(dataEl, new[] { "tableStatus" }, 1);
+                        var tableSort = FindKnownString(dataEl, new[] { "tableSort", "tableSort2" }, 1);
+                        var parts = new List<string> { "p=" + protocol.ToString(CultureInfo.InvariantCulture) };
+                        if (!string.IsNullOrWhiteSpace(gameId)) parts.Add("g=" + gameId);
+                        if (!string.IsNullOrWhiteSpace(groupId)) parts.Add("group=" + groupId);
+                        if (!string.IsNullOrWhiteSpace(groupType)) parts.Add("type=" + groupType);
+                        if (!string.IsNullOrWhiteSpace(tableStatus)) parts.Add("status=" + tableStatus);
+                        if (!string.IsNullOrWhiteSpace(tableSort)) parts.Add("sort=" + tableSort);
+                        if (dataEl.TryGetProperty("gameArr", out var gameArrEl) && gameArrEl.ValueKind == JsonValueKind.Array)
+                            parts.Add("gameArr=" + gameArrEl.GetArrayLength().ToString(CultureInfo.InvariantCulture));
+                        if (dataEl.TryGetProperty("groupArr", out var groupArrEl) && groupArrEl.ValueKind == JsonValueKind.Array)
+                            parts.Add("groupArr=" + groupArrEl.GetArrayLength().ToString(CultureInfo.InvariantCulture));
+                        details.Add(string.Join(",", parts));
+                    }
+                    else
+                    {
+                        details.Add("p=" + protocol.ToString(CultureInfo.InvariantCulture));
+                    }
+                }
+                catch { }
+            }
+
+            if (details.Count == 0)
+            {
+                var protoHits = Regex.Matches(normalized, "\"protocol\"\\s*:\\s*(\\d+)", RegexOptions.IgnoreCase)
+                    .Cast<Match>()
+                    .Select(m => m.Groups.Count > 1 ? m.Groups[1].Value : "")
+                    .Where(v => !string.IsNullOrWhiteSpace(v))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(4)
+                    .ToArray();
+                if (protoHits.Length > 0)
+                    details.Add("p~" + string.Join(",", protoHits));
+
+                var groupCount = Regex.Matches(normalized, "\"groupID\"|\"groupId\"", RegexOptions.IgnoreCase).Count;
+                if (groupCount > 0)
+                    details.Add("groupKeys=" + groupCount.ToString(CultureInfo.InvariantCulture));
+
+                var gameCount = Regex.Matches(normalized, "\"gameID\"|\"gameId\"", RegexOptions.IgnoreCase).Count;
+                if (gameCount > 0)
+                    details.Add("gameKeys=" + gameCount.ToString(CultureInfo.InvariantCulture));
+
+                if (normalized.IndexOf("\"gameArr\"", StringComparison.OrdinalIgnoreCase) >= 0)
+                    details.Add("hasGameArr");
+                if (normalized.IndexOf("\"groupArr\"", StringComparison.OrdinalIgnoreCase) >= 0)
+                    details.Add("hasGroupArr");
+            }
+
+            return string.Join(" | ", details.Distinct(StringComparer.OrdinalIgnoreCase).Take(4));
+        }
+
+        private void LogLaunchGameRequestDiagIfNeeded(string scope, string? url, JsonElement requestEl, string? frameId = null, string? frameHint = null)
+        {
+            if (!IsLaunchGameUrl(url) || requestEl.ValueKind != JsonValueKind.Object)
+                return;
+
+            try
+            {
+                var method = requestEl.TryGetProperty("method", out var methodEl) ? (methodEl.GetString() ?? "") : "";
+                var postData = requestEl.TryGetProperty("postData", out var postDataEl) ? (postDataEl.GetString() ?? "") : "";
+                var providerCode = "";
+                var gameId = "";
+                var gameType = "";
+                var html5 = "";
+                var typeButton = "";
+                var lang = "";
+                var money = "";
+
+                if (!string.IsNullOrWhiteSpace(postData) && postData.TrimStart().StartsWith("{", StringComparison.Ordinal))
+                {
+                    using var bodyDoc = JsonDocument.Parse(postData);
+                    var bodyRoot = bodyDoc.RootElement;
+                    if (bodyRoot.ValueKind == JsonValueKind.Object)
+                    {
+                        providerCode = bodyRoot.TryGetProperty("providercode", out var providerCodeEl) ? (providerCodeEl.GetString() ?? "") : "";
+                        gameId = bodyRoot.TryGetProperty("gameid", out var gameIdEl) ? (gameIdEl.GetString() ?? "") : "";
+                        gameType = bodyRoot.TryGetProperty("type", out var typeEl) ? (typeEl.GetString() ?? "") : "";
+                        html5 = bodyRoot.TryGetProperty("html5", out var html5El) ? (html5El.GetString() ?? "") : "";
+                        typeButton = bodyRoot.TryGetProperty("typeButton", out var typeButtonEl) ? (typeButtonEl.GetRawText() ?? "") : "";
+                        lang = bodyRoot.TryGetProperty("lang", out var langEl) ? (langEl.GetString() ?? "") : "";
+                        money = bodyRoot.TryGetProperty("money", out var moneyEl) ? (moneyEl.GetRawText() ?? "") : "";
+                    }
+                }
+
+                frameHint ??= DescribeCdpFrame(scope, frameId);
+                _wmLastLaunchRequestSummary =
+                    $"method={ClipForLog(method, 16)} provider={ClipForLog(providerCode, 20)} gameType={ClipForLog(gameType, 20)} " +
+                    $"gameId={ClipForLog(gameId, 40)} html5={ClipForLog(html5, 8)} lang={ClipForLog(lang, 12)} " +
+                    $"frame={ClipForLog(frameHint, 80)}";
+                var sig = $"{scope}|{frameId}|{method}|{providerCode}|{gameId}|{gameType}|{html5}|{typeButton}|{lang}|{money}|{frameHint}";
+                var msg =
+                    $"[WM_DIAG][LaunchGameReq] scope={scope} frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frameHint, 220)} " +
+                    $"method={ClipForLog(method, 16)} provider={ClipForLog(providerCode, 40)} gameType={ClipForLog(gameType, 40)} gameId={ClipForLog(gameId, 80)} " +
+                    $"html5={ClipForLog(html5, 8)} typeButton={ClipForLog(typeButton, 16)} lang={ClipForLog(lang, 16)} money={ClipForLog(money, 24)} " +
+                    $"url={ClipForLog(url, 180)}";
+                LogChangedOrThrottled("WM_DIAG_LAUNCH_GAME_REQ", sig, msg, 1200);
+                EnsureWmTrace("launchGame-request", url, scope, frameId);
+                LogWmTrace(
+                    "launchGame.request",
+                    $"scope={scope} provider={ClipForLog(providerCode, 40)} gameType={ClipForLog(gameType, 40)} gameId={ClipForLog(gameId, 80)} html5={ClipForLog(html5, 8)} typeButton={ClipForLog(typeButton, 16)} lang={ClipForLog(lang, 16)} frame={ClipForLog(frameHint, 180)}",
+                    "launchGame.request",
+                    500,
+                    force: true);
+            }
+            catch (Exception ex)
+            {
+                LogThrottled("WM_DIAG_LAUNCH_GAME_REQ_ERR", "[WM_DIAG][LaunchGameReq] parse error: " + ex.Message, 2000);
+            }
+        }
+
+        private void LogLaunchGameDiagIfNeeded(string scope, string kind, string? url, string payload, string? frameId = null, string? frameHint = null)
+        {
+            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(payload))
+                return;
+            if (!IsLaunchGameUrl(url))
+                return;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(payload);
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                    return;
+
+                var success = "0";
+                if (root.TryGetProperty("success", out var successEl))
+                {
+                    success = successEl.ValueKind switch
+                    {
+                        JsonValueKind.True => "1",
+                        JsonValueKind.False => "0",
+                        JsonValueKind.String => string.Equals(successEl.GetString(), "true", StringComparison.OrdinalIgnoreCase) ? "1" : "0",
+                        _ => "0"
+                    };
+                }
+                else if (root.TryGetProperty("status", out var statusBoolEl))
+                {
+                    success = statusBoolEl.ValueKind switch
+                    {
+                        JsonValueKind.True => "1",
+                        JsonValueKind.False => "0",
+                        JsonValueKind.String => string.Equals(statusBoolEl.GetString(), "true", StringComparison.OrdinalIgnoreCase) || string.Equals(statusBoolEl.GetString(), "success", StringComparison.OrdinalIgnoreCase) ? "1" : "0",
+                        _ => "0"
+                    };
+                }
+                var errorCode = "";
+                var status = "";
+                var errorDesc = "";
+                var gameUrl = "";
+                if (root.TryGetProperty("errCode", out var errCodeEl))
+                    errorCode = errCodeEl.GetString() ?? "";
+                if (root.TryGetProperty("errMsg", out var errMsgEl))
+                    errorDesc = errMsgEl.GetString() ?? "";
+                if (root.TryGetProperty("msg", out var msgEl) && string.IsNullOrWhiteSpace(errorDesc))
+                    errorDesc = msgEl.GetString() ?? "";
+                if (root.TryGetProperty("gameUrl", out var gameUrlElRoot))
+                    gameUrl = gameUrlElRoot.GetString() ?? "";
+                else if (root.TryGetProperty("game_url", out var gameUrlOldElRoot))
+                    gameUrl = gameUrlOldElRoot.GetString() ?? "";
+                if (root.TryGetProperty("status", out var statusElRoot))
+                    status = statusElRoot.ValueKind == JsonValueKind.String ? (statusElRoot.GetString() ?? "") : statusElRoot.GetRawText();
+
+                if (root.TryGetProperty("value", out var valueEl) && valueEl.ValueKind == JsonValueKind.Object)
+                {
+                    if (string.IsNullOrWhiteSpace(errorCode))
+                        errorCode = valueEl.TryGetProperty("errorCodeId", out var errorCodeEl) ? (errorCodeEl.GetString() ?? "") : "";
+                    if (valueEl.TryGetProperty("content", out var contentEl) && contentEl.ValueKind == JsonValueKind.Object)
+                    {
+                        if (string.IsNullOrWhiteSpace(status))
+                            status = contentEl.TryGetProperty("status", out var statusEl) ? (statusEl.GetString() ?? "") : "";
+                        if (string.IsNullOrWhiteSpace(errorDesc))
+                            errorDesc = contentEl.TryGetProperty("error_desc", out var errorDescEl) ? (errorDescEl.GetString() ?? "") : "";
+                        if (string.IsNullOrWhiteSpace(gameUrl))
+                            gameUrl = contentEl.TryGetProperty("game_url", out var gameUrlEl) ? (gameUrlEl.GetString() ?? "") : "";
+                    }
+                }
+
+                var launchHost = "";
+                var launchPath = "";
+                if (Uri.TryCreate(gameUrl, UriKind.Absolute, out var gameUri))
+                {
+                    launchHost = gameUri.Host;
+                    launchPath = gameUri.AbsolutePath;
+                }
+
+                frameHint ??= DescribeCdpFrame(scope, frameId);
+                _wmLastLaunchResponseSummary =
+                    $"success={success} status={ClipForLog(status, 24)} errorCode={ClipForLog(errorCode, 24)} " +
+                    $"launchHost={ClipForLog(launchHost, 40)} gameUrl={ClipForLog(gameUrl, 120)} frame={ClipForLog(frameHint, 80)}";
+                var sig = $"{scope}|{kind}|{frameId}|{success}|{errorCode}|{status}|{gameUrl}|{frameHint}";
+                var msg =
+                    $"[WM_DIAG][LaunchGame] scope={scope} kind={kind} frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frameHint, 220)} " +
+                    $"success={success} errorCode={ClipForLog(errorCode, 24)} status={ClipForLog(status, 24)} errorDesc={ClipForLog(errorDesc, 120)} " +
+                    $"gameUrl={ClipForLog(gameUrl, 200)} launchHost={ClipForLog(launchHost, 80)} launchPath={ClipForLog(launchPath, 80)}";
+                LogChangedOrThrottled("WM_DIAG_LAUNCH_GAME", sig, msg, 1200);
+                var traceUrl = string.IsNullOrWhiteSpace(gameUrl) ? url : gameUrl;
+                EnsureWmTrace("launchGame", traceUrl, scope, frameId, forceNew: true);
+                LogWmTrace(
+                    "launchGame",
+                    $"scope={scope} kind={kind} success={success} status={ClipForLog(status, 24)} errorCode={ClipForLog(errorCode, 24)} launchHost={ClipForLog(launchHost, 80)} gameUrl={ClipForLog(gameUrl, 180)} frame={ClipForLog(frameHint, 180)}",
+                    "launchGame",
+                    500,
+                    force: true);
+            }
+            catch (Exception ex)
+            {
+                LogThrottled("WM_DIAG_LAUNCH_GAME_ERR", "[WM_DIAG][LaunchGame] parse error: " + ex.Message, 2000);
+            }
+        }
+
+        private void LogWmPacketDiagIfNeeded(string scope, string kind, string? url, string? mime, string payload, bool isBinary, string? frameId = null, string? frameHint = null)
+        {
+            if (string.IsNullOrWhiteSpace(payload))
+                return;
+
+            var wmUrl = IsWmUrl(url);
+            var wmPayload = LooksLikeWmPacketPayload(payload, isBinary);
+            if (!wmUrl && !wmPayload)
+                return;
+
+            var desc = DescribeWmPacketPayload(payload, isBinary);
+            if (!wmUrl && string.IsNullOrWhiteSpace(desc))
+                return;
+
+            frameHint ??= DescribeCdpFrame(scope, frameId);
+            var preview = ClipForLog(PreviewPayload(payload, isBinary), 220);
+            var sig = string.Join("|", new[]
+            {
+                scope,
+                kind,
+                ClipForLog(url, 140),
+                frameId ?? "",
+                ClipForLog(frameHint, 140),
+                mime ?? "",
+                wmUrl ? "1" : "0",
+                desc,
+                preview
+            });
+            var msg =
+                $"[WM_DIAG][Packet] scope={scope} kind={kind} frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frameHint, 220)} wmUrl={(wmUrl ? 1 : 0)} " +
+                $"url={ClipForLog(url, 180)} mime={ClipForLog(mime, 48)} desc={ClipForLog(desc, 180)} preview={preview}";
+            LogChangedOrThrottled("WM_DIAG_PACKET:" + scope + ":" + kind, sig, msg, 1200);
+            EnsureWmTrace("wm-packet", url, scope, frameId);
+            LogWmTrace(
+                "packet",
+                $"scope={scope} kind={kind} frameId={ClipForLog(frameId, 48)} wmUrl={(wmUrl ? 1 : 0)} url={ClipForLog(url, 160)} desc={ClipForLog(desc, 160)}",
+                "packet:" + kind + ":" + ClipForLog(frameId, 24) + ":" + ClipForLog(desc, 60),
+                1200);
+        }
+
+        private void LogHttpBodyCodecDiagIfNeeded(string scope, string kind, string? url, string? mime, string payload, bool isBinary, string? contentEncoding, string? contentLength, string? frameId = null, string? frameHint = null)
+        {
+            if (string.IsNullOrWhiteSpace(url) && string.IsNullOrWhiteSpace(payload))
+                return;
+
+            frameHint ??= DescribeCdpFrame(scope, frameId);
+            var codec = DetectPayloadCodec(payload, isBinary, contentEncoding);
+            var normalized = NormalizePacketPayload(payload, isBinary, contentEncoding);
+            var decoded = !string.IsNullOrWhiteSpace(normalized) && normalized != payload ? 1 : 0;
+            var textLike = LooksLikeTextPayload(normalized) ? 1 : 0;
+            var wmLike = IsWmUrl(url) || IsWmFrameHint(frameHint) || LooksLikeWmPacketPayload(normalized, false);
+            if (!wmLike && !isBinary && string.IsNullOrWhiteSpace(contentEncoding))
+                return;
+
+            var msg =
+                $"[WM_DIAG][BodyCodec] scope={scope} kind={kind} frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frameHint, 220)} " +
+                $"url={ClipForLog(url, 180)} mime={ClipForLog(mime, 64)} ce={ClipForLog(contentEncoding, 48)} len={ClipForLog(contentLength, 24)} " +
+                $"binary={(isBinary ? 1 : 0)} decoded={decoded} textLike={textLike} codec={ClipForLog(codec, 120)}";
+            var sig = string.Join("|", scope, kind, ClipForLog(url, 160), ClipForLog(frameId, 48), ClipForLog(contentEncoding, 32), ClipForLog(contentLength, 24), codec, decoded.ToString(CultureInfo.InvariantCulture), textLike.ToString(CultureInfo.InvariantCulture));
+            LogChangedOrThrottled("WM_DIAG_BODY_CODEC:" + scope + ":" + kind, sig, msg, 1200);
+            EnsureWmTrace("body-codec", url, scope, frameId);
+            LogWmTrace(
+                "body-codec",
+                $"scope={scope} kind={kind} frameId={ClipForLog(frameId, 48)} codec={ClipForLog(codec, 120)} decoded={decoded} textLike={textLike} url={ClipForLog(url, 160)}",
+                "body-codec:" + kind + ":" + ClipForLog(frameId, 24) + ":" + ClipForLog(codec, 40),
+                1200);
         }
 
         private void LogPacket(string kind, string? url, string preview, bool isBinary)
@@ -7124,15 +9958,16 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private void TryUpdateOverlayServerStateFromPayload(string scope, string kind, string? url, string payload, bool isBinary)
         {
-            if (!string.Equals(scope, "popup", StringComparison.OrdinalIgnoreCase))
-                return;
-            if (!string.Equals(kind, "WS.recv", StringComparison.OrdinalIgnoreCase))
+            var normalizedKind = NormalizeProtocolFeedKind(kind);
+            if (!string.Equals(normalizedKind, "WS.recv", StringComparison.OrdinalIgnoreCase))
                 return;
             if (string.IsNullOrWhiteSpace(payload))
                 return;
 
             var normalized = NormalizePacketPayload(payload, isBinary);
             if (string.IsNullOrWhiteSpace(normalized))
+                return;
+            if (!ShouldAcceptWmProtocolFeed(scope, normalizedKind, url, normalized, null))
                 return;
 
             foreach (var candidate in ExtractPossibleJsonPayloads(normalized))
@@ -7226,6 +10061,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             if (string.IsNullOrWhiteSpace(state.Text) && !string.IsNullOrWhiteSpace(state.SessionKey))
                                 state.Text = "ID: " + state.SessionKey;
                         }, "protocol26");
+                        LogPopupRoadParserDiag(scope, normalizedKind, url, protocol, routeKey, resolvedId, resolvedName, "protocol26");
                         continue;
                     }
 
@@ -7249,6 +10085,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             state.Countdown = null;
                             state.LastCountdownUpdatedUtc = DateTime.MinValue;
                         }, "protocol25");
+                        LogPopupRoadParserDiag(scope, normalizedKind, url, protocol, routeKey, resolvedId, resolvedName, "protocol25");
                         continue;
                     }
 
@@ -7301,6 +10138,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                                 state.LastCountdownUpdatedUtc = DateTime.MinValue;
                             }
                         }, "protocol21");
+                        LogPopupRoadParserDiag(scope, normalizedKind, url, protocol, routeKey, resolvedId, resolvedName, "protocol21");
                         continue;
                     }
 
@@ -7354,6 +10192,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             state.BetPlayer = player > 0 ? player : null;
                             state.BetTie = tie > 0 ? tie : null;
                         }, "protocol22");
+                        LogPopupRoadParserDiag(scope, normalizedKind, url, protocol, routeKey, resolvedId, resolvedName, "protocol22");
                         continue;
                     }
 
@@ -7378,6 +10217,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             state.PlayerScore = SumWmBaccaratScore(state.CardValueByArea, 1, 3, 5);
                             state.BankerScore = SumWmBaccaratScore(state.CardValueByArea, 2, 4, 6);
                         }, "protocol24");
+                        LogPopupRoadParserDiag(scope, normalizedKind, url, protocol, routeKey, resolvedId, resolvedName, "protocol24");
                         continue;
                     }
 
@@ -7397,6 +10237,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                                 state.LastCountdownUpdatedUtc = DateTime.MinValue;
                             }
                         }, "protocol20");
+                        LogPopupRoadParserDiag(scope, normalizedKind, url, protocol, routeKey, resolvedId, resolvedName, "protocol20");
                         continue;
                     }
 
@@ -7440,6 +10281,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             state.TableBetPlayer = player;
                             state.TableBetTie = tie;
                         }, "protocol33");
+                        LogPopupRoadParserDiag(scope, normalizedKind, url, protocol, routeKey, resolvedId, resolvedName, "protocol33");
                         continue;
                     }
 
@@ -7457,10 +10299,41 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             state.Countdown = countdown;
                             state.LastCountdownUpdatedUtc = DateTime.UtcNow;
                         }, "protocol38");
+                        LogPopupRoadParserDiag(scope, normalizedKind, url, protocol, routeKey, resolvedId, resolvedName, "protocol38");
                     }
                 }
                 catch { }
             }
+        }
+
+        private void LogPopupRoadParserDiag(string scope, string normalizedKind, string? url, int protocol, string routeKey, string tableId, string tableName, string source)
+        {
+            try
+            {
+                PopupServerRoadState? state = null;
+                var stateCount = 0;
+                lock (_popupServerRoadGate)
+                {
+                    stateCount = _popupServerRoadStates.Count;
+                    _popupServerRoadStates.TryGetValue(routeKey, out state);
+                }
+
+                var histLen = state?.History?.Count ?? 0;
+                var histText = state?.HistoryText ?? "";
+                var session = state?.SessionKey ?? "";
+                var countdown = state?.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? "";
+                var overlayActive = !string.IsNullOrWhiteSpace(tableId) && _overlayActiveRooms.Contains(tableId) ? 1 : 0;
+                var selected = !string.IsNullOrWhiteSpace(tableId) && _selectedRooms.Contains(tableId) ? 1 : 0;
+                var sig =
+                    $"{scope}|{normalizedKind}|p={protocol}|table={tableId}|route={routeKey}|session={session}|hist={histLen}|countdown={countdown}|overlay={overlayActive}|sel={selected}";
+                var msg =
+                    $"[WM_DIAG][RoadStateParser] scope={scope} kind={normalizedKind} protocol={protocol} source={source} " +
+                    $"table={ClipForLog(tableId, 48)} name={ClipForLog(tableName, 80)} route={ClipForLog(routeKey, 96)} " +
+                    $"session={ClipForLog(session, 48)} histLen={histLen} hist={ClipForLog(histText, 80)} countdown={countdown} " +
+                    $"overlayActive={overlayActive} selected={selected} states={stateCount} url={ClipForLog(url, 160)}";
+                LogChangedOrThrottled("WM_DIAG_ROAD_STATE_PARSER", sig, msg, 800);
+            }
+            catch { }
         }
 
         private static string GetPopupRoadHostTag(string? url)
@@ -7894,6 +10767,16 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 }, LogJsonOptions);
                 var script = $"window.__abxTableOverlay && window.__abxTableOverlay.setServerState && window.__abxTableOverlay.setServerState({idJson}, {patchJson});";
                 await ExecuteOverlayScriptAsync(script);
+
+                var overlayActive = !string.IsNullOrWhiteSpace(state.TableId) && _overlayActiveRooms.Contains(state.TableId) ? 1 : 0;
+                var selected = !string.IsNullOrWhiteSpace(state.TableId) && _selectedRooms.Contains(state.TableId) ? 1 : 0;
+                var histLen = state.History?.Count ?? 0;
+                var sig = $"{state.TableId}|overlay={overlayActive}|sel={selected}|session={state.SessionKey}|hist={histLen}|countdown={state.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? ""}|route={state.RouteKey}";
+                var msg =
+                    $"[WM_DIAG][RoadStatePush] table={ClipForLog(state.TableId, 48)} name={ClipForLog(state.TableName, 80)} overlayActive={overlayActive} " +
+                    $"selected={selected} session={ClipForLog(state.SessionKey, 48)} histLen={histLen} countdown={state.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? ""} " +
+                    $"route={ClipForLog(state.RouteKey, 96)}";
+                LogChangedOrThrottled("WM_DIAG_ROAD_STATE_PUSH", sig, msg, 800);
             }
             catch { }
         }
@@ -8025,6 +10908,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     await PushPopupServerRoadStateAsync(snapshot);
 
                 var targetDesc = string.Join(" | ", targets.Select(t => !string.IsNullOrWhiteSpace(t.Item2) ? t.Item2 : t.Item1));
+                var missDesc = string.Join(" | ", targets
+                    .Where(t => snapshots.All(s => !string.Equals(s.TableId, t.Item1, StringComparison.OrdinalIgnoreCase)))
+                    .Select(t => !string.IsNullOrWhiteSpace(t.Item2) ? t.Item2 : t.Item1)
+                    .Take(8));
+                var diagSig = $"{snapshots.Count}/{targets.Count}|{targetDesc}|miss={missDesc}";
+                var diagMsg =
+                    $"[WM_DIAG][RoadBootstrap] matched={snapshots.Count}/{targets.Count} targets={ClipForLog(targetDesc, 220)} " +
+                    $"miss={ClipForLog(missDesc, 160)}";
+                LogChangedOrThrottled("WM_DIAG_ROAD_BOOTSTRAP", diagSig, diagMsg, 1500);
                 if (_enableRoadnetInfoLogs)
                     LogThrottled("ROADNET_BOOTSTRAP", $"[ROADNET] bootstrap cache -> overlay: matched={snapshots.Count}/{targets.Count} targets={targetDesc}", 30000);
             }
@@ -8045,6 +10937,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 _latestNetworkRoomsSig = "";
                 _lastTableUpdateAt = DateTime.MinValue;
                 _protocol21Rooms.Clear();
+                _bufferedWrappedProtocol21Rooms.Clear();
+                _bufferedWrappedProtocol21Source = "";
+                _bufferedWrappedProtocol21At = DateTime.MinValue;
+                _bufferedWrappedProtocol21Version = 0;
+                _wrappedProtocol21SnapshotPublished = false;
+                _wrappedProtocol21LastPublishedCount = 0;
+                _wrappedProtocol21LastPublishedAt = DateTime.MinValue;
             }
             lock (_popupServerRoadGate)
             {
@@ -8074,7 +10973,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
         }
 
-        private void TryUpdateLatestNetworkRoomsFromPayload(string scope, string kind, string? url, string payload, bool isBinary)
+        private void TryUpdateLatestNetworkRoomsFromPayload(string scope, string kind, string? url, string payload, bool isBinary, string? frameId = null)
         {
             if (string.IsNullOrWhiteSpace(payload))
                 return;
@@ -8083,10 +10982,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (string.IsNullOrWhiteSpace(normalizedPayload))
                 return;
 
-            if (TryUpdateLatestNetworkRoomsFromProtocol35Snapshot(scope, kind, url, normalizedPayload))
+            LogProtocolRoomFeedScopeSkipIfAny(scope, kind, url, normalizedPayload, frameId);
+
+            if (TryUpdateLatestNetworkRoomsFromProtocol35Snapshot(scope, kind, url, normalizedPayload, frameId))
                 return;
 
-            if (TryUpdateLatestNetworkRoomsFromProtocol21(scope, kind, url, normalizedPayload))
+            if (TryUpdateLatestNetworkRoomsFromProtocol21(scope, kind, url, normalizedPayload, frameId))
                 return;
 
             if (!TryExtractRoomsFromPayload(normalizedPayload, out var rooms, out var reason))
@@ -8102,17 +11003,217 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (rooms.Count == 0)
                 return;
 
+            if (!ShouldAcceptGenericRoomFeed(scope, kind, url, frameId, rooms, reason, out var genericRejectReason))
+            {
+                var frameHint = DescribeCdpFrame(scope, frameId);
+                var msg =
+                    $"[WM_DIAG][GenericRoomFeedDrop] scope={scope} kind={kind} frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frameHint, 220)} " +
+                    $"url={ClipForLog(url, 180)} reason={ClipForLog(reason, 120)} reject={ClipForLog(genericRejectReason, 120)} " +
+                    $"rooms={rooms.Count} sample={ClipForLog(Sample(rooms.Select(r => r.Name), 6), 180)}";
+                LogChangedOrThrottled("WM_DIAG_GENERIC_ROOM_FEED_DROP", msg, msg, 1200);
+                LogWmTrace(
+                    "rooms.generic-drop",
+                    $"scope={scope} kind={kind} reject={ClipForLog(genericRejectReason, 120)} rooms={rooms.Count} url={ClipForLog(url, 160)}",
+                    "rooms.generic-drop",
+                    800);
+                return;
+            }
+
             PublishLatestNetworkRooms(rooms, $"{scope}/{kind}/{url} via {reason}");
         }
 
-        private bool TryUpdateLatestNetworkRoomsFromProtocol21(string scope, string kind, string? url, string payload)
+        private void LogProtocolRoomFeedScopeSkipIfAny(string scope, string kind, string? url, string payload, string? frameId = null)
         {
-            if (!string.Equals(scope, "popup", StringComparison.OrdinalIgnoreCase))
-                return false;
-            if (!string.Equals(kind, "WS.recv", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(payload))
+                return;
+            var normalizedKind = NormalizeProtocolFeedKind(kind);
+            if (!string.Equals(normalizedKind, "WS.recv", StringComparison.OrdinalIgnoreCase))
+                return;
+            if (string.Equals(scope, "popup", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var protocolList = new List<string>();
+            var detailList = new List<string>();
+            foreach (var candidate in ExtractPossibleJsonPayloads(payload))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(candidate);
+                    var root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object)
+                        continue;
+
+                    var protocol = I(FindKnownString(root, new[] { "protocol" }, 0), -1);
+                    if (protocol is not (21 or 35))
+                        continue;
+
+                    var protocolKey = protocol.ToString(CultureInfo.InvariantCulture);
+                    if (!protocolList.Contains(protocolKey, StringComparer.Ordinal))
+                        protocolList.Add(protocolKey);
+
+                    if (detailList.Count >= 3)
+                        continue;
+
+                    if (protocol == 21 &&
+                        root.TryGetProperty("data", out var dataEl) &&
+                        dataEl.ValueKind == JsonValueKind.Object)
+                    {
+                        detailList.Add("p21:" + DescribeProtocol21Candidate(dataEl));
+                    }
+                    else if (protocol == 35 &&
+                             root.TryGetProperty("data", out var data35El) &&
+                             data35El.ValueKind == JsonValueKind.Object)
+                    {
+                        var gameArrLen = data35El.TryGetProperty("gameArr", out var gameArrEl) && gameArrEl.ValueKind == JsonValueKind.Array
+                            ? gameArrEl.GetArrayLength()
+                            : 0;
+                        detailList.Add($"p35:gameArr={gameArrLen}");
+                    }
+                    else
+                    {
+                        detailList.Add("p" + protocolKey);
+                    }
+                }
+                catch { }
+            }
+
+            if (protocolList.Count == 0)
+                return;
+
+            var frameHint = DescribeCdpFrame(scope, frameId);
+            var sig = $"{scope}|{kind}|{ClipForLog(url, 120)}|{frameId}|{frameHint}|{string.Join(",", protocolList)}|{string.Join(" | ", detailList)}";
+            var msg =
+                $"[WM_DIAG][ProtocolFeedScopeSkip] scope={scope} kind={kind} parserKind={normalizedKind} protocols={string.Join(",", protocolList)} " +
+                $"frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frameHint, 220)} url={ClipForLog(url, 160)} detail={ClipForLog(string.Join(" | ", detailList), 220)}";
+            LogChangedOrThrottled("WM_DIAG_PROTOCOL_SCOPE_SKIP", sig, msg, 2000);
+            EnsureWmTrace("protocol-scope-skip", url, scope, frameId);
+            LogWmTrace(
+                "protocol.scope-skip",
+                $"scope={scope} kind={kind} parserKind={normalizedKind} protocols={string.Join(",", protocolList)} frameId={ClipForLog(frameId, 48)} url={ClipForLog(url, 160)} detail={ClipForLog(string.Join(" | ", detailList), 180)}",
+                "protocol.scope-skip",
+                1500);
+        }
+
+        private string DescribeProtocol21Candidate(JsonElement data, int fallbackGameId = -1)
+        {
+            try
+            {
+                var gameId = I(FindKnownString(data, new[] { "gameID", "gameId" }, 1), fallbackGameId);
+                var groupId = FindKnownString(data, new[] { "groupID", "groupId" }, 1);
+                var groupType = I(FindKnownString(data, new[] { "groupType", "tableType" }, 1), -1);
+                var tableSort = I(FindKnownString(data, new[] { "tableSort", "tableSort2" }, 1), int.MaxValue);
+                var tableSort2 = I(FindKnownString(data, new[] { "tableSort2" }, 1), int.MaxValue);
+                var tableStatus = I(FindKnownString(data, new[] { "tableStatus" }, 1), -1);
+                return $"game={gameId},group={groupId},type={groupType},sort={tableSort},sort2={tableSort2},status={tableStatus}";
+            }
+            catch
+            {
+                return "candidate=error";
+            }
+        }
+
+        private static string NormalizeProtocolFeedKind(string? kind)
+        {
+            var normalized = (kind ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(normalized))
+                return "";
+
+            if (normalized.StartsWith("FRAME.", StringComparison.OrdinalIgnoreCase))
+                normalized = normalized.Substring("FRAME.".Length);
+
+            if (string.Equals(normalized, "wsRecv", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "WS.recv", StringComparison.OrdinalIgnoreCase))
+                return "WS.recv";
+
+            if (string.Equals(normalized, "xhrRsp", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "HTTP.body", StringComparison.OrdinalIgnoreCase))
+                return "HTTP.body";
+
+            return normalized;
+        }
+
+        private bool ShouldAcceptWmProtocolFeed(string scope, string kind, string? url, string payload, string? frameId, bool allowHttpBody = false)
+        {
+            if (string.IsNullOrWhiteSpace(payload))
                 return false;
 
+            var normalizedKind = NormalizeProtocolFeedKind(kind);
+            if (string.Equals(scope, "popup", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.Equals(normalizedKind, "WS.recv", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                if (allowHttpBody && string.Equals(normalizedKind, "HTTP.body", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                return false;
+            }
+
+            if (!string.Equals(scope, "main", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (!IsWrappedMainWmMode(url))
+                return false;
+
+            if (!string.Equals(normalizedKind, "WS.recv", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!(allowHttpBody && string.Equals(normalizedKind, "HTTP.body", StringComparison.OrdinalIgnoreCase)))
+                    return false;
+            }
+
+            var frameHint = DescribeCdpFrame(scope, frameId);
+            if (IsWmUrl(url) || IsWmFrameHint(frameHint))
+                return true;
+
+            return LooksLikeWmPacketPayload(payload, false);
+        }
+
+        private bool IsWrappedMainWmMode(string? url = null)
+        {
+            try
+            {
+                if (PopupHost?.Visibility == Visibility.Visible && _popupWeb?.CoreWebView2 != null)
+                    return false;
+
+                if (Web?.CoreWebView2 == null)
+                    return false;
+
+                var active = GetActiveRoomHostWebView();
+                if (!ReferenceEquals(active, Web))
+                    return false;
+
+                var activeUrl = Web.CoreWebView2?.Source ?? Web.Source?.ToString() ?? "";
+                var startReason = _wmTraceStartReason ?? "";
+                var startUrl = _wmTraceStartUrl ?? "";
+                var candidateUrl = url ?? "";
+
+                var hasWmTarget =
+                    IsLikelyWmRoomFeedSource(activeUrl) ||
+                    IsLikelyWmRoomFeedSource(candidateUrl) ||
+                    IsLikelyWmRoomFeedSource(startUrl);
+
+                if (!hasWmTarget)
+                    return false;
+
+                return startReason.IndexOf("launchGame", StringComparison.OrdinalIgnoreCase) >= 0
+                    || IsLaunchGameUrl(startUrl);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryUpdateLatestNetworkRoomsFromProtocol21(string scope, string kind, string? url, string payload, string? frameId = null)
+        {
+            if (!ShouldAcceptWmProtocolFeed(scope, kind, url, payload, frameId))
+                return false;
+
+            var normalizedKind = NormalizeProtocolFeedKind(kind);
             var matched = false;
+            var seenProtocol21 = 0;
+            var acceptedProtocol21 = 0;
+            var rejectedProtocol21 = 0;
+            var acceptedSamples = new List<string>();
+            var rejectedSamples = new List<string>();
             foreach (var candidate in ExtractPossibleJsonPayloads(payload))
             {
                 try
@@ -8125,14 +11226,28 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     var protocol = I(FindKnownString(root, new[] { "protocol" }, 0), -1);
                     if (protocol != 21)
                         continue;
+                    seenProtocol21++;
 
                     if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+                    {
+                        rejectedProtocol21++;
+                        if (rejectedSamples.Count < 3)
+                            rejectedSamples.Add("data=missing");
                         continue;
+                    }
 
-                    if (!TryExtractRoomFromProtocol21(data, url, out var roomState))
+                    if (!TryExtractRoomFromProtocol21(data, url, out var roomState, out var rejectReason))
+                    {
+                        rejectedProtocol21++;
+                        if (rejectedSamples.Count < 3)
+                            rejectedSamples.Add(DescribeProtocol21Candidate(data) + ",why=" + rejectReason);
                         continue;
+                    }
 
                     matched = true;
+                    acceptedProtocol21++;
+                    if (acceptedSamples.Count < 4)
+                        acceptedSamples.Add($"{roomState.Name}<-{DescribeProtocol21Candidate(data)}");
                     lock (_roomFeedGate)
                     {
                         _protocol21Rooms[roomState.CacheKey] = roomState;
@@ -8141,23 +11256,54 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 catch { }
             }
 
+            if (seenProtocol21 > 0 && !matched)
+            {
+                var frameHint = DescribeCdpFrame(scope, frameId);
+                var missSig = $"{scope}|{ClipForLog(url, 120)}|{frameId}|{frameHint}|seen={seenProtocol21}|reject={rejectedProtocol21}|{string.Join(" | ", rejectedSamples)}";
+                var missMsg =
+                    $"[WM_DIAG][Protocol21NoRoom] scope={scope} kind={kind} parserKind={normalizedKind} seen={seenProtocol21} rejected={rejectedProtocol21} " +
+                    $"frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frameHint, 220)} url={ClipForLog(url, 160)} sample={ClipForLog(string.Join(" | ", rejectedSamples), 240)}";
+                LogChangedOrThrottled("WM_DIAG_PROTOCOL21_NO_ROOM", missSig, missMsg, 1500);
+                EnsureWmTrace("protocol21-no-room", url, scope, frameId);
+                LogWmTrace(
+                    "protocol21.reject",
+                    $"scope={scope} kind={kind} parserKind={normalizedKind} seen={seenProtocol21} rejected={rejectedProtocol21} frameId={ClipForLog(frameId, 48)} url={ClipForLog(url, 160)} sample={ClipForLog(string.Join(" | ", rejectedSamples), 180)}",
+                    "protocol21.reject",
+                    1200);
+            }
+
             if (!matched)
                 return false;
 
+            int protocolCacheCount;
             List<RoomEntry> rooms;
             lock (_roomFeedGate)
             {
-                rooms = _protocol21Rooms.Values
-                    .Where(r => !string.IsNullOrWhiteSpace(r.Name))
-                    .Where(r => !IsLobbyNoiseName(r.Name))
-                    .OrderBy(r => r.Sort <= 0 ? int.MaxValue : r.Sort)
-                    .ThenBy(r => BuildRoomDisplaySortKey(r.Name), StringComparer.Ordinal)
-                    .Select(r => new RoomEntry { Id = r.Id, Name = r.Name })
-                    .ToList();
+                protocolCacheCount = _protocol21Rooms.Count;
+                rooms = BuildPublishedRoomEntriesFromProtocolCacheLocked();
             }
 
+            var frame = DescribeCdpFrame(scope, frameId);
+            var acceptSig = $"{scope}|{kind}|{normalizedKind}|{ClipForLog(url, 120)}|{frameId}|seen={seenProtocol21}|accept={acceptedProtocol21}|cache={protocolCacheCount}|{string.Join(" | ", acceptedSamples)}";
+            var acceptMsg =
+                $"[WM_DIAG][Protocol21Accept] scope={scope} kind={kind} parserKind={normalizedKind} seen={seenProtocol21} accepted={acceptedProtocol21} cache={protocolCacheCount} " +
+                $"frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frame, 220)} url={ClipForLog(url, 160)} sample={ClipForLog(string.Join(" | ", acceptedSamples), 240)}";
+            LogChangedOrThrottled("WM_DIAG_PROTOCOL21_ACCEPT", acceptSig, acceptMsg, 1000);
+
             if (rooms.Count == 0)
+            {
+                var emptySig = $"{scope}|{ClipForLog(url, 120)}|{frameId}|{frame}|seen={seenProtocol21}|cache={protocolCacheCount}";
+                var emptyMsg =
+                    $"[WM_DIAG][Protocol21CacheEmpty] scope={scope} kind={kind} parserKind={normalizedKind} seen={seenProtocol21} cache={protocolCacheCount} " +
+                    $"frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frame, 220)} url={ClipForLog(url, 160)}";
+                LogChangedOrThrottled("WM_DIAG_PROTOCOL21_CACHE_EMPTY", emptySig, emptyMsg, 1500);
+                LogWmTrace(
+                    "protocol21.cache-empty",
+                    $"scope={scope} kind={kind} parserKind={normalizedKind} seen={seenProtocol21} cache={protocolCacheCount} frameId={ClipForLog(frameId, 48)} url={ClipForLog(url, 160)}",
+                    "protocol21.cache-empty",
+                    1200);
                 return true;
+            }
 
             var popupVisible = false;
             try
@@ -8168,19 +11314,28 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             if (!popupVisible)
                 PublishLatestNetworkRooms(rooms, $"{scope}/{kind}/{url} via protocol21");
+            LogWmTrace(
+                "protocol21.accept",
+                $"scope={scope} kind={kind} parserKind={normalizedKind} frameId={ClipForLog(frameId, 48)} rooms={rooms.Count} popup={(popupVisible ? 1 : 0)} url={ClipForLog(url, 160)}",
+                "protocol21.accept",
+                800);
             return true;
         }
 
-        private bool TryUpdateLatestNetworkRoomsFromProtocol35Snapshot(string scope, string kind, string? url, string payload)
+        private bool TryUpdateLatestNetworkRoomsFromProtocol35Snapshot(string scope, string kind, string? url, string payload, string? frameId = null)
         {
-            if (!string.Equals(scope, "popup", StringComparison.OrdinalIgnoreCase))
-                return false;
-            if (!string.Equals(kind, "WS.recv", StringComparison.OrdinalIgnoreCase))
+            if (!ShouldAcceptWmProtocolFeed(scope, kind, url, payload, frameId, allowHttpBody: true))
                 return false;
 
             var matched = false;
+            var seenProtocol35 = 0;
+            var acceptedRooms = 0;
+            var protocol35Hint = payload.IndexOf("\"protocol\":35", StringComparison.OrdinalIgnoreCase) >= 0;
+            var protocol35ParseErrorCount = 0;
+            string? protocol35ParseError = null;
             foreach (var candidate in ExtractPossibleJsonPayloads(payload))
             {
+                var candidateLooksLikeProtocol35 = candidate.IndexOf("\"protocol\":35", StringComparison.OrdinalIgnoreCase) >= 0;
                 try
                 {
                     using var doc = JsonDocument.Parse(candidate);
@@ -8191,6 +11346,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     var protocol = I(FindKnownString(root, new[] { "protocol" }, 0), -1);
                     if (protocol != 35)
                         continue;
+                    seenProtocol35++;
 
                     if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
                         continue;
@@ -8210,9 +11366,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         {
                             if (groupNode.ValueKind != JsonValueKind.Object)
                                 continue;
-                            if (!TryExtractRoomFromProtocol21(groupNode, url, out var roomState, gameId))
+                            if (!TryExtractRoomFromProtocol35SnapshotGroup(groupNode, gameNode, gameId, url, out var roomState, out _))
                                 continue;
                             matched = true;
+                            acceptedRooms++;
                             lock (_roomFeedGate)
                             {
                                 _protocol21Rooms[roomState.CacheKey] = roomState;
@@ -8220,33 +11377,103 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    if (protocol35Hint || candidateLooksLikeProtocol35)
+                    {
+                        protocol35ParseErrorCount++;
+                        protocol35ParseError ??= ex.GetType().Name + ": " + ex.Message;
+                    }
+                }
             }
+
+            if (!matched)
+            {
+                if (protocol35Hint)
+                {
+                    var missKind = NormalizeProtocolFeedKind(kind);
+                    var missFrame = DescribeCdpFrame(scope, frameId);
+                    var missMsg =
+                        $"[WM_DIAG][Protocol35NoRoom] scope={scope} kind={kind} parserKind={missKind} seen={seenProtocol35} " +
+                        $"frameId={ClipForLog(frameId, 48)} frame={ClipForLog(missFrame, 220)} url={ClipForLog(url, 160)} " +
+                        $"len={payload.Length} parseErrCount={protocol35ParseErrorCount} parseErr={ClipForLog(protocol35ParseError, 180)} " +
+                        $"sample={ClipForLog(payload, 240)} tail={ClipTailForLog(payload, 240)}";
+                    LogChangedOrThrottled("WM_DIAG_PROTOCOL35_NO_ROOM", missMsg, missMsg, 1200);
+                }
+                return false;
+            }
+
+            int protocolCacheCount;
+            List<RoomEntry> rooms;
+            lock (_roomFeedGate)
+            {
+                protocolCacheCount = _protocol21Rooms.Count;
+                rooms = BuildPublishedRoomEntriesFromProtocolCacheLocked();
+            }
+
+            var normalizedKind = NormalizeProtocolFeedKind(kind);
+            var frame = DescribeCdpFrame(scope, frameId);
+            var acceptSig = $"{scope}|{kind}|{normalizedKind}|{ClipForLog(url, 120)}|{frameId}|seen={seenProtocol35}|accept={acceptedRooms}|cache={protocolCacheCount}";
+            var acceptMsg =
+                $"[WM_DIAG][Protocol35Accept] scope={scope} kind={kind} parserKind={normalizedKind} seen={seenProtocol35} accepted={acceptedRooms} cache={protocolCacheCount} " +
+                $"frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frame, 220)} url={ClipForLog(url, 160)} sample={ClipForLog(Sample(rooms.Select(r => r.Name), 6), 240)}";
+            LogChangedOrThrottled("WM_DIAG_PROTOCOL35_ACCEPT", acceptSig, acceptMsg, 1000);
+
+            var popupVisible = false;
+            try
+            {
+                popupVisible = PopupHost?.Visibility == Visibility.Visible;
+            }
+            catch { }
+
+            if (!popupVisible && rooms.Count > 0)
+                PublishLatestNetworkRooms(rooms, $"{scope}/{kind}/{url} via protocol35");
 
             return matched;
         }
 
-        private bool TryExtractRoomFromProtocol21(JsonElement data, string? url, out Protocol21RoomState roomState, int fallbackGameId = -1)
+        private bool TryExtractRoomFromProtocol35SnapshotGroup(JsonElement groupNode, JsonElement gameNode, int fallbackGameId, string? url, out Protocol21RoomState roomState, out string rejectReason)
         {
+            if (TryExtractRoomFromProtocol21(groupNode, url, out roomState, out rejectReason, fallbackGameId))
+                return true;
+
             roomState = new Protocol21RoomState();
 
-            var gameId = I(FindKnownString(data, new[] { "gameID", "gameId" }, 1), fallbackGameId);
-            var groupIdText = FindKnownString(data, new[] { "groupID", "groupId" }, 1);
+            var gameId = I(FindKnownString(groupNode, new[] { "gameID", "gameId" }, 1), fallbackGameId);
+            if (gameId <= 0)
+                gameId = I(FindKnownString(gameNode, new[] { "gameID", "gameId" }, 1), fallbackGameId);
+
+            var groupIdText = FindKnownString(groupNode, new[] { "groupID", "groupId" }, 1);
             var groupId = I(groupIdText, -1);
             if (groupId <= 0)
+            {
+                rejectReason = "groupId<=0";
+                return false;
+            }
+
+            var groupType = I(FindKnownString(groupNode, new[] { "groupType", "tableType" }, 1), -1);
+            if (groupType < 0)
+                groupType = I(FindKnownString(gameNode, new[] { "groupType", "tableType" }, 1), -1);
+
+            var tableSort = FirstPositiveInt(
+                FindKnownString(groupNode, new[] { "tableSort", "tableSort2", "sort", "sortNo", "tableNo", "tableNumber", "tableIdx" }, 1),
+                FindKnownString(gameNode, new[] { "tableSort", "tableSort2", "sort", "sortNo", "tableNo", "tableNumber", "tableIdx" }, 1));
+            var tableSort2 = FirstPositiveInt(
+                FindKnownString(groupNode, new[] { "tableSort2", "tableSort", "sort", "sortNo" }, 1),
+                FindKnownString(gameNode, new[] { "tableSort2", "tableSort", "sort", "sortNo" }, 1));
+
+            var tableStatusText = FindKnownString(groupNode, new[] { "tableStatus", "status" }, 1);
+            var tableStatus = I(tableStatusText, -1);
+            if (tableStatus <= 0 && string.IsNullOrWhiteSpace(tableStatusText))
+                tableStatus = 1;
+
+            if (!TryMapVisibleRoomNameFromProtocol21(gameId, groupType, groupId, tableSort, tableSort2, tableStatus, out var name, out var sort, out rejectReason))
                 return false;
 
-            var groupType = I(FindKnownString(data, new[] { "groupType", "tableType" }, 1), -1);
-            var tableSort = I(FindKnownString(data, new[] { "tableSort", "tableSort2" }, 1), int.MaxValue);
-            var tableSort2 = I(FindKnownString(data, new[] { "tableSort2" }, 1), int.MaxValue);
-            var tableStatus = I(FindKnownString(data, new[] { "tableStatus" }, 1), -1);
             var lowerUrl = (url ?? "").ToLowerInvariant();
             var hostTag = lowerUrl.Contains("qqhrsbjx") ? "qqhrsbjx"
                 : lowerUrl.Contains("hip288") ? "hip288"
                 : "popup";
-
-            if (!TryMapVisibleRoomNameFromProtocol21(gameId, groupType, groupId, tableSort, tableSort2, tableStatus, out var name, out var sort))
-                return false;
 
             roomState = new Protocol21RoomState
             {
@@ -8260,18 +11487,85 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return true;
         }
 
-        private bool TryMapVisibleRoomNameFromProtocol21(int gameId, int groupType, int groupId, int tableSort, int tableSort2, int tableStatus, out string name, out int sort)
+        private static int FirstPositiveInt(params string?[] values)
+        {
+            foreach (var value in values)
+            {
+                var parsed = I(value, int.MinValue);
+                if (parsed > 0)
+                    return parsed;
+            }
+
+            return int.MaxValue;
+        }
+
+        private bool TryExtractRoomFromProtocol21(JsonElement data, string? url, out Protocol21RoomState roomState, out string rejectReason, int fallbackGameId = -1)
+        {
+            roomState = new Protocol21RoomState();
+            rejectReason = "";
+
+            var gameId = I(FindKnownString(data, new[] { "gameID", "gameId" }, 1), fallbackGameId);
+            var groupIdText = FindKnownString(data, new[] { "groupID", "groupId" }, 1);
+            var groupId = I(groupIdText, -1);
+            if (groupId <= 0)
+            {
+                rejectReason = "groupId<=0";
+                return false;
+            }
+
+            var groupTypeText = FindKnownString(data, new[] { "groupType", "tableType" }, 1);
+            var tableSortText = FindKnownString(data, new[] { "tableSort", "tableSort2" }, 1);
+            var tableSort2Text = FindKnownString(data, new[] { "tableSort2" }, 1);
+            var tableStatusText = FindKnownString(data, new[] { "tableStatus" }, 1);
+            var groupType = I(groupTypeText, -1);
+            var tableSort = I(tableSortText, int.MaxValue);
+            var tableSort2 = I(tableSort2Text, int.MaxValue);
+            var tableStatus = I(tableStatusText, -1);
+            var lowerUrl = (url ?? "").ToLowerInvariant();
+            var hostTag = lowerUrl.Contains("qqhrsbjx") ? "qqhrsbjx"
+                : lowerUrl.Contains("hip288") ? "hip288"
+                : "popup";
+
+            if (!TryMapVisibleRoomNameFromProtocol21(gameId, groupType, groupId, tableSort, tableSort2, tableStatus, out var name, out var sort, out rejectReason))
+            {
+                if (string.Equals(rejectReason, "tableStatus<=0", StringComparison.Ordinal) && string.IsNullOrWhiteSpace(tableStatusText))
+                    rejectReason = "tableStatus=missing";
+                else if (string.Equals(rejectReason, "game101/tableSort<=0", StringComparison.Ordinal) && string.IsNullOrWhiteSpace(tableSortText))
+                    rejectReason = "game101/tableSort=missing";
+                return false;
+            }
+
+            roomState = new Protocol21RoomState
+            {
+                CacheKey = $"{hostTag}:{gameId}:{groupId}",
+                Id = groupId.ToString(CultureInfo.InvariantCulture),
+                Name = name,
+                Sort = sort,
+                GameId = gameId,
+                GroupType = groupType
+            };
+            return true;
+        }
+
+        private bool TryMapVisibleRoomNameFromProtocol21(int gameId, int groupType, int groupId, int tableSort, int tableSort2, int tableStatus, out string name, out int sort, out string rejectReason)
         {
             name = "";
             sort = int.MaxValue;
+            rejectReason = "";
 
             if (tableStatus <= 0)
+            {
+                rejectReason = "tableStatus<=0";
                 return false;
+            }
 
             if (gameId == 101)
             {
                 if (tableSort <= 0)
+                {
+                    rejectReason = "game101/tableSort<=0";
                     return false;
+                }
 
                 if (groupType is 36 or 12 or 18 or 19 or 22)
                 {
@@ -8287,6 +11581,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     return true;
                 }
 
+                rejectReason = "game101/groupType=" + groupType.ToString(CultureInfo.InvariantCulture);
                 return false;
             }
 
@@ -8300,7 +11595,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     _ => ""
                 };
                 sort = 100 + tableSort;
-                return !string.IsNullOrWhiteSpace(name);
+                if (!string.IsNullOrWhiteSpace(name))
+                    return true;
+                rejectReason = $"game102/tableSort={tableSort}";
+                return false;
             }
 
             if (gameId == 103 && tableSort == 1)
@@ -8348,6 +11646,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 }
             }
 
+            rejectReason = $"unsupported_game={gameId},groupType={groupType},tableSort={tableSort},tableSort2={tableSort2}";
             return false;
         }
 
@@ -8356,12 +11655,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             source = "protocol21-mapped";
             lock (_roomFeedGate)
             {
-                rooms = _protocol21Rooms.Values
-                    .Where(r => !string.IsNullOrWhiteSpace(r.Name))
-                    .Where(r => !IsLobbyNoiseName(r.Name))
-                    .OrderBy(r => BuildRoomDisplaySortKey(r.Name), StringComparer.Ordinal)
-                    .Select(r => new RoomEntry { Id = r.Id, Name = r.Name })
-                    .ToList();
+                rooms = BuildPublishedRoomEntriesFromProtocolCacheLocked();
             }
             return rooms.Count > 0;
         }
@@ -8424,7 +11718,60 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return "900|" + BuildRoomAlphaKey(text);
         }
 
+        private List<RoomEntry> BuildPublishedRoomEntriesFromProtocolCacheLocked()
+        {
+            return NormalizePublishedRoomEntries(
+                _protocol21Rooms.Values
+                    .Where(r => !string.IsNullOrWhiteSpace(r.Name))
+                    .Where(r => !IsLobbyNoiseName(r.Name))
+                    .OrderBy(r => r.Sort <= 0 ? int.MaxValue : r.Sort)
+                    .ThenBy(r => BuildRoomDisplaySortKey(r.Name), StringComparer.Ordinal)
+                    .Select(r => new RoomEntry { Id = r.Id, Name = r.Name }));
+        }
+
+        private List<RoomEntry> NormalizePublishedRoomEntries(IEnumerable<RoomEntry>? rooms)
+        {
+            var result = new List<RoomEntry>();
+            if (rooms == null)
+                return result;
+
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var room in rooms)
+            {
+                var id = (room?.Id ?? "").Trim();
+                var name = (room?.Name ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(id) && string.IsNullOrWhiteSpace(name))
+                    continue;
+
+                var dedupeKey = !string.IsNullOrWhiteSpace(name)
+                    ? "NAME:" + TextNorm.U(name)
+                    : "ID:" + id;
+                if (!seen.Add(dedupeKey))
+                    continue;
+
+                result.Add(new RoomEntry
+                {
+                    Id = string.IsNullOrWhiteSpace(id) ? name : id,
+                    Name = string.IsNullOrWhiteSpace(name) ? id : name
+                });
+            }
+
+            return result;
+        }
+
         private void PublishLatestNetworkRooms(List<RoomEntry> rooms, string source)
+        {
+            rooms = NormalizePublishedRoomEntries(rooms);
+            if (rooms.Count == 0)
+                return;
+
+            if (TryDelayWrappedProtocol21Publish(rooms, source))
+                return;
+
+            PublishLatestNetworkRoomsCore(rooms, source);
+        }
+
+        private void PublishLatestNetworkRoomsCore(List<RoomEntry> rooms, string source)
         {
             var sig = string.Join("|", rooms.Select(r => $"{r.Id}::{r.Name}"));
             var changed = false;
@@ -8434,6 +11781,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var nextPriority = GetRoomFeedPriority(source);
                 if (currentPriority > nextPriority)
                     return;
+                if (source.IndexOf("protocol35", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    _bufferedWrappedProtocol21Rooms.Clear();
+                    _bufferedWrappedProtocol21Source = "";
+                    _bufferedWrappedProtocol21At = DateTime.MinValue;
+                    _wrappedProtocol21SnapshotPublished = true;
+                    _wrappedProtocol21LastPublishedCount = rooms.Count;
+                    _wrappedProtocol21LastPublishedAt = DateTime.UtcNow;
+                }
                 if (string.Equals(_latestNetworkRoomsSig, sig, StringComparison.Ordinal))
                     return;
                 _latestNetworkRooms = rooms.Select(r => new RoomEntry { Id = r.Id, Name = r.Name }).ToList();
@@ -8444,8 +11800,162 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
 
             Log("[ROOMNET] rooms=" + rooms.Count + " source=" + source + " sample=" + Sample(rooms.Select(r => r.Name), 6));
+            if (!IsLikelyWmRoomFeedSource(source) || !LooksLikeBaccaratRoomSet(rooms))
+            {
+                var diag =
+                    $"[WM_DIAG][WrapperRoomFeedCandidate] source={ClipForLog(source, 220)} rooms={rooms.Count} " +
+                    $"wmSource={(IsLikelyWmRoomFeedSource(source) ? 1 : 0)} baccaratLike={(LooksLikeBaccaratRoomSet(rooms) ? 1 : 0)} " +
+                    $"sample={ClipForLog(Sample(rooms.Select(r => r.Name), 6), 220)}";
+                LogChangedOrThrottled("WM_DIAG_WRAPPER_ROOM_FEED", diag, diag, 1200);
+                LogWmTrace(
+                    "rooms.wrapper-candidate",
+                    $"rooms={rooms.Count} wmSource={(IsLikelyWmRoomFeedSource(source) ? 1 : 0)} baccaratLike={(LooksLikeBaccaratRoomSet(rooms) ? 1 : 0)} source={ClipForLog(source, 180)}",
+                    "rooms.wrapper-candidate",
+                    800);
+            }
+            EnsureWmTrace("publish-rooms", source, null, null);
+            LogWmTrace(
+                "rooms.publish",
+                $"source={ClipForLog(source, 180)} rooms={rooms.Count} changed={(changed ? 1 : 0)} sample={ClipForLog(Sample(rooms.Select(r => r.Name), 6), 180)}",
+                "rooms.publish",
+                800);
             if (changed)
                 ScheduleRoomListRefreshFromNetworkFeed(source, rooms.Count);
+        }
+
+        private bool TryDelayWrappedProtocol21Publish(List<RoomEntry> rooms, string source)
+        {
+            if (rooms.Count == 0)
+                return false;
+            if (!IsWrappedMainWmMode(source))
+                return false;
+            if (source.IndexOf("protocol21", StringComparison.OrdinalIgnoreCase) < 0 ||
+                source.IndexOf("protocol35", StringComparison.OrdinalIgnoreCase) >= 0)
+                return false;
+
+            var now = DateTime.UtcNow;
+            var due = TimeSpan.Zero;
+            var publishNow = false;
+            var version = 0;
+            var lastCount = 0;
+            var stage = "";
+
+            lock (_roomFeedGate)
+            {
+                if (_latestNetworkRoomsSource.IndexOf("protocol35", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return false;
+
+                _bufferedWrappedProtocol21Rooms = rooms.Select(r => new RoomEntry { Id = r.Id, Name = r.Name }).ToList();
+                _bufferedWrappedProtocol21Source = source;
+                _bufferedWrappedProtocol21At = now;
+                version = ++_bufferedWrappedProtocol21Version;
+                lastCount = _wrappedProtocol21LastPublishedCount;
+
+                if (!_wrappedProtocol21SnapshotPublished)
+                {
+                    if (rooms.Count >= 30)
+                    {
+                        _wrappedProtocol21SnapshotPublished = true;
+                        _wrappedProtocol21LastPublishedCount = rooms.Count;
+                        _wrappedProtocol21LastPublishedAt = now;
+                        publishNow = true;
+                        stage = "release-threshold";
+                    }
+                    else
+                    {
+                        due = rooms.Count >= 20 ? TimeSpan.FromMilliseconds(900) : TimeSpan.FromMilliseconds(1400);
+                        stage = "buffer-first";
+                    }
+                }
+                else
+                {
+                    var countDelta = rooms.Count - _wrappedProtocol21LastPublishedCount;
+                    var age = now - _wrappedProtocol21LastPublishedAt;
+                    if (countDelta >= 6 || age >= TimeSpan.FromSeconds(6))
+                    {
+                        _wrappedProtocol21LastPublishedCount = rooms.Count;
+                        _wrappedProtocol21LastPublishedAt = now;
+                        publishNow = true;
+                        stage = "release-delta";
+                    }
+                    else
+                    {
+                        due = TimeSpan.FromMilliseconds(1600);
+                        stage = "buffer-delta";
+                    }
+                }
+            }
+
+            if (publishNow)
+            {
+                var releaseMsg =
+                    $"[WM_DIAG][WrapperProtocol21Buffer] stage={stage} rooms={rooms.Count} last={lastCount} source={ClipForLog(source, 220)}";
+                LogChangedOrThrottled("WM_DIAG_WRAPPED_PROTOCOL21_RELEASE", releaseMsg, releaseMsg, 800);
+                return false;
+            }
+
+            var holdMsg =
+                $"[WM_DIAG][WrapperProtocol21Buffer] stage={stage} rooms={rooms.Count} last={lastCount} dueMs={(int)due.TotalMilliseconds} source={ClipForLog(source, 220)}";
+            LogChangedOrThrottled("WM_DIAG_WRAPPED_PROTOCOL21_BUFFER", holdMsg, holdMsg, 800);
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(due);
+                    FlushBufferedWrappedProtocol21Publish(version);
+                }
+                catch { }
+            });
+
+            return true;
+        }
+
+        private void FlushBufferedWrappedProtocol21Publish(int version)
+        {
+            List<RoomEntry> rooms;
+            string source;
+            var shouldPublish = false;
+            var now = DateTime.UtcNow;
+
+            lock (_roomFeedGate)
+            {
+                if (version != _bufferedWrappedProtocol21Version)
+                    return;
+                if (_bufferedWrappedProtocol21Rooms.Count == 0 || string.IsNullOrWhiteSpace(_bufferedWrappedProtocol21Source))
+                    return;
+                if (_latestNetworkRoomsSource.IndexOf("protocol35", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return;
+
+                rooms = _bufferedWrappedProtocol21Rooms
+                    .Select(r => new RoomEntry { Id = r.Id, Name = r.Name })
+                    .ToList();
+                source = _bufferedWrappedProtocol21Source;
+
+                if (!_wrappedProtocol21SnapshotPublished)
+                {
+                    if (rooms.Count < 12 && (now - _bufferedWrappedProtocol21At) < TimeSpan.FromSeconds(3))
+                        return;
+                    _wrappedProtocol21SnapshotPublished = true;
+                    _wrappedProtocol21LastPublishedCount = rooms.Count;
+                    _wrappedProtocol21LastPublishedAt = now;
+                    shouldPublish = true;
+                }
+                else if (rooms.Count > _wrappedProtocol21LastPublishedCount)
+                {
+                    _wrappedProtocol21LastPublishedCount = rooms.Count;
+                    _wrappedProtocol21LastPublishedAt = now;
+                    shouldPublish = true;
+                }
+            }
+
+            if (!shouldPublish)
+                return;
+
+            var flushMsg =
+                $"[WM_DIAG][WrapperProtocol21Buffer] stage=flush rooms={rooms.Count} source={ClipForLog(source, 220)}";
+            LogChangedOrThrottled("WM_DIAG_WRAPPED_PROTOCOL21_FLUSH", flushMsg, flushMsg, 800);
+            PublishLatestNetworkRoomsCore(rooms, source);
         }
 
         private void ScheduleRoomListRefreshFromNetworkFeed(string source, int roomCount)
@@ -8469,6 +11979,23 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var immediate = !hasUiRooms || (now - _roomListLastLoaded) > TimeSpan.FromSeconds(2);
                 var minGap = immediate ? TimeSpan.FromMilliseconds(120) : TimeSpan.FromMilliseconds(600);
                 var due = immediate ? TimeSpan.Zero : TimeSpan.FromMilliseconds(250);
+
+                if (source.IndexOf("protocol35", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    immediate = true;
+                    minGap = TimeSpan.FromMilliseconds(80);
+                    due = TimeSpan.Zero;
+                }
+
+                if (IsWrappedMainWmMode(source) &&
+                    source.IndexOf("protocol21", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    source.IndexOf("protocol35", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    roomCount < 20)
+                {
+                    immediate = false;
+                    minGap = TimeSpan.FromMilliseconds(900);
+                    due = TimeSpan.FromMilliseconds(900);
+                }
 
                 if (_roomListLoading == 0 && (now - _lastRoomFeedRefreshAt) >= minGap)
                 {
@@ -8502,11 +12029,69 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private static int GetRoomFeedPriority(string? source)
         {
             var text = source ?? "";
+            if (text.IndexOf("protocol35", StringComparison.OrdinalIgnoreCase) >= 0)
+                return 4;
             if (text.IndexOf("table_update", StringComparison.OrdinalIgnoreCase) >= 0)
                 return 3;
             if (text.IndexOf("protocol21", StringComparison.OrdinalIgnoreCase) >= 0)
                 return 2;
             return 1;
+        }
+
+        private bool IsLikelyWmRoomFeedSource(string? source)
+        {
+            var text = (source ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(text))
+                return false;
+
+            return text.IndexOf("protocol21", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("protocol35", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("table_update", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("m8810.com", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("co=wm", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("iframe_101", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("iframe_109", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private bool LooksLikeBaccaratRoomSet(IEnumerable<RoomEntry>? rooms)
+        {
+            try
+            {
+                return rooms?.Any(r => LooksLikeBaccaratRoom(r?.Name) || LooksLikeBaccaratRoom(r?.Id)) == true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool ShouldAcceptGenericRoomFeed(string scope, string kind, string? url, string? frameId, List<RoomEntry> rooms, string? reason, out string rejectReason)
+        {
+            rejectReason = "";
+            if (rooms == null || rooms.Count == 0)
+            {
+                rejectReason = "rooms=0";
+                return false;
+            }
+
+            var frameHint = DescribeCdpFrame(scope, frameId);
+            var baccaratCount = rooms.Count(r => LooksLikeBaccaratRoom(r.Name) || LooksLikeBaccaratRoom(r.Id));
+            var wmLike =
+                IsLikelyWmRoomFeedSource(url) ||
+                IsLikelyWmRoomFeedSource(frameHint) ||
+                IsLikelyWmRoomFeedSource(reason);
+
+            if (wmLike)
+                return true;
+
+            if (string.Equals(scope, "popup", StringComparison.OrdinalIgnoreCase) && baccaratCount > 0)
+                return true;
+
+            if (baccaratCount >= 8 && baccaratCount >= Math.Max(3, rooms.Count / 2))
+                return true;
+
+            rejectReason = $"non-wm baccarat={baccaratCount}/{rooms.Count}";
+            return false;
         }
 
         private bool TryExtractRoomsFromPayload(string payload, out List<RoomEntry> rooms, out string reason)
@@ -9710,6 +13295,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return new GameContext
             {
                 TableId = tableId,
+                TableName = setting.Name ?? ResolveRoomName(tableId),
                 GetSnap = () =>
                 {
                     if (TryGetTaskSnapshot(tableId, out var snap))
@@ -10189,6 +13775,37 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 || string.Equals(_expireMode, "trial", StringComparison.OrdinalIgnoreCase);
         }
 
+        private bool TryGetCachedLicenseUntilUtc(string username, out DateTimeOffset untilUtc)
+        {
+            untilUtc = default;
+            try
+            {
+                var uname = (username ?? "").Trim().ToLowerInvariant();
+                if (string.IsNullOrWhiteSpace(uname))
+                    return false;
+
+                var cachedUser = (_cfg?.LicenseUser ?? "").Trim().ToLowerInvariant();
+                if (string.IsNullOrWhiteSpace(cachedUser))
+                    return false;
+                if (!string.Equals(cachedUser, uname, StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                var rawUntil = (_cfg?.LicenseUntil ?? "").Trim();
+                if (!DateTimeOffset.TryParse(rawUntil, out var parsed))
+                    return false;
+
+                if (DateTimeOffset.UtcNow >= parsed)
+                    return false;
+
+                untilUtc = parsed;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private async Task<bool> EnsureLicenseOnceAsync()
         {
             if (!CheckLicense) return true;
@@ -10253,6 +13870,38 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var lic = await FetchLicenseAsync(username);
             if (lic == null)
             {
+                var nowUtc = DateTimeOffset.UtcNow;
+                if (!string.IsNullOrWhiteSpace(_lastKnownLicenseUser)
+                    && string.Equals(_lastKnownLicenseUser, username, StringComparison.OrdinalIgnoreCase)
+                    && _lastKnownLicenseUntilUtc.HasValue
+                    && _lastKnownLicenseUntilUtc.Value > nowUtc)
+                {
+                    var keepUntilUtc = _lastKnownLicenseUntilUtc.Value;
+                    StartExpiryCountdown(keepUntilUtc, "license");
+                    StartLicenseRecheckTimer(username);
+                    Log("[License] fetch unavailable -> fallback last-known until " + keepUntilUtc.ToString("u"));
+                    return true;
+                }
+
+                if (string.Equals(_expireMode, "license", StringComparison.OrdinalIgnoreCase)
+                    && _runExpiresAt.HasValue
+                    && _runExpiresAt.Value.ToUniversalTime() > nowUtc)
+                {
+                    var keepUntilUtc = _runExpiresAt.Value.ToUniversalTime();
+                    StartExpiryCountdown(keepUntilUtc, "license");
+                    StartLicenseRecheckTimer(username);
+                    Log("[License] fetch unavailable -> keep in-memory session until " + keepUntilUtc.ToString("u"));
+                    return true;
+                }
+
+                if (TryGetCachedLicenseUntilUtc(username, out var cachedUntilUtc))
+                {
+                    StartExpiryCountdown(cachedUntilUtc, "license");
+                    StartLicenseRecheckTimer(username);
+                    Log("[License] fetch unavailable -> fallback cached config until " + cachedUntilUtc.ToString("u"));
+                    return true;
+                }
+
                 MessageBox.Show("Không tìm thấy license cho tài khoản này. Hãy liên hệ Telegram: @minoauto.",
                     "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
@@ -10272,6 +13921,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             var okLease2 = await AcquireLeaseOnceAsync(username);
             if (!okLease2) return false;
+
+            _cfg.LicenseUser = username;
+            _cfg.LicenseUntil = expUtc.ToString("o");
+            _cfg.UseTrial = false;
+            _lastKnownLicenseUser = username;
+            _lastKnownLicenseUntilUtc = expUtc;
+            _ = SaveConfigAsync();
 
             StartExpiryCountdown(expUtc, "license");
             StartLicenseRecheckTimer(username);
@@ -11689,6 +15345,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (Web?.CoreWebView2 == null) return;
 
             _homeJs ??= await LoadHomeJsAsync();
+            LogHomeJsSignatureIfAny();
 
             if (_topForwardId == null)
                 _topForwardId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(TOP_FORWARD);
@@ -11709,6 +15366,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 // Đăng ký autostart Home với interval mặc định (_homePushMs)
                 var homeAuto = BuildHomeAutostartJs(_homePushMs);
                 _homeAutoStartId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(homeAuto);
+                LogChangedOrThrottled("HOME_AUTO_SIG",
+                    $"{_homePushMs}|{homeAuto.Length}",
+                    $"[Bridge] HOME_AUTOSTART registered interval={_homePushMs} len={homeAuto.Length}",
+                    60000);
             }
 
 
@@ -11800,7 +15461,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     _ = f.ExecuteScriptAsync(_homeJs);
                 _ = f.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
+                _ = f.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
                 Log("[Bridge] Frame injected + autostart armed.");
+                _ = LogFrameCollectorDiagAsync(f, "FrameCreated");
 
                 // Hook lifecycle của CHÍNH frame này
                 string lastFrameNavUri = "";
@@ -11854,7 +15517,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 {
                     try
                     {
-                        Log($"[Frame NavDone] id={f.Name} uri={lastFrameNavUri}");
+                        var state = e2.IsSuccess ? "OK" : ("Err " + e2.WebErrorStatus);
+                        Log($"[Frame NavDone] id={f.Name} status={state} uri={lastFrameNavUri}");
+                        if (!e2.IsSuccess)
+                            Log($"[Frame NavErr] id={f.Name} webError={e2.WebErrorStatus} uri={lastFrameNavUri}");
+                        _ = LogFrameCollectorDiagAsync(f, "FrameNavDone", lastFrameNavUri);
+                        if (e2.IsSuccess)
+                            ScheduleDelayedFrameDiag(f, "FrameNavDone", lastFrameNavUri);
                     }
                     catch { }
                 };
@@ -11900,10 +15569,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
+                if (!string.IsNullOrEmpty(_homeJs))
+                    _ = f.ExecuteScriptAsync(_homeJs);
                 _ = f.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
+                _ = f.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
 
                 Log("[Bridge] Frame DOMContentLoaded -> reinjected + autostart.");
+                _ = LogFrameCollectorDiagAsync(f, "FrameDOMContentLoaded");
             }
             catch (Exception ex)
             {
@@ -11915,17 +15588,26 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             try
             {
-                if (!e.IsSuccess) return;
                 var f = sender as CoreWebView2Frame;
                 if (f == null) return;
+                if (!e.IsSuccess)
+                {
+                    Log($"[Bridge] Frame NavigationCompleted error: id={f.Name} webError={e.WebErrorStatus}");
+                    return;
+                }
 
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
+                if (!string.IsNullOrEmpty(_homeJs))
+                    _ = f.ExecuteScriptAsync(_homeJs);
                 _ = f.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
+                _ = f.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
 
                 Log("[Bridge] Frame NavigationCompleted -> reinjected + autostart.");
+                _ = LogFrameCollectorDiagAsync(f, "FrameNavigationCompleted");
+                ScheduleDelayedFrameDiag(f, "FrameNavigationCompleted");
             }
             catch (Exception ex)
             {
@@ -12217,7 +15899,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 "if (/^games\\./i.test(h)) { sendGameHint(); return; }",
                 "if (/^games\\./i.test(h)) { sendGameHint(); if (typeof window.__abx_hw_startTablePush==='function'){ try{ window.__abx_hw_startTablePush(Math.max(1200, __INTERVAL__)); }catch(_){} } return; }");
             script = script.Replace(
-                "if (hasGameFrame()) { sendGameHint(); /* váº«n khÃ´ng start home_push */ }",
+                "if (hasGameFrame()) { sendGameHint(); /* vẫn không start home_push */ }",
                 "if (hasGameFrame()) { sendGameHint(); if (typeof window.__abx_hw_startTablePush==='function'){ try{ window.__abx_hw_startTablePush(Math.max(1200, __INTERVAL__)); }catch(_){} } }");
             return script.Replace("__INTERVAL__", ms.ToString());
         }
@@ -13687,5 +17369,3 @@ private async Task<CancellationTokenSource> DebounceAsync(
     }
 
 }
-
-

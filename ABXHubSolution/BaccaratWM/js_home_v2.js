@@ -468,12 +468,12 @@
             const ov = window.__abxTableOverlay;
             if (ov && typeof ov.resolveRoomDom === 'function') {
                 const root = ov.resolveRoomDom(id);
-                if (root && !betIsInsideOverlay(root))
+                if (betIsUsableRoot(root))
                     return root;
             }
         } catch (_) {}
         const multiRoot = betFindMultiRootById(id);
-        if (multiRoot)
+        if (betIsUsableRoot(multiRoot))
             return multiRoot;
         return null;
     }
@@ -608,7 +608,7 @@
             return null;
         for (const needle of candidates) {
             const multiRoot = betFindMultiRootById(needle);
-            if (multiRoot)
+            if (betIsUsableRoot(multiRoot))
                 return multiRoot;
         }
         const docs = betCollectDocs();
@@ -618,15 +618,15 @@
             for (const needle of candidates) {
                 try {
                     const byId = doc.getElementById(needle);
-                    if (byId) {
-                        if (betIsInsideOverlay(byId))
-                            continue;
-                        const exact = betFindAncestorById(byId, needle, attrs);
-                        const root = exact || betResolveCardRoot(byId);
-                        if (betHasBetTargets(root))
-                            return root;
-                        if (!fallback)
-                            fallback = root;
+                        if (byId) {
+                            if (betIsInsideOverlay(byId))
+                                continue;
+                            const exact = betFindAncestorById(byId, needle, attrs);
+                            const root = exact || betResolveCardRoot(byId);
+                            if (betIsUsableRoot(root))
+                                return root;
+                            if (!fallback && root && root.isConnected !== false && !betIsInsideOverlay(root) && betHasBetTargets(root))
+                                fallback = root;
                     }
                 } catch (_) {}
                 for (const attr of attrs) {
@@ -638,9 +638,9 @@
                                 continue;
                             const exact = betFindAncestorById(hit, needle, attrs);
                             const root = exact || betResolveCardRoot(hit);
-                            if (betHasBetTargets(root))
+                            if (betIsUsableRoot(root))
                                 return root;
-                            if (!fallback)
+                            if (!fallback && root && root.isConnected !== false && !betIsInsideOverlay(root) && betHasBetTargets(root))
                                 fallback = root;
                     }
                     } catch (_) {}
@@ -688,6 +688,34 @@
             return false;
         const rc = el.getBoundingClientRect();
         return !!(rc && rc.width > 2 && rc.height > 2);
+    }
+
+    function betIsUsableRoot(root) {
+        if (!root || !(root instanceof Element))
+            return false;
+        if (root.isConnected === false || betIsInsideOverlay(root))
+            return false;
+        if (!betHasBetTargets(root))
+            return false;
+        if (betIsVisible(root))
+            return true;
+        try {
+            const inner = root.querySelector('.qC_lC,[data-betcode],.qE_lp,.qX_lc,.kU_kV,.zv_zw,.uU_g0,.kI_kJ,.yu_yv');
+            if (betIsVisible(inner))
+                return true;
+        } catch (_) {}
+        return false;
+    }
+
+    function betPrepareRootForBet(root) {
+        if (!betIsUsableRoot(root))
+            return null;
+        try {
+            root.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+        } catch (_) {
+            try { root.scrollIntoView({ block: 'center', inline: 'nearest' }); } catch (__ ) {}
+        }
+        return root;
     }
 
     function betFindFirstVisible(root, selector) {
@@ -1160,10 +1188,27 @@
                 continue;
             const selected = await betSelectMultiChipValueAsync(item.value, doc);
             if (!selected || !selected.ok) {
+                betEmitDiag('chip_select', {
+                    rootId: (root && root.id) || '',
+                    targetId: (target && target.id) || '',
+                    confirmId: (confirmBtn && confirmBtn.id) || '',
+                    amount: item.value,
+                    ok: 0,
+                    selected: (selected && selected.selected) || ''
+                });
                 if (typeof logBetWarn === 'function')
                     logBetWarn('chip select failed amount=' + item.value + ' selected=' + ((selected && selected.selected) || '') + ' rootId=' + ((root && root.id) || ''));
                 return false;
             }
+            betEmitDiag('chip_select', {
+                rootId: (root && root.id) || '',
+                targetId: (target && target.id) || '',
+                confirmId: (confirmBtn && confirmBtn.id) || '',
+                amount: item.value,
+                ok: 1,
+                selected: (selected && selected.selected) || '',
+                token: (selected && selected.token) || ''
+            });
             try {
                 console.log('[BET-WM] chip selected', {
                     rootId: (root && root.id) || '',
@@ -1178,7 +1223,13 @@
             }
         }
         await new Promise(r => setTimeout(r, 150));
-        betDispatchClickAtPoint(confirmBtn);
+        const confirmOk = betDispatchClickAtPoint(confirmBtn);
+        betEmitDiag('confirm_click', {
+            rootId: (root && root.id) || '',
+            targetId: (target && target.id) || '',
+            confirmId: (confirmBtn && confirmBtn.id) || '',
+            ok: confirmOk ? 1 : 0
+        });
         await new Promise(r => setTimeout(r, 120));
         return true;
     }
@@ -1194,10 +1245,27 @@
         }
         const selected = await betSelectMultiChipValueAsync(amountValue, doc);
         if (!selected || !selected.ok) {
+            betEmitDiag('chip_select', {
+                rootId: (root && root.id) || '',
+                targetId: (target && target.id) || '',
+                confirmId: (confirmBtn && confirmBtn.id) || '',
+                amount: amountValue,
+                ok: 0,
+                selected: (selected && selected.selected) || ''
+            });
             if (typeof logBetWarn === 'function')
                 logBetWarn('chip select failed amount=' + amountValue + ' selected=' + ((selected && selected.selected) || '') + ' rootId=' + ((root && root.id) || ''));
             return false;
         }
+        betEmitDiag('chip_select', {
+            rootId: (root && root.id) || '',
+            targetId: (target && target.id) || '',
+            confirmId: (confirmBtn && confirmBtn.id) || '',
+            amount: amountValue,
+            ok: 1,
+            selected: (selected && selected.selected) || '',
+            token: (selected && selected.token) || ''
+        });
         try {
             console.log('[BET-WM] chip selected', {
                 rootId: (root && root.id) || '',
@@ -1212,7 +1280,15 @@
                   targetId: (target && target.id) || ''
               });
           } catch (_) {}
-          if (!betTryClickDirect(target, logBetWarn, 'target'))
+          const targetOk = betTryClickDirect(target, logBetWarn, 'target');
+          betEmitDiag('target_click', {
+              rootId: (root && root.id) || '',
+              targetId: (target && target.id) || '',
+              confirmId: (confirmBtn && confirmBtn.id) || '',
+              amount: amountValue,
+              ok: targetOk ? 1 : 0
+          });
+          if (!targetOk)
               return false;
           await new Promise(r => setTimeout(r, 120));
           try {
@@ -1221,7 +1297,15 @@
                   confirmId: (confirmBtn && confirmBtn.id) || ''
               });
           } catch (_) {}
-          if (!betTryClickDirect(confirmBtn, logBetWarn, 'confirm'))
+          const confirmOk = betTryClickDirect(confirmBtn, logBetWarn, 'confirm');
+          betEmitDiag('confirm_click', {
+              rootId: (root && root.id) || '',
+              targetId: (target && target.id) || '',
+              confirmId: (confirmBtn && confirmBtn.id) || '',
+              amount: amountValue,
+              ok: confirmOk ? 1 : 0
+          });
+          if (!confirmOk)
               return false;
           await new Promise(r => setTimeout(r, 120));
           return true;
@@ -1245,6 +1329,14 @@
         }
         const chipNode = betFindChipByAmount(amountValue, root.ownerDocument || document);
         if (!chipNode) {
+            betEmitDiag('chip_select', {
+                rootId: (root && root.id) || '',
+                targetId: (target && target.id) || '',
+                confirmId: (confirmBtn && confirmBtn.id) || '',
+                amount: amountValue,
+                ok: 0,
+                msg: 'chip-not-found'
+            });
             if (typeof logBetWarn === 'function')
                 logBetWarn('abx-flow chip not found amount=' + amountValue + ' rootId=' + ((root && root.id) || ''));
             return false;
@@ -1270,10 +1362,28 @@
         await new Promise(r => setTimeout(r, 120));
         const selected = betGetSelectedChipAmount(chipDoc);
         if (selected != null && selected !== amountValue) {
+            betEmitDiag('chip_select', {
+                rootId: (root && root.id) || '',
+                targetId: (target && target.id) || '',
+                confirmId: (confirmBtn && confirmBtn.id) || '',
+                amount: amountValue,
+                ok: 0,
+                selected,
+                token: chipToken || ''
+            });
             if (typeof logBetWarn === 'function')
                 logBetWarn('abx-flow chip mismatch expected=' + amountValue + ' actual=' + selected + ' rootId=' + ((root && root.id) || ''));
             return false;
         }
+        betEmitDiag('chip_select', {
+            rootId: (root && root.id) || '',
+            targetId: (target && target.id) || '',
+            confirmId: (confirmBtn && confirmBtn.id) || '',
+            amount: amountValue,
+            ok: 1,
+            selected,
+            token: chipToken || ''
+        });
         try {
             console.log('[BET-WM] chip selected', {
                 rootId: (root && root.id) || '',
@@ -1289,7 +1399,15 @@
                   targetId: (target && target.id) || ''
               });
           } catch (_) {}
-          if (!betTryClickDirect(target, logBetWarn, 'target'))
+          const targetOk = betTryClickDirect(target, logBetWarn, 'target');
+          betEmitDiag('target_click', {
+              rootId: (root && root.id) || '',
+              targetId: (target && target.id) || '',
+              confirmId: (confirmBtn && confirmBtn.id) || '',
+              amount: amountValue,
+              ok: targetOk ? 1 : 0
+          });
+          if (!targetOk)
               return false;
           await new Promise(r => setTimeout(r, 120));
           await new Promise(r => setTimeout(r, 150));
@@ -1299,7 +1417,15 @@
                   confirmId: (confirmBtn && confirmBtn.id) || ''
               });
           } catch (_) {}
-          if (!betTryClickDirect(confirmBtn, logBetWarn, 'confirm'))
+          const confirmOk = betTryClickDirect(confirmBtn, logBetWarn, 'confirm');
+          betEmitDiag('confirm_click', {
+              rootId: (root && root.id) || '',
+              targetId: (target && target.id) || '',
+              confirmId: (confirmBtn && confirmBtn.id) || '',
+              amount: amountValue,
+              ok: confirmOk ? 1 : 0
+          });
+          if (!confirmOk)
               return false;
           await new Promise(r => setTimeout(r, 120));
           return true;
@@ -1894,23 +2020,161 @@
         return v;
     }
 
-    window.__cw_bet = function (tableId, side, amount, isVirtual, waitDone) {
+    async function betResolveRootForBetAsync(id, roomName, logBetWarn) {
+        const resolvedName = String(roomName || '').trim();
+        const rememberResolvedRoot = (root) => {
+            root = betPrepareRootForBet(root);
+            if (!root)
+                return root;
+            try {
+                if (id)
+                    rememberRoomDom(id, root);
+                if (resolvedName)
+                    rememberRoomDom(resolvedName, root);
+                const rootId = getCardId(root);
+                if (rootId)
+                    rememberRoomDom(rootId, root);
+            } catch (_) {}
+            return root;
+        };
+        const tryResolve = () => {
+            let root = betResolveRootFromOverlay(id);
+            if (!root)
+                root = betFindCardRootById(id);
+            if (!root && resolvedName) {
+                root = betResolveRootFromOverlay(resolvedName) || findCardRootByName(resolvedName);
+            }
+            return rememberResolvedRoot(root || null);
+        };
+
+        let root = tryResolve();
+        if (root)
+            return root;
+
+        try {
+            if (window.__abxTableOverlay && typeof window.__abxTableOverlay.scrollToRoom === 'function') {
+                window.__abxTableOverlay.scrollToRoom(resolvedName || id);
+            }
+        } catch (_) {}
+
+        for (let i = 0; i < 6; i++) {
+            await new Promise(r => setTimeout(r, 120));
+            root = tryResolve();
+            if (root)
+                return root;
+        }
+
+        if (typeof logBetWarn === 'function')
+            logBetWarn('root unresolved after retry tableId=' + id + ' name=' + resolvedName);
+        return null;
+    }
+
+    function betPostBridgePayload(payload) {
         let sent = false;
-        const sendOnce = (id, sideLabel, amountValue) => {
+        try {
+            if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
+                window.chrome.webview.postMessage(JSON.stringify(payload));
+                sent = true;
+            }
+        } catch (_) {}
+        try {
+            if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
+                window.chrome.webview.postMessage(payload);
+                sent = true;
+            }
+        } catch (_) {}
+        try {
+            if (window.top && window.top !== window && typeof window.top.postMessage === 'function') {
+                window.top.postMessage(payload, '*');
+                sent = true;
+            }
+        } catch (_) {}
+        try {
+            if (window.top && window.top !== window && typeof window.top.postMessage === 'function') {
+                window.top.postMessage(JSON.stringify(payload), '*');
+                sent = true;
+            }
+        } catch (_) {}
+        try {
+            if (window.parent && window.parent !== window && typeof window.parent.postMessage === 'function') {
+                window.parent.postMessage(payload, '*');
+                sent = true;
+            }
+        } catch (_) {}
+        try {
+            if (window.parent && window.parent !== window && typeof window.parent.postMessage === 'function') {
+                window.parent.postMessage(JSON.stringify(payload), '*');
+                sent = true;
+            }
+        } catch (_) {}
+        return sent;
+    }
+
+    function betDiagText(v, maxLen) {
+        try {
+            const s = String(v == null ? '' : v).trim();
+            const max = Math.max(16, Number(maxLen) || 120);
+            return s.length > max ? s.slice(0, max) : s;
+        } catch (_) {}
+        return '';
+    }
+
+    function betEmitDiag(stage, data) {
+        try {
+            const payload = Object.assign({
+                abx: 'bet_diag',
+                ui: 'game',
+                source: 'cw_bet',
+                stage: betDiagText(stage, 48),
+                href: betDiagText(location && location.href || '', 220),
+                host: betDiagText(location && location.host || '', 120),
+                title: betDiagText(document && document.title || '', 120),
+                ts: Date.now()
+            }, data || {});
+            if (payload.msg)
+                payload.msg = betDiagText(payload.msg, 220);
+            if (payload.name)
+                payload.name = betDiagText(payload.name, 120);
+            if (payload.rootId)
+                payload.rootId = betDiagText(payload.rootId, 120);
+            if (payload.targetId)
+                payload.targetId = betDiagText(payload.targetId, 120);
+            if (payload.confirmId)
+                payload.confirmId = betDiagText(payload.confirmId, 120);
+            betPostBridgePayload(payload);
+        } catch (_) {}
+    }
+
+    window.__cw_bet = function (tableId, side, amount, isVirtual, waitDone, tableName) {
+        let sent = false;
+        const sendOnce = (id, sideLabel, amountValue, roomName) => {
             if (sent)
                 return;
             sent = true;
             if (!id || !sideLabel)
                 return;
             try {
-                const payload = { abx: 'bet', tableId: id, side: sideLabel, amount: amountValue };
-                const payloadJson = JSON.stringify(payload);
-                window.chrome?.webview?.postMessage?.(payloadJson);
-                if (window.top && window.top !== window && typeof window.top.postMessage === 'function')
-                    window.top.postMessage(payloadJson, '*');
+                const payload = { abx: 'bet', tableId: id, name: String(roomName || '').trim(), side: sideLabel, amount: amountValue, ui: 'game', source: 'cw_bet', ts: Date.now() };
+                const bridgeOk = betPostBridgePayload(payload);
+                betEmitDiag('send_once', {
+                    tableId: id,
+                    name: String(roomName || '').trim(),
+                    side: sideLabel,
+                    amount: amountValue,
+                    ok: bridgeOk ? 1 : 0
+                });
+                if (!bridgeOk)
+                    sent = false;
             } catch (_) {}
         };
         const logBetWarn = (msg) => {
+            betEmitDiag('warn', {
+                tableId: String(tableId || '').trim(),
+                name: String(tableName || '').trim(),
+                side: betNormalizeSide(side),
+                amount: Number(amount) || 0,
+                msg
+            });
             try {
                 if (typeof logToOverlayConsole === 'function')
                     logToOverlayConsole('[bet] ' + msg, 'warn');
@@ -1927,6 +2191,7 @@
 
         try {
             const id = String(tableId || '').trim();
+            const roomName = String(tableName || '').trim();
             const s = betNormalizeSide(side);
             const sideLabel = (s === 'player') ? 'P' : (s === 'banker' ? 'B' : '');
             let amountValue = Number(amount) || 0;
@@ -1934,23 +2199,49 @@
             if (forcedLevel1 > 0)
                 amountValue = forcedLevel1;
 
-            logBetWarn('start tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue + ' virtual=' + (isVirtual === true));
+            logBetWarn('start tableId=' + id + ' name=' + roomName + ' side=' + sideLabel + ' amount=' + amountValue + ' virtual=' + (isVirtual === true));
+            betEmitDiag('start', {
+                tableId: id,
+                name: roomName,
+                side: sideLabel,
+                amount: amountValue,
+                virtual: isVirtual === true ? 1 : 0
+            });
 
             if (id && sideLabel) {
                 if (isVirtual === true) {
-                    sendOnce(id, sideLabel, amountValue);
+                    sendOnce(id, sideLabel, amountValue, roomName);
                     return 'ok';
                 }
                 const idCandidates = betGetTableIdCandidates(id);
-                let root = betResolveRootFromOverlay(id);
-                const trustedRoot = !!root;
-                if (!root)
-                    root = betFindCardRootById(id);
+                let root = betResolveRootFromOverlay(id) || betFindCardRootById(id);
+                if (!root && roomName)
+                    root = betResolveRootFromOverlay(roomName) || findCardRootByName(roomName);
+                root = betPrepareRootForBet(root);
                 if (!root) {
-                    logBetWarn('root not found for tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue);
+                    const runResolve = async () => betResolveRootForBetAsync(id, roomName, logBetWarn);
+                    if (waitDone === true) {
+                        return runResolve().then(rootResolved => {
+                            if (!rootResolved)
+                                return 'err:root';
+                            return window.__cw_bet(id, side, amountValue, isVirtual, true, roomName);
+                        });
+                    }
+                    logBetWarn('root not found for tableId=' + id + ' name=' + roomName + ' side=' + sideLabel + ' amount=' + amountValue);
                     return 'err:root';
                 }
+                const trustedRoot = !!(betResolveRootFromOverlay(id) || (roomName && betResolveRootFromOverlay(roomName)));
                 logBetWarn('root ok for tableId=' + id + ' rootId=' + ((root && root.id) || '') + ' visible=' + betIsVisible(root) + ' multi=' + betIsMultiBetRoot(root));
+                betEmitDiag('root', {
+                    tableId: id,
+                    name: roomName,
+                    side: sideLabel,
+                    amount: amountValue,
+                    rootId: (root && root.id) || '',
+                    visible: betIsVisible(root) ? 1 : 0,
+                    multi: betIsMultiBetRoot(root) ? 1 : 0,
+                    trustedRoot: trustedRoot ? 1 : 0
+                });
                 const targetTail = s === 'player' ? BET_PLAYER_TAIL : BET_BANKER_TAIL;
                 const selector = s === 'player'
                     ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt'
@@ -1967,13 +2258,25 @@
                 if (!target) {
                     target = betFindTargetByTableId(id, s);
                 }
+                if (!target && roomName) {
+                    target = betFindTargetByTableId(roomName, s);
+                }
                 if (!target) {
-                    logBetWarn('target not found for tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue);
+                    logBetWarn('target not found for tableId=' + id + ' name=' + roomName + ' side=' + sideLabel + ' amount=' + amountValue);
                     return 'err:target';
                 }
                 const rootDoc = root ? (root.ownerDocument || document) : document;
                 const useMultiFlow = !!(root && betIsMultiBetRoot(root) && betFindMultiTargetByRoot(root, s));
                 logBetWarn('target ok tableId=' + id + ' targetId=' + ((target && target.id) || '') + ' useMulti=' + useMultiFlow);
+                betEmitDiag('target', {
+                    tableId: id,
+                    name: roomName,
+                    side: sideLabel,
+                    amount: amountValue,
+                    rootId: (root && root.id) || '',
+                    targetId: (target && target.id) || '',
+                    multi: useMultiFlow ? 1 : 0
+                });
                 {
                     const clickTarget =
                         (useMultiFlow ? target : (
@@ -1990,6 +2293,18 @@
                         return 'err:plan';
                     }
                     logBetWarn('plan ok tableId=' + id + ' steps=' + planResult.plan.length + ' remaining=' + planResult.remaining + ' multi=' + useMultiFlow);
+                    betEmitDiag('plan', {
+                        tableId: id,
+                        name: roomName,
+                        side: sideLabel,
+                        amount: amountValue,
+                        rootId: (root && root.id) || '',
+                        targetId: (target && target.id) || '',
+                        steps: planResult.plan.length,
+                        remaining: planResult.remaining,
+                        multi: useMultiFlow ? 1 : 0
+                    });
+                    sendOnce(id, sideLabel, amountValue, roomName);
                     const stakeRoot = betResolveStakeRoot(clickTarget, root) || root;
                     const runBetTask = async () => {
                         try {
@@ -2013,9 +2328,31 @@
                             if (!okMulti) {
                                 logBetWarn((useDirectSingleChip ? 'direct flow failed ' : 'multi plan failed ') +
                                     'tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue + ' rootId=' + ((root && root.id) || ''));
+                                betEmitDiag('run_result', {
+                                    tableId: id,
+                                    name: roomName,
+                                    side: sideLabel,
+                                    amount: amountValue,
+                                    rootId: (root && root.id) || '',
+                                    targetId: (target && target.id) || '',
+                                    confirmId: (confirmBtn && confirmBtn.id) || '',
+                                    ok: 0,
+                                    multi: 1
+                                });
                                 return false;
                             }
-                            sendOnce(id, sideLabel, amountValue);
+                            sendOnce(id, sideLabel, amountValue, roomName);
+                            betEmitDiag('run_result', {
+                                tableId: id,
+                                name: roomName,
+                                side: sideLabel,
+                                amount: amountValue,
+                                rootId: (root && root.id) || '',
+                                targetId: (target && target.id) || '',
+                                confirmId: (confirmBtn && confirmBtn.id) || '',
+                                ok: 1,
+                                multi: 1
+                            });
                             try {
                                 console.log('[BET-WM] done', {
                                     tableId: id,
@@ -2045,16 +2382,39 @@
                             }
                         }
                         // Giống behavior cũ: đã chạy plan xong thì vẫn gửi để lưu lịch sử
-                        sendOnce(id, sideLabel, amountValue);
+                        betEmitDiag('confirm_state', {
+                            tableId: id,
+                            name: roomName,
+                            side: sideLabel,
+                            amount: amountValue,
+                            rootId: (root && root.id) || '',
+                            targetId: (target && target.id) || '',
+                            ok: confirmed ? 1 : 0,
+                            beforeCount: beforeCount,
+                            beforeActive: beforeActive ? 1 : 0
+                        });
+                        sendOnce(id, sideLabel, amountValue, roomName);
                         return confirmed;
                     };
                     const queued = betEnqueueTask(runBetTask, useMultiFlow ? 12000 : 7000);
                     if (waitDone === true)
-                        return queued.then(ok => ok ? 'ok' : 'err:exec');
+                        return queued.then(ok => {
+                            betEmitDiag('queue_result', {
+                                tableId: id,
+                                name: roomName,
+                                side: sideLabel,
+                                amount: amountValue,
+                                rootId: (root && root.id) || '',
+                                targetId: (target && target.id) || '',
+                                ok: ok ? 1 : 0,
+                                multi: useMultiFlow ? 1 : 0
+                            });
+                            return ok ? 'ok' : 'err:exec';
+                        });
                     const tail = (typeof cssTail === 'function') ? cssTail(clickTarget) : '';
                 }
             } else {
-                sendOnce(id, sideLabel, amountValue);
+                sendOnce(id, sideLabel, amountValue, roomName);
             }
         } catch (_) {}
 
@@ -2340,7 +2700,7 @@
         const pickClickable = (el) =>
             (el && (el.closest('a,button,[role=button],li') || el)) || null;
 
-        // 1) ?u ti?n t?m theo 2 tail ?? c?u h?nh
+        // 1) Ưu tiên tìm theo 2 tail đã cấu hình
         const tails = [TAIL_PP_TRUC_TUYEN, TAIL_PP_TRUC_TUYEN_ALT];
 
         for (const t of tails) {
@@ -2352,7 +2712,7 @@
             }
         }
 
-        // 2) Fallback: qu?t theo text "PP tr?c tuy?n" trong header
+        // 2) Fallback: quét theo text "PP trực tuyến" trong header
         const candidates = Array.from(
             document.querySelectorAll('span.desc, li, a, button, div'));
         const menu = document.querySelector('.dropdown_menu.LIVE');
@@ -2896,6 +3256,184 @@
         return text;
     };
 
+    function normalizeLobbyRoomText(value) {
+        return String(value || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function normalizeLobbyRoomKey(value) {
+        const text = normalizeLobbyRoomText(value);
+        if (!text)
+            return '';
+        try {
+            return text.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+        } catch (_) {
+            return text.toLowerCase();
+        }
+    }
+
+    const LOBBY_CATEGORY_NOISE = new Set([
+        'casino',
+        'esports',
+        'lotto',
+        'other',
+        'poker',
+        'slots',
+        'slot',
+        'sports'
+    ]);
+
+    function isLobbyCategoryNoise(value) {
+        const key = normalizeLobbyRoomKey(value).replace(/[_|/\\:+-]+/g, ' ').replace(/\s+/g, ' ').trim();
+        if (!key)
+            return true;
+        if (LOBBY_CATEGORY_NOISE.has(key))
+            return true;
+        if (/^(casino|esports|lotto|other|poker|slots?|sports)$/.test(key))
+            return true;
+        return false;
+    }
+
+    function extractLobbyRoomName(value) {
+        const raw = normalizeLobbyRoomText(value);
+        if (!raw)
+            return '';
+        if (isLobbyCategoryNoise(raw))
+            return '';
+
+        const key = normalizeLobbyRoomKey(raw);
+        if (!key || key.length < 3 || key.length > 64)
+            return '';
+        if (/\d{6,}/.test(key))
+            return '';
+
+        const patterns = [
+            /\((?:sexy|speed|site)\)\s*bac\s*(?:\d{1,3}|[a-z])\b/i,
+            /\((?:sexy|speed|site)\)\s*sd\s*(?:\d{1,3}|[a-z])\b/i,
+            /\((?:sexy|speed|site)\)\s*d&?t\s*(?:\d{1,3}|[a-z])\b/i,
+            /\b(?:speed\s*)?baccarat\s*(?:\d{1,3}|[a-z])\b/i,
+            /\b(?:speed\s*)?baccarat\s*[a-z]\b/i,
+            /\bbac\s*(?:\d{1,3}|[a-z])\b/i,
+            /\brong\s*ho\s*\d{1,3}\b/i,
+            /\broulette\s*\d{1,3}\b/i,
+            /\btai\s*xiu\s*\d{1,3}\b/i,
+            /\bnguu\s*nguu\s*\d{1,3}\b/i,
+            /\bfantan\s*\d{1,3}\b/i,
+            /\bxoc\s*dia\s*\d{1,3}\b/i
+        ];
+
+        for (const re of patterns) {
+            const mRaw = raw.match(re);
+            if (mRaw && mRaw[0])
+                return normalizeLobbyRoomText(mRaw[0]);
+            const m = key.match(re);
+            if (m && m[0])
+                return normalizeLobbyRoomText(m[0]);
+        }
+        return '';
+    }
+
+    function isVisibleLobbyNode(el, minWidth = 8, minHeight = 8) {
+        try {
+            if (!el || !el.getBoundingClientRect)
+                return false;
+            const st = window.getComputedStyle ? window.getComputedStyle(el) : null;
+            if (st && (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0'))
+                return false;
+            const r = el.getBoundingClientRect();
+            return r.width >= minWidth && r.height >= minHeight;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function formatLobbyRect(rect) {
+        if (!rect)
+            return null;
+        return {
+            x: Math.round(rect.x || 0),
+            y: Math.round(rect.y || 0),
+            width: Math.round(rect.w || 0),
+            height: Math.round(rect.h || 0)
+        };
+    }
+
+    function getLobbyCardName(card) {
+        if (!card || !card.querySelectorAll)
+            return '';
+
+        let best = '';
+        const accept = (value) => {
+            const room = extractLobbyRoomName(value);
+            if (!room)
+                return;
+            if (!best || room.length < best.length)
+                best = room;
+        };
+
+        const titleSelectors = [
+            '.rC_rT',
+            '.rC_rE span',
+            '.rY_sn',
+            '.rW_sl',
+            '.tile-name',
+            '.title',
+            '.game-title',
+            '.ls_by',
+            '.qL_qM.qL_qN'
+        ];
+        for (const sel of titleSelectors) {
+            try {
+                card.querySelectorAll(sel).forEach(node => {
+                    if (!isVisibleLobbyNode(node, 4, 4))
+                        return;
+                    accept(node.textContent || '');
+                });
+            } catch (_) {}
+            if (best)
+                return best;
+        }
+
+        try {
+            const attrs = [
+                'data-table-name',
+                'data-tablename',
+                'data-tabletitle',
+                'data-table-title',
+                'data-title',
+                'data-name',
+                'data-display-name',
+                'data-displayname',
+                'data-label',
+                'aria-label',
+                'title',
+                'alt'
+            ];
+            attrs.forEach(attr => {
+                const v = card.getAttribute ? card.getAttribute(attr) : '';
+                if (v)
+                    accept(v);
+            });
+        } catch (_) {}
+        if (best)
+            return best;
+
+        try {
+            const nodes = card.querySelectorAll('span,div,small,button,a');
+            for (let i = 0; i < nodes.length && i < 180; i++) {
+                const node = nodes[i];
+                if (!node || !isVisibleLobbyNode(node, 4, 4))
+                    continue;
+                if (node.children && node.children.length > 0)
+                    continue;
+                accept(node.textContent || '');
+                if (best)
+                    return best;
+            }
+        } catch (_) {}
+
+        return best;
+    }
+
     function collectVisibleLobbyTables() {
         try {
             const cards = collectBaccarat3Cards();
@@ -2908,21 +3446,23 @@
                 if (!card)
                     return;
                 const rect = rectOf(card);
-                if (!rect || rect.width < 120 || rect.height < 80)
+                if (!rect || rect.w < 120 || rect.h < 70)
+                    return;
+                if (!isVisibleLobbyNode(card, 80, 40))
                     return;
                 const idInfo = extractBaccCardId(card);
                 const id = idInfo.id || card.getAttribute('data-table-id') || card.dataset.tableId || '';
-                const name = normalizeText(card.querySelector('.rC_rT, .rC_rE span, .rY_sn, .rW_sl, .tile-name, .title, .game-title, .ls_by')?.textContent);
-                if (!id && !name)
+                const name = getLobbyCardName(card);
+                if (!name)
                     return;
-                const key = String(id || name).trim().toLowerCase();
+                const key = normalizeLobbyRoomKey(name || id);
                 if (!key || seen.has(key))
                     return;
                 seen.add(key);
                 tables.push({
-                    id: String(id || '').trim(),
+                    id: String(id || name || '').trim(),
                     name: String(name || '').trim(),
-                    rect: formatRect(rect)
+                    rect: formatLobbyRect(rect)
                 });
             });
             return tables;
@@ -2931,17 +3471,36 @@
         }
     }
 
+    function collectVisibleLobbyTablesDiag() {
+        const tables = collectVisibleLobbyTables();
+        const sample = tables.slice(0, 6).map(t => String(t && (t.name || t.id) || '').trim()).filter(Boolean);
+        return {
+            tables,
+            diag: {
+                host: String(location.host || ''),
+                href: String(location.href || ''),
+                title: String(document.title || ''),
+                cards: Array.isArray(tables) ? tables.length : 0,
+                sample
+            }
+        };
+    }
+
     function postVisibleLobbyTables() {
         try {
-            const tables = collectVisibleLobbyTables();
+            const pack = collectVisibleLobbyTablesDiag();
+            const tables = Array.isArray(pack && pack.tables) ? pack.tables : [];
             if (!tables.length)
                 return 0;
             const payload = {
                 abx: 'table_update',
                 ui: 'game',
+                source: 'homewatch_visible_cards',
+                source_detail: 'homewatch/collectVisibleLobbyTables',
                 href: String(location.href || ''),
                 title: String(document.title || ''),
                 tables,
+                diag: pack && pack.diag ? pack.diag : null,
                 ts: Date.now()
             };
             const text = JSON.stringify(payload);
@@ -2958,7 +3517,15 @@
     }
 
     window.__abx_hw_collectTables = function () {
-        return { abx: 'table_update', tables: collectVisibleLobbyTables(), ts: Date.now() };
+        const pack = collectVisibleLobbyTablesDiag();
+        return {
+            abx: 'table_update',
+            source: 'homewatch_visible_cards',
+            source_detail: 'homewatch/collectVisibleLobbyTables',
+            tables: pack && Array.isArray(pack.tables) ? pack.tables : [],
+            diag: pack && pack.diag ? pack.diag : null,
+            ts: Date.now()
+        };
     };
 
     window.__abx_hw_pushTablesNow = function () {
@@ -3571,13 +4138,15 @@
                 return null;
                     const tables = cards.map(card => {
                         const textSnapshot = normalizeText(card.textContent || '');
+                        const rawName = normalizeText(card.querySelector('.rC_rT, .rC_rE span, .rY_sn, .rW_sl, .tile-name, .title, .game-title, .ls_by')?.textContent);
+                        const roomName = extractLobbyRoomName(rawName);
                         const resultChain = Array.from(card.querySelectorAll('.np_nu, .yw_yz, .dw_result'))
                             .map(el => normalizeText(el.textContent))
                             .filter(Boolean)
                             .join('');
                         return {
                             id: card.getAttribute('data-table-id') || card.dataset.tableId || '',
-                        name: normalizeText(card.querySelector('.rC_rT, .rC_rE span, .rY_sn, .rW_sl, .tile-name, .title, .game-title, .ls_by')?.textContent),
+                        name: roomName,
                         countdown: (card.querySelector('span.yv_yy.yv_yz, span.yv_yy.yv_yB, span.yw_yz.yw_yA.yw_yF, span.yw_yz.yw_yA, [data-countdown], [class*=count]')?.textContent || '').replace(/[^\d]/g, '') || null,
                         resultChain,
                         counts: parseCounts(textSnapshot),
@@ -3587,10 +4156,17 @@
                         bankerSpot: findSpot(card, ['banker', 'nhà cái']),
                         rect: formatRect(rectOf(card))
             };
-                }).filter(entry => entry.id || entry.name);
+                }).filter(entry => entry && entry.name);
                 if (!tables.length)
                 return null;
-                return { abx: 'table_update', tables };
+                return {
+                    abx: 'table_update',
+                    source: 'homewatch_panel_visible_cards',
+                    source_detail: 'homewatch/panel/createPayload',
+                    href: String(location.href || ''),
+                    title: String(document.title || ''),
+                    tables
+                };
             };
 
             const sendPayload = (payload) => {
@@ -8261,11 +8837,24 @@
             return { cols, rows };
                 }
 
-        function rememberRoomDom(name, node) {
-            if (!name || !node)
-                    return;
-            roomDomRegistry.set(name, node);
-                }
+    function betCanCacheRoomDom(node) {
+        try {
+            if (!node || !(node instanceof Element))
+                return false;
+            if (node.isConnected === false)
+                return false;
+            if (betIsInsideOverlay(node))
+                return false;
+            return true;
+        } catch (_) {}
+        return false;
+    }
+
+    function rememberRoomDom(name, node) {
+        if (!name || !betCanCacheRoomDom(node))
+            return;
+        roomDomRegistry.set(name, node);
+    }
 
         const CARD_ID_ATTRS = [
             'data-table-id',
@@ -8384,9 +8973,9 @@
             if (!needle)
             return null;
             const cached = roomDomRegistry.get(needle);
-            if (cached && cached.isConnected)
+            if (betIsUsableRoot(cached))
                 return cached;
-            if (cached && !cached.isConnected)
+            if (cached)
                 roomDomRegistry.delete(needle);
             const byId = document.getElementById(needle);
             if (byId) {
@@ -11559,7 +12148,7 @@ function deriveWinLoseValue(text) {
             if (lowered.includes('thua'))
                 return 'THUA';
             if (lowered.includes('hoa') || lowered.includes('tie'))
-                return 'HÃ’A';
+                return 'HÒA';
             return '--';
         }
 

@@ -1,19 +1,19 @@
 ﻿<Window
-    x:Class="BaccaratWM.MainWindow"
+    x:Class="AviatorHit.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:local="clr-namespace:BaccaratWM"
+    xmlns:local="clr-namespace:AviatorHit"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
-    Title="Baccarat đa bàn sảnh WM (Telegram: @minoauto)"
+    Title="Aviator HIT,GO88,NET88 (Telegram: @minoauto)"
     Width="1366"
     Height="768"
     Background="#F0F2F5"
     Closing="Window_Closing"
     FontFamily="Segoe UI, Segoe UI Variable, Arial"
     FontSize="14"
-    Icon="pack://application:,,,/BaccaratWM;component/Assets/AppIcon.ico"
+    Icon="pack://application:,,,/AviatorHit;component/Assets/AppIcon.ico"
     Loaded="Window_Loaded"
     SnapsToDevicePixels="True"
     TextOptions.TextFormattingMode="Display"
@@ -114,211 +114,6 @@
             <Setter Property="Foreground" Value="{StaticResource TextSubtle}" />
         </Style>
 
-        <!--  Rounded template cho ListBoxItem  -->
-        <ControlTemplate x:Key="RoundedListBoxItemTemplate" TargetType="ListBoxItem">
-            <Border
-                x:Name="Bd"
-                Padding="{TemplateBinding Padding}"
-                Background="{TemplateBinding Background}"
-                BorderBrush="{TemplateBinding BorderBrush}"
-                BorderThickness="{TemplateBinding BorderThickness}"
-                CornerRadius="10">
-                <ContentPresenter />
-            </Border>
-            <ControlTemplate.Triggers>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter TargetName="Bd" Property="Opacity" Value="0.6" />
-                </Trigger>
-            </ControlTemplate.Triggers>
-        </ControlTemplate>
-
-        <!--  Style 1: Danh sách chuẩn  -->
-        <Style x:Key="RoomListStyle1" TargetType="ListBox">
-            <Setter Property="ItemsPanel">
-                <Setter.Value>
-                    <ItemsPanelTemplate>
-                        <VirtualizingStackPanel />
-                    </ItemsPanelTemplate>
-                </Setter.Value>
-            </Setter>
-            <Setter Property="ItemContainerStyle">
-                <Setter.Value>
-                    <Style TargetType="ListBoxItem">
-                        <Setter Property="Template" Value="{StaticResource RoundedListBoxItemTemplate}" />
-                        <Setter Property="Padding" Value="10,6" />
-                        <Setter Property="Margin" Value="0,2" />
-                        <Setter Property="Background" Value="Transparent" />
-                        <Setter Property="BorderBrush" Value="Transparent" />
-                        <Setter Property="BorderThickness" Value="1" />
-                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                        <Setter Property="Cursor" Value="Hand" />
-                        <Style.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#EEF2FF" />
-                                <Setter Property="BorderBrush" Value="#CBD5E1" />
-                            </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="#D6E4FF" />
-                                <Setter Property="BorderBrush" Value="#1D4ED8" />
-                                <Setter Property="FontWeight" Value="SemiBold" />
-                                <Setter Property="Foreground" Value="#0F172A" />
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!--  Style 2: Chip wrap  -->
-        <Style x:Key="RoomListStyle2" TargetType="ListBox">
-            <Setter Property="ItemsPanel">
-                <Setter.Value>
-                    <ItemsPanelTemplate>
-                        <WrapPanel ItemWidth="170" Orientation="Horizontal" />
-                    </ItemsPanelTemplate>
-                </Setter.Value>
-            </Setter>
-            <Setter Property="ItemContainerStyle">
-                <Setter.Value>
-                    <Style TargetType="ListBoxItem">
-                        <Setter Property="Template" Value="{StaticResource RoundedListBoxItemTemplate}" />
-                        <Setter Property="Padding" Value="8,6" />
-                        <Setter Property="Margin" Value="4" />
-                        <Setter Property="Background" Value="#F1F5F9" />
-                        <Setter Property="BorderBrush" Value="#E2E8F0" />
-                        <Setter Property="BorderThickness" Value="1" />
-                        <Setter Property="HorizontalContentAlignment" Value="Center" />
-                        <Setter Property="Cursor" Value="Hand" />
-                        <Style.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#E0E7FF" />
-                                <Setter Property="BorderBrush" Value="#C7D2FE" />
-                            </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="#1D4ED8" />
-                                <Setter Property="BorderBrush" Value="#1D4ED8" />
-                                <Setter Property="Foreground" Value="White" />
-                                <Setter Property="FontWeight" Value="SemiBold" />
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!--  Style 3: Thẻ 2 cột  -->
-        <Style x:Key="RoomListStyle3" TargetType="ListBox">
-            <Setter Property="ItemsPanel">
-                <Setter.Value>
-                    <ItemsPanelTemplate>
-                        <WrapPanel ItemWidth="230" Orientation="Horizontal" />
-                    </ItemsPanelTemplate>
-                </Setter.Value>
-            </Setter>
-            <Setter Property="ItemContainerStyle">
-                <Setter.Value>
-                    <Style TargetType="ListBoxItem">
-                        <Setter Property="Template" Value="{StaticResource RoundedListBoxItemTemplate}" />
-                        <Setter Property="Padding" Value="12,10" />
-                        <Setter Property="Margin" Value="6" />
-                        <Setter Property="Background" Value="White" />
-                        <Setter Property="BorderBrush" Value="#E5E7EB" />
-                        <Setter Property="BorderThickness" Value="1" />
-                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                        <Setter Property="Cursor" Value="Hand" />
-                        <Style.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="BorderBrush" Value="#94A3B8" />
-                                <Setter Property="Background" Value="#F8FAFC" />
-                            </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="#E0F2FE" />
-                                <Setter Property="BorderBrush" Value="#0284C7" />
-                                <Setter Property="FontWeight" Value="SemiBold" />
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!--  Style 4: Danh sách gọn  -->
-        <Style x:Key="RoomListStyle4" TargetType="ListBox">
-            <Setter Property="ItemsPanel">
-                <Setter.Value>
-                    <ItemsPanelTemplate>
-                        <VirtualizingStackPanel />
-                    </ItemsPanelTemplate>
-                </Setter.Value>
-            </Setter>
-            <Setter Property="ItemContainerStyle">
-                <Setter.Value>
-                    <Style TargetType="ListBoxItem">
-                        <Setter Property="Template" Value="{StaticResource RoundedListBoxItemTemplate}" />
-                        <Setter Property="Padding" Value="8,4" />
-                        <Setter Property="Margin" Value="0,2" />
-                        <Setter Property="Background" Value="Transparent" />
-                        <Setter Property="BorderBrush" Value="Transparent" />
-                        <Setter Property="BorderThickness" Value="1" />
-                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                        <Setter Property="Cursor" Value="Hand" />
-                        <Style.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#F1F5F9" />
-                                <Setter Property="BorderBrush" Value="#E2E8F0" />
-                            </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="#E2E8F0" />
-                                <Setter Property="BorderBrush" Value="#94A3B8" />
-                                <Setter Property="FontWeight" Value="SemiBold" />
-                                <Setter Property="Foreground" Value="#0F172A" />
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!--  Style 5: Danh sách xen kẽ  -->
-        <Style x:Key="RoomListStyle5" TargetType="ListBox">
-            <Setter Property="AlternationCount" Value="2" />
-            <Setter Property="ItemsPanel">
-                <Setter.Value>
-                    <ItemsPanelTemplate>
-                        <VirtualizingStackPanel />
-                    </ItemsPanelTemplate>
-                </Setter.Value>
-            </Setter>
-            <Setter Property="ItemContainerStyle">
-                <Setter.Value>
-                    <Style TargetType="ListBoxItem">
-                        <Setter Property="Template" Value="{StaticResource RoundedListBoxItemTemplate}" />
-                        <Setter Property="Padding" Value="10,6" />
-                        <Setter Property="Margin" Value="0,2" />
-                        <Setter Property="Background" Value="Transparent" />
-                        <Setter Property="BorderBrush" Value="Transparent" />
-                        <Setter Property="BorderThickness" Value="1" />
-                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                        <Setter Property="Cursor" Value="Hand" />
-                        <Style.Triggers>
-                            <Trigger Property="ItemsControl.AlternationIndex" Value="1">
-                                <Setter Property="Background" Value="#F8FAFC" />
-                            </Trigger>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#EEF2FF" />
-                                <Setter Property="BorderBrush" Value="#CBD5E1" />
-                            </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="#CBD5FF" />
-                                <Setter Property="BorderBrush" Value="#1E3A8A" />
-                                <Setter Property="FontWeight" Value="SemiBold" />
-                                <Setter Property="Foreground" Value="#0F172A" />
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
-                </Setter.Value>
-            </Setter>
-        </Style>
         <!--  Primary Button (Facebook blue)  -->
         <Style x:Key="PrimaryButton" TargetType="Button">
             <Setter Property="Background" Value="{StaticResource Blue}" />
@@ -466,11 +261,17 @@
             <Setter Property="AlternationCount" Value="2" />
             <Setter Property="AlternatingRowBackground" Value="{StaticResource Log_Alt}" />
             <Setter Property="GridLinesVisibility" Value="None" />
-            <Setter Property="RowHeight" Value="28" />
             <Setter Property="ColumnHeaderHeight" Value="30" />
             <Setter Property="HeadersVisibility" Value="All" />
             <Setter Property="SelectionMode" Value="Single" />
             <Setter Property="SelectionUnit" Value="FullRow" />
+            <Setter Property="RowStyle">
+                <Setter.Value>
+                    <Style TargetType="DataGridRow">
+                        <Setter Property="MinHeight" Value="28" />
+                    </Style>
+                </Setter.Value>
+            </Setter>
             <Setter Property="ColumnHeaderStyle">
                 <Setter.Value>
                     <Style TargetType="DataGridColumnHeader">
@@ -490,6 +291,7 @@
                         <Setter Property="Padding" Value="8,4" />
                         <Setter Property="BorderThickness" Value="0" />
                         <Setter Property="HorizontalContentAlignment" Value="Center" />
+                        <Setter Property="VerticalContentAlignment" Value="Center" />
                     </Style>
                 </Setter.Value>
             </Setter>
@@ -512,8 +314,8 @@
         <local:ProgressWidthConverter x:Key="FillWidthConv" />
 
         <!--  PACK URI CHO ẢNH  -->
-        <BitmapImage x:Key="ImgBanker" UriSource="pack://application:,,,/Assets/side/BANKER.png" />
-        <BitmapImage x:Key="ImgPlayer" UriSource="pack://application:,,,/Assets/side/PLAYER.png" />
+        <BitmapImage x:Key="ImgLE" UriSource="pack://application:,,,/Assets/side/LE.png" />
+        <BitmapImage x:Key="ImgCHAN" UriSource="pack://application:,,,/Assets/side/CHAN.png" />
         <BitmapImage x:Key="ImgTHANG" UriSource="pack://application:,,,/Assets/kq/THANG.png" />
         <BitmapImage x:Key="ImgTHUA" UriSource="pack://application:,,,/Assets/kq/THUA.png" />
     </Window.Resources>
@@ -553,50 +355,13 @@
                 CornerRadius="10"
                 Effect="{StaticResource SoftShadow}"
                 SnapsToDevicePixels="True">
-                <Grid x:Name="WebLayerRoot">
+                <Grid>
                     <!--  Trang web  -->
                     <wv2:WebView2 x:Name="Web">
                         <wv2:WebView2.CreationProperties>
                             <wv2:CoreWebView2CreationProperties AdditionalBrowserArguments="--disable-gpu" UserDataFolder="{x:Static local:MainWindow.Wv2UserDataDir}" />
                         </wv2:WebView2.CreationProperties>
                     </wv2:WebView2>
-
-                    <Border
-                        x:Name="PopupHost"
-                        Panel.ZIndex="20"
-                        Background="#CC000000"
-                        Visibility="Collapsed">
-                        <Grid Margin="10">
-                            <Border
-                                Background="#111111"
-                                BorderBrush="#444444"
-                                BorderThickness="1"
-                                CornerRadius="8">
-                                <Grid>
-                                    <Grid x:Name="PopupWebHost" Margin="0,36,0,0" />
-                                    <Button
-                                        x:Name="BtnClosePopup"
-                                        Width="30"
-                                        Height="24"
-                                        MinWidth="0"
-                                        MinHeight="0"
-                                        Margin="0,8,8,0"
-                                        Padding="0"
-                                        HorizontalAlignment="Right"
-                                        VerticalAlignment="Top"
-                                        Background="#FFFFFF"
-                                        BorderBrush="#D0D5DD"
-                                        BorderThickness="1"
-                                        Click="BtnClosePopup_Click"
-                                        Content="X"
-                                        Cursor="Hand"
-                                        FontSize="12"
-                                        FontWeight="Bold"
-                                        Foreground="#111111" />
-                                </Grid>
-                            </Border>
-                        </Grid>
-                    </Border>
 
                     <!--  Lớp phủ chặn chuột  -->
                     <Border
@@ -648,7 +413,6 @@
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
 
                                     </Grid.RowDefinitions>
                                     <Grid.ColumnDefinitions>
@@ -692,27 +456,13 @@
                                         Grid.Column="1"
                                         PasswordChanged="TxtPass_PasswordChanged" />
 
-                                    <!--  VERIFY CODE  -->
-                                    <TextBlock
-                                        Grid.Row="3"
-                                        Grid.Column="0"
-                                        Style="{StaticResource CapsLabel}"
-                                        Text="MÃ XÁC MINH"
-                                        Visibility="Collapsed" />
-                                    <TextBox
-                                        x:Name="TxtVerify"
-                                        Grid.Row="3"
-                                        Grid.Column="1"
-                                        TextChanged="TxtVerify_TextChanged"
-                                        Visibility="Collapsed" />
-
                                     <!--  CHECKBOXES  -->
                                     <TextBlock
-                                        Grid.Row="4"
+                                        Grid.Row="3"
                                         Grid.Column="0"
                                         Text="" />
                                     <Grid
-                                        Grid.Row="4"
+                                        Grid.Row="3"
                                         Grid.Column="1"
                                         Margin="0,6,0,0"
                                         VerticalAlignment="Center">
@@ -730,13 +480,12 @@
                                                 TextTrimming="CharacterEllipsis"
                                                 TextWrapping="NoWrap" />
                                         </CheckBox>
-
                                     </Grid>
 
 
                                     <!--  CONTROLS  -->
                                     <Grid
-                                        Grid.Row="5"
+                                        Grid.Row="4"
                                         Grid.Column="0"
                                         Grid.ColumnSpan="2"
                                         Margin="0,6,0,0"
@@ -768,8 +517,6 @@
                                             Style="{StaticResource SecondaryButton}"
                                             Visibility="Visible" />
 
-
-
                                     </Grid>
 
 
@@ -778,239 +525,13 @@
                         </Border>
 
                         <Border
-                            x:Name="GroupRoomList"
-                            Style="{StaticResource Card}"
-                            Visibility="Collapsed">
-                            <StackPanel>
-                                <!--  Dropdown multi-select danh sách bàn  -->
-                                <StackPanel Margin="6,0,6,0">
-                                    <Border
-                                        x:Name="RoomHeader"
-                                        Padding="10,8"
-                                        Background="White"
-                                        BorderBrush="{StaticResource CardBorder}"
-                                        BorderThickness="1"
-                                        CornerRadius="10"
-                                        Cursor="Hand"
-                                        MouseLeftButtonUp="RoomHeader_MouseLeftButtonUp">
-                                        <DockPanel LastChildFill="False">
-                                            <StackPanel DockPanel.Dock="Left">
-                                                <TextBlock
-                                                    FontSize="12"
-                                                    FontWeight="SemiBold"
-                                                    Foreground="#1D4ED8"
-                                                    Text="Danh sách bàn" />
-                                                <TextBlock
-                                                    x:Name="TxtRoomSummary"
-                                                    FontSize="14"
-                                                    FontWeight="Bold"
-                                                    Foreground="#111827"
-                                                    Text="Không có mục nào" />
-                                            </StackPanel>
-                                            <Button
-                                                x:Name="BtnReloadRoomList"
-                                                Width="44"
-                                                MinWidth="44"
-                                                MinHeight="36"
-                                                Margin="6,0,0,0"
-                                                Padding="0"
-                                                HorizontalAlignment="Right"
-                                                Click="BtnReloadRoomList_Click"
-                                                DockPanel.Dock="Right"
-                                                Style="{StaticResource PrimaryButton}"
-                                                ToolTip="Làm mới bàn">
-                                                <TextBlock
-                                                    FontFamily="Segoe MDL2 Assets"
-                                                    FontSize="18"
-                                                    Text="" />
-                                            </Button>
-                                        </DockPanel>
-                                    </Border>
-
-                                    <Popup
-                                        x:Name="RoomPopup"
-                                        AllowsTransparency="True"
-                                        Placement="Bottom"
-                                        PlacementTarget="{Binding ElementName=RoomHeader}"
-                                        StaysOpen="True">
-                                        <Border
-                                            MinWidth="{Binding ActualWidth, ElementName=RoomHeader}"
-                                            Padding="10"
-                                            Background="White"
-                                            BorderBrush="{StaticResource CardBorder}"
-                                            BorderThickness="1"
-                                            CornerRadius="10"
-                                            Effect="{StaticResource SoftShadow}">
-                                            <StackPanel>
-                                                <DockPanel Margin="0,0,0,6">
-                                                    <CheckBox
-                                                        x:Name="ChkRoomAll"
-                                                        MinWidth="100"
-                                                        VerticalAlignment="Center"
-                                                        Click="ChkRoomAll_Click"
-                                                        Content="Chọn tất cả"
-                                                        FontWeight="SemiBold"
-                                                        Foreground="#111827"
-                                                        IsThreeState="True" />
-                                                    <TextBlock
-                                                        x:Name="TxtRoomCount"
-                                                        VerticalAlignment="Center"
-                                                        DockPanel.Dock="Right"
-                                                        FontSize="12"
-                                                        Foreground="#374151"
-                                                        Text="0/0 đã chọn" />
-                                                </DockPanel>
-
-                                                <Border
-                                                    Padding="6"
-                                                    Background="#F9FAFB"
-                                                    BorderBrush="{StaticResource CardBorder}"
-                                                    BorderThickness="1"
-                                                    CornerRadius="8">
-                                                    <ScrollViewer
-                                                        MaxHeight="420"
-                                                        HorizontalScrollBarVisibility="Disabled"
-                                                        VerticalScrollBarVisibility="Auto">
-                                                        <Grid>
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="*" />
-                                                                <ColumnDefinition Width="*" />
-                                                            </Grid.ColumnDefinitions>
-                                                            <ItemsControl x:Name="RoomItemsCol1" ItemsSource="{Binding RoomOptionsCol1, RelativeSource={RelativeSource AncestorType=Window}}">
-                                                                <ItemsControl.ItemsPanel>
-                                                                    <ItemsPanelTemplate>
-                                                                        <StackPanel />
-                                                                    </ItemsPanelTemplate>
-                                                                </ItemsControl.ItemsPanel>
-                                                                <ItemsControl.ItemTemplate>
-                                                                    <DataTemplate>
-                                                                        <Border
-                                                                            x:Name="RoomBorder"
-                                                                            Margin="0"
-                                                                            Padding="0"
-                                                                            Background="#f8fafc"
-                                                                            CornerRadius="8">
-                                                                            <CheckBox
-                                                                                x:Name="RoomCheck"
-                                                                                Padding="6,0"
-                                                                                VerticalAlignment="Center"
-                                                                                HorizontalContentAlignment="Left"
-                                                                                VerticalContentAlignment="Center"
-                                                                                Background="#d1fae5"
-                                                                                BorderBrush="#34d399"
-                                                                                BorderThickness="1"
-                                                                                Checked="RoomItemCheck_Click"
-                                                                                Content="{Binding Name}"
-                                                                                FontSize="12"
-                                                                                FontWeight="SemiBold"
-                                                                                Foreground="#0f172a"
-                                                                                IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                                                Unchecked="RoomItemCheck_Click" />
-                                                                        </Border>
-                                                                        <DataTemplate.Triggers>
-                                                                            <Trigger SourceName="RoomCheck" Property="IsChecked" Value="True">
-                                                                                <Setter TargetName="RoomBorder" Property="Background" Value="#fee2e2" />
-                                                                                <Setter TargetName="RoomCheck" Property="Foreground" Value="#b91c1c" />
-                                                                                <Setter TargetName="RoomCheck" Property="Background" Value="#bbf7d0" />
-                                                                                <Setter TargetName="RoomCheck" Property="FontWeight" Value="Bold" />
-                                                                            </Trigger>
-                                                                        </DataTemplate.Triggers>
-                                                                    </DataTemplate>
-                                                                </ItemsControl.ItemTemplate>
-                                                            </ItemsControl>
-                                                            <ItemsControl
-                                                                x:Name="RoomItemsCol2"
-                                                                Grid.Column="1"
-                                                                Margin="10,0,0,0"
-                                                                ItemsSource="{Binding RoomOptionsCol2, RelativeSource={RelativeSource AncestorType=Window}}">
-                                                                <ItemsControl.ItemsPanel>
-                                                                    <ItemsPanelTemplate>
-                                                                        <StackPanel />
-                                                                    </ItemsPanelTemplate>
-                                                                </ItemsControl.ItemsPanel>
-                                                                <ItemsControl.ItemTemplate>
-                                                                    <DataTemplate>
-                                                                        <Border
-                                                                            x:Name="RoomBorder"
-                                                                            Margin="0"
-                                                                            Padding="0"
-                                                                            Background="#f8fafc"
-                                                                            CornerRadius="8">
-                                                                            <CheckBox
-                                                                                x:Name="RoomCheck"
-                                                                                Padding="6,0"
-                                                                                VerticalAlignment="Center"
-                                                                                HorizontalContentAlignment="Left"
-                                                                                VerticalContentAlignment="Center"
-                                                                                Background="#d1fae5"
-                                                                                BorderBrush="#34d399"
-                                                                                BorderThickness="1"
-                                                                                Checked="RoomItemCheck_Click"
-                                                                                Content="{Binding Name}"
-                                                                                FontSize="12"
-                                                                                FontWeight="SemiBold"
-                                                                                Foreground="#0f172a"
-                                                                                IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                                                Unchecked="RoomItemCheck_Click" />
-                                                                        </Border>
-                                                                        <DataTemplate.Triggers>
-                                                                            <Trigger SourceName="RoomCheck" Property="IsChecked" Value="True">
-                                                                                <Setter TargetName="RoomBorder" Property="Background" Value="#fee2e2" />
-                                                                                <Setter TargetName="RoomCheck" Property="Foreground" Value="#b91c1c" />
-                                                                                <Setter TargetName="RoomCheck" Property="Background" Value="#bbf7d0" />
-                                                                                <Setter TargetName="RoomCheck" Property="FontWeight" Value="Bold" />
-                                                                            </Trigger>
-                                                                        </DataTemplate.Triggers>
-                                                                    </DataTemplate>
-                                                                </ItemsControl.ItemTemplate>
-                                                            </ItemsControl>
-                                                        </Grid>
-                                                    </ScrollViewer>
-                                                </Border>
-                                            </StackPanel>
-                                        </Border>
-                                    </Popup>
-                                    <StackPanel
-                                        Margin="0,12,0,0"
-                                        HorizontalAlignment="Center"
-                                        Orientation="Horizontal">
-                                        <Button
-                                            x:Name="BtnCreateOverlay"
-                                            MinWidth="120"
-                                            Padding="16,10"
-                                            Click="BtnCreateOverlay_Click"
-                                            Content="Tạo bàn chơi"
-                                            IsEnabled="False"
-                                            Style="{StaticResource PrimaryButton}" />
-                                        <Button
-                                            x:Name="BtnCloseAllOverlay"
-                                            MinWidth="120"
-                                            Margin="16,0,0,0"
-                                            Padding="16,10"
-                                            Click="BtnCloseAllOverlay_Click"
-                                            Content="Đóng tất cả bàn"
-                                            Style="{StaticResource PrimaryButton}" />
-                                        <Button
-                                            x:Name="BtnResetOverlay"
-                                            MinWidth="120"
-                                            Margin="16,0,0,0"
-                                            Padding="16,10"
-                                            Click="BtnResetOverlay_Click"
-                                            Content="Đặt lại màn hình"
-                                            Style="{StaticResource PrimaryButton}" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-
-                        <Border
                             x:Name="GroupStrategyMoney"
                             Style="{StaticResource Card}"
                             Visibility="Collapsed">
                             <StackPanel>
-                                <Grid Margin="0,0,0,10" VerticalAlignment="Center">
+                                <StackPanel Style="{StaticResource SectionHeader}">
                                     <TextBlock Style="{StaticResource SectionTitle}" Text="Chiến lược &amp; Chuỗi tiền" />
-                                </Grid>
+                                </StackPanel>
 
                                 <Grid>
                                     <Grid.RowDefinitions>
@@ -1026,6 +547,8 @@
                                         <!--  CÓ LÃI QUAY VỀ MỨC ĐẦU  -->
                                         <RowDefinition Height="Auto" />
                                         <!--  ĐẶT KHI CÒN (GIÂY)  -->
+                                        <RowDefinition Height="Auto" />
+                                        <!--  CỬA ĐẶT &amp; TỈ LỆ  -->
                                     </Grid.RowDefinitions>
 
                                     <Grid.ColumnDefinitions>
@@ -1061,24 +584,27 @@
                                             Padding="10,8"
                                             HorizontalAlignment="Stretch"
                                             SelectedIndex="4">
-                                            <ComboBoxItem Content="1) Chuỗi cầu P/B (player/banker tự nhập)" />
-                                            <ComboBoxItem Content="2) Thế cầu P/B (player/banker tự nhập)" />
-                                            <ComboBoxItem Content="3) Bám cầu trước (thông minh)" />
-                                            <ComboBoxItem Content="4) Cửa đặt ngẫu nhiên" />
-                                            <ComboBoxItem Content="5) Bám cầu P/B theo thống kê AI" />
-                                            <ComboBoxItem Content="6) Xu hướng chuyển trạng thái" />
-                                            <ComboBoxItem Content="7) Run-length (dài-chuỗi)" />
-                                            <ComboBoxItem Content="8) Chuyên gia bỏ phiếu" />
-                                            <ComboBoxItem Content="9) Lịch chẻ 10 tay" />
-                                            <ComboBoxItem Content="10) KNN chuỗi con" />
-                                            <ComboBoxItem Content="11) Lịch hai lớp" />
-                                            <ComboBoxItem Content="12) AI học tại chỗ (n-gram)" />
-                                            <ComboBoxItem Content="13) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime)" />
-                                            <ComboBoxItem Content="14) Top10 tích lũy (khởi từ 50 P/B)" />
+                                            <ComboBoxItem Content="1) Chuỗi cầu C/L (chẵn/lẻ tự nhập)" />
+                                            <ComboBoxItem Content="2) Thế cầu C/L (chẵn/lẻ tự nhập)" />
+                                            <ComboBoxItem Content="3) Chuỗi cầu I/N (Ít/Nhiều, tự nhập)" />
+                                            <ComboBoxItem Content="4) Thế cầu I/N (Ít/Nhiều, tự nhập)" />
+                                            <ComboBoxItem Content="5) Bám cầu trước (thông minh)" />
+                                            <ComboBoxItem Content="6) Cửa đặt ngẫu nhiên" />
+                                            <ComboBoxItem Content="7) Bám cầu C/L theo thống kê AI" />
+                                            <ComboBoxItem Content="8) Xu hướng chuyển trạng thái" />
+                                            <ComboBoxItem Content="9) Run-length (dài-chuỗi)" />
+                                            <ComboBoxItem Content="10) Chuyên gia bỏ phiếu" />
+                                            <ComboBoxItem Content="11) Lịch chẻ 10 tay" />
+                                            <ComboBoxItem Content="12) KNN chuỗi con" />
+                                            <ComboBoxItem Content="13) Lịch hai lớp" />
+                                            <ComboBoxItem Content="14) AI học tại chỗ (n-gram)" />
+                                            <ComboBoxItem Content="15) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime)" />
+                                            <ComboBoxItem Content="16) Top10 tích lũy (khởi từ 50 C/L)" />
+                                            <ComboBoxItem Content="17) Đánh các cửa ăn nổ hũ" />
                                         </ComboBox>
                                     </Grid>
 
-                                    <!--  HÀNG CHI TIẾT: CHUỖI CẦU (ẩn/hiện theo chọn 1)  -->
+                                    <!--  HÀNG CHI TIẾT: CHUỖI CẦU (ẩn/hiện theo chọn 1 hoặc 3)  -->
                                     <Grid
                                         x:Name="RowChuoiCau"
                                         Grid.Row="1"
@@ -1186,6 +712,7 @@
                                             <ComboBoxItem Content="3. Quản lý vốn Victor 2" Tag="Victor2" />
                                             <ComboBoxItem Content="4. Quản lý vốn Fibonaci ngược" Tag="ReverseFibo" />
                                             <ComboBoxItem Content="5. Quản lý vốn đa tầng" Tag="MultiChain" />
+                                            <ComboBoxItem Content="6. Thua thắng đều lên mức" Tag="IncreaseEveryRound" />
                                             <ComboBoxItem Content="7. Thắng đánh lên, thua giữ nguyên mức" Tag="WinUpLoseKeep" />
                                         </ComboBox>
                                     </Grid>
@@ -1236,6 +763,54 @@
                                         Margin="{StaticResource ValueFieldMargin}"
                                         HorizontalAlignment="Stretch"
                                         Text="0" />
+                                    <!--  CỬA ĐẶT &amp; TỈ LỆ  -->
+                                    <Grid
+                                        x:Name="RowSideRatio"
+                                        Grid.Row="6"
+                                        Grid.ColumnSpan="2"
+                                        Visibility="Collapsed">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="130" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock
+                                            Grid.Column="0"
+                                            Style="{StaticResource CapsLabel}"
+                                            Text="CỬA ĐẶT &amp; TỈ LỆ" />
+                                        <StackPanel Grid.Column="1" Orientation="Vertical">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox
+                                                    x:Name="TxtSideRatio"
+                                                    Grid.Column="0"
+                                                    MinHeight="36"
+                                                    MaxHeight="120"
+                                                    Margin="{StaticResource ValueFieldMargin}"
+                                                    HorizontalAlignment="Stretch"
+                                                    AcceptsReturn="True"
+                                                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                    TextWrapping="Wrap" />
+                                                <Button
+                                                    x:Name="BtnResetSideRatio"
+                                                    Grid.Column="1"
+                                                    MinWidth="70"
+                                                    Margin="8,0,0,0"
+                                                    Padding="12,8"
+                                                    Content="Reset"
+                                                    Style="{StaticResource SecondaryButton}" />
+                                            </Grid>
+                                            <TextBlock
+                                                x:Name="LblSideRatioError"
+                                                Margin="0,2,0,0"
+                                                Foreground="Red"
+                                                TextWrapping="Wrap"
+                                                Visibility="Collapsed" />
+                                        </StackPanel>
+                                    </Grid>
                                 </Grid>
                                 <!--  HÀNG: CẮT LÃI / CẮT LỖ (đặt ngay sau hàng 'Đặt khi còn (giây)')  -->
                                 <Grid>
@@ -1277,30 +852,6 @@
                                         LostFocus="TxtCut_LostFocus" />
 
                                 </Grid>
-                                <CheckBox
-                                    x:Name="ChkAutoResetOnCut"
-                                    Margin="12,6,0,0"
-                                    VerticalAlignment="Center"
-                                    Checked="ChkAutoResetOnCut_Changed"
-                                    Content="Đủ cắt lãi, cắt lỗ tự động về mức cược đầu"
-                                    Foreground="#222"
-                                    Unchecked="ChkAutoResetOnCut_Changed" />
-                                <CheckBox
-                                    x:Name="ChkAutoResetOnWinGeTotal"
-                                    Margin="12,4,0,0"
-                                    VerticalAlignment="Center"
-                                    Checked="ChkAutoResetOnWinGeTotal_Changed"
-                                    Content="Tiền thắng &gt;= tổng cược tự động về mức cược đầu"
-                                    Foreground="#222"
-                                    Unchecked="ChkAutoResetOnWinGeTotal_Changed" />
-                                <CheckBox
-                                    x:Name="ChkWaitCutLossBeforeBet"
-                                    Margin="12,4,0,0"
-                                    VerticalAlignment="Center"
-                                    Checked="ChkWaitCutLossBeforeBet_Changed"
-                                    Content="Chờ đủ cắt lỗ mới vào tiền"
-                                    Foreground="#222"
-                                    Unchecked="ChkWaitCutLossBeforeBet_Changed" />
                                 <Grid
                                     Grid.Row="0"
                                     Margin="0,10,0,0"
@@ -1310,40 +861,28 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
 
                                     <!--  Nút Bắt đầu cược  -->
                                     <Button
                                         x:Name="BtnPlay"
-                                        Grid.Column="1"
-                                        MinWidth="140"
-                                        Margin="12,0,0,0"
-                                        Padding="13"
-                                        Click="ResetStrategyAll_Click"
-                                        Content="Đặt lại chiến lược"
-                                        Style="{StaticResource PrimaryButton}"
-                                        Tag="reset-strategy"
-                                        Visibility="Visible" />
-
-                                    <Button
-                                        x:Name="BtnRunAllTables"
                                         Grid.Column="0"
-                                        MinWidth="160"
+                                        MinWidth="140"
                                         Padding="13"
-                                        Click="BtnRunAllTables_Click"
-                                        Content="Chạy tất cả bàn"
+                                        Click="PlayXocDia_Click"
+                                        Content="Bắt Đầu Cược"
                                         Style="{StaticResource PrimaryButton}"
                                         Visibility="Visible" />
 
                                     <!--  Checkbox Dùng thử  -->
                                     <CheckBox
                                         x:Name="ChkTrial"
-                                        Grid.Column="2"
+                                        Grid.Column="1"
                                         Margin="12,0,0,0"
                                         VerticalAlignment="Center"
                                         Content="Dùng thử"
-                                        IsEnabled="False">
+                                        IsEnabled="False"
+                                        Visibility="Collapsed">
                                         <CheckBox.Style>
                                             <Style TargetType="CheckBox">
                                                 <Setter Property="Foreground" Value="#222" />
@@ -1359,7 +898,7 @@
                                     <!--  Checkbox Khóa chuột  -->
                                     <CheckBox
                                         x:Name="ChkLockMouse"
-                                        Grid.Column="3"
+                                        Grid.Column="2"
                                         Margin="12,0,0,0"
                                         VerticalAlignment="Center"
                                         Checked="ChkLockMouse_Checked"
@@ -1584,8 +1123,7 @@
                                             Grid.Row="1"
                                             Grid.ColumnSpan="2"
                                             Padding="0"
-                                            Style="{StaticResource GhostCell}"
-                                            Visibility="Collapsed">
+                                            Style="{StaticResource GhostCell}">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
@@ -1604,7 +1142,7 @@
                                                 <Border Grid.Column="1" Style="{StaticResource GhostQMid}">
                                                     <Grid
                                                         x:Name="CellKetQua"
-                                                        Margin="8,0,0,0"
+                                                        Margin="0,0,0,0"
                                                         HorizontalAlignment="Center"
                                                         VerticalAlignment="Center">
                                                         <Image
@@ -1651,8 +1189,7 @@
                                             Grid.Row="2"
                                             Grid.ColumnSpan="2"
                                             Padding="0"
-                                            Style="{StaticResource GhostCell}"
-                                            Visibility="Collapsed">
+                                            Style="{StaticResource GhostCell}">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
@@ -1723,17 +1260,17 @@
                                                     <TextBlock
                                                         VerticalAlignment="Center"
                                                         Style="{StaticResource CapsLabel}"
-                                                        Text="TỔNG CƯỢC" />
+                                                        Text="MỨC TIỀN" />
                                                 </Border>
 
-                                                <Border Grid.Column="1" Style="{StaticResource GhostQMid}">
+                                                <Border Grid.Column="1" Style="{StaticResource GhostQLast}">
                                                     <TextBlock
-                                                        x:Name="LblTotalStake"
+                                                        x:Name="LblLevel"
                                                         HorizontalAlignment="Center"
                                                         VerticalAlignment="Center"
                                                         FontWeight="SemiBold"
                                                         Style="{StaticResource ValueText}"
-                                                        Text="0" />
+                                                        Text="" />
                                                 </Border>
 
                                                 <Border Grid.Column="2" Style="{StaticResource GhostQMid}">
@@ -2113,18 +1650,7 @@
                                                 <DataGridTextColumn.ElementStyle>
                                                     <Style TargetType="TextBlock">
                                                         <Setter Property="TextAlignment" Value="Center" />
-                                                    </Style>
-                                                </DataGridTextColumn.ElementStyle>
-                                            </DataGridTextColumn>
-
-                                            <!--  Bàn chơi  -->
-                                            <DataGridTextColumn
-                                                Width="*"
-                                                Binding="{Binding Table}"
-                                                Header="Bàn chơi">
-                                                <DataGridTextColumn.ElementStyle>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="TextAlignment" Value="Center" />
+                                                        <Setter Property="VerticalAlignment" Value="Center" />
                                                     </Style>
                                                 </DataGridTextColumn.ElementStyle>
                                             </DataGridTextColumn>
@@ -2137,6 +1663,7 @@
                                                 <DataGridTextColumn.ElementStyle>
                                                     <Style TargetType="TextBlock">
                                                         <Setter Property="TextAlignment" Value="Center" />
+                                                        <Setter Property="VerticalAlignment" Value="Center" />
                                                     </Style>
                                                 </DataGridTextColumn.ElementStyle>
                                             </DataGridTextColumn>
@@ -2148,7 +1675,7 @@
                                                         <Grid VerticalAlignment="Center">
                                                             <Image
                                                                 x:Name="ImgSide"
-                                                                Height="24"
+                                                                Height="32"
                                                                 Source="{Binding Side, Converter={StaticResource SideToIcon}}"
                                                                 Visibility="Visible" />
                                                             <TextBlock
@@ -2175,7 +1702,7 @@
                                                         <Grid VerticalAlignment="Center">
                                                             <Image
                                                                 x:Name="ImgKq"
-                                                                Height="24"
+                                                                Height="32"
                                                                 Source="{Binding Result, Converter={StaticResource KetQuaToIcon}}"
                                                                 Visibility="Visible" />
                                                             <TextBlock
@@ -2206,7 +1733,7 @@
                                                             <Grid VerticalAlignment="Center">
                                                                 <Image
                                                                     x:Name="ImgWL"
-                                                                    Height="24"
+                                                                    Height="32"
                                                                     Source="{Binding WinLose, Converter={StaticResource WinLossToIcon}}"
                                                                     Visibility="Visible" />
                                                                 <TextBlock
@@ -2236,11 +1763,12 @@
                                             <!--  Tài khoản  -->
                                             <DataGridTextColumn
                                                 Width="*"
-                                                Binding="{Binding Account, StringFormat=N2}"
+                                                Binding="{Binding Account, StringFormat=N0}"
                                                 Header="Tài khoản">
                                                 <DataGridTextColumn.ElementStyle>
                                                     <Style TargetType="TextBlock">
                                                         <Setter Property="TextAlignment" Value="Center" />
+                                                        <Setter Property="VerticalAlignment" Value="Center" />
                                                     </Style>
                                                 </DataGridTextColumn.ElementStyle>
                                             </DataGridTextColumn>
@@ -2336,64 +1864,12 @@
                                         VerticalAlignment="Center"
                                         Visibility="Collapsed" />
 
+
+
                                 </Grid>
                             </StackPanel>
                         </Border>
 
-                        <!--  Console  -->
-                        <Border
-                            Grid.Row="2"
-                            Grid.RowSpan="2"
-                            Grid.Column="2"
-                            Margin="2"
-                            Visibility="Collapsed">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
-
-                                <!--  Header: tiêu đề + nút clear + nút copy  -->
-                                <Grid Grid.Row="0" Margin="0,0,0,4">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-
-                                    <TextBlock
-                                        VerticalAlignment="Center"
-                                        FontWeight="Bold"
-                                        Text="Log console" />
-
-                                    <Button
-                                        Grid.Column="1"
-                                        Margin="8,0,0,0"
-                                        Padding="6,2"
-                                        Click="BtnClearLog_Click"
-                                        Content="Clear" />
-
-                                    <!--  Nút copy log  -->
-                                    <Button
-                                        Grid.Column="2"
-                                        Margin="8,0,0,0"
-                                        Padding="6,2"
-                                        Click="BtnCopyLog_Click"
-                                        Content="Copy" />
-                                </Grid>
-
-
-                                <TextBox
-                                    x:Name="TxtLog"
-                                    Grid.Row="1"
-                                    Margin="0"
-                                    HorizontalScrollBarVisibility="Auto"
-                                    IsReadOnly="True"
-                                    Style="{StaticResource ConsoleBox}"
-                                    TextWrapping="NoWrap"
-                                    VerticalScrollBarVisibility="Auto" />
-                            </Grid>
-                        </Border>
 
 
 
@@ -2404,12 +1880,3 @@
         </Grid>
     </DockPanel>
 </Window>
-
-
-
-
-
-
-
-
-
