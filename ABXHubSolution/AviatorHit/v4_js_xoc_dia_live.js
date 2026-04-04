@@ -643,6 +643,111 @@
         };
     }
 
+    function uniqueByHistoryKey(items) {
+        var seen = {},
+        out = [];
+        for (var i = 0; i < items.length; i++) {
+            var it = items[i];
+            var key = [it.text, it.x, it.y, it.w, it.h, it.tail].join('|');
+            if (seen[key])
+                continue;
+            seen[key] = 1;
+            out.push(it);
+        }
+        return out;
+    }
+
+    function buildAviatorHistoryRects(limit) {
+        limit = limit || 50;
+        var labs = collectLabels();
+        var cand = [];
+        for (var i = 0; i < labs.length; i++) {
+            var L = labs[i];
+            var s = String(L.text || '').trim();
+            var tl = String(L.tl || '');
+            if (!/^\d+(?:\.\d+)?x$/i.test(s))
+                continue;
+            if (/undefined/i.test(s))
+                continue;
+            if (/cashout|boxbet|autobet|chat|itemchat|listuserbet|broadcast|placeholder|lbtongthang|lbheso|lbhesocashout|session|jpbar/.test(tl))
+                continue;
+            if (L.w < 40 || L.w > 180 || L.h < 10 || L.h > 70)
+                continue;
+            cand.push({
+                text: s,
+                x: Math.round(L.x),
+                y: Math.round(L.y),
+                w: Math.round(L.w),
+                h: Math.round(L.h),
+                tail: L.tail,
+                tl: L.tl
+            });
+        }
+
+        cand = uniqueByHistoryKey(cand);
+        var strict = cand.filter(function (it) {
+            return /historylsp|nodehistoryheso/.test(String(it.tl || ''));
+        });
+        if (strict.length >= 10)
+            cand = strict;
+        cand.sort(function (a, b) {
+            return a.y - b.y || a.x - b.x;
+        });
+
+        var hs = [];
+        for (var j = 0; j < cand.length; j++)
+            hs.push(Math.max(1, cand[j].h));
+        var rowThr = Math.max(6, Math.min(12, Math.round(median(hs) * 0.75)));
+        var rows = [];
+
+        for (var k = 0; k < cand.length; k++) {
+            var it = cand[k];
+            var row = null;
+            for (var r = 0; r < rows.length; r++) {
+                if (Math.abs(rows[r].cy - it.y) <= rowThr) {
+                    row = rows[r];
+                    break;
+                }
+            }
+            if (!row) {
+                row = {
+                    cy: it.y,
+                    items: []
+                };
+                rows.push(row);
+            }
+            row.items.push(it);
+            row.cy = Math.round((row.cy * (row.items.length - 1) + it.y) / row.items.length);
+        }
+
+        rows = rows.filter(function (r) {
+            return r.items.length >= 5 && r.items.length <= 12;
+        }).sort(function (a, b) {
+            return a.cy - b.cy;
+        });
+
+        var ordered = [];
+        for (var n = 0; n < rows.length; n++) {
+            var arr = rows[n].items.slice().sort(function (a, b) {
+                return b.x - a.x;
+            });
+            for (var m = 0; m < arr.length; m++)
+                ordered.push(arr[m]);
+        }
+
+        if (ordered.length > limit)
+            ordered = ordered.slice(ordered.length - limit);
+        return ordered;
+    }
+
+    function readAviatorHistorySeq(limit) {
+        var list = buildAviatorHistoryRects(limit || 50);
+        var vals = [];
+        for (var i = 0; i < list.length; i++)
+            vals.push(list[i].text);
+        return vals.join('|');
+    }
+
     /* ---------------- resolver/auto ---------------- */
     function resolve(poolSig, sig) {
         if (!sig)
@@ -2328,10 +2433,7 @@
 
         function readSeqSafe() {
             try {
-                if (typeof readTKSeq === 'function') {
-                    var r = readTKSeq();
-                    return (r && r.seq) ? r.seq : '';
-                }
+                return (typeof readAviatorHistorySeq === 'function') ? readAviatorHistorySeq(50) : '';
             } catch (_) {}
             return '';
         }

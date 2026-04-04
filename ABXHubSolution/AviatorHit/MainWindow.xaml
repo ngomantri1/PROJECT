@@ -27,6 +27,8 @@
         <local:SideToIconConverter x:Key="SideToIcon" />
         <local:KetQuaToIconConverter x:Key="KetQuaToIcon" />
         <local:WinLossToIconConverter x:Key="WinLossToIcon" />
+        <local:AviatorOddBackgroundConverter x:Key="AviatorOddBg" />
+        <local:AviatorOddForegroundConverter x:Key="AviatorOddFg" />
 
         <!--  (tuỳ chọn) Brush dùng cho badge khi fallback chữ  -->
         <SolidColorBrush x:Key="WinBg" Color="#EBF5E9" />
@@ -1379,22 +1381,28 @@
                                                 </ItemsControl.ItemContainerStyle>
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate DataType="{x:Type local:SeqIconVM}">
-                                                        <Image
-                                                            x:Name="Icon"
-                                                            Width="20"
-                                                            Height="20"
-                                                            Opacity="1"
-                                                            Source="{Binding Img}">
-                                                            <Image.CacheMode>
-                                                                <BitmapCache />
-                                                            </Image.CacheMode>
-                                                        </Image>
+                                                        <Border
+                                                            x:Name="Chip"
+                                                            MinWidth="44"
+                                                            Padding="6,2"
+                                                            Background="{Binding Text, Converter={StaticResource AviatorOddBg}}"
+                                                            BorderBrush="#D6B86A"
+                                                            BorderThickness="1"
+                                                            CornerRadius="8"
+                                                            Opacity="1">
+                                                            <TextBlock
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Foreground="{Binding Text, Converter={StaticResource AviatorOddFg}}"
+                                                                FontWeight="SemiBold"
+                                                                Text="{Binding Text}" />
+                                                        </Border>
                                                         <DataTemplate.Triggers>
                                                             <DataTrigger Binding="{Binding IsLatest}" Value="True">
                                                                 <DataTrigger.EnterActions>
                                                                     <BeginStoryboard x:Name="FadeSink">
                                                                         <Storyboard RepeatBehavior="Forever">
-                                                                            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="Icon" Storyboard.TargetProperty="Opacity">
+                                                                            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="Chip" Storyboard.TargetProperty="Opacity">
                                                                                 <EasingDoubleKeyFrame KeyTime="0:0:0.0" Value="1.0" />
                                                                                 <EasingDoubleKeyFrame KeyTime="0:0:1.5" Value="0.2">
                                                                                     <EasingDoubleKeyFrame.EasingFunction>

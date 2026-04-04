@@ -8,12 +8,19 @@ namespace AviatorHit
     public sealed class SeqIconVM : INotifyPropertyChanged
     {
         private ImageSource? _img;
+        private string? _text;
         private bool _isLatest;
 
         public ImageSource? Img
         {
             get => _img;
             init { _img = value; OnPropertyChanged(); }
+        }
+
+        public string? Text
+        {
+            get => _text;
+            init { _text = value; OnPropertyChanged(); }
         }
 
         public bool IsLatest

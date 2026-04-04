@@ -236,6 +236,58 @@ namespace AviatorHit
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
     }
+
+    public static class AviatorOddPalette
+    {
+        public static bool TryParse(string? raw, out double value)
+        {
+            value = 0;
+            var s = (raw ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(s)) return false;
+            if (s.EndsWith("x", StringComparison.OrdinalIgnoreCase))
+                s = s[..^1];
+            s = s.Replace(",", "");
+            return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        }
+
+        public static Brush Background(string? raw)
+        {
+            if (!TryParse(raw, out var v))
+                return new SolidColorBrush(Color.FromRgb(90, 90, 90));
+
+            if (v < 1.5) return new SolidColorBrush(Color.FromRgb(150, 150, 150));
+            if (v < 3.0) return new SolidColorBrush(Color.FromRgb(84, 99, 219));
+            if (v < 5.0) return new SolidColorBrush(Color.FromRgb(146, 78, 204));
+            if (v < 8.0) return new SolidColorBrush(Color.FromRgb(108, 196, 20));
+            if (v < 15.0) return new SolidColorBrush(Color.FromRgb(215, 180, 18));
+            if (v < 50.0) return new SolidColorBrush(Color.FromRgb(208, 103, 18));
+            return new SolidColorBrush(Color.FromRgb(216, 52, 43));
+        }
+
+        public static Brush Foreground(string? raw)
+        {
+            if (!TryParse(raw, out var v))
+                return Brushes.White;
+            return v < 10.0 ? Brushes.White : Brushes.White;
+        }
+    }
+
+    public sealed class AviatorOddBackgroundConverter : IValueConverter
+    {
+        public object Convert(object value, Type t, object p, CultureInfo c)
+            => AviatorOddPalette.Background(value?.ToString());
+
+        public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
+    }
+
+    public sealed class AviatorOddForegroundConverter : IValueConverter
+    {
+        public object Convert(object value, Type t, object p, CultureInfo c)
+            => AviatorOddPalette.Foreground(value?.ToString());
+
+        public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
+    }
+
     public partial class MainWindow : Window
     {
         private const string AppLocalDirName = "AviatorHit"; // đổi thành tên bạn muốn
@@ -1407,51 +1459,56 @@ Ví dụ không hợp lệ:
                                         {
                                             double progNow = snap.prog ?? 0;
                                             var seqStr = snap.seq ?? "";
+                                            bool isAviatorSeq = seqStr.IndexOf('x') >= 0 || seqStr.IndexOf('|') >= 0;
 
-                                            // Nếu đang khóa theo dõi và chuỗi đã thay đổi so với _baseSeq => ván cũ khép
-                                            if (_lockMajorMinorUpdates == true &&
-                                                !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
+                                            if (!isAviatorSeq)
                                             {
-                                                char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
-                                                bool winIsChan = (tail == '0' || tail == '2' || tail == '4');
-
-                                                long prevC = _roundTotalsC, prevL = _roundTotalsL;
-                                                // Ni: nếu cửa THẮNG là cửa có tổng tiền lớn hơn trong ván đó => 'N', ngược lại 'I'
-                                                char ni = winIsChan ? ((prevC >= prevL) ? 'N' : 'I')
-                                                                    : ((prevL >= prevC) ? 'N' : 'I');
-
-                                                _niSeq.Append(ni);
-                                                if (_niSeq.Length > NiSeqMax)
-                                                    _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
-
-                                                Log($"[NI] add={ni} | seq={_niSeq} | tail={tail} | C={prevC} | L={prevL}");
-
-                                                // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
-                                                var kqStr = winIsChan ? "CHAN" : "LE";
-                                                long? accNow2 = snap?.totals?.A;
-                                                if (_pendingRows.Count > 0 && accNow2.HasValue)
+                                                // Nếu đang khóa theo dõi và chuỗi đã thay đổi so với _baseSeq => ván cũ khép
+                                                if (_lockMajorMinorUpdates == true &&
+                                                    !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
                                                 {
-                                                    // Chiến lược 17 tự finalize nhiều cửa theo winners
-                                                    if (_activeTask is not AviatorHit.Tasks.JackpotMultiSideTask)
+                                                    char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
+                                                    bool winIsChan = (tail == '0' || tail == '2' || tail == '4');
+
+                                                    long prevC = _roundTotalsC, prevL = _roundTotalsL;
+                                                    char ni = winIsChan ? ((prevC >= prevL) ? 'N' : 'I')
+                                                                        : ((prevL >= prevC) ? 'N' : 'I');
+
+                                                    _niSeq.Append(ni);
+                                                    if (_niSeq.Length > NiSeqMax)
+                                                        _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
+
+                                                    Log($"[NI] add={ni} | seq={_niSeq} | tail={tail} | C={prevC} | L={prevL}");
+
+                                                    var kqStr = winIsChan ? "CHAN" : "LE";
+                                                    long? accNow2 = snap?.totals?.A;
+                                                    if (_pendingRows.Count > 0 && accNow2.HasValue)
                                                     {
-                                        FinalizeLastBet(kqStr, accNow2.Value);
+                                                        if (_activeTask is not AviatorHit.Tasks.JackpotMultiSideTask)
+                                                        {
+                                                            FinalizeLastBet(kqStr, accNow2.Value);
+                                                        }
+                                                    }
+
+                                                    _lockMajorMinorUpdates = false;
+                                                }
+
+                                                if (_lockMajorMinorUpdates == false)
+                                                {
+                                                    if (progNow == 0)
+                                                    {
+                                                        _baseSeq = seqStr;
+                                                        _roundTotalsC = snap.totals?.C ?? 0;
+                                                        _roundTotalsL = snap.totals?.L ?? 0;
+                                                        if (_roundTotalsC != 0 && _roundTotalsL != 0)
+                                                            _lockMajorMinorUpdates = true;
                                                     }
                                                 }
-
-                                                _lockMajorMinorUpdates = false; // xong chu kỳ này
                                             }
-
-                                            // Khi vào ván mới (prog == 0) → lấy mốc base & totals để so sánh cho ván sắp khép
-                                            if (_lockMajorMinorUpdates == false)
+                                            else
                                             {
-                                                if (progNow == 0)
-                                                {
-                                                    _baseSeq = seqStr;
-                                                    _roundTotalsC = snap.totals?.C ?? 0;
-                                                    _roundTotalsL = snap.totals?.L ?? 0;
-                                                    if (_roundTotalsC != 0 && _roundTotalsL != 0)
-                                                        _lockMajorMinorUpdates = true;
-                                                }
+                                                _lockMajorMinorUpdates = false;
+                                                _baseSeq = seqStr;
                                             }
                                         }
                                         catch { /* an toàn */ }
@@ -1481,12 +1538,10 @@ Ví dụ không hợp lệ:
                                                     if (LblProg != null) LblProg.Text = "-";
                                                 }
 
-                                                // Kết quả gần nhất từ chuỗi seq
+                                                // Kết quả gần nhất từ chuỗi Aviator (cũ -> mới)
                                                 var seqStrLocal = snap.seq ?? "";
-                                                char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
-                                                var kq = (last == '0' || last == '2' || last == '4') ? "CHAN"
-                                                         : (last == '1' || last == '3') ? "LE" : "";
-                                                SetLastResultUI(kq);
+                                                var latestResult = GetLatestSeqEntry(seqStrLocal);
+                                                SetLastAviatorResultUI(latestResult);
                                                 if (LblUserName != null && !string.IsNullOrWhiteSpace(snap.username))
                                                     LblUserName.Text = snap.username;
 
@@ -1498,7 +1553,7 @@ Ví dụ không hợp lệ:
                                                         : (!string.IsNullOrWhiteSpace(snap?.balanceText) ? snap.balanceText : "-");
 
                                                 // Chuỗi kết quả
-                                                UpdateSeqUI(snap.seq ?? "");
+                                                UpdateAviatorSeqUI(snap.seq ?? "");
 
                                                 // 🔸 Trạng thái: "Phiên mới" / "Ngừng đặt cược" / "Đang chờ kết quả"
                                                 if (LblStatusText != null)
@@ -4535,21 +4590,27 @@ Ví dụ không hợp lệ:
 
 
 
+        private static string[] SplitSeqEntries(string fullSeq)
+        {
+            if (string.IsNullOrWhiteSpace(fullSeq)) return Array.Empty<string>();
+            return fullSeq.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
+
+        private static string GetLatestSeqEntry(string fullSeq)
+        {
+            var parts = SplitSeqEntries(fullSeq);
+            return parts.Length == 0 ? string.Empty : parts[^1];
+        }
+
         void UpdateSeqUI(string fullSeq)
         {
-            var tail = (fullSeq.Length <= 15) ? fullSeq : fullSeq.Substring(fullSeq.Length - 15, 15);
+            var parts = SplitSeqEntries(fullSeq);
+            var tailParts = (parts.Length <= 50) ? parts : parts[^50..];
+            var tailKey = string.Join("|", tailParts);
+            var tail = tailKey;
             if (tail == _lastSeqTailShown) return; // QUAN TRỌNG: đừng reset animation
 
-            var items = new List<SeqIconVM>(tail.Length);
-            for (int i = 0; i < tail.Length; i++)
-            {
-                var ch = tail[i];
-                if (_seqIconMap.TryGetValue(ch, out var img))
-                    items.Add(new SeqIconVM { Img = img, IsLatest = (i == tail.Length - 1) });
-            }
-            SeqIcons.ItemsSource = items;
-            SeqIcons.ToolTip = fullSeq;
-            _lastSeqTailShown = tail;
+            UpdateAviatorSeqUI(fullSeq);
         }
 
 
@@ -4619,6 +4680,42 @@ Ví dụ không hợp lệ:
             }
         }
 
+
+        private void UpdateAviatorSeqUI(string fullSeq)
+        {
+            var parts = SplitSeqEntries(fullSeq);
+            var tailParts = (parts.Length <= 50) ? parts : parts[^50..];
+            var tailKey = string.Join("|", tailParts);
+            if (tailKey == _lastSeqTailShown) return;
+
+            var items = new List<SeqIconVM>(tailParts.Length);
+            for (int i = 0; i < tailParts.Length; i++)
+            {
+                items.Add(new SeqIconVM
+                {
+                    Text = tailParts[i],
+                    IsLatest = (i == tailParts.Length - 1)
+                });
+            }
+
+            SeqIcons.ItemsSource = items;
+            SeqIcons.ToolTip = fullSeq;
+            _lastSeqTailShown = tailKey;
+        }
+
+        private void SetLastAviatorResultUI(string? result)
+        {
+            if (ImgKetQua != null)
+            {
+                ImgKetQua.Source = null;
+                ImgKetQua.Visibility = Visibility.Collapsed;
+            }
+            if (LblKetQua != null)
+            {
+                LblKetQua.Visibility = Visibility.Visible;
+                LblKetQua.Text = string.IsNullOrWhiteSpace(result) ? "-" : result.Trim();
+            }
+        }
 
         private void SetLastSideUI(string? result)
         {
