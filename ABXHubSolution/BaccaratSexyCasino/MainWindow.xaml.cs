@@ -8702,13 +8702,8 @@ try{
                     LblAmount.Text = "-";
             }
 
-            bool allowUnboundHistory = IsCurrentHostAllowUnboundHistory();
             if (!hasIssuedContext || isTableSwitchResetIssue)
             {
-                Log($"[BET][HIST][SKIP] reason={(isTableSwitchResetIssue ? "table-switch-reset" : "unbound-context")} | at={DateTime.Now:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqEvt={(string.IsNullOrWhiteSpace(issuedSeqEvent) ? "-" : issuedSeqEvent)}");
-                if (!allowUnboundHistory || isTableSwitchResetIssue)
-                    return;
-
                 if (issuedObservedRound <= 0)
                 {
                     issuedObservedRound = issuedSeqDisplay.Length > 0
@@ -8719,7 +8714,7 @@ try{
                 if (issuedTableId <= 0 && TryInferTableIdFromStatus(issuedSnap?.status, out var inferredTableId))
                     issuedTableId = inferredTableId;
 
-                Log($"[BET][HIST][BYPASS] reason=wrapper-allow-unbound | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqLen={issuedSeqDisplay.Length}");
+                Log($"[BET][HIST][INFO] reason={(isTableSwitchResetIssue ? "table-switch-reset-recorded" : "missing-context-recorded")} | action=record-pending | at={DateTime.Now:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqEvt={(string.IsNullOrWhiteSpace(issuedSeqEvent) ? "-" : issuedSeqEvent)} | seqLen={issuedSeqDisplay.Length}");
             }
 
             var row = new BetRow
@@ -8747,7 +8742,7 @@ try{
             Log($"[BET][HIST][PENDING] {row.At:HH:mm:ss} | {side} | {amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqLen={issuedSeqDisplay.Length} | seqVer={(issuedSeqVersion?.ToString() ?? "-")} | seqEvt={issuedSeqEvent} | seqSrc={(string.IsNullOrWhiteSpace(issuedSeqSource) ? "-" : issuedSeqSource)} | tail={issueTail} | acc={row.Account:#,0.##}");
             if (issuedTableId <= 0 || issuedGameShoe <= 0 || roundId <= 0)
             {
-                Log($"[BET][HIST][WARN] pending-unbound-context | at={row.At:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound}");
+                Log($"[BET][HIST][INFO] pending-recorded-without-context | at={row.At:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound}");
             }
 
             _betAll.Insert(0, row);
@@ -11218,23 +11213,8 @@ try{
                 {
                     foreach (var row in unboundRows)
                     {
-                        row.Result = "RESET-CONTEXT";
-                        row.WinLose = "Bỏ qua";
-                        row.Account = balanceAfter;
-                        Log($"[BET][HIST][DROP] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=context-unbound");
+                        Log($"[BET][HIST][INFO] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=keep-pending-without-context");
                     }
-
-                    foreach (var row in unboundRows)
-                        _pendingRows.Remove(row);
-
-                    if (_autoFollowNewest)
-                        ShowFirstPage();
-                    else
-                        RefreshCurrentPage();
-
-                    pendingSnapshot = _pendingRows.ToList();
-                    if (pendingSnapshot.Count == 0)
-                        return;
                 }
             }
             int contextSkipCount = pendingSnapshot.Count(row => !IsRowContextMatch(row));
