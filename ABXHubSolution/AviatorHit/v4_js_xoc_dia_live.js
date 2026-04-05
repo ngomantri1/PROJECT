@@ -58,12 +58,22 @@
         } catch (_) {}
     })();
 
-    if (!(window.cc && cc.director && cc.director.getScene)) {
-        return;
+    function sceneReady() {
+        try {
+            return !!(window.cc && cc.director && typeof cc.director.getScene === 'function');
+        } catch (_) {
+            return false;
+        }
+    }
+    function getV2Ctor() {
+        try {
+            return sceneReady() ? (cc.v2 || cc.Vec2) : null;
+        } catch (_) {
+            return null;
+        }
     }
 
     /* ---------------- utils ---------------- */
-    var V2 = (cc.v2 || cc.Vec2);
     var sleep = function (ms) {
         return new Promise(function (r) {
             setTimeout(r, ms);
@@ -163,6 +173,15 @@
     /* ---------------- scene helpers ---------------- */
     function wRect(node) {
         try {
+            var V2 = getV2Ctor();
+            if (!V2) {
+                return {
+                    x: 0,
+                    y: 0,
+                    w: 0,
+                    h: 0
+                };
+            }
             var p = node.convertToWorldSpaceAR(new V2(0, 0));
             var cs = node.getContentSize ? node.getContentSize() : (node._contentSize || {
                 width: 0,
@@ -200,6 +219,8 @@
         return a.slice(-limit).join('/');
     }
     function walkNodes(cb) {
+        if (!sceneReady())
+            return;
         var scene = cc.director.getScene();
         if (!scene)
             return;
@@ -996,7 +1017,7 @@
         '</div>' +
         '<div id="cwInfo" style="white-space:pre;color:#9f9;line-height:1.45"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
+    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -2438,6 +2459,67 @@
             return '';
         }
 
+        function readLiveOddSafe() {
+            try {
+                return (typeof readAviatorLiveOdd === 'function') ? readAviatorLiveOdd() : {
+                    text: '',
+                    value: null
+                };
+            } catch (_) {}
+            return {
+                text: '',
+                value: null
+            };
+        }
+
+        function readAviatorCountdownSafe() {
+            var TARGET = 'mainaviator/canvas/aviatorgame/nodebetting/lbtimecountdown';
+            try {
+                var hit = null;
+                walkNodes(function (n) {
+                    if (hit)
+                        return;
+                    var tail = String(tailOf(n, 16) || '').toLowerCase();
+                    if (!tail.endsWith(TARGET))
+                        return;
+                    var lb = getComp(n, cc.Label);
+                    var rt = getComp(n, cc.RichText);
+                    var text = '';
+                    if (lb && typeof lb.string !== 'undefined')
+                        text = String(lb.string || '').trim();
+                    if (!text && rt && typeof rt.string !== 'undefined')
+                        text = String(rt.string || '').trim();
+                    var value = /^\d+$/.test(text) ? parseInt(text, 10) : null;
+                    if (typeof value === 'number' && isFinite(value)) {
+                        if (value < 0)
+                            value = 0;
+                        if (value > 5)
+                            value = 5;
+                    } else {
+                        value = null;
+                    }
+                    hit = {
+                        text: text,
+                        value: value,
+                        pct: (typeof value === 'number' ? Math.max(0, Math.min(1, value / 5)) : null),
+                        tail: tail
+                    };
+                });
+                return hit || {
+                    text: '',
+                    value: null,
+                    pct: null,
+                    tail: ''
+                };
+            } catch (_) {}
+            return {
+                text: '',
+                value: null,
+                pct: null,
+                tail: ''
+            };
+        }
+
         // Bắt đầu bắn snapshot định kỳ {abx:'tick', prog, totals, seq, status}
         window.__cw_startPush = function (tickMs) {
             try {
@@ -2452,15 +2534,25 @@
                 }
                 _lastJson = '';
                 _pushTimer = setInterval(function () {
+                    if (!sceneReady())
+                        return;
                     var p = readProgressVal(); // lấy progress hiện tại
                     var st = (typeof statusByProg === 'function') // tính status theo rule mới
                      ? statusByProg(p) : '';
                     var profile = readProfileSafe();
+                    var liveOdd = readLiveOddSafe();
+                    var countdown = readAviatorCountdownSafe();
                     var snap = {
                         abx: 'tick',
                         prog: p,
                         totals: readTotalsSafe(),
                         seq: readSeqSafe(),
+                        liveOddText: String(liveOdd.text || ''),
+                        liveOddValue: (typeof liveOdd.value === 'number' ? liveOdd.value : null),
+                        countdownText: String(countdown.text || ''),
+                        countdownValue: (typeof countdown.value === 'number' ? countdown.value : null),
+                        countdownPct: (typeof countdown.pct === 'number' ? countdown.pct : null),
+                        cashedOut: !!window.__cw_lastCashoutOk,
                         username: String(profile.username || ''),
                         balanceText: String(profile.balanceText || ''),
                         status: String(st || ''), // <-- THÊM TRƯỜNG status
@@ -2568,6 +2660,490 @@
                     abx: 'bet_error',
                     side: side,
                     amount: amount,
+                    error: String(err && err.message || err),
+                    ts: Date.now()
+                });
+                return 'fail:' + String(err && err.message || err);
+            }
+        };
+
+        function oddOf(raw) {
+            if (raw == null)
+                return null;
+            var s = String(raw).trim();
+            if (!/^\d+(?:\.\d+)?x$/i.test(s))
+                return null;
+            s = s.replace(/x$/i, '');
+            var v = parseFloat(s);
+            return isFinite(v) ? v : null;
+        }
+
+        var AVIATOR_BET_BUTTON_TAIL = 'mainaviator/canvas/aviatorgame/boxbet_1/btndatcuoc';
+        var AVIATOR_BET_LABEL_TAIL = 'mainaviator/canvas/aviatorgame/boxbet_1/btndatcuoc/moneybetuser/lbmoneybetuser';
+        var AVIATOR_LIVE_ODD_TAIL = 'mainaviator/canvas/aviatorgame/lbhesocashout';
+
+        function readNodeLabelText(node) {
+            if (!node)
+                return '';
+            var lb = getComp(node, cc.Label);
+            var rt = getComp(node, cc.RichText);
+            var txt = '';
+            if (lb && typeof lb.string !== 'undefined')
+                txt = String(lb.string || '').trim();
+            if (!txt && rt && typeof rt.string !== 'undefined')
+                txt = String(rt.string || '').trim();
+            return txt;
+        }
+
+        function findNodeByTailEnd(targetTail) {
+            targetTail = String(targetTail || '').toLowerCase();
+            var hit = null;
+            walkNodes(function (n) {
+                if (hit)
+                    return;
+                var tail = String(tailOf(n, 18) || '').toLowerCase();
+                if (tail.endsWith(targetTail))
+                    hit = n;
+            });
+            return hit;
+        }
+
+        function parseMoneyAmount(raw) {
+            var s = String(raw || '').trim().replace(/[^\d]/g, '');
+            if (!s)
+                return 0;
+            var v = parseInt(s, 10);
+            return isFinite(v) ? v : 0;
+        }
+
+        function formatMoneyAmount(amount) {
+            var n = Math.max(0, Math.floor(Number(amount) || 0));
+            return n.toLocaleString('en-US');
+        }
+
+        function readAviatorBetAmount() {
+            var n = findNodeByTailEnd(AVIATOR_BET_LABEL_TAIL);
+            if (!n)
+                return {
+                    text: '',
+                    value: 0,
+                    tail: ''
+                };
+            var txt = readNodeLabelText(n);
+            return {
+                text: txt,
+                value: parseMoneyAmount(txt),
+                tail: tailOf(n, 18) || ''
+            };
+        }
+
+        function flattenTree(root) {
+            var rows = [];
+            (function dfs(n, depth) {
+                if (!n)
+                    return;
+                rows.push({
+                    node: n,
+                    depth: depth,
+                    name: String(n.name || ''),
+                    tail: tailOf(n, 18) || '',
+                    text: readNodeLabelText(n),
+                    hasLabel: !!getComp(n, cc.Label),
+                    hasRichText: !!getComp(n, cc.RichText),
+                    hasEditBox: !!getComp(n, cc.EditBox)
+                });
+                var kids = (n.children || n._children) || [];
+                for (var i = 0; i < kids.length; i++)
+                    dfs(kids[i], depth + 1);
+            })(root, 0);
+            return rows;
+        }
+
+        function findAviatorBetEditTarget(root) {
+            var all = flattenTree(root);
+            var exactEdit = all.find(function (x) {
+                return x.hasEditBox;
+            });
+            if (exactEdit)
+                return {
+                    kind: 'EditBox',
+                    row: exactEdit
+                };
+
+            var exactLabel = all.find(function (x) {
+                return String(x.tail || '').toLowerCase().endsWith(AVIATOR_BET_LABEL_TAIL);
+            });
+            if (exactLabel)
+                return {
+                    kind: exactLabel.hasRichText ? 'RichText' : 'Label',
+                    row: exactLabel
+                };
+
+            var moneyNode = all.find(function (x) {
+                return /moneybetuser|lbmoneybetuser/.test(String(x.tail || '').toLowerCase());
+            });
+            if (moneyNode)
+                return {
+                    kind: moneyNode.hasRichText ? 'RichText' : 'Label',
+                    row: moneyNode
+                };
+            return null;
+        }
+
+        function trySetAviatorEditBox(node, valueText) {
+            var eb = getComp(node, cc.EditBox);
+            if (!eb)
+                return false;
+
+            try {
+                eb.string = valueText;
+            } catch (_) {
+            }
+            try {
+                if (typeof eb._updateLabelStringStyle === 'function')
+                    eb._updateLabelStringStyle();
+            } catch (_) {
+            }
+            try {
+                if (typeof eb.editBoxTextChanged === 'function')
+                    eb.editBoxTextChanged(valueText);
+            } catch (_) {
+            }
+            try {
+                if (typeof eb.editBoxEditingDidEnded === 'function')
+                    eb.editBoxEditingDidEnded();
+            } catch (_) {
+            }
+            try {
+                if (eb.delegate && typeof eb.delegate.editBoxTextChanged === 'function')
+                    eb.delegate.editBoxTextChanged(eb, valueText);
+            } catch (_) {
+            }
+            try {
+                if (eb.delegate && typeof eb.delegate.editBoxEditingDidEnded === 'function')
+                    eb.delegate.editBoxEditingDidEnded(eb);
+            } catch (_) {
+            }
+            return true;
+        }
+
+        function trySetAviatorLabel(node, valueText) {
+            var lb = getComp(node, cc.Label);
+            if (lb && typeof lb.string !== 'undefined') {
+                lb.string = valueText;
+                return true;
+            }
+            var rt = getComp(node, cc.RichText);
+            if (rt && typeof rt.string !== 'undefined') {
+                rt.string = valueText;
+                return true;
+            }
+            return false;
+        }
+
+        function readAviatorLiveOdd() {
+            var exact = findNodeByTailEnd(AVIATOR_LIVE_ODD_TAIL);
+            if (exact) {
+                var exactTxt = readNodeLabelText(exact);
+                return {
+                    text: exactTxt,
+                    value: oddOf(exactTxt),
+                    tail: tailOf(exact, 18) || ''
+                };
+            }
+
+            var list = buildTextRects();
+            var best = null,
+            bestScore = -1;
+            for (var i = 0; i < list.length; i++) {
+                var it = list[i];
+                var val = oddOf(it.text);
+                if (val == null)
+                    continue;
+                var tl = String(it.tail || '').toLowerCase();
+                if (/historylsp|nodehistoryheso|jpbar|session|chat|broadcast|listuserbet|autobet|boxbet/.test(tl))
+                    continue;
+                var ar = Math.max(1, (it.w || 0) * (it.h || 0));
+                var centerBias = -dist2((it.x || 0) + (it.w || 0) * 0.5, (it.y || 0) + (it.h || 0) * 0.5, 960, 620) / 5000;
+                var score = ar + centerBias + (val > 1 ? 100 : 0);
+                if (score > bestScore) {
+                    best = it;
+                    bestScore = score;
+                }
+            }
+            if (!best)
+                return {
+                    text: '',
+                    value: null
+                };
+            return {
+                text: String(best.text || '').trim(),
+                value: oddOf(best.text),
+                tail: best.tail || ''
+            };
+        }
+
+        function findAviatorNode(patterns) {
+            var hit = null,
+            bestScore = -1;
+            walkNodes(function (n) {
+                var c = clickableOf(n, 8);
+                if (!c || !clickable(c))
+                    return;
+                var tail = String(tailOf(n, 16) || '').toLowerCase();
+                var txt = '';
+                var lb = getComp(n, cc.Label) || getComp(n, cc.RichText);
+                if (lb && typeof lb.string !== 'undefined')
+                    txt = String(lb.string || '');
+                var hay = (txt + ' ' + tail).toLowerCase();
+                for (var i = 0; i < patterns.length; i++) {
+                    if (!patterns[i].test(hay))
+                        continue;
+                    var r = wRect(n);
+                    var score = (r.y || 0) + ((r.w || 0) * (r.h || 0)) / 100;
+                    if (score > bestScore) {
+                        hit = c;
+                        bestScore = score;
+                    }
+                    break;
+                }
+            });
+            return hit;
+        }
+
+        function clickAviatorBetButton() {
+            var node = findNodeByTailEnd(AVIATOR_BET_BUTTON_TAIL);
+            if (!node) {
+                return {
+                    ok: false,
+                    message: 'fail:no-bet-button'
+                };
+            }
+            var ok = emitClick(node);
+            return {
+                ok: !!ok,
+                tail: tailOf(node, 18) || '',
+                name: String(node.name || '')
+            };
+        }
+
+        function stopAviatorAutoCashoutWatch(reason) {
+            try {
+                var st = window.__cw_autoCashoutState;
+                if (!st)
+                    return;
+                st.active = false;
+                st.stopReason = reason || st.stopReason || '';
+            } catch (_) {
+            }
+        }
+
+        function startAviatorAutoCashoutWatch(target) {
+            stopAviatorAutoCashoutWatch('restart');
+
+            var state = {
+                active: true,
+                target: Number(target) || 1.01,
+                requested: false,
+                accepted: false,
+                startedAt: Date.now(),
+                lastLive: null,
+                stopReason: '',
+                token: Math.random().toString(36).slice(2)
+            };
+            window.__cw_autoCashoutState = state;
+
+            safePost({
+                abx: 'cashout_watch_start',
+                target: state.target,
+                ts: Date.now()
+            });
+
+            (async function watchLoop(myState) {
+                while (myState.active && window.__cw_autoCashoutState === myState) {
+                    try {
+                        var liveInfo = readAviatorLiveOdd();
+                        var live = liveInfo && typeof liveInfo.value === 'number' ? liveInfo.value : null;
+                        if (live != null)
+                            myState.lastLive = live;
+
+                        if (!myState.requested && live != null && live >= myState.target) {
+                            myState.requested = true;
+                            safePost({
+                                abx: 'cashout_trigger',
+                                target: myState.target,
+                                live: live,
+                                ts: Date.now()
+                            });
+
+                            var stopRes = clickAviatorBetButton();
+                            myState.accepted = !!(stopRes && stopRes.ok);
+                            myState.stopReason = myState.accepted ? 'target-hit' : 'click-failed';
+                            window.__cw_lastCashoutOk = myState.accepted;
+
+                            safePost({
+                                abx: myState.accepted ? 'cashout_click_ok' : 'cashout_click_fail',
+                                target: myState.target,
+                                live: live,
+                                tail: stopRes && stopRes.tail || '',
+                                ts: Date.now()
+                            });
+
+                            myState.active = false;
+                            break;
+                        }
+
+                        if (Date.now() - myState.startedAt > 45000) {
+                            myState.stopReason = 'timeout';
+                            myState.active = false;
+                            break;
+                        }
+                    } catch (err) {
+                        myState.stopReason = 'err:' + String(err && err.message || err);
+                        myState.active = false;
+                        break;
+                    }
+
+                    await sleep(40);
+                }
+
+                if (window.__cw_autoCashoutState === myState) {
+                    safePost({
+                        abx: 'cashout_watch_stop',
+                        target: myState.target,
+                        live: myState.lastLive,
+                        accepted: !!myState.accepted,
+                        reason: myState.stopReason || '',
+                        ts: Date.now()
+                    });
+                }
+            })(state);
+
+            return state;
+        }
+
+        async function setAviatorAmount(amount) {
+            var amt = Math.max(5000, Math.floor(Number(amount) || 0));
+            if (amt % 5000 !== 0)
+                return {
+                    ok: false,
+                    message: 'fail:invalid-amount',
+                    amount: amt
+                };
+
+            var root = findNodeByTailEnd(AVIATOR_BET_BUTTON_TAIL);
+            if (!root)
+                return {
+                    ok: false,
+                    message: 'fail:no-bet-root'
+                };
+
+            var targetNode = findAviatorBetEditTarget(root);
+            if (!targetNode)
+                return {
+                    ok: false,
+                    message: 'fail:no-edit-target'
+                };
+
+            var valueText = formatMoneyAmount(amt);
+            var before = readAviatorBetAmount();
+            var changed = targetNode.kind === 'EditBox'
+                ? trySetAviatorEditBox(targetNode.row.node, valueText)
+                : trySetAviatorLabel(targetNode.row.node, valueText);
+
+            await sleep(120);
+
+            var after = readAviatorBetAmount();
+            var ok = !!changed && !!after && after.value === amt;
+            if (ok)
+                window.__cw_lastAmount = amt;
+
+            return {
+                ok: ok,
+                mode: targetNode.kind,
+                amount: amt,
+                valueText: valueText,
+                before: before,
+                after: after,
+                editTail: targetNode.row.tail
+            };
+        }
+
+        window.__cw_cashout = async function () {
+            try {
+                stopAviatorAutoCashoutWatch('manual-cashout');
+                var st = window.__cw_autoCashoutState;
+                if (st)
+                    st.requested = true;
+                var stopRes = clickAviatorBetButton();
+                if (!stopRes.ok)
+                    return stopRes.message || 'fail:no-cashout-button';
+                await sleep(60);
+                window.__cw_lastCashoutOk = true;
+                if (st) {
+                    st.accepted = true;
+                    st.stopReason = 'manual-cashout';
+                }
+                safePost({
+                    abx: 'cashout',
+                    target: window.__cw_lastTarget || 0,
+                    tail: stopRes.tail || '',
+                    ts: Date.now()
+                });
+                return 'ok';
+            } catch (err) {
+                return 'fail:' + String(err && err.message || err);
+            }
+        };
+
+        window.__cw_bet = async function (a, b) {
+            try {
+                if (typeof a === 'string') {
+                    var side = normalizeSide(a);
+                    var amtLegacy = Math.max(0, Math.floor(Number(b) || 0));
+                    BET_QUEUE.push({
+                        side: side,
+                        amt: amtLegacy,
+                        resolve: null
+                    });
+                    processBetQueue();
+                    return 'ok';
+                }
+
+                var amt = Math.max(0, Math.floor(Number(a) || 0));
+                var target = Number(b);
+                if (!isFinite(target) || target < 1)
+                    target = 1.01;
+
+                stopAviatorAutoCashoutWatch('new-bet');
+                window.__cw_lastTarget = target;
+                window.__cw_lastCashoutOk = false;
+
+                var setRes = await setAviatorAmount(amt);
+                if (!setRes || setRes.ok !== true)
+                    return (setRes && setRes.message) ? String(setRes.message) : 'fail:set-amount';
+
+                var btnRes = clickAviatorBetButton();
+                if (!btnRes.ok)
+                    return btnRes.message || 'fail:no-bet-button';
+                await sleep(100);
+
+                startAviatorAutoCashoutWatch(target);
+
+                safePost({
+                    abx: 'bet',
+                    side: 'AUTO',
+                    amount: amt,
+                    target: target,
+                    tail: btnRes.tail || '',
+                    ts: Date.now()
+                });
+                return 'ok';
+            } catch (err) {
+                safePost({
+                    abx: 'bet_error',
+                    side: 'AUTO',
+                    amount: Number(a) || 0,
                     error: String(err && err.message || err),
                     ts: Date.now()
                 });

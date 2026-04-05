@@ -18,12 +18,14 @@ namespace AviatorHit.Tasks
 
         // Dãy tiền 1 chiều (giữ lại để tương thích)
         public long[] StakeSeq { get; init; }
+        public AviatorStakeEntry[] StakeEntries { get; init; } = Array.Empty<AviatorStakeEntry>();
 
         // ====== NEW: dãy tiền nhiều chuỗi (mỗi dòng 1 chuỗi) ======
         // Ví dụ:
         // [ [1000,2000,4000,8000],
         //   [2000,4000,8000,16000] ]
         public long[][] StakeChains { get; init; } = Array.Empty<long[]>();
+        public AviatorStakeEntry[][] StakeEntryChains { get; init; } = Array.Empty<AviatorStakeEntry[]>();
 
         // Tổng tiền của từng chuỗi, dùng để so điều kiện "chuỗi sau thắng >= tổng chuỗi trước thì lùi về"
         public long[] StakeChainTotals { get; init; } = Array.Empty<long>();
@@ -63,8 +65,10 @@ namespace AviatorHit.Tasks
         // --- UI updaters (được gán từ MainWindow) ---
         public Action<string>? UiSetSide;     // "CHAN"/"LE"
         public Action<double>? UiSetStake;    // tiền đang đánh
+        public Action<double>? UiSetTarget;   // hệ số auto-cashout
         public Action<double>? UiAddWin;      // cộng/trừ tiền thắng lũy kế
         public Action<bool>? UiWinLoss;       // true = win, false = loss
+        public Action<string, bool>? UiFinalizeAviatorBet; // (resultText, win)
         public Action<int, int>? UiSetChainLevel; // (chainIndex, levelIndex) cho MultiChain
     }
 }

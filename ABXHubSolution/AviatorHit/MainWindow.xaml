@@ -585,24 +585,9 @@
                                             Margin="{StaticResource ValueFieldMargin}"
                                             Padding="10,8"
                                             HorizontalAlignment="Stretch"
-                                            SelectedIndex="4">
-                                            <ComboBoxItem Content="1) Chuỗi cầu C/L (chẵn/lẻ tự nhập)" />
-                                            <ComboBoxItem Content="2) Thế cầu C/L (chẵn/lẻ tự nhập)" />
-                                            <ComboBoxItem Content="3) Chuỗi cầu I/N (Ít/Nhiều, tự nhập)" />
-                                            <ComboBoxItem Content="4) Thế cầu I/N (Ít/Nhiều, tự nhập)" />
-                                            <ComboBoxItem Content="5) Bám cầu trước (thông minh)" />
-                                            <ComboBoxItem Content="6) Cửa đặt ngẫu nhiên" />
-                                            <ComboBoxItem Content="7) Bám cầu C/L theo thống kê AI" />
-                                            <ComboBoxItem Content="8) Xu hướng chuyển trạng thái" />
-                                            <ComboBoxItem Content="9) Run-length (dài-chuỗi)" />
-                                            <ComboBoxItem Content="10) Chuyên gia bỏ phiếu" />
-                                            <ComboBoxItem Content="11) Lịch chẻ 10 tay" />
-                                            <ComboBoxItem Content="12) KNN chuỗi con" />
-                                            <ComboBoxItem Content="13) Lịch hai lớp" />
-                                            <ComboBoxItem Content="14) AI học tại chỗ (n-gram)" />
-                                            <ComboBoxItem Content="15) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime)" />
-                                            <ComboBoxItem Content="16) Top10 tích lũy (khởi từ 50 C/L)" />
-                                            <ComboBoxItem Content="17) Đánh các cửa ăn nổ hũ" />
+                                            IsEnabled="False"
+                                            SelectedIndex="0">
+                                            <ComboBoxItem Content="1) Chạy ăn hũ" />
                                         </ComboBox>
                                     </Grid>
 
@@ -1155,6 +1140,7 @@
                                                         <TextBlock
                                                             x:Name="LblKetQua"
                                                             Style="{StaticResource ValueText}"
+                                                            FontWeight="Bold"
                                                             Text="-" />
                                                     </Grid>
                                                 </Border>
@@ -1368,48 +1354,40 @@
                                             Grid.Row="5"
                                             Grid.Column="1"
                                             Style="{StaticResource GhostCell}">
-                                            <ItemsControl x:Name="SeqIcons" VerticalAlignment="Center">
+                                            <ItemsControl x:Name="RecentSeqItems">
                                                 <ItemsControl.ItemsPanel>
                                                     <ItemsPanelTemplate>
                                                         <WrapPanel Orientation="Horizontal" />
                                                     </ItemsPanelTemplate>
                                                 </ItemsControl.ItemsPanel>
-                                                <ItemsControl.ItemContainerStyle>
-                                                    <Style TargetType="ContentPresenter">
-                                                        <Setter Property="Margin" Value="1,0" />
-                                                    </Style>
-                                                </ItemsControl.ItemContainerStyle>
                                                 <ItemsControl.ItemTemplate>
-                                                    <DataTemplate DataType="{x:Type local:SeqIconVM}">
+                                                    <DataTemplate>
                                                         <Border
-                                                            x:Name="Chip"
-                                                            MinWidth="44"
-                                                            Padding="6,2"
+                                                            Margin="0,0,2,0"
+                                                            Padding="7,2"
                                                             Background="{Binding Text, Converter={StaticResource AviatorOddBg}}"
-                                                            BorderBrush="#D6B86A"
+                                                            BorderBrush="#E4E6EB"
                                                             BorderThickness="1"
-                                                            CornerRadius="8"
-                                                            Opacity="1">
+                                                            CornerRadius="10">
                                                             <TextBlock
-                                                                HorizontalAlignment="Center"
-                                                                VerticalAlignment="Center"
-                                                                Foreground="{Binding Text, Converter={StaticResource AviatorOddFg}}"
+                                                                FontSize="13"
                                                                 FontWeight="SemiBold"
+                                                                Foreground="{Binding Text, Converter={StaticResource AviatorOddFg}}"
                                                                 Text="{Binding Text}" />
                                                         </Border>
                                                         <DataTemplate.Triggers>
                                                             <DataTrigger Binding="{Binding IsLatest}" Value="True">
                                                                 <DataTrigger.EnterActions>
-                                                                    <BeginStoryboard x:Name="FadeSink">
+                                                                    <BeginStoryboard x:Name="RecentSeqBlinkSB">
                                                                         <Storyboard RepeatBehavior="Forever">
-                                                                            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="Chip" Storyboard.TargetProperty="Opacity">
+                                                                            <DoubleAnimationUsingKeyFrames Storyboard.TargetProperty="Opacity">
                                                                                 <EasingDoubleKeyFrame KeyTime="0:0:0.0" Value="1.0" />
                                                                                 <EasingDoubleKeyFrame KeyTime="0:0:1.5" Value="0.2">
                                                                                     <EasingDoubleKeyFrame.EasingFunction>
                                                                                         <SineEase EasingMode="EaseIn" />
                                                                                     </EasingDoubleKeyFrame.EasingFunction>
                                                                                 </EasingDoubleKeyFrame>
-                                                                                <DiscreteDoubleKeyFrame KeyTime="0:0:2" Value="0.2" />
+                                                                                <DiscreteDoubleKeyFrame KeyTime="0:0:2.0" Value="0.2" />
                                                                                 <EasingDoubleKeyFrame KeyTime="0:0:4.0" Value="1.0">
                                                                                     <EasingDoubleKeyFrame.EasingFunction>
                                                                                         <SineEase EasingMode="EaseOut" />
@@ -1420,7 +1398,7 @@
                                                                     </BeginStoryboard>
                                                                 </DataTrigger.EnterActions>
                                                                 <DataTrigger.ExitActions>
-                                                                    <StopStoryboard BeginStoryboardName="FadeSink" />
+                                                                    <StopStoryboard BeginStoryboardName="RecentSeqBlinkSB" />
                                                                 </DataTrigger.ExitActions>
                                                             </DataTrigger>
                                                         </DataTemplate.Triggers>

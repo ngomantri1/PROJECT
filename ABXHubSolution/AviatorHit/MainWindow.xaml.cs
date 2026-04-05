@@ -314,6 +314,7 @@ namespace AviatorHit
         private bool _cdpNetworkOn = false;
         private readonly ConcurrentDictionary<string, string> _wsUrlByRequestId = new();
         private readonly string[] _pktInterestingHints = new[] { "wss://", "websocket", "hytsocesk", "xoc", "live", "socket" };
+        private readonly ObservableCollection<SeqIconVM> _recentSeqItems = new();
 
         // ==== Auto-login watcher ====
         private CancellationTokenSource? _autoLoginWatchCts;
@@ -335,7 +336,9 @@ namespace AviatorHit
 
         private DecisionState _dec = new();
         private long[] _stakeSeq = Array.Empty<long>();
+        private AviatorHit.Tasks.AviatorStakeEntry[] _stakeEntries = Array.Empty<AviatorHit.Tasks.AviatorStakeEntry>();
         private System.Collections.Generic.List<long[]> _stakeChains = new();
+        private System.Collections.Generic.List<AviatorHit.Tasks.AviatorStakeEntry[]> _stakeEntryChains = new();
         private long[] _stakeChainTotals = Array.Empty<long>();
         // Chỉ dùng cho hiển thị LblLevel: vị trí hiện tại trong _stakeSeq
         private int _stakeLevelIndexForUi = -1;
@@ -498,24 +501,21 @@ Ví dụ không hợp lệ:
 
 
         const string TIP_STAKE_CSV =
-         @"Chuỗi TIỀN (StakeCsv)
-• Có thể nhập 1 chuỗi hoặc NHIỀU chuỗi tiền.
-• Nếu nhập NHIỀU chuỗi: MỖI CHUỖI 1 DÒNG. Ví dụ:
-  1000-2000-4000-8000
-  2000-4000-8000-16000
-  4000-8000-16000-32000
-• Nếu chỉ nhập 1 chuỗi thì dùng như cũ: 1000,1000,2000,3000,5000
-• Phân tách chấp nhận: dấu phẩy ',', dấu gạch '-', dấu chấm phẩy ';' hoặc khoảng trắng.
-• Đơn vị: VNĐ (số nguyên). Cho phép trùng giá trị.
-• Hết chuỗi sẽ quay lại đầu (nếu chiến lược dùng lặp).
-• Dùng cho quản lý vốn ""5. Đa tầng chuỗi tiền"": thua hết 1 dòng → sang dòng kế; chuỗi sau thắng đủ tổng chuỗi trước → quay về chuỗi trước.
+         @"Chuỗi TIỀN & HỆ SỐ DỪNG
+• Mỗi entry có dạng: tiền:hệ_số
+• Ví dụ 1 dòng:
+  5000:1.2-10000:2.0-15000:4.5
+• Nếu nhập nhiều chuỗi thì MỖI CHUỖI 1 DÒNG.
+• Khi quản lý vốn cần chuỗi tiền thuần, hệ thống sẽ tự lọc thành:
+  5000-10000-15000
+• Thắng nếu hệ số kết quả >= hệ số của entry đang đánh.
+• Thua nếu hệ số kết quả < hệ số của entry đang đánh.
+• Có thể dùng '-', ',', ';' để phân tách các entry.
+• Đơn vị tiền: VNĐ nguyên. Hệ số dùng dấu chấm thập phân.
 • Ví dụ hợp lệ:
-  1000,1000,2000,3000,5000
-  1000-1000-2000-3000-5000
-  1000 1000 2000 3000 5000
-  1000-2000-4000-8000
-  2000-4000-8000-16000
-• Ví dụ sai: 1k, 2k, 3k (không dùng chữ k).";
+  5000:1.2-10000:2.0-15000:4.5
+  5000:1.1
+  5000:1.2-5000:1.5-10000:2.0";
 
 
         const string TIP_CUT_PROFIT =
@@ -567,7 +567,7 @@ Ví dụ không hợp lệ:
         {
             public string Url { get; set; } = "";
             [Obsolete] public string Username { get; set; } = "";
-            public string StakeCsv { get; set; } = "1000-3000-7000-15000-33000-69000-142000-291000-595000-1215000";
+            public string StakeCsv { get; set; } = "5000:1.20-10000:2.00-15000:4.50";
             public int DecisionSeconds { get; set; } = 10;
 
             // Remember creds (DPAPI)
@@ -580,7 +580,7 @@ Ví dụ không hợp lệ:
             public string LastHomeUsername { get; set; } = "";
             public string TrialUntil { get; set; } = "";
             public string TrialSessionKey { get; set; } = "";
-            public int BetStrategyIndex { get; set; } = 4; // mặc định "5. Theo cầu trước thông minh"
+            public int BetStrategyIndex { get; set; } = 0; // luôn cố định "1. Chạy ăn hũ"
             public string BetSeq { get; set; } = "";       // giá trị ô "CHUỖI CẦU"
             public string BetPatterns { get; set; } = "";  // giá trị ô "CÁC THẾ CẦU"
             public string MoneyStrategy { get; set; } = "IncreaseWhenLose";//IncreaseWhenLose
@@ -671,6 +671,7 @@ Ví dụ không hợp lệ:
         private readonly Dictionary<char, ImageSource> _seqIconMap = new();
 
         private string _lastSeqTailShown = "";
+        private string _lastSeqDebugLogged = "";
         // Tổng tiền thắng lũy kế của phiên hiện tại
         private double _winTotal = 0;
         private CoreWebView2Environment? _webEnv;
@@ -849,6 +850,7 @@ Ví dụ không hợp lệ:
             // đảm bảo về Home UI lúc khởi động
             SetModeUi(false);
             BetGrid.ItemsSource = _betPage;
+            if (RecentSeqItems != null) RecentSeqItems.ItemsSource = _recentSeqItems;
             // gọi async sau khi cửa sổ đã load
             this.Loaded += MainWindow_Loaded;
 
@@ -1136,15 +1138,16 @@ Ví dụ không hợp lệ:
                 if (TxtStakeCsv != null)
                 {
                     TxtStakeCsv.Text = _cfg.StakeCsv;
-                    RebuildStakeSeq(_cfg.StakeCsv);
+                    RebuildAviatorStakeSeq(_cfg.StakeCsv);
                     Log($"[StakeCsv] loaded: {_cfg.StakeCsv} -> {_stakeSeq.Length} mức");
 
                 }
                 if (CmbBetStrategy != null)
-                    CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 16) ? _cfg.BetStrategyIndex : 16;
+                    CmbBetStrategy.SelectedIndex = 0;
                 SyncStrategyFieldsToUI();
                 UpdateTooltips();
                 UpdateBetStrategyUi();
+                ForceAviatorModeUi();
 
 
                 if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString();
@@ -1198,9 +1201,9 @@ Ví dụ không hợp lệ:
             try
             {
                 _cfg.Url = T(TxtUrl);
-                _cfg.StakeCsv = T(TxtStakeCsv, "1000,2000,4000,8000,16000");
+                _cfg.StakeCsv = T(TxtStakeCsv, "5000:1.20-10000:2.00-15000:4.50");
                 _cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
-                _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? _cfg.BetStrategyIndex;
+                _cfg.BetStrategyIndex = 0;
                 _cfg.BetSeq = T(TxtChuoiCau, _cfg.BetSeq);
                 _cfg.BetPatterns = T(TxtTheCau, _cfg.BetPatterns);
                 _cfg.SideRateText = T(TxtSideRatio, _cfg.SideRateText);
@@ -1484,10 +1487,7 @@ Ví dụ không hợp lệ:
                                                     long? accNow2 = snap?.totals?.A;
                                                     if (_pendingRows.Count > 0 && accNow2.HasValue)
                                                     {
-                                                        if (_activeTask is not AviatorHit.Tasks.JackpotMultiSideTask)
-                                                        {
-                                                            FinalizeLastBet(kqStr, accNow2.Value);
-                                                        }
+                                                        FinalizeLastBet(kqStr, accNow2.Value);
                                                     }
 
                                                     _lockMajorMinorUpdates = false;
@@ -1519,6 +1519,8 @@ Ví dụ không hợp lệ:
 
                                         // --- NEW: lấy status từ JSON (JS đã bơm vào tick) ---
                                         string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
+                                        if (snap?.countdownValue.HasValue == true)
+                                            statusUi = snap.countdownValue.Value > 0 ? "Bắt đầu đặt cược" : "Chờ kết quả";
 
                                         // --- Cập nhật UI ---
                                         _ = Dispatcher.BeginInvoke(new Action(() =>
@@ -1526,15 +1528,26 @@ Ví dụ không hợp lệ:
                                             try
                                             {
                                                 // Progress / % thời gian
-                                                if (snap.prog.HasValue)
+                                                double? timePct = snap.countdownPct ?? snap.prog;
+                                                if (timePct.HasValue)
                                                 {
-                                                    var p = Math.Max(0, Math.Min(1, snap.prog.Value));
+                                                    var p = Math.Max(0, Math.Min(1, timePct.Value));
                                                     if (PrgBet != null) PrgBet.Value = p;
-                                                    if (LblProg != null) LblProg.Text = $"{(int)Math.Round(p * 100)}%";
+                                                    if (Fill != null) Fill.Background = GetCountdownFillBrush(p);
+                                                    if (LblProg != null)
+                                                    {
+                                                        if (snap.countdownValue.HasValue)
+                                                            LblProg.Text = snap.countdownValue.Value.ToString(CultureInfo.InvariantCulture);
+                                                        else if (!string.IsNullOrWhiteSpace(snap.countdownText))
+                                                            LblProg.Text = snap.countdownText!.Trim();
+                                                        else
+                                                            LblProg.Text = $"{(int)Math.Round(p * 100)}%";
+                                                    }
                                                 }
                                                 else
                                                 {
                                                     if (PrgBet != null) PrgBet.Value = 0;
+                                                    if (Fill != null) Fill.Background = GetCountdownFillBrush(0);
                                                     if (LblProg != null) LblProg.Text = "-";
                                                 }
 
@@ -1584,6 +1597,12 @@ Ví dụ không hợp lệ:
                                 if (abxStr == "game_hint")
                                 {
                                     _lastGameTickUtc = DateTime.UtcNow; // synthetic tick
+                                    try
+                                    {
+                                        _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
+                                        Log("[CW] ensure push from game_hint");
+                                    }
+                                    catch { }
                                     return;
                                 }
 
@@ -1636,6 +1655,24 @@ Ví dụ không hợp lệ:
                                     long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
                                     string error = root.TryGetProperty("error", out var ee) ? (ee.GetString() ?? "") : "";
                                     Log($"[BET][ERR] {side} {amount} :: {error}");
+                                    return;
+                                }
+
+                                if (abxStr == "cashout_watch_start" || abxStr == "cashout_trigger" ||
+                                    abxStr == "cashout_click_ok" || abxStr == "cashout_click_fail" ||
+                                    abxStr == "cashout_watch_stop" || abxStr == "cashout")
+                                {
+                                    double target = root.TryGetProperty("target", out var te) && te.TryGetDouble(out var tv) ? tv : 0;
+                                    double live = root.TryGetProperty("live", out var le) && le.TryGetDouble(out var lv) ? lv : 0;
+                                    string reason = root.TryGetProperty("reason", out var re) ? (re.GetString() ?? "") : "";
+                                    bool accepted = root.TryGetProperty("accepted", out var ae2) &&
+                                        (ae2.ValueKind == JsonValueKind.True || ae2.ValueKind == JsonValueKind.False) ? ae2.GetBoolean() : false;
+                                    string extra = "";
+                                    if (target > 0) extra += $" target={target:0.00}x";
+                                    if (live > 0) extra += $" live={live:0.00}x";
+                                    if (!string.IsNullOrWhiteSpace(reason)) extra += $" reason={reason}";
+                                    if (abxStr == "cashout_watch_stop") extra += $" accepted={accepted}";
+                                    Log($"[JS-{abxStr.ToUpperInvariant()}]{extra}");
                                     return;
                                 }
 
@@ -2237,6 +2274,7 @@ Ví dụ không hợp lệ:
                 // NEW: đồng bộ nội dung theo chiến lược đang chọn + gắn tooltip ngay khi mở app
                 // (các helper đã gửi: SyncStrategyFieldsToUI(), UpdateTooltips())
                 SyncStrategyFieldsToUI();     // đổ đúng Chuỗi/Thế theo chiến lược 1/2/3/4
+                ForceAviatorModeUi();
                 UpdateTooltips();             // gắn TIP_* cho Chuỗi/Thế + StakeCsv/Cắt lãi/Cắt lỗ/% thời gian
 
                 // NEW: nạp chuỗi tiền theo “Quản lý vốn” hiện tại để UI hiển thị đúng ngay từ đầu
@@ -3902,15 +3940,203 @@ Ví dụ không hợp lệ:
 
 
 
+        private static bool TryParseStakeEntryToken(string token, out AviatorHit.Tasks.AviatorStakeEntry entry, out string error)
+        {
+            entry = new AviatorHit.Tasks.AviatorStakeEntry();
+            error = "";
+
+            var s = (token ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(s))
+            {
+                error = "Entry trống.";
+                return false;
+            }
+
+            var parts = s.Split(':', StringSplitOptions.TrimEntries);
+            if (parts.Length != 2)
+            {
+                error = $"Entry '{s}' phải có dạng tiền:hệ_số.";
+                return false;
+            }
+
+            if (!long.TryParse(parts[0].Replace(",", "").Trim(), out var stake) || stake <= 0)
+            {
+                error = $"Tiền cược không hợp lệ: '{parts[0]}'.";
+                return false;
+            }
+
+            if (!double.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var target) || target < 1.0)
+            {
+                error = $"Hệ số dừng không hợp lệ: '{parts[1]}'.";
+                return false;
+            }
+
+            entry = new AviatorHit.Tasks.AviatorStakeEntry
+            {
+                Stake = stake,
+                Target = target,
+                Raw = s
+            };
+            return true;
+        }
+
+        private bool IsAviatorStrategySelected()
+        {
+            try
+            {
+                if (CmbBetStrategy == null) return false;
+                if (CmbBetStrategy.Items.Count == 1) return true;
+
+                var item = CmbBetStrategy.SelectedItem as ComboBoxItem;
+                var content = (item?.Content?.ToString() ?? "").Trim();
+                return content.IndexOf("Chạy ăn hũ", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool ValidateAviatorStakeCsv(string? csv, out string error)
+        {
+            error = "";
+
+            var input = (csv ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                error = "Chuỗi tiền không được để trống. Ví dụ: 5000:1.2-10000:2.0-15000:4.5";
+                return false;
+            }
+
+            var lines = input.Replace("\r", "").Split('\n');
+            var validCount = 0;
+
+            foreach (var rawLine in lines)
+            {
+                var line = (rawLine ?? "").Trim();
+                if (line.Length == 0) continue;
+
+                var parts = System.Text.RegularExpressions.Regex.Split(line, @"\s*[-,;]+\s*")
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .ToArray();
+
+                foreach (var p in parts)
+                {
+                    var token = (p ?? "").Trim();
+                    if (token.Length == 0) continue;
+
+                    if (TryParseStakeEntryToken(token, out _, out var tokenErr))
+                    {
+                        validCount++;
+                        continue;
+                    }
+
+                    if (long.TryParse(token.Replace(",", ""), out var legacyStake) && legacyStake > 0)
+                    {
+                        validCount++;
+                        continue;
+                    }
+
+                    error = tokenErr;
+                    return false;
+                }
+            }
+
+            if (validCount <= 0)
+            {
+                error = "Chuỗi tiền không hợp lệ. Ví dụ: 5000:1.2-10000:2.0-15000:4.5";
+                return false;
+            }
+
+            return true;
+        }
+
+        private void RebuildAviatorStakeSeq(string? csv)
+        {
+            _stakeChains.Clear();
+            _stakeEntryChains.Clear();
+
+            csv ??= "";
+            var lines = csv.Replace("\r", "").Split('\n');
+
+            var flatAmounts = new List<long>();
+            var flatEntries = new List<AviatorHit.Tasks.AviatorStakeEntry>();
+            string? parseError = null;
+
+            foreach (var rawLine in lines)
+            {
+                var line = (rawLine ?? "").Trim();
+                if (line.Length == 0) continue;
+
+                var parts = System.Text.RegularExpressions.Regex.Split(line, @"\s*[-,;]+\s*")
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .ToArray();
+
+                var oneAmounts = new List<long>();
+                var oneEntries = new List<AviatorHit.Tasks.AviatorStakeEntry>();
+
+                foreach (var p in parts)
+                {
+                    if (!TryParseStakeEntryToken(p, out var entry, out var err))
+                    {
+                        var token = (p ?? "").Trim();
+                        if (long.TryParse(token.Replace(",", ""), out var legacyStake) && legacyStake > 0)
+                        {
+                            entry = new AviatorHit.Tasks.AviatorStakeEntry
+                            {
+                                Stake = legacyStake,
+                                Target = 1.20,
+                                Raw = token + ":1.20"
+                            };
+                        }
+                        else
+                        {
+                            parseError = err;
+                            continue;
+                        }
+                    }
+
+                    oneEntries.Add(entry);
+                    oneAmounts.Add(entry.Stake);
+                }
+
+                if (oneAmounts.Count > 0)
+                {
+                    _stakeChains.Add(oneAmounts.ToArray());
+                    _stakeEntryChains.Add(oneEntries.ToArray());
+                    flatAmounts.AddRange(oneAmounts);
+                    flatEntries.AddRange(oneEntries);
+                }
+            }
+
+            if (flatAmounts.Count == 0)
+            {
+                var fallback = new AviatorHit.Tasks.AviatorStakeEntry { Stake = 5000, Target = 1.20, Raw = "5000:1.20" };
+                flatAmounts.Add(fallback.Stake);
+                flatEntries.Add(fallback);
+                _stakeChains.Add(new[] { fallback.Stake });
+                _stakeEntryChains.Add(new[] { fallback });
+            }
+
+            _stakeSeq = flatAmounts.ToArray();
+            _stakeEntries = flatEntries.ToArray();
+
+            _stakeChainTotals = _stakeChains
+                .Select(ch => ch.Aggregate(0L, (s, x) => s + x))
+                .ToArray();
+
+            ShowSeqError(parseError);
+        }
+
         private async void TxtStakeCsv_TextChanged(object sender, TextChangedEventArgs e)
         {
             if (!_uiReady) return;
 
             _stakeCts = await DebounceAsync(_stakeCts, 150, async () =>
             {
-                var csv = (TxtStakeCsv?.Text ?? "1000,2000,4000,8000,16000").Trim();
+                var csv = (TxtStakeCsv?.Text ?? "5000:1.20-10000:2.00-15000:4.50").Trim();
 
-                RebuildStakeSeq(csv);
+                RebuildAviatorStakeSeq(csv);
 
                 var id = GetMoneyStrategyFromUI();
                 _cfg.StakeCsv = csv; // vẫn lưu bản hiện hành
@@ -3973,8 +4199,30 @@ Ví dụ không hợp lệ:
             _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? 4;
             await SaveConfigAsync();
         }
-
-
+        private void ForceAviatorModeUi()
+        {
+            try
+            {
+                if (CmbBetStrategy != null)
+                {
+                    CmbBetStrategy.SelectedIndex = 0;
+                    CmbBetStrategy.IsEnabled = false;
+                }
+                if (RowChuoiCau != null)
+                    RowChuoiCau.Visibility = Visibility.Collapsed;
+                if (RowTheCau != null)
+                    RowTheCau.Visibility = Visibility.Collapsed;
+                if (RowSideRatio != null)
+                    RowSideRatio.Visibility = Visibility.Collapsed;
+                if (TxtChuoiCau != null && string.IsNullOrWhiteSpace(TxtChuoiCau.Text))
+                    TxtChuoiCau.Text = "C";
+                if (TxtTheCau != null && string.IsNullOrWhiteSpace(TxtTheCau.Text))
+                    TxtTheCau.Text = "C-L";
+                if (_cfg != null)
+                    _cfg.BetStrategyIndex = 0;
+            }
+            catch { }
+        }
 
         private GameContext BuildContext(bool useRawWinAmount = false)
         {
@@ -3990,7 +4238,9 @@ Ví dụ không hợp lệ:
                 Log = (s) => Log(s),
 
                 StakeSeq = _stakeSeq,
+                StakeEntries = _stakeEntries,
                 StakeChains = _stakeChains.Select(a => a.ToArray()).ToArray(),
+                StakeEntryChains = _stakeEntryChains.Select(a => a.ToArray()).ToArray(),
                 StakeChainTotals = _stakeChainTotals,
 
                 DecisionPercent = _decisionPercent,
@@ -4048,6 +4298,19 @@ Ví dụ không hợp lệ:
                         }
                     }
                 }),
+                UiSetTarget = target => Dispatcher.Invoke(() =>
+                {
+                    if (LblSide != null)
+                    {
+                        LblSide.Visibility = Visibility.Visible;
+                        LblSide.Text = $"AUTO {target:0.00}x";
+                    }
+                    if (ImgSide != null)
+                    {
+                        ImgSide.Source = null;
+                        ImgSide.Visibility = Visibility.Collapsed;
+                    }
+                }),
 
                 UiAddWin = delta =>
                 {
@@ -4068,7 +4331,7 @@ Ví dụ không hợp lệ:
                         UpdateStatsWin(net);
                     }
 
-                    // QUAN TRỌNG: chạy đồng bộ để SmartPrevTask await xong là net/cờ reset đã cập nhật xong
+                    // QUAN TRỌNG: chạy đồng bộ để task Aviator nhận đủ UI/profit state ngay sau khi chấm ván
                     if (Dispatcher.CheckAccess()) Apply();
                     else Dispatcher.Invoke(Apply);
                 },
@@ -4077,6 +4340,10 @@ Ví dụ không hợp lệ:
                 {
                     SetWinLossUI(s);
                     UpdateStatsWinLoss(s);
+                }),
+                UiFinalizeAviatorBet = (resultText, win) => Dispatcher.Invoke(() =>
+                {
+                    try { FinalizePendingAviatorBet(resultText, win); } catch { }
                 }),
             };
         }
@@ -4124,11 +4391,13 @@ Ví dụ không hợp lệ:
             {
                 if (_taskCts != null) { Log("[DEC] a task is already running"); return; }
 
+                ForceAviatorModeUi();
                 await SaveConfigAsync();
                 await EnsureWebReadyAsync();
                 // ✅ Validate trước khi bắt đầu
                 if (!ValidateInputsForCurrentStrategy())
                 {
+                    Log("[DEC] start aborted: invalid inputs for current strategy");
                     if (BtnPlay != null) BtnPlay.IsEnabled = true; // trả lại nút nếu đang disable vì double-click guard
                     return;
                 }
@@ -4196,7 +4465,7 @@ Ví dụ không hợp lệ:
                 }
 
                 // Chuẩn bị & chạy Task chiến lược (giữ nguyên)
-                RebuildStakeSeq((TxtStakeCsv?.Text ?? "1000,2000,4000,8000,16000").Trim());
+                RebuildAviatorStakeSeq((TxtStakeCsv?.Text ?? "5000:1.20-10000:2.00-15000:4.50").Trim());
                 _winTotal = 0;
                 if (LblWin != null) LblWin.Text = "0";
 
@@ -4289,29 +4558,8 @@ Ví dụ không hợp lệ:
 
 
                 bool useRawWinAmount = false;
-                AviatorHit.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
-                {
-                    0 => new AviatorHit.Tasks.SeqParityFollowTask(),     // 1
-                    1 => new AviatorHit.Tasks.PatternParityTask(),       // 2
-                    2 => new AviatorHit.Tasks.SeqMajorMinorTask(),       // 3
-                    3 => new AviatorHit.Tasks.PatternMajorMinorTask(),   // 4
-                    4 => new AviatorHit.Tasks.SmartPrevTask(),           // 5
-                    5 => new AviatorHit.Tasks.RandomParityTask(),        // 6
-                    6 => new AviatorHit.Tasks.AiStatParityTask(),        // 7
-                    7 => new AviatorHit.Tasks.StateTransitionBiasTask(), // 8
-                    8 => new AviatorHit.Tasks.RunLengthBiasTask(),       // 9
-                    9 => new AviatorHit.Tasks.EnsembleMajorityTask(),    // 10
-                    10 => new AviatorHit.Tasks.TimeSlicedHedgeTask(),    // 11
-                    11 => new AviatorHit.Tasks.KnnSubsequenceTask(),     // 12
-                    12 => new AviatorHit.Tasks.DualScheduleHedgeTask(),  // 13
-                    13 => new AviatorHit.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
-                    14 => new AviatorHit.Tasks.AiExpertPanelTask(), // 15
-                    15 => new AviatorHit.Tasks.Top10PatternFollowTask(), // 16
-                    16 => new AviatorHit.Tasks.JackpotMultiSideTask(), // 17
-                    _ => new AviatorHit.Tasks.SmartPrevTask(),
-                };
-
-                if (_cfg.BetStrategyIndex == 16) useRawWinAmount = true;
+                _cfg.BetStrategyIndex = 0;
+                AviatorHit.Tasks.IBetTask task = new AviatorHit.Tasks.AutoCashoutTask();
 
                 var running = Task.Run(() => StartTaskAsync(task, _taskCts.Token, useRawWinAmount));
 
@@ -4602,6 +4850,14 @@ Ví dụ không hợp lệ:
             return parts.Length == 0 ? string.Empty : parts[^1];
         }
 
+        private static Brush GetCountdownFillBrush(double pct)
+        {
+            pct = Math.Max(0, Math.Min(1, pct));
+            if (pct > 0.60) return new SolidColorBrush(Color.FromRgb(105, 195, 107));
+            if (pct > 0.30) return new SolidColorBrush(Color.FromRgb(215, 180, 18));
+            return new SolidColorBrush(Color.FromRgb(216, 52, 43));
+        }
+
         void UpdateSeqUI(string fullSeq)
         {
             var parts = SplitSeqEntries(fullSeq);
@@ -4686,20 +4942,30 @@ Ví dụ không hợp lệ:
             var parts = SplitSeqEntries(fullSeq);
             var tailParts = (parts.Length <= 50) ? parts : parts[^50..];
             var tailKey = string.Join("|", tailParts);
-            if (tailKey == _lastSeqTailShown) return;
+            if (RecentSeqItems != null)
+                RecentSeqItems.ToolTip = fullSeq;
+            if (tailKey == _lastSeqTailShown)
+                return;
 
-            var items = new List<SeqIconVM>(tailParts.Length);
-            for (int i = 0; i < tailParts.Length; i++)
+            var recent = (tailParts.Length <= 10) ? tailParts : tailParts[^10..];
+            _recentSeqItems.Clear();
+            for (int i = 0; i < recent.Length; i++)
             {
-                items.Add(new SeqIconVM
+                _recentSeqItems.Add(new SeqIconVM
                 {
-                    Text = tailParts[i],
-                    IsLatest = (i == tailParts.Length - 1)
+                    Text = recent[i],
+                    IsLatest = (i == recent.Length - 1)
                 });
             }
-
-            SeqIcons.ItemsSource = items;
-            SeqIcons.ToolTip = fullSeq;
+            if (!string.IsNullOrWhiteSpace(tailKey) && tailKey != _lastSeqDebugLogged)
+            {
+                _lastSeqDebugLogged = tailKey;
+                try
+                {
+                    Log("[AVIATOR-SEQ] " + string.Join(" | ", recent));
+                }
+                catch { }
+            }
             _lastSeqTailShown = tailKey;
         }
 
@@ -5848,6 +6114,31 @@ Ví dụ không hợp lệ:
             FinalizeLastBet(resText, balance, winners, resText);
         }
 
+        private void FinalizePendingAviatorBet(string? resultText, bool win)
+        {
+            if (_pendingRows.Count == 0 || string.IsNullOrWhiteSpace(resultText)) return;
+
+            long balance = 0;
+            try { balance = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
+
+            foreach (var row in _pendingRows)
+            {
+                row.Result = resultText!.Trim();
+                row.WinLose = win ? "Thắng" : "Thua";
+                row.Account = balance;
+
+                try { AppendBetCsv(row); } catch { }
+            }
+
+            if (_autoFollowNewest)
+                ShowFirstPage();
+            else
+                RefreshCurrentPage();
+
+            Log($"[BET-FINALIZE] result={resultText} win={win} rows={_pendingRows.Count}");
+            _pendingRows.Clear();
+        }
+
         private void SetLevelForMultiChain(int chainIndex, int levelIndex)
         {
             if (LblLevel == null) return;
@@ -6337,6 +6628,20 @@ Ví dụ không hợp lệ:
         {
             ShowErrorsForCurrentStrategy(); // cập nhật UI trước
 
+            if (IsAviatorStrategySelected())
+            {
+                if (!ValidateAviatorStakeCsv(T(TxtStakeCsv), out var aviatorErr))
+                {
+                    SetError(LblSeqError, aviatorErr);
+                    Log("[Validate] Aviator stake csv invalid: " + aviatorErr);
+                    BringBelow(TxtStakeCsv);
+                    return false;
+                }
+
+                SetError(LblSeqError, null);
+                return true;
+            }
+
             int idx = CmbBetStrategy?.SelectedIndex ?? 4;
             if (idx == 0) // 1. Chuỗi C/L
             {
@@ -6414,7 +6719,7 @@ Ví dụ không hợp lệ:
                 }
 
                 if (TxtStakeCsv != null) TxtStakeCsv.Text = csv;      // -> sẽ kích TextChanged để rebuild _stakeSeq
-                RebuildStakeSeq(csv);
+                RebuildAviatorStakeSeq(csv);
                 Log($"[StakeCsv.load] id={id} => {csv} -> {_stakeSeq.Length}");
             }
             catch { /* ignore */ }
@@ -6519,6 +6824,16 @@ Ví dụ không hợp lệ:
         // --- Hiển thị lỗi live theo chiến lược đang chọn ---
         private void ShowErrorsForCurrentStrategy()
         {
+            if (IsAviatorStrategySelected())
+            {
+                string s = (TxtStakeCsv?.Text ?? "");
+                bool ok = ValidateAviatorStakeCsv(s, out var e0);
+                SetError(LblSeqError, ok ? null : e0);
+                SetError(LblPatError, null);
+                SetError(LblSideRatioError, null);
+                return;
+            }
+
             int idx = CmbBetStrategy?.SelectedIndex ?? 4;
 
             // Chuỗi cầu (chiến lược 1,3)

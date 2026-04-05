@@ -39,6 +39,25 @@ namespace AviatorHit.Tasks
             return string.Equals(betSide, lastSide, StringComparison.OrdinalIgnoreCase);
         }
 
+        public static bool TryParseMultiplier(string? raw, out double value)
+        {
+            value = 0;
+            var s = (raw ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(s)) return false;
+            if (s.EndsWith("x", StringComparison.OrdinalIgnoreCase))
+                s = s[..^1];
+            s = s.Replace(",", "");
+            return double.TryParse(s, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out value);
+        }
+
+        public static string GetLatestAviatorResult(string? seq)
+        {
+            if (string.IsNullOrWhiteSpace(seq)) return "";
+            var parts = seq.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return parts.Length == 0 ? "" : parts[^1];
+        }
+
         private static void UiResetRoundControls()
         {
             var app = Application.Current;
@@ -139,6 +158,41 @@ namespace AviatorHit.Tasks
             return ok;
         }
 
+        public static async Task<bool> PlaceBet(GameContext ctx, long amount, double target, CancellationToken ct, bool ignoreCooldown = false)
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var last = Volatile.Read(ref _lastBetOkMs);
+            if (!ignoreCooldown && now - last < 3000)
+            {
+                ctx.Log?.Invoke($"[BET] cooldown 3s active, skip ({3000 - (now - last)}ms left)");
+                return false;
+            }
+
+            await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke("AUTO"));
+            await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
+            await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetTarget?.Invoke(target));
+
+            var js =
+                "(async function(){try{" +
+                " if (typeof window.__cw_bet==='function'){" +
+                "   return String(await window.__cw_bet(" + amount + ", " + target.ToString(System.Globalization.CultureInfo.InvariantCulture) + "));" +
+                " } else { return 'no'; }" +
+                "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
+
+            var rRaw = await ctx.EvalJsAsync(js);
+            ctx.Log?.Invoke($"[AVIATOR-BET-JS] result={rRaw} amount={amount:N0} target={target:0.00}x");
+
+            var ok = !string.IsNullOrWhiteSpace(rRaw) &&
+                     rRaw.IndexOf("fail", StringComparison.OrdinalIgnoreCase) < 0 &&
+                     rRaw.IndexOf("err:", StringComparison.OrdinalIgnoreCase) < 0 &&
+                     rRaw.IndexOf("no", StringComparison.OrdinalIgnoreCase) < 0;
+
+            if (ok)
+                Volatile.Write(ref _lastBetOkMs, now);
+
+            return ok;
+        }
+
 
 
         public static async Task<bool> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSeq, CancellationToken ct)
@@ -158,6 +212,29 @@ namespace AviatorHit.Tasks
                     return win;
                 }
                 await Task.Delay(120, ct);
+            }
+        }
+
+        public static async Task<bool> WaitRoundFinishAndJudge(GameContext ctx, string baseSeq, double target, CancellationToken ct)
+        {
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                var s = ctx.GetSnap?.Invoke();
+
+                var curSeq = s?.seq ?? "";
+                if (!string.Equals(curSeq, baseSeq, StringComparison.Ordinal))
+                {
+                    var latest = GetLatestAviatorResult(curSeq);
+                    var finalValue = TryParseMultiplier(latest, out var parsedFinal) ? parsedFinal : 0;
+                    var win = finalValue >= target;
+                    await ctx.UiDispatcher.InvokeAsync(() => ctx.UiWinLoss?.Invoke(win));
+                    await ctx.UiDispatcher.InvokeAsync(() => ctx.UiFinalizeAviatorBet?.Invoke(latest, win));
+                    ctx.Log?.Invoke($"[AVIATOR-ROUND] final={latest} target={target:0.00}x win={win}");
+                    return win;
+                }
+
+                await Task.Delay(80, ct);
             }
         }
     }

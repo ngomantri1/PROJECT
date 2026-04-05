@@ -19,6 +19,7 @@ namespace AviatorHit.Tasks
         }
 
         public long CurrentUnit => _seq[Math.Clamp(_i, 0, _seq.Length - 1)];
+        public int CurrentIndex => Math.Clamp(_i, 0, _seq.Length - 1);
 
         /// <summary>Tiền sẽ đặt ở VÁN SẮP CƯỢC (có xét gấp đôi với Victor2).</summary>
         public long GetStakeForThisBet()

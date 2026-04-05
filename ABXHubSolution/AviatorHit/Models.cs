@@ -31,6 +31,12 @@ namespace AviatorHit
         public string username { get; set; }
         public string? balanceText { get; set; }
         public string status { get; set; }
+        public string? liveOddText { get; set; }
+        public double? liveOddValue { get; set; }
+        public string? countdownText { get; set; }
+        public int? countdownValue { get; set; }
+        public double? countdownPct { get; set; }
+        public bool? cashedOut { get; set; }
     }
 
     public sealed class DecisionState
