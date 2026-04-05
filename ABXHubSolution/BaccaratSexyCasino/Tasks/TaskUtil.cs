@@ -258,6 +258,8 @@ namespace BaccaratSexyCasino.Tasks
                     await ctx.UiDispatcher.InvokeAsync(() =>
                     {
                         ctx.UiRecordBetIssued?.Invoke(side, amount, roundId);
+                        if (string.Equals(ctx.MoneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase))
+                            ctx.UiSetChainLevel?.Invoke(ctx.MoneyChainIndex, ctx.MoneyChainStep);
                     });
                 }
                 else
@@ -266,6 +268,8 @@ namespace BaccaratSexyCasino.Tasks
                     {
                         ctx.UiSetSide?.Invoke(side);
                         ctx.UiSetStake?.Invoke(amount);
+                        if (string.Equals(ctx.MoneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase))
+                            ctx.UiSetChainLevel?.Invoke(ctx.MoneyChainIndex, ctx.MoneyChainStep);
                     });
                 }
                 _lastBetOkMsByTab[tabKey] = now;
