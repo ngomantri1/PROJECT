@@ -107,7 +107,7 @@ namespace AviatorHit
     (function tick(){
       try{
         if (window.__cw_startPush && window.cc && cc.director && cc.director.getScene){
-          try{ window.__cw_startPush(240); }catch(_){}
+          try{ window.__cw_startPush(300); }catch(_){}
           return;
         }
       }catch(_){}

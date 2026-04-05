@@ -2523,9 +2523,9 @@
         // Bắt đầu bắn snapshot định kỳ {abx:'tick', prog, totals, seq, status}
         window.__cw_startPush = function (tickMs) {
             try {
-                tickMs = Number(tickMs) || 240;
-                if (tickMs < 120)
-                    tickMs = 120;
+                tickMs = Number(tickMs) || 300;
+                if (tickMs < 180)
+                    tickMs = 180;
                 if (tickMs > 1000)
                     tickMs = 1000;
                 if (_pushTimer) {

@@ -393,6 +393,7 @@ namespace AviatorHit
                                                                  // --- UI mode monitor ---
         private DateTime _lastGameTickUtc = DateTime.MinValue;
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
+        private DateTime _lastEnsurePushUtc = DateTime.MinValue;
         private bool _isGameUi = false;              // trạng thái UI hiện hành
         private bool _forceGameUiFromLoginTool = false; // ép hiện vùng chiến lược sau khi bấm Đăng nhập Tool
         private System.Windows.Threading.DispatcherTimer? _uiModeTimer;
@@ -657,7 +658,9 @@ Ví dụ không hợp lệ:
 
         // File
         private readonly ConcurrentQueue<string> _fileLogQueue = new();
-        private const int FILE_FLUSH_MS = 500;
+        private const int FILE_FLUSH_MS = 1000;
+        private const int GAME_PUSH_INTERVAL_MS = 300;
+        private static readonly TimeSpan GamePushEnsureMinGap = TimeSpan.FromSeconds(3);
 
         // Pump
         private CancellationTokenSource? _logPumpCts;
@@ -672,6 +675,12 @@ Ví dụ không hợp lệ:
 
         private string _lastSeqTailShown = "";
         private string _lastSeqDebugLogged = "";
+        private string _lastAviatorResultShown = "";
+        private int _lastUiTimePermille = -1;
+        private string _lastUiProgText = "";
+        private string _lastUiStatusText = "";
+        private string _lastUiUserName = "";
+        private string _lastUiAmountText = "";
         // Tổng tiền thắng lũy kế của phiên hiện tại
         private double _winTotal = 0;
         private CoreWebView2Environment? _webEnv;
@@ -743,7 +752,7 @@ Ví dụ không hợp lệ:
     (function tick(){
       try{
         if (window.__cw_startPush && window.cc && cc.director && cc.director.getScene){
-          try{ window.__cw_startPush(240); }catch(_){}
+          try{ window.__cw_startPush(300); }catch(_){}
           return;
         }
       }catch(_){}
@@ -952,6 +961,28 @@ Ví dụ không hợp lệ:
             var line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
             EnqueueUi(line);
             EnqueueFile(line);
+        }
+
+        private readonly ConcurrentDictionary<string, long> _logThrottleMs = new();
+        private void LogThrottled(string key, string msg, int windowMs)
+        {
+            var now = Environment.TickCount64;
+            var last = _logThrottleMs.GetOrAdd(key, long.MinValue);
+            if (now - last < windowMs) return;
+            _logThrottleMs[key] = now;
+            Log(msg);
+        }
+
+        private async Task EnsureGamePushAsync(int minGapMs = 0, bool log = false, string? logMessage = null)
+        {
+            var now = DateTime.UtcNow;
+            var gap = minGapMs > 0 ? TimeSpan.FromMilliseconds(minGapMs) : GamePushEnsureMinGap;
+            if (now - _lastEnsurePushUtc < gap) return;
+
+            _lastEnsurePushUtc = now;
+            await Web.ExecuteScriptAsync($"window.__cw_startPush && window.__cw_startPush({GAME_PUSH_INTERVAL_MS});");
+            if (log)
+                LogThrottled("ensure-push", logMessage ?? $"[CW] ensure push {GAME_PUSH_INTERVAL_MS}ms", 5000);
         }
 
         private void SetModeUi(bool isGame)
@@ -1532,38 +1563,64 @@ Ví dụ không hợp lệ:
                                                 if (timePct.HasValue)
                                                 {
                                                     var p = Math.Max(0, Math.Min(1, timePct.Value));
-                                                    if (PrgBet != null) PrgBet.Value = p;
-                                                    if (Fill != null) Fill.Background = GetCountdownFillBrush(p);
-                                                    if (LblProg != null)
+                                                    var permille = (int)Math.Round(p * 1000);
+                                                    if (_lastUiTimePermille != permille)
                                                     {
-                                                        if (snap.countdownValue.HasValue)
-                                                            LblProg.Text = snap.countdownValue.Value.ToString(CultureInfo.InvariantCulture);
-                                                        else if (!string.IsNullOrWhiteSpace(snap.countdownText))
-                                                            LblProg.Text = snap.countdownText!.Trim();
-                                                        else
-                                                            LblProg.Text = $"{(int)Math.Round(p * 100)}%";
+                                                        if (PrgBet != null) PrgBet.Value = p;
+                                                        if (Fill != null) Fill.Background = GetCountdownFillBrush(p);
+                                                        _lastUiTimePermille = permille;
+                                                    }
+
+                                                    string progText;
+                                                    if (snap.countdownValue.HasValue)
+                                                        progText = snap.countdownValue.Value.ToString(CultureInfo.InvariantCulture);
+                                                    else if (!string.IsNullOrWhiteSpace(snap.countdownText))
+                                                        progText = snap.countdownText!.Trim();
+                                                    else
+                                                        progText = $"{(int)Math.Round(p * 100)}%";
+
+                                                    if (LblProg != null && !string.Equals(_lastUiProgText, progText, StringComparison.Ordinal))
+                                                    {
+                                                        LblProg.Text = progText;
+                                                        _lastUiProgText = progText;
                                                     }
                                                 }
                                                 else
                                                 {
-                                                    if (PrgBet != null) PrgBet.Value = 0;
-                                                    if (Fill != null) Fill.Background = GetCountdownFillBrush(0);
-                                                    if (LblProg != null) LblProg.Text = "-";
+                                                    if (_lastUiTimePermille != 0)
+                                                    {
+                                                        if (PrgBet != null) PrgBet.Value = 0;
+                                                        if (Fill != null) Fill.Background = GetCountdownFillBrush(0);
+                                                        _lastUiTimePermille = 0;
+                                                    }
+                                                    if (LblProg != null && !string.Equals(_lastUiProgText, "-", StringComparison.Ordinal))
+                                                    {
+                                                        LblProg.Text = "-";
+                                                        _lastUiProgText = "-";
+                                                    }
                                                 }
 
                                                 // Kết quả gần nhất từ chuỗi Aviator (cũ -> mới)
                                                 var seqStrLocal = snap.seq ?? "";
                                                 var latestResult = GetLatestSeqEntry(seqStrLocal);
                                                 SetLastAviatorResultUI(latestResult);
-                                                if (LblUserName != null && !string.IsNullOrWhiteSpace(snap.username))
+                                                if (LblUserName != null && !string.IsNullOrWhiteSpace(snap.username) &&
+                                                    !string.Equals(_lastUiUserName, snap.username, StringComparison.Ordinal))
+                                                {
                                                     LblUserName.Text = snap.username;
+                                                    _lastUiUserName = snap.username;
+                                                }
 
                                                 // Tổng tiền
                                                 var amt = snap?.totals?.A;
-                                                if (LblAmount != null)
-                                                    LblAmount.Text = amt.HasValue
-                                                        ? amt.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
-                                                        : (!string.IsNullOrWhiteSpace(snap?.balanceText) ? snap.balanceText : "-");
+                                                var amountText = amt.HasValue
+                                                    ? amt.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
+                                                    : (!string.IsNullOrWhiteSpace(snap?.balanceText) ? snap.balanceText : "-");
+                                                if (LblAmount != null && !string.Equals(_lastUiAmountText, amountText, StringComparison.Ordinal))
+                                                {
+                                                    LblAmount.Text = amountText;
+                                                    _lastUiAmountText = amountText;
+                                                }
 
                                                 // Chuỗi kết quả
                                                 UpdateAviatorSeqUI(snap.seq ?? "");
@@ -1573,13 +1630,22 @@ Ví dụ không hợp lệ:
                                                 {
                                                     if (!string.IsNullOrWhiteSpace(statusUi))
                                                     {
-                                                        LblStatusText.Text = statusUi;
-                                                        LblStatusText.Visibility = Visibility.Visible;
+                                                        if (!string.Equals(_lastUiStatusText, statusUi, StringComparison.Ordinal) ||
+                                                            LblStatusText.Visibility != Visibility.Visible)
+                                                        {
+                                                            LblStatusText.Text = statusUi;
+                                                            LblStatusText.Visibility = Visibility.Visible;
+                                                            _lastUiStatusText = statusUi;
+                                                        }
                                                     }
                                                     else
                                                     {
-                                                        LblStatusText.Text = "";
-                                                        LblStatusText.Visibility = Visibility.Collapsed;
+                                                        if (LblStatusText.Visibility != Visibility.Collapsed || _lastUiStatusText.Length != 0)
+                                                        {
+                                                            LblStatusText.Text = "";
+                                                            LblStatusText.Visibility = Visibility.Collapsed;
+                                                            _lastUiStatusText = "";
+                                                        }
                                                     }
                                                 }
                                             }
@@ -1599,8 +1665,8 @@ Ví dụ không hợp lệ:
                                     _lastGameTickUtc = DateTime.UtcNow; // synthetic tick
                                     try
                                     {
-                                        _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
-                                        Log("[CW] ensure push from game_hint");
+                                        if (Web != null)
+                                            await EnsureGamePushAsync(log: false);
                                     }
                                     catch { }
                                     return;
@@ -1619,6 +1685,15 @@ Ví dụ không hợp lệ:
                                         side = $"AUTO {target:0.00}x";
 
                                     Log($"[BET] {side} {amount:N0}");
+
+                                    try
+                                    {
+                                        await Dispatcher.InvokeAsync(() =>
+                                        {
+                                            SetWinLossUI(null);
+                                        });
+                                    }
+                                    catch { }
 
                                     long accNow = 0;
                                     try { accNow = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
@@ -4450,15 +4525,14 @@ Ví dụ không hợp lệ:
                 }
 
                 // Bật kênh push (idempotent)
-                await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
-                Log("[CW] ensure push 240ms");
+                await EnsureGamePushAsync(log: true);
 
                 // 🔒 MỚI: Chờ đủ bridge + Cocos + tick để tránh nổ IndexOutOfRange trong task
                 var ready = await WaitForBridgeAndGameDataAsync(15000);
                 if (!ready)
                 {
                     Log("[DEC] Dữ liệu chưa sẵn sàng (bridge/cocos/tick). Thử gia hạn push & chờ thêm.");
-                    await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
+                    await EnsureGamePushAsync(log: true);
                     ready = await WaitForBridgeAndGameDataAsync(15000);
                     if (!ready)
                     {
@@ -4612,7 +4686,7 @@ Ví dụ không hợp lệ:
             {
                 StopTask();
                 AviatorHit.Tasks.TaskUtil.ClearBetCooldown();
-                _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
+                if (Web != null) _ = EnsureGamePushAsync(log: false);
                 Log("[Loop] stopped");
                 SetPlayButtonState(false);
                 StopExpiryCountdown();
@@ -4976,6 +5050,10 @@ Ví dụ không hợp lệ:
 
         private void SetLastAviatorResultUI(string? result)
         {
+            var normalized = string.IsNullOrWhiteSpace(result) ? "-" : result.Trim();
+            if (string.Equals(_lastAviatorResultShown, normalized, StringComparison.Ordinal))
+                return;
+
             if (ImgKetQua != null)
             {
                 ImgKetQua.Source = null;
@@ -4990,8 +5068,9 @@ Ví dụ không hợp lệ:
             {
                 LblKetQua.Visibility = Visibility.Visible;
                 LblKetQua.Foreground = AviatorOddPalette.Foreground(result);
-                LblKetQua.Text = string.IsNullOrWhiteSpace(result) ? "-" : result.Trim();
+                LblKetQua.Text = normalized;
             }
+            _lastAviatorResultShown = normalized;
         }
 
         private void SetLastSideUI(string? result)
