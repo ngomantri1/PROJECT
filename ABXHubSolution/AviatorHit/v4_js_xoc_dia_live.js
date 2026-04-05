@@ -1017,7 +1017,7 @@
         '</div>' +
         '<div id="cwInfo" style="white-space:pre;color:#9f9;line-height:1.45"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
+    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -2400,6 +2400,20 @@
             }
         }
 
+        function isAviatorDiagEnabled() {
+            try {
+                return window.__cw_aviator_diag === true;
+            } catch (_) {
+                return false;
+            }
+        }
+
+        function safePostAviatorDiag(obj) {
+            if (!isAviatorDiagEnabled())
+                return;
+            safePost(obj);
+        }
+
         var _pushTimer = null;
         var _lastJson = '';
 
@@ -2678,9 +2692,43 @@
             return isFinite(v) ? v : null;
         }
 
-        var AVIATOR_BET_BUTTON_TAIL = 'mainaviator/canvas/aviatorgame/boxbet_1/btndatcuoc';
-        var AVIATOR_BET_LABEL_TAIL = 'mainaviator/canvas/aviatorgame/boxbet_1/btndatcuoc/moneybetuser/lbmoneybetuser';
         var AVIATOR_LIVE_ODD_TAIL = 'mainaviator/canvas/aviatorgame/lbhesocashout';
+
+        function normalizeAviatorBoxIndex(v) {
+            return Number(v) === 2 ? 2 : 1;
+        }
+
+        function getAviatorBetButtonTail(boxIndex) {
+            var box = normalizeAviatorBoxIndex(boxIndex);
+            return 'mainaviator/canvas/aviatorgame/boxbet_' + box + '/btndatcuoc';
+        }
+
+        function getAviatorBoxTail(boxIndex) {
+            var box = normalizeAviatorBoxIndex(boxIndex);
+            return 'mainaviator/canvas/aviatorgame/boxbet_' + box;
+        }
+
+        function getAviatorBetLabelTail(boxIndex) {
+            var box = normalizeAviatorBoxIndex(boxIndex);
+            return 'mainaviator/canvas/aviatorgame/boxbet_' + box + '/btndatcuoc/moneybetuser/lbmoneybetuser';
+        }
+
+        function findAviatorBetButtonNode(boxIndex) {
+            return findNodeByTailEnd(getAviatorBetButtonTail(boxIndex));
+        }
+
+        function findAviatorBoxRootNode(boxIndex) {
+            boxIndex = normalizeAviatorBoxIndex(boxIndex);
+            var targetTail = getAviatorBoxTail(boxIndex);
+            var node = findAviatorBetButtonNode(boxIndex);
+            while (node) {
+                var tail = String(tailOf(node, 18) || '').toLowerCase();
+                if (tail.endsWith(targetTail))
+                    return node;
+                node = node.parent || null;
+            }
+            return null;
+        }
 
         function readNodeLabelText(node) {
             if (!node)
@@ -2721,20 +2769,43 @@
             return n.toLocaleString('en-US');
         }
 
-        function readAviatorBetAmount() {
-            var n = findNodeByTailEnd(AVIATOR_BET_LABEL_TAIL);
+        function readAviatorBetAmount(boxIndex) {
+            var n = findNodeByTailEnd(getAviatorBetLabelTail(boxIndex));
             if (!n)
                 return {
                     text: '',
                     value: 0,
-                    tail: ''
+                    tail: '',
+                    boxIndex: normalizeAviatorBoxIndex(boxIndex)
                 };
             var txt = readNodeLabelText(n);
             return {
                 text: txt,
                 value: parseMoneyAmount(txt),
-                tail: tailOf(n, 18) || ''
+                tail: tailOf(n, 18) || '',
+                boxIndex: normalizeAviatorBoxIndex(boxIndex)
             };
+        }
+
+        function normalizeAviatorUiText(s) {
+            try {
+                return String(s || '').normalize('NFD').replace(/[\u0300-\u036F]/g, '').toUpperCase();
+            } catch (_) {
+                return String(s || '').toUpperCase();
+            }
+        }
+
+        function uniqTexts(list) {
+            var seen = {};
+            var out = [];
+            for (var i = 0; i < list.length; i++) {
+                var txt = String(list[i] || '').replace(/\s+/g, ' ').trim();
+                if (!txt || seen[txt])
+                    continue;
+                seen[txt] = 1;
+                out.push(txt);
+            }
+            return out;
         }
 
         function flattenTree(root) {
@@ -2750,7 +2821,9 @@
                     text: readNodeLabelText(n),
                     hasLabel: !!getComp(n, cc.Label),
                     hasRichText: !!getComp(n, cc.RichText),
-                    hasEditBox: !!getComp(n, cc.EditBox)
+                    hasEditBox: !!getComp(n, cc.EditBox),
+                    hasButton: !!getComp(n, cc.Button),
+                    hasToggle: !!getComp(n, cc.Toggle)
                 });
                 var kids = (n.children || n._children) || [];
                 for (var i = 0; i < kids.length; i++)
@@ -2759,7 +2832,195 @@
             return rows;
         }
 
-        function findAviatorBetEditTarget(root) {
+        function readAviatorBetButtonState(boxIndex) {
+            boxIndex = normalizeAviatorBoxIndex(boxIndex);
+            var btn = findAviatorBetButtonNode(boxIndex);
+            if (!btn) {
+                return {
+                    ok: false,
+                    boxIndex: boxIndex,
+                    state: 'missing',
+                    buttonTexts: '',
+                    normalizedTexts: '',
+                    tail: ''
+                };
+            }
+
+            var rows = flattenTree(btn);
+            var texts = uniqTexts(rows.map(function (x) {
+                return x.text;
+            }));
+            var buttonTexts = texts.join(' | ');
+            var normalizedTexts = normalizeAviatorUiText(buttonTexts);
+            var state = 'ready';
+
+            if (/CUOC PHIEN SAU|PHIEN SAU|HUY/.test(normalizedTexts))
+                state = 'pending';
+            else if (/\bDUNG\b/.test(normalizedTexts))
+                state = 'running';
+            else if (!buttonTexts)
+                state = 'unknown';
+
+            return {
+                ok: true,
+                boxIndex: boxIndex,
+                state: state,
+                buttonTexts: buttonTexts,
+                normalizedTexts: normalizedTexts,
+                tail: tailOf(btn, 18) || ''
+            };
+        }
+
+        function dumpAviatorBetButton(boxIndex) {
+            boxIndex = normalizeAviatorBoxIndex(boxIndex);
+            var btn = findAviatorBetButtonNode(boxIndex);
+            if (!btn) {
+                return {
+                    ok: false,
+                    boxIndex: boxIndex,
+                    message: 'fail:no-bet-button'
+                };
+            }
+
+            var rows = flattenTree(btn).filter(function (x) {
+                return !!x.hasLabel || !!x.hasRichText || !!x.hasEditBox || !!x.hasButton || !!x.hasToggle || !!String(x.text || '').trim();
+            });
+            var limited = rows.slice(0, 60).map(function (x) {
+                var flags = [];
+                if (x.hasLabel)
+                    flags.push('Label');
+                if (x.hasRichText)
+                    flags.push('RichText');
+                if (x.hasEditBox)
+                    flags.push('EditBox');
+                if (x.hasButton)
+                    flags.push('Button');
+                if (x.hasToggle)
+                    flags.push('Toggle');
+                var text = String(x.text || '').replace(/\s+/g, ' ').trim();
+                return [
+                    'd=' + x.depth,
+                    'name=' + x.name,
+                    'tail=' + x.tail,
+                    'flags=' + flags.join('/'),
+                    'text=' + text
+                ].join(' | ');
+            });
+
+            return {
+                ok: true,
+                boxIndex: boxIndex,
+                rootTail: tailOf(btn, 18) || '',
+                count: rows.length,
+                dump: limited.join(' || ')
+            };
+        }
+
+        function snapshotAviatorBoxes() {
+            var snap1 = readAviatorBetAmount(1);
+            var snap2 = readAviatorBetAmount(2);
+            var state1 = readAviatorBetButtonState(1);
+            var state2 = readAviatorBetButtonState(2);
+            return {
+                ok: true,
+                box1Value: snap1 && snap1.value || 0,
+                box1Text: snap1 && snap1.text || '',
+                box1State: state1 && state1.state || '',
+                box1Texts: state1 && state1.buttonTexts || '',
+                box2Value: snap2 && snap2.value || 0,
+                box2Text: snap2 && snap2.text || '',
+                box2State: state2 && state2.state || '',
+                box2Texts: state2 && state2.buttonTexts || ''
+            };
+        }
+
+        function dumpAviatorBoxTree(boxIndex) {
+            boxIndex = normalizeAviatorBoxIndex(boxIndex);
+            var root = findAviatorBoxRootNode(boxIndex);
+            if (!root)
+                return {
+                    ok: false,
+                    boxIndex: boxIndex,
+                    message: 'fail:no-box-root'
+                };
+
+            var rows = flattenTree(root).filter(function (x) {
+                return !!x.hasLabel || !!x.hasRichText || !!x.hasEditBox || !!x.hasButton || !!x.hasToggle || !!String(x.text || '').trim();
+            });
+            var limited = rows.slice(0, 80).map(function (x) {
+                var flags = [];
+                if (x.hasLabel)
+                    flags.push('Label');
+                if (x.hasRichText)
+                    flags.push('RichText');
+                if (x.hasEditBox)
+                    flags.push('EditBox');
+                if (x.hasButton)
+                    flags.push('Button');
+                if (x.hasToggle)
+                    flags.push('Toggle');
+                var text = String(x.text || '').replace(/\s+/g, ' ').trim();
+                return [
+                    'd=' + x.depth,
+                    'name=' + x.name,
+                    'tail=' + x.tail,
+                    'flags=' + flags.join('/'),
+                    'text=' + text
+                ].join(' | ');
+            });
+
+            return {
+                ok: true,
+                boxIndex: boxIndex,
+                rootTail: tailOf(root, 18) || '',
+                count: rows.length,
+                dump: limited.join(' || ')
+            };
+        }
+
+        function scanSceneForMoneyText(pattern) {
+            var root = sceneReady() ? cc.director.getScene() : null;
+            if (!root)
+                return {
+                    ok: false,
+                    message: 'fail:no-root'
+                };
+
+            var regex = pattern instanceof RegExp ? pattern : /10,?000/;
+            var rows = flattenTree(root).filter(function (x) {
+                var text = String(x.text || '').trim();
+                return !!text && regex.test(text);
+            });
+
+            var limited = rows.slice(0, 120).map(function (x) {
+                var flags = [];
+                if (x.hasLabel)
+                    flags.push('Label');
+                if (x.hasRichText)
+                    flags.push('RichText');
+                if (x.hasEditBox)
+                    flags.push('EditBox');
+                if (x.hasButton)
+                    flags.push('Button');
+                if (x.hasToggle)
+                    flags.push('Toggle');
+                return [
+                    'd=' + x.depth,
+                    'name=' + x.name,
+                    'tail=' + x.tail,
+                    'flags=' + flags.join('/'),
+                    'text=' + String(x.text || '').replace(/\s+/g, ' ').trim()
+                ].join(' | ');
+            });
+
+            return {
+                ok: true,
+                count: rows.length,
+                dump: limited.join(' || ')
+            };
+        }
+
+        function findAviatorBetEditTarget(root, boxIndex) {
             var all = flattenTree(root);
             var exactEdit = all.find(function (x) {
                 return x.hasEditBox;
@@ -2771,7 +3032,7 @@
                 };
 
             var exactLabel = all.find(function (x) {
-                return String(x.tail || '').toLowerCase().endsWith(AVIATOR_BET_LABEL_TAIL);
+                return String(x.tail || '').toLowerCase().endsWith(getAviatorBetLabelTail(boxIndex));
             });
             if (exactLabel)
                 return {
@@ -2788,6 +3049,61 @@
                     row: moneyNode
                 };
             return null;
+        }
+
+        function findAviatorBoxBetComponent(boxIndex) {
+            boxIndex = normalizeAviatorBoxIndex(boxIndex);
+            var root = findAviatorBoxRootNode(boxIndex);
+            if (!root || !root.getComponents)
+                return null;
+
+            var comps = [];
+            try {
+                comps = root.getComponents(cc.Component) || [];
+            } catch (_) {
+                comps = [];
+            }
+
+            for (var i = 0; i < comps.length; i++) {
+                var comp = comps[i];
+                try {
+                    if (comp && typeof comp.bet !== 'undefined' && typeof comp.betAdd !== 'undefined')
+                        return comp;
+                } catch (_) {
+                }
+            }
+            return null;
+        }
+
+        function trySetAviatorBoxComponent(comp, amount) {
+            if (!comp)
+                return false;
+
+            var amt = Math.max(5000, Math.floor(Number(amount) || 0));
+            var changed = false;
+
+            try {
+                comp.bet = amt;
+                changed = true;
+            } catch (_) {
+            }
+            try {
+                comp.betAdd = amt;
+                changed = true;
+            } catch (_) {
+            }
+            try {
+                if (typeof comp.refreshMoney === 'function')
+                    comp.refreshMoney();
+            } catch (_) {
+            }
+            try {
+                if (typeof comp.udpateBetLabel === 'function')
+                    comp.udpateBetLabel();
+            } catch (_) {
+            }
+
+            return changed;
         }
 
         function trySetAviatorEditBox(node, valueText) {
@@ -2911,25 +3227,30 @@
             return hit;
         }
 
-        function clickAviatorBetButton() {
-            var node = findNodeByTailEnd(AVIATOR_BET_BUTTON_TAIL);
+        function clickAviatorBetButton(boxIndex) {
+            boxIndex = normalizeAviatorBoxIndex(boxIndex);
+            var node = findAviatorBetButtonNode(boxIndex);
             if (!node) {
                 return {
                     ok: false,
-                    message: 'fail:no-bet-button'
+                    message: 'fail:no-bet-button',
+                    boxIndex: boxIndex
                 };
             }
             var ok = emitClick(node);
             return {
                 ok: !!ok,
                 tail: tailOf(node, 18) || '',
-                name: String(node.name || '')
+                name: String(node.name || ''),
+                boxIndex: boxIndex
             };
         }
 
-        function stopAviatorAutoCashoutWatch(reason) {
+        function stopAviatorAutoCashoutWatch(boxIndex, reason) {
             try {
-                var st = window.__cw_autoCashoutState;
+                boxIndex = normalizeAviatorBoxIndex(boxIndex);
+                window.__cw_autoCashoutByBox = window.__cw_autoCashoutByBox || {};
+                var st = window.__cw_autoCashoutByBox[boxIndex];
                 if (!st)
                     return;
                 st.active = false;
@@ -2938,11 +3259,14 @@
             }
         }
 
-        function startAviatorAutoCashoutWatch(target) {
-            stopAviatorAutoCashoutWatch('restart');
+        function startAviatorAutoCashoutWatch(boxIndex, target) {
+            boxIndex = normalizeAviatorBoxIndex(boxIndex);
+            stopAviatorAutoCashoutWatch(boxIndex, 'restart');
+            window.__cw_autoCashoutByBox = window.__cw_autoCashoutByBox || {};
 
             var state = {
                 active: true,
+                boxIndex: boxIndex,
                 target: Number(target) || 1.01,
                 requested: false,
                 accepted: false,
@@ -2951,16 +3275,17 @@
                 stopReason: '',
                 token: Math.random().toString(36).slice(2)
             };
-            window.__cw_autoCashoutState = state;
+            window.__cw_autoCashoutByBox[boxIndex] = state;
 
             safePost({
                 abx: 'cashout_watch_start',
+                boxIndex: boxIndex,
                 target: state.target,
                 ts: Date.now()
             });
 
             (async function watchLoop(myState) {
-                while (myState.active && window.__cw_autoCashoutState === myState) {
+                while (myState.active && window.__cw_autoCashoutByBox[myState.boxIndex] === myState) {
                     try {
                         var liveInfo = readAviatorLiveOdd();
                         var live = liveInfo && typeof liveInfo.value === 'number' ? liveInfo.value : null;
@@ -2969,22 +3294,39 @@
 
                         if (!myState.requested && live != null && live >= myState.target) {
                             myState.requested = true;
+                            var beforeCashout = readAviatorBetAmount(myState.boxIndex);
                             safePost({
                                 abx: 'cashout_trigger',
+                                boxIndex: myState.boxIndex,
                                 target: myState.target,
                                 live: live,
                                 ts: Date.now()
                             });
 
-                            var stopRes = clickAviatorBetButton();
+                            var stopRes = clickAviatorBetButton(myState.boxIndex);
+                            var afterCashout = readAviatorBetAmount(myState.boxIndex);
                             myState.accepted = !!(stopRes && stopRes.ok);
                             myState.stopReason = myState.accepted ? 'target-hit' : 'click-failed';
                             window.__cw_lastCashoutOk = myState.accepted;
 
                             safePost({
                                 abx: myState.accepted ? 'cashout_click_ok' : 'cashout_click_fail',
+                                boxIndex: myState.boxIndex,
                                 target: myState.target,
                                 live: live,
+                                tail: stopRes && stopRes.tail || '',
+                                ts: Date.now()
+                            });
+                            safePostAviatorDiag({
+                                abx: 'cashout_diag_click',
+                                boxIndex: myState.boxIndex,
+                                target: myState.target,
+                                live: live,
+                                ok: !!(stopRes && stopRes.ok),
+                                beforeValue: beforeCashout && beforeCashout.value || 0,
+                                beforeText: beforeCashout && beforeCashout.text || '',
+                                afterValue: afterCashout && afterCashout.value || 0,
+                                afterText: afterCashout && afterCashout.text || '',
                                 tail: stopRes && stopRes.tail || '',
                                 ts: Date.now()
                             });
@@ -3007,75 +3349,173 @@
                     await sleep(40);
                 }
 
-                if (window.__cw_autoCashoutState === myState) {
+                if (window.__cw_autoCashoutByBox[myState.boxIndex] === myState) {
                     safePost({
                         abx: 'cashout_watch_stop',
+                        boxIndex: myState.boxIndex,
                         target: myState.target,
                         live: myState.lastLive,
                         accepted: !!myState.accepted,
                         reason: myState.stopReason || '',
                         ts: Date.now()
                     });
+                    delete window.__cw_autoCashoutByBox[myState.boxIndex];
                 }
             })(state);
 
             return state;
         }
 
-        async function setAviatorAmount(amount) {
+        async function setAviatorAmount(amount, boxIndex) {
+            boxIndex = normalizeAviatorBoxIndex(boxIndex);
             var amt = Math.max(5000, Math.floor(Number(amount) || 0));
             if (amt % 5000 !== 0)
                 return {
                     ok: false,
                     message: 'fail:invalid-amount',
-                    amount: amt
+                    amount: amt,
+                    boxIndex: boxIndex
                 };
 
-            var root = findNodeByTailEnd(AVIATOR_BET_BUTTON_TAIL);
-            if (!root)
+            var boxRoot = findAviatorBoxRootNode(boxIndex);
+            if (!boxRoot)
                 return {
                     ok: false,
-                    message: 'fail:no-bet-root'
-                };
-
-            var targetNode = findAviatorBetEditTarget(root);
-            if (!targetNode)
-                return {
-                    ok: false,
-                    message: 'fail:no-edit-target'
+                    message: 'fail:no-box-root',
+                    boxIndex: boxIndex
                 };
 
             var valueText = formatMoneyAmount(amt);
-            var before = readAviatorBetAmount();
-            var changed = targetNode.kind === 'EditBox'
-                ? trySetAviatorEditBox(targetNode.row.node, valueText)
-                : trySetAviatorLabel(targetNode.row.node, valueText);
+            var before = readAviatorBetAmount(boxIndex);
+            var mode = 'ComponentState';
+            var editTail = tailOf(boxRoot, 18) || '';
+            var changed = false;
+
+            var boxComp = findAviatorBoxBetComponent(boxIndex);
+            if (boxComp)
+                changed = trySetAviatorBoxComponent(boxComp, amt);
+
+            if (!changed) {
+                var fallbackRoot = findAviatorBetButtonNode(boxIndex);
+                var targetNode = fallbackRoot ? findAviatorBetEditTarget(fallbackRoot, boxIndex) : null;
+                if (!targetNode)
+                    return {
+                        ok: false,
+                        message: 'fail:no-edit-target',
+                        boxIndex: boxIndex
+                    };
+
+                mode = targetNode.kind;
+                editTail = targetNode.row.tail || editTail;
+                changed = targetNode.kind === 'EditBox'
+                    ? trySetAviatorEditBox(targetNode.row.node, valueText)
+                    : trySetAviatorLabel(targetNode.row.node, valueText);
+            }
 
             await sleep(120);
 
-            var after = readAviatorBetAmount();
+            var after = readAviatorBetAmount(boxIndex);
             var ok = !!changed && !!after && after.value === amt;
-            if (ok)
+            if (ok) {
                 window.__cw_lastAmount = amt;
+                window.__cw_lastAmountByBox = window.__cw_lastAmountByBox || {};
+                window.__cw_lastAmountByBox[boxIndex] = amt;
+            }
+
+            safePostAviatorDiag({
+                abx: 'bet_diag_set',
+                boxIndex: boxIndex,
+                ok: ok,
+                mode: mode,
+                amount: amt,
+                beforeValue: before && before.value || 0,
+                beforeText: before && before.text || '',
+                afterValue: after && after.value || 0,
+                afterText: after && after.text || '',
+                editTail: editTail,
+                ts: Date.now()
+            });
 
             return {
                 ok: ok,
-                mode: targetNode.kind,
+                boxIndex: boxIndex,
+                mode: mode,
                 amount: amt,
                 valueText: valueText,
                 before: before,
                 after: after,
-                editTail: targetNode.row.tail
+                editTail: editTail
             };
         }
 
-        window.__cw_cashout = async function () {
+        window.__cw_ensure_box_idle = async function (boxIndex, reason) {
             try {
-                stopAviatorAutoCashoutWatch('manual-cashout');
-                var st = window.__cw_autoCashoutState;
+                boxIndex = normalizeAviatorBoxIndex(boxIndex);
+                reason = String(reason || 'manual');
+
+                var beforeState = readAviatorBetButtonState(boxIndex);
+                var beforeAmount = readAviatorBetAmount(boxIndex);
+                var needsCancel = beforeState && beforeState.ok && beforeState.state === 'pending';
+                var clicked = false;
+
+                if (needsCancel) {
+                    stopAviatorAutoCashoutWatch(boxIndex, 'ensure-idle');
+                    var cancelRes = clickAviatorBetButton(boxIndex);
+                    clicked = !!(cancelRes && cancelRes.ok);
+                    await sleep(140);
+                }
+
+                var afterState = readAviatorBetButtonState(boxIndex);
+                var afterAmount = readAviatorBetAmount(boxIndex);
+                var ok = !afterState || !afterState.ok || afterState.state !== 'pending';
+
+                safePostAviatorDiag({
+                    abx: 'ensure_box_idle',
+                    boxIndex: boxIndex,
+                    ok: ok,
+                    clicked: clicked,
+                    reason: reason,
+                    stateBefore: beforeState && beforeState.state || '',
+                    stateAfter: afterState && afterState.state || '',
+                    beforeValue: beforeAmount && beforeAmount.value || 0,
+                    beforeText: beforeAmount && beforeAmount.text || '',
+                    afterValue: afterAmount && afterAmount.value || 0,
+                    afterText: afterAmount && afterAmount.text || '',
+                    buttonTexts: afterState && afterState.buttonTexts || beforeState && beforeState.buttonTexts || '',
+                    tail: afterState && afterState.tail || beforeState && beforeState.tail || '',
+                    ts: Date.now()
+                });
+
+                return {
+                    ok: ok,
+                    boxIndex: boxIndex,
+                    clicked: clicked,
+                    reason: reason,
+                    stateBefore: beforeState && beforeState.state || '',
+                    stateAfter: afterState && afterState.state || '',
+                    beforeText: beforeAmount && beforeAmount.text || '',
+                    afterText: afterAmount && afterAmount.text || '',
+                    buttonTexts: afterState && afterState.buttonTexts || beforeState && beforeState.buttonTexts || ''
+                };
+            } catch (err) {
+                return {
+                    ok: false,
+                    boxIndex: normalizeAviatorBoxIndex(boxIndex),
+                    reason: String(reason || 'manual'),
+                    message: 'err:' + String(err && err.message || err)
+                };
+            }
+        };
+
+        window.__cw_cashout = async function (boxIndex) {
+            try {
+                boxIndex = normalizeAviatorBoxIndex(boxIndex);
+                stopAviatorAutoCashoutWatch(boxIndex, 'manual-cashout');
+                window.__cw_autoCashoutByBox = window.__cw_autoCashoutByBox || {};
+                var st = window.__cw_autoCashoutByBox[boxIndex];
                 if (st)
                     st.requested = true;
-                var stopRes = clickAviatorBetButton();
+                var stopRes = clickAviatorBetButton(boxIndex);
                 if (!stopRes.ok)
                     return stopRes.message || 'fail:no-cashout-button';
                 await sleep(60);
@@ -3084,9 +3524,11 @@
                     st.accepted = true;
                     st.stopReason = 'manual-cashout';
                 }
+                var lastTargetByBox = window.__cw_lastTargetByBox || {};
                 safePost({
                     abx: 'cashout',
-                    target: window.__cw_lastTarget || 0,
+                    boxIndex: boxIndex,
+                    target: lastTargetByBox[boxIndex] || window.__cw_lastTarget || 0,
                     tail: stopRes.tail || '',
                     ts: Date.now()
                 });
@@ -3096,7 +3538,7 @@
             }
         };
 
-        window.__cw_bet = async function (a, b) {
+        window.__cw_bet = async function (a, b, c) {
             try {
                 if (typeof a === 'string') {
                     var side = normalizeSide(a);
@@ -3112,26 +3554,118 @@
 
                 var amt = Math.max(0, Math.floor(Number(a) || 0));
                 var target = Number(b);
+                var boxIndex = normalizeAviatorBoxIndex(c);
                 if (!isFinite(target) || target < 1)
                     target = 1.01;
 
-                stopAviatorAutoCashoutWatch('new-bet');
+                stopAviatorAutoCashoutWatch(boxIndex, 'new-bet');
                 window.__cw_lastTarget = target;
+                window.__cw_lastTargetByBox = window.__cw_lastTargetByBox || {};
+                window.__cw_lastTargetByBox[boxIndex] = target;
                 window.__cw_lastCashoutOk = false;
 
-                var setRes = await setAviatorAmount(amt);
+                var setRes = await setAviatorAmount(amt, boxIndex);
                 if (!setRes || setRes.ok !== true)
                     return (setRes && setRes.message) ? String(setRes.message) : 'fail:set-amount';
 
-                var btnRes = clickAviatorBetButton();
+                var beforeBetClick = readAviatorBetAmount(boxIndex);
+                var btnRes = clickAviatorBetButton(boxIndex);
                 if (!btnRes.ok)
                     return btnRes.message || 'fail:no-bet-button';
                 await sleep(100);
+                var afterBetClick = readAviatorBetAmount(boxIndex);
 
-                startAviatorAutoCashoutWatch(target);
+                safePostAviatorDiag({
+                    abx: 'bet_diag_click',
+                    boxIndex: boxIndex,
+                    amount: amt,
+                    target: target,
+                    ok: !!btnRes.ok,
+                    beforeValue: beforeBetClick && beforeBetClick.value || 0,
+                    beforeText: beforeBetClick && beforeBetClick.text || '',
+                    afterValue: afterBetClick && afterBetClick.value || 0,
+                    afterText: afterBetClick && afterBetClick.text || '',
+                    tail: btnRes.tail || '',
+                    ts: Date.now()
+                });
+
+                if (isAviatorDiagEnabled()) {
+                    try {
+                        var btnDump = dumpAviatorBetButton(boxIndex);
+                        safePostAviatorDiag({
+                            abx: 'bet_diag_button_dump',
+                            boxIndex: boxIndex,
+                            ok: !!(btnDump && btnDump.ok),
+                            count: btnDump && btnDump.count || 0,
+                            rootTail: btnDump && btnDump.rootTail || '',
+                            dump: btnDump && btnDump.dump || '',
+                            message: btnDump && btnDump.message || '',
+                            ts: Date.now()
+                        });
+                    } catch (_) {
+                    }
+
+                    try {
+                        var dualSnap = snapshotAviatorBoxes();
+                        safePostAviatorDiag({
+                            abx: 'bet_diag_dual_snapshot',
+                            boxIndex: boxIndex,
+                            box1Value: dualSnap.box1Value || 0,
+                            box1Text: dualSnap.box1Text || '',
+                            box1State: dualSnap.box1State || '',
+                            box1Texts: dualSnap.box1Texts || '',
+                            box2Value: dualSnap.box2Value || 0,
+                            box2Text: dualSnap.box2Text || '',
+                            box2State: dualSnap.box2State || '',
+                            box2Texts: dualSnap.box2Texts || '',
+                            ts: Date.now()
+                        });
+                    } catch (_) {
+                    }
+                }
+
+                startAviatorAutoCashoutWatch(boxIndex, target);
+
+                if (boxIndex === 2 && isAviatorDiagEnabled()) {
+                    try {
+                        await sleep(180);
+                        var treeRes = dumpAviatorBoxTree(boxIndex);
+                        safePostAviatorDiag({
+                            abx: 'bet_diag_tree',
+                            boxIndex: boxIndex,
+                            ok: !!(treeRes && treeRes.ok),
+                            count: treeRes && treeRes.count || 0,
+                            rootTail: treeRes && treeRes.rootTail || '',
+                            dump: treeRes && treeRes.dump || '',
+                            message: treeRes && treeRes.message || '',
+                            ts: Date.now()
+                        });
+                        var sceneScan = scanSceneForMoneyText(/10,?000/);
+                        safePostAviatorDiag({
+                            abx: 'bet_diag_scene_scan',
+                            boxIndex: boxIndex,
+                            ok: !!(sceneScan && sceneScan.ok),
+                            count: sceneScan && sceneScan.count || 0,
+                            dump: sceneScan && sceneScan.dump || '',
+                            message: sceneScan && sceneScan.message || '',
+                            ts: Date.now()
+                        });
+                    } catch (diagErr) {
+                        safePostAviatorDiag({
+                            abx: 'bet_diag_scene_scan',
+                            boxIndex: boxIndex,
+                            ok: false,
+                            count: 0,
+                            dump: '',
+                            message: 'diag-error:' + String(diagErr && diagErr.message || diagErr),
+                            ts: Date.now()
+                        });
+                    }
+                }
 
                 safePost({
                     abx: 'bet',
+                    boxIndex: boxIndex,
                     side: 'AUTO',
                     amount: amt,
                     target: target,
@@ -3140,8 +3674,10 @@
                 });
                 return 'ok';
             } catch (err) {
+                var errBoxIndex = normalizeAviatorBoxIndex(c);
                 safePost({
                     abx: 'bet_error',
+                    boxIndex: errBoxIndex,
                     side: 'AUTO',
                     amount: Number(a) || 0,
                     error: String(err && err.message || err),

@@ -19,6 +19,10 @@ namespace AviatorHit.Tasks
         // Dãy tiền 1 chiều (giữ lại để tương thích)
         public long[] StakeSeq { get; init; }
         public AviatorStakeEntry[] StakeEntries { get; init; } = Array.Empty<AviatorStakeEntry>();
+        public string TabId { get; init; } = "";
+        public int BetBoxIndex { get; init; } = 1;
+        public int[] CleanupBoxIndexes { get; init; } = Array.Empty<int>();
+        public Func<int[]>? GetCleanupBoxIndexes { get; init; }
 
         // ====== NEW: dãy tiền nhiều chuỗi (mỗi dòng 1 chuỗi) ======
         // Ví dụ:

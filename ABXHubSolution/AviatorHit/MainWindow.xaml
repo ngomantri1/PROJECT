@@ -527,6 +527,100 @@
                         </Border>
 
                         <Border
+                            x:Name="GroupStrategyTabs"
+                            Style="{StaticResource Card}"
+                            Visibility="Collapsed">
+                            <StackPanel>
+                                <StackPanel Style="{StaticResource SectionHeader}">
+                                    <TextBlock Style="{StaticResource SectionTitle}" Text="Tabs chiến lược" />
+                                </StackPanel>
+
+                                <Border
+                                    Padding="4"
+                                    Background="#F0F2F5"
+                                    BorderBrush="#E4E6EB"
+                                    BorderThickness="1"
+                                    CornerRadius="16">
+                                    <ListBox
+                                        x:Name="StrategyTabList"
+                                        BorderThickness="0"
+                                        Background="Transparent"
+                                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                        ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                        SelectionChanged="StrategyTabList_SelectionChanged">
+                                        <ListBox.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ListBox.ItemsPanel>
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem">
+                                                <Setter Property="Padding" Value="0" />
+                                                <Setter Property="Margin" Value="0,0,8,0" />
+                                                <Setter Property="BorderThickness" Value="0" />
+                                                <Setter Property="Background" Value="Transparent" />
+                                                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border
+                                                    x:Name="TabItemBorder"
+                                                    MinWidth="154"
+                                                    Padding="16,10"
+                                                    Background="#F7F8FA"
+                                                    BorderBrush="#DADDE1"
+                                                    BorderThickness="1"
+                                                    CornerRadius="12"
+                                                    SnapsToDevicePixels="True">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <TextBlock
+                                                            Grid.Column="0"
+                                                            VerticalAlignment="Center"
+                                                            FontSize="14"
+                                                            FontWeight="SemiBold"
+                                                            Foreground="#1C1E21"
+                                                            Text="{Binding Name}" />
+
+                                                        <Border
+                                                            Grid.Column="1"
+                                                            Margin="10,0,0,0"
+                                                            Padding="8,2"
+                                                            Background="#E4E6EB"
+                                                            CornerRadius="9">
+                                                            <TextBlock
+                                                                FontSize="12"
+                                                                FontWeight="SemiBold"
+                                                                Foreground="#606770"
+                                                                Text="{Binding BetBoxIndex, StringFormat=Box {0}}" />
+                                                        </Border>
+                                                    </Grid>
+                                                </Border>
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsMouseOver}" Value="True">
+                                                        <Setter TargetName="TabItemBorder" Property="Background" Value="#FFFFFF" />
+                                                        <Setter TargetName="TabItemBorder" Property="BorderBrush" Value="#CCD0D5" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
+                                                        <Setter TargetName="TabItemBorder" Property="Background" Value="#E7F3FF" />
+                                                        <Setter TargetName="TabItemBorder" Property="BorderBrush" Value="#1877F2" />
+                                                    </DataTrigger>
+                                                </DataTemplate.Triggers>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <Border
                             x:Name="GroupStrategyMoney"
                             Style="{StaticResource Card}"
                             Visibility="Collapsed">

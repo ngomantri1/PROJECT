@@ -12,6 +12,7 @@ namespace AviatorHit.Tasks
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
             var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
+            ctx.Log?.Invoke($"[AVIATOR-TAB] tab={ctx.TabId} box={ctx.BetBoxIndex}");
             ctx.Log?.Invoke("Chiến lược: Chạy ăn hũ");
 
             while (true)

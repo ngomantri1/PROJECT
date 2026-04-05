@@ -6,16 +6,17 @@ using System.Windows.Threading;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Collections.Concurrent;
 
 namespace AviatorHit.Tasks
 {
     internal static class TaskUtil
     {
-        // Khóa chống bắn đúp: 3s kể từ lần place bet THÀNH CÔNG gần nhất
-        private static long _lastBetOkMs = 0;
+        // Khóa chống bắn đúp: 3s kể từ lần place bet THÀNH CÔNG gần nhất, tách theo từng box.
+        private static readonly ConcurrentDictionary<int, long> _lastBetOkMsByBox = new();
 
         // (tuỳ chọn) reset khi dừng task
-        public static void ClearBetCooldown() => Volatile.Write(ref _lastBetOkMs, 0);
+        public static void ClearBetCooldown() => _lastBetOkMsByBox.Clear();
 
         public static string ParityCharToSide(char ch) => (ch == 'C') ? "CHAN" : "LE";
         public static char DigitToParity(char d) => (d == '0' || d == '2' || d == '4') ? 'C' : 'L';
@@ -143,11 +144,12 @@ namespace AviatorHit.Tasks
 
         public static async Task<bool> PlaceBet(GameContext ctx, string side, long amount, CancellationToken ct, bool ignoreCooldown = false)
         {
+            var boxIndex = Math.Max(1, ctx.BetBoxIndex);
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var last = Volatile.Read(ref _lastBetOkMs);
+            var last = _lastBetOkMsByBox.TryGetValue(boxIndex, out var lastByBox) ? lastByBox : 0L;
             if (!ignoreCooldown && now - last < 3000)  // 3 giây khoá sau lần bet OK gần nhất
             {
-                ctx.Log?.Invoke($"[BET] cooldown 3s active, skip ({3000 - (now - last)}ms left)");
+                ctx.Log?.Invoke($"[BET] cooldown 3s active box={boxIndex}, skip ({3000 - (now - last)}ms left)");
                 return false;
             }
 
@@ -159,31 +161,62 @@ namespace AviatorHit.Tasks
             var js =
                 "(async function(){try{" +
                 " if (typeof window.__cw_bet==='function'){" +
-                "   return String(await window.__cw_bet('" + side + "', " + amount + "));" +
+                "   return String(await window.__cw_bet('" + side + "', " + amount + ", " + Math.Max(1, ctx.BetBoxIndex) + "));" +
                 " } else { return 'no'; }" +
                 "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
             var rRaw = await ctx.EvalJsAsync(js);
-            ctx.Log?.Invoke($"[BET-JS] result={rRaw}");
+            ctx.Log?.Invoke($"[BET-JS] tab={ctx.TabId} box={ctx.BetBoxIndex} result={rRaw}");
 
             // Không kiểm tra thành công/thất bại để tránh bắn lặp; chỉ đẩy lệnh một lần
             bool ok = true;
 
             if (ok)
-                Volatile.Write(ref _lastBetOkMs, now); // kích hoạt khoá 3s
+                _lastBetOkMsByBox[boxIndex] = now;
 
             return ok;
         }
 
         public static async Task<bool> PlaceBet(GameContext ctx, long amount, double target, CancellationToken ct, bool ignoreCooldown = false)
         {
+            var boxIndex = Math.Max(1, ctx.BetBoxIndex);
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var last = Volatile.Read(ref _lastBetOkMs);
+            var last = _lastBetOkMsByBox.TryGetValue(boxIndex, out var lastByBox) ? lastByBox : 0L;
             if (!ignoreCooldown && now - last < 3000)
             {
-                ctx.Log?.Invoke($"[BET] cooldown 3s active, skip ({3000 - (now - last)}ms left)");
+                ctx.Log?.Invoke($"[BET] cooldown 3s active box={boxIndex}, skip ({3000 - (now - last)}ms left)");
                 return false;
             }
+
+            async Task EnsureAviatorBoxIdleAsync(int targetBoxIndex, string reason)
+            {
+                targetBoxIndex = Math.Max(1, targetBoxIndex);
+                var js =
+                    "(async function(){try{" +
+                    " if (typeof window.__cw_ensure_box_idle==='function'){" +
+                    "   return JSON.stringify(await window.__cw_ensure_box_idle(" + targetBoxIndex + ", '" + reason + "'));" +
+                    " }" +
+                    " return JSON.stringify({ok:false,boxIndex:" + targetBoxIndex + ",message:'no-fn'});" +
+                    "}catch(e){" +
+                    " return JSON.stringify({ok:false,boxIndex:" + targetBoxIndex + ",message:'err:' + (e && e.message ? e.message : e)});" +
+                "}})();";
+
+                await ctx.EvalJsAsync(js);
+            }
+
+            var cleanupBoxes = (ctx.GetCleanupBoxIndexes?.Invoke() ?? ctx.CleanupBoxIndexes ?? Array.Empty<int>())
+                .Where(x => x > 0 && x != boxIndex)
+                .Distinct()
+                .ToArray();
+
+            foreach (var cleanupBox in cleanupBoxes)
+            {
+                ct.ThrowIfCancellationRequested();
+                await EnsureAviatorBoxIdleAsync(cleanupBox, "inactive-cleanup");
+            }
+
+            ct.ThrowIfCancellationRequested();
+            await EnsureAviatorBoxIdleAsync(boxIndex, "pre-bet");
 
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke("AUTO"));
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
@@ -192,20 +225,18 @@ namespace AviatorHit.Tasks
             var js =
                 "(async function(){try{" +
                 " if (typeof window.__cw_bet==='function'){" +
-                "   return String(await window.__cw_bet(" + amount + ", " + target.ToString(System.Globalization.CultureInfo.InvariantCulture) + "));" +
+                "   return String(await window.__cw_bet(" + amount + ", " + target.ToString(System.Globalization.CultureInfo.InvariantCulture) + ", " + Math.Max(1, ctx.BetBoxIndex) + "));" +
                 " } else { return 'no'; }" +
                 "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
             var rRaw = await ctx.EvalJsAsync(js);
-            ctx.Log?.Invoke($"[AVIATOR-BET-JS] result={rRaw} amount={amount:N0} target={target:0.00}x");
+            ctx.Log?.Invoke($"[AVIATOR-BET-JS] tab={ctx.TabId} box={ctx.BetBoxIndex} result={rRaw} amount={amount:N0} target={target:0.00}x");
 
-            var ok = !string.IsNullOrWhiteSpace(rRaw) &&
-                     rRaw.IndexOf("fail", StringComparison.OrdinalIgnoreCase) < 0 &&
-                     rRaw.IndexOf("err:", StringComparison.OrdinalIgnoreCase) < 0 &&
-                     rRaw.IndexOf("no", StringComparison.OrdinalIgnoreCase) < 0;
+            // Bắt chước flow cũ: đã gọi JS thì coi như đã đặt lệnh thành công.
+            var ok = true;
 
             if (ok)
-                Volatile.Write(ref _lastBetOkMs, now);
+                _lastBetOkMsByBox[boxIndex] = now;
 
             return ok;
         }

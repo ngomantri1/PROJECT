@@ -322,8 +322,8 @@ namespace AviatorHit
         // === Fields ================================================================
         private volatile CwSnapshot _lastSnap;
         private readonly object _snapLock = new();
-        private CancellationTokenSource _taskCts;
-        private IBetTask _activeTask;
+        private CancellationTokenSource? _taskCts;
+        private IBetTask? _activeTask;
         private const int NiSeqMax = 50;
         private readonly System.Text.StringBuilder _niSeq = new(NiSeqMax);
 
@@ -415,7 +415,6 @@ namespace AviatorHit
         private bool _autoFollowNewest = true;// true = đang bám trang mới nhất (trang 1); false = đang xem trang cũ, KHÔNG auto nhảy
 
         // 3) Giữ pending bet để chờ kết quả
-        private readonly List<BetRow> _pendingRows = new();
         private const int MaxHistory = 1000;   // tổng số bản ghi giữ trong bộ nhớ & khi load
 
 
@@ -564,8 +563,17 @@ Ví dụ không hợp lệ:
 
 
         // ====== CONFIG ======
+        private record RootConfig
+        {
+            public List<AppConfig> Tabs { get; set; } = new();
+            public string SelectedTabId { get; set; } = "";
+        }
+
         private record AppConfig
         {
+            public string TabId { get; set; } = Guid.NewGuid().ToString("N");
+            public string TabName { get; set; } = "";
+            public int BetBoxIndex { get; set; } = 1;
             public string Url { get; set; } = "";
             [Obsolete] public string Username { get; set; } = "";
             public string StakeCsv { get; set; } = "5000:1.20-10000:2.00-15000:4.50";
@@ -608,6 +616,12 @@ Ví dụ không hợp lệ:
         // 1) Model 1 dòng log đặt cược
         private record StatsRoot
         {
+            public List<StatsItem> Tabs { get; set; } = new();
+        }
+
+        private record StatsItem
+        {
+            public string TabId { get; set; } = "";
             public TabStats Stats { get; set; } = new();
         }
 
@@ -623,10 +637,76 @@ Ví dụ không hợp lệ:
             public double TotalProfit { get; set; }
         }
 
+        private sealed class StrategyTabState : INotifyPropertyChanged
+        {
+            private string _name;
+            private bool _isRunning;
+
+            public StrategyTabState(AppConfig config)
+            {
+                Config = config;
+                _name = string.IsNullOrWhiteSpace(config.TabName) ? "" : config.TabName.Trim();
+            }
+
+            public AppConfig Config { get; }
+            public string Id => Config.TabId;
+            public int BetBoxIndex => Config.BetBoxIndex <= 0 ? 1 : Config.BetBoxIndex;
+
+            public string Name
+            {
+                get => _name;
+                set
+                {
+                    if (_name == value) return;
+                    _name = value;
+                    Config.TabName = value;
+                    OnPropertyChanged(nameof(Name));
+                }
+            }
+
+            public bool IsRunning
+            {
+                get => _isRunning;
+                set
+                {
+                    if (_isRunning == value) return;
+                    _isRunning = value;
+                    OnPropertyChanged(nameof(IsRunning));
+                }
+            }
+
+            public double WinTotal { get; set; } = 0;
+            public string LastSide { get; set; } = "";
+            public bool? LastWinLoss { get; set; }
+            public long? LastStakeAmount { get; set; }
+            public string LastLevelText { get; set; } = "";
+            public long[] RunStakeSeq { get; set; } = Array.Empty<long>();
+            public AviatorStakeEntry[] RunStakeEntries { get; set; } = Array.Empty<AviatorStakeEntry>();
+            public List<long[]> RunStakeChains { get; set; } = new();
+            public List<AviatorStakeEntry[]> RunStakeEntryChains { get; set; } = new();
+            public long[] RunStakeChainTotals { get; set; } = Array.Empty<long>();
+            public double RunDecisionPercent { get; set; } = 0;
+            public bool CutStopTriggered { get; set; } = false;
+            public List<BetRow> PendingRows { get; } = new();
+
+            public CancellationTokenSource? TaskCts { get; set; }
+            public Task? RunningTask { get; set; }
+            public IBetTask? ActiveTask { get; set; }
+            public DecisionState DecisionState { get; set; } = new DecisionState();
+            public bool Cooldown { get; set; } = false;
+            public TabStats Stats { get; set; } = new TabStats();
+
+            public event PropertyChangedEventHandler? PropertyChanged;
+            private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        }
+
         private sealed class BetRow
         {
             public DateTime At { get; set; }                 // Thời gian đặt
             public string Game { get; set; } = "Xóc đĩa live";
+            public string TabId { get; set; } = "";
+            public string TabName { get; set; } = "";
+            public int BoxIndex { get; set; }
             public long Stake { get; set; }                  // Tiền cược
             public string Side { get; set; } = "";           // CHAN/LE
             public string Result { get; set; } = "";         // Kết quả "CHAN"/"LE"
@@ -644,8 +724,13 @@ Ví dụ không hợp lệ:
 
 
 
+        private RootConfig _rootCfg = new();
         private AppConfig _cfg = new();
         private StatsRoot _statsRoot = new();
+        private readonly ObservableCollection<StrategyTabState> _strategyTabs = new();
+        private StrategyTabState? _activeTab;
+        private bool _tabSwitching = false;
+        private const int MaxTabs = 2;
         private string _statsPath = "";
         private readonly SemaphoreSlim _statsWriteGate = new(1, 1);
 
@@ -1001,6 +1086,9 @@ Ví dụ không hợp lệ:
                     if (GroupLoginNav != null)
                         GroupLoginNav.Visibility = isGame ? Visibility.Collapsed : Visibility.Visible;
 
+                    if (GroupStrategyTabs != null)
+                        GroupStrategyTabs.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
+
                     if (GroupStrategyMoney != null)
                         GroupStrategyMoney.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
 
@@ -1145,79 +1233,359 @@ Ví dụ không hợp lệ:
         }
 
         // ====== Config I/O ======
+        private static AppConfig CloneConfig(AppConfig cfg)
+        {
+            var json = JsonSerializer.Serialize(cfg);
+            return JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
+        }
+
+        private static AppConfig CreateDefaultTab(int index)
+        {
+            var boxIndex = index <= 1 ? 1 : 2;
+            return new AppConfig
+            {
+                TabId = Guid.NewGuid().ToString("N"),
+                TabName = $"Chiến lược {index}",
+                BetBoxIndex = boxIndex,
+                Url = DEFAULT_URL,
+                StakeCsv = "5000:1.20-10000:2.00-15000:4.50",
+                DecisionSeconds = 10,
+                MoneyStrategy = "IncreaseWhenLose",
+                SideRateText = AviatorHit.Tasks.SideRateParser.DefaultText
+            };
+        }
+
+        private StrategyTabState? FindTabByBoxIndex(int boxIndex)
+        {
+            var target = boxIndex == 2 ? 2 : 1;
+            return _strategyTabs.FirstOrDefault(t => t.BetBoxIndex == target);
+        }
+
+        private bool IsAnyTabRunning() => _strategyTabs.Any(t => t.IsRunning);
+        private bool IsActiveTabRunning() => _activeTab != null && _activeTab.IsRunning;
+
+        private static int ReadBoxIndex(JsonElement root, int fallback = 1)
+        {
+            try
+            {
+                if (root.TryGetProperty("boxIndex", out var boxEl))
+                {
+                    if (boxEl.ValueKind == JsonValueKind.Number && boxEl.TryGetInt32(out var boxNum) && boxNum > 0)
+                        return boxNum;
+
+                    if (boxEl.ValueKind == JsonValueKind.String &&
+                        int.TryParse(boxEl.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var boxText) &&
+                        boxText > 0)
+                    {
+                        return boxText;
+                    }
+                }
+            }
+            catch { }
+
+            return fallback > 0 ? fallback : 1;
+        }
+
+        private long ReadCurrentBalanceFromUi()
+        {
+            try { return (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); }
+            catch { return 0; }
+        }
+
+        private static string FormatAviatorBoxSide(int boxIndex, double target)
+        {
+            var normalizedBox = boxIndex == 2 ? 2 : 1;
+            return $"BOX {normalizedBox} {target:0.00}x";
+        }
+
+        private Task<string> EnsureAviatorBoxIdleAsync(int boxIndex, string reason)
+        {
+            if (Web?.CoreWebView2 == null)
+                return Task.FromResult("no-webview");
+
+            var normalizedBox = boxIndex == 2 ? 2 : 1;
+            var normalizedReason = (reason ?? "manual")
+                .Replace("\\", "")
+                .Replace("'", "")
+                .Replace("\"", "");
+
+            var js =
+                "(async function(){try{" +
+                " if (typeof window.__cw_ensure_box_idle==='function'){" +
+                "   return JSON.stringify(await window.__cw_ensure_box_idle(" + normalizedBox + ", '" + normalizedReason + "'));" +
+                " }" +
+                " return JSON.stringify({ok:false,boxIndex:" + normalizedBox + ",message:'no-fn'});" +
+                "}catch(e){" +
+                " return JSON.stringify({ok:false,boxIndex:" + normalizedBox + ",message:'err:' + (e && e.message ? e.message : e)});" +
+                "}})();";
+
+            return Dispatcher.InvokeAsync(() => Web.ExecuteScriptAsync(js)).Task.Unwrap();
+        }
+
+        private void RefreshBetHistoryUi()
+        {
+            if (_autoFollowNewest)
+                ShowFirstPage();
+            else
+                RefreshCurrentPage();
+        }
+
         private void LoadConfig()
         {
             try
             {
+                AppConfig? legacyCfg = null;
+                _rootCfg = new RootConfig();
+
                 if (File.Exists(_cfgPath))
                 {
                     var json = File.ReadAllText(_cfgPath, Encoding.UTF8);
-                    _cfg = JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
+
+                    try
+                    {
+                        var parsedRoot = JsonSerializer.Deserialize<RootConfig>(json);
+                        if (parsedRoot?.Tabs != null && parsedRoot.Tabs.Count > 0)
+                            _rootCfg = parsedRoot;
+                        else
+                            legacyCfg = JsonSerializer.Deserialize<AppConfig>(json);
+                    }
+                    catch
+                    {
+                        legacyCfg = JsonSerializer.Deserialize<AppConfig>(json);
+                    }
+
                     Log("Loaded config: " + _cfgPath);
                 }
+
+                if (_rootCfg.Tabs == null || _rootCfg.Tabs.Count == 0)
+                {
+                    var first = legacyCfg != null ? CloneConfig(legacyCfg) : CreateDefaultTab(1);
+                    if (string.IsNullOrWhiteSpace(first.TabId)) first.TabId = Guid.NewGuid().ToString("N");
+                    first.TabName = string.IsNullOrWhiteSpace(first.TabName) ? "Chiến lược 1" : first.TabName.Trim();
+                    first.BetBoxIndex = 1;
+                    if (string.IsNullOrWhiteSpace(first.Url)) first.Url = DEFAULT_URL;
+
+                    var second = CloneConfig(first);
+                    second.TabId = Guid.NewGuid().ToString("N");
+                    second.TabName = "Chiến lược 2";
+                    second.BetBoxIndex = 2;
+
+                    _rootCfg.Tabs = new List<AppConfig> { first, second };
+                    _rootCfg.SelectedTabId = first.TabId;
+                }
+
+                while (_rootCfg.Tabs.Count < MaxTabs)
+                    _rootCfg.Tabs.Add(CreateDefaultTab(_rootCfg.Tabs.Count + 1));
+                if (_rootCfg.Tabs.Count > MaxTabs)
+                    _rootCfg.Tabs = _rootCfg.Tabs.Take(MaxTabs).ToList();
+
+                for (int i = 0; i < _rootCfg.Tabs.Count; i++)
+                {
+                    var tabCfg = _rootCfg.Tabs[i] ?? CreateDefaultTab(i + 1);
+                    if (string.IsNullOrWhiteSpace(tabCfg.TabId))
+                        tabCfg.TabId = Guid.NewGuid().ToString("N");
+                    if (string.IsNullOrWhiteSpace(tabCfg.TabName))
+                        tabCfg.TabName = $"Chiến lược {i + 1}";
+                    tabCfg.BetBoxIndex = i == 0 ? 1 : 2;
+                    if (string.IsNullOrWhiteSpace(tabCfg.Url))
+                        tabCfg.Url = DEFAULT_URL;
+                    _rootCfg.Tabs[i] = tabCfg;
+                }
+
+                _strategyTabs.Clear();
+                foreach (var tabCfg in _rootCfg.Tabs)
+                    _strategyTabs.Add(new StrategyTabState(tabCfg) { Name = tabCfg.TabName });
+
+                _activeTab = _strategyTabs.FirstOrDefault(t => t.Id == _rootCfg.SelectedTabId)
+                    ?? _strategyTabs.FirstOrDefault();
+                if (_activeTab == null)
+                {
+                    var fallbackCfg = CreateDefaultTab(1);
+                    var fallbackTab = new StrategyTabState(fallbackCfg) { Name = fallbackCfg.TabName };
+                    _strategyTabs.Add(fallbackTab);
+                    _activeTab = fallbackTab;
+                }
+
+                _cfg = _activeTab.Config;
+                _rootCfg.SelectedTabId = _activeTab.Id;
                 _homeUsername = _cfg.LastHomeUsername;
-                // Sinh / nạp clientId cố định cho lease
                 _leaseClientId = string.IsNullOrWhiteSpace(_cfg.LeaseClientId)
                     ? (_cfg.LeaseClientId = Guid.NewGuid().ToString("N"))
                     : _cfg.LeaseClientId;
                 EnsureDeviceId();
                 EnsureTrialKey();
 
-                if (string.IsNullOrWhiteSpace(_cfg.Url))
-                    _cfg.Url = DEFAULT_URL;
-                if (TxtUrl != null) TxtUrl.Text = _cfg.Url;
-                if (TxtStakeCsv != null)
+                if (StrategyTabList != null)
                 {
-                    TxtStakeCsv.Text = _cfg.StakeCsv;
-                    RebuildAviatorStakeSeq(_cfg.StakeCsv);
-                    Log($"[StakeCsv] loaded: {_cfg.StakeCsv} -> {_stakeSeq.Length} mức");
-
-                }
-                if (CmbBetStrategy != null)
-                    CmbBetStrategy.SelectedIndex = 0;
-                SyncStrategyFieldsToUI();
-                UpdateTooltips();
-                UpdateBetStrategyUi();
-                ForceAviatorModeUi();
-
-
-                if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString();
-                if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
-                LoadStakeCsvForCurrentMoneyStrategy();// NEW: nạp chuỗi tiền theo “Quản lý vốn” hiện tại
-                if (ChkS7ResetOnProfit != null) ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
-                MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
-                UpdateS7ResetOptionUI();
-
-                if (TxtSideRatio != null)
-                {
-                    var sideTxt = string.IsNullOrWhiteSpace(_cfg.SideRateText) ? AviatorHit.Tasks.SideRateParser.DefaultText : _cfg.SideRateText;
-                    TxtSideRatio.Text = sideTxt;
-                    _cfg.SideRateText = sideTxt;
+                    StrategyTabList.ItemsSource = _strategyTabs;
+                    StrategyTabList.SelectedItem = _activeTab;
                 }
 
-
-                if (ChkRemember != null) ChkRemember.IsChecked = _cfg.RememberCreds;
-
-                if (_cfg.RememberCreds)
-                {
-                    var user = UnprotectString(_cfg.EncUser);
-                    var pass = UnprotectString(_cfg.EncPass);
-                    if (TxtUser != null) TxtUser.Text = user;
-                    if (TxtPass != null) TxtPass.Password = pass;
-                }
-                else
-                {
-                    if (!string.IsNullOrEmpty(_cfg.Username) && TxtUser != null)
-                        TxtUser.Text = _cfg.Username;
-                }
-
-                if (ChkTrial != null) ChkTrial.IsChecked = IsTrialModeRequestedOrActive();
-                ApplyCutUiFromConfig();
                 LoadStats();
-
-
+                ApplyActiveTabToUi();
             }
             catch (Exception ex) { Log("[LoadConfig] " + ex); }
+        }
+
+        private void ApplyUiToConfig(AppConfig cfg)
+        {
+            if (cfg == null) return;
+
+            cfg.Url = T(TxtUrl);
+            cfg.StakeCsv = T(TxtStakeCsv, "5000:1.20-10000:2.00-15000:4.50");
+            cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
+            cfg.BetStrategyIndex = 0;
+            cfg.BetSeq = T(TxtChuoiCau, cfg.BetSeq);
+            cfg.BetPatterns = T(TxtTheCau, cfg.BetPatterns);
+            cfg.SideRateText = T(TxtSideRatio, cfg.SideRateText);
+
+            var remember = (ChkRemember?.IsChecked == true);
+            cfg.RememberCreds = remember;
+            if (remember)
+            {
+                cfg.EncUser = ProtectString(T(TxtUser));
+                cfg.EncPass = ProtectString(P(TxtPass));
+                cfg.Username = "";
+            }
+            else
+            {
+                cfg.EncUser = "";
+                cfg.EncPass = "";
+                cfg.Username = "";
+            }
+
+            cfg.LockMouse = (ChkLockMouse?.IsChecked == true);
+            cfg.UseTrial = IsTrialModeRequestedOrActive();
+            cfg.LeaseClientId = _leaseClientId;
+            cfg.MoneyStrategy = GetMoneyStrategyFromUI();
+            if (ChkS7ResetOnProfit != null)
+                cfg.S7ResetOnProfit = (ChkS7ResetOnProfit.IsChecked == true);
+        }
+
+        private void ApplyActiveTabToUi()
+        {
+            if (_activeTab == null) return;
+
+            _cfg = _activeTab.Config;
+            if (string.IsNullOrWhiteSpace(_cfg.Url))
+                _cfg.Url = DEFAULT_URL;
+
+            if (StrategyTabList != null && StrategyTabList.SelectedItem != _activeTab)
+            {
+                _tabSwitching = true;
+                StrategyTabList.SelectedItem = _activeTab;
+                _tabSwitching = false;
+            }
+
+            if (TxtUrl != null) TxtUrl.Text = _cfg.Url;
+            if (TxtStakeCsv != null)
+            {
+                TxtStakeCsv.Text = _cfg.StakeCsv;
+                RebuildAviatorStakeSeq(_cfg.StakeCsv);
+                Log($"[StakeCsv] loaded[{_activeTab.Name}]: {_cfg.StakeCsv} -> {_stakeSeq.Length} mức");
+            }
+            if (CmbBetStrategy != null)
+                CmbBetStrategy.SelectedIndex = 0;
+
+            SyncStrategyFieldsToUI();
+            UpdateTooltips();
+            UpdateBetStrategyUi();
+            ForceAviatorModeUi();
+
+            if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString();
+            if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
+            LoadStakeCsvForCurrentMoneyStrategy();
+            if (ChkS7ResetOnProfit != null) ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
+            MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
+            UpdateS7ResetOptionUI();
+
+            if (TxtSideRatio != null)
+            {
+                var sideTxt = string.IsNullOrWhiteSpace(_cfg.SideRateText) ? AviatorHit.Tasks.SideRateParser.DefaultText : _cfg.SideRateText;
+                TxtSideRatio.Text = sideTxt;
+                _cfg.SideRateText = sideTxt;
+            }
+
+            if (ChkRemember != null) ChkRemember.IsChecked = _cfg.RememberCreds;
+            if (ChkLockMouse != null) ChkLockMouse.IsChecked = _cfg.LockMouse;
+            if (_cfg.RememberCreds)
+            {
+                var user = UnprotectString(_cfg.EncUser);
+                var pass = UnprotectString(_cfg.EncPass);
+                if (TxtUser != null) TxtUser.Text = user;
+                if (TxtPass != null) TxtPass.Password = pass;
+            }
+            else if (!string.IsNullOrEmpty(_cfg.Username) && TxtUser != null)
+            {
+                TxtUser.Text = _cfg.Username;
+            }
+
+            if (ChkTrial != null) ChkTrial.IsChecked = IsTrialModeRequestedOrActive();
+            ApplyCutUiFromConfig();
+            ApplyTabRuntimeToUi(_activeTab);
+        }
+
+        private void ApplyTabRuntimeToUi(StrategyTabState tab)
+        {
+            _winTotal = tab.WinTotal;
+            if (LblWin != null) LblWin.Text = tab.WinTotal.ToString("N0");
+            if (LblStake != null) LblStake.Text = tab.LastStakeAmount.HasValue ? tab.LastStakeAmount.Value.ToString("N0") : "";
+            if (LblLevel != null) LblLevel.Text = tab.LastLevelText ?? "";
+            SetLastSideUI(tab.LastSide);
+            SetWinLossUI(tab.LastWinLoss);
+            UpdateStatsUi(tab);
+        }
+
+        private void SyncStatsRootFromTabs()
+        {
+            _statsRoot ??= new StatsRoot();
+            if (_statsRoot.Tabs == null) _statsRoot.Tabs = new List<StatsItem>();
+            _statsRoot.Tabs = _strategyTabs
+                .Select(t => new StatsItem { TabId = t.Id, Stats = t.Stats ?? new TabStats() })
+                .ToList();
+        }
+
+        private void LoadStats()
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(_statsPath) && File.Exists(_statsPath))
+                {
+                    var json = File.ReadAllText(_statsPath, Encoding.UTF8);
+                    using var doc = JsonDocument.Parse(json);
+                    if (doc.RootElement.TryGetProperty("Tabs", out _))
+                    {
+                        _statsRoot = JsonSerializer.Deserialize<StatsRoot>(json) ?? new StatsRoot();
+                    }
+                    else if (doc.RootElement.TryGetProperty("Stats", out var statsEl))
+                    {
+                        var legacyStats = statsEl.Deserialize<TabStats>() ?? new TabStats();
+                        _statsRoot = new StatsRoot();
+                        if (_strategyTabs.Count > 0)
+                        {
+                            _strategyTabs[0].Stats = legacyStats;
+                            if (_strategyTabs.Count > 1)
+                                _strategyTabs[1].Stats = new TabStats();
+                        }
+                    }
+                    Log("Loaded stats: " + _statsPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[LoadStats] " + ex);
+            }
+
+            _statsRoot ??= new StatsRoot();
+            var byId = (_statsRoot.Tabs ?? new List<StatsItem>())
+                .Where(t => !string.IsNullOrWhiteSpace(t.TabId))
+                .ToDictionary(t => t.TabId, t => t.Stats ?? new TabStats());
+
+            foreach (var tab in _strategyTabs)
+                tab.Stats = byId.TryGetValue(tab.Id, out var stats) ? stats : (tab.Stats ?? new TabStats());
+
+            SyncStatsRootFromTabs();
+            UpdateStatsUi();
         }
 
         private async Task SaveConfigAsync()
@@ -1231,38 +1599,16 @@ Ví dụ không hợp lệ:
             await _cfgWriteGate.WaitAsync();
             try
             {
-                _cfg.Url = T(TxtUrl);
-                _cfg.StakeCsv = T(TxtStakeCsv, "5000:1.20-10000:2.00-15000:4.50");
-                _cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
-                _cfg.BetStrategyIndex = 0;
-                _cfg.BetSeq = T(TxtChuoiCau, _cfg.BetSeq);
-                _cfg.BetPatterns = T(TxtTheCau, _cfg.BetPatterns);
-                _cfg.SideRateText = T(TxtSideRatio, _cfg.SideRateText);
+                if (_activeTab != null)
+                    ApplyUiToConfig(_activeTab.Config);
 
-                var remember = (ChkRemember?.IsChecked == true);
-                _cfg.RememberCreds = remember;
-                if (remember)
-                {
-                    _cfg.EncUser = ProtectString(T(TxtUser));
-                    _cfg.EncPass = ProtectString(P(TxtPass));
-                    _cfg.Username = "";
-                }
-                else { _cfg.EncUser = ""; _cfg.EncPass = ""; _cfg.Username = ""; }
-
-                _cfg.LockMouse = (ChkLockMouse?.IsChecked == true);
-                _cfg.UseTrial = IsTrialModeRequestedOrActive();
-                _cfg.LeaseClientId = _leaseClientId;
-                _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
-                if (ChkS7ResetOnProfit != null)
-                    _cfg.S7ResetOnProfit = (ChkS7ResetOnProfit.IsChecked == true);
-
+                _rootCfg.Tabs = _strategyTabs.Select(t => t.Config).ToList();
+                _rootCfg.SelectedTabId = _activeTab?.Id ?? "";
 
                 var dir = Path.GetDirectoryName(_cfgPath);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-                var json = JsonSerializer.Serialize(_cfg, new JsonSerializerOptions { WriteIndented = true });
-
-                // Ghi an toàn: file tạm -> move (atomic)
+                var json = JsonSerializer.Serialize(_rootCfg, new JsonSerializerOptions { WriteIndented = true });
                 var tmp = _cfgPath + ".tmp";
                 await File.WriteAllTextAsync(tmp, json, Encoding.UTF8);
                 File.Move(tmp, _cfgPath, true);
@@ -1273,27 +1619,6 @@ Ví dụ không hợp lệ:
             finally { _cfgWriteGate.Release(); }
         }
 
-        private void LoadStats()
-        {
-            try
-            {
-                if (!string.IsNullOrEmpty(_statsPath) && File.Exists(_statsPath))
-                {
-                    var json = File.ReadAllText(_statsPath, Encoding.UTF8);
-                    _statsRoot = JsonSerializer.Deserialize<StatsRoot>(json) ?? new StatsRoot();
-                    Log("Loaded stats: " + _statsPath);
-                }
-            }
-            catch (Exception ex)
-            {
-                Log("[LoadStats] " + ex);
-            }
-
-            _statsRoot ??= new StatsRoot();
-            _statsRoot.Stats ??= new TabStats();
-            UpdateStatsUi();
-        }
-
         private async Task SaveStatsAsync()
         {
             if (string.IsNullOrEmpty(_statsPath)) return;
@@ -1301,6 +1626,8 @@ Ví dụ không hợp lệ:
             await _statsWriteGate.WaitAsync();
             try
             {
+                SyncStatsRootFromTabs();
+
                 var dir = Path.GetDirectoryName(_statsPath);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
@@ -1315,7 +1642,22 @@ Ví dụ không hợp lệ:
 
         private void UpdateStatsUi()
         {
-            var s = _statsRoot?.Stats ?? new TabStats();
+            if (_activeTab != null)
+            {
+                UpdateStatsUi(_activeTab);
+                return;
+            }
+
+            if (LblStatStreak != null) LblStatStreak.Text = "0/0";
+            if (LblStatTotalWinLoss != null) LblStatTotalWinLoss.Text = "0/0";
+            if (LblStatTotalBet != null) LblStatTotalBet.Text = "0";
+            if (LblStatTotalProfit != null) LblStatTotalProfit.Text = "0";
+        }
+
+        private void UpdateStatsUi(StrategyTabState tab)
+        {
+            if (tab == null) return;
+            var s = tab.Stats ?? new TabStats();
             if (LblStatStreak != null)
                 LblStatStreak.Text = $"{s.MaxWinStreak}/{s.MaxLossStreak}";
             if (LblStatTotalWinLoss != null)
@@ -1328,46 +1670,200 @@ Ví dụ không hợp lệ:
 
         private void UpdateStatsStake(double amount)
         {
+            var tab = _activeTab;
+            if (tab == null) return;
             var rounded = (long)Math.Round(amount);
             if (rounded > 0)
-                _statsRoot.Stats.TotalBetAmount += rounded;
-            UpdateStatsUi();
+                tab.Stats.TotalBetAmount += rounded;
+            UpdateStatsUi(tab);
             _ = SaveStatsAsync();
         }
 
         private void UpdateStatsWin(double net)
         {
-            _statsRoot.Stats.TotalProfit += net;
-            UpdateStatsUi();
+            var tab = _activeTab;
+            if (tab == null) return;
+            tab.Stats.TotalProfit += net;
+            UpdateStatsUi(tab);
             _ = SaveStatsAsync();
         }
 
         private void UpdateStatsWinLoss(bool? result)
         {
-            if (!result.HasValue) return;
+            var tab = _activeTab;
+            if (tab == null || !result.HasValue) return;
+
             if (result.Value)
             {
-                _statsRoot.Stats.TotalWinCount++;
-                _statsRoot.Stats.CurrentWinStreak++;
-                _statsRoot.Stats.CurrentLossStreak = 0;
-                if (_statsRoot.Stats.CurrentWinStreak > _statsRoot.Stats.MaxWinStreak)
-                    _statsRoot.Stats.MaxWinStreak = _statsRoot.Stats.CurrentWinStreak;
+                tab.Stats.TotalWinCount++;
+                tab.Stats.CurrentWinStreak++;
+                tab.Stats.CurrentLossStreak = 0;
+                if (tab.Stats.CurrentWinStreak > tab.Stats.MaxWinStreak)
+                    tab.Stats.MaxWinStreak = tab.Stats.CurrentWinStreak;
             }
             else
             {
-                _statsRoot.Stats.TotalLossCount++;
-                _statsRoot.Stats.CurrentLossStreak++;
-                _statsRoot.Stats.CurrentWinStreak = 0;
-                if (_statsRoot.Stats.CurrentLossStreak > _statsRoot.Stats.MaxLossStreak)
-                    _statsRoot.Stats.MaxLossStreak = _statsRoot.Stats.CurrentLossStreak;
+                tab.Stats.TotalLossCount++;
+                tab.Stats.CurrentLossStreak++;
+                tab.Stats.CurrentWinStreak = 0;
+                if (tab.Stats.CurrentLossStreak > tab.Stats.MaxLossStreak)
+                    tab.Stats.MaxLossStreak = tab.Stats.CurrentLossStreak;
             }
-            UpdateStatsUi();
+            UpdateStatsUi(tab);
+            _ = SaveStatsAsync();
         }
 
         private void ResetStats()
         {
-            _statsRoot.Stats = new TabStats();
-            UpdateStatsUi();
+            if (_activeTab == null) return;
+            _activeTab.Stats = new TabStats();
+            UpdateStatsUi(_activeTab);
+        }
+
+        private void UpdateTabSide(StrategyTabState tab, string? result)
+        {
+            if (tab == null) return;
+            tab.LastSide = result ?? "";
+            if (ReferenceEquals(_activeTab, tab))
+                SetLastSideUI(result);
+        }
+
+        private void UpdateTabStake(StrategyTabState tab, double amount, long[] stakeSeq, string moneyStrategyId)
+        {
+            if (tab == null) return;
+
+            var rounded = (long)Math.Round(amount);
+            if (rounded > 0)
+            {
+                tab.LastStakeAmount = rounded;
+                tab.Stats.TotalBetAmount += rounded;
+            }
+            else
+            {
+                tab.LastStakeAmount = null;
+            }
+
+            if (!string.Equals(moneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var idx = Array.IndexOf(stakeSeq ?? Array.Empty<long>(), rounded);
+                    tab.LastLevelText = (idx >= 0 && (stakeSeq?.Length ?? 0) > 0) ? $"{idx + 1}/{stakeSeq!.Length}" : "";
+                }
+                catch
+                {
+                    tab.LastLevelText = "";
+                }
+            }
+
+            if (ReferenceEquals(_activeTab, tab))
+            {
+                if (LblStake != null)
+                    LblStake.Text = tab.LastStakeAmount.HasValue ? tab.LastStakeAmount.Value.ToString("N0") : "";
+                if (!string.Equals(moneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase) && LblLevel != null)
+                    LblLevel.Text = tab.LastLevelText ?? "";
+                UpdateStatsUi(tab);
+            }
+            _ = SaveStatsAsync();
+        }
+
+        private void UpdateTabWin(StrategyTabState tab, double net, string moneyStrategyId)
+        {
+            if (tab == null) return;
+
+            tab.WinTotal += net;
+            tab.Stats.TotalProfit += net;
+            if (ReferenceEquals(_activeTab, tab))
+            {
+                _winTotal = tab.WinTotal;
+                if (LblWin != null)
+                    LblWin.Text = tab.WinTotal.ToString("N0");
+            }
+
+            try
+            {
+                AviatorHit.Tasks.MoneyHelper.NotifyTempProfit(moneyStrategyId, net);
+            }
+            catch { }
+
+            CheckCutAndStopIfNeeded(tab);
+            UpdateStatsUi(tab);
+            _ = SaveStatsAsync();
+        }
+
+        private void UpdateTabWinLoss(StrategyTabState tab, bool? result)
+        {
+            if (tab == null) return;
+            tab.LastWinLoss = result;
+            if (result.HasValue)
+            {
+                if (result.Value)
+                {
+                    tab.Stats.TotalWinCount++;
+                    tab.Stats.CurrentWinStreak++;
+                    tab.Stats.CurrentLossStreak = 0;
+                    if (tab.Stats.CurrentWinStreak > tab.Stats.MaxWinStreak)
+                        tab.Stats.MaxWinStreak = tab.Stats.CurrentWinStreak;
+                }
+                else
+                {
+                    tab.Stats.TotalLossCount++;
+                    tab.Stats.CurrentLossStreak++;
+                    tab.Stats.CurrentWinStreak = 0;
+                    if (tab.Stats.CurrentLossStreak > tab.Stats.MaxLossStreak)
+                        tab.Stats.MaxLossStreak = tab.Stats.CurrentLossStreak;
+                }
+            }
+
+            if (ReferenceEquals(_activeTab, tab))
+                SetWinLossUI(result);
+            UpdateStatsUi(tab);
+            _ = SaveStatsAsync();
+        }
+
+        private void ResetTabMiniState(StrategyTabState tab)
+        {
+            tab.LastWinLoss = null;
+            tab.LastSide = "";
+            tab.LastStakeAmount = null;
+            tab.LastLevelText = "";
+        }
+
+        private void SwitchTab(StrategyTabState tab)
+        {
+            if (tab == null) return;
+            if (_activeTab != null && ReferenceEquals(_activeTab, tab)) return;
+
+            try
+            {
+                _tabSwitching = true;
+                if (_activeTab != null)
+                    ApplyUiToConfig(_activeTab.Config);
+
+                _activeTab = tab;
+                _cfg = tab.Config;
+                _taskCts = tab.TaskCts;
+                _activeTask = tab.ActiveTask;
+                _cooldown = tab.Cooldown;
+                _winTotal = tab.WinTotal;
+                _rootCfg.SelectedTabId = tab.Id;
+
+                ApplyActiveTabToUi();
+                SetPlayButtonState(tab.IsRunning);
+                _ = SaveConfigAsync();
+                _ = SaveStatsAsync();
+            }
+            finally
+            {
+                _tabSwitching = false;
+            }
+        }
+
+        private void StrategyTabList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_tabSwitching) return;
+            if (StrategyTabList?.SelectedItem is StrategyTabState tab)
+                SwitchTab(tab);
         }
 
         private async void BtnStatsReset_Click(object sender, RoutedEventArgs e)
@@ -1516,9 +2012,10 @@ Ví dụ không hợp lệ:
 
                                                     var kqStr = winIsChan ? "CHAN" : "LE";
                                                     long? accNow2 = snap?.totals?.A;
-                                                    if (_pendingRows.Count > 0 && accNow2.HasValue)
+                                                    if (accNow2.HasValue)
                                                     {
-                                                        FinalizeLastBet(kqStr, accNow2.Value);
+                                                        foreach (var pendingTab in _strategyTabs.Where(t => t.PendingRows.Count > 0).ToList())
+                                                            FinalizeLastBet(pendingTab, kqStr, accNow2.Value);
                                                     }
 
                                                     _lockMajorMinorUpdates = false;
@@ -1675,6 +2172,14 @@ Ví dụ không hợp lệ:
                                 // 3) bet ok → tạo dòng placeholder (Result/WinLose = "-") và SHOW TRANG 1
                                 if (abxStr == "bet")
                                 {
+                                    int boxIndex = ReadBoxIndex(root, 1);
+                                    var tab = FindTabByBoxIndex(boxIndex);
+                                    if (tab == null)
+                                    {
+                                        Log($"[BET][WARN] no strategy tab mapped for box={boxIndex}");
+                                        return;
+                                    }
+
                                     string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
                                     long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
                                     double target = root.TryGetProperty("target", out var te) && te.TryGetDouble(out var tv) ? tv : 0;
@@ -1682,25 +2187,30 @@ Ví dụ không hợp lệ:
                                                 : sideRaw.Equals("LE", StringComparison.OrdinalIgnoreCase) ? "LE"
                                                 : sideRaw.ToUpperInvariant();
                                     if (side == "AUTO" && target > 0)
-                                        side = $"AUTO {target:0.00}x";
+                                        side = FormatAviatorBoxSide(boxIndex, target);
 
-                                    Log($"[BET] {side} {amount:N0}");
+                                    Log($"[BET] tab={tab.Name} box={boxIndex} {side} {amount:N0}");
 
                                     try
                                     {
-                                        await Dispatcher.InvokeAsync(() =>
+                                        if (ReferenceEquals(_activeTab, tab))
                                         {
-                                            SetWinLossUI(null);
-                                        });
+                                            await Dispatcher.InvokeAsync(() =>
+                                            {
+                                                SetWinLossUI(null);
+                                            });
+                                        }
                                     }
                                     catch { }
 
-                                    long accNow = 0;
-                                    try { accNow = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
+                                    long accNow = ReadCurrentBalanceFromUi();
 
                                     var row = new BetRow
                                     {
                                         At = DateTime.Now,
+                                        TabId = tab.Id,
+                                        TabName = tab.Name,
+                                        BoxIndex = boxIndex,
                                         Game = "Xóc đĩa live",
                                         Stake = amount,
                                         Side = side,
@@ -1708,11 +2218,12 @@ Ví dụ không hợp lệ:
                                         WinLose = "-",
                                         Account = accNow
                                     };
+                                    row.Game = $"Aviator Box {boxIndex}";
 
                                     // MỚI NHẤT Ở ĐẦU DANH SÁCH (trang 1)
                                     _betAll.Insert(0, row);
                                     if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
-                                    _pendingRows.Add(row);
+                                    tab.PendingRows.Add(row);
                                     // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
                                     if (_autoFollowNewest)
                                     {
@@ -1729,10 +2240,11 @@ Ví dụ không hợp lệ:
                                 // 4) bet_error
                                 if (abxStr == "bet_error")
                                 {
+                                    int boxIndex = ReadBoxIndex(root, 1);
                                     string side = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "?") : "?";
                                     long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
                                     string error = root.TryGetProperty("error", out var ee) ? (ee.GetString() ?? "") : "";
-                                    Log($"[BET][ERR] {side} {amount} :: {error}");
+                                    Log($"[BET][ERR] box={boxIndex} {side} {amount} :: {error}");
                                     return;
                                 }
 
@@ -1740,17 +2252,48 @@ Ví dụ không hợp lệ:
                                     abxStr == "cashout_click_ok" || abxStr == "cashout_click_fail" ||
                                     abxStr == "cashout_watch_stop" || abxStr == "cashout")
                                 {
+                                    int boxIndex = ReadBoxIndex(root, 1);
                                     double target = root.TryGetProperty("target", out var te) && te.TryGetDouble(out var tv) ? tv : 0;
                                     double live = root.TryGetProperty("live", out var le) && le.TryGetDouble(out var lv) ? lv : 0;
                                     string reason = root.TryGetProperty("reason", out var re) ? (re.GetString() ?? "") : "";
                                     bool accepted = root.TryGetProperty("accepted", out var ae2) &&
                                         (ae2.ValueKind == JsonValueKind.True || ae2.ValueKind == JsonValueKind.False) ? ae2.GetBoolean() : false;
-                                    string extra = "";
+                                    string extra = $" box={boxIndex}";
                                     if (target > 0) extra += $" target={target:0.00}x";
                                     if (live > 0) extra += $" live={live:0.00}x";
                                     if (!string.IsNullOrWhiteSpace(reason)) extra += $" reason={reason}";
                                     if (abxStr == "cashout_watch_stop") extra += $" accepted={accepted}";
                                     Log($"[JS-{abxStr.ToUpperInvariant()}]{extra}");
+                                    return;
+                                }
+
+                                if (abxStr == "ensure_box_idle")
+                                {
+                                    return;
+                                }
+
+                                if (abxStr == "bet_diag_set" || abxStr == "bet_diag_click" || abxStr == "cashout_diag_click")
+                                {
+                                    return;
+                                }
+
+                                if (abxStr == "bet_diag_tree")
+                                {
+                                    return;
+                                }
+
+                                if (abxStr == "bet_diag_button_dump")
+                                {
+                                    return;
+                                }
+
+                                if (abxStr == "bet_diag_dual_snapshot")
+                                {
+                                    return;
+                                }
+
+                                if (abxStr == "bet_diag_scene_scan")
+                                {
                                     return;
                                 }
 
@@ -2409,7 +2952,7 @@ Ví dụ không hợp lệ:
                     await ApplyBackgroundForStateAsync(); // đúng hành vi cũ sau khi có URL
                 }
 
-                SetPlayButtonState(_taskCts != null); // (nếu trong SetPlayButtonState có SetConfigEditable thì sẽ khóa/mở các ô)
+                SetPlayButtonState(_activeTab?.IsRunning == true); // (nếu trong SetPlayButtonState có SetConfigEditable thì sẽ khóa/mở các ô)
                 ApplyMouseShieldFromCheck();
 
                 // Không dùng timer phụ thuộc isGame/url để đổi UI.
@@ -2577,6 +3120,7 @@ Ví dụ không hợp lệ:
         {
             if (!_uiReady) return;
             _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
+            Log($"[MoneyStrategy] tab={_activeTab?.Name ?? "(no-tab)"} box={_activeTab?.BetBoxIndex ?? 0} selected={_cfg.MoneyStrategy}");
             AviatorHit.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             // NEW: mỗi “Quản lý vốn” có chuỗi tiền riêng → nạp lại ô StakeCsv
             LoadStakeCsvForCurrentMoneyStrategy();
@@ -4213,10 +4757,19 @@ Ví dụ không hợp lệ:
             _stakeCts = await DebounceAsync(_stakeCts, 150, async () =>
             {
                 var csv = (TxtStakeCsv?.Text ?? "5000:1.20-10000:2.00-15000:4.50").Trim();
+                var id = GetMoneyStrategyFromUI();
+                var prevStakeCsv = _cfg.StakeCsv;
+                var prevByMoney = "";
+                if (_cfg.StakeCsvByMoney != null &&
+                    !string.IsNullOrWhiteSpace(id) &&
+                    _cfg.StakeCsvByMoney.TryGetValue(id, out var savedPrev) &&
+                    !string.IsNullOrWhiteSpace(savedPrev))
+                {
+                    prevByMoney = savedPrev;
+                }
 
                 RebuildAviatorStakeSeq(csv);
 
-                var id = GetMoneyStrategyFromUI();
                 _cfg.StakeCsv = csv; // vẫn lưu bản hiện hành
                 _cfg.StakeCsvByMoney ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 if (!string.IsNullOrWhiteSpace(id)) _cfg.StakeCsvByMoney[id] = csv;
@@ -4302,12 +4855,17 @@ Ví dụ không hợp lệ:
             catch { }
         }
 
-        private GameContext BuildContext(bool useRawWinAmount = false)
+        private GameContext BuildContext(StrategyTabState tab, bool useRawWinAmount = false)
         {
+            var cfg = tab.Config;
             var applyWinTax = !useRawWinAmount;
-
-            // NEW: đóng băng strategyId tại thời điểm tạo context để tránh bị đổi giữa chừng
-            var moneyStrategyId = _cfg.MoneyStrategy ?? "IncreaseWhenLose";
+            var stakeSeq = tab.RunStakeSeq.Length > 0 ? tab.RunStakeSeq : (_stakeSeq ?? Array.Empty<long>());
+            var stakeEntries = tab.RunStakeEntries.Length > 0 ? tab.RunStakeEntries : (_stakeEntries ?? Array.Empty<AviatorStakeEntry>());
+            var stakeChains = tab.RunStakeChains.Count > 0 ? tab.RunStakeChains : (_stakeChains ?? new List<long[]>());
+            var stakeEntryChains = tab.RunStakeEntryChains.Count > 0 ? tab.RunStakeEntryChains : (_stakeEntryChains ?? new List<AviatorStakeEntry[]>());
+            var stakeChainTotals = tab.RunStakeChainTotals.Length > 0 ? tab.RunStakeChainTotals : _stakeChainTotals;
+            var decisionPercent = tab.RunDecisionPercent > 0 ? tab.RunDecisionPercent : _decisionPercent;
+            var moneyStrategyId = cfg.MoneyStrategy ?? "IncreaseWhenLose";
 
             return new GameContext
             {
@@ -4315,75 +4873,67 @@ Ví dụ không hợp lệ:
                 EvalJsAsync = (js) => Dispatcher.InvokeAsync(() => Web.ExecuteScriptAsync(js)).Task.Unwrap(),
                 Log = (s) => Log(s),
 
-                StakeSeq = _stakeSeq,
-                StakeEntries = _stakeEntries,
-                StakeChains = _stakeChains.Select(a => a.ToArray()).ToArray(),
-                StakeEntryChains = _stakeEntryChains.Select(a => a.ToArray()).ToArray(),
-                StakeChainTotals = _stakeChainTotals,
+                StakeSeq = stakeSeq.ToArray(),
+                StakeEntries = stakeEntries.ToArray(),
+                TabId = tab.Id,
+                BetBoxIndex = tab.BetBoxIndex,
+                CleanupBoxIndexes = _strategyTabs
+                    .Where(t => !ReferenceEquals(t, tab) && !t.IsRunning)
+                    .Select(t => t.BetBoxIndex)
+                    .Distinct()
+                    .ToArray(),
+                GetCleanupBoxIndexes = () => _strategyTabs
+                    .Where(t => !ReferenceEquals(t, tab) && !t.IsRunning)
+                    .Select(t => t.BetBoxIndex)
+                    .Distinct()
+                    .ToArray(),
+                StakeChains = stakeChains.Select(a => a.ToArray()).ToArray(),
+                StakeEntryChains = stakeEntryChains.Select(a => a.ToArray()).ToArray(),
+                StakeChainTotals = stakeChainTotals?.ToArray() ?? Array.Empty<long>(),
 
-                DecisionPercent = _decisionPercent,
-                State = _dec,
+                DecisionPercent = decisionPercent,
+                State = tab.DecisionState,
                 UiDispatcher = Dispatcher,
-                GetCooldown = () => _cooldown,
-                SetCooldown = (v) => _cooldown = v,
+                GetCooldown = () => tab.Cooldown,
+                SetCooldown = (v) =>
+                {
+                    tab.Cooldown = v;
+                    if (ReferenceEquals(_activeTab, tab)) _cooldown = v;
+                },
 
-                // NEW: dùng biến moneyStrategyId đã đóng băng
                 MoneyStrategyId = moneyStrategyId,
 
-                SideRateText = _cfg.SideRateText ?? AviatorHit.Tasks.SideRateParser.DefaultText,
+                SideRateText = cfg.SideRateText ?? AviatorHit.Tasks.SideRateParser.DefaultText,
                 UseRawWinAmount = useRawWinAmount,
-                BetSeq = _cfg.BetSeq ?? "",
-                BetPatterns = _cfg.BetPatterns ?? "",
+                BetSeq = cfg.BetSeq ?? "",
+                BetPatterns = cfg.BetPatterns ?? "",
                 UiFinalizeMultiBet = (winners, resultDisplay) => Dispatcher.Invoke(() =>
                 {
-                    try { FinalizePendingBetsWithWinners(winners, resultDisplay); } catch { }
+                    try { FinalizePendingBetsWithWinners(tab, winners, resultDisplay); } catch { }
                 }),
                 UiSetChainLevel = (chain, level) => Dispatcher.Invoke(() =>
                 {
-                    try { SetLevelForMultiChain(chain, level); } catch { }
+                    try { SetLevelForMultiChain(tab, chain, level); } catch { }
                 }),
 
-                // ==== 3 callback UI ====
                 UiSetSide = s => Dispatcher.Invoke(() =>
                 {
-                    SetLastSideUI(s);
+                    UpdateTabSide(tab, s);
                 }),
                 UiSetStake = v => Dispatcher.Invoke(() =>
                 {
-                    // TIỀN CƯỢC
-                    if (LblStake != null)
-                        LblStake.Text = v.ToString("N0");
-                    UpdateStatsStake(v);
-
-                    // Với MultiChain, mức tiền sẽ được set qua UiSetChainLevel
-                    if (moneyStrategyId == "MultiChain") return;
-
-                    if (LblLevel != null)
-                    {
-                        try
-                        {
-                            var seq = _stakeSeq ?? Array.Empty<long>();
-                            var rounded = (long)Math.Round(v);
-                            var idx = Array.IndexOf(seq, rounded); // 0-based
-
-                            LblLevel.Text = (idx >= 0 && seq.Length > 0)
-                                ? $"{idx + 1}/{seq.Length}"
-                                : "";
-                        }
-                        catch
-                        {
-                            LblLevel.Text = "";
-                        }
-                    }
+                    UpdateTabStake(tab, v, stakeSeq.ToArray(), moneyStrategyId);
                 }),
                 UiSetTarget = target => Dispatcher.Invoke(() =>
                 {
-                    if (LblSide != null)
+                    var sideText = FormatAviatorBoxSide(tab.BetBoxIndex, target);
+                    tab.LastSide = sideText;
+                    if (ReferenceEquals(_activeTab, tab) && LblSide != null)
                     {
                         LblSide.Visibility = Visibility.Visible;
-                        LblSide.Text = $"AUTO {target:0.00}x";
+                        LblSide.Text = sideText;
                     }
-                    if (ImgSide != null)
+                    if (ReferenceEquals(_activeTab, tab) && ImgSide != null)
                     {
                         ImgSide.Source = null;
                         ImgSide.Visibility = Visibility.Collapsed;
@@ -4395,44 +4945,33 @@ Ví dụ không hợp lệ:
                     void Apply()
                     {
                         var net = (applyWinTax && delta > 0) ? Math.Round(delta * 1.0) : delta;
-                        _winTotal += net;
-
-                        // NEW: dùng moneyStrategyId đã đóng băng (không đọc _cfg.MoneyStrategy ở đây nữa)
-                        try
-                        {
-                            AviatorHit.Tasks.MoneyHelper.NotifyTempProfit(moneyStrategyId, net);
-                        }
-                        catch { /* ignore */ }
-
-                        if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
-                        CheckCutAndStopIfNeeded();
-                        UpdateStatsWin(net);
+                        UpdateTabWin(tab, net, moneyStrategyId);
                     }
 
-                    // QUAN TRỌNG: chạy đồng bộ để task Aviator nhận đủ UI/profit state ngay sau khi chấm ván
                     if (Dispatcher.CheckAccess()) Apply();
                     else Dispatcher.Invoke(Apply);
                 },
 
                 UiWinLoss = s => Dispatcher.Invoke(() =>
                 {
-                    SetWinLossUI(s);
-                    UpdateStatsWinLoss(s);
+                    UpdateTabWinLoss(tab, s);
                 }),
                 UiFinalizeAviatorBet = (resultText, win) => Dispatcher.Invoke(() =>
                 {
-                    try { FinalizePendingAviatorBet(resultText, win); } catch { }
+                    try { FinalizePendingAviatorBet(tab, resultText, win); } catch { }
                 }),
             };
         }
 
 
-        private async Task StartTaskAsync(IBetTask task, CancellationToken ct, bool useRawWinAmount = false)
+        private async Task StartTaskAsync(StrategyTabState tab, IBetTask task, CancellationToken ct, bool useRawWinAmount = false)
         {
+            tab.ActiveTask = task;
+            tab.DecisionState = new DecisionState();
             _activeTask = task;
-            _dec = new DecisionState(); // reset trạng thái cho task mới
+            _dec = tab.DecisionState;
             AviatorHit.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
-            var ctx = BuildContext(useRawWinAmount);
+            var ctx = BuildContext(tab, useRawWinAmount);
             // === Preflight: chờ __cw_bet sẵn sàng trước khi chạy chiến lược ===
             for (int i = 0; i < 25; i++) // 25 * 200ms ~= 5s
             {
@@ -4446,11 +4985,33 @@ Ví dụ không hợp lệ:
             await task.RunAsync(ctx, ct);
         }
 
-        private void StopTask()
+        private void StopTask(StrategyTabState? tab)
         {
-            try { _taskCts?.Cancel(); } catch { }
-            _taskCts = null;
-            _activeTask = null;
+            if (tab == null) return;
+            try { tab.TaskCts?.Cancel(); } catch { }
+            tab.TaskCts = null;
+            tab.ActiveTask = null;
+            tab.RunningTask = null;
+            tab.IsRunning = false;
+            tab.Cooldown = false;
+
+            if (ReferenceEquals(_activeTab, tab))
+            {
+                _taskCts = null;
+                _activeTask = null;
+                _cooldown = false;
+            }
+
+            _ = EnsureAviatorBoxIdleAsync(tab.BetBoxIndex, "stop-task")
+                .ContinueWith(t =>
+                {
+                    try
+                    {
+                        var result = t.Status == TaskStatus.RanToCompletion ? t.Result : t.Exception?.GetBaseException().Message ?? "unknown";
+                        _ = result;
+                    }
+                    catch { }
+                }, TaskScheduler.Default);
         }
 
 
@@ -4467,7 +5028,17 @@ Ví dụ không hợp lệ:
             if (BtnPlay != null) BtnPlay.IsEnabled = false;
             try
             {
-                if (_taskCts != null) { Log("[DEC] a task is already running"); return; }
+                var activeTab = _activeTab;
+                if (activeTab == null)
+                {
+                    Log("[DEC] no active strategy tab");
+                    return;
+                }
+                if (activeTab.TaskCts != null || activeTab.IsRunning)
+                {
+                    Log($"[DEC] \"{activeTab.Name}\" is already running");
+                    return;
+                }
 
                 ForceAviatorModeUi();
                 await SaveConfigAsync();
@@ -4481,8 +5052,12 @@ Ví dụ không hợp lệ:
                 }
 
 
+                activeTab.CutStopTriggered = false;
+                activeTab.WinTotal = 0;
+                ResetTabMiniState(activeTab);
+                activeTab.PendingRows.Clear();
                 _cutStopTriggered = false;
-                _winTotal = 0;            // tuỳ bạn: nếu muốn đếm lại từ 0 khi bắt đầu
+                _winTotal = 0;
                 if (LblWin != null) LblWin.Text = "0";
                 ResetBetMiniPanel();    // xoá THẮNG/THUA, CỬA ĐẶT, TIỀN CƯỢC, MỨC TIỀN
 
@@ -4543,10 +5118,19 @@ Ví dụ không hợp lệ:
 
                 // Chuẩn bị & chạy Task chiến lược (giữ nguyên)
                 RebuildAviatorStakeSeq((TxtStakeCsv?.Text ?? "5000:1.20-10000:2.00-15000:4.50").Trim());
-                _winTotal = 0;
+                activeTab.RunStakeSeq = _stakeSeq.ToArray();
+                activeTab.RunStakeEntries = _stakeEntries.ToArray();
+                activeTab.RunStakeChains = _stakeChains.Select(a => a.ToArray()).ToList();
+                activeTab.RunStakeEntryChains = _stakeEntryChains.Select(a => a.ToArray()).ToList();
+                activeTab.RunStakeChainTotals = _stakeChainTotals.ToArray();
+                activeTab.RunDecisionPercent = _decisionPercent;
+                activeTab.IsRunning = true;
+                activeTab.Cooldown = false;
+                _winTotal = activeTab.WinTotal;
                 if (LblWin != null) LblWin.Text = "0";
 
-                _dec = new DecisionState();
+                activeTab.DecisionState = new DecisionState();
+                _dec = activeTab.DecisionState;
                 _cooldown = false;
                 if (CheckLicense)
                 {
@@ -4564,15 +5148,16 @@ Ví dụ không hợp lệ:
 
 
                 // === Khởi động task theo lựa chọn CHIẾN LƯỢC ===
-                _taskCts = new CancellationTokenSource();
+                activeTab.TaskCts = new CancellationTokenSource();
+                _taskCts = activeTab.TaskCts;
 
-                // 👉 Bắt đầu re-check license mỗi 5 phút, gắn với vòng đời _taskCts
+                // 👉 Bắt đầu re-check license mỗi 5 phút, gắn với vòng đời task của tab active
                 if (CheckLicense)
                 {
                     var username = (T(TxtUser) ?? "").Trim().ToLowerInvariant();
                     if (!string.IsNullOrWhiteSpace(username))
                     {
-                        var token = _taskCts.Token;
+                        var token = activeTab.TaskCts.Token;
                         _ = Task.Run(async () =>
                         {
                             try
@@ -4637,17 +5222,29 @@ Ví dụ không hợp lệ:
                 bool useRawWinAmount = false;
                 _cfg.BetStrategyIndex = 0;
                 AviatorHit.Tasks.IBetTask task = new AviatorHit.Tasks.AutoCashoutTask();
+                activeTab.ActiveTask = task;
+                _activeTask = task;
 
-                var running = Task.Run(() => StartTaskAsync(task, _taskCts.Token, useRawWinAmount));
+                var tabRef = activeTab;
+                var running = Task.Run(() => StartTaskAsync(tabRef, task, tabRef.TaskCts.Token, useRawWinAmount));
+                tabRef.RunningTask = running;
 
                 running.ContinueWith(t =>
                 {
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        SetPlayButtonState(false);
-                        _activeTask = null;
-                        _cooldown = false;
-                        _taskCts = null;
+                        tabRef.TaskCts = null;
+                        tabRef.ActiveTask = null;
+                        tabRef.RunningTask = null;
+                        tabRef.IsRunning = false;
+                        tabRef.Cooldown = false;
+                        if (ReferenceEquals(_activeTab, tabRef))
+                        {
+                            _activeTask = null;
+                            _cooldown = false;
+                            _taskCts = null;
+                            SetPlayButtonState(false);
+                        }
 
                         if (t.IsFaulted)
                             Log("[Task ERR] " + (t.Exception?.GetBaseException().Message ?? "Unknown error"));
@@ -4658,19 +5255,19 @@ Ví dụ không hợp lệ:
                     }));
                 }, TaskScheduler.Default);
 
-                Log("[Loop] started task: " + task.DisplayName);
+                Log($"[Loop] started task: {activeTab.Name} -> {task.DisplayName}");
                 SetPlayButtonState(true);
             }
             catch (Exception ex)
             {
                 Log("[PlayXocDia_Click] " + ex);
                 // nếu lỗi trước khi start, trả lại nút
-                if (_taskCts == null && BtnPlay != null) BtnPlay.IsEnabled = true;
+                if ((_activeTab?.TaskCts) == null && BtnPlay != null) BtnPlay.IsEnabled = true;
             }
             finally
             {
                 // nếu chưa start được task thì bật lại nút
-                if (_taskCts == null && BtnPlay != null) BtnPlay.IsEnabled = true;
+                if ((_activeTab?.TaskCts) == null && BtnPlay != null) BtnPlay.IsEnabled = true;
                 Interlocked.Exchange(ref _playStartInProgress, 0);
             }
         }
@@ -4684,11 +5281,14 @@ Ví dụ không hợp lệ:
             if (Interlocked.Exchange(ref _stopInProgress, 1) == 1) return;
             try
             {
-                StopTask();
+                var activeTab = _activeTab;
+                if (activeTab == null) return;
+
+                StopTask(activeTab);
                 AviatorHit.Tasks.TaskUtil.ClearBetCooldown();
                 if (Web != null) _ = EnsureGamePushAsync(log: false);
-                Log("[Loop] stopped");
-                SetPlayButtonState(false);
+                Log("[Loop] stopped tab: " + activeTab.Name);
+                SetPlayButtonState(activeTab.IsRunning);
                 StopExpiryCountdown();
                 StopLeaseHeartbeat();
                 var uname = ResolveLeaseUsername();
@@ -5806,9 +6406,9 @@ Ví dụ không hợp lệ:
                         Dispatcher.BeginInvoke(new Action(() =>
                         {
                             // Tự dừng vòng chơi nếu còn đang chạy
-                            if (_taskCts != null)
+                            if (_activeTab?.IsRunning == true)
                             {
-                                StopTask();
+                                StopTask(_activeTab);
                                 SetPlayButtonState(false);
                             }
 
@@ -6118,58 +6718,67 @@ Ví dụ không hợp lệ:
 
         private void CheckCutAndStopIfNeeded()
         {
-            if (_cutStopTriggered) return;
+            foreach (var tab in _strategyTabs.Where(t => t.IsRunning).ToList())
+                CheckCutAndStopIfNeeded(tab);
+        }
 
-            double cutProfit = _cfg?.CutProfit ?? 0;   // dương ⇒ bật cắt lãi
-            double cutLoss = _cfg?.CutLoss ?? 0;   // dương ⇒ bật cắt lỗ (ngưỡng là -cutLoss)
 
-            // ⬇️ Không nhập (rỗng/0) ⇒ hoạt động bình thường (không cắt)
+        private void CheckCutAndStopIfNeeded(StrategyTabState tab)
+        {
+            if (tab == null || tab.CutStopTriggered) return;
+
+            double cutProfit = tab.Config?.CutProfit ?? 0;
+            double cutLoss = tab.Config?.CutLoss ?? 0;
             if (cutProfit <= 0 && cutLoss <= 0) return;
 
-            // Ưu tiên cắt lãi
-            if (cutProfit > 0 && _winTotal >= cutProfit)
+            var winTotal = tab.WinTotal;
+            if (cutProfit > 0 && winTotal >= cutProfit)
             {
-                _cutStopTriggered = true;
-                StopTaskAndNotify($"Đạt CẮT LÃI: Tiền thắng = {_winTotal:N0} ≥ {cutProfit:N0}");
+                tab.CutStopTriggered = true;
+                if (ReferenceEquals(_activeTab, tab)) _cutStopTriggered = true;
+                StopTaskAndNotify(tab, $"Đạt CẮT LÃI: Tiền thắng = {winTotal:N0} ≥ {cutProfit:N0}");
                 return;
             }
 
-            // Cắt lỗ: hiểu cutLoss là số dương → ngưỡng thực tế = -cutLoss
             if (cutLoss > 0)
             {
                 var lossThreshold = -cutLoss;
-                if (_winTotal <= lossThreshold)
+                if (winTotal <= lossThreshold)
                 {
-                    _cutStopTriggered = true;
-                    StopTaskAndNotify($"Đạt CẮT LỖ: Tiền thắng = {_winTotal:N0} ≤ {lossThreshold:N0}");
+                    tab.CutStopTriggered = true;
+                    if (ReferenceEquals(_activeTab, tab)) _cutStopTriggered = true;
+                    StopTaskAndNotify(tab, $"Đạt CẮT LỖ: Tiền thắng = {winTotal:N0} ≤ {lossThreshold:N0}");
                     return;
                 }
             }
         }
 
 
-        private void StopTaskAndNotify(string reason)
+        private void StopTaskAndNotify(StrategyTabState tab, string reason)
         {
             try
             {
-                StopTask();
-                SetPlayButtonState(false);
+                StopTask(tab);
+                if (ReferenceEquals(_activeTab, tab))
+                    SetPlayButtonState(false);
                 MessageBox.Show(reason, "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                 Log("[CUT] " + reason);
             }
             catch { /* ignore */ }
         }
 
-        private void FinalizeLastBet(string? result, long balanceAfter, HashSet<string>? winners = null, string? displayResult = null)
+        private void FinalizeLastBet(StrategyTabState tab, string? result, long balanceAfter, HashSet<string>? winners = null, string? displayResult = null)
         {
-            if (_pendingRows.Count == 0 || string.IsNullOrWhiteSpace(result)) return;
+            if (tab == null || tab.PendingRows.Count == 0 || string.IsNullOrWhiteSpace(result)) return;
 
             var winSet = winners ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase) { result! };
             var resultText = string.IsNullOrWhiteSpace(displayResult)
                 ? result!.ToUpperInvariant()
                 : displayResult!;
 
-            foreach (var row in _pendingRows)
+            var pendingRows = tab.PendingRows.ToList();
+
+            foreach (var row in pendingRows)
             {
                 row.Result = resultText;
                 bool win = winSet.Contains(row.Side);
@@ -6190,28 +6799,28 @@ Ví dụ không hợp lệ:
                 RefreshCurrentPage();   // (mục 3 bên dưới)
             }
 
-            _pendingRows.Clear(); // sẵn sàng ván tiếp theo
+            tab.PendingRows.Clear();
         }
 
-        public void FinalizePendingBetsWithWinners(HashSet<string> winners, string? displayResult = null)
+        private void FinalizePendingBetsWithWinners(StrategyTabState tab, HashSet<string> winners, string? displayResult = null)
         {
-            if (_pendingRows.Count == 0) return;
-            long balance = 0;
-            try { balance = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
+            if (tab == null || tab.PendingRows.Count == 0) return;
+            long balance = ReadCurrentBalanceFromUi();
             var resText = !string.IsNullOrWhiteSpace(displayResult)
                 ? displayResult
                 : (winners != null && winners.Count > 0 ? string.Join("/", winners) : "-");
-            FinalizeLastBet(resText, balance, winners, resText);
+            FinalizeLastBet(tab, resText, balance, winners, resText);
         }
 
-        private void FinalizePendingAviatorBet(string? resultText, bool win)
+        private void FinalizePendingAviatorBet(StrategyTabState tab, string? resultText, bool win)
         {
-            if (_pendingRows.Count == 0 || string.IsNullOrWhiteSpace(resultText)) return;
+            if (tab == null || tab.PendingRows.Count == 0 || string.IsNullOrWhiteSpace(resultText)) return;
 
-            long balance = 0;
-            try { balance = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
+            long balance = ReadCurrentBalanceFromUi();
 
-            foreach (var row in _pendingRows)
+            var pendingRows = tab.PendingRows.ToList();
+
+            foreach (var row in pendingRows)
             {
                 row.Result = resultText!.Trim();
                 row.WinLose = win ? "Thắng" : "Thua";
@@ -6220,23 +6829,25 @@ Ví dụ không hợp lệ:
                 try { AppendBetCsv(row); } catch { }
             }
 
-            if (_autoFollowNewest)
-                ShowFirstPage();
-            else
-                RefreshCurrentPage();
+            RefreshBetHistoryUi();
 
-            Log($"[BET-FINALIZE] result={resultText} win={win} rows={_pendingRows.Count}");
-            _pendingRows.Clear();
+            Log($"[BET-FINALIZE] tab={tab.Name} box={tab.BetBoxIndex} result={resultText} win={win} rows={pendingRows.Count}");
+            tab.PendingRows.Clear();
         }
 
-        private void SetLevelForMultiChain(int chainIndex, int levelIndex)
+        private void SetLevelForMultiChain(StrategyTabState tab, int chainIndex, int levelIndex)
         {
-            if (LblLevel == null) return;
+            if (tab == null) return;
             try
             {
-                var chains = _stakeChains ?? new List<long[]>();
+                var chains = (tab.RunStakeChains != null && tab.RunStakeChains.Count > 0) ? tab.RunStakeChains : (_stakeChains ?? new List<long[]>());
                 int total = chains.Sum(ch => ch?.Length ?? 0);
-                if (total == 0) { LblLevel.Text = ""; return; }
+                if (total == 0)
+                {
+                    tab.LastLevelText = "";
+                    if (ReferenceEquals(_activeTab, tab) && LblLevel != null) LblLevel.Text = "";
+                    return;
+                }
 
                 chainIndex = Math.Clamp(chainIndex, 0, chains.Count - 1);
                 var curChain = chains[chainIndex] ?? Array.Empty<long>();
@@ -6247,11 +6858,15 @@ Ví dụ không hợp lệ:
                     offset += chains[i]?.Length ?? 0;
 
                 int pos = offset + levelIndex; // 0-based
-                LblLevel.Text = $"{pos + 1}/{total}";
+                tab.LastLevelText = $"{pos + 1}/{total}";
+                if (ReferenceEquals(_activeTab, tab) && LblLevel != null)
+                    LblLevel.Text = tab.LastLevelText;
             }
             catch
             {
-                LblLevel.Text = "";
+                tab.LastLevelText = "";
+                if (ReferenceEquals(_activeTab, tab) && LblLevel != null)
+                    LblLevel.Text = "";
             }
         }
 
@@ -6800,12 +7415,16 @@ Ví dụ không hợp lệ:
             {
                 var id = GetMoneyStrategyFromUI();                    // ví dụ: "Victor2" / "IncreaseWhenLose" ...
                 string csv = _cfg.StakeCsv;                           // fallback
+                string source = "StakeCsv";
+                string savedByMoney = "";
                 if (_cfg.StakeCsvByMoney != null &&
                     !string.IsNullOrWhiteSpace(id) &&
                     _cfg.StakeCsvByMoney.TryGetValue(id, out var saved) &&
                     !string.IsNullOrWhiteSpace(saved))
                 {
                     csv = saved;
+                    source = "StakeCsvByMoney";
+                    savedByMoney = saved;
                 }
 
                 if (TxtStakeCsv != null) TxtStakeCsv.Text = csv;      // -> sẽ kích TextChanged để rebuild _stakeSeq
