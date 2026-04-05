@@ -1611,9 +1611,12 @@ Ví dụ không hợp lệ:
                                 {
                                     string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
                                     long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
+                                    double target = root.TryGetProperty("target", out var te) && te.TryGetDouble(out var tv) ? tv : 0;
                                     string side = sideRaw.Equals("CHAN", StringComparison.OrdinalIgnoreCase) ? "CHAN"
                                                 : sideRaw.Equals("LE", StringComparison.OrdinalIgnoreCase) ? "LE"
                                                 : sideRaw.ToUpperInvariant();
+                                    if (side == "AUTO" && target > 0)
+                                        side = $"AUTO {target:0.00}x";
 
                                     Log($"[BET] {side} {amount:N0}");
 
@@ -4896,6 +4899,7 @@ Ví dụ không hợp lệ:
             void ShowText(string text)
             {
                 if (ImgKetQua != null) ImgKetQua.Visibility = Visibility.Collapsed;
+                if (BdKetQuaChip != null) BdKetQuaChip.Visibility = Visibility.Visible;
                 if (LblKetQua != null)
                 {
                     LblKetQua.Visibility = Visibility.Visible;
@@ -4923,6 +4927,7 @@ Ví dụ không hợp lệ:
                 // Hiển thị ảnh + ẩn chữ
                 ImgKetQua.Source = icon;
                 ImgKetQua.Visibility = Visibility.Visible;
+                if (BdKetQuaChip != null) BdKetQuaChip.Visibility = Visibility.Collapsed;
                 if (LblKetQua != null) LblKetQua.Visibility = Visibility.Collapsed;
 
                 // Cache lại để DataGrid (converters) có thể "kế thừa" từ trạng thái
@@ -4976,9 +4981,15 @@ Ví dụ không hợp lệ:
                 ImgKetQua.Source = null;
                 ImgKetQua.Visibility = Visibility.Collapsed;
             }
+            if (BdKetQuaChip != null)
+            {
+                BdKetQuaChip.Visibility = Visibility.Visible;
+                BdKetQuaChip.Background = AviatorOddPalette.Background(result);
+            }
             if (LblKetQua != null)
             {
                 LblKetQua.Visibility = Visibility.Visible;
+                LblKetQua.Foreground = AviatorOddPalette.Foreground(result);
                 LblKetQua.Text = string.IsNullOrWhiteSpace(result) ? "-" : result.Trim();
             }
         }

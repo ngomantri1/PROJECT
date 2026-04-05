@@ -94,6 +94,22 @@ namespace AviatorHit.Tasks
         // Gọi khi kết thúc ván (đã chấm THẮNG/THUA) để ván sau reset tiếp
         public static void UiRoundAllowNextReset() => _uiRoundResetDone = false;
 
+        private static double GetDecisionProgress(CwSnapshot? snap)
+        {
+            if (snap?.countdownPct is double countdownPct)
+                return countdownPct;
+            return snap?.prog ?? 0;
+        }
+
+        private static bool IsBettingPhase(CwSnapshot? snap)
+        {
+            if (snap?.countdownValue is int countdownValue)
+                return countdownValue > 0;
+
+            var p = GetDecisionProgress(snap);
+            return p > 0;
+        }
+
         public static async Task WaitUntilBetWindow(GameContext ctx, CancellationToken ct)
         {
             // Quy ước: prog = phần trăm thời gian đã trôi/hoặc còn lại. Ở code bạn set LblProg = p*100,
@@ -102,23 +118,24 @@ namespace AviatorHit.Tasks
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                double p = s?.prog ?? 1.0;
+                double p = GetDecisionProgress(s);
                 //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
-                if (p <= ctx.DecisionPercent && p > 0) break;
+                if (IsBettingPhase(s) && p <= ctx.DecisionPercent && p > 0) break;
                 await Task.Delay(120, ct);
             }
         }
 
-        // Chờ sang phiên mới rồi đặt NGAY khi mở cửa (đặt sớm, KHÔNG phụ thuộc DecisionPercent)
+        // Chờ sang phiên mới và chỉ vào khi đang ở pha đặt cược thật của Aviator.
+        // Với countdown hiện tại: chỉ đặt khi countdownValue > 0 và % còn lại >= DecisionPercent.
         public static async Task WaitUntilNewRoundStart(GameContext ctx, CancellationToken ct)
         {
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                double p = s?.prog ?? 1.0;
+                double p = GetDecisionProgress(s);
                 //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
-                if (p >= ctx.DecisionPercent) break;
+                if (IsBettingPhase(s) && p >= ctx.DecisionPercent) break;
                 await Task.Delay(120, ct);
             }
         }

@@ -1137,11 +1137,22 @@
                                                             Height="25"
                                                             Stretch="Uniform"
                                                             Visibility="Collapsed" />
-                                                        <TextBlock
-                                                            x:Name="LblKetQua"
-                                                            Style="{StaticResource ValueText}"
-                                                            FontWeight="Bold"
-                                                            Text="-" />
+                                                        <Border
+                                                            x:Name="BdKetQuaChip"
+                                                            Padding="10,3"
+                                                            Background="#969696"
+                                                            BorderBrush="#E4E6EB"
+                                                            BorderThickness="1"
+                                                            CornerRadius="10">
+                                                            <TextBlock
+                                                                x:Name="LblKetQua"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                FontSize="15"
+                                                                FontWeight="SemiBold"
+                                                                Foreground="White"
+                                                                Text="-" />
+                                                        </Border>
                                                     </Grid>
                                                 </Border>
 
@@ -1207,6 +1218,7 @@
                                                         <TextBlock
                                                             x:Name="LblSide"
                                                             Style="{StaticResource ValueText}"
+                                                            FontWeight="SemiBold"
                                                             Text="" />
                                                     </Grid>
                                                 </Border>
@@ -1370,7 +1382,7 @@
                                                             BorderThickness="1"
                                                             CornerRadius="10">
                                                             <TextBlock
-                                                                FontSize="13"
+                                                                FontSize="15"
                                                                 FontWeight="SemiBold"
                                                                 Foreground="{Binding Text, Converter={StaticResource AviatorOddFg}}"
                                                                 Text="{Binding Text}" />
