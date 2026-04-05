@@ -261,7 +261,7 @@ namespace AviatorHit.Tasks
                     for (int i = 0; i < wonLevel; i++)
                         spentInThisChain += curChain[i];
 
-                    double netWinOnThisChain = 0.98 * justWon - spentInThisChain;
+                    double netWinOnThisChain = 1.0 * justWon - spentInThisChain;
                     if (netWinOnThisChain < 0)
                         netWinOnThisChain = 0;
 

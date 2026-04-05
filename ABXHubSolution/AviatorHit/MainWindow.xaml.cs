@@ -4394,7 +4394,7 @@ Ví dụ không hợp lệ:
                 {
                     void Apply()
                     {
-                        var net = (applyWinTax && delta > 0) ? Math.Round(delta * 0.98) : delta;
+                        var net = (applyWinTax && delta > 0) ? Math.Round(delta * 1.0) : delta;
                         _winTotal += net;
 
                         // NEW: dùng moneyStrategyId đã đóng băng (không đọc _cfg.MoneyStrategy ở đây nữa)
