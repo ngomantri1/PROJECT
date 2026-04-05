@@ -5741,7 +5741,14 @@ try{
                 Log($"[NETSEQ][BOOT] src={source} | len={jsDisplay.Length} | ver={_netSeqVersion} | evt={_netSeqEvent}");
             }
 
+            long jsSeqVersion = Math.Max(snap.seqVersion ?? 0, jsDisplay.Length);
+            bool jsDisplayChanged = !string.Equals(jsDisplay, _netSeqDisplay, StringComparison.Ordinal);
             bool jsAhead = jsDisplay.Length > _netSeqDisplay.Length;
+            bool jsVersionAhead = jsSeqVersion > _netSeqVersion;
+            bool jsSameLenAdvance =
+                jsDisplay.Length == _netSeqDisplay.Length &&
+                jsVersionAhead &&
+                (jsDisplayChanged || !string.Equals(snap.seqEvent ?? "", "no-change", StringComparison.OrdinalIgnoreCase));
             bool jsLooksStaleForObservedRound =
                 _netObservedTableId > 0 &&
                 (_netSeqTableId == 0 || _netObservedTableId == _netSeqTableId) &&
@@ -5749,9 +5756,11 @@ try{
                 (_netSeqGameShoe == 0 || _netObservedGameShoe == _netSeqGameShoe) &&
                 _netObservedGameRound > 0 &&
                 jsDisplay.Length > _netObservedGameRound;
-            if (jsAhead)
+            bool recentNetWinner = _netLastWinnerAt != DateTime.MinValue &&
+                                   (DateTime.UtcNow - _netLastWinnerAt).TotalSeconds <= 15;
+            if (jsAhead || jsSameLenAdvance)
             {
-                if (jsLooksStaleForObservedRound)
+                if (jsAhead && jsLooksStaleForObservedRound)
                 {
                     Log($"[NETSEQ][JS-STALE] src={source} | jsLen={jsDisplay.Length} | obsRound={_netObservedGameRound} | obsShoe={_netObservedGameShoe} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | keep=network");
                     snap.seq = _netSeqDisplay;
@@ -5761,17 +5770,16 @@ try{
                     return;
                 }
 
-                bool recentNetWinner = _netLastWinnerAt != DateTime.MinValue &&
-                                       (DateTime.UtcNow - _netLastWinnerAt).TotalSeconds <= 15;
                 if (!recentNetWinner)
                 {
                     long prevNetLen = _netSeqDisplay.Length;
                     long prevNetVer = _netSeqVersion;
                     _netSeqDisplay = jsDisplay;
-                    _netSeqVersion = Math.Max(_netSeqVersion, Math.Max(snap.seqVersion ?? 0, jsDisplay.Length));
+                    _netSeqVersion = Math.Max(_netSeqVersion, jsSeqVersion);
                     _netSeqEvent = string.IsNullOrWhiteSpace(snap.seqEvent) ? "js-resync" : "js-resync-" + snap.seqEvent;
                     _netSeqSource = "js-resync";
-                    Log($"[NETSEQ][RESYNC] src={source} | jsLen={jsDisplay.Length} | jsVer={(snap.seqVersion ?? 0)} | prevNetLen={prevNetLen} | prevNetVer={prevNetVer} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion}");
+                    string resyncReason = jsAhead ? "len-ahead" : "ver-ahead-same-len";
+                    Log($"[NETSEQ][RESYNC] src={source} | jsLen={jsDisplay.Length} | jsVer={(snap.seqVersion ?? 0)} | prevNetLen={prevNetLen} | prevNetVer={prevNetVer} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | reason={resyncReason}");
                     snap.seq = _netSeqDisplay;
                     snap.seqVersion = _netSeqVersion;
                     snap.seqEvent = _netSeqEvent;
@@ -5779,7 +5787,8 @@ try{
                     return;
                 }
 
-                Log($"[NETSEQ][JS-AHEAD] src={source} | jsLen={jsDisplay.Length} | jsVer={(snap.seqVersion ?? 0)} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | keep=network");
+                string keepReason = jsAhead ? "recent-net-winner-len-ahead" : "recent-net-winner-ver-ahead-same-len";
+                Log($"[NETSEQ][JS-AHEAD] src={source} | jsLen={jsDisplay.Length} | jsVer={(snap.seqVersion ?? 0)} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | keep=network | reason={keepReason}");
             }
 
             bool shouldOverride =
