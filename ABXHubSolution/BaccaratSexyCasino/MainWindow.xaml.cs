@@ -540,12 +540,12 @@ namespace BaccaratSexyCasino
 
 
 
-        private const string DEFAULT_URL = "web.zowin.tv"; // URL mặc định bạn muốn
+        private const string DEFAULT_URL = "dk8808.com"; // URL cố định hiển thị và sử dụng trong app
         // === License repo/worker settings (CHỈNH LẠI CHO PHÙ HỢP) ===
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn
         const string LicenseBranch = "main";          // <- nhánh
-        const string LicenseNameGame = "auto";          // <- nhánh
+        const string LicenseNameGame = "dk88";          // <- nhánh
         const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/auto";
         private const bool EnableLeaseCloudflare = true; // true=bật gọi Cloudflare
         private const string TrialConsumedTodayMessage = "Hết lượt dùng thử trong ngày. Hãy quay lại dùng thử vào ngày mai.";
@@ -1803,9 +1803,8 @@ try{
                 EnsureDeviceId();
                 EnsureTrialKey();
 
-                if (string.IsNullOrWhiteSpace(_cfg.Url))
-                    _cfg.Url = DEFAULT_URL;
-                if (TxtUrl != null) TxtUrl.Text = _cfg.Url;
+                _cfg.Url = DEFAULT_URL;
+                if (TxtUrl != null) TxtUrl.Text = DEFAULT_URL;
 
                 ApplyGlobalConfigToUi();
                 ApplyActiveTabToUi();
@@ -2162,7 +2161,7 @@ try{
 
         private void ApplyUiToConfig(AppConfig cfg)
         {
-            cfg.Url = T(TxtUrl);
+            cfg.Url = DEFAULT_URL;
             cfg.StakeCsv = T(TxtStakeCsv, "1000,2000,4000,8000,16000");
             cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
             cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? cfg.BetStrategyIndex;
@@ -3285,7 +3284,7 @@ try{
         private async void OpenUrl_Click(object sender, RoutedEventArgs e)
         {
             await SaveConfigAsync();
-            await NavigateIfNeededAsync(T(TxtUrl).Trim());
+            await NavigateIfNeededAsync(DEFAULT_URL);
         }
         private void Exit_Click(object sender, RoutedEventArgs e) => Close();
         private void StartLoop_Click(object sender, RoutedEventArgs e)

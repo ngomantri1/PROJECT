@@ -558,6 +558,8 @@
                                         x:Name="TxtUrl"
                                         Grid.Row="0"
                                         Grid.Column="1"
+                                        Focusable="False"
+                                        IsReadOnly="True"
                                         TextChanged="TxtUrl_TextChanged" />
 
                                     <!--  USER  -->

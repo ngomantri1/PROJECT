@@ -19,10 +19,10 @@ namespace BaccaratSexyCasino
             // 2) đảm bảo WebView2 sẵn
             await EnsureWebReadyAsync();
 
-            // 3) lấy URL từ textbox hoặc từ _cfg
-            string url = (TxtUrl?.Text ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(url) && _cfg != null)
-                url = _cfg.Url ?? string.Empty;
+            // 3) luôn dùng URL cố định trong code
+            string url = DEFAULT_URL;
+            if (_cfg != null) _cfg.Url = DEFAULT_URL;
+            if (TxtUrl != null) TxtUrl.Text = DEFAULT_URL;
 
             // 4) điều hướng
             if (!string.IsNullOrWhiteSpace(url))
