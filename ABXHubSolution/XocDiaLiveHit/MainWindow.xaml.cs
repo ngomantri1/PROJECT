@@ -1196,6 +1196,26 @@ Ví dụ không hợp lệ:
                 if (!Equals(BtnVaoXocDia.Content as string, desired))
                     BtnVaoXocDia.Content = desired;
             }
+            if (!isGame)
+                ClearAccountHeaderUi();
+        }
+
+        private void ClearAccountHeaderUi()
+        {
+            if (LblUserName != null) LblUserName.Text = "";
+            if (LblAmount != null) LblAmount.Text = "";
+        }
+
+        private void UpdateAccountHeaderFromGame(string? username, long? amount)
+        {
+            if (!GetIsGameByUrlFallback()) return;
+
+            if (LblUserName != null)
+                LblUserName.Text = string.IsNullOrWhiteSpace(username) ? "" : username;
+            if (LblAmount != null)
+                LblAmount.Text = amount.HasValue
+                    ? amount.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
+                    : "-";
         }
 
 
@@ -2455,9 +2475,8 @@ Ví dụ không hợp lệ:
 
                                                 // Tổng tiền
                                                 var amt = snap?.totals?.A;
-                                                if (LblAmount != null)
-                                                    LblAmount.Text = amt.HasValue
-                                                        ? amt.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) : "-";
+                                                var uname = snap.username ?? "";
+                                                UpdateAccountHeaderFromGame(uname, amt);
 
                                                 // Chuỗi kết quả
                                                 UpdateSeqUI(snap.seq ?? "");
@@ -2566,8 +2585,8 @@ Ví dụ không hợp lệ:
                                         }
                                     }
 
-                                    var bal = root.TryGetProperty("balance", out var bEl) ? (bEl.GetString() ?? "") : "";
-                                    var href = root.TryGetProperty("href", out var hEl) ? (hEl.GetString() ?? "") : "";
+                                    _ = root.TryGetProperty("balance", out _);
+                                    _ = root.TryGetProperty("href", out _);
 
                                     try
                                     {
@@ -2578,8 +2597,7 @@ Ví dụ không hợp lệ:
                                                // if (string.IsNullOrWhiteSpace(TxtUser.Text) || TxtUser.Text != uname)
                                                //     TxtUser.Text = uname;
                                             //}
-                                            if (LblUserName != null) LblUserName.Text = uname;
-                                            if (LblAmount != null) LblAmount.Text = bal;
+                                            // Home tick khÃ´ng cÃ²n Ä‘Æ°á»£c phÃ©p cập nhật UI tài khoản.
                                         });
 
                                         // cập nhật trạng thái đã đăng nhập dựa trên nút Logout/Login

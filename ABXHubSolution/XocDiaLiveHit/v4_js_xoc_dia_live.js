@@ -700,6 +700,37 @@
             };
         }
     }
+    function readLabelTextByTailEnd(tailEnd) {
+        try {
+            var labels = collectLabels();
+            var needle = String(tailEnd || '').toLowerCase();
+            var best = null;
+            var bestArea = -1;
+            for (var i = 0; i < labels.length; i++) {
+                var it = labels[i];
+                var tl = String(it.tail || '').toLowerCase();
+                var text = String(it.text || '').trim();
+                if (!needle || !tl.endsWith(needle) || !text || isMoneyText(text))
+                    continue;
+
+                var areaNow = (it.w || 0) * (it.h || 0);
+                if (areaNow > bestArea) {
+                    best = it;
+                    bestArea = areaNow;
+                }
+            }
+            return best ? String(best.text || '').trim() : '';
+        } catch (_) {
+            return '';
+        }
+    }
+    function readUsernameSafe() {
+        try {
+            return readLabelTextByTailEnd('XDLive/Canvas/Bg/footer/usernameLB') || '';
+        } catch (_) {
+            return '';
+        }
+    }
     async function waitForTotalsChange(before, side, timeout) {
         timeout = timeout || 1400;
         var t0 = (performance && performance.now ? performance.now() : Date.now());
@@ -2220,6 +2251,7 @@
                         abx: 'tick',
                         prog: p,
                         totals: readTotalsSafe(),
+                        username: readUsernameSafe(),
                         seq: readSeqSafe(),
                         status: String(st || ''), // <-- THÊM TRƯỜNG status
                         ts: Date.now()
