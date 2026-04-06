@@ -2314,8 +2314,6 @@ Ví dụ không hợp lệ:
     var out = {
       host:'', href:'', title:'', ready:'',
       chrome:0, hwCollect:0, hwStart:0, gpCollect:0, gpPush:0,
-      homeRev:'', frameGate:'',
-      cwBet:0, betNorm:0, betRootFn:0, betChipFn:0, betPlanFn:0,
       hwCount:-1, gpCount:-1, startRet:'', gpPushRet:'',
       hwSample:'', gpSample:'', hwErr:'', gpErr:'', startErr:'', gpPushErr:'',
       isWm:0, topPost:0, parentPost:0,
@@ -2421,13 +2419,6 @@ Ví dụ không hợp lệ:
     try{ out.chrome = (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') ? 1 : 0; }catch(_){}
     try{ out.topPost = (window.top && typeof window.top.postMessage === 'function') ? 1 : 0; }catch(_){}
     try{ out.parentPost = (window.parent && typeof window.parent.postMessage === 'function') ? 1 : 0; }catch(_){}
-    try{ out.homeRev = String(window.__cw_home_js_rev || ''); }catch(_){}
-    try{ out.frameGate = sampleObject(window.__cw_frame_gate || null, 2); }catch(_){}
-    try{ out.cwBet = (typeof window.__cw_bet === 'function') ? 1 : 0; }catch(_){}
-    try{ out.betNorm = (typeof window.betNormalizeSide === 'function') ? 1 : 0; }catch(_){}
-    try{ out.betRootFn = (typeof window.betResolveRootFromOverlay === 'function') ? 1 : 0; }catch(_){}
-    try{ out.betChipFn = (typeof window.betFindChipByAmount === 'function') ? 1 : 0; }catch(_){}
-    try{ out.betPlanFn = (typeof window.betBuildChipPlan === 'function') ? 1 : 0; }catch(_){}
     try{ out.scriptCount = (document.scripts && document.scripts.length) ? document.scripts.length : 0; }catch(_){}
     try{ out.htmlLen = (document.documentElement && document.documentElement.outerHTML) ? document.documentElement.outerHTML.length : 0; }catch(_){}
     try{
@@ -2780,8 +2771,6 @@ Ví dụ không hợp lệ:
                     phase, host, ready,
                     N("chrome").ToString(), N("hwCollect").ToString(), N("hwStart").ToString(),
                     N("gpCollect").ToString(), N("gpPush").ToString(),
-                    S("homeRev"), S("frameGate"),
-                    N("cwBet").ToString(), N("betNorm").ToString(), N("betRootFn").ToString(), N("betChipFn").ToString(), N("betPlanFn").ToString(),
                     N("hwCount").ToString(), N("gpCount").ToString(),
                     S("startRet"), S("gpPushRet"), N("isWm").ToString(),
                     S("hwSample"), S("gpSample"),
@@ -2797,8 +2786,6 @@ Ví dụ không hợp lệ:
                 var msg =
                     $"[WM_DIAG][{phase}] host={host} ready={ready} chrome={N("chrome")} " +
                     $"hwCollect={N("hwCollect")} hwStart={N("hwStart")} gpCollect={N("gpCollect")} gpPush={N("gpPush")} " +
-                    $"homeRev={ClipForLog(S("homeRev"), 48)} frameGate={ClipForLog(S("frameGate"), 120)} " +
-                    $"cwBet={N("cwBet")} betNorm={N("betNorm")} betRootFn={N("betRootFn")} betChipFn={N("betChipFn")} betPlanFn={N("betPlanFn")} " +
                     $"hwCount={N("hwCount")} gpCount={N("gpCount")} isWm={N("isWm")} startRet={S("startRet")} gpPushRet={S("gpPushRet")} " +
                     $"hwSample={ClipForLog(S("hwSample"), 80)} gpSample={ClipForLog(S("gpSample"), 80)} topPost={N("topPost")} parentPost={N("parentPost")} " +
                     $"ifrCount={N("ifrCount")} scriptCount={N("scriptCount")} bodyTextLen={N("bodyTextLen")} htmlLen={N("htmlLen")} " +

@@ -5,24 +5,10 @@
         window.__cw_home_js_rev = HOME_JS_REV;
     } catch (_) {}
     // Muốn hiện và ẩn bảng điều khiển home watch thì tìm dòng sau : showPanel: false // ⬅️ false = ẩn panel; true = hiện panel
-    const CW_IS_CHILD_FRAME = window.self !== window.top;
-    const CW_IS_GAME_HOST = /^games\./i.test(location.hostname || '');
-    const CW_IS_WM_HOST =
-        /(?:^|\.)m8810\.com$/i.test(location.hostname || '') ||
-        /^wmvn\./i.test(location.hostname || '') ||
-        /(?:^|\/)iframe_(?:101|109)(?:\/|$)/i.test(location.pathname || '') ||
-        /[?&]co=wm(?:&|$)/i.test(location.search || '');
-    const CW_IS_WM_CHILD_RUNTIME = CW_IS_CHILD_FRAME && !CW_IS_GAME_HOST && CW_IS_WM_HOST;
-    try {
-        window.__cw_frame_gate = {
-            child: CW_IS_CHILD_FRAME ? 1 : 0,
-            game: CW_IS_GAME_HOST ? 1 : 0,
-            wm: CW_IS_WM_HOST ? 1 : 0,
-            allow: (!CW_IS_CHILD_FRAME || CW_IS_GAME_HOST || CW_IS_WM_HOST) ? 1 : 0
-        };
-    } catch (_) {}
-    if (CW_IS_CHILD_FRAME && !CW_IS_GAME_HOST && !CW_IS_WM_HOST) {
-        return;
+    if (window.self !== window.top) {
+        if (!/^games\./i.test(location.hostname)) {
+            return;
+        }
     }
     function isTelemetry(u) {
         try {
@@ -2825,10 +2811,8 @@
     }
 
     // Skip toàn bộ Home Watch ở domain game
-    if (!CW_IS_WM_CHILD_RUNTIME) {
-        try { startGameBalanceWatch(); } catch (_) {}
-    }
-    if (CW_IS_GAME_HOST) {
+    try { startGameBalanceWatch(); } catch (_) {}
+    if (/^games\./i.test(location.hostname)) {
         try { startGameBalanceWatch(); } catch (_) {}
         console.debug('[HomeWatch] Skip on game host');
         return;
@@ -14090,10 +14074,6 @@ function deriveWinLoseColor(text) {
 
     function boot() {
     try {
-        if (CW_IS_WM_CHILD_RUNTIME) {
-            try { console.debug('[HomeWatch] WM child runtime only'); } catch (_) {}
-            return;
-        }
         onDomReady(() => {
             ensureRoot();
             installPostMessageLogger();
