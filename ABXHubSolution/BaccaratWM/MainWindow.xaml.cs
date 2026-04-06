@@ -263,6 +263,51 @@ namespace BaccaratWM
             public DateTime LastUpdatedUtc { get; set; } = DateTime.UtcNow;
         }
 
+        private sealed class CdpBetProbeRect
+        {
+            public double X { get; set; }
+            public double Y { get; set; }
+            public double W { get; set; }
+            public double H { get; set; }
+            public double Cx { get; set; }
+            public double Cy { get; set; }
+        }
+
+        private sealed class CdpBetProbePoint
+        {
+            public string Id { get; set; } = "";
+            public string Text { get; set; } = "";
+            public double X { get; set; }
+            public double Y { get; set; }
+            public CdpBetProbeRect? Rect { get; set; }
+        }
+
+        private sealed class CdpBetProbePrep
+        {
+            public bool Ok { get; set; }
+            public string Error { get; set; } = "";
+            public string Token { get; set; } = "";
+            public string FrameId { get; set; } = "";
+            public CdpBetProbeRect? IframeRect { get; set; }
+            public int InnerWidth { get; set; }
+            public int InnerHeight { get; set; }
+            public Dictionary<string, string> Before { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, string> After { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+            public CdpBetProbePoint? Chip { get; set; }
+            public CdpBetProbePoint? Target { get; set; }
+            public CdpBetProbePoint? Confirm { get; set; }
+        }
+
+        private sealed class CdpBetProbeOpenRoomResult
+        {
+            public bool Ok { get; set; }
+            public string Error { get; set; } = "";
+            public string Action { get; set; } = "";
+            public string Match { get; set; } = "";
+            public string ButtonText { get; set; } = "";
+            public string Href { get; set; } = "";
+        }
+
         private const string AppLocalDirName = "BaccaratWM"; // đổi thành tên bạn muốn
         // ====== App paths ======
         private readonly string _appDataDir;
@@ -1807,6 +1852,23 @@ Ví dụ không hợp lệ:
                     Log("[DevTools] " + ex.Message);
                 }
             }
+
+            if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) == (ModifierKeys.Control | ModifierKeys.Shift))
+            {
+                if (e.Key == Key.F10)
+                {
+                    _ = RunCdpBetProbeAsync("player", 10, confirm: true);
+                    e.Handled = true;
+                    return;
+                }
+
+                if (e.Key == Key.F11)
+                {
+                    _ = RunCdpBetProbeAsync("banker", 10, confirm: true);
+                    e.Handled = true;
+                    return;
+                }
+            }
         }
 
 
@@ -3069,6 +3131,575 @@ Ví dụ không hợp lệ:
             if (PopupHost?.Visibility == Visibility.Visible && _popupWeb?.CoreWebView2 != null)
                 return _popupWeb;
             return Web?.CoreWebView2 != null ? Web : null;
+        }
+
+        private static T? DeserializeScriptResult<T>(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return default;
+
+            var trimmed = raw.Trim();
+            if (string.Equals(trimmed, "null", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, "undefined", StringComparison.OrdinalIgnoreCase))
+                return default;
+
+            try
+            {
+                return JsonSerializer.Deserialize<T>(trimmed, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+            }
+            catch
+            {
+                return default;
+            }
+        }
+
+        private static string ClipForCdpProbe(string? value, int max = 80)
+        {
+            var raw = (value ?? "").Trim();
+            if (raw.Length <= max)
+                return raw;
+            return raw.Substring(0, max) + "...";
+        }
+
+        private static string DescribeCdpProbePoint(CdpBetProbePoint? point)
+        {
+            if (point == null)
+                return "<null>";
+            var rect = point.Rect;
+            return $"id={ClipForCdpProbe(point.Id, 48)} text={ClipForCdpProbe(point.Text, 24)} x={point.X:0.##} y={point.Y:0.##} rect={rect?.X:0.##},{rect?.Y:0.##},{rect?.W:0.##}x{rect?.H:0.##}";
+        }
+
+        private static string DescribeCdpProbeSnapshot(Dictionary<string, string>? snap)
+        {
+            if (snap == null || snap.Count == 0)
+                return "<empty>";
+            return string.Join(" | ", snap.Select(kv => $"{kv.Key}={ClipForCdpProbe(kv.Value, 24)}"));
+        }
+
+        private static string BuildCdpBetProbeOpenRoomJs(string tableId, string tableName)
+        {
+            var idJson = JsonSerializer.Serialize(tableId ?? "");
+            var nameJson = JsonSerializer.Serialize(tableName ?? "");
+            return $@"
+(function(){{
+  try {{
+    const roomId = {idJson};
+    const roomName = {nameJson};
+    const strip = (s) => {{
+      try {{
+        return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      }} catch (_ ) {{
+        return String(s || '');
+      }}
+    }};
+    const norm = (s) => strip(String(s || '').trim().toLowerCase()).replace(/\s+/g, ' ');
+    const isVis = (el) => {{
+      if (!el || !el.isConnected) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity || '1') < 0.05) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 4 && r.height > 4;
+    }};
+    const textOf = (el) => norm(
+      (el && (el.textContent || el.innerText || el.getAttribute?.('aria-label') || el.getAttribute?.('title'))) || ''
+    );
+    const wants = [roomName, roomId].map(norm).filter(Boolean);
+    if (!wants.length) return {{ ok:false, error:'room-empty' }};
+
+    try {{
+      if (window.__abxTableOverlay && typeof window.__abxTableOverlay.scrollToRoom === 'function' && roomName)
+        window.__abxTableOverlay.scrollToRoom(roomName);
+    }} catch (_ ) {{}}
+
+    const enterRx = /\b(di vao|vao game|vao|enter|join|play|open)\b/;
+    const rejectRx = /\b(player|banker|hoa|tie|next p|next b|xu ly|quyet toan|settings?|mute|volume)\b/;
+    const clickLike = (el) => {{
+      if (!el) return false;
+      try {{ el.scrollIntoView({{ block:'center', inline:'center' }}); }} catch (_ ) {{}}
+      const r = el.getBoundingClientRect();
+      const cx = Math.max(0, Math.min(window.innerWidth - 1, Math.round(r.left + Math.max(1, r.width) / 2)));
+      const cy = Math.max(0, Math.min(window.innerHeight - 1, Math.round(r.top + Math.max(1, r.height) / 2)));
+      const top = document.elementFromPoint(cx, cy) || el;
+      const seq = ['pointerover', 'mouseover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+      for (const t of seq) {{
+        try {{
+          top.dispatchEvent(new MouseEvent(t, {{
+            bubbles: true,
+            cancelable: true,
+            clientX: cx,
+            clientY: cy,
+            view: window
+          }}));
+        }} catch (_ ) {{}}
+      }}
+      try {{ el.click(); }} catch (_ ) {{}}
+      if (top !== el) {{
+        try {{ top.click(); }} catch (_ ) {{}}
+      }}
+      return true;
+    }};
+    const scoreButton = (btn) => {{
+      if (!btn || !isVis(btn)) return -9999;
+      const txt = textOf(btn);
+      let score = 0;
+      if (enterRx.test(txt)) score += 20;
+      if (/di vao/.test(txt)) score += 12;
+      if (/vao/.test(txt)) score += 6;
+      if (!txt) score += 1;
+      if (rejectRx.test(txt)) score -= 20;
+      const r = btn.getBoundingClientRect();
+      if (r.top < window.innerHeight * 0.4) score += 2;
+      if (r.width > 18 && r.height > 12) score += 1;
+      return score;
+    }};
+    const findButtonInRoot = (root) => {{
+      if (!root) return null;
+      const nodes = Array.from(root.querySelectorAll('a,button,[role=button],[onclick],.mouse_pointer'));
+      let best = null;
+      let bestScore = -9999;
+      for (const node of nodes) {{
+        const score = scoreButton(node);
+        if (score > bestScore) {{
+          bestScore = score;
+          best = node;
+        }}
+      }}
+      return bestScore >= 2 ? best : null;
+    }};
+    const seen = new Set();
+    const matches = [];
+    const addRoot = (root, matchText) => {{
+      if (!root || seen.has(root) || !isVis(root)) return;
+      seen.add(root);
+      const btn = findButtonInRoot(root);
+      if (!btn) return;
+      const txt = textOf(root);
+      let score = 0;
+      if (wants.some(w => txt === w)) score += 30;
+      if (wants.some(w => txt.includes(w))) score += 18;
+      if (wants.some(w => (matchText || '').includes(w))) score += 10;
+      const rr = root.getBoundingClientRect();
+      if (rr.width > 180 && rr.height > 60) score += 2;
+      matches.push({{ root, btn, score, matchText: matchText || '', btnText: textOf(btn) }});
+    }};
+
+    const nodes = Array.from(document.querySelectorAll('span,div,p,a,button,li'));
+    for (const node of nodes) {{
+      if (!isVis(node)) continue;
+      const txt = textOf(node);
+      if (!txt) continue;
+      if (!wants.some(w => txt === w || txt.includes(w))) continue;
+      let cur = node;
+      for (let i = 0; i < 8 && cur; i++, cur = cur.parentElement)
+        addRoot(cur, txt);
+    }}
+
+    if (!matches.length) {{
+      const broad = Array.from(document.querySelectorAll('div,section,article,li'));
+      for (const root of broad) {{
+        if (!isVis(root)) continue;
+        const txt = textOf(root);
+        if (!txt || !wants.some(w => txt.includes(w))) continue;
+        addRoot(root, txt);
+      }}
+    }}
+
+    if (!matches.length)
+      return {{ ok:false, error:'room-root-not-found', match:wants.join('|') }};
+
+    matches.sort((a, b) => b.score - a.score);
+    const hit = matches[0];
+    clickLike(hit.btn);
+    return {{
+      ok: true,
+      action: 'room-open-click',
+      match: hit.matchText || '',
+      buttonText: hit.btnText || '',
+      href: location.href || ''
+    }};
+  }} catch (e) {{
+    return {{ ok:false, error:String((e && e.message) || e || 'room-open-failed') }};
+  }}
+}})();";
+        }
+
+        private async Task<bool> EnsurePopupReadyForCdpBetProbeAsync()
+        {
+            if (PopupHost?.Visibility == Visibility.Visible && _popupWeb?.CoreWebView2 != null)
+                return true;
+
+            if (Web?.CoreWebView2 == null)
+            {
+                Log("[CDPBET][OPEN] main web not ready");
+                return false;
+            }
+
+            var tableId = (_activeTableId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(tableId))
+            {
+                Log("[CDPBET][OPEN] no active table selected");
+                return false;
+            }
+
+            var tableName = ResolveRoomName(tableId).Trim();
+            Log($"[CDPBET][OPEN] activeTable={tableId} name={ClipForCdpProbe(tableName, 80)}");
+
+            try { await ScrollRoomIntoViewAsync(tableName); } catch { }
+            await Task.Delay(180);
+
+            var openRaw = await Web.ExecuteScriptAsync(BuildCdpBetProbeOpenRoomJs(tableId, tableName));
+            var open = DeserializeScriptResult<CdpBetProbeOpenRoomResult>(openRaw);
+            if (open == null)
+            {
+                Log("[CDPBET][OPEN] parse-failed raw=" + ClipForCdpProbe(openRaw, 220));
+                return false;
+            }
+
+            Log($"[CDPBET][OPEN] ok={(open.Ok ? 1 : 0)} action={ClipForCdpProbe(open.Action, 40)} match={ClipForCdpProbe(open.Match, 80)} btn={ClipForCdpProbe(open.ButtonText, 60)} err={ClipForCdpProbe(open.Error, 120)}");
+            if (!open.Ok)
+                return false;
+
+            var t0 = DateTime.UtcNow;
+            while ((DateTime.UtcNow - t0).TotalMilliseconds < 12000)
+            {
+                if (PopupHost?.Visibility == Visibility.Visible && _popupWeb?.CoreWebView2 != null)
+                {
+                    await Task.Delay(900);
+                    try { _popupWeb.Focus(); } catch { }
+                    return true;
+                }
+                await Task.Delay(150);
+            }
+
+            Log("[CDPBET][OPEN] popup-timeout");
+            return false;
+        }
+
+        private static string BuildCdpBetProbePrepareJs(string side, int amount, bool confirm)
+        {
+            var sideJson = JsonSerializer.Serialize(side);
+            return $@"
+(function(){{
+  try {{
+    const side = {sideJson};
+    const amount = {amount};
+    const wantConfirm = {(confirm ? "true" : "false")};
+    const iframe = document.getElementById('iframe_101');
+    if (!iframe) return {{ ok:false, error:'iframe_101-not-found' }};
+    const prev = {{
+      style: iframe.getAttribute('style'),
+      display: iframe.style.display || '',
+      visibility: iframe.style.visibility || '',
+      position: iframe.style.position || '',
+      left: iframe.style.left || '',
+      top: iframe.style.top || '',
+      width: iframe.style.width || '',
+      height: iframe.style.height || '',
+      zIndex: iframe.style.zIndex || ''
+    }};
+    const token = 'cdpbet_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    window.__abx_cdpProbeRestore = window.__abx_cdpProbeRestore || {{}};
+    window.__abx_cdpProbeRestore[token] = prev;
+
+    iframe.style.display = 'block';
+    iframe.style.visibility = 'visible';
+    iframe.style.position = 'fixed';
+    iframe.style.left = '0px';
+    iframe.style.top = '0px';
+    iframe.style.width = '1152px';
+    iframe.style.height = '732px';
+    iframe.style.zIndex = '2147483647';
+
+    const doc = iframe.contentDocument;
+    const win = iframe.contentWindow;
+    if (!doc || !win) return {{ ok:false, error:'iframe_101-doc-not-found', token }};
+    try {{ iframe.scrollIntoView({{ block:'center', inline:'center' }}); }} catch (_ ) {{}}
+    try {{ win.focus(); }} catch (_ ) {{}}
+
+    const ids = ['myTotalBet', 'totl_bet', 'moneyBoxPlayer', 'moneyBoxBanker', 'peopleBoxPlayer', 'peopleBoxBanker'];
+    const snap = () => {{
+      const out = {{}};
+      ids.forEach(id => {{
+        try {{
+          const el = doc.getElementById(id);
+          out[id] = el ? String(el.textContent || '').replace(/\s+/g, ' ').trim() : '';
+        }} catch (_ ) {{
+          out[id] = '';
+        }}
+      }});
+      return out;
+    }};
+    const rect = el => {{
+      if (!el || !el.getBoundingClientRect) return null;
+      const r = el.getBoundingClientRect();
+      return {{
+        x: Number(r.left || 0),
+        y: Number(r.top || 0),
+        w: Number(r.width || 0),
+        h: Number(r.height || 0),
+        cx: Number((r.left || 0) + (r.width || 0) / 2),
+        cy: Number((r.top || 0) + (r.height || 0) / 2)
+      }};
+    }};
+    const frameRect = rect(iframe);
+    const labelToAmount = raw => {{
+      const s = String(raw || '').replace(/\s+/g, '').trim().toUpperCase();
+      const m = s.match(/^(\d+(?:[.,]\d+)?)([KM]?)$/);
+      if (!m) return 0;
+      const base = Number(String(m[1]).replace(/,/g, ''));
+      if (!Number.isFinite(base)) return 0;
+      if (m[2] === 'K') return base * 1000;
+      if (m[2] === 'M') return base * 1000000;
+      return base;
+    }};
+    const chipText = el => {{
+      if (!el) return '';
+      const nodes = [el];
+      try {{ nodes.push(...Array.from(el.querySelectorAll('span,div,b,strong,i,em'))); }} catch (_ ) {{}}
+      for (const node of nodes) {{
+        const text = String(node.textContent || '').replace(/\s+/g, ' ').trim();
+        if (text && labelToAmount(text) > 0) return text;
+      }}
+      return '';
+    }};
+    const findChip = () => {{
+      const direct = doc.getElementById(`patawardopen-box-money-${{amount}}`);
+      if (direct) return direct;
+      const roots = [doc.getElementById('chip_box'), doc.getElementById('pataward-chip')].filter(Boolean);
+      for (const root of roots) {{
+        const nodes = [root];
+        try {{ nodes.push(...Array.from(root.querySelectorAll('*'))); }} catch (_ ) {{}}
+        for (const raw of nodes) {{
+          const el = raw && raw.closest ? (raw.closest('button,[role=button],a,[onclick],.mouse_pointer') || raw) : raw;
+          if (labelToAmount(chipText(el)) === amount) return el;
+        }}
+      }}
+      return null;
+    }};
+    const pack = el => {{
+      if (!el || !frameRect) return null;
+      const r = rect(el);
+      if (!r) return null;
+      return {{
+        id: String(el.id || ''),
+        text: String(el.textContent || '').replace(/\s+/g, ' ').trim(),
+        x: Number(frameRect.x + r.cx),
+        y: Number(frameRect.y + r.cy),
+        rect: r
+      }};
+    }};
+
+    const targetId = side === 'banker' ? 'playbetboxBanker' : side === 'tie' ? 'playbetboxTie' : 'playbetboxPlayer';
+    const chip = findChip();
+    const target = doc.getElementById(targetId);
+    const confirmEl = wantConfirm ? doc.getElementById('verifyBoxConfirmBtn') : null;
+
+    return {{
+      ok: !!(chip && target && (!wantConfirm || confirmEl)),
+      error: chip ? (target ? (!wantConfirm || confirmEl ? '' : 'confirm-not-found') : ('target-not-found:' + targetId)) : ('chip-not-found:' + amount),
+      token,
+      frameId: 'iframe_101',
+      iframeRect: frameRect,
+      innerWidth: Number(win.innerWidth || 0),
+      innerHeight: Number(win.innerHeight || 0),
+      before: snap(),
+      chip: pack(chip),
+      target: pack(target),
+      confirm: wantConfirm ? pack(confirmEl) : null
+    }};
+  }} catch (e) {{
+    return {{ ok:false, error:String((e && e.message) || e || 'prepare-failed') }};
+  }}
+}})();";
+        }
+
+        private static string BuildCdpBetProbeAfterJs(string token)
+        {
+            var tokenJson = JsonSerializer.Serialize(token);
+            return $@"
+(function(){{
+  try {{
+    const token = {tokenJson};
+    const iframe = document.getElementById('iframe_101');
+    if (!iframe) return {{ ok:false, error:'iframe_101-not-found', token }};
+    const doc = iframe.contentDocument;
+    if (!doc) return {{ ok:false, error:'iframe_101-doc-not-found', token }};
+    const ids = ['myTotalBet', 'totl_bet', 'moneyBoxPlayer', 'moneyBoxBanker', 'peopleBoxPlayer', 'peopleBoxBanker'];
+    const out = {{}};
+    ids.forEach(id => {{
+      try {{
+        const el = doc.getElementById(id);
+        out[id] = el ? String(el.textContent || '').replace(/\s+/g, ' ').trim() : '';
+      }} catch (_ ) {{
+        out[id] = '';
+      }}
+    }});
+    return {{ ok:true, token, after: out }};
+  }} catch (e) {{
+    return {{ ok:false, token, error:String((e && e.message) || e || 'after-failed') }};
+  }}
+}})();";
+        }
+
+        private static string BuildCdpBetProbeRestoreJs(string token)
+        {
+            var tokenJson = JsonSerializer.Serialize(token);
+            return $@"
+(function(){{
+  try {{
+    const token = {tokenJson};
+    const iframe = document.getElementById('iframe_101');
+    const store = window.__abx_cdpProbeRestore || {{}};
+    const prev = store[token];
+    if (!iframe || !prev) return false;
+    if (prev.style == null) iframe.removeAttribute('style');
+    else iframe.setAttribute('style', prev.style);
+    iframe.style.display = prev.display || '';
+    iframe.style.visibility = prev.visibility || '';
+    iframe.style.position = prev.position || '';
+    iframe.style.left = prev.left || '';
+    iframe.style.top = prev.top || '';
+    iframe.style.width = prev.width || '';
+    iframe.style.height = prev.height || '';
+    iframe.style.zIndex = prev.zIndex || '';
+    try {{ delete store[token]; }} catch (_ ) {{}}
+    return true;
+  }} catch (_ ) {{
+    return false;
+  }}
+}})();";
+        }
+
+        private async Task DispatchCdpMouseClickAsync(CoreWebView2 core, double x, double y, string stage)
+        {
+            var movePayload = JsonSerializer.Serialize(new
+            {
+                type = "mouseMoved",
+                x,
+                y,
+                buttons = 0
+            });
+            var pressPayload = JsonSerializer.Serialize(new
+            {
+                type = "mousePressed",
+                x,
+                y,
+                button = "left",
+                buttons = 1,
+                clickCount = 1
+            });
+            var releasePayload = JsonSerializer.Serialize(new
+            {
+                type = "mouseReleased",
+                x,
+                y,
+                button = "left",
+                buttons = 0,
+                clickCount = 1
+            });
+
+            Log($"[CDPBET][CLICK] stage={stage} x={x:0.##} y={y:0.##}");
+            await core.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent", movePayload);
+            await Task.Delay(40);
+            await core.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent", pressPayload);
+            await Task.Delay(70);
+            await core.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent", releasePayload);
+        }
+
+        private async Task RunCdpBetProbeAsync(string side, int amount, bool confirm)
+        {
+            await Dispatcher.InvokeAsync(async () =>
+            {
+                await _domActionLock.WaitAsync();
+                WebView2? targetWeb = null;
+                string token = "";
+
+                try
+                {
+                    if (!await EnsurePopupReadyForCdpBetProbeAsync())
+                    {
+                        Log("[CDPBET] popup room not ready");
+                        return;
+                    }
+
+                    targetWeb = GetActiveRoomHostWebView();
+                    var core = targetWeb?.CoreWebView2;
+                    if (core == null)
+                    {
+                        Log("[CDPBET] active host not ready");
+                        return;
+                    }
+
+                    if (!ReferenceEquals(targetWeb, _popupWeb))
+                    {
+                        Log("[CDPBET] active host is not popup room");
+                        return;
+                    }
+
+                    var webName = ReferenceEquals(targetWeb, _popupWeb) ? "PopupWeb" : ReferenceEquals(targetWeb, Web) ? "Web" : "OtherWeb";
+                    Log($"[CDPBET][START] web={webName} side={side} amount={amount} confirm={(confirm ? 1 : 0)} href={ClipForCdpProbe(targetWeb.Source?.ToString(), 180)}");
+
+                    try { targetWeb.Focus(); } catch { }
+                    try { await SetMouseLockAsync(targetWeb, false); } catch { }
+                    try { await core.CallDevToolsProtocolMethodAsync("Page.bringToFront", "{}"); } catch { }
+
+                    var prepRaw = await targetWeb.ExecuteScriptAsync(BuildCdpBetProbePrepareJs(side, amount, confirm));
+                    var prep = DeserializeScriptResult<CdpBetProbePrep>(prepRaw);
+                    if (prep == null)
+                    {
+                        Log("[CDPBET][PREP] parse-failed raw=" + ClipForCdpProbe(prepRaw, 240));
+                        return;
+                    }
+
+                    token = prep.Token ?? "";
+                    Log($"[CDPBET][PREP] ok={(prep.Ok ? 1 : 0)} err={ClipForCdpProbe(prep.Error, 120)} frame={prep.FrameId} iframe={prep.IframeRect?.W:0.##}x{prep.IframeRect?.H:0.##} inner={prep.InnerWidth}x{prep.InnerHeight}");
+                    Log($"[CDPBET][PREP] chip={DescribeCdpProbePoint(prep.Chip)}");
+                    Log($"[CDPBET][PREP] target={DescribeCdpProbePoint(prep.Target)}");
+                    Log($"[CDPBET][PREP] confirm={DescribeCdpProbePoint(prep.Confirm)}");
+                    Log($"[CDPBET][BEFORE] {DescribeCdpProbeSnapshot(prep.Before)}");
+
+                    if (!prep.Ok || prep.Chip == null || prep.Target == null || (confirm && prep.Confirm == null))
+                        return;
+
+                    await DispatchCdpMouseClickAsync(core, prep.Chip.X, prep.Chip.Y, "chip");
+                    await Task.Delay(220);
+                    await DispatchCdpMouseClickAsync(core, prep.Target.X, prep.Target.Y, "target");
+                    await Task.Delay(260);
+                    if (confirm && prep.Confirm != null)
+                    {
+                        await DispatchCdpMouseClickAsync(core, prep.Confirm.X, prep.Confirm.Y, "confirm");
+                        await Task.Delay(320);
+                    }
+
+                    var afterRaw = await targetWeb.ExecuteScriptAsync(BuildCdpBetProbeAfterJs(token));
+                    var after = DeserializeScriptResult<CdpBetProbePrep>(afterRaw);
+                    if (after != null && after.After != null && after.After.Count > 0)
+                        Log($"[CDPBET][AFTER] {DescribeCdpProbeSnapshot(after.After)}");
+                    else
+                        Log("[CDPBET][AFTER] parse-failed raw=" + ClipForCdpProbe(afterRaw, 240));
+                }
+                catch (Exception ex)
+                {
+                    Log("[CDPBET] " + ex.Message);
+                }
+                finally
+                {
+                    try
+                    {
+                        if (!string.IsNullOrWhiteSpace(token) && targetWeb?.CoreWebView2 != null)
+                            await targetWeb.ExecuteScriptAsync(BuildCdpBetProbeRestoreJs(token));
+                    }
+                    catch (Exception ex)
+                    {
+                        Log("[CDPBET][RESTORE] " + ex.Message);
+                    }
+
+                    _domActionLock.Release();
+                }
+            }).Task.Unwrap();
         }
 
         private async Task<bool> ExecuteOverlayScriptAsync(string script)

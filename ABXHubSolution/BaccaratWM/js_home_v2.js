@@ -224,6 +224,14 @@
     const BET_BANKER_TAIL = 'div.qC_lC.qC_q1[1]';
     const BET_MULTI_ROOT_RE = /^groupMultiple_\d+_\d+$/i;
     const BET_MULTI_CHIP_SELECTOR = '#mult_chips_box .chip_item.mouse_pointer, .mult_chips_box .chip_item.mouse_pointer';
+    const BET_PACKED_TARGET_IDS = {
+        player: 'playbetboxPlayer',
+        banker: 'playbetboxBanker',
+        tie: 'playbetboxTie'
+    };
+    const BET_PACKED_CONFIRM_IDS = ['verifyBoxConfirmBtn'];
+    const BET_PACKED_CHIP_ROOT_SELECTORS = ['#chip_box', '#pataward-chip'];
+    const BET_PACKED_ROOT_SELECTORS = ['#bet_box_1', '#bet_box_2', '[id^="bet_box_"]'];
 
     const CHIP_LABEL_BY_AMOUNT = {
         10: '10',
@@ -298,8 +306,170 @@
         return docs;
             }
 
+    function betGetChipNodeText(el) {
+        if (!el)
+            return '';
+        const candidates = [];
+        try { candidates.push(el); } catch (_) {}
+        try { candidates.push(...Array.from(el.querySelectorAll('span,div,b,strong,i,em'))); } catch (_) {}
+        for (const node of candidates) {
+            try {
+                const text = String((node && node.textContent) || '').replace(/\s+/g, ' ').trim();
+                if (!text || text.length > 12)
+                    continue;
+                if (betLabelToAmount(text) > 0)
+                    return text;
+            } catch (_) {}
+        }
+        return '';
+    }
+
+    function betGetPackedTargetId(side) {
+        const s = betNormalizeSide(side);
+        return BET_PACKED_TARGET_IDS[s] || '';
+    }
+
+    function betFindPackedTargetByRoot(root, side) {
+        const id = betGetPackedTargetId(side);
+        if (!id)
+            return null;
+        const doc = (root && root.ownerDocument) || document;
+        const allowDocFallback = !root || root === doc || root.nodeType === 9;
+        const pick = (base) => {
+            if (!base)
+                return null;
+            try {
+                if (base.getElementById) {
+                    const hit = base.getElementById(id);
+                    if (hit && betIsVisible(hit))
+                        return hit;
+                }
+            } catch (_) {}
+            try {
+                if (base.querySelector) {
+                    const hit = base.querySelector('#' + betCssEscape(id));
+                    if (hit && betIsVisible(hit))
+                        return hit;
+                }
+            } catch (_) {}
+            return null;
+        };
+        return pick(root) || (allowDocFallback ? pick(doc) : null);
+    }
+
+    function betFindPackedConfirmByRoot(root) {
+        const doc = (root && root.ownerDocument) || document;
+        const allowDocFallback = !root || root === doc || root.nodeType === 9;
+        const pick = (base) => {
+            if (!base)
+                return null;
+            for (const id of BET_PACKED_CONFIRM_IDS) {
+                try {
+                    if (base.getElementById) {
+                        const hit = base.getElementById(id);
+                        if (hit && betIsVisible(hit))
+                            return hit;
+                    }
+                } catch (_) {}
+                try {
+                    if (base.querySelector) {
+                        const hit = base.querySelector('#' + betCssEscape(id));
+                        if (hit && betIsVisible(hit))
+                            return hit;
+                    }
+                } catch (_) {}
+            }
+            return null;
+        };
+        return pick(root) || (allowDocFallback ? pick(doc) : null);
+    }
+
+    function betGetCommonAncestor(a, b) {
+        if (!a || !b)
+            return a || b || null;
+        const seen = new Set();
+        let cur = a;
+        while (cur) {
+            seen.add(cur);
+            cur = cur.parentElement;
+        }
+        cur = b;
+        while (cur) {
+            if (seen.has(cur))
+                return cur;
+            cur = cur.parentElement;
+        }
+        return null;
+    }
+
+    function betFindPackedBetRoot(doc) {
+        const curDoc = doc || document;
+        const player = betFindPackedTargetByRoot(curDoc, 'player');
+        const banker = betFindPackedTargetByRoot(curDoc, 'banker');
+        if (!player && !banker)
+            return null;
+        for (const sel of BET_PACKED_ROOT_SELECTORS) {
+            try {
+                const list = Array.from(curDoc.querySelectorAll(sel));
+                for (const el of list) {
+                    if (!el)
+                        continue;
+                    const hasPlayer = !!(player && el.contains(player));
+                    const hasBanker = !!(banker && el.contains(banker));
+                    if ((hasPlayer || hasBanker) && betIsVisible(el))
+                        return el;
+                }
+            } catch (_) {}
+        }
+        const confirm = betFindPackedConfirmByRoot(curDoc);
+        const common = betGetCommonAncestor(player, banker) || betGetCommonAncestor(player || banker, confirm);
+        if (common && common instanceof Element)
+            return common;
+        return player || banker || null;
+    }
+
+    function betNodeIsPackedChipCandidate(el, chipRoot) {
+        if (!el || !chipRoot || !chipRoot.contains(el))
+            return false;
+        if (!betIsVisible(el))
+            return false;
+        const text = betGetChipNodeText(el);
+        if (!text || betLabelToAmount(text) <= 0)
+            return false;
+        return true;
+    }
+
+    function betCollectPackedChipNodes(doc) {
+        const curDoc = doc || document;
+        const out = [];
+        const seen = new Set();
+        for (const sel of BET_PACKED_CHIP_ROOT_SELECTORS) {
+            let chipRoot = null;
+            try { chipRoot = curDoc.querySelector(sel); } catch (_) {}
+            if (!chipRoot)
+                continue;
+            const nodes = [];
+            try { nodes.push(chipRoot, ...Array.from(chipRoot.querySelectorAll('*'))); } catch (_) {}
+            for (const raw of nodes) {
+                const el = raw && raw.closest
+                    ? (raw.closest('button,[role=button],a,[onclick],.mouse_pointer,[id*="chip"]') || raw)
+                    : raw;
+                if (!betNodeIsPackedChipCandidate(el, chipRoot))
+                    continue;
+                if (seen.has(el))
+                    continue;
+                seen.add(el);
+                out.push(el);
+            }
+        }
+        return out;
+    }
+
     function betCollectChipNodes(doc) {
         const nodes = [];
+        const packedNodes = betCollectPackedChipNodes(doc);
+        if (packedNodes.length)
+            nodes.push(...packedNodes);
         if (doc && doc.querySelectorAll) {
             try { nodes.push(...doc.querySelectorAll(BET_MULTI_CHIP_SELECTOR)); } catch (_) {}
         }
@@ -318,6 +488,8 @@
 
     function betIsMultiBetRoot(root) {
         try {
+            if (betFindPackedTargetByRoot(root, 'player') || betFindPackedTargetByRoot(root, 'banker'))
+                return true;
             const id = String((root && root.id) || '').trim();
             return !!(id && BET_MULTI_ROOT_RE.test(id) && !/_opencard$/i.test(id));
         } catch (_) {}
@@ -411,6 +583,9 @@
     function betFindMultiTargetByRoot(root, side) {
         if (!betIsMultiBetRoot(root))
             return null;
+        const packedTarget = betFindPackedTargetByRoot(root, side);
+        if (packedTarget)
+            return packedTarget;
         const s = betNormalizeSide(side);
         const suffix = s === 'player'
             ? '_lightPlayer'
@@ -425,6 +600,9 @@
     function betFindMultiConfirmByRoot(root) {
         if (!betIsMultiBetRoot(root))
             return null;
+        const packedConfirm = betFindPackedConfirmByRoot(root);
+        if (packedConfirm)
+            return packedConfirm;
         const doc = root.ownerDocument || document;
         const el = doc.getElementById(root.id + '_confirm');
         if (el)
@@ -486,6 +664,9 @@
                     return root;
             }
         } catch (_) {}
+        const packedRoot = betFindPackedBetRoot(document);
+        if (betIsUsableRoot(packedRoot))
+            return packedRoot;
         const multiRoot = betFindMultiRootById(id);
         if (betIsUsableRoot(multiRoot))
             return multiRoot;
@@ -523,6 +704,12 @@
 
     function betFindTargetByTableId(id, side) {
         const s = betNormalizeSide(side);
+        const packedRoot = betFindPackedBetRoot(document);
+        if (packedRoot) {
+            const packedTarget = betFindPackedTargetByRoot(packedRoot, s);
+            if (packedTarget)
+                return packedTarget;
+        }
         const multiRoot = betFindMultiRootById(id);
         if (multiRoot) {
             const multiTarget = betFindMultiTargetByRoot(multiRoot, s);
@@ -584,8 +771,14 @@
     function betResolveCardRoot(node) {
         if (!node)
             return null;
+        const packedRoot = betFindPackedBetRoot((node && node.ownerDocument) || document);
+        if (packedRoot && packedRoot.contains && packedRoot.contains(node))
+            return packedRoot;
         return node.closest('div[id^="TileHeight-"]') ||
             node.closest('div[id^="groupMultiple_"]') ||
+            node.closest('#bet_box_1') ||
+            node.closest('#bet_box_2') ||
+            node.closest('[id^="bet_box_"]') ||
             node.closest('div.gC_gE.gC_gH.gC_gI') ||
             node.closest('div.hu_hv.hu_hy') ||
             node.closest('div.eB_eC.tile-container-wrapper') ||
@@ -607,6 +800,8 @@
     function betHasBetTargets(root) {
         if (!root || !root.querySelector)
             return false;
+        if (betFindPackedTargetByRoot(root, 'player') || betFindPackedTargetByRoot(root, 'banker'))
+            return true;
         if (betFindMultiTargetByRoot(root, 'player') || betFindMultiTargetByRoot(root, 'banker'))
             return true;
         try {
@@ -618,6 +813,9 @@
 
     function betFindCardRootById(id) {
         const candidates = betGetTableIdCandidates(id);
+        const packedRoot = betFindPackedBetRoot(document);
+        if (betIsUsableRoot(packedRoot))
+            return packedRoot;
         if (!candidates.length)
             return null;
         for (const needle of candidates) {
@@ -925,15 +1123,15 @@
             for (const curDoc of docs) {
                 const nodes = betCollectChipNodes(curDoc);
                 for (const el of nodes) {
-                    const text = (el.textContent || '').trim().toUpperCase();
+                    const text = betGetChipNodeText(el).trim().toUpperCase();
                     if (text !== upper)
                         continue;
-                    const btn = el.closest && el.closest('button,[role=button],a');
+                    const btn = el.closest && el.closest('button,[role=button],a,[onclick],.mouse_pointer,[id*="chip"]');
                     if (btn && betIsVisible(el))
                         return el;
                 }
                 for (const el of nodes) {
-                    const text = (el.textContent || '').trim().toUpperCase();
+                    const text = betGetChipNodeText(el).trim().toUpperCase();
                     if (text === upper && betIsVisible(el))
                         return el;
                 }
@@ -967,7 +1165,7 @@
         ].filter(Boolean).join(' ');
         if (!clsSources)
             return false;
-        if (/\b(active|selected|on|checked|qC_qH|rO_rT|lL_lT)\b/i.test(clsSources))
+        if (/\b(active|selected|on|checked|current|focus|focused|qC_qH|rO_rT|lL_lT)\b/i.test(clsSources))
             return true;
         return /\blF_lN\b/.test(clsSources);
     }
@@ -1041,7 +1239,7 @@
                     const token = betParseMultiChipTokenFromNode(el);
                     if (token)
                         return betMultiChipTokenToAmount(token);
-                    const txt = (el && el.textContent || '').trim();
+                    const txt = betGetChipNodeText(el);
                     return betLabelToAmount(txt);
                 })
                 .filter(v => Number.isFinite(v) && v > 0));
@@ -1574,12 +1772,12 @@
         const upper = String(label).trim().toUpperCase();
         const nodes = betCollectChipNodes(doc);
         for (const el of nodes) {
-            const text = (el.textContent || '').trim().toUpperCase();
+            const text = betGetChipNodeText(el).trim().toUpperCase();
             if (text === upper && betIsVisible(el))
                 return el;
     }
         for (const el of nodes) {
-            const text = (el.textContent || '').trim().toUpperCase();
+            const text = betGetChipNodeText(el).trim().toUpperCase();
             if (text === upper)
                 return el;
         }
@@ -1625,6 +1823,9 @@
     }
 
     function betResolveStakeRoot(target, fallbackRoot) {
+        const packedRoot = betFindPackedBetRoot((target && target.ownerDocument) || (fallbackRoot && fallbackRoot.ownerDocument) || document);
+        if (packedRoot && target && packedRoot.contains && packedRoot.contains(target))
+            return packedRoot;
         if (target && target.closest) {
             return target.closest('.kU_kV') ||
                 target.closest('.zv_zw') ||
@@ -1632,6 +1833,9 @@
                 target.closest('.pI_pJ') ||
                 target.closest('.kI_kJ') ||
                 target.closest('.yu_yv') ||
+                target.closest('#bet_box_1') ||
+                target.closest('#bet_box_2') ||
+                target.closest('[id^="bet_box_"]') ||
                 fallbackRoot;
         }
         return fallbackRoot;
@@ -8988,6 +9192,9 @@
             const needle = (id || '').trim();
             if (!needle)
             return null;
+            const packedRoot = betFindPackedBetRoot(document);
+            if (betIsUsableRoot(packedRoot))
+                return packedRoot;
             const cached = roomDomRegistry.get(needle);
             if (betIsUsableRoot(cached))
                 return cached;

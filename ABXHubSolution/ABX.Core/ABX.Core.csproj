@@ -4,5 +4,15 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**;artifacts2\**</DefaultItemExcludes>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="artifacts\**\*.cs" />
+    <Compile Remove="artifacts2\**\*.cs" />
+    <Compile Remove="obj\Debug\*.AssemblyInfo.cs" />
+    <Compile Remove="obj\Debug\.NETCoreApp,Version=v8.0.AssemblyAttributes.cs" />
+    <Compile Remove="obj\Release\*.AssemblyInfo.cs" />
+    <Compile Remove="obj\Release\.NETCoreApp,Version=v8.0.AssemblyAttributes.cs" />
+  </ItemGroup>
 </Project>
