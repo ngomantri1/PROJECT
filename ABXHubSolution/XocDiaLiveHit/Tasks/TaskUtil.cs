@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -11,11 +12,20 @@ namespace XocDiaLiveHit.Tasks
 {
     internal static class TaskUtil
     {
-        // Khóa chống bắn đúp: 3s kể từ lần place bet THÀNH CÔNG gần nhất
-        private static long _lastBetOkMs = 0;
+        // Khóa chống bắn đúp theo từng tab: 3s kể từ lần place bet THÀNH CÔNG gần nhất
+        private static readonly ConcurrentDictionary<string, long> _lastBetOkMsByTab = new();
+        private static readonly ConcurrentDictionary<string, string> _lastBetSeqByTab = new();
+        private static readonly ConcurrentDictionary<string, string> _lastBetSideByTab = new();
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> _betGateByTab = new();
 
         // (tuỳ chọn) reset khi dừng task
-        public static void ClearBetCooldown() => Volatile.Write(ref _lastBetOkMs, 0);
+        public static void ClearBetCooldown()
+        {
+            _lastBetOkMsByTab.Clear();
+            _lastBetSeqByTab.Clear();
+            _lastBetSideByTab.Clear();
+            _betGateByTab.Clear();
+        }
 
         public static string ParityCharToSide(char ch) => (ch == 'C') ? "CHAN" : "LE";
         public static char DigitToParity(char d) => (d == '0' || d == '2' || d == '4') ? 'C' : 'L';
@@ -107,36 +117,60 @@ namespace XocDiaLiveHit.Tasks
 
         public static async Task<bool> PlaceBet(GameContext ctx, string side, long amount, CancellationToken ct, bool ignoreCooldown = false)
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var last = Volatile.Read(ref _lastBetOkMs);
-            if (!ignoreCooldown && now - last < 3000)  // 3 giây khoá sau lần bet OK gần nhất
+            var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
+            var gate = _betGateByTab.GetOrAdd(tabKey, _ => new SemaphoreSlim(1, 1));
+            if (!await gate.WaitAsync(0, ct))
             {
-                ctx.Log?.Invoke($"[BET] cooldown 3s active, skip ({3000 - (now - last)}ms left)");
+                ctx.Log?.Invoke($"[BET] tab={tabKey} đang có lệnh bet khác chạy, bỏ qua để tránh bắn đúp");
                 return false;
             }
 
-            // Cập nhật UI chỉ khi thực sự được phép bắn
-            await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke(side));
-            await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
+            try
+            {
+                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                var snap = ctx.GetSnap?.Invoke();
+                var roundKey = snap?.seq ?? "";
 
-            // GỌI __cw_bet AN TOÀN (giữ nguyên như code hiện tại)
-            var js =
-                "(async function(){try{" +
-                " if (typeof window.__cw_bet==='function'){" +
-                "   return String(await window.__cw_bet('" + side + "', " + amount + "));" +
-                " } else { return 'no'; }" +
-                "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
+                var last = _lastBetOkMsByTab.TryGetValue(tabKey, out var v) ? v : 0;
+                var lastRound = _lastBetSeqByTab.TryGetValue(tabKey, out var r) ? r : "";
+                var lastSide = _lastBetSideByTab.TryGetValue(tabKey, out var s) ? s : "";
+                var sameRound = !string.IsNullOrWhiteSpace(roundKey) &&
+                                string.Equals(lastRound, roundKey, StringComparison.Ordinal);
+                var sameSide = string.Equals(lastSide, side, StringComparison.OrdinalIgnoreCase);
 
-            var rRaw = await ctx.EvalJsAsync(js);
-            ctx.Log?.Invoke($"[BET-JS] result={rRaw}");
+                if (!ignoreCooldown && sameRound && sameSide && now - last < 3000)
+                {
+                    ctx.Log?.Invoke($"[BET] tab={tabKey} cooldown 3s active, skip ({3000 - (now - last)}ms left)");
+                    return false;
+                }
 
-            // Không kiểm tra thành công/thất bại để tránh bắn lặp; chỉ đẩy lệnh một lần
-            bool ok = true;
+                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke(side));
+                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
 
-            if (ok)
-                Volatile.Write(ref _lastBetOkMs, now); // kích hoạt khoá 3s
+                var js =
+                    "(async function(){try{" +
+                    " if (typeof window.__cw_bet==='function'){" +
+                    "   return String(await window.__cw_bet('" + side + "', " + amount + "));" +
+                    " } else { return 'no'; }" +
+                    "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
-            return ok;
+                var rRaw = await ctx.EvalJsAsync(js);
+                ctx.Log?.Invoke($"[BET-JS] tab={tabKey} round={roundKey} result={rRaw}");
+
+                bool ok = true;
+                if (ok)
+                {
+                    _lastBetOkMsByTab[tabKey] = now;
+                    _lastBetSeqByTab[tabKey] = roundKey;
+                    _lastBetSideByTab[tabKey] = side ?? "";
+                }
+
+                return ok;
+            }
+            finally
+            {
+                try { gate.Release(); } catch { }
+            }
         }
 
 

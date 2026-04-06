@@ -27,6 +27,7 @@
         <local:SideToIconConverter x:Key="SideToIcon" />
         <local:KetQuaToIconConverter x:Key="KetQuaToIcon" />
         <local:WinLossToIconConverter x:Key="WinLossToIcon" />
+        <local:TabOverlapMarginConverter x:Key="TabOverlapMarginConverter" />
 
         <!--  (tuỳ chọn) Brush dùng cho badge khi fallback chữ  -->
         <SolidColorBrush x:Key="WinBg" Color="#EBF5E9" />
@@ -175,6 +176,40 @@
                 </Trigger>
                 <Trigger Property="IsEnabled" Value="False">
                     <Setter Property="Opacity" Value="0.6" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="TabCloseButton" TargetType="Button">
+            <Setter Property="Width" Value="18" />
+            <Setter Property="Height" Value="18" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Background" Value="#EEF0F3" />
+            <Setter Property="Foreground" Value="#65676B" />
+            <Setter Property="BorderBrush" Value="#D8DADF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="9">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#E4E6EB" />
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -521,6 +556,189 @@
 
 
                                 </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border
+                            x:Name="GroupStrategyTabs"
+                            Style="{StaticResource Card}"
+                            Visibility="Collapsed">
+                            <StackPanel>
+                                <Grid
+                                    x:Name="StrategyTabHost"
+                                    VerticalAlignment="Center"
+                                    SizeChanged="StrategyTabHost_SizeChanged">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ListBox
+                                        x:Name="StrategyTabList"
+                                        Grid.Column="0"
+                                        Width="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=TabStripWidth}"
+                                        Height="40"
+                                        MinWidth="0"
+                                        Margin="0,0,10,0"
+                                        HorizontalAlignment="Left"
+                                        HorizontalContentAlignment="Stretch"
+                                        AllowDrop="True"
+                                        AlternationCount="999"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        ClipToBounds="False"
+                                        Drop="StrategyTabList_Drop"
+                                        Loaded="StrategyTabList_Loaded"
+                                        PreviewMouseLeftButtonDown="StrategyTabList_PreviewMouseLeftButtonDown"
+                                        PreviewMouseMove="StrategyTabList_PreviewMouseMove"
+                                        ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+                                        ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                        SelectionChanged="StrategyTabList_SelectionChanged"
+                                        SizeChanged="StrategyTabList_SizeChanged">
+                                        <ListBox.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ListBox.ItemsPanel>
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem">
+                                                <Setter Property="Padding" Value="0" />
+                                                <Setter Property="Margin">
+                                                    <Setter.Value>
+                                                        <MultiBinding Converter="{StaticResource TabOverlapMarginConverter}">
+                                                            <Binding Path="(ItemsControl.AlternationIndex)" RelativeSource="{RelativeSource Self}" />
+                                                            <Binding Path="TabOverlap" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                            <Binding Path="Items.Count" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                        </MultiBinding>
+                                                    </Setter.Value>
+                                                </Setter>
+                                                <Setter Property="Background" Value="Transparent" />
+                                                <Setter Property="BorderThickness" Value="0" />
+                                                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                <Setter Property="VerticalContentAlignment" Value="Center" />
+                                                <Setter Property="Panel.ZIndex" Value="1" />
+                                                <EventSetter Event="RequestBringIntoView" Handler="StrategyTabItem_RequestBringIntoView" />
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Panel.ZIndex" Value="6" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter Property="Panel.ZIndex" Value="7" />
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border
+                                                    x:Name="TabBorder"
+                                                    Width="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=TabHeaderWidth}"
+                                                    MinWidth="50"
+                                                    Padding="0"
+                                                    Background="White"
+                                                    BorderBrush="{StaticResource CardBorder}"
+                                                    BorderThickness="1"
+                                                    ClipToBounds="True"
+                                                    CornerRadius="8"
+                                                    MouseLeftButtonDown="TabHeader_MouseDoubleClick"
+                                                    ToolTip="{Binding Name}">
+                                                    <Grid>
+                                                        <Button
+                                                            x:Name="TabCloseBtn"
+                                                            Margin="0"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Top"
+                                                            Panel.ZIndex="8"
+                                                            Click="TabClose_Click"
+                                                            Content="x"
+                                                            Style="{StaticResource TabCloseButton}"
+                                                            Tag="{Binding}"
+                                                            Visibility="Collapsed" />
+                                                        <Grid Margin="10,6,28,6">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <Ellipse
+                                                                x:Name="RunDot"
+                                                                Width="8"
+                                                                Height="8"
+                                                                Margin="0,0,6,0"
+                                                                VerticalAlignment="Center"
+                                                                Fill="#D60000"
+                                                                Visibility="Collapsed" />
+                                                            <TextBlock
+                                                                x:Name="TabNameText"
+                                                                Grid.Column="1"
+                                                                VerticalAlignment="Center"
+                                                                FontWeight="SemiBold"
+                                                                Foreground="{StaticResource TextMain}"
+                                                                Text="{Binding Name}"
+                                                                TextTrimming="CharacterEllipsis" />
+                                                            <TextBox
+                                                                x:Name="TabNameEdit"
+                                                                Grid.Column="1"
+                                                                MinWidth="80"
+                                                                VerticalAlignment="Center"
+                                                                Background="White"
+                                                                FontWeight="SemiBold"
+                                                                Foreground="{StaticResource TextMain}"
+                                                                KeyDown="TabNameEdit_KeyDown"
+                                                                LostFocus="TabNameEdit_LostFocus"
+                                                                MaxLength="20"
+                                                                Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                                                                Visibility="Collapsed" />
+                                                        </Grid>
+                                                    </Grid>
+                                                </Border>
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding IsEditing}" Value="True">
+                                                        <Setter TargetName="TabNameText" Property="Visibility" Value="Collapsed" />
+                                                        <Setter TargetName="TabNameEdit" Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
+                                                        <Setter TargetName="TabBorder" Property="BorderBrush" Value="{StaticResource Blue}" />
+                                                        <Setter TargetName="TabCloseBtn" Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                                        <Setter TargetName="RunDot" Property="Visibility" Value="Visible" />
+                                                        <Setter TargetName="TabBorder" Property="Background" Value="#FDECEC" />
+                                                        <Setter TargetName="TabBorder" Property="BorderBrush" Value="#F5A3A3" />
+                                                        <Setter TargetName="TabNameText" Property="Foreground" Value="#B00000" />
+                                                    </DataTrigger>
+                                                    <Trigger SourceName="TabBorder" Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="TabCloseBtn" Property="Visibility" Value="Visible" />
+                                                    </Trigger>
+                                                </DataTemplate.Triggers>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+
+                                    <Button
+                                        x:Name="BtnAddStrategyTab"
+                                        Grid.Column="1"
+                                        Width="32"
+                                        Height="32"
+                                        MinWidth="32"
+                                        MinHeight="32"
+                                        Margin="4,0,0,0"
+                                        Padding="0"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        Click="AddStrategyTab_Click"
+                                        Content="+"
+                                        FontSize="18"
+                                        FontWeight="SemiBold"
+                                        Style="{StaticResource SecondaryButton}" />
+                                </Grid>
+
+                                <TextBlock
+                                    x:Name="LblTabHint"
+                                    Margin="0,6,0,0"
+                                    Foreground="#D60000"
+                                    Text="Chỉ được mở tối đa 5 chiến lược"
+                                    Visibility="Collapsed" />
                             </StackPanel>
                         </Border>
 
