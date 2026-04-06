@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -368,16 +368,12 @@ namespace XocDiaLiveHit
 
         // Cache & cờ để không inject lặp lại
         private string? _appJs;
-        private string? _homeJs;  // nội dung js_home_v2.js
         private bool _webMsgHooked; // để gắn WebMessageReceived đúng 1 lần
 
 
 
 
         private string? _topForwardId, _appJsRegId;           // id script TOP_FORWARD
-                                                              // ID riêng cho autostart của trang Home (đừng dùng chung với _homeJsRegId)
-        private string? _homeAutoStartId;
-        private string? _homeJsRegId;
         private bool _frameHooked;               // đã gắn FrameCreated?
         private string? _lastDocKey;             // key document hiện tại (performance.timeOrigin)
                                                  // Bridge đăng ký toàn cục
@@ -398,10 +394,6 @@ namespace XocDiaLiveHit
         // === License periodic re-check (5 phút/lần) ===
         private System.Threading.Timer? _licenseCheckTimer;
         private int _licenseCheckBusy = 0; // guard chống chồng lệnh
-        // === Username lấy từ Home (authoritative) ===
-        private string? _homeUsername;                 // username chuẩn lấy từ home_tick
-        private DateTime _homeUsernameAt = DateTime.MinValue; // mốc thời gian bắt được
-        private bool _homeLoggedIn = false; // chỉ true khi phát hiện có nút Đăng xuất (đã login)
         private bool _navModeHooked = false;   // đã gắn handler NavigationCompleted để cập nhật UI nhanh về Home?
 
 
@@ -410,7 +402,6 @@ namespace XocDiaLiveHit
         private readonly SemaphoreSlim _cfgWriteGate = new(1, 1);// Khoá ghi config để không bao giờ ghi song song
                                                                  // --- UI mode monitor ---
         private DateTime _lastGameTickUtc = DateTime.MinValue;
-        private DateTime _lastHomeTickUtc = DateTime.MinValue;
         private bool _isGameUi = false;              // trạng thái UI hiện hành
         private bool _forceGameUiFromLoginTool = false; // ép hiện vùng chiến lược sau khi bấm Đăng nhập Tool
         private System.Windows.Threading.DispatcherTimer? _uiModeTimer;
@@ -420,7 +411,6 @@ namespace XocDiaLiveHit
         private string? _lastGameUrl = null;
 
         private static readonly TimeSpan GameTickFresh = TimeSpan.FromSeconds(3);
-        private static readonly TimeSpan HomeTickFresh = TimeSpan.FromSeconds(1.5);
         // Master switch: đặt false để bỏ qua kiểm tra Trial/License (không UI, không config, true kiểm tra bình thường)
         private bool CheckLicense = true;
 
@@ -867,75 +857,12 @@ Ví dụ không hợp lệ:
   }catch(_){}
 })();";
 
-        private const string HOME_AUTOSTART_TEMPLATE = @"
-(function(){
-  try{
-    var key = String((performance && performance.timeOrigin) || Date.now());
-    if (window.__hw_autostart_key === key) return;
-    window.__hw_autostart_key = key;
-    // MỚI: 1-shot báo hiệu đã ở trang game/đang có iframe game
-    if (!window.__abx_gameHintSent) window.__abx_gameHintSent = 0;
-    function sendGameHint(){
-      try{
-        if (window.__abx_gameHintSent) return;
-        window.__abx_gameHintSent = 1;
-        var msg = JSON.stringify({abx:'game_hint'});
-        if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage){
-          window.chrome.webview.postMessage(msg);
-        } else {
-          try { parent.postMessage({abx:'game_hint'}, '*'); } catch(_){}
-        }
-      }catch(_){}
-    }
-    // ⬇️ MỚI: phát hiện xem top-page có iframe games.* không
-    function hasGameFrame(){
-      try{
-        var ifs = Array.from(document.querySelectorAll('iframe'));
-        for (var i=0;i<ifs.length;i++){
-          var f = ifs[i];
-          try{
-            var u = new URL(f.src || '', location.href);
-            if (/^games\./i.test(u.hostname)) return true;
-          }catch(_){}
-        }
-      }catch(_){}
-      return false;
-    }
-
-    var delay=300, tries=0;
-    (function tick(){
-      try{
-        var h = String(location.hostname||'');
-        // Nếu bản thân đang ở games.* => bắn hint ngay (không cần home-push)
-        if (/^games\./i.test(h)) { sendGameHint(); return; }
-        // Nếu còn ở Home nhưng đã nhúng iframe game => bắn hint để C# chuyển UI tức thì
-        if (hasGameFrame()) { sendGameHint(); /* vẫn không start home_push */ }
-        // ⬇️ CHỈ start push khi KHÔNG phải games.* VÀ cũng KHÔNG có iframe games.*
-        if (!/^games\./i.test(h) && !hasGameFrame() && typeof window.__abx_hw_startPush==='function'){
-          try{ window.__abx_hw_startPush(__INTERVAL__); }catch(_){}
-          return;
-        }
-      }catch(_){}
-      tries++; delay = Math.min(5000, delay + (tries<10?100:500));
-      setTimeout(tick, delay);
-    })();
-  }catch(_){}
-})();";
-
-
-
-        // Guard chống re-entrancy (đặt ở class level)
         private bool _ensuringWeb = false;
 
         private bool _frameHookedAlways;
 
         private WebView2LiveBridge? _bridge;
         private bool _inputEventsHooked;
-        // Interval push của Home (ms)
-        private int _homePushMs = 800;
-        // Home-flow state flags (per-document)
-        private bool _homeAutoLoginDone = false;
-        private bool _homeAutoPlayDone = false;
         private CancellationTokenSource? _leaseHbCts;
 
 
@@ -1139,17 +1066,8 @@ Ví dụ không hợp lệ:
                 return;
             }
 
-            var now = DateTime.UtcNow;
-            var recentGame = (now - _lastGameTickUtc) <= GameTickFresh;
-            var recentHome = (now - _lastHomeTickUtc) <= HomeTickFresh;
-
-            bool nextIsGame;
-            if (recentGame && !recentHome) nextIsGame = true;
-            else if (!recentGame && recentHome) nextIsGame = false;
-            else if (recentGame && recentHome) nextIsGame = true;   // giữ logic cũ
-            else nextIsGame = GetIsGameByUrlFallback();
-
-            ApplyUiMode(nextIsGame);
+            var recentGame = (DateTime.UtcNow - _lastGameTickUtc) <= GameTickFresh;
+            ApplyUiMode(recentGame || GetIsGameByUrlFallback());
         }
         // Khóa/mở cấu hình khi Start/Stop:
         // - enabled = true  => đang "Bắt Đầu Cược" (chưa chạy)  => mở hết để sửa
@@ -1261,7 +1179,6 @@ Ví dụ không hợp lệ:
                     _cfg = JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
                     Log("Loaded config: " + _cfgPath);
                 }
-                _homeUsername = _cfg.LastHomeUsername;
                 // Sinh / nạp clientId cố định cho lease
                 _leaseClientId = string.IsNullOrWhiteSpace(_cfg.LeaseClientId)
                     ? (_cfg.LeaseClientId = Guid.NewGuid().ToString("N"))
@@ -1546,7 +1463,6 @@ Ví dụ không hợp lệ:
 
                 LoadStats();
 
-                _homeUsername = _cfg.LastHomeUsername;
                 _leaseClientId = string.IsNullOrWhiteSpace(_cfg.LeaseClientId)
                     ? (_cfg.LeaseClientId = Guid.NewGuid().ToString("N"))
                     : _cfg.LeaseClientId;
@@ -2368,24 +2284,6 @@ Ví dụ không hợp lệ:
                                     var snap = System.Text.Json.JsonSerializer.Deserialize<CwSnapshot>(msg);
                                     if (snap != null)
                                     {
-                                        // Ghi nhận username từ tick game (dùng làm _homeUsername nếu Home chưa gửi)
-                                        try
-                                        {
-                                            var userVal = snap.username ?? "";
-                                            if (!string.IsNullOrWhiteSpace(userVal))
-                                            {
-                                                var normalized = userVal.Trim().ToLowerInvariant();
-                                                _homeUsername = normalized;
-                                                _homeUsernameAt = DateTime.UtcNow;
-
-                                                if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
-                                                {
-                                                    _cfg.LastHomeUsername = _homeUsername;
-                                                    _ = SaveConfigAsync();
-                                                }
-                                            }
-                                        }
-                                        catch { /* ignore */ }
 
                                         // === NI-SEQUENCE & finalize đúng thời điểm (đuôi seq đổi) ===
                                         try
@@ -2565,71 +2463,6 @@ Ví dụ không hợp lệ:
                                     return;
                                 }
 
-                                // 5) home_tick: username/balance/url từ Home
-                                if (abxStr == "home_tick")
-                                {
-                                    var uname = root.TryGetProperty("username", out var uEl) ? (uEl.GetString() ?? "") : "";
-                                    if (!string.IsNullOrWhiteSpace(uname))
-                                    {
-                                        var normalized = uname.Trim().ToLowerInvariant();
-                                        if (_homeUsername != normalized)
-                                        {
-                                            _homeUsername = normalized;
-                                            _homeUsernameAt = DateTime.UtcNow;
-
-                                            if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
-                                            {
-                                                _cfg.LastHomeUsername = _homeUsername;
-                                                _ = SaveConfigAsync(); // fire-and-forget
-                                            }
-                                        }
-                                    }
-
-                                    _ = root.TryGetProperty("balance", out _);
-                                    _ = root.TryGetProperty("href", out _);
-
-                                    try
-                                    {
-                                        await Dispatcher.InvokeAsync(() =>
-                                        {
-                                            //if (!string.IsNullOrWhiteSpace(uname) && TxtUser != null)
-                                            //{
-                                               // if (string.IsNullOrWhiteSpace(TxtUser.Text) || TxtUser.Text != uname)
-                                               //     TxtUser.Text = uname;
-                                            //}
-                                            // Home tick khÃ´ng cÃ²n Ä‘Æ°á»£c phÃ©p cập nhật UI tài khoản.
-                                        });
-
-                                        // cập nhật trạng thái đã đăng nhập dựa trên nút Logout/Login
-                                        try
-                                        {
-                                            var jsLogged = @"
-(function(){
-  try{
-    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}}; 
-    const low=s=>rm(String(s||'').trim().toLowerCase());
-    const vis=el=>{if(!el)return false; const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
-                   return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
-    const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
-
-    const hasLogoutVis = qa('a,button,[role=""button""],.btn,.base-button')
-        .some(el => vis(el) && /dang\\s*xuat|đăng\\s*xuất|logout|sign\\s*out/i.test(low(el.textContent)));
-    const hasLoginVis = qa('a,button,[role=""button""],.btn,.base-button')
-        .some(el => vis(el) && /dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
-
-    return (hasLogoutVis && !hasLoginVis) ? '1' : '0';
-  }catch(e){ return '0'; }
-})();";
-                                            var st = await ExecJsAsyncStr(jsLogged);
-                                            _homeLoggedIn = (st == "1");
-                                        }
-                                        catch { /* ignore */ }
-                                    }
-                                    catch { }
-
-                                    _lastHomeTickUtc = DateTime.UtcNow;
-                                    return;
-                                }
                             }
                             catch
                             {
@@ -3106,32 +2939,11 @@ Ví dụ không hợp lệ:
             catch (Exception ex) { Log("[SyncLoginField] " + ex); }
         }
 
-        // Bấm 'Chơi Xóc Đĩa Live' từ Home:
-        // 1) Ưu tiên gọi API JS nếu có (__abx_hw_clickPlayXDL), 
-        // 2) fallback sang C# ClickXocDiaTitleAsync(timeout)
+        // Bấm 'Chơi Xóc Đĩa Live' từ Home bằng nhánh C# trực tiếp.
         private async Task<bool> TryPlayXocDiaFromHomeAsync()
         {
             try
             {
-                Log("[HOME] Play Xóc Đĩa Live: try js api");
-                var js = @"
-        (function(){
-          try{
-            if (typeof window.__abx_hw_clickPlayXDL === 'function'){
-              var r = window.__abx_hw_clickPlayXDL();
-              return (r===true||r==='ok') ? 'ok' : String(r||'no-fn');
-            }
-            return 'no-fn';
-          }catch(e){ return 'err:'+ (e && e.message || e); }
-        })();";
-                var r = await Web.CoreWebView2.ExecuteScriptAsync(js) ?? "\"\"";
-                if (r.Contains("ok", StringComparison.OrdinalIgnoreCase))
-                {
-                    Log("[HOME] Play XDL via JS: ok");
-                    return true;
-                }
-
-                Log("[HOME] Play XDL via JS not available, fallback C#");
                 var r2 = await ClickXocDiaTitleAsync(12000); // hàm C# bạn đã có
                 Log("[HOME] Play XDL via C#: " + r2);
                 return string.Equals(r2, "clicked", StringComparison.OrdinalIgnoreCase);
@@ -3672,81 +3484,6 @@ Ví dụ không hợp lệ:
             }
             return "login-timeout";
         }
-
-
-        // Gọi Login từ HOME:
-        // - Ưu tiên gọi API JS (__abx_hw_clickLogin)
-        // - Fallback: gửi lệnh kiểu "ấn nút" xuống trang (home_click_login)
-        private async Task<bool> HomeClickLoginAsync()
-        {
-            try
-            {
-                await EnsureWebReadyAsync();
-                var r = await Web.CoreWebView2.ExecuteScriptAsync(
-                    "(typeof window.__abx_hw_clickLogin==='function') ? window.__abx_hw_clickLogin() : 'no-fn';"
-                ) ?? "\"\"";
-                if (r.Contains("ok", StringComparison.OrdinalIgnoreCase))
-                {
-                    Log("[HOME] click login via JS: ok");
-                    return true;
-                }
-
-                // fallback: gọi theo "nút" (host -> page)
-                var msg = JsonSerializer.Serialize(new { cmd = "home_click_login" });
-                Web.CoreWebView2.PostWebMessageAsJson(msg);
-                Log("[HOME] sent host cmd: home_click_login");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Log("[HOME] click login error: " + ex.Message);
-                return false;
-            }
-        }
-
-        // Gọi Play Xóc Đĩa từ HOME:
-        // - Ưu tiên gọi API JS (__abx_hw_clickPlayXDL)
-        // - Fallback: gửi lệnh kiểu "nút" (home_click_xoc)
-        private async Task<bool> HomeClickPlayAsync()
-        {
-            try
-            {
-                await EnsureWebReadyAsync();
-                var r = await Web.CoreWebView2.ExecuteScriptAsync(
-                    "(typeof window.__abx_hw_clickPlayXDL==='function') ? window.__abx_hw_clickPlayXDL() : 'no-fn';"
-                ) ?? "\"\"";
-                if (r.Contains("ok", StringComparison.OrdinalIgnoreCase))
-                {
-                    Log("[HOME] play via JS: ok");
-                    return true;
-                }
-
-                // fallback: gọi theo "nút" (host -> page)
-                var msg = JsonSerializer.Serialize(new { cmd = "home_click_xoc" });
-                Web.CoreWebView2.PostWebMessageAsJson(msg);
-                Log("[HOME] sent host cmd: home_click_xoc");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Log("[HOME] play click error: " + ex.Message);
-                return false;
-            }
-        }
-
-        // (tuỳ chọn) kích hoạt push thủ công từ C# với ms tùy ý
-        private void HomeStartPush(int ms = 800)
-        {
-            try
-            {
-                var msg = JsonSerializer.Serialize(new { cmd = "home_start_push", ms });
-                Web.CoreWebView2.PostWebMessageAsJson(msg);
-                Log($"[HOME] cmd home_start_push ms={ms}");
-            }
-            catch { }
-        }
-
-
 
         // ====== ExecJs string ======
         private bool IsWebAlive =>
@@ -6468,39 +6205,12 @@ Ví dụ không hợp lệ:
             return "";
         }
 
-        private async Task<string> LoadHomeJsAsync()
-        {
-            try
-            {
-                var resName = FindResourceName("js_home_v2.js")
-                              ?? "XocDiaLiveHit.js_home_v2.js"; // fallback tên logic
-                var text = ReadEmbeddedText(resName);   // helper sẵn có
-                text = RemoveUtf8Bom(text);             // helper sẵn có
-
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    Log($"[Bridge] Loaded HOME JS from embedded: {resName} (len={text.Length})");
-                    return text;
-                }
-                Log("[Bridge] Embedded HOME JS empty: " + resName);
-            }
-            catch (Exception ex)
-            {
-                Log("[Bridge] Read embedded HOME JS failed: " + ex.Message);
-            }
-            return "";
-        }
-
-
-
-
         private async Task EnsureBridgeRegisteredAsync()
         {
             await EnsureWebReadyAsync();
             if (Web?.CoreWebView2 == null) return;
 
             _appJs ??= await LoadAppJsAsyncFallback();
-            _homeJs ??= await LoadHomeJsAsync();
 
             if (_topForwardId == null)
                 _topForwardId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(TOP_FORWARD);
@@ -6508,19 +6218,8 @@ Ví dụ không hợp lệ:
             if (_appJsRegId == null && !string.IsNullOrEmpty(_appJs))
                 _appJsRegId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(_appJs);
 
-            // NEW: đăng ký Home JS
-            if (_homeJsRegId == null && !string.IsNullOrEmpty(_homeJs))
-                _homeJsRegId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(_homeJs);
-
             if (_autoStartId == null)
                 _autoStartId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(FRAME_AUTOSTART);
-            if (_homeAutoStartId == null)
-            {
-                // Đăng ký autostart Home với interval mặc định (_homePushMs)
-                var homeAuto = BuildHomeAutostartJs(_homePushMs);
-                _homeAutoStartId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(homeAuto);
-            }
-
 
             if (!_frameHooked)
             {
@@ -6539,14 +6238,6 @@ Ví dụ không hợp lệ:
         }
 
 
-        private void ResetHomeFlowFlags()
-        {
-            _homeAutoLoginDone = false;
-            _homeAutoPlayDone = false;
-        }
-
-
-
         private async Task InjectOnNewDocAsync()
         {
             if (Web?.CoreWebView2 == null) return;
@@ -6562,21 +6253,13 @@ Ví dụ không hợp lệ:
 
             if (!string.IsNullOrEmpty(key) && key != _lastDocKey)
             {
-                ResetHomeFlowFlags();
                 // Tiêm lại ngay trên tài liệu hiện tại (phòng khi AddScript chưa kịp chạy vì timing)
                 await Web.CoreWebView2.ExecuteScriptAsync(TOP_FORWARD);
                 if (!string.IsNullOrEmpty(_appJs))
                     await Web.CoreWebView2.ExecuteScriptAsync(_appJs);
 
-                // NEW: tiêm Home JS luôn (an toàn trên Game vì nó tự no-op)
-                if (!string.IsNullOrEmpty(_homeJs))
-                    await Web.CoreWebView2.ExecuteScriptAsync(_homeJs);
-
                 // Kích autostart trên top (idempotent – nếu không có __cw_startPush thì không sao)
                 await Web.CoreWebView2.ExecuteScriptAsync(FRAME_AUTOSTART);
-                // Nếu KHÔNG phải host games.* thì khởi động push của js_home_v2
-                await Web.CoreWebView2.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
-
 
                 _lastDocKey = key;
                 Log("[Bridge] Injected on current doc, key=" + key);
@@ -6596,9 +6279,6 @@ Ví dụ không hợp lệ:
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
-                // NEW: inject Home JS vào frame
-                if (!string.IsNullOrEmpty(_homeJs))
-                    _ = f.ExecuteScriptAsync(_homeJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
                 Log("[Bridge] Frame injected + autostart armed.");
 
@@ -6907,23 +6587,6 @@ Ví dụ không hợp lệ:
                 line = $"Còn lại: {left:hh\\:mm\\:ss}";
             }
             LblExpire.Text = line;
-        }
-
-        // Helper build script với tham số interval (ms)
-        private static string BuildHomeAutostartJs(int intervalMs)
-        {
-            var ms = Math.Max(300, intervalMs);
-            return HOME_AUTOSTART_TEMPLATE.Replace("__INTERVAL__", ms.ToString());
-        }
-
-        private async void BtnHomeLogin_Click(object sender, RoutedEventArgs e)
-        {
-            await HomeClickLoginAsync();
-        }
-
-        private async void BtnHomePlay_Click(object sender, RoutedEventArgs e)
-        {
-            await HomeClickPlayAsync();
         }
 
         private void StartLeaseHeartbeat(string username, string? clientIdOverride = null)
