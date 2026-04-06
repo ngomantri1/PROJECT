@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -11,11 +12,20 @@ namespace TaiXiuLiveHit.Tasks
 {
     internal static class TaskUtil
     {
-        // Khóa chống bắn đúp: 3s kể từ lần place bet THÀNH CÔNG gần nhất
-        private static long _lastBetOkMs = 0;
+        // Khóa chống bắn đúp theo từng tab: 3s kể từ lần place bet THÀNH CÔNG gần nhất
+        private static readonly ConcurrentDictionary<string, long> _lastBetOkMsByTab = new();
+        private static readonly ConcurrentDictionary<string, string> _lastBetSessionByTab = new();
+        private static readonly ConcurrentDictionary<string, string> _lastBetSideByTab = new();
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> _betGateByTab = new();
 
         // (tuỳ chọn) reset khi dừng task
-        public static void ClearBetCooldown() => Volatile.Write(ref _lastBetOkMs, 0);
+        public static void ClearBetCooldown()
+        {
+            _lastBetOkMsByTab.Clear();
+            _lastBetSessionByTab.Clear();
+            _lastBetSideByTab.Clear();
+            _betGateByTab.Clear();
+        }
 
         public static string ParityCharToSide(char ch) => (ch == 'T') ? "TAI" : "XIU";
         public static char DigitToParity(char d) => (d == 'T') ? 'T' : 'X';
@@ -23,7 +33,6 @@ namespace TaiXiuLiveHit.Tasks
         private static readonly object _betLock = new object();
         private static string _lastBetSeq = "";
         private static long _lastBetMs = 0;
-        private static int _betInFlight = 0;
         // Reset UI 1 lần ngay khi vào cửa sổ đặt (p >= DecisionPercent)
         private static bool _uiRoundResetDone = false;
         public static string SeqToParityString(string digitSeq)
@@ -110,49 +119,61 @@ namespace TaiXiuLiveHit.Tasks
 
         public static async Task<bool> PlaceBet(GameContext ctx, string side, long amount, CancellationToken ct, bool ignoreCooldown = false)
         {
-            if (Interlocked.CompareExchange(ref _betInFlight, 1, 0) != 0)
+            var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
+            var gate = _betGateByTab.GetOrAdd(tabKey, _ => new SemaphoreSlim(1, 1));
+            if (!await gate.WaitAsync(0, ct))
             {
-                ctx.Log?.Invoke("[BET] đang có lệnh bet khác chạy, bỏ qua để tránh bắn đúp");
+                ctx.Log?.Invoke($"[BET] tab={tabKey} đang có lệnh bet khác chạy, bỏ qua để tránh bắn đúp");
                 return false;
             }
 
             try
             {
                 var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                var last = Volatile.Read(ref _lastBetOkMs);
-            if (!ignoreCooldown && now - last < 3000)  // 3 giây khoá sau lần bet OK gần nhất
-            {
-                ctx.Log?.Invoke($"[BET] cooldown 3s active, skip ({3000 - (now - last)}ms left)");
-                return false;
-            }
+                var snap = ctx.GetSnap?.Invoke();
+                var session = snap?.session ?? "";
 
-            // Cập nhật UI chỉ khi thực sự được phép bắn
-            await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke(side));
-            await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
+                var last = _lastBetOkMsByTab.TryGetValue(tabKey, out var lastMs) ? lastMs : 0;
+                var lastSession = _lastBetSessionByTab.TryGetValue(tabKey, out var sessionVal) ? sessionVal : "";
+                var lastSide = _lastBetSideByTab.TryGetValue(tabKey, out var sideVal) ? sideVal : "";
+                var sameSession = !string.IsNullOrWhiteSpace(session) &&
+                                  string.Equals(lastSession, session, StringComparison.Ordinal);
+                var sameSide = string.Equals(lastSide, side, StringComparison.OrdinalIgnoreCase);
 
-            // GỌI __cw_bet AN TOÀN (giữ nguyên như code hiện tại)
-            var js =
-                "(async function(){try{" +
-                " if (typeof window.__cw_bet==='function'){" +
-                "   return String(await window.__cw_bet('" + side + "', " + amount + "));" +
-                " } else { return 'no'; }" +
-                "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
+                if (!ignoreCooldown && sameSession && sameSide && now - last < 3000)
+                {
+                    ctx.Log?.Invoke($"[BET] tab={tabKey} cooldown 3s active, skip ({3000 - (now - last)}ms left)");
+                    return false;
+                }
 
-            var rRaw = await ctx.EvalJsAsync(js);
-            ctx.Log?.Invoke($"[BET-JS] result={rRaw}");
+                // Cập nhật UI chỉ khi thực sự được phép bắn
+                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke(side));
+                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
 
-            // Giong XocDiaLiveHit: coi nhu da day lenh xong, khong phu thuoc vao JSON return
-            // cua ExecuteScriptAsync vi bridge co the van bao "{}" nhung bet thuc te da vao.
-            bool ok = true;
+                // Giữ contract gọi bet xuống JS như hiện tại
+                var js =
+                    "(async function(){try{" +
+                    " if (typeof window.__cw_bet==='function'){" +
+                    "   return String(await window.__cw_bet('" + side + "', " + amount + "));" +
+                    " } else { return 'no'; }" +
+                    "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
-            if (ok)
-                Volatile.Write(ref _lastBetOkMs, now); // kích hoạt khoá 3s
+                var rRaw = await ctx.EvalJsAsync(js);
+                ctx.Log?.Invoke($"[BET-JS] tab={tabKey} session={session} result={rRaw}");
 
-            return ok;
+                bool ok = true;
+                if (ok)
+                {
+                    _lastBetOkMsByTab[tabKey] = now;
+                    _lastBetSessionByTab[tabKey] = session;
+                    _lastBetSideByTab[tabKey] = side ?? "";
+                }
+
+                return ok;
             }
             finally
             {
-                Interlocked.Exchange(ref _betInFlight, 0);
+                try { gate.Release(); } catch { }
             }
         }
 

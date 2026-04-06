@@ -10,6 +10,9 @@ namespace TaiXiuLiveHit.Tasks
         // Lấy snapshot mới nhất từ MainWindow (thread-safe)
         public Func<CwSnapshot> GetSnap { get; init; }
 
+        // Tab id (chiến lược) dùng cho cooldown/runtime riêng
+        public string TabId { get; init; } = "";
+
         // Thực thi JS: trả về chuỗi (Web.ExecuteScriptAsync)
         public Func<string, Task<string>> EvalJsAsync { get; init; }
 
