@@ -453,9 +453,6 @@
 
     function betCollectChipNodes(doc) {
         const nodes = [];
-        const packedNodes = betCollectPackedChipNodes(doc);
-        if (packedNodes.length)
-            nodes.push(...packedNodes);
         if (doc && doc.querySelectorAll) {
             try { nodes.push(...doc.querySelectorAll(BET_MULTI_CHIP_SELECTOR)); } catch (_) {}
         }
@@ -646,15 +643,12 @@
             const ov = window.__abxTableOverlay;
             if (ov && typeof ov.resolveRoomDom === 'function') {
                 const root = ov.resolveRoomDom(id);
-                if (betIsUsableRoot(root))
+                if (root && !betIsInsideOverlay(root))
                     return root;
             }
         } catch (_) {}
-        const packedRoot = betFindPackedBetRoot(document);
-        if (betIsUsableRoot(packedRoot))
-            return packedRoot;
         const multiRoot = betFindMultiRootById(id);
-        if (betIsUsableRoot(multiRoot))
+        if (multiRoot)
             return multiRoot;
         return null;
     }
@@ -690,12 +684,6 @@
 
     function betFindTargetByTableId(id, side) {
         const s = betNormalizeSide(side);
-        const packedRoot = betFindPackedBetRoot(document);
-        if (packedRoot) {
-            const packedTarget = betFindPackedTargetByRoot(packedRoot, s);
-            if (packedTarget)
-                return packedTarget;
-        }
         const multiRoot = betFindMultiRootById(id);
         if (multiRoot) {
             const multiTarget = betFindMultiTargetByRoot(multiRoot, s);
@@ -757,14 +745,8 @@
     function betResolveCardRoot(node) {
         if (!node)
             return null;
-        const packedRoot = betFindPackedBetRoot((node && node.ownerDocument) || document);
-        if (packedRoot && packedRoot.contains && packedRoot.contains(node))
-            return packedRoot;
         return node.closest('div[id^="TileHeight-"]') ||
             node.closest('div[id^="groupMultiple_"]') ||
-            node.closest('#bet_box_1') ||
-            node.closest('#bet_box_2') ||
-            node.closest('[id^="bet_box_"]') ||
             node.closest('div.gC_gE.gC_gH.gC_gI') ||
             node.closest('div.hu_hv.hu_hy') ||
             node.closest('div.eB_eC.tile-container-wrapper') ||
@@ -786,8 +768,6 @@
     function betHasBetTargets(root) {
         if (!root || !root.querySelector)
             return false;
-        if (betFindPackedTargetByRoot(root, 'player') || betFindPackedTargetByRoot(root, 'banker'))
-            return true;
         if (betFindMultiTargetByRoot(root, 'player') || betFindMultiTargetByRoot(root, 'banker'))
             return true;
         try {
@@ -799,14 +779,11 @@
 
     function betFindCardRootById(id) {
         const candidates = betGetTableIdCandidates(id);
-        const packedRoot = betFindPackedBetRoot(document);
-        if (betIsUsableRoot(packedRoot))
-            return packedRoot;
         if (!candidates.length)
             return null;
         for (const needle of candidates) {
             const multiRoot = betFindMultiRootById(needle);
-            if (betIsUsableRoot(multiRoot))
+            if (multiRoot)
                 return multiRoot;
         }
         const docs = betCollectDocs();
@@ -821,9 +798,9 @@
                                 continue;
                             const exact = betFindAncestorById(byId, needle, attrs);
                             const root = exact || betResolveCardRoot(byId);
-                            if (betIsUsableRoot(root))
+                            if (betHasBetTargets(root))
                                 return root;
-                            if (!fallback && root && root.isConnected !== false && !betIsInsideOverlay(root) && betHasBetTargets(root))
+                            if (!fallback)
                                 fallback = root;
                     }
                 } catch (_) {}
@@ -836,9 +813,9 @@
                                 continue;
                             const exact = betFindAncestorById(hit, needle, attrs);
                             const root = exact || betResolveCardRoot(hit);
-                            if (betIsUsableRoot(root))
+                            if (betHasBetTargets(root))
                                 return root;
-                            if (!fallback && root && root.isConnected !== false && !betIsInsideOverlay(root) && betHasBetTargets(root))
+                            if (!fallback)
                                 fallback = root;
                     }
                     } catch (_) {}
@@ -1109,15 +1086,15 @@
             for (const curDoc of docs) {
                 const nodes = betCollectChipNodes(curDoc);
                 for (const el of nodes) {
-                    const text = betGetChipNodeText(el).trim().toUpperCase();
+                    const text = (el.textContent || '').trim().toUpperCase();
                     if (text !== upper)
                         continue;
-                    const btn = el.closest && el.closest('button,[role=button],a,[onclick],.mouse_pointer,[id*="chip"]');
+                    const btn = el.closest && el.closest('button,[role=button],a');
                     if (btn && betIsVisible(el))
                         return el;
                 }
                 for (const el of nodes) {
-                    const text = betGetChipNodeText(el).trim().toUpperCase();
+                    const text = (el.textContent || '').trim().toUpperCase();
                     if (text === upper && betIsVisible(el))
                         return el;
                 }
@@ -1225,7 +1202,7 @@
                     const token = betParseMultiChipTokenFromNode(el);
                     if (token)
                         return betMultiChipTokenToAmount(token);
-                    const txt = betGetChipNodeText(el);
+                    const txt = (el && el.textContent || '').trim();
                     return betLabelToAmount(txt);
                 })
                 .filter(v => Number.isFinite(v) && v > 0));
@@ -1284,7 +1261,7 @@
         let idx = 0;
         let currentChipValue = null;
         let chipRetry = 0;
-        const CHIP_SWITCH_DELAY = 120;
+        const CHIP_SWITCH_DELAY = 240;
         const BET_CLICK_DELAY = 160;
         const CHIP_DOUBLE_CLICK_GAP = 80;
         const CHIP_VERIFY_RETRY = 3;
@@ -1365,9 +1342,9 @@
             return { ok: false, token: '' };
         const token = betParseMultiChipTokenFromNode(chipNode);
         betDispatchClickAtPoint(chipNode);
-        await new Promise(r => setTimeout(r, 120));
+        await new Promise(r => setTimeout(r, 220));
         betDispatchClickAtPoint(chipNode);
-        await new Promise(r => setTimeout(r, 120));
+        await new Promise(r => setTimeout(r, 220));
         const selected = betGetSelectedChipAmount(doc);
         return { ok: selected == null || selected === value, token, selected };
     }
@@ -1417,10 +1394,10 @@
             } catch (_) {}
             for (let i = 0; i < item.count; i++) {
                 betDispatchClickAtPoint(target);
-                await new Promise(r => setTimeout(r, 120));
+                await new Promise(r => setTimeout(r, 260));
             }
         }
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise(r => setTimeout(r, 350));
         const confirmOk = betDispatchClickAtPoint(confirmBtn);
         betEmitDiag('confirm_click', {
             rootId: (root && root.id) || '',
@@ -1428,7 +1405,7 @@
             confirmId: (confirmBtn && confirmBtn.id) || '',
             ok: confirmOk ? 1 : 0
         });
-        await new Promise(r => setTimeout(r, 120));
+        await new Promise(r => setTimeout(r, 240));
         return true;
     }
 
@@ -1488,7 +1465,7 @@
           });
           if (!targetOk)
               return false;
-          await new Promise(r => setTimeout(r, 120));
+          await new Promise(r => setTimeout(r, 260));
           try {
               console.log('[BET-WM] confirm click', {
                   rootId: (root && root.id) || '',
@@ -1505,7 +1482,7 @@
           });
           if (!confirmOk)
               return false;
-          await new Promise(r => setTimeout(r, 120));
+          await new Promise(r => setTimeout(r, 240));
           return true;
       }
 
@@ -1555,9 +1532,9 @@
             });
         } catch (_) {}
         betDispatchClickAtPoint(chipNode);
-        await new Promise(r => setTimeout(r, 120));
+        await new Promise(r => setTimeout(r, 220));
         betDispatchClickAtPoint(chipNode);
-        await new Promise(r => setTimeout(r, 120));
+        await new Promise(r => setTimeout(r, 220));
         const selected = betGetSelectedChipAmount(chipDoc);
         if (selected != null && selected !== amountValue) {
             betEmitDiag('chip_select', {
@@ -1758,12 +1735,12 @@
         const upper = String(label).trim().toUpperCase();
         const nodes = betCollectChipNodes(doc);
         for (const el of nodes) {
-            const text = betGetChipNodeText(el).trim().toUpperCase();
+            const text = (el.textContent || '').trim().toUpperCase();
             if (text === upper && betIsVisible(el))
                 return el;
     }
         for (const el of nodes) {
-            const text = betGetChipNodeText(el).trim().toUpperCase();
+            const text = (el.textContent || '').trim().toUpperCase();
             if (text === upper)
                 return el;
         }
@@ -1809,9 +1786,6 @@
     }
 
     function betResolveStakeRoot(target, fallbackRoot) {
-        const packedRoot = betFindPackedBetRoot((target && target.ownerDocument) || (fallbackRoot && fallbackRoot.ownerDocument) || document);
-        if (packedRoot && target && packedRoot.contains && packedRoot.contains(target))
-            return packedRoot;
         if (target && target.closest) {
             return target.closest('.kU_kV') ||
                 target.closest('.zv_zw') ||
@@ -1819,9 +1793,6 @@
                 target.closest('.pI_pJ') ||
                 target.closest('.kI_kJ') ||
                 target.closest('.yu_yv') ||
-                target.closest('#bet_box_1') ||
-                target.closest('#bet_box_2') ||
-                target.closest('[id^="bet_box_"]') ||
                 fallbackRoot;
         }
         return fallbackRoot;
@@ -2418,23 +2389,23 @@
                     return 'ok';
                 }
                 const idCandidates = betGetTableIdCandidates(id);
-                let root = betResolveRootFromOverlay(id) || betFindCardRootById(id);
-                if (!root && roomName)
-                    root = betResolveRootFromOverlay(roomName) || findCardRootByName(roomName);
-                root = betPrepareRootForBet(root);
-                if (!root) {
-                    const runResolve = async () => betResolveRootForBetAsync(id, roomName, logBetWarn);
-                    if (waitDone === true) {
-                        return runResolve().then(rootResolved => {
-                            if (!rootResolved)
-                                return 'err:root';
-                            return window.__cw_bet(id, side, amountValue, isVirtual, true, roomName);
-                        });
+                let root = betResolveRootFromOverlay(id);
+                let trustedRoot = !!root;
+                if (!root)
+                    root = betFindCardRootById(id);
+                if (!root && roomName) {
+                    const overlayRoot = betResolveRootFromOverlay(roomName);
+                    if (overlayRoot) {
+                        root = overlayRoot;
+                        trustedRoot = true;
+                    } else {
+                        root = findCardRootByName(roomName);
                     }
+                }
+                if (!root) {
                     logBetWarn('root not found for tableId=' + id + ' name=' + roomName + ' side=' + sideLabel + ' amount=' + amountValue);
                     return 'err:root';
                 }
-                const trustedRoot = !!(betResolveRootFromOverlay(id) || (roomName && betResolveRootFromOverlay(roomName)));
                 logBetWarn('root ok for tableId=' + id + ' rootId=' + ((root && root.id) || '') + ' visible=' + betIsVisible(root) + ' multi=' + betIsMultiBetRoot(root));
                 betEmitDiag('root', {
                     tableId: id,
@@ -2508,7 +2479,6 @@
                         remaining: planResult.remaining,
                         multi: useMultiFlow ? 1 : 0
                     });
-                    sendOnce(id, sideLabel, amountValue, roomName);
                     const stakeRoot = betResolveStakeRoot(clickTarget, root) || root;
                     const runBetTask = async () => {
                         try {
@@ -9176,13 +9146,10 @@
             const needle = (id || '').trim();
             if (!needle)
             return null;
-            const packedRoot = betFindPackedBetRoot(document);
-            if (betIsUsableRoot(packedRoot))
-                return packedRoot;
             const cached = roomDomRegistry.get(needle);
-            if (betIsUsableRoot(cached))
+            if (cached && cached.isConnected)
                 return cached;
-            if (cached)
+            if (cached && !cached.isConnected)
                 roomDomRegistry.delete(needle);
             const byId = document.getElementById(needle);
             if (byId) {
