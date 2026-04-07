@@ -22,6 +22,8 @@ namespace BaccaratSexyCasino
     {
         public string abx { get; set; }
         public double? prog { get; set; }
+        public string? progSource { get; set; }
+        public string? progTail { get; set; }
         public CwTotals totals { get; set; }
         public string seq { get; set; }
         public long? seqVersion { get; set; }
@@ -35,6 +37,8 @@ namespace BaccaratSexyCasino
         public string session { get; set; }
         public string username { get; set; }
         public string status { get; set; }
+        public string? statusSource { get; set; }
+        public string? statusTail { get; set; }
         public long? jsBuildMs { get; set; }
         public long? jsProgMs { get; set; }
         public long? jsTotalsMs { get; set; }
