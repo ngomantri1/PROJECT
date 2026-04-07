@@ -3335,11 +3335,6 @@
                             break;
                         }
 
-                        if (Date.now() - myState.startedAt > 45000) {
-                            myState.stopReason = 'timeout';
-                            myState.active = false;
-                            break;
-                        }
                     } catch (err) {
                         myState.stopReason = 'err:' + String(err && err.message || err);
                         myState.active = false;
