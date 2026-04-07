@@ -730,29 +730,22 @@
         var secR = right ? parseSec(right.text) : null;
         var secL = left ? parseSec(left.text) : null;
         if (secR != null && secR > 0) {
-            S._progTail = right.tail || '';
-            S._progIsSec = true;
-            window.__cw_prog_tail = S._progTail;
+            setProgMeta('cocos-countdown-right', right.tail || '', true);
             return secR;
         }
         if (secL != null && secL > 0) {
-            S._progTail = left.tail || '';
-            S._progIsSec = true;
-            window.__cw_prog_tail = S._progTail;
+            setProgMeta('cocos-countdown-left', left.tail || '', true);
             return secL;
         }
         if (secR != null) {
-            S._progTail = right.tail || '';
-            S._progIsSec = true;
-            window.__cw_prog_tail = S._progTail;
+            setProgMeta('cocos-countdown-right', right.tail || '', true);
             return secR;
         }
         if (secL != null) {
-            S._progTail = left.tail || '';
-            S._progIsSec = true;
-            window.__cw_prog_tail = S._progTail;
+            setProgMeta('cocos-countdown-left', left.tail || '', true);
             return secL;
         }
+        clearProgMeta();
         return null;
     }
     function walkNodes(cb) {
@@ -1297,63 +1290,17 @@
         if (!__cw_hasCocos()) {
             var domCountdown = domReadBetCountdown();
             if (domCountdown && domCountdown.value != null) {
-                S._progIsSec = true;
-                S._progTail = domCountdown.tail || 'body/div#themeZone.game.scenes_default.baccarat_normal/div#countdown.icon_progress.progress_countdown/dl.progress_no/dd#countdownTime/p';
-                try { window.__cw_prog_tail = S._progTail; } catch (_) {}
+                setProgMeta('dom-countdown' + (domCountdown.source ? ':' + domCountdown.source : ''), domCountdown.tail || 'body/div#themeZone.game.scenes_default.baccarat_normal/div#countdown.icon_progress.progress_countdown/dl.progress_no/dd#countdownTime/p', true);
                 return domCountdown.value;
             }
-            var domCards = domScanBaccaratCards();
-            var domActive = domPickActiveCard(domCards);
-            if (domActive && domActive.countdown != null) {
-                S._progIsSec = true;
-                S._progTail = 'dom/baccarat/countdown';
-                try { window.__cw_prog_tail = S._progTail; } catch (_) {}
-                return domActive.countdown;
-            }
-            S._progTail = 'dom/baccarat';
-            try { window.__cw_prog_tail = S._progTail; } catch (_) {}
+            clearProgMeta();
             return null;
         }
         var cd = readCountdownSec();
         if (cd != null)
             return cd;
-        S._progIsSec = false;
-        var bars = [];
-        walkNodes(function (n) {
-            if (!nodeInGame(n))
-                return;
-            var comps = getComps(n, cc.ProgressBar);
-            if (comps && comps.length) {
-                var r = wRect(n);
-                for (var i = 0; i < comps.length; i++) {
-                    bars.push({
-                        comp: comps[i],
-                        rect: r,
-                        tail: tailOf(n, 12)
-                    });
-                }
-            }
-        });
-        if (!bars.length) {
-            S._progTail = '';
-            window.__cw_prog_tail = '';
-            return null;
-        }
-        var H = innerHeight,
-        cs = bars.filter(function (b) {
-            var r = b.rect;
-            return r.w > 300 && r.h >= 6 && r.h <= 60 && r.y < H * 0.75;
-        });
-        var barPick = (cs[0] || bars[0]);
-        var bar = barPick.comp;
-        try {
-            S._progTail = barPick.tail || '';
-        } catch (e) {}
-        try {
-            window.__cw_prog_tail = barPick.tail || '';
-        } catch (e) {}
-        var pr = (bar && typeof bar.progress !== 'undefined') ? bar.progress : 0;
-        return clamp01(Number(pr));
+        clearProgMeta();
+        return null;
     }
 
     var _domBaccaratCache = {
@@ -6630,6 +6577,10 @@
         tickMs: 360,
         prog: null,
         status: 'ĐỢI MỞ BÁT',
+        progSource: '',
+        progTail: '',
+        statusSource: '',
+        statusTail: '',
         money: [],
         text: [],
         selC: null,
@@ -6645,6 +6596,30 @@
         seqEvent: '',
         focusPinned: null
     };
+
+    function setProgMeta(source, tail, isSec) {
+        S.progSource = String(source || '');
+        S.progTail = String(tail || '');
+        S._progTail = S.progTail;
+        S._progIsSec = !!isSec;
+        try { window.__cw_prog_source = S.progSource; } catch (_) {}
+        try { window.__cw_prog_tail = S.progTail; } catch (_) {}
+    }
+
+    function clearProgMeta() {
+        setProgMeta('', '', false);
+    }
+
+    function setStatusMeta(source, tail) {
+        S.statusSource = String(source || '');
+        S.statusTail = String(tail || '');
+        try { window.__cw_status_source = S.statusSource; } catch (_) {}
+        try { window.__cw_status_tail = S.statusTail; } catch (_) {}
+    }
+
+    function clearStatusMeta() {
+        setStatusMeta('', '');
+    }
 
     var ROOT = CW_ROOT_ID;
     var _old = document.getElementById(ROOT);
@@ -7173,7 +7148,11 @@
         try {
             window.__cw_last_panel_snapshot = {
                 prog: S.prog,
+                progSource: String(S.progSource || ''),
+                progTail: String(S.progTail || ''),
                 status: String(S.status || ''),
+                statusSource: String(S.statusSource || ''),
+                statusTail: String(S.statusTail || ''),
                 seq: String(S.seq || ''),
                 seqVersion: Number(S.seqVersion || 0),
                 seqEvent: String(S.seqEvent || ''),
@@ -9916,7 +9895,7 @@
             return '';
         }
     }
-    function domPickStatusFromSelector(selectors, preferredTailPart) {
+    function domPickStatusInfoFromSelector(selectors, preferredTailPart) {
         try {
             var contexts = [];
             domWalkContexts(window, 'top', 0, 0, contexts, []);
@@ -9960,26 +9939,38 @@
                     }
                 }
             }
-            return best ? best.text : '';
+            return best || null;
         } catch (_) {
-            return '';
+            return null;
         }
     }
-    function domReadProcessStatus() {
+    function domPickStatusFromSelector(selectors, preferredTailPart) {
+        var best = domPickStatusInfoFromSelector(selectors, preferredTailPart);
+        return best ? best.text : '';
+    }
+    function domReadProcessStatusInfo() {
         try {
-            var msgGray = domPickStatusFromSelector([
+            var msgGray = domPickStatusInfoFromSelector([
                 '#themeZone.game.scenes_default #gameMessage.message_gray p',
                 '#gameMessage.message_gray p',
                 'div#gameMessage.message_gray p'
             ], 'div#gameMessage.message_gray/p');
             if (msgGray)
                 return msgGray;
-            return domPickStatusFromSelector([
+            return domPickStatusInfoFromSelector([
                 '#processBar.info_status p#processStatus',
                 '#processBar p#processStatus',
                 'p#processStatus',
                 '#processStatus'
             ], 'div#processBar.info_status/p#processStatus');
+        } catch (_) {
+            return null;
+        }
+    }
+    function domReadProcessStatus() {
+        try {
+            var info = domReadProcessStatusInfo();
+            return info ? info.text : '';
         } catch (_) {
             return '';
         }
@@ -10015,19 +10006,15 @@
     function statusByProg(p) {
         if (!__cw_hasCocos()) {
             try {
-                var processStatus = domReadProcessStatus();
-                if (processStatus)
-                    return processStatus;
-                var cards = domScanBaccaratCards();
-                var active = domPickActiveCard(cards);
-                if (active && active.countdown != null)
-                    return 'Baccarat DOM | ' + (active.title || 'ACTIVE') + ' | ' + active.countdown + 's';
-                if (active && active.title)
-                    return 'Baccarat DOM | ' + active.title;
-                if (cards && cards.length)
-                    return 'Baccarat DOM | ' + cards.length + ' card(s)';
-                return 'Baccarat DOM | waiting';
+                var processStatus = domReadProcessStatusInfo();
+                if (processStatus && processStatus.text) {
+                    setStatusMeta('dom-process' + (processStatus.source ? ':' + processStatus.source : ''), processStatus.tail || '');
+                    return processStatus.text;
+                }
+                clearStatusMeta();
+                return '';
             } catch (_) {
+                clearStatusMeta();
                 return 'Baccarat DOM';
             }
         }
@@ -10070,20 +10057,19 @@
         var tail = (p > EPS) ? TAIL_MSG : TAIL_WAIT;
         var txt = pickTextByTailEnd(tail);
 
-        // Fallback nhẹ khi không tìm thấy text
-        if (txt)
+        if (txt) {
+            setStatusMeta((p > EPS) ? 'cocos-text-message' : 'cocos-text-waiting', tail);
             return txt;
+        }
+        clearStatusMeta();
         return "";
     }
 
     function tick() {
         var p = collectProgress();
         var st = statusByProg(p == null ? null : p);
-        if (!__cw_hasCocos() && domStatusImpliesClosed(st))
-            p = 0;
-        if (p != null)
-            S.prog = p;
-        S.status = st;
+        S.prog = p;
+        S.status = String(st || '');
         var T = totals(S);
         S._lastTotals = T;
 
@@ -10505,12 +10491,16 @@
                 var snap = {
                     abx: 'tick',
                     prog: cached.prog,
+                    progSource: String(cached.progSource || ''),
+                    progTail: String(cached.progTail || ''),
                     totals: cached.totals || null,
                     seq: String(cached.seq || ''),
                     seqVersion: Number(cached.seqVersion || 0),
                     seqEvent: String(cached.seqEvent || ''),
                     username: (cached && cached.totals && cached.totals.N != null) ? String(cached.totals.N || '') : '',
                     status: String(cached.status || ''),
+                    statusSource: String(cached.statusSource || ''),
+                    statusTail: String(cached.statusTail || ''),
                     ts: Date.now(),
                     origin: 'canvas-panel'
                 };
@@ -10643,7 +10633,11 @@
             return {
                 abx: obj.abx,
                 prog: obj.prog,
+                progSource: obj.progSource,
+                progTail: obj.progTail,
                 status: obj.status,
+                statusSource: obj.statusSource,
+                statusTail: obj.statusTail,
                 seq: obj.seq,
                 seqVersion: obj.seqVersion,
                 seqEvent: obj.seqEvent,
@@ -10767,42 +10761,20 @@
                     cached = window.__cw_last_panel_snapshot;
             } catch (_) {}
 
+            var tp0 = Date.now();
+            p = readProgressVal();
+            _abxSnapCache.prog = p;
+            _abxSnapCache.progAt = Date.now();
+            jsProgMs += (Date.now() - tp0);
             try {
-                if (cached && cached.prog != null)
-                    p = cached.prog;
-            } catch (_) {}
-            try {
-                if (p == null && S && S.prog != null)
-                    p = S.prog;
-            } catch (_) {}
-            if (p == null) {
-                var tp0 = Date.now();
-                var useProgCache = perfMode && buildSource === 'push' && _abxSnapCache.progAt > 0 && (nowTs - _abxSnapCache.progAt) < 420;
-                if (useProgCache) {
-                    p = _abxSnapCache.prog;
-                } else {
-                    p = readProgressVal();
-                    _abxSnapCache.prog = p;
-                    _abxSnapCache.progAt = Date.now();
-                }
-                jsProgMs += (Date.now() - tp0);
+                st = (typeof statusByProg === 'function') ? String(statusByProg(p) || '') : '';
+            } catch (_) {
+                st = '';
             }
-
-            try {
-                if (cached && cached.status != null)
-                    st = String(cached.status || '');
-            } catch (_) {}
-            try {
-                if (!st && S && S.status != null)
-                    st = String(S.status || '');
-            } catch (_) {}
-            if (!st) {
-                try {
-                    st = (typeof statusByProg === 'function') ? String(statusByProg(p) || '') : '';
-                } catch (_) {
-                    st = '';
-                }
-            }
+            var progSource = String((S && S.progSource) || window.__cw_prog_source || '');
+            var progTail = String((S && S.progTail) || window.__cw_prog_tail || '');
+            var statusSource = String((S && S.statusSource) || window.__cw_status_source || '');
+            var statusTail = String((S && S.statusTail) || window.__cw_status_tail || '');
             var progNum = (typeof p === 'number' && isFinite(p)) ? p : null;
             var totalsCacheMs = 1400;
             var seqCacheMs = 700;
@@ -11015,12 +10987,16 @@
             return {
                 abx: 'tick',
                 prog: p,
+                progSource: progSource,
+                progTail: progTail,
                 totals: t,
                 seq: seq,
                 seqVersion: seqVersion,
                 seqEvent: seqEvent,
                 username: uname,
                 status: String(st || ''),
+                statusSource: statusSource,
+                statusTail: statusTail,
                 ts: Date.now(),
                 jsProgMs: jsProgMs,
                 jsTotalsMs: jsTotalsMs,
