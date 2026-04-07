@@ -351,6 +351,9 @@ namespace BaccaratWM
         private string _wmTraceStartUrl = "";
         private string _wmLastLaunchRequestSummary = "";
         private string _wmLastLaunchResponseSummary = "";
+        private string _wmLastLaunchGameUrl = "";
+        private string _wmLastLaunchHost = "";
+        private DateTime _wmLastLaunchAtUtc = DateTime.MinValue;
         private readonly object _roomFeedGate = new();
         private readonly object _frameNetTapChunkGate = new();
         private List<RoomEntry> _latestNetworkRooms = new();
@@ -9804,6 +9807,164 @@ private async Task<CancellationTokenSource> DebounceAsync(
                    || IsWmRelayUrl(url);
         }
 
+        private bool UrlMatchesHost(string? url, string? host)
+        {
+            var rawUrl = (url ?? "").Trim();
+            var rawHost = (host ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(rawUrl) || string.IsNullOrWhiteSpace(rawHost))
+                return false;
+
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri))
+                return rawUrl.IndexOf(rawHost, StringComparison.OrdinalIgnoreCase) >= 0;
+
+            var actualHost = (uri.Host ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(actualHost))
+                return rawUrl.IndexOf(rawHost, StringComparison.OrdinalIgnoreCase) >= 0;
+
+            return actualHost.Contains(rawHost, StringComparison.OrdinalIgnoreCase) ||
+                   rawHost.Contains(actualHost, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool IsPopupOnLastLaunchHost()
+        {
+            var launchHost = (_wmLastLaunchHost ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(launchHost))
+                return false;
+
+            var popupUrl = _popupWeb?.CoreWebView2?.Source ?? _popupWeb?.Source?.ToString() ?? "";
+            return IsWmUrl(popupUrl) && UrlMatchesHost(popupUrl, launchHost);
+        }
+
+        private async Task<bool> EnsurePopupRoutedToLastLaunchGameAsync(WebView2? active, string reason)
+        {
+            try
+            {
+                var launchUrl = (_wmLastLaunchGameUrl ?? "").Trim();
+                var launchHost = (_wmLastLaunchHost ?? "").Trim();
+                var activeUrl = active?.CoreWebView2?.Source ?? active?.Source?.ToString() ?? "";
+                var popupUrl = _popupWeb?.CoreWebView2?.Source ?? _popupWeb?.Source?.ToString() ?? "";
+
+                if (string.IsNullOrWhiteSpace(launchUrl) || string.IsNullOrWhiteSpace(launchHost))
+                {
+                    Log($"[POPUPROUTE][SKIP] reason=no-launch-game active={ClipForLog(activeUrl, 120)} popup={ClipForLog(popupUrl, 120)}");
+                    return false;
+                }
+
+                if ((DateTime.UtcNow - _wmLastLaunchAtUtc) > TimeSpan.FromMinutes(10))
+                {
+                    Log($"[POPUPROUTE][SKIP] reason=launch-stale host={ClipForLog(launchHost, 60)} ageSec={(DateTime.UtcNow - _wmLastLaunchAtUtc).TotalSeconds:0}");
+                    return false;
+                }
+
+                if (IsWmUrl(activeUrl))
+                {
+                    Log($"[POPUPROUTE][SKIP] reason=active-already-wm active={ClipForLog(activeUrl, 120)}");
+                    return false;
+                }
+
+                if (IsPopupOnLastLaunchHost())
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (Web != null)
+                            Web.Visibility = Visibility.Collapsed;
+                        if (PopupHost != null)
+                            PopupHost.Visibility = Visibility.Visible;
+                    });
+                    try { _popupWeb?.Focus(); } catch { }
+                    Log($"[POPUPROUTE][READY] reuse=1 host={ClipForLog(launchHost, 60)} popup={ClipForLog(_popupWeb?.CoreWebView2?.Source ?? _popupWeb?.Source?.ToString(), 160)}");
+                    return true;
+                }
+
+                Log($"[POPUPROUTE][TRY] reason={ClipForLog(reason, 48)} active={ClipForLog(activeUrl, 120)} popup={ClipForLog(popupUrl, 120)} launchHost={ClipForLog(launchHost, 60)} launchUrl={ClipForLog(launchUrl, 160)}");
+
+                var popupWeb = await EnsurePopupWebReadyAsync();
+                if (popupWeb?.CoreWebView2 == null)
+                {
+                    Log("[POPUPROUTE][FAIL] reason=popup-not-ready");
+                    return false;
+                }
+
+                popupUrl = popupWeb.CoreWebView2.Source ?? popupWeb.Source?.ToString() ?? "";
+                if (IsWmUrl(popupUrl) && UrlMatchesHost(popupUrl, launchHost))
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (Web != null)
+                            Web.Visibility = Visibility.Collapsed;
+                        if (PopupHost != null)
+                            PopupHost.Visibility = Visibility.Visible;
+                    });
+                    try { popupWeb.Focus(); } catch { }
+                    Log($"[POPUPROUTE][READY] reuse=1 host={ClipForLog(launchHost, 60)} popup={ClipForLog(popupUrl, 160)}");
+                    return true;
+                }
+
+                var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                void Handler(object? s, CoreWebView2NavigationCompletedEventArgs e)
+                {
+                    try
+                    {
+                        var current = popupWeb.CoreWebView2?.Source ?? popupWeb.Source?.ToString() ?? "";
+                        if (!e.IsSuccess)
+                        {
+                            tcs.TrySetResult(false);
+                            return;
+                        }
+
+                        if (IsWmUrl(current) && UrlMatchesHost(current, launchHost))
+                            tcs.TrySetResult(true);
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                popupWeb.NavigationCompleted += Handler;
+                try
+                {
+                    Log($"[POPUPROUTE][NAV] url={ClipForLog(launchUrl, 180)}");
+                    popupWeb.CoreWebView2.Navigate(launchUrl);
+                    var completed = await Task.WhenAny(tcs.Task, Task.Delay(12000));
+                    var routeOk = false;
+                    if (ReferenceEquals(completed, tcs.Task))
+                        routeOk = await tcs.Task;
+
+                    var finalPopupUrl = popupWeb.CoreWebView2.Source ?? popupWeb.Source?.ToString() ?? "";
+                    if (!routeOk)
+                        routeOk = IsWmUrl(finalPopupUrl) && UrlMatchesHost(finalPopupUrl, launchHost);
+
+                    if (!routeOk)
+                    {
+                        Log($"[POPUPROUTE][TIMEOUT] host={ClipForLog(launchHost, 60)} popup={ClipForLog(finalPopupUrl, 160)}");
+                        return false;
+                    }
+
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (Web != null)
+                            Web.Visibility = Visibility.Collapsed;
+                        if (PopupHost != null)
+                            PopupHost.Visibility = Visibility.Visible;
+                    });
+                    try { popupWeb.Focus(); } catch { }
+                    await Task.Delay(900);
+                    try { await InjectOnPopupDocAsync(); } catch { }
+                    Log($"[POPUPROUTE][READY] reuse=0 host={ClipForLog(launchHost, 60)} popup={ClipForLog(finalPopupUrl, 160)}");
+                    return true;
+                }
+                finally
+                {
+                    try { popupWeb.NavigationCompleted -= Handler; } catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[POPUPROUTE][ERR] " + ex.Message);
+                return false;
+            }
+        }
+
         private bool IsLaunchGameUrl(string? url)
         {
             if (string.IsNullOrWhiteSpace(url))
@@ -9811,6 +9972,53 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return url.IndexOf("/wps/game/launchGame", StringComparison.OrdinalIgnoreCase) >= 0
                    || url.IndexOf("/api/user/launch-game", StringComparison.OrdinalIgnoreCase) >= 0
                    || url.IndexOf("/launch-game", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private bool ShouldPreferPopupForBetHost(WebView2? active)
+        {
+            try
+            {
+                if (_popupWeb?.CoreWebView2 == null)
+                    return false;
+
+                if ((DateTime.UtcNow - _wmLastLaunchAtUtc) > TimeSpan.FromMinutes(10))
+                    return false;
+
+                var launchHost = (_wmLastLaunchHost ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(launchHost))
+                    return false;
+
+                var popupUrl = _popupWeb.Source?.ToString() ?? "";
+                if (!IsWmUrl(popupUrl))
+                    return false;
+
+                if (!Uri.TryCreate(popupUrl, UriKind.Absolute, out var popupUri))
+                    return false;
+
+                if (!popupUri.Host.Contains(launchHost, StringComparison.OrdinalIgnoreCase) &&
+                    !launchHost.Contains(popupUri.Host, StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                var activeUrl = active?.Source?.ToString() ?? "";
+                if (string.IsNullOrWhiteSpace(activeUrl))
+                    return true;
+
+                if (!Uri.TryCreate(activeUrl, UriKind.Absolute, out var activeUri))
+                    return true;
+
+                if (IsWmUrl(activeUrl))
+                    return false;
+
+                if (activeUri.Host.Contains(launchHost, StringComparison.OrdinalIgnoreCase) ||
+                    launchHost.Contains(activeUri.Host, StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private void RememberWmRelayCandidatesFromTap(string scope, string? ownerUrl, string? tapFetch, string? tapXhr, string? tapWs, string? frameId = null, string? frameHint = null)
@@ -10463,6 +10671,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 _wmLastLaunchResponseSummary =
                     $"success={success} status={ClipForLog(status, 24)} errorCode={ClipForLog(errorCode, 24)} " +
                     $"launchHost={ClipForLog(launchHost, 40)} gameUrl={ClipForLog(gameUrl, 120)} frame={ClipForLog(frameHint, 80)}";
+                if (!string.IsNullOrWhiteSpace(gameUrl))
+                {
+                    _wmLastLaunchGameUrl = gameUrl;
+                    _wmLastLaunchHost = launchHost;
+                    _wmLastLaunchAtUtc = DateTime.UtcNow;
+                }
                 var sig = $"{scope}|{kind}|{frameId}|{success}|{errorCode}|{status}|{gameUrl}|{frameHint}";
                 var msg =
                     $"[WM_DIAG][LaunchGame] scope={scope} kind={kind} frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frameHint, 220)} " +
@@ -13617,13 +13831,18 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 {
                     var candidates = new List<WebView2?>();
                     var active = GetActiveRoomHostWebView();
-                    if (active != null) candidates.Add(active);
-                    if (!ReferenceEquals(Web, active)) candidates.Add(Web);
-                    if (!ReferenceEquals(_popupWeb, active) && !ReferenceEquals(_popupWeb, Web)) candidates.Add(_popupWeb);
-
                     var isBetCall = !string.IsNullOrWhiteSpace(js) &&
                         (js.IndexOf("__cw_bet", StringComparison.OrdinalIgnoreCase) >= 0 ||
                          js.IndexOf("__cw_forceStakeLevel1", StringComparison.OrdinalIgnoreCase) >= 0);
+                    var popupRouted = false;
+                    void AddCandidate(WebView2? web)
+                    {
+                        if (web == null)
+                            return;
+                        if (candidates.Any(existing => ReferenceEquals(existing, web)))
+                            return;
+                        candidates.Add(web);
+                    }
                     string DescribeWebView(WebView2? web)
                     {
                         if (web == null) return "null";
@@ -13633,7 +13852,25 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     }
                     if (isBetCall)
                     {
-                        Log($"[JSHOST][TRY] active={DescribeWebView(active)} candidates={string.Join(',', candidates.Select(DescribeWebView))}");
+                        popupRouted = await EnsurePopupRoutedToLastLaunchGameAsync(active, "bet-host");
+                        active = GetActiveRoomHostWebView();
+                    }
+                    var preferPopup = isBetCall && (popupRouted || ShouldPreferPopupForBetHost(active));
+                    if (preferPopup)
+                    {
+                        AddCandidate(_popupWeb);
+                        AddCandidate(active);
+                        AddCandidate(Web);
+                    }
+                    else
+                    {
+                        AddCandidate(active);
+                        AddCandidate(Web);
+                        AddCandidate(_popupWeb);
+                    }
+                    if (isBetCall)
+                    {
+                        Log($"[JSHOST][TRY] active={DescribeWebView(active)} preferPopup={(preferPopup ? 1 : 0)} popupRouted={(popupRouted ? 1 : 0)} launchHost={ClipForLog(_wmLastLaunchHost, 60)} launchUrl={ClipForLog(_wmLastLaunchGameUrl, 120)} candidates={string.Join(',', candidates.Select(DescribeWebView))}");
                     }
 
                     foreach (var web in candidates)

@@ -2322,6 +2322,11 @@
 
     window.__cw_bet = function (tableId, side, amount, isVirtual, waitDone, tableName) {
         let sent = false;
+        let diagTableId = String(tableId || '').trim();
+        let diagRoomName = String(tableName || '').trim();
+        let diagSideLabel = '';
+        let diagAmountValue = Number(amount) || 0;
+        let diagPhase = 'init';
         const sendOnce = (id, sideLabel, amountValue, roomName) => {
             if (sent)
                 return;
@@ -2370,10 +2375,17 @@
             const s = betNormalizeSide(side);
             const sideLabel = (s === 'player') ? 'P' : (s === 'banker' ? 'B' : '');
             let amountValue = Number(amount) || 0;
+            diagTableId = id;
+            diagRoomName = roomName;
+            diagSideLabel = sideLabel;
+            diagAmountValue = amountValue;
+            diagPhase = 'normalized';
             const forcedLevel1 = betConsumeForceStakeLevel1(id);
             if (forcedLevel1 > 0)
                 amountValue = forcedLevel1;
+            diagAmountValue = amountValue;
 
+            diagPhase = 'start';
             logBetWarn('start tableId=' + id + ' name=' + roomName + ' side=' + sideLabel + ' amount=' + amountValue + ' virtual=' + (isVirtual === true));
             betEmitDiag('start', {
                 tableId: id,
@@ -2385,10 +2397,12 @@
 
             if (id && sideLabel) {
                 if (isVirtual === true) {
+                    diagPhase = 'virtual';
                     sendOnce(id, sideLabel, amountValue, roomName);
                     return 'ok';
                 }
                 const idCandidates = betGetTableIdCandidates(id);
+                diagPhase = 'resolve_root';
                 let root = betResolveRootFromOverlay(id);
                 let trustedRoot = !!root;
                 if (!root)
@@ -2406,6 +2420,7 @@
                     logBetWarn('root not found for tableId=' + id + ' name=' + roomName + ' side=' + sideLabel + ' amount=' + amountValue);
                     return 'err:root';
                 }
+                diagPhase = 'root_ready';
                 logBetWarn('root ok for tableId=' + id + ' rootId=' + ((root && root.id) || '') + ' visible=' + betIsVisible(root) + ' multi=' + betIsMultiBetRoot(root));
                 betEmitDiag('root', {
                     tableId: id,
@@ -2421,6 +2436,7 @@
                 const selector = s === 'player'
                     ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt'
                     : '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru';
+                diagPhase = 'resolve_target';
                 let target = root
                     ? (betFindMultiTargetByRoot(root, s) || betFindByTail(root, targetTail) || betFindFirstVisible(root, selector))
                     : null;
@@ -2442,6 +2458,7 @@
                 }
                 const rootDoc = root ? (root.ownerDocument || document) : document;
                 const useMultiFlow = !!(root && betIsMultiBetRoot(root) && betFindMultiTargetByRoot(root, s));
+                diagPhase = 'target_ready';
                 logBetWarn('target ok tableId=' + id + ' targetId=' + ((target && target.id) || '') + ' useMulti=' + useMultiFlow);
                 betEmitDiag('target', {
                     tableId: id,
@@ -2462,11 +2479,13 @@
                             target.closest('.yu_yv') ||
                             target
                         ));
+                    diagPhase = 'build_plan';
                     const planResult = betBuildChipPlan(amountValue, rootDoc);
                     if (!planResult.plan.length || planResult.remaining > 0) {
                         logBetWarn('cannot build chip plan amount=' + amountValue + ' remaining=' + planResult.remaining);
                         return 'err:plan';
                     }
+                    diagPhase = 'plan_ready';
                     logBetWarn('plan ok tableId=' + id + ' steps=' + planResult.plan.length + ' remaining=' + planResult.remaining + ' multi=' + useMultiFlow);
                     betEmitDiag('plan', {
                         tableId: id,
@@ -2481,6 +2500,7 @@
                     });
                     const stakeRoot = betResolveStakeRoot(clickTarget, root) || root;
                     const runBetTask = async () => {
+                        diagPhase = useMultiFlow ? 'run_multi' : 'run_single';
                         try {
                             const confirmBtn = useMultiFlow ? betFindMultiConfirmByRoot(root) : null;
                             console.log('[BET-WM] start', {
@@ -2573,6 +2593,7 @@
                     const queued = betEnqueueTask(runBetTask, useMultiFlow ? 12000 : 7000);
                     if (waitDone === true)
                         return queued.then(ok => {
+                            diagPhase = 'queue_done';
                             betEmitDiag('queue_result', {
                                 tableId: id,
                                 name: roomName,
@@ -2588,9 +2609,29 @@
                     const tail = (typeof cssTail === 'function') ? cssTail(clickTarget) : '';
                 }
             } else {
+                diagPhase = 'bridge_only';
                 sendOnce(id, sideLabel, amountValue, roomName);
             }
-        } catch (_) {}
+        } catch (err) {
+            const errName = (() => {
+                try { return String((err && err.name) || 'Error'); } catch (_) { return 'Error'; }
+            })();
+            const errMsg = (() => {
+                try { return String((err && err.message) || err || 'unknown'); } catch (_) { return 'unknown'; }
+            })();
+            betEmitDiag('exception', {
+                tableId: diagTableId,
+                name: diagRoomName,
+                side: diagSideLabel,
+                amount: diagAmountValue,
+                msg: 'phase=' + diagPhase + ' ' + errName + ': ' + errMsg
+            });
+            try {
+                if (console && console.warn)
+                    console.warn('[BET][EXCEPTION]', { phase: diagPhase, name: errName, message: errMsg });
+            } catch (_) {}
+            return 'err:exception';
+        }
 
         return 'ok';
     };
