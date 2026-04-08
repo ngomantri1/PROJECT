@@ -420,6 +420,23 @@ namespace BaccaratWM
         private bool _popupBridgeRegistered;
         private bool _popupWebMsgHooked;
         private string? _popupLastDocKey;
+        private CoreWebView2Frame? _popupGameFrame;
+        private string _popupGameFrameName = "";
+        private string _popupGameFrameLastHref = "";
+        private DateTime _popupGameFrameSeenUtc = DateTime.MinValue;
+        private int _popupGameFrameScore = 0;
+        private CoreWebView2Frame? _mainGameFrame;
+        private string _mainGameFrameName = "";
+        private string _mainGameFrameLastHref = "";
+        private DateTime _mainGameFrameSeenUtc = DateTime.MinValue;
+        private int _mainGameFrameScore = 0;
+        private string _mainCdpFrameHintId = "";
+        private string _mainCdpFrameHintName = "";
+        private string _mainCdpFrameHintUrl = "";
+        private DateTime _mainCdpFrameHintUtc = DateTime.MinValue;
+        private string _mainTopLevelWmFrameHint = "";
+        private string _mainTopLevelWmFrameHref = "";
+        private DateTime _mainTopLevelWmFrameHintUtc = DateTime.MinValue;
         private string? _lastForcedLobbyUrl; // luu URL lobby PP da force navigate
         private string? _topForwardId, _appJsRegId;           // id script TOP_FORWARD
                                                               // ID riêng cho autostart của trang Home (đừng dùng chung với _homeJsRegId)
@@ -431,6 +448,7 @@ namespace BaccaratWM
                                                  // Bridge đăng ký toàn cục
         private string? _autoStartId;        // id script FRAME_AUTOSTART (đăng ký toàn cục)
         private bool _domHooked;             // đã gắn DOMContentLoaded cho top chưa
+        private const string BuildMarker = "wrapper-frame-v1";
 
         // === License/Trial run state ===
 
@@ -1832,6 +1850,7 @@ Ví dụ không hợp lệ:
             // gọi async sau khi cửa sổ đã load
             this.Loaded += MainWindow_Loaded;
             InitRoomDropdown();
+            Log("[BUILD] " + BuildMarker);
 
         }
 
@@ -3697,11 +3716,47 @@ Ví dụ không hợp lệ:
             if (string.IsNullOrWhiteSpace(script))
                 return false;
 
+            string DescribeOverlayWebView(WebView2? web)
+            {
+                if (web == null) return "null";
+                if (ReferenceEquals(web, _popupWeb)) return "PopupWeb";
+                if (ReferenceEquals(web, Web)) return "Web";
+                return "OtherWeb";
+            }
+
+            string DetectOverlayOp(string s)
+            {
+                if (string.IsNullOrWhiteSpace(s)) return "";
+                if (s.IndexOf("__abxTableOverlay.openRooms", StringComparison.OrdinalIgnoreCase) >= 0) return "openRooms";
+                if (s.IndexOf("__abxTableOverlay.scrollToRoom", StringComparison.OrdinalIgnoreCase) >= 0) return "scrollToRoom";
+                if (s.IndexOf("__abxTableOverlay.pinRooms", StringComparison.OrdinalIgnoreCase) >= 0) return "pinRooms";
+                if (s.IndexOf("__abxTableOverlay.scrollToTop", StringComparison.OrdinalIgnoreCase) >= 0) return "scrollToTop";
+                return "";
+            }
+
             var candidates = new List<WebView2?>();
             var active = GetActiveRoomHostWebView();
             if (active != null) candidates.Add(active);
             if (!ReferenceEquals(Web, active)) candidates.Add(Web);
             if (!ReferenceEquals(_popupWeb, active) && !ReferenceEquals(_popupWeb, Web)) candidates.Add(_popupWeb);
+            var op = DetectOverlayOp(script);
+            var blockByOverlayLock =
+                !string.IsNullOrWhiteSpace(op) &&
+                ShouldLockWrapperOverlay() &&
+                (string.Equals(op, "scrollToRoom", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(op, "scrollToTop", StringComparison.OrdinalIgnoreCase));
+            if (blockByOverlayLock)
+            {
+                Log($"[OVERLAYJS][BLOCK] op={op} reason=popup-wm-active");
+                return false;
+            }
+            if (string.Equals(op, "scrollToRoom", StringComparison.OrdinalIgnoreCase) && ShouldDisableOverlayRoomResolve())
+            {
+                Log($"[OVERLAYJS][BLOCK] op={op} reason=wrapper-rr5309");
+                return false;
+            }
+            if (!string.IsNullOrWhiteSpace(op))
+                Log($"[OVERLAYJS][TRY] op={op} candidates={string.Join(",", candidates.Select(DescribeOverlayWebView))}");
 
             foreach (var web in candidates)
             {
@@ -3714,11 +3769,17 @@ Ví dụ không hợp lệ:
                     var res = await web.ExecuteScriptAsync(wrapped);
                     var ok = string.Equals((res ?? "").Trim(), "true", StringComparison.OrdinalIgnoreCase);
                     if (ok)
+                    {
+                        if (!string.IsNullOrWhiteSpace(op))
+                            Log($"[OVERLAYJS][OK] op={op} web={DescribeOverlayWebView(web)}");
                         return true;
+                    }
                 }
                 catch { }
             }
 
+            if (!string.IsNullOrWhiteSpace(op))
+                Log($"[OVERLAYJS][MISS] op={op}");
             return false;
         }
 
@@ -5782,7 +5843,8 @@ Ví dụ không hợp lệ:
             var setting = GetOrCreateTableSetting(tableId, tableName, out created);
             _activeTableId = setting.Id;
             ApplyTableSettingToUi(setting);
-            await ScrollRoomIntoViewAsync(setting.Name);
+            if (!ShouldDisableOverlayRoomResolve())
+                await ScrollRoomIntoViewAsync(setting.Name);
             UpdateStatsUi(GetOrCreateTableTaskState(setting.Id, setting.Name));
             await PushTableCutValuesToOverlayAsync(setting.Id, setting.CutProfit, setting.CutLoss);
             if (created)
@@ -8106,6 +8168,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             if (!_uiReady) return;
             if (GetActiveRoomHostWebView()?.CoreWebView2 == null && Web?.CoreWebView2 == null && _popupWeb?.CoreWebView2 == null) return;
+            if (ShouldDisableOverlayRoomResolve())
+            {
+                Log("[OVERLAYJS][BLOCK] op=scrollToRoom reason=wrapper-rr5309");
+                return;
+            }
             var name = (roomName ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(name))
                 return;
@@ -8604,6 +8671,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 var f = e.Frame;
+                _ = ProbeAndMaybeRememberPopupGameFrameAsync(f, "frame-created");
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
@@ -8644,6 +8712,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var f = sender as CoreWebView2Frame;
                 if (f == null) return;
 
+                _ = ProbeAndMaybeRememberPopupGameFrameAsync(f, "dom-ready");
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
@@ -8673,6 +8742,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     return;
                 }
 
+                _ = ProbeAndMaybeRememberPopupGameFrameAsync(f, "nav-complete");
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
@@ -9181,6 +9251,16 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     Log("[OVERLAY] play click id=" + id + " name=" + name);
                     await ToggleTablePlayAsync(id, name);
                 }
+                if (ev == "scroll_probe")
+                {
+                    var id = root.TryGetProperty("id", out var scrollIdEl) ? (scrollIdEl.GetString() ?? "") : "";
+                    var ok = root.TryGetProperty("ok", out var okEl) && okEl.ValueKind == JsonValueKind.Number ? okEl.GetInt32() : 0;
+                    var reason = root.TryGetProperty("reason", out var reasonEl) ? (reasonEl.GetString() ?? "") : "";
+                    var href = root.TryGetProperty("href", out var hrefEl) ? (hrefEl.GetString() ?? "") : "";
+                    var host = root.TryGetProperty("host", out var hostEl) ? (hostEl.GetString() ?? "") : "";
+                    var node = root.TryGetProperty("node", out var nodeEl) ? (nodeEl.GetString() ?? "") : "";
+                    Log($"[OVERLAY][SCROLL] id={id} ok={ok} reason={ClipForLog(reason, 48)} host={ClipForLog(host, 80)} href={ClipForLog(href, 160)} node={ClipForLog(node, 120)}");
+                }
                 if (ev == "state")
                 {
                     if (root.TryGetProperty("tables", out var tablesEl) &&
@@ -9249,6 +9329,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             try
             {
+                _ = SetWrapperOverlayLockAsync(false, "popup-close");
                 ClearLatestNetworkRooms("popup-close");
                 if (PopupHost != null)
                     PopupHost.Visibility = Visibility.Collapsed;
@@ -9272,6 +9353,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             _popupBridgeRegistered = false;
             _popupLastDocKey = null;
             _cdpNetworkOnPopup = false;
+            ClearPopupGameFrameCache("destroy-popup");
 
             if (popupWeb == null)
                 return;
@@ -9807,6 +9889,790 @@ private async Task<CancellationTokenSource> DebounceAsync(
                    || IsWmRelayUrl(url);
         }
 
+        private bool IsRr5309WrapperUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return false;
+            return url.IndexOf("rr5309.com", StringComparison.OrdinalIgnoreCase) >= 0
+                   && url.IndexOf("seamless", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private bool ShouldDisableOverlayRoomResolve()
+        {
+            try
+            {
+                var mainUrl = Web?.CoreWebView2?.Source ?? Web?.Source?.ToString() ?? "";
+                if (!IsRr5309WrapperUrl(mainUrl))
+                    return false;
+
+                if (string.IsNullOrWhiteSpace((_wmLastLaunchGameUrl ?? "").Trim()))
+                    return false;
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool ShouldUseTrackedWmGameFrameForBet(WebView2? active)
+        {
+            try
+            {
+                if (!ShouldDisableOverlayRoomResolve())
+                    return false;
+
+                return active?.CoreWebView2 != null || _popupWeb?.CoreWebView2 != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool IsPopupWmVisible()
+        {
+            try
+            {
+                if (PopupHost?.Visibility != Visibility.Visible)
+                    return false;
+                var popupUrl = _popupWeb?.CoreWebView2?.Source ?? _popupWeb?.Source?.ToString() ?? "";
+                return IsWmUrl(popupUrl);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool IsMainWmFrameVisible()
+        {
+            try
+            {
+                if (Web?.CoreWebView2 == null)
+                    return false;
+                if (_mainGameFrame == null)
+                    return false;
+                if ((DateTime.UtcNow - _mainGameFrameSeenUtc) > TimeSpan.FromMinutes(3))
+                    return false;
+                return IsWmUrl(_mainGameFrameLastHref) || !string.IsNullOrWhiteSpace(_mainGameFrameName);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool HasFreshMainTopLevelWmHint()
+        {
+            try
+            {
+                if (Web?.CoreWebView2 == null)
+                    return false;
+                if ((DateTime.UtcNow - _mainTopLevelWmFrameHintUtc) > TimeSpan.FromMinutes(3))
+                    return false;
+                return !string.IsNullOrWhiteSpace(_mainTopLevelWmFrameHint) || IsWmUrl(_mainTopLevelWmFrameHref);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryGetFreshMainCdpFrameHint(string? href, out string hintedName)
+        {
+            hintedName = "";
+            try
+            {
+                if ((DateTime.UtcNow - _mainCdpFrameHintUtc) > TimeSpan.FromMinutes(3))
+                    return false;
+                if (string.IsNullOrWhiteSpace(_mainCdpFrameHintName))
+                    return false;
+
+                var rawHref = (href ?? "").Trim();
+                if (!string.IsNullOrWhiteSpace(rawHref) &&
+                    !string.IsNullOrWhiteSpace(_mainCdpFrameHintUrl) &&
+                    !UrlMatchesHost(rawHref, _mainCdpFrameHintUrl) &&
+                    !UrlMatchesHost(_mainCdpFrameHintUrl, rawHref))
+                {
+                    return false;
+                }
+
+                hintedName = _mainCdpFrameHintName;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryExtractMainTopLevelWmHint(string? iframeSummary, out string hint)
+        {
+            hint = "";
+            var raw = (iframeSummary ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(raw))
+                return false;
+
+            foreach (var part in raw.Split(new[] { "||" }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var item = part.Trim();
+                if (item.Length == 0)
+                    continue;
+
+                if (item.IndexOf("seamless-game", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    item.IndexOf("wmvn.", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    item.IndexOf("m8810.com", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    item.IndexOf("qqhrsbjx", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    hint = item;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void RememberMainFrameHintFromCdp(string scope, string? frameId, string? name, string? url, string? reason)
+        {
+            try
+            {
+                if (!string.Equals(scope, "main", StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                var rawName = (name ?? "").Trim();
+                var rawUrl = (url ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(rawName) && !string.IsNullOrWhiteSpace(frameId))
+                {
+                    _cdpFrameNameById.TryGetValue(scope + "|" + frameId.Trim(), out rawName);
+                    rawName = (rawName ?? "").Trim();
+                }
+                if (string.IsNullOrWhiteSpace(rawUrl) && !string.IsNullOrWhiteSpace(frameId))
+                {
+                    _cdpFrameUrlById.TryGetValue(scope + "|" + frameId.Trim(), out rawUrl);
+                    rawUrl = (rawUrl ?? "").Trim();
+                }
+                var interesting =
+                    rawName.IndexOf("seamless-game", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    rawName.IndexOf("iframe_", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    IsWmUrl(rawUrl);
+                if (!interesting)
+                    return;
+
+                _mainCdpFrameHintId = (frameId ?? "").Trim();
+                _mainCdpFrameHintName = string.IsNullOrWhiteSpace(rawName) ? "seamless-game" : rawName;
+                _mainCdpFrameHintUrl = rawUrl;
+                _mainCdpFrameHintUtc = DateTime.UtcNow;
+                Log($"[MAINFRAME][CDP] reason={ClipForLog(reason, 48)} frameId={ClipForLog(frameId, 48)} name={ClipForLog(_mainCdpFrameHintName, 48)} url={ClipForLog(rawUrl, 180)}");
+            }
+            catch (Exception ex)
+            {
+                Log($"[MAINFRAME][CDP] err={ClipForLog(ex.Message, 160)}");
+            }
+        }
+
+        private async Task RememberMainTopLevelWmHintAsync(string stage, string href, string iframeSummary)
+        {
+            try
+            {
+                if (!TryExtractMainTopLevelWmHint(iframeSummary, out var hint))
+                    return;
+
+                var changed =
+                    !string.Equals(_mainTopLevelWmFrameHint, hint, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(_mainTopLevelWmFrameHref, href, StringComparison.OrdinalIgnoreCase) ||
+                    (DateTime.UtcNow - _mainTopLevelWmFrameHintUtc) > TimeSpan.FromSeconds(10);
+
+                _mainTopLevelWmFrameHint = hint;
+                _mainTopLevelWmFrameHref = href ?? "";
+                _mainTopLevelWmFrameHintUtc = DateTime.UtcNow;
+
+                if (changed)
+                {
+                    Log($"[MAINFRAME][EARLY] stage={ClipForLog(stage, 48)} hint={ClipForLog(hint, 220)} href={ClipForLog(href, 180)}");
+                }
+
+                await SetWrapperOverlayLockAsync(true, "main-top-hint");
+            }
+            catch (Exception ex)
+            {
+                Log($"[MAINFRAME][EARLY] stage={ClipForLog(stage, 48)} err={ClipForLog(ex.Message, 160)}");
+            }
+        }
+
+        private bool ShouldLockWrapperOverlay()
+        {
+            try
+            {
+                return ShouldDisableOverlayRoomResolve() && (IsPopupWmVisible() || IsMainWmFrameVisible() || HasFreshMainTopLevelWmHint());
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static int ScoreTrackedWmFrame(string name, string href, int hasGData, int hasLobbyNet, int hasCoreWs, int helper, int finder, int roomRoots)
+        {
+            var score = 0;
+            if (!string.IsNullOrWhiteSpace(href) && (href.IndexOf("wm", StringComparison.OrdinalIgnoreCase) >= 0 || href.IndexOf("qqhrsbjx", StringComparison.OrdinalIgnoreCase) >= 0))
+                score += 2;
+            if (href.IndexOf("/iframe_", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("iframe_", StringComparison.OrdinalIgnoreCase) >= 0)
+                score += 3;
+            if (name.IndexOf("seamless-game", StringComparison.OrdinalIgnoreCase) >= 0)
+                score += 3;
+            if (hasGData == 1) score++;
+            if (hasLobbyNet == 1) score++;
+            if (hasCoreWs == 1) score++;
+            if (helper == 1) score += 2;
+            if (finder == 1) score += 2;
+            if (roomRoots > 0) score += 3;
+            return score;
+        }
+
+        private static bool LooksLikeActiveWmGameFrame(string name, string href, int hasGData, int hasLobbyNet, int hasCoreWs)
+        {
+            var hasWmHref = !string.IsNullOrWhiteSpace(href) &&
+                            (href.IndexOf("wm", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             href.IndexOf("qqhrsbjx", StringComparison.OrdinalIgnoreCase) >= 0);
+            var namedGameFrame =
+                name.IndexOf("seamless-game", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                name.IndexOf("iframe_", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                href.IndexOf("/iframe_", StringComparison.OrdinalIgnoreCase) >= 0;
+            return hasWmHref && (namedGameFrame || hasGData == 1 || hasLobbyNet == 1 || hasCoreWs == 1);
+        }
+
+        private void ClearPopupGameFrameCache(string reason)
+        {
+            _popupGameFrame = null;
+            _popupGameFrameName = "";
+            _popupGameFrameLastHref = "";
+            _popupGameFrameSeenUtc = DateTime.MinValue;
+            _popupGameFrameScore = 0;
+            if (!string.IsNullOrWhiteSpace(reason))
+                Log($"[POPUPFRAME][CLEAR] reason={ClipForLog(reason, 64)}");
+        }
+
+        private void ClearMainGameFrameCache(string reason)
+        {
+            _mainGameFrame = null;
+            _mainGameFrameName = "";
+            _mainGameFrameLastHref = "";
+            _mainGameFrameSeenUtc = DateTime.MinValue;
+            _mainGameFrameScore = 0;
+            _mainCdpFrameHintId = "";
+            _mainCdpFrameHintName = "";
+            _mainCdpFrameHintUrl = "";
+            _mainCdpFrameHintUtc = DateTime.MinValue;
+            _mainTopLevelWmFrameHint = "";
+            _mainTopLevelWmFrameHref = "";
+            _mainTopLevelWmFrameHintUtc = DateTime.MinValue;
+            if (!string.IsNullOrWhiteSpace(reason))
+                Log($"[MAINFRAME][CLEAR] reason={ClipForLog(reason, 64)}");
+        }
+
+        private async Task SetWrapperOverlayLockAsync(bool locked, string reason)
+        {
+            try
+            {
+                if (Web?.CoreWebView2 == null || !ShouldDisableOverlayRoomResolve())
+                    return;
+
+                var rawReason = (reason ?? "").Trim();
+                var hardLock = locked &&
+                               (rawReason.IndexOf("ready", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                rawReason.IndexOf("route-ready", StringComparison.OrdinalIgnoreCase) >= 0);
+                var lockMode = !locked ? "off" : (hardLock ? "hard" : "soft");
+                var state = locked ? "true" : "false";
+                var js = $@"(function(){{
+  try {{
+    window.__abx_wrapper_overlay_locked = {state};
+    window.__abx_wrapper_overlay_lock_state = '{lockMode}';
+    var ov = window.__abxTableOverlay;
+    if (ov && typeof ov.hide === 'function' && '{lockMode}' === 'hard')
+      ov.hide();
+    if (ov && typeof ov.show === 'function' && (!{state} || '{lockMode}' === 'soft'))
+      ov.show();
+    return true;
+  }} catch (_ ) {{
+    return false;
+  }}
+}})();";
+                var raw = await Web.ExecuteScriptAsync(js);
+                Log($"[OVERLAYLOCK] state={(locked ? 1 : 0)} mode={lockMode} reason={ClipForLog(reason, 48)} ok={ClipForLog(raw, 12)}");
+            }
+            catch (Exception ex)
+            {
+                Log("[OVERLAYLOCK] " + ex.Message);
+            }
+        }
+
+        private async Task ProbeAndMaybeRememberPopupGameFrameAsync(CoreWebView2Frame? frame, string stage)
+        {
+            try
+            {
+                if (frame == null)
+                    return;
+
+                const string js = @"(function(){
+  try{
+    const href = String(location.href || '');
+    const host = String(location.host || '');
+    const hasGData = window.gData ? 1 : 0;
+    const hasLobbyNet = window.lobbyNet ? 1 : 0;
+    const hasCoreWs = window.CoreWebSocket ? 1 : 0;
+    const helper = (typeof window.__cw_bet === 'function') ? 1 : 0;
+    const finder = (typeof window.findCardRootByName === 'function') ? 1 : 0;
+    const roomRoots = document.querySelectorAll('[id^=""groupMultiple_""]').length;
+    return JSON.stringify({
+      host: host,
+      href: href,
+      hasGData: hasGData,
+      hasLobbyNet: hasLobbyNet,
+      hasCoreWs: hasCoreWs,
+      helper: helper,
+      finder: finder,
+      roomRoots: roomRoots,
+      ready: document.readyState || ''
+    });
+  }catch(e){
+    return JSON.stringify({ err: String((e && e.message) || e || 'probe-failed') });
+  }
+})();";
+
+                var raw = await frame.ExecuteScriptAsync(js);
+                raw = (raw ?? "").Trim();
+                if (raw.StartsWith("\"", StringComparison.Ordinal) && raw.EndsWith("\"", StringComparison.Ordinal))
+                    raw = JsonSerializer.Deserialize<string>(raw) ?? raw;
+
+                using var doc = JsonDocument.Parse(raw);
+                var root = doc.RootElement;
+                var err = root.TryGetProperty("err", out var errEl) ? (errEl.GetString() ?? "") : "";
+                if (!string.IsNullOrWhiteSpace(err))
+                {
+                    Log($"[POPUPFRAME][PROBE] stage={stage} name={ClipForLog(frame.Name, 48)} err={ClipForLog(err, 160)}");
+                    return;
+                }
+
+                var host = root.TryGetProperty("host", out var hostEl) ? (hostEl.GetString() ?? "") : "";
+                var href = root.TryGetProperty("href", out var hrefEl) ? (hrefEl.GetString() ?? "") : "";
+                var hasGData = root.TryGetProperty("hasGData", out var hasGDataEl) ? hasGDataEl.GetInt32() : 0;
+                var hasLobbyNet = root.TryGetProperty("hasLobbyNet", out var hasLobbyNetEl) ? hasLobbyNetEl.GetInt32() : 0;
+                var hasCoreWs = root.TryGetProperty("hasCoreWs", out var hasCoreWsEl) ? hasCoreWsEl.GetInt32() : 0;
+                var helper = root.TryGetProperty("helper", out var helperEl) ? helperEl.GetInt32() : 0;
+                var finder = root.TryGetProperty("finder", out var finderEl) ? finderEl.GetInt32() : 0;
+                var roomRoots = root.TryGetProperty("roomRoots", out var roomRootsEl) ? roomRootsEl.GetInt32() : 0;
+                var ready = root.TryGetProperty("ready", out var readyEl) ? (readyEl.GetString() ?? "") : "";
+                var name = (frame.Name ?? "").Trim();
+                var score = ScoreTrackedWmFrame(name, href, hasGData, hasLobbyNet, hasCoreWs, helper, finder, roomRoots);
+
+                Log($"[POPUPFRAME][PROBE] stage={stage} name={ClipForLog(name, 48)} ready={ready} gData={hasGData} lobbyNet={hasLobbyNet} coreWs={hasCoreWs} helper={helper} finder={finder} roomRoots={roomRoots} score={score} href={ClipForLog(href, 180)}");
+
+                if (score < 5)
+                    return;
+
+                if (_popupGameFrame == null || score > _popupGameFrameScore || string.Equals(_popupGameFrameName, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    _popupGameFrame = frame;
+                    _popupGameFrameName = name;
+                    _popupGameFrameLastHref = href;
+                    _popupGameFrameSeenUtc = DateTime.UtcNow;
+                    _popupGameFrameScore = score;
+                    Log($"[POPUPFRAME][FOUND] reason={ClipForLog(stage, 48)} name={ClipForLog(name, 48)} score={score} href={ClipForLog(href, 180)}");
+                    _ = SetWrapperOverlayLockAsync(true, "popup-frame-found");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[POPUPFRAME][PROBE] stage={stage} err={ClipForLog(ex.Message, 160)}");
+            }
+        }
+
+        private async Task EnsurePopupGameFrameBridgeAsync(CoreWebView2Frame? frame, string stage)
+        {
+            try
+            {
+                if (frame == null)
+                    return;
+
+                _homeJs ??= await LoadHomeJsAsync();
+                await frame.ExecuteScriptAsync(FRAME_SHIM);
+                if (!string.IsNullOrEmpty(_appJs))
+                    await frame.ExecuteScriptAsync(_appJs);
+                if (!string.IsNullOrEmpty(_homeJs))
+                    await frame.ExecuteScriptAsync(_homeJs);
+                await frame.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
+                await frame.ExecuteScriptAsync(FRAME_AUTOSTART);
+                await frame.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
+                Log($"[POPUPFRAME][REINJECT] stage={stage} name={ClipForLog(frame.Name, 48)}");
+            }
+            catch (Exception ex)
+            {
+                Log($"[POPUPFRAME][REINJECT] stage={stage} err={ClipForLog(ex.Message, 160)}");
+            }
+        }
+
+        private async Task<CoreWebView2Frame?> TryGetReadyPopupGameFrameAsync(string stage)
+        {
+            try
+            {
+                var frame = _popupGameFrame;
+                if (frame == null)
+                {
+                    Log($"[POPUPFRAME][MISS] stage={stage} reason=no-cache");
+                    return null;
+                }
+
+                await ProbeAndMaybeRememberPopupGameFrameAsync(frame, stage + "-cached");
+                frame = _popupGameFrame;
+                if (frame == null)
+                {
+                    Log($"[POPUPFRAME][MISS] stage={stage} reason=cache-lost");
+                    return null;
+                }
+
+                const string js = @"(function(){
+  try{
+    const href = String(location.href || '');
+    const hasGData = window.gData ? 1 : 0;
+    const hasLobbyNet = window.lobbyNet ? 1 : 0;
+    const hasCoreWs = window.CoreWebSocket ? 1 : 0;
+    const helper = (typeof window.__cw_bet === 'function') ? 1 : 0;
+    const finder = (typeof window.findCardRootByName === 'function') ? 1 : 0;
+    const roomRoots = document.querySelectorAll('[id^=""groupMultiple_""]').length;
+    return JSON.stringify({ href, hasGData, hasLobbyNet, hasCoreWs, helper, finder, roomRoots });
+  }catch(e){
+    return JSON.stringify({ err: String((e && e.message) || e || 'probe-failed') });
+  }
+})();";
+
+                async Task<JsonElement?> ProbeAsync()
+                {
+                    var probeRaw = await frame.ExecuteScriptAsync(js);
+                    probeRaw = (probeRaw ?? "").Trim();
+                    if (probeRaw.StartsWith("\"", StringComparison.Ordinal) && probeRaw.EndsWith("\"", StringComparison.Ordinal))
+                        probeRaw = JsonSerializer.Deserialize<string>(probeRaw) ?? probeRaw;
+                    using var probeDoc = JsonDocument.Parse(probeRaw);
+                    return probeDoc.RootElement.Clone();
+                }
+
+                var probe = await ProbeAsync();
+                if (probe == null)
+                    return null;
+
+                var probeRoot = probe.Value;
+                var err = probeRoot.TryGetProperty("err", out var errEl) ? (errEl.GetString() ?? "") : "";
+                if (!string.IsNullOrWhiteSpace(err))
+                {
+                    Log($"[POPUPFRAME][MISS] stage={stage} reason=probe-error msg={ClipForLog(err, 160)}");
+                    return null;
+                }
+
+                var href = probeRoot.TryGetProperty("href", out var hrefEl) ? (hrefEl.GetString() ?? "") : "";
+                var hasGData = probeRoot.TryGetProperty("hasGData", out var gEl) ? gEl.GetInt32() : 0;
+                var hasLobbyNet = probeRoot.TryGetProperty("hasLobbyNet", out var lEl) ? lEl.GetInt32() : 0;
+                var hasCoreWs = probeRoot.TryGetProperty("hasCoreWs", out var cEl) ? cEl.GetInt32() : 0;
+                var helper = probeRoot.TryGetProperty("helper", out var hEl) ? hEl.GetInt32() : 0;
+                var finder = probeRoot.TryGetProperty("finder", out var fEl) ? fEl.GetInt32() : 0;
+                var roomRoots = probeRoot.TryGetProperty("roomRoots", out var rEl) ? rEl.GetInt32() : 0;
+                if (helper == 1 && finder == 1)
+                {
+                    Log($"[POPUPFRAME][READY] stage={stage} name={ClipForLog(_popupGameFrameName, 48)} roomRoots={roomRoots} href={ClipForLog(href, 180)}");
+                    return frame;
+                }
+
+                var activeGameFrame = LooksLikeActiveWmGameFrame(_popupGameFrameName, href, hasGData, hasLobbyNet, hasCoreWs);
+                if (!activeGameFrame)
+                {
+                    Log($"[POPUPFRAME][MISS] stage={stage} reason=not-active-game-frame name={ClipForLog(_popupGameFrameName, 48)} href={ClipForLog(href, 180)}");
+                    return null;
+                }
+
+                await EnsurePopupGameFrameBridgeAsync(frame, stage);
+                await Task.Delay(180);
+                probe = await ProbeAsync();
+                if (probe == null)
+                    return null;
+                probeRoot = probe.Value;
+                err = probeRoot.TryGetProperty("err", out errEl) ? (errEl.GetString() ?? "") : "";
+                if (!string.IsNullOrWhiteSpace(err))
+                {
+                    Log($"[POPUPFRAME][MISS] stage={stage} reason=probe-error-after-reinject msg={ClipForLog(err, 160)}");
+                    return null;
+                }
+
+                href = probeRoot.TryGetProperty("href", out hrefEl) ? (hrefEl.GetString() ?? "") : "";
+                helper = probeRoot.TryGetProperty("helper", out hEl) ? hEl.GetInt32() : 0;
+                finder = probeRoot.TryGetProperty("finder", out fEl) ? fEl.GetInt32() : 0;
+                roomRoots = probeRoot.TryGetProperty("roomRoots", out rEl) ? rEl.GetInt32() : 0;
+                Log($"[POPUPFRAME][PROBE] stage={stage}-after-reinject name={ClipForLog(_popupGameFrameName, 48)} helper={helper} finder={finder} roomRoots={roomRoots} href={ClipForLog(href, 180)}");
+                if (helper == 1 && finder == 1)
+                {
+                    Log($"[POPUPFRAME][READY] stage={stage}-after-reinject name={ClipForLog(_popupGameFrameName, 48)} roomRoots={roomRoots} href={ClipForLog(href, 180)}");
+                    return frame;
+                }
+
+                Log($"[POPUPFRAME][MISS] stage={stage} reason=not-ready name={ClipForLog(_popupGameFrameName, 48)}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Log($"[POPUPFRAME][MISS] stage={stage} reason=probe-error msg={ClipForLog(ex.Message, 160)}");
+                return null;
+            }
+        }
+
+        private async Task ProbeAndMaybeRememberMainGameFrameAsync(CoreWebView2Frame? frame, string stage)
+        {
+            try
+            {
+                if (frame == null)
+                    return;
+
+                const string js = @"(function(){
+  try{
+    const href = String(location.href || '');
+    const host = String(location.host || '');
+    const hasGData = window.gData ? 1 : 0;
+    const hasLobbyNet = window.lobbyNet ? 1 : 0;
+    const hasCoreWs = window.CoreWebSocket ? 1 : 0;
+    const helper = (typeof window.__cw_bet === 'function') ? 1 : 0;
+    const finder = (typeof window.findCardRootByName === 'function') ? 1 : 0;
+    const roomRoots = document.querySelectorAll('[id^=""groupMultiple_""]').length;
+    return JSON.stringify({
+      host: host,
+      href: href,
+      hasGData: hasGData,
+      hasLobbyNet: hasLobbyNet,
+      hasCoreWs: hasCoreWs,
+      helper: helper,
+      finder: finder,
+      roomRoots: roomRoots,
+      ready: document.readyState || ''
+    });
+  }catch(e){
+    return JSON.stringify({ err: String((e && e.message) || e || 'probe-failed') });
+  }
+})();";
+
+                var raw = await frame.ExecuteScriptAsync(js);
+                raw = (raw ?? "").Trim();
+                if (raw.StartsWith("\"", StringComparison.Ordinal) && raw.EndsWith("\"", StringComparison.Ordinal))
+                    raw = JsonSerializer.Deserialize<string>(raw) ?? raw;
+
+                using var doc = JsonDocument.Parse(raw);
+                var root = doc.RootElement;
+                var err = root.TryGetProperty("err", out var errEl) ? (errEl.GetString() ?? "") : "";
+                if (!string.IsNullOrWhiteSpace(err))
+                {
+                    Log($"[MAINFRAME][PROBE] stage={stage} name={ClipForLog(frame.Name, 48)} err={ClipForLog(err, 160)}");
+                    return;
+                }
+
+                var href = root.TryGetProperty("href", out var hrefEl) ? (hrefEl.GetString() ?? "") : "";
+                var hasGData = root.TryGetProperty("hasGData", out var hasGDataEl) ? hasGDataEl.GetInt32() : 0;
+                var hasLobbyNet = root.TryGetProperty("hasLobbyNet", out var hasLobbyNetEl) ? hasLobbyNetEl.GetInt32() : 0;
+                var hasCoreWs = root.TryGetProperty("hasCoreWs", out var hasCoreWsEl) ? hasCoreWsEl.GetInt32() : 0;
+                var helper = root.TryGetProperty("helper", out var helperEl) ? helperEl.GetInt32() : 0;
+                var finder = root.TryGetProperty("finder", out var finderEl) ? finderEl.GetInt32() : 0;
+                var roomRoots = root.TryGetProperty("roomRoots", out var roomRootsEl) ? roomRootsEl.GetInt32() : 0;
+                var ready = root.TryGetProperty("ready", out var readyEl) ? (readyEl.GetString() ?? "") : "";
+                var rawName = (frame.Name ?? "").Trim();
+                var name = rawName;
+                if (string.IsNullOrWhiteSpace(name) && TryGetFreshMainCdpFrameHint(href, out var hintedName))
+                    name = hintedName;
+                var score = ScoreTrackedWmFrame(name, href, hasGData, hasLobbyNet, hasCoreWs, helper, finder, roomRoots);
+
+                Log($"[MAINFRAME][PROBE] stage={stage} name={ClipForLog(name, 48)} rawName={ClipForLog(rawName, 48)} ready={ready} gData={hasGData} lobbyNet={hasLobbyNet} coreWs={hasCoreWs} helper={helper} finder={finder} roomRoots={roomRoots} score={score} href={ClipForLog(href, 180)}");
+
+                if (score < 5)
+                    return;
+
+                if (_mainGameFrame == null || score > _mainGameFrameScore || string.Equals(_mainGameFrameName, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    _mainGameFrame = frame;
+                    _mainGameFrameName = name;
+                    _mainGameFrameLastHref = href;
+                    _mainGameFrameSeenUtc = DateTime.UtcNow;
+                    _mainGameFrameScore = score;
+                    Log($"[MAINFRAME][FOUND] reason={ClipForLog(stage, 48)} name={ClipForLog(name, 48)} score={score} href={ClipForLog(href, 180)}");
+                    _ = SetWrapperOverlayLockAsync(true, "main-frame-found");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[MAINFRAME][PROBE] stage={stage} err={ClipForLog(ex.Message, 160)}");
+            }
+        }
+
+        private async Task EnsureMainGameFrameBridgeAsync(CoreWebView2Frame? frame, string stage)
+        {
+            try
+            {
+                if (frame == null)
+                    return;
+
+                _homeJs ??= await LoadHomeJsAsync();
+                await frame.ExecuteScriptAsync(FRAME_SHIM);
+                if (!string.IsNullOrEmpty(_appJs))
+                    await frame.ExecuteScriptAsync(_appJs);
+                if (!string.IsNullOrEmpty(_homeJs))
+                    await frame.ExecuteScriptAsync(_homeJs);
+                await frame.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
+                await frame.ExecuteScriptAsync(FRAME_AUTOSTART);
+                await frame.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
+                Log($"[MAINFRAME][REINJECT] stage={stage} name={ClipForLog(frame.Name, 48)}");
+            }
+            catch (Exception ex)
+            {
+                Log($"[MAINFRAME][REINJECT] stage={stage} err={ClipForLog(ex.Message, 160)}");
+            }
+        }
+
+        private async Task<CoreWebView2Frame?> TryGetReadyMainGameFrameAsync(string stage)
+        {
+            try
+            {
+                var frame = _mainGameFrame;
+                if (frame == null)
+                {
+                    Log($"[MAINFRAME][MISS] stage={stage} reason=no-cache");
+                    return null;
+                }
+
+                await ProbeAndMaybeRememberMainGameFrameAsync(frame, stage + "-cached");
+                frame = _mainGameFrame;
+                if (frame == null)
+                {
+                    Log($"[MAINFRAME][MISS] stage={stage} reason=cache-lost");
+                    return null;
+                }
+
+                const string js = @"(function(){
+  try{
+    const href = String(location.href || '');
+    const hasGData = window.gData ? 1 : 0;
+    const hasLobbyNet = window.lobbyNet ? 1 : 0;
+    const hasCoreWs = window.CoreWebSocket ? 1 : 0;
+    const helper = (typeof window.__cw_bet === 'function') ? 1 : 0;
+    const finder = (typeof window.findCardRootByName === 'function') ? 1 : 0;
+    const roomRoots = document.querySelectorAll('[id^=""groupMultiple_""]').length;
+    return JSON.stringify({ href, hasGData, hasLobbyNet, hasCoreWs, helper, finder, roomRoots });
+  }catch(e){
+    return JSON.stringify({ err: String((e && e.message) || e || 'probe-failed') });
+  }
+})();";
+
+                async Task<JsonElement?> ProbeAsync()
+                {
+                    var probeRaw = await frame.ExecuteScriptAsync(js);
+                    probeRaw = (probeRaw ?? "").Trim();
+                    if (probeRaw.StartsWith("\"", StringComparison.Ordinal) && probeRaw.EndsWith("\"", StringComparison.Ordinal))
+                        probeRaw = JsonSerializer.Deserialize<string>(probeRaw) ?? probeRaw;
+                    using var probeDoc = JsonDocument.Parse(probeRaw);
+                    return probeDoc.RootElement.Clone();
+                }
+
+                var probe = await ProbeAsync();
+                if (probe == null)
+                    return null;
+
+                var probeRoot = probe.Value;
+                var err = probeRoot.TryGetProperty("err", out var errEl) ? (errEl.GetString() ?? "") : "";
+                if (!string.IsNullOrWhiteSpace(err))
+                {
+                    Log($"[MAINFRAME][MISS] stage={stage} reason=probe-error msg={ClipForLog(err, 160)}");
+                    return null;
+                }
+
+                var href = probeRoot.TryGetProperty("href", out var hrefEl) ? (hrefEl.GetString() ?? "") : "";
+                var hasGData = probeRoot.TryGetProperty("hasGData", out var gEl) ? gEl.GetInt32() : 0;
+                var hasLobbyNet = probeRoot.TryGetProperty("hasLobbyNet", out var lEl) ? lEl.GetInt32() : 0;
+                var hasCoreWs = probeRoot.TryGetProperty("hasCoreWs", out var cEl) ? cEl.GetInt32() : 0;
+                var helper = probeRoot.TryGetProperty("helper", out var hEl) ? hEl.GetInt32() : 0;
+                var finder = probeRoot.TryGetProperty("finder", out var fEl) ? fEl.GetInt32() : 0;
+                var roomRoots = probeRoot.TryGetProperty("roomRoots", out var rEl) ? rEl.GetInt32() : 0;
+                var effectiveName = string.IsNullOrWhiteSpace(_mainGameFrameName) && TryGetFreshMainCdpFrameHint(href, out var hintedName)
+                    ? hintedName
+                    : _mainGameFrameName;
+                if (helper == 1 && (finder == 1 || roomRoots > 0))
+                {
+                    Log($"[MAINFRAME][READY] stage={stage} name={ClipForLog(effectiveName, 48)} helper={helper} finder={finder} roomRoots={roomRoots} href={ClipForLog(href, 180)}");
+                    await SetWrapperOverlayLockAsync(true, "main-frame-ready");
+                    return frame;
+                }
+
+                var activeGameFrame = LooksLikeActiveWmGameFrame(effectiveName, href, hasGData, hasLobbyNet, hasCoreWs);
+                if (!activeGameFrame)
+                {
+                    Log($"[MAINFRAME][MISS] stage={stage} reason=not-active-game-frame name={ClipForLog(effectiveName, 48)} href={ClipForLog(href, 180)}");
+                    return null;
+                }
+
+                await EnsureMainGameFrameBridgeAsync(frame, stage);
+                await Task.Delay(180);
+                probe = await ProbeAsync();
+                if (probe == null)
+                    return null;
+                probeRoot = probe.Value;
+                err = probeRoot.TryGetProperty("err", out errEl) ? (errEl.GetString() ?? "") : "";
+                if (!string.IsNullOrWhiteSpace(err))
+                {
+                    Log($"[MAINFRAME][MISS] stage={stage} reason=probe-error-after-reinject msg={ClipForLog(err, 160)}");
+                    return null;
+                }
+
+                href = probeRoot.TryGetProperty("href", out hrefEl) ? (hrefEl.GetString() ?? "") : "";
+                helper = probeRoot.TryGetProperty("helper", out hEl) ? hEl.GetInt32() : 0;
+                finder = probeRoot.TryGetProperty("finder", out fEl) ? fEl.GetInt32() : 0;
+                roomRoots = probeRoot.TryGetProperty("roomRoots", out rEl) ? rEl.GetInt32() : 0;
+                effectiveName = string.IsNullOrWhiteSpace(_mainGameFrameName) && TryGetFreshMainCdpFrameHint(href, out hintedName)
+                    ? hintedName
+                    : _mainGameFrameName;
+                Log($"[MAINFRAME][PROBE] stage={stage}-after-reinject name={ClipForLog(effectiveName, 48)} helper={helper} finder={finder} roomRoots={roomRoots} href={ClipForLog(href, 180)}");
+                if (helper == 1 && (finder == 1 || roomRoots > 0))
+                {
+                    Log($"[MAINFRAME][READY] stage={stage}-after-reinject name={ClipForLog(effectiveName, 48)} helper={helper} finder={finder} roomRoots={roomRoots} href={ClipForLog(href, 180)}");
+                    await SetWrapperOverlayLockAsync(true, "main-frame-ready");
+                    return frame;
+                }
+
+                Log($"[MAINFRAME][MISS] stage={stage} reason=not-ready name={ClipForLog(effectiveName, 48)} helper={helper} finder={finder} roomRoots={roomRoots}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Log($"[MAINFRAME][MISS] stage={stage} reason=probe-error msg={ClipForLog(ex.Message, 160)}");
+                return null;
+            }
+        }
+
+        private async Task<(CoreWebView2Frame? frame, string target)> TryGetReadyTrackedWmGameFrameAsync(WebView2? active, string stage)
+        {
+            var preferMainFromTopHint = ReferenceEquals(active, Web) && HasFreshMainTopLevelWmHint();
+            var preferPopup = !preferMainFromTopHint && (ReferenceEquals(active, _popupWeb) || IsPopupWmVisible());
+            if (preferPopup)
+            {
+                var popupFrame = await TryGetReadyPopupGameFrameAsync(stage + "-popup");
+                if (popupFrame != null)
+                    return (popupFrame, $"PopupWeb/{ClipForLog(_popupGameFrameName, 48)}");
+            }
+
+            var mainFrame = await TryGetReadyMainGameFrameAsync(stage + "-main");
+            if (mainFrame != null)
+                return (mainFrame, $"Web/{ClipForLog(_mainGameFrameName, 48)}");
+
+            if (!preferPopup)
+            {
+                var popupFrame = await TryGetReadyPopupGameFrameAsync(stage + "-popup-fallback");
+                if (popupFrame != null)
+                    return (popupFrame, $"PopupWeb/{ClipForLog(_popupGameFrameName, 48)}");
+            }
+
+            return (null, "none");
+        }
+
         private bool UrlMatchesHost(string? url, string? host)
         {
             var rawUrl = (url ?? "").Trim();
@@ -9833,6 +10699,115 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             var popupUrl = _popupWeb?.CoreWebView2?.Source ?? _popupWeb?.Source?.ToString() ?? "";
             return IsWmUrl(popupUrl) && UrlMatchesHost(popupUrl, launchHost);
+        }
+
+        private async Task LogBetHostProbeAsync(string stage, WebView2? web)
+        {
+            try
+            {
+                if (web?.CoreWebView2 == null)
+                {
+                    Log($"[POPUPREADY][PROBE] stage={stage} web=null");
+                    return;
+                }
+
+                static string Describe(WebView2? target, WebView2? popup, WebView2? main)
+                {
+                    if (target == null) return "null";
+                    if (ReferenceEquals(target, popup)) return "PopupWeb";
+                    if (ReferenceEquals(target, main)) return "Web";
+                    return "OtherWeb";
+                }
+
+                const string js = @"(function(){
+  try{
+    const clip=(v,n)=>String(v||'').replace(/\s+/g,' ').trim().slice(0,n||120);
+    const bodyText=clip(document.body&&(document.body.innerText||document.body.textContent)||'',160);
+    const iframes=Array.from(document.querySelectorAll('iframe')).slice(0,3).map((f,idx)=>{
+      let probe='cross';
+      try{
+        const cw=f.contentWindow;
+        const cd=cw&&cw.document;
+        probe=[
+          'href='+clip(cw&&cw.location&&cw.location.href||'',120),
+          'ready='+(cd&&cd.readyState||''),
+          'cwbet='+(cw&&typeof cw.__cw_bet==='function'?1:0),
+          'findRoot='+(cw&&typeof cw.findCardRootByName==='function'?1:0),
+          'roots='+(cd?cd.querySelectorAll('[id^=""groupMultiple_""]').length:0)
+        ].join(',');
+      }catch(_){}
+      return (f.id||('#'+idx))+':'+clip(f.getAttribute('src')||'',120)+'|'+probe;
+    }).join(' || ');
+    const helper = (typeof window.__cw_bet==='function') ? 1 : 0;
+    const finder = (typeof window.findCardRootByName==='function') ? 1 : 0;
+    const roomRoots = document.querySelectorAll('[id^=""groupMultiple_""]').length;
+    const overlay = window.__abxTableOverlay ? 1 : 0;
+    const maint = /(维护中|LOADING\s*\d+%|kx55588|kx66699)/i.test(bodyText) ? 1 : 0;
+    return JSON.stringify({
+      href: clip(location.href||'', 180),
+      host: clip(location.host||'', 80),
+      ready: document.readyState||'',
+      helper: helper,
+      finder: finder,
+      overlay: overlay,
+      maint: maint,
+      roomRoots: roomRoots,
+      ifrCount: document.querySelectorAll('iframe').length,
+      body: bodyText,
+      iframes: iframes
+    });
+  }catch(e){
+    return JSON.stringify({ err: String(e && e.message || e) });
+  }
+})();";
+
+                var raw = await web.ExecuteScriptAsync(js);
+                raw = (raw ?? "").Trim();
+                if (raw.StartsWith("\"", StringComparison.Ordinal) && raw.EndsWith("\"", StringComparison.Ordinal))
+                    raw = JsonSerializer.Deserialize<string>(raw) ?? raw;
+
+                var target = Describe(web, _popupWeb, Web);
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    Log($"[POPUPREADY][PROBE] stage={stage} web={target} raw=");
+                    return;
+                }
+
+                using var doc = JsonDocument.Parse(raw);
+                var root = doc.RootElement;
+                var err = root.TryGetProperty("err", out var errEl) ? (errEl.GetString() ?? "") : "";
+                if (!string.IsNullOrWhiteSpace(err))
+                {
+                    Log($"[POPUPREADY][PROBE] stage={stage} web={target} err={ClipForLog(err, 160)}");
+                    return;
+                }
+
+                var href = root.TryGetProperty("href", out var hrefEl) ? (hrefEl.GetString() ?? "") : "";
+                var host = root.TryGetProperty("host", out var hostEl) ? (hostEl.GetString() ?? "") : "";
+                var ready = root.TryGetProperty("ready", out var readyEl) ? (readyEl.GetString() ?? "") : "";
+                var helper = root.TryGetProperty("helper", out var helperEl) ? helperEl.GetInt32() : 0;
+                var finder = root.TryGetProperty("finder", out var finderEl) ? finderEl.GetInt32() : 0;
+                var overlay = root.TryGetProperty("overlay", out var overlayEl) ? overlayEl.GetInt32() : 0;
+                var maint = root.TryGetProperty("maint", out var maintEl) ? maintEl.GetInt32() : 0;
+                var roomRoots = root.TryGetProperty("roomRoots", out var roomRootsEl) ? roomRootsEl.GetInt32() : 0;
+                var ifrCount = root.TryGetProperty("ifrCount", out var ifrCountEl) ? ifrCountEl.GetInt32() : 0;
+                var body = root.TryGetProperty("body", out var bodyEl) ? (bodyEl.GetString() ?? "") : "";
+                var iframes = root.TryGetProperty("iframes", out var ifrEl) ? (ifrEl.GetString() ?? "") : "";
+                Log(
+                    $"[POPUPREADY][PROBE] stage={stage} web={target} ready={ready} helper={helper} finder={finder} overlay={overlay} maint={maint} " +
+                    $"roomRoots={roomRoots} ifrCount={ifrCount} host={ClipForLog(host, 80)} href={ClipForLog(href, 180)} body={ClipForLog(body, 180)} iframes={ClipForLog(iframes, 320)}");
+
+                if (ShouldDisableOverlayRoomResolve() &&
+                    string.Equals(target, "Web", StringComparison.Ordinal) &&
+                    TryExtractMainTopLevelWmHint(iframes, out _))
+                {
+                    await RememberMainTopLevelWmHintAsync(stage, href, iframes);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[POPUPREADY][PROBE] stage={stage} err={ex.Message}");
+            }
         }
 
         private async Task<bool> EnsurePopupRoutedToLastLaunchGameAsync(WebView2? active, string reason)
@@ -9872,6 +10847,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             PopupHost.Visibility = Visibility.Visible;
                     });
                     try { _popupWeb?.Focus(); } catch { }
+                    await SetWrapperOverlayLockAsync(true, "popup-reuse");
                     Log($"[POPUPROUTE][READY] reuse=1 host={ClipForLog(launchHost, 60)} popup={ClipForLog(_popupWeb?.CoreWebView2?.Source ?? _popupWeb?.Source?.ToString(), 160)}");
                     return true;
                 }
@@ -9896,6 +10872,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             PopupHost.Visibility = Visibility.Visible;
                     });
                     try { popupWeb.Focus(); } catch { }
+                    await SetWrapperOverlayLockAsync(true, "popup-reuse");
                     Log($"[POPUPROUTE][READY] reuse=1 host={ClipForLog(launchHost, 60)} popup={ClipForLog(popupUrl, 160)}");
                     return true;
                 }
@@ -9923,6 +10900,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 popupWeb.NavigationCompleted += Handler;
                 try
                 {
+                    ClearPopupGameFrameCache("popup-route-nav");
                     Log($"[POPUPROUTE][NAV] url={ClipForLog(launchUrl, 180)}");
                     popupWeb.CoreWebView2.Navigate(launchUrl);
                     var completed = await Task.WhenAny(tcs.Task, Task.Delay(12000));
@@ -9950,6 +10928,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     try { popupWeb.Focus(); } catch { }
                     await Task.Delay(900);
                     try { await InjectOnPopupDocAsync(); } catch { }
+                    await SetWrapperOverlayLockAsync(true, "popup-route-ready");
                     Log($"[POPUPROUTE][READY] reuse=0 host={ClipForLog(launchHost, 60)} popup={ClipForLog(finalPopupUrl, 160)}");
                     return true;
                 }
@@ -10132,6 +11111,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 $"[WM_DIAG][FrameMap] scope={scope} reason={ClipForLog(reason, 48)} frameId={ClipForLog(frameId, 48)} " +
                 $"parent={ClipForLog(parentFrameId, 48)} name={ClipForLog(name, 48)} url={ClipForLog(url, 180)} frame={ClipForLog(frameHint, 220)}";
             LogChangedOrThrottled("WM_DIAG_FRAME_MAP:" + scope + ":" + frameId, sig, msg, 1200);
+            RememberMainFrameHintFromCdp(scope, frameId, name, url, reason);
             EnsureWmTrace("frame-map", url, scope, frameId);
             LogWmTrace(
                 "frame.map",
@@ -13852,8 +14832,52 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     }
                     if (isBetCall)
                     {
-                        popupRouted = await EnsurePopupRoutedToLastLaunchGameAsync(active, "bet-host");
+                        await LogBetHostProbeAsync("before-route-active", active);
+                        await LogBetHostProbeAsync("before-route-popup", _popupWeb);
+                        var shouldShortCircuitMain = ShouldDisableOverlayRoomResolve() && ReferenceEquals(active, Web);
+                        var preRouteMainFrame = shouldShortCircuitMain
+                            ? await TryGetReadyMainGameFrameAsync("pre-route-main")
+                            : null;
+                        if (preRouteMainFrame != null)
+                        {
+                            await SetWrapperOverlayLockAsync(true, "main-frame-pre-route");
+                        }
+                        else if (shouldShortCircuitMain && HasFreshMainTopLevelWmHint())
+                        {
+                            await SetWrapperOverlayLockAsync(true, "main-top-hint-pre-route");
+                            Log($"[MAINFRAME][EARLY] stage=pre-route-main-short-circuit hint={ClipForLog(_mainTopLevelWmFrameHint, 220)} href={ClipForLog(_mainTopLevelWmFrameHref, 180)}");
+                        }
+                        else
+                        {
+                            popupRouted = await EnsurePopupRoutedToLastLaunchGameAsync(active, "bet-host");
+                        }
                         active = GetActiveRoomHostWebView();
+                        await LogBetHostProbeAsync("after-route-active", active);
+                        await LogBetHostProbeAsync("after-route-popup", _popupWeb);
+                    }
+                    var useTrackedGameFrame = isBetCall && ShouldUseTrackedWmGameFrameForBet(active);
+                    if (useTrackedGameFrame)
+                    {
+                        var (trackedFrame, target) = await TryGetReadyTrackedWmGameFrameAsync(active, "bet-host");
+                        if (trackedFrame == null)
+                        {
+                            await SetWrapperOverlayLockAsync(false, "tracked-frame-not-ready");
+                            Log("[JSHOST][FRAME] selected=none reason=tracked-frame-not-ready");
+                            return "no";
+                        }
+
+                        try
+                        {
+                            var frameResult = await trackedFrame.ExecuteScriptAsync(js);
+                            Log($"[JSHOST][FRAME] selected={target}");
+                            return frameResult;
+                        }
+                        catch (Exception ex)
+                        {
+                            await SetWrapperOverlayLockAsync(false, "tracked-frame-exec-fail");
+                            Log($"[JSHOST][FRAME] fail selected={target} msg={ClipForLog(ex.Message, 160)}");
+                            return "no";
+                        }
                     }
                     var preferPopup = isBetCall && (popupRouted || ShouldPreferPopupForBetHost(active));
                     if (preferPopup)
@@ -16282,6 +17306,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (!string.IsNullOrEmpty(key) && key != _lastDocKey)
             {
                 ResetHomeFlowFlags();
+                ClearMainGameFrameCache("main-doc-changed");
                 // Tiêm lại ngay trên tài liệu hiện tại (phòng khi AddScript chưa kịp chạy vì timing)
                 await Web.CoreWebView2.ExecuteScriptAsync(TOP_FORWARD);
                 if (!string.IsNullOrEmpty(_appJs))
@@ -16319,6 +17344,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 var f = e.Frame;
+                _ = ProbeAndMaybeRememberMainGameFrameAsync(f, "frame-created");
 
                 // Tiêm ngay (idempotent)
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
@@ -16434,6 +17460,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var f = sender as CoreWebView2Frame;
                 if (f == null) return;
 
+                _ = ProbeAndMaybeRememberMainGameFrameAsync(f, "dom-ready");
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
@@ -16464,6 +17491,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     return;
                 }
 
+                _ = ProbeAndMaybeRememberMainGameFrameAsync(f, "nav-complete");
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);

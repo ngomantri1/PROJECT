@@ -972,6 +972,46 @@
         return target;
     }
 
+    function betDescribeNode(el) {
+        if (!el || !el.tagName)
+            return '';
+        let text = '';
+        try {
+            text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        } catch (_) {}
+        let cls = '';
+        try {
+            cls = (el.className && typeof el.className === 'string') ? el.className.trim().replace(/\s+/g, '.') : '';
+        } catch (_) {}
+        let href = '';
+        try {
+            href = (el.getAttribute && el.getAttribute('href')) ? String(el.getAttribute('href')).trim() : '';
+        } catch (_) {}
+        return [
+            String(el.tagName || '').toLowerCase(),
+            el.id ? ('#' + el.id) : '',
+            cls ? ('.' + cls) : '',
+            href ? (' href=' + href) : '',
+            text ? (' text=' + text.slice(0, 32)) : ''
+        ].join('');
+    }
+
+    function betIsNavigatingAnchor(el) {
+        if (!el || !el.tagName)
+            return false;
+        if (String(el.tagName || '').toLowerCase() !== 'a')
+            return false;
+        let href = '';
+        try {
+            href = (el.getAttribute && el.getAttribute('href')) ? String(el.getAttribute('href')).trim() : '';
+        } catch (_) {}
+        if (!href)
+            return false;
+        if (href === '#' || /^javascript:/i.test(href))
+            return false;
+        return true;
+    }
+
     function betNormalizeSide(side) {
         const raw = String(side || '').trim().toUpperCase();
         if (!raw)
@@ -1275,7 +1315,7 @@
         };
         const clickChipValue = (value) => {
             const chipNode = betFindChipByAmount(value, doc) || betFindChip(betAmountToLabel(value), doc);
-            const chipBtn = chipNode ? (chipNode.closest('button,[role=button],a') || chipNode) : null;
+            const chipBtn = chipNode || null;
             if (!chipBtn)
                 return false;
             betDispatchClickOnce(chipBtn, 'click', { noScroll: true });
@@ -1341,9 +1381,9 @@
         if (!chipNode)
             return { ok: false, token: '', selected: null, activeMatch: 0, clickOk: 0, msg: 'chip-not-found' };
         const token = betParseMultiChipTokenFromNode(chipNode);
-        const clickOk1 = betDispatchClickAtPoint(chipNode);
+        const clickOk1 = betTryClickDirect(chipNode, null, 'chip');
         await new Promise(r => setTimeout(r, 220));
-        const clickOk2 = betDispatchClickAtPoint(chipNode);
+        const clickOk2 = betTryClickDirect(chipNode, null, 'chip');
         await new Promise(r => setTimeout(r, 220));
         const selected = betGetSelectedChipAmount(doc);
         const activeMatch = betIsChipActive(chipNode) ? 1 : 0;
@@ -1408,18 +1448,29 @@
                 });
             } catch (_) {}
             for (let i = 0; i < item.count; i++) {
-                betDispatchClickAtPoint(target);
+                const targetOk = betTryClickDirect(target, logBetWarn, 'target');
+                betEmitDiag('target_click', {
+                    rootId: (root && root.id) || '',
+                    targetId: (target && target.id) || '',
+                    confirmId: (confirmBtn && confirmBtn.id) || '',
+                    amount: item.value,
+                    ok: targetOk ? 1 : 0
+                });
+                if (!targetOk)
+                    return false;
                 await new Promise(r => setTimeout(r, 260));
             }
         }
         await new Promise(r => setTimeout(r, 350));
-        const confirmOk = betDispatchClickAtPoint(confirmBtn);
+        const confirmOk = betTryClickDirect(confirmBtn, logBetWarn, 'confirm');
         betEmitDiag('confirm_click', {
             rootId: (root && root.id) || '',
             targetId: (target && target.id) || '',
             confirmId: (confirmBtn && confirmBtn.id) || '',
             ok: confirmOk ? 1 : 0
         });
+        if (!confirmOk)
+            return false;
         await new Promise(r => setTimeout(r, 240));
         return true;
     }
@@ -1552,9 +1603,9 @@
                 sameDoc: chipDoc === rootDoc
             });
         } catch (_) {}
-        betDispatchClickAtPoint(chipNode);
+        betTryClickDirect(chipNode, logBetWarn, 'chip');
         await new Promise(r => setTimeout(r, 220));
-        betDispatchClickAtPoint(chipNode);
+        betTryClickDirect(chipNode, logBetWarn, 'chip');
         await new Promise(r => setTimeout(r, 220));
         const selected = betGetSelectedChipAmount(chipDoc);
         if (selected != null && selected !== amountValue) {
@@ -2024,21 +2075,35 @@
         if (!el)
             return false;
         try {
-            const isBetLabel = betIsBetLabel(el);
-            const target = isBetLabel ? el : (el.closest('button,[role=button],a') || el);
-            const inCard = !!(target.closest && (target.closest('div[id^="TileHeight-"]') || target.closest('div.gC_gE.gC_gH.gC_gI')));
-            if (isBetLabel) {
-                return betDispatchClickAtPoint(target);
-            }
-            if (inCard && typeof peelAndClick === 'function') {
-                const allowScroll = !(opts && opts.noScroll);
-                try { peelAndClick(target, { holdMs: 160, scrollIntoView: allowScroll }); return true; } catch (_) {}
-            }
+            const target = el;
+            const promoted = (!betIsBetLabel(el) && el.closest) ? (el.closest('button,[role=button],a') || null) : null;
             const doc = target.ownerDocument || document;
             const win = doc.defaultView || window;
             const kind = (mode || 'click').toLowerCase();
+            try {
+                betEmitDiag('click_node', {
+                    targetId: (target && target.id) || '',
+                    ok: 1,
+                    msg: 'mode=' + kind
+                        + ' exact=' + betDescribeNode(target)
+                        + (promoted && promoted !== target ? ' promoted=' + betDescribeNode(promoted) : '')
+                        + ' focus=' + ((doc && typeof doc.hasFocus === 'function' && doc.hasFocus()) ? 1 : 0)
+                        + ' active=' + betDescribeNode(doc && doc.activeElement)
+                        + ' vis=' + String((doc && doc.visibilityState) || '')
+                });
+            } catch (_) {}
             if (kind === 'point') {
-                return betDispatchClickAtPoint(target);
+                return false;
+            }
+            if (betIsNavigatingAnchor(target)) {
+                try {
+                    betEmitDiag('click_blocked', {
+                        targetId: (target && target.id) || '',
+                        ok: 0,
+                        msg: 'navigating-anchor exact=' + betDescribeNode(target)
+                    });
+                } catch (_) {}
+                return false;
             }
             if (kind === 'click') {
                 if (typeof target.click === 'function') {
@@ -2095,7 +2160,16 @@
                 return true;
             }
             return true;
-        } catch (_) {}
+        } catch (err) {
+            try {
+                betEmitDiag('click_exception', {
+                    targetId: (el && el.id) || '',
+                    amount: 0,
+                    ok: 0,
+                    msg: (err && err.message) ? err.message : String(err || '')
+                });
+            } catch (_) {}
+        }
         return false;
     }
 
@@ -2194,20 +2268,35 @@
           if (!target)
               return false;
           try {
-              if (betDispatchClickAtPoint(target))
+              if (betDispatchClickOnce(target, 'click', { noScroll: true })) {
+                  try {
+                      betEmitDiag('click_path', {
+                          targetId: (target && target.id) || '',
+                          ok: 1,
+                          msg: 'direct:click label=' + ((label || 'click'))
+                      });
+                  } catch (_) {}
                   return true;
+              }
           } catch (_) {}
           try {
-              if (betDispatchClickOnce(target, 'click', { noScroll: true }))
+              if (betDispatchClickOnce(target, 'mouse', { noScroll: true })) {
+                  try {
+                      betEmitDiag('click_path', {
+                          targetId: (target && target.id) || '',
+                          ok: 1,
+                          msg: 'direct:mouse label=' + ((label || 'click'))
+                      });
+                  } catch (_) {}
                   return true;
+              }
           } catch (_) {}
           try {
-              if (betDispatchClickOnce(target, 'mouse', { noScroll: true }))
-                  return true;
-          } catch (_) {}
-          try {
-              if (betDispatchClickOnce(target, 'point', { noScroll: true }))
-                  return true;
+              betEmitDiag('click_path', {
+                  targetId: (target && target.id) || '',
+                  ok: 0,
+                  msg: 'direct:none label=' + ((label || 'click'))
+              });
           } catch (_) {}
           try {
               if (typeof logBetWarn === 'function')
@@ -2263,6 +2352,19 @@
         return v;
     }
 
+    function betAllowOverlayRoomResolve() {
+        try {
+            const href = String(location && location.href || '');
+            const host = String(location && location.host || '');
+            if (/rr5309\.com/i.test(host) || /rr5309\.com/i.test(href))
+                return false;
+        } catch (_) {}
+        try {
+            return !!(window.__abxTableOverlay && typeof window.__abxTableOverlay.scrollToRoom === 'function');
+        } catch (_) {}
+        return false;
+    }
+
     async function betResolveRootForBetAsync(id, roomName, logBetWarn) {
         const resolvedName = String(roomName || '').trim();
         const rememberResolvedRoot = (root) => {
@@ -2295,7 +2397,7 @@
             return root;
 
         try {
-            if (window.__abxTableOverlay && typeof window.__abxTableOverlay.scrollToRoom === 'function') {
+            if (betAllowOverlayRoomResolve()) {
                 window.__abxTableOverlay.scrollToRoom(resolvedName || id);
             }
         } catch (_) {}
@@ -9366,14 +9468,37 @@
         function scrollCardIntoView(roomId, options = {}) {
             const { behavior = 'smooth', block = 'center', highlight = true } = options || {};
             const card = findCardRootByName(roomId);
-            if (!card)
+            const postProbe = (ok, node, reason) => {
+                try {
+                    const el = node instanceof Element ? node : null;
+                    const info = el ? [
+                        (el.tagName || '').toLowerCase(),
+                        el.id ? ('#' + el.id) : '',
+                        el.className ? ('.' + String(el.className).trim().replace(/\s+/g, '.')) : ''
+                    ].join('') : '';
+                    window.chrome?.webview?.postMessage?.({
+                        overlay: 'table',
+                        event: 'scroll_probe',
+                        id: String(roomId || ''),
+                        ok: ok ? 1 : 0,
+                        reason: String(reason || ''),
+                        href: String(location.href || ''),
+                        host: String(location.host || ''),
+                        node: info
+                    });
+                } catch (_) {}
+            };
+            if (!card) {
+                postProbe(false, null, 'not-found');
                 return false;
+            }
             try {
                 card.scrollIntoView({ block, behavior });
             } catch (_) {}
             if (highlight)
                 highlightOnce(card);
-                    return true;
+            postProbe(true, card, 'scrolled');
+            return true;
         }
 
         function scrollLobbyTop(options = {}) {
@@ -14169,14 +14294,50 @@ function deriveWinLoseColor(text) {
             setDesiredPinList(list);
         }
 
+        function overlayLockState() {
+            try {
+                const raw = window.__abx_wrapper_overlay_lock_state;
+                if (raw === 'soft' || raw === 'hard')
+                    return raw;
+                return window.__abx_wrapper_overlay_locked === true ? 'hard' : 'off';
+            } catch (_) {}
+            return 'off';
+        }
+
+        function overlayLocked() {
+            return overlayLockState() !== 'off';
+        }
+
+        function overlayHideLocked() {
+            return overlayLockState() === 'hard';
+        }
+
         window.__abxTableOverlay = {
-            openRooms: applyRooms,
-            pinRooms,
-            scrollToRoom: scrollCardIntoView,
-            scrollToTop: scrollLobbyTop,
+            openRooms: function () {
+                return applyRooms.apply(null, arguments);
+            },
+            pinRooms: function () {
+                return pinRooms.apply(null, arguments);
+            },
+            scrollToRoom: function () {
+                if (overlayLocked())
+                    return false;
+                return scrollCardIntoView.apply(null, arguments);
+            },
+            scrollToTop: function () {
+                if (overlayLocked())
+                    return false;
+                return scrollLobbyTop.apply(null, arguments);
+            },
             reset: resetLayout,
             hide,
-            show,
+            show: function () {
+                if (overlayHideLocked()) {
+                    try { hide(); } catch (_) {}
+                    return false;
+                }
+                return show.apply(null, arguments);
+            },
             close: closePanel,
             setCutValues,
             setPlayState,

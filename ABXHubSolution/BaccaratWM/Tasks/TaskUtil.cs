@@ -201,6 +201,7 @@ namespace BaccaratWM.Tasks
                 var tableNameJson = JsonSerializer.Serialize(ctx.TableName ?? "");
                 var sideJson = JsonSerializer.Serialize(side ?? "");
                 var virtualJs = isVirtual ? "true" : "false";
+                ctx.Log?.Invoke($"[BET-REQ] table={tableId} name={ctx.TableName ?? ""} side={side} amount={amount} virtual={(isVirtual ? 1 : 0)}");
 
             // GỌI __cw_bet AN TOÀN (giữ nguyên như code hiện tại)
                 var js =
