@@ -6827,8 +6827,33 @@ try{
                 bool gameReady = false;
                 if (HasRecentGameSignal(out var warmReason))
                 {
-                    gameReady = true;
-                    Log("[VaoXocDia] existing game signal: " + warmReason);
+                    var warmBridgeState = "-";
+                    bool warmBridgeReady = false;
+                    try
+                    {
+                        var warmBridgeJson = await ExecuteOnBetWebAsync(
+                            "(function(){ return (typeof window.__cw_bet==='function' || typeof window.__cw_bet_enqueue==='function') ? 'ready' : 'missing'; })()");
+                        warmBridgeState = warmBridgeJson?.Trim().Trim('"') ?? "-";
+                        warmBridgeReady = string.Equals(warmBridgeState, "ready", StringComparison.OrdinalIgnoreCase);
+                    }
+                    catch (Exception ex)
+                    {
+                        warmBridgeState = "err:" + ex.Message;
+                    }
+
+                    if (warmBridgeReady)
+                    {
+                        gameReady = true;
+                        Log("[VaoXocDia] existing game signal: " + warmReason + " | bridge=" + warmBridgeState);
+                    }
+                    else
+                    {
+                        var warmBetWeb = GetBetWebView();
+                        Log("[VaoXocDia] ignore stale game signal (bridge-missing) | " + warmReason +
+                            " | bridge=" + warmBridgeState +
+                            " | betWeb=" + GetBetWebViewName(warmBetWeb) +
+                            " | src=" + GetBetWebViewSource(warmBetWeb));
+                    }
                 }
 
                 if (!gameReady)
