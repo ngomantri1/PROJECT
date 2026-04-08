@@ -1339,14 +1339,23 @@
     async function betSelectMultiChipValueAsync(value, doc) {
         const chipNode = betFindChipByAmount(value, doc);
         if (!chipNode)
-            return { ok: false, token: '' };
+            return { ok: false, token: '', selected: null, activeMatch: 0, clickOk: 0, msg: 'chip-not-found' };
         const token = betParseMultiChipTokenFromNode(chipNode);
-        betDispatchClickAtPoint(chipNode);
+        const clickOk1 = betDispatchClickAtPoint(chipNode);
         await new Promise(r => setTimeout(r, 220));
-        betDispatchClickAtPoint(chipNode);
+        const clickOk2 = betDispatchClickAtPoint(chipNode);
         await new Promise(r => setTimeout(r, 220));
         const selected = betGetSelectedChipAmount(doc);
-        return { ok: selected == null || selected === value, token, selected };
+        const activeMatch = betIsChipActive(chipNode) ? 1 : 0;
+        const ok = selected === value || (!!activeMatch && (!selected || selected === value));
+        return {
+            ok,
+            token,
+            selected,
+            activeMatch,
+            clickOk: (clickOk1 && clickOk2) ? 1 : 0,
+            msg: ok ? '' : ('selected=' + (selected == null ? '' : selected) + ' active=' + activeMatch + ' click=' + ((clickOk1 && clickOk2) ? 1 : 0))
+        };
     }
 
     async function betExecuteMultiPlanAsync(plan, target, root, doc, logBetWarn) {
@@ -1369,10 +1378,14 @@
                     confirmId: (confirmBtn && confirmBtn.id) || '',
                     amount: item.value,
                     ok: 0,
-                    selected: (selected && selected.selected) || ''
+                    selected: (selected && selected.selected) || '',
+                    token: (selected && selected.token) || '',
+                    activeMatch: (selected && selected.activeMatch) || 0,
+                    clickOk: (selected && selected.clickOk) || 0,
+                    msg: (selected && selected.msg) || ''
                 });
                 if (typeof logBetWarn === 'function')
-                    logBetWarn('chip select failed amount=' + item.value + ' selected=' + ((selected && selected.selected) || '') + ' rootId=' + ((root && root.id) || ''));
+                    logBetWarn('chip select failed amount=' + item.value + ' selected=' + ((selected && selected.selected) || '') + ' active=' + ((selected && selected.activeMatch) || 0) + ' click=' + ((selected && selected.clickOk) || 0) + ' rootId=' + ((root && root.id) || ''));
                 return false;
             }
             betEmitDiag('chip_select', {
@@ -1382,7 +1395,9 @@
                 amount: item.value,
                 ok: 1,
                 selected: (selected && selected.selected) || '',
-                token: (selected && selected.token) || ''
+                token: (selected && selected.token) || '',
+                activeMatch: (selected && selected.activeMatch) || 0,
+                clickOk: (selected && selected.clickOk) || 0
             });
             try {
                 console.log('[BET-WM] chip selected', {
@@ -1426,10 +1441,14 @@
                 confirmId: (confirmBtn && confirmBtn.id) || '',
                 amount: amountValue,
                 ok: 0,
-                selected: (selected && selected.selected) || ''
+                selected: (selected && selected.selected) || '',
+                token: (selected && selected.token) || '',
+                activeMatch: (selected && selected.activeMatch) || 0,
+                clickOk: (selected && selected.clickOk) || 0,
+                msg: (selected && selected.msg) || ''
             });
             if (typeof logBetWarn === 'function')
-                logBetWarn('chip select failed amount=' + amountValue + ' selected=' + ((selected && selected.selected) || '') + ' rootId=' + ((root && root.id) || ''));
+                logBetWarn('chip select failed amount=' + amountValue + ' selected=' + ((selected && selected.selected) || '') + ' active=' + ((selected && selected.activeMatch) || 0) + ' click=' + ((selected && selected.clickOk) || 0) + ' rootId=' + ((root && root.id) || ''));
             return false;
         }
         betEmitDiag('chip_select', {
@@ -1439,7 +1458,9 @@
             amount: amountValue,
             ok: 1,
             selected: (selected && selected.selected) || '',
-            token: (selected && selected.token) || ''
+            token: (selected && selected.token) || '',
+            activeMatch: (selected && selected.activeMatch) || 0,
+            clickOk: (selected && selected.clickOk) || 0
         });
         try {
             console.log('[BET-WM] chip selected', {
@@ -1640,7 +1661,7 @@
         });
     }
 
-    function betEnqueueTask(fn, timeoutMs) {
+    function betEnqueueTask(fn, timeoutMs, meta) {
         try {
             if (!Array.isArray(window.__abx_bet_queue))
                 window.__abx_bet_queue = [];
@@ -1655,9 +1676,17 @@
                     fn,
                     timeoutMs: Math.max(1000, Number(timeoutMs) || 6000),
                     resolve,
-                    enqueuedAt: Date.now()
+                    enqueuedAt: Date.now(),
+                    meta: Object.assign({}, meta || {})
                 };
                 window.__abx_bet_queue.push(item);
+                try {
+                    betEmitDiag('queue_enqueue', Object.assign({}, item.meta, {
+                        seq: item.seq,
+                        timeoutMs: item.timeoutMs,
+                        queueSize: window.__abx_bet_queue.length
+                    }));
+                } catch (_) {}
                 try {
                     console.log('[BET-WM][queue] enqueue', {
                         rev: HOME_JS_REV,
@@ -1676,6 +1705,13 @@
                     }
                     window.__abx_bet_running = true;
                     try {
+                        betEmitDiag('queue_start', Object.assign({}, item.meta, {
+                            seq: item.seq,
+                            waitedMs: Date.now() - item.enqueuedAt,
+                            remain: window.__abx_bet_queue.length
+                        }));
+                    } catch (_) {}
+                    try {
                         console.log('[BET-WM][queue] start', {
                             rev: HOME_JS_REV,
                             seq: item.seq,
@@ -1685,6 +1721,13 @@
                     } catch (_) {}
                     let timeoutHandle = 0;
                     const work = Promise.resolve().then(item.fn).catch(err => {
+                        try {
+                            betEmitDiag('queue_item_exception', Object.assign({}, item.meta, {
+                                seq: item.seq,
+                                ok: 0,
+                                msg: (err && err.message) ? err.message : String(err || '')
+                            }));
+                        } catch (_) {}
                         try {
                             console.warn('[BET-WM][queue] item exception', {
                                 seq: item.seq,
@@ -1698,6 +1741,13 @@
                         new Promise(done => {
                             timeoutHandle = setTimeout(() => {
                             try {
+                                betEmitDiag('queue_timeout', Object.assign({}, item.meta, {
+                                    seq: item.seq,
+                                    ok: 0,
+                                    timeoutMs: item.timeoutMs
+                                }));
+                            } catch (_) {}
+                            try {
                                 if (console && console.warn)
                                         console.warn('[BET-WM][queue] timeout', { seq: item.seq, timeoutMs: item.timeoutMs });
                             } catch (_) {}
@@ -1707,6 +1757,12 @@
                     ]).then(result => {
                         if (timeoutHandle)
                             clearTimeout(timeoutHandle);
+                        try {
+                            betEmitDiag('queue_finish', Object.assign({}, item.meta, {
+                                seq: item.seq,
+                                ok: result ? 1 : 0
+                            }));
+                        } catch (_) {}
                         try {
                             console.log('[BET-WM][queue] finish', {
                                 rev: HOME_JS_REV,
@@ -2113,7 +2169,19 @@
             clickEl.dispatchEvent(md);
             clickEl.dispatchEvent(mu);
             clickEl.dispatchEvent(mc);
-        } catch (_) {} finally {
+        } catch (err) {
+            try {
+                betEmitDiag('click_exception', {
+                    targetId: (target && target.id) || '',
+                    amount: 0,
+                    ok: 0,
+                    x: Math.round(cx),
+                    y: Math.round(cy),
+                    msg: (err && err.message) ? err.message : String(err || '')
+                });
+            } catch (_) {}
+            return false;
+        } finally {
             if (peeled.length)
                 setTimeout(() => {
                     peeled.reverse().forEach(k => { try { k.node.style.pointerEvents = k.prevPE; } catch (_) {} });
@@ -2499,10 +2567,23 @@
                         multi: useMultiFlow ? 1 : 0
                     });
                     const stakeRoot = betResolveStakeRoot(clickTarget, root) || root;
+                    const queueMeta = {
+                        tableId: id,
+                        name: roomName,
+                        side: sideLabel,
+                        amount: amountValue,
+                        rootId: (root && root.id) || '',
+                        targetId: (target && target.id) || '',
+                        multi: useMultiFlow ? 1 : 0
+                    };
                     const runBetTask = async () => {
-                        diagPhase = useMultiFlow ? 'run_multi' : 'run_single';
+                        const confirmBtn = useMultiFlow ? betFindMultiConfirmByRoot(root) : null;
                         try {
-                            const confirmBtn = useMultiFlow ? betFindMultiConfirmByRoot(root) : null;
+                            diagPhase = useMultiFlow ? 'run_multi' : 'run_single';
+                            betEmitDiag('run_phase', Object.assign({}, queueMeta, {
+                                confirmId: (confirmBtn && confirmBtn.id) || '',
+                                msg: useMultiFlow ? 'run_multi:start' : 'run_single:start'
+                            }));
                             console.log('[BET-WM] start', {
                                 tableId: id,
                                 rootId: (root && root.id) || '',
@@ -2514,11 +2595,33 @@
                                 useMultiFlow
                             });
                         } catch (_) {}
+                        try {
                         if (useMultiFlow) {
                             const useDirectSingleChip = planResult.plan.length === 1 && planResult.plan[0] && planResult.plan[0].count === 1;
-                            const okMulti = useDirectSingleChip
-                                ? await betExecuteMultiAbxStyleAsync(amountValue, root, s, logBetWarn)
-                                : await betExecuteMultiPlanAsync(planResult.plan, target, root, rootDoc, logBetWarn);
+                            let okMulti = false;
+                            if (useDirectSingleChip) {
+                                diagPhase = 'run_multi_direct';
+                                betEmitDiag('run_phase', Object.assign({}, queueMeta, {
+                                    confirmId: (confirmBtn && confirmBtn.id) || '',
+                                    msg: 'multi_direct_single'
+                                }));
+                                okMulti = await betExecuteMultiDirectAsync(amountValue, target, root, rootDoc, logBetWarn);
+                                if (!okMulti) {
+                                    diagPhase = 'run_multi_direct_fallback';
+                                    betEmitDiag('run_phase', Object.assign({}, queueMeta, {
+                                        confirmId: (confirmBtn && confirmBtn.id) || '',
+                                        msg: 'multi_direct_single_fallback_plan'
+                                    }));
+                                    okMulti = await betExecuteMultiPlanAsync([{ value: amountValue, count: 1 }], target, root, rootDoc, logBetWarn);
+                                }
+                            } else {
+                                diagPhase = 'run_multi_plan';
+                                betEmitDiag('run_phase', Object.assign({}, queueMeta, {
+                                    confirmId: (confirmBtn && confirmBtn.id) || '',
+                                    msg: 'multi_plan'
+                                }));
+                                okMulti = await betExecuteMultiPlanAsync(planResult.plan, target, root, rootDoc, logBetWarn);
+                            }
                             if (!okMulti) {
                                 logBetWarn((useDirectSingleChip ? 'direct flow failed ' : 'multi plan failed ') +
                                     'tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue + ' rootId=' + ((root && root.id) || ''));
@@ -2557,6 +2660,11 @@
                             } catch (_) {}
                             return true;
                         }
+                        diagPhase = 'run_single_schedule';
+                        betEmitDiag('run_phase', Object.assign({}, queueMeta, {
+                            confirmId: (confirmBtn && confirmBtn.id) || '',
+                            msg: 'single_schedule'
+                        }));
                         const beforeVal = stakeRoot ? betReadStakeValue(stakeRoot, s) : null;
                         const beforeSideVal = stakeRoot ? betReadSideValue(stakeRoot, s) : null;
                         const beforeCount = stakeRoot ? betCountChips(stakeRoot, s) : 0;
@@ -2589,8 +2697,23 @@
                         });
                         sendOnce(id, sideLabel, amountValue, roomName);
                         return confirmed;
+                        } catch (err) {
+                            betEmitDiag('run_exception', Object.assign({}, queueMeta, {
+                                confirmId: (confirmBtn && confirmBtn.id) || '',
+                                ok: 0,
+                                msg: 'phase=' + diagPhase + ' ' + ((err && err.message) ? err.message : String(err || ''))
+                            }));
+                            try {
+                                console.warn('[BET-WM] run exception', {
+                                    tableId: id,
+                                    phase: diagPhase,
+                                    message: (err && err.message) ? err.message : String(err || '')
+                                });
+                            } catch (_) {}
+                            return false;
+                        }
                     };
-                    const queued = betEnqueueTask(runBetTask, useMultiFlow ? 12000 : 7000);
+                    const queued = betEnqueueTask(runBetTask, useMultiFlow ? 12000 : 7000, queueMeta);
                     if (waitDone === true)
                         return queued.then(ok => {
                             diagPhase = 'queue_done';
