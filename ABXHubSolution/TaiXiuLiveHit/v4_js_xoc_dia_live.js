@@ -3573,16 +3573,77 @@
         chipToChip: 80, // giữa các vòng click liên tiếp
         afterChipsBeforeConfirm: 260 // giữ nguyên nhịp xác nhận như trước
     };
+    var _txLastErr = '';
+    function txSetErr(msg) {
+        _txLastErr = String(msg || '').trim() || 'click_failed';
+        return false;
+    }
 
     // Tìm node theo phần đuôi tail (dùng tailOf + walkNodes bên trên)
     function txFindNodeByTailEnd(tailEnd) {
         var tailLower = String(tailEnd || '').toLowerCase();
+        if (!tailLower)
+            return null;
+        var lastSeg = '';
+        var segs = tailLower.split('/');
+        if (segs.length)
+            lastSeg = segs[segs.length - 1];
         var hit = null;
+        var hitScore = -1e9;
         walkNodes(function (n) {
-            if (hit)
-                return;
             var t = tailOf(n, 16);
-            if (String(t || '').toLowerCase().endsWith(tailLower)) {
+            var tl = String(t || '').toLowerCase();
+            if (!tl)
+                return;
+            var score = -1e9;
+            if (tl.endsWith(tailLower))
+                score = 100;
+            else if (tl.indexOf(tailLower) !== -1)
+                score = 80;
+            else if (lastSeg && tl.indexOf(lastSeg) !== -1)
+                score = 60;
+            if (score < 0)
+                return;
+            if (clickable(n))
+                score += 20;
+            if (n.activeInHierarchy !== false)
+                score += 5;
+            if (score > hitScore) {
+                hitScore = score;
+                hit = n;
+            }
+        });
+        return hit;
+    }
+
+    function txFindNodeByAnyTailEnds(cands) {
+        if (!cands || !cands.length)
+            return null;
+        for (var i = 0; i < cands.length; i++) {
+            var n = txFindNodeByTailEnd(cands[i]);
+            if (n)
+                return n;
+        }
+        return null;
+    }
+
+    function txFindNodeByNameTailRegex(re) {
+        var hit = null;
+        var best = -1e9;
+        walkNodes(function (n) {
+            var nm = String((n && n.name) || '').toLowerCase();
+            var tl = String(tailOf(n, 16) || '').toLowerCase();
+            if (!re.test(nm) && !re.test(tl))
+                return;
+            var score = 0;
+            if (clickable(n))
+                score += 20;
+            if (nm && re.test(nm))
+                score += 8;
+            if (tl && re.test(tl))
+                score += 6;
+            if (score > best) {
+                best = score;
                 hit = n;
             }
         });
@@ -3592,17 +3653,57 @@
     // Scan xem chip nào ở menuMoney đang tồn tại
     function txScanMenuChips() {
         var out = [];
+        var seen = {};
         for (var i = 0; i < TX_MENU_CHIP_CONFIG.length; i++) {
             var cfg = TX_MENU_CHIP_CONFIG[i];
             var n = txFindNodeByTailEnd(cfg.tailEnd);
             if (!n)
                 continue;
+            seen[String(cfg.amount)] = 1;
             out.push({
                 amount: cfg.amount,
                 tailEnd: cfg.tailEnd,
                 node: n
             });
         }
+
+        // Fallback: scan động theo node name/tail trong menuMoney/btnPrices
+        var dyn = {};
+        walkNodes(function (n) {
+            var nm = String((n && n.name) || '');
+            var tl = String(tailOf(n, 16) || '').toLowerCase();
+            var keyPath = (tl.indexOf('btnprices') !== -1 || tl.indexOf('menumoney') !== -1 || tl.indexOf('btnfunctions') !== -1);
+            if (!keyPath)
+                return;
+            var text = (nm + ' ' + tl).toLowerCase();
+            var m = text.match(/(\d+)\s*(k|m)\b/i);
+            if (!m)
+                return;
+            var amount = parseInt(m[1], 10);
+            if (isNaN(amount))
+                return;
+            amount = amount * ((String(m[2]).toUpperCase() === 'M') ? 1000000 : 1000);
+            if (!(amount > 0))
+                return;
+            var k = String(amount);
+            if (seen[k] || dyn[k])
+                return;
+            if (!clickable(n))
+                return;
+            dyn[k] = {
+                amount: amount,
+                tailEnd: 'dynamic:' + nm,
+                node: n
+            };
+        });
+        for (var kk in dyn) {
+            if (Object.prototype.hasOwnProperty.call(dyn, kk))
+                out.push(dyn[kk]);
+        }
+
+        out.sort(function (a, b) {
+            return b.amount - a.amount;
+        });
         return out;
     }
 
@@ -3648,35 +3749,44 @@
     }
 
     function txClickSide(side) {
-        var tailEnd = (String(side || '').toUpperCase() === 'TAI')
-         ? TX_TAIL_BTN_TAI
-         : TX_TAIL_BTN_XIU;
-
-        var n = txFindNodeByTailEnd(tailEnd);
+        var isTai = (String(side || '').toUpperCase() === 'TAI');
+        var tails = isTai ? [TX_TAIL_BTN_TAI, 'nodeSprite/btnCuocTai', 'btnCuocTai']
+             : [TX_TAIL_BTN_XIU, 'nodeSprite/btnCuocXiu', 'btnCuocXiu'];
+        var n = txFindNodeByAnyTailEnds(tails);
         if (!n) {
-            console.warn('[cwBetTx] Không tìm thấy nút cửa', side, 'tailEnd =', tailEnd);
-            return false;
+            n = txFindNodeByNameTailRegex(isTai ? /btncuoctai|cuoctai|buttontai/ : /btncuocxiu|cuocxiu|buttonxiu/);
+        }
+        if (!n) {
+            console.warn('[cwBetTx] Không tìm thấy nút cửa', side);
+            return txSetErr('side_not_found_' + side);
         }
         var node = clickableOf(n, 5);
         var ok = emitClick(node);
         if (!ok) {
             console.warn('[cwBetTx] click cửa thất bại', side);
-            return false;
+            return txSetErr('side_click_failed_' + side);
         }
         return true;
     }
 
     async function txClickDatCuoc() {
-        var n = txFindNodeByTailEnd(TX_TAIL_BTN_DATCUOC);
+        var n = txFindNodeByAnyTailEnds([
+                    TX_TAIL_BTN_DATCUOC,
+                    'btnFunctions/btnDatCuoc',
+                    'btnDatCuoc'
+                ]);
+        if (!n) {
+            n = txFindNodeByNameTailRegex(/btndatcuoc|datcuoc|xacnhan|confirm/);
+        }
         if (!n) {
             console.warn('[cwBetTx] Không tìm thấy nút ĐẶT CƯỢC');
-            return false;
+            return txSetErr('datcuoc_not_found');
         }
         var node = clickableOf(n, 5);
         var ok = emitClick(node);
         if (!ok) {
             console.warn('[cwBetTx] click ĐẶT CƯỢC thất bại');
-            return false;
+            return txSetErr('datcuoc_click_failed');
         }
         await sleep(180);
         return true;
@@ -3685,20 +3795,21 @@
     // ĐẶT CƯỢC: dùng đúng flow cũ đã hoạt động ổn:
     // chọn cửa 1 lần -> bấm chip theo plan -> xác nhận 1 lần.
     async function cwBetTxByChip(side, amount) {
+        _txLastErr = '';
         side = String(side || '').toUpperCase();
         side = (side === 'TAI') ? 'TAI' : 'XIU';
 
         var amt = Math.max(0, Math.floor(Number(amount) || 0));
         if (!amt) {
             console.warn('[cwBetTx] amount = 0');
-            return false;
+            return txSetErr('amount_invalid');
         }
 
         // 1) Lấy danh sách chip ở menuMoney
         var chips = txScanMenuChips();
         if (!chips.length) {
             console.warn('[cwBetTx] Không tìm thấy chip menuMoney nào');
-            return false;
+            return txSetErr('chip_not_found');
         }
 
         // 2) Lập plan tách số tiền
@@ -3707,7 +3818,7 @@
         var rest = plan.rest;
         if (!steps.length || rest > 0) {
             console.warn('[cwBetTx] Không lập được plan cho amount =', amt, 'rest =', rest);
-            return false;
+            return txSetErr('chip_plan_invalid');
         }
 
         try {
@@ -3735,7 +3846,7 @@
                 var okChip = txClickMenuChipOnce(step.chip);
                 if (!okChip) {
                     console.warn('[cwBetTx] click chip thất bại', step.chip.amount);
-                    return false;
+                    return txSetErr('chip_click_failed_' + step.chip.amount);
                 }
                 await sleep(TX_BET_DELAY.chipToChip);
             }
@@ -3776,7 +3887,20 @@
 
                 var ok = await cwBetTxByChip(side, amt);
                 if (!ok) {
-                    throw new Error('click_failed');
+                    // fallback: thử engine cũ nếu nhánh TX-tail bị lệch trên 1 số host
+                    try {
+                        if (typeof window.cwBet === 'function') {
+                            var okClassic = await window.cwBet(side, amt);
+                            if (okClassic) {
+                                await sleep(220);
+                                await txClickDatCuoc().catch(function () {});
+                                ok = true;
+                            }
+                        }
+                    } catch (_) {}
+                }
+                if (!ok) {
+                    throw new Error(_txLastErr || 'click_failed');
                 }
 
                 var changed = true;
