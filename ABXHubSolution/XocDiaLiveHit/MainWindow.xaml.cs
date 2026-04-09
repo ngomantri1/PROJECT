@@ -894,6 +894,12 @@ Ví dụ không hợp lệ:
             BetGrid.ItemsSource = _betPage;
             // gọi async sau khi cửa sổ đã load
             this.Loaded += MainWindow_Loaded;
+            this.PreviewKeyDown += MainWindow_PreviewKeyDown;
+            if (Web != null)
+            {
+                Web.PreviewKeyDown += MainWindow_PreviewKeyDown;
+                Web.KeyDown += MainWindow_PreviewKeyDown;
+            }
 
         }
 
@@ -1038,15 +1044,41 @@ Ví dụ không hợp lệ:
             return System.IO.Path.Combine(aiDir, "ngram_state_v1.json");
         }
 
+        private static bool IsGameUrlLike(string? url)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(url)) return false;
+                if (!Uri.TryCreate(url, UriKind.Absolute, out var u)) return false;
+
+                var host = u.Host ?? string.Empty;
+                if (host.StartsWith("games.", StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                // Một số nhà cái render game trực tiếp ở portal domain (không qua games.*)
+                // Ví dụ: https://v.hitclub.vg/?a=hitclub
+                if (host.Equals("v.hitclub.vg", StringComparison.OrdinalIgnoreCase))
+                {
+                    var q = u.Query ?? string.Empty;
+                    if (q.IndexOf("a=hitclub", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return true;
+                }
+
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private bool GetIsGameByUrlFallback()
         {
             try
             {
                 var src = Web?.Source?.ToString() ?? "";
                 if (string.IsNullOrWhiteSpace(src)) return _isGameUi;
-                var host = new Uri(src).Host;
-                // games.* => đang ở trang game
-                return host.StartsWith("games.", StringComparison.OrdinalIgnoreCase);
+                return IsGameUrlLike(src);
             }
             catch { return _isGameUi; }
         }
@@ -2656,9 +2688,8 @@ Ví dụ không hợp lệ:
                 if (settings != null)
                 {
                     settings.IsWebMessageEnabled = true;
-                    // (tuỳ chọn khác, giữ nguyên nếu bạn không cần)
-                    // settings.AreDefaultContextMenusEnabled = false;
-                    // settings.AreDevToolsEnabled = true;
+                    settings.AreDevToolsEnabled = true;
+                    settings.AreBrowserAcceleratorKeysEnabled = true;
                 }
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
@@ -2762,6 +2793,38 @@ Ví dụ không hợp lệ:
             }
 
             return targetDir;
+        }
+
+        private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.F12 && e.SystemKey != Key.F12) return;
+            if (TryOpenDevTools())
+                e.Handled = true;
+        }
+
+        private bool TryOpenDevTools()
+        {
+            try
+            {
+                var core = Web?.CoreWebView2;
+                if (core == null) return false;
+
+                var settings = core.Settings;
+                if (settings != null)
+                {
+                    settings.AreDevToolsEnabled = true;
+                    settings.AreBrowserAcceleratorKeysEnabled = true;
+                }
+
+                core.OpenDevToolsWindow();
+                Log("[DevTools] opened by F12");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log("[DevTools] open failed: " + ex.Message);
+                return false;
+            }
         }
 
 
@@ -4299,9 +4362,7 @@ Ví dụ không hợp lệ:
 
         private async Task StartGameNavWatchdogAsync(string? url)
         {
-            if (string.IsNullOrWhiteSpace(url) ||
-                !Uri.TryCreate(url, UriKind.Absolute, out var u) ||
-                !u.Host.StartsWith("games.", StringComparison.OrdinalIgnoreCase))
+            if (!IsGameUrlLike(url))
                 return;
 
             var gen = Interlocked.Increment(ref _gameNavWatchdogGen);
@@ -4311,8 +4372,7 @@ Ví dụ không hợp lệ:
             var cur = Web?.Source?.ToString() ?? "";
             try
             {
-                if (Uri.TryCreate(cur, UriKind.Absolute, out var cu) &&
-                    !cu.Host.StartsWith("games.", StringComparison.OrdinalIgnoreCase))
+                if (!IsGameUrlLike(cur))
                     return;
             }
             catch { }
@@ -4335,9 +4395,7 @@ Ví dụ không hợp lệ:
                 try
                 {
                     var src = Web?.Source?.ToString() ?? "";
-                    if (!string.IsNullOrWhiteSpace(src) &&
-                        Uri.TryCreate(src, UriKind.Absolute, out var u) &&
-                        u.Host.StartsWith("games.", StringComparison.OrdinalIgnoreCase))
+                    if (IsGameUrlLike(src))
                     {
                         _lastGameUrl = src;
                         return true;
