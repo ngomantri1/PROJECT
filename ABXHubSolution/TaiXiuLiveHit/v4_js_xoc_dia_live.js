@@ -2427,6 +2427,11 @@
     var _lastSession = '';
     var _diagNoProgCount = 0;
     var _diagNoTotalsCount = 0;
+    var _cdLastTail = '';
+    var _cdLastSec = null;
+    var _cdStuckCount = 0;
+    var _cdZeroHoldUntil = 0;
+    var _cdLastSeenAt = 0;
 
     function shallowChanged(obj) {
         var s = '';
@@ -2440,13 +2445,340 @@
         return false;
     }
 
-    function readProgressVal() {
+    function nodeRectSafeBridge(node) {
         try {
-            if (typeof window.__cw_lastProg === 'number') {
-                return window.__cw_lastProg;
+            if (!node || !node.convertToWorldSpaceAR) {
+                return {
+                    x: 0,
+                    y: 0,
+                    w: 0,
+                    h: 0
+                };
+            }
+            var size = node.getContentSize ? node.getContentSize() : null;
+            var w = size && typeof size.width === 'number' ? size.width : 0;
+            var h = size && typeof size.height === 'number' ? size.height : 0;
+            var p = node.convertToWorldSpaceAR(cc.v2(0, 0));
+            return {
+                x: p.x - w / 2,
+                y: p.y - h / 2,
+                w: w,
+                h: h
+            };
+        } catch (_) {
+            return {
+                x: 0,
+                y: 0,
+                w: 0,
+                h: 0
+            };
+        }
+    }
+
+    function clamp01Bridge(x) {
+        x = Number(x);
+        if (!isFinite(x))
+            return null;
+        if (x < 0)
+            return 0;
+        if (x > 1)
+            return 1;
+        return x;
+    }
+
+    function nodeTextSafeBridge(node) {
+        try {
+            var out = '';
+            var lb = getComp(node, cc.Label);
+            var rt = getComp(node, cc.RichText);
+            if (lb) {
+                if (lb.string != null)
+                    out = String(lb.string);
+                else if (lb._string != null)
+                    out = String(lb._string);
+            }
+            if (!out && rt) {
+                if (rt.string != null)
+                    out = String(rt.string);
+                else if (rt._string != null)
+                    out = String(rt._string);
+            }
+            return String(out || '');
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function nodeActiveSafeBridge(node) {
+        try {
+            if (!node)
+                return false;
+            if (typeof node.activeInHierarchy === 'boolean')
+                return !!node.activeInHierarchy;
+            if (typeof node.active === 'boolean')
+                return !!node.active;
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function collectLabelNodesBridge() {
+        var out = [];
+        try {
+            walkNodes(function (n) {
+                if (!n || !nodeActiveSafeBridge(n))
+                    return;
+                var lb = getComp(n, cc.Label);
+                var rt = getComp(n, cc.RichText);
+                if (!lb && !rt)
+                    return;
+                var text = nodeTextSafeBridge(n);
+                var r = nodeRectSafeBridge(n);
+                out.push({
+                    text: text,
+                    x: r.x,
+                    y: r.y,
+                    w: r.w,
+                    h: r.h,
+                    tail: tailOf(n, 16)
+                });
+            });
+        } catch (_) {}
+        return out;
+    }
+
+    function normalizeSeqTx(seq) {
+        return String(seq || '').toUpperCase().replace(/[^TX]/g, '');
+    }
+
+    function finalizeCountdownSec(sec, src, tail) {
+        var n = parseInt(sec, 10);
+        if (isNaN(n))
+            return null;
+        if (n < 0)
+            n = 0;
+        if (n > 45)
+            n = 45;
+
+        var now = Date.now();
+        if (src !== 'label_scan') {
+            if (typeof _cdLastSec === 'number') {
+                var near = Math.abs(n - _cdLastSec) <= 2;
+                var nearZero = (_cdLastSec <= 1 && n <= 3);
+                if (!near && !nearZero)
+                    return null;
+            }
+
+            // Vừa về 0 thì giữ 0 một nhịp ngắn để tránh dính nguồn countdown sai.
+            if (_cdZeroHoldUntil > now && n >= 20) {
+                return {
+                    sec: 0,
+                    src: 'zero_hold',
+                    tail: tail || ''
+                };
+            }
+        }
+
+        if (n <= 0)
+            _cdZeroHoldUntil = now + 5000;
+
+        return {
+            sec: n,
+            src: src || 'unknown',
+            tail: tail || ''
+        };
+    }
+
+    function scoreCountdownCandidate(c) {
+        var score = 0;
+        var tail = String(c.tail || '').toLowerCase();
+        var sec = Number(c.sec);
+        if (tail.indexOf('countdownnode') !== -1)
+            score += 80;
+        if (tail.indexOf('countdown') !== -1 || tail.indexOf('count_down') !== -1 || tail.indexOf('timer') !== -1)
+            score += 30;
+        if (tail.indexOf('txgamelive') !== -1 && tail.indexOf('bordertabble') !== -1)
+            score += 18;
+        if (tail.indexOf('nodefont') !== -1)
+            score += 8;
+        if (tail.indexOf('chat') !== -1 || tail.indexOf('contentchat') !== -1 || tail.indexOf('tip') !== -1 ||
+            tail.indexOf('input') !== -1 || tail.indexOf('moneylabel') !== -1 || tail.indexOf('nameuser') !== -1 ||
+            tail.indexOf('lbsesionid') !== -1 || tail.indexOf('session') !== -1) {
+            score -= 45;
+        }
+        if (sec >= 0 && sec <= 45)
+            score += 10;
+        else
+            score -= 30;
+
+        var cx = Number(c.x || 0) + Number(c.w || 0) / 2;
+        var cy = Number(c.y || 0) + Number(c.h || 0) / 2;
+        if (cx > 80 && cx < 1400)
+            score += 3;
+        if (cy > 80 && cy < 900)
+            score += 3;
+        if (Number(c.w || 0) >= 8 && Number(c.h || 0) >= 8)
+            score += 2;
+        if (_cdLastTail && tail === _cdLastTail)
+            score += 6;
+        if (typeof _cdLastSec === 'number' && Math.abs(sec - _cdLastSec) <= 1)
+            score += 3;
+        return score;
+    }
+
+    function pickCountdownByLabelScan() {
+        try {
+            var labels = collectLabelNodesBridge();
+            if (!labels || !labels.length)
+                return null;
+            var exactCands = [];
+            var cands = [];
+            for (var i = 0; i < labels.length; i++) {
+                var l = labels[i];
+                var raw = String(l.text || '').trim();
+                if (!raw)
+                    continue;
+                // Tránh bắt nhầm label tiền/chuỗi dài có chứa số.
+                if (raw.length > 4 && !/^\D*\d{1,2}\D*$/.test(raw))
+                    continue;
+                var m = raw.match(/(\d{1,2})/);
+                if (!m)
+                    continue;
+                var sec = parseInt(m[1], 10);
+                if (isNaN(sec) || sec < 0 || sec > 60)
+                    continue;
+                var tail = String(l.tail || '').toLowerCase();
+                var hasTimerKey = (tail.indexOf('countdownnode') !== -1 ||
+                        tail.indexOf('countdown') !== -1 ||
+                        tail.indexOf('count_down') !== -1 ||
+                        tail.indexOf('timer') !== -1);
+                if (!hasTimerKey && !(_cdLastTail && tail === _cdLastTail))
+                    continue;
+
+                var c = {
+                    sec: sec,
+                    text: raw,
+                    tail: tail,
+                    x: l.x,
+                    y: l.y,
+                    w: l.w,
+                    h: l.h
+                };
+                c.score = scoreCountdownCandidate(c);
+                if (tail.indexOf('txgamelive') !== -1 && tail.indexOf('countdownnode') !== -1)
+                    exactCands.push(c);
+                else
+                    cands.push(c);
+            }
+            var bucket = exactCands.length ? exactCands : cands;
+            if (!bucket.length)
+                return null;
+            bucket.sort(function (a, b) {
+                return b.score - a.score;
+            });
+            var pick = bucket[0];
+            if (!pick || pick.score < 1)
+                return null;
+
+            if (_cdLastTail === pick.tail && _cdLastSec === pick.sec)
+                _cdStuckCount++;
+            else
+                _cdStuckCount = 0;
+
+            if (_cdStuckCount >= 4 && bucket.length > 1) {
+                for (var j = 1; j < bucket.length; j++) {
+                    var alt = bucket[j];
+                    if (!alt)
+                        continue;
+                    if (alt.score + 8 < pick.score)
+                        continue;
+                    if (alt.tail !== pick.tail || alt.sec !== pick.sec) {
+                        pick = alt;
+                        _cdStuckCount = 0;
+                        break;
+                    }
+                }
+            }
+
+            _cdLastTail = pick.tail || '';
+            _cdLastSec = pick.sec;
+            _cdLastSeenAt = Date.now();
+            return pick;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function readProgressInfo() {
+        try {
+            var byLabel = pickCountdownByLabelScan();
+            if (byLabel && typeof byLabel.sec === 'number') {
+                var secOk = finalizeCountdownSec(byLabel.sec, 'label_scan', byLabel.tail || '');
+                if (secOk && typeof secOk.sec === 'number') {
+                    return {
+                        prog: clamp01Bridge(secOk.sec / 45),
+                        sec: secOk.sec,
+                        src: secOk.src || 'label_scan',
+                        tail: secOk.tail || byLabel.tail || ''
+                    };
+                }
             }
         } catch (_) {}
-        return null;
+
+        // KHÔNG fallback sang collectProgress / cache_prog để tránh nhảy sai countdown (ví dụ 0s -> 39s).
+        // Chỉ giữ giá trị cũ trong khoảng ngắn nếu label mất tạm thời.
+        try {
+            if (typeof _cdLastSec === 'number') {
+                if (_cdLastSec <= 0) {
+                    return {
+                        prog: 0,
+                        sec: 0,
+                        src: 'label_hold_zero',
+                        tail: _cdLastTail || ''
+                    };
+                }
+                if (_cdLastSeenAt > 0 && (Date.now() - _cdLastSeenAt) <= 1200) {
+                    var secCache = _cdLastSec;
+                    if (secCache < 0)
+                        secCache = 0;
+                    if (secCache > 45)
+                        secCache = 45;
+                    return {
+                        prog: clamp01Bridge(secCache / 45),
+                        sec: secCache,
+                        src: 'label_cache',
+                        tail: _cdLastTail || ''
+                    };
+                }
+            }
+        } catch (_) {}
+
+        try {
+            if (_cdZeroHoldUntil > Date.now() && typeof _cdLastSec === 'number' && _cdLastSec <= 0) {
+                return {
+                    prog: 0,
+                    sec: 0,
+                    src: 'zero_hold',
+                    tail: _cdLastTail || ''
+                };
+            }
+        } catch (_) {}
+
+        return {
+            prog: null,
+            sec: null,
+            src: 'none',
+            tail: ''
+        };
+    }
+
+    function readProgressVal() {
+        var info = readProgressInfo();
+        try {
+            window.__cw_progSrc = info.src || 'none';
+        } catch (_) {}
+        return info.prog;
     }
 
     // Đọc tổng tiền an toàn: lấy nền từ totals() mới nhất (tick)
@@ -2543,23 +2875,105 @@
         }
     };
 
-    function readSeqSafe() {
-        // Ưu tiên dùng cache đã export ra global từ tick()
+    function readSeqFromHistorySpritesGeneric() {
+        try {
+            var cells = [];
+            walkNodes(function (n) {
+                if (!n || !nodeActiveSafeBridge(n))
+                    return;
+                var sp = getComp(n, cc.Sprite);
+                if (!sp || !sp.spriteFrame)
+                    return;
+                var sf = String(sp.spriteFrame.name || '').toLowerCase();
+                if (!sf)
+                    return;
+                var ch = '';
+                if (sf.indexOf('taiden') !== -1 || sf.indexOf('tai') !== -1 || sf.indexOf('black') !== -1 || sf.indexOf('den') !== -1)
+                    ch = 'T';
+                else if (sf.indexOf('xiutrang') !== -1 || sf.indexOf('xiu') !== -1 || sf.indexOf('white') !== -1 || sf.indexOf('trang') !== -1)
+                    ch = 'X';
+                if (!ch)
+                    return;
+                var tail = String(tailOf(n, 16) || '').toLowerCase();
+                if (tail.indexOf('listhistory') === -1 && tail.indexOf('/history/') === -1 && tail.indexOf('/lsp/') === -1)
+                    return;
+                var r = nodeRectSafeBridge(n);
+                cells.push({
+                    ch: ch,
+                    x: r.x + r.w / 2,
+                    y: r.y + r.h / 2
+                });
+            });
+
+            if (!cells.length)
+                return '';
+            var ys = cells.map(function (c) {
+                return c.y;
+            }).sort(function (a, b) {
+                return a - b;
+            });
+            var mid = ys[Math.floor(ys.length / 2)] || 0;
+            var row = cells.filter(function (c) {
+                return Math.abs(c.y - mid) <= 26;
+            });
+            if (row.length < 6)
+                row = cells.slice();
+            row.sort(function (a, b) {
+                return a.x - b.x;
+            });
+            var seq = '';
+            for (var i = 0; i < row.length; i++)
+                seq += row[i].ch;
+            seq = normalizeSeqTx(seq);
+            return seq.length >= 3 ? seq : '';
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function readSeqInfo() {
         try {
             if (typeof window.__cw_lastSeq === 'string' && window.__cw_lastSeq.length) {
-                return window.__cw_lastSeq;
+                var cached = normalizeSeqTx(window.__cw_lastSeq);
+                if (cached.length)
+                    return {
+                        seq: cached,
+                        src: 'cache_seq'
+                    };
             }
         } catch (_) {}
 
-        // Fallback: gọi lại readTKSeq() trực tiếp
         try {
             if (typeof readTKSeq === 'function') {
                 var r = readTKSeq();
-                return (r && r.seq) ? r.seq : '';
+                var fromTk = normalizeSeqTx(r && r.seq ? r.seq : '');
+                if (fromTk.length)
+                    return {
+                        seq: fromTk,
+                        src: 'readTKSeq'
+                    };
             }
         } catch (_) {}
 
-        return '';
+        var generic = readSeqFromHistorySpritesGeneric();
+        if (generic.length)
+            return {
+                seq: generic,
+                src: 'sprite_scan'
+            };
+
+        return {
+            seq: '',
+            src: 'none'
+        };
+    }
+
+    function readSeqSafe() {
+        var info = readSeqInfo();
+        try {
+            window.__cw_seqSrc = info.src || 'none';
+        } catch (_) {}
+        return info.seq || '';
     }
 
     function readSessionSafe() {
@@ -2660,75 +3074,134 @@
 
     window.readSessionSafe = readSessionSafe;
 
-    // NEW: đọc Username an toàn theo tail Cocos
-    function readUsernameSafe() {
-        try {
-            // helper: tìm node theo tail Cocos
-            function findByTail(tail) {
-                if (!tail)
-                    return null;
-
-                // ưu tiên các hàm ông chủ đã tiêm
-                if (window.findNodeByTailCompat)
-                    return window.findNodeByTailCompat(tail);
-                if (window.__abx_findNodeByTail)
-                    return window.__abx_findNodeByTail(tail);
-
-                // fallback: tự lần từ scene
-                var scene = getSceneSafeBridge();
-                if (!scene)
-                    return null;
-
-                var parts = String(tail).split('/').filter(Boolean);
-                if (parts[0] === scene.name)
-                    parts.shift();
-
-                var node = scene;
-                for (var i = 0; i < parts.length; i++) {
-                    var name = parts[i];
-                    var kids = node.children || node._children || [];
-                    var found = null;
-                    for (var j = 0; j < kids.length; j++) {
-                        if (kids[j] && kids[j].name === name) {
-                            found = kids[j];
-                            break;
-                        }
-                    }
-                    if (!found)
-                        return null;
-                    node = found;
-                }
-                return node;
-            }
-
-            function getNodeText(node) {
-                if (!node || !node.getComponent)
-                    return '';
-                var lbl = node.getComponent(cc.Label);
-                if (lbl && lbl.string != null)
-                    return String(lbl.string);
-                var rt = node.getComponent(cc.RichText);
-                if (rt && rt.string != null)
-                    return String(rt.string);
-                return '';
-            }
-
-            // tail Username
-            var tail = 'MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/NameUser';
-            var node = findByTail(tail);
-            if (!node)
-                return '';
-
-            var txt = getNodeText(node) || '';
-            txt = String(txt).trim();
-            if (!txt)
-                return '';
-
-            // chuẩn hoá khoảng trắng
-            return txt.replace(/\s+/g, ' ');
-        } catch (_) {
-            return '';
+    // NEW: read username with multi-source fallback
+    function readUsernameInfo() {
+        function normalizeUser(s) {
+            return String(s || '').trim().replace(/\s+/g, ' ');
         }
+        function isLikelyUser(s) {
+            var t = normalizeUser(s);
+            if (!t || t.length < 3 || t.length > 32)
+                return false;
+            if (/^\d{1,2}s?$/i.test(t))
+                return false;
+            if (/^(tai|xiu|ngung|cho|cuoc|dat|tip)$/i.test(t))
+                return false;
+            if (!/^[A-Za-z0-9_.\- ]+$/.test(t))
+                return false;
+            return true;
+        }
+        function findByTail(tail) {
+            if (!tail)
+                return null;
+            if (window.findNodeByTailCompat)
+                return window.findNodeByTailCompat(tail);
+            if (window.__abx_findNodeByTail)
+                return window.__abx_findNodeByTail(tail);
+
+            var scene = getSceneSafeBridge();
+            if (!scene)
+                return null;
+            var parts = String(tail).split('/').filter(Boolean);
+            if (parts[0] === scene.name)
+                parts.shift();
+
+            var node = scene;
+            for (var i = 0; i < parts.length; i++) {
+                var name = parts[i];
+                var kids = node.children || node._children || [];
+                var found = null;
+                for (var j = 0; j < kids.length; j++) {
+                    if (kids[j] && kids[j].name === name) {
+                        found = kids[j];
+                        break;
+                    }
+                }
+                if (!found)
+                    return null;
+                node = found;
+            }
+            return node;
+        }
+
+        try {
+            var tails = [
+                'MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/NameUser',
+                'MiniGameScene/Canvas/FooterRoomUi/Left/buttonName/NameUser',
+                'MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/lbUserName',
+                'MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/Label'
+            ];
+            for (var i = 0; i < tails.length; i++) {
+                var node = findByTail(tails[i]);
+                var txt = normalizeUser(nodeTextSafeBridge(node));
+                if (isLikelyUser(txt))
+                    return {
+                        username: txt,
+                        src: 'tail_exact'
+                    };
+            }
+        } catch (_) {}
+
+        try {
+            var labels = collectLabelNodesBridge();
+            var best = null;
+            var bestScore = -1e9;
+            for (var k = 0; k < labels.length; k++) {
+                var l = labels[k];
+                var txt2 = normalizeUser(l.text || '');
+                if (!isLikelyUser(txt2))
+                    continue;
+                var tl = String(l.tail || '').toLowerCase();
+                var sc = 0;
+                if (tl.indexOf('nameuser') !== -1)
+                    sc += 45;
+                if (tl.indexOf('buttonname') !== -1 || tl.indexOf('username') !== -1 || tl.indexOf('nick') !== -1 || tl.indexOf('account') !== -1)
+                    sc += 25;
+                if (tl.indexOf('footterroomui') !== -1 || tl.indexOf('/left/') !== -1)
+                    sc += 10;
+                if (tl.indexOf('chat') !== -1 || tl.indexOf('contentchat') !== -1 || tl.indexOf('tip') !== -1 ||
+                    tl.indexOf('moneylabel') !== -1 || tl.indexOf('popup') !== -1 || tl.indexOf('lbtotal') !== -1) {
+                    sc -= 45;
+                }
+                if (/^[A-Za-z0-9_.\-]{3,24}$/.test(txt2))
+                    sc += 15;
+                if (txt2.length >= 4 && txt2.length <= 18)
+                    sc += 8;
+                if (sc > bestScore) {
+                    bestScore = sc;
+                    best = txt2;
+                }
+            }
+            if (best && bestScore >= 12)
+                return {
+                    username: best,
+                    src: 'label_scan'
+                };
+        } catch (_) {}
+
+        try {
+            if (typeof window.__cw_lastUser === 'string' && window.__cw_lastUser.length) {
+                var last = normalizeUser(window.__cw_lastUser);
+                if (isLikelyUser(last))
+                    return {
+                        username: last,
+                        src: 'cache_user'
+                    };
+            }
+        } catch (_) {}
+
+        return {
+            username: '',
+            src: 'none'
+        };
+    }
+
+    function readUsernameSafe() {
+        var info = readUsernameInfo();
+        try {
+            window.__cw_userSrc = info.src || 'none';
+        } catch (_) {}
+        return info.username || '';
     }
 
     window.readUsernameSafe = readUsernameSafe;
@@ -2748,16 +3221,32 @@
             _lastJson = '';
 
             _pushTimer = setInterval(function () {
-                var p = readProgressVal();
+                var progInfo = readProgressInfo();
+                var p = progInfo.prog;
                 var st = (typeof window.cwStatusByProg === 'function')
                  ? window.cwStatusByProg(p)
                  : '';
 
-                // Lấy chuỗi kết quả an toàn (ưu tiên cache __cw_lastSeq)
-                var seq = readSeqSafe() || '';
+                var seqInfo = readSeqInfo();
+                var seq = seqInfo.seq || '';
                 var last = '';
                 if (seq && seq.length)
                     last = seq.slice(-1);
+
+                var userInfo = readUsernameInfo();
+                var userName = userInfo.username || '';
+
+                try {
+                    if (typeof p === 'number' && !isNaN(p))
+                        window.__cw_lastProg = p;
+                    if (seq && seq.length)
+                        window.__cw_lastSeq = seq;
+                    if (userName)
+                        window.__cw_lastUser = userName;
+                    window.__cw_progSrc = progInfo.src || 'none';
+                    window.__cw_seqSrc = seqInfo.src || 'none';
+                    window.__cw_userSrc = userInfo.src || 'none';
+                } catch (_) {}
 
                 // Mapping prog -> thời gian (giây)
                 var timeSec = null;
@@ -2789,7 +3278,12 @@
                     last: last,
                     status: String(st || ''),
                     session: (typeof readSessionSafe === 'function') ? readSessionSafe() : '',
-                    username: (typeof readUsernameSafe === 'function') ? readUsernameSafe() : '',
+                    username: userName,
+                    progSrc: progInfo.src || '',
+                    progSec: (typeof progInfo.sec === 'number') ? progInfo.sec : null,
+                    progTail: progInfo.tail || '',
+                    seqSrc: seqInfo.src || '',
+                    userSrc: userInfo.src || '',
                     ts: Date.now()
                 };
 
@@ -2805,6 +3299,11 @@
                             hasDirector: !!(window.cc && window.cc.director),
                             hasScene: !!(window.cc && window.cc.director && window.cc.director.getScene && window.cc.director.getScene()),
                             seqLen: seq ? seq.length : 0,
+                            progSrc: progInfo.src || '',
+                            progSec: (typeof progInfo.sec === 'number') ? progInfo.sec : null,
+                            progTail: progInfo.tail || '',
+                            seqSrc: seqInfo.src || '',
+                            userSrc: userInfo.src || '',
                             host: String(location.host || ''),
                             href: String(location.href || ''),
                             ts: Date.now()
@@ -2823,6 +3322,9 @@
                             reason: 'totals_null',
                             noTotalsCount: _diagNoTotalsCount,
                             seqLen: seq ? seq.length : 0,
+                            progSrc: progInfo.src || '',
+                            seqSrc: seqInfo.src || '',
+                            userSrc: userInfo.src || '',
                             host: String(location.host || ''),
                             href: String(location.href || ''),
                             ts: Date.now()

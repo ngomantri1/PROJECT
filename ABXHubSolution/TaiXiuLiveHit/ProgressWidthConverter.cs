@@ -31,11 +31,35 @@ namespace TaiXiuLiveHit
         // ===== MultiBinding =====
         public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
         {
+            values ??= Array.Empty<object>();
+
             // patterns thường gặp:
-            // [0]=ActualWidth, [1]=Percent(0..1), [2]=MinWidth (optional)
+            // [0]=ActualWidth, [1]=Percent(0..1)
+            // [0]=ActualWidth, [1]=Value, [2]=Minimum, [3]=Maximum
+            // [0]=ActualWidth, [1]=Percent(0..1), [2]=MinWidth (legacy)
             double actualWidth = ToDouble(values, 0, double.NaN);
-            double percent = ToDouble(values, 1, 0);
-            double minWidth = ToDouble(values, 2, 0);
+            double percent;
+            double minWidth = 0;
+
+            if (values != null && values.Length >= 4)
+            {
+                // Mode mới: Value/Min/Max -> quy đổi về percent
+                double value = ToDouble(values, 1, 0);
+                double minimum = ToDouble(values, 2, 0);
+                double maximum = ToDouble(values, 3, 1);
+                double range = maximum - minimum;
+
+                if (double.IsNaN(range) || range <= 0)
+                    percent = 0;
+                else
+                    percent = (value - minimum) / range;
+            }
+            else
+            {
+                // Legacy: values[1] là percent trực tiếp, values[2] là minWidth tùy chọn
+                percent = ToDouble(values, 1, 0);
+                minWidth = ToDouble(values, 2, 0);
+            }
 
             percent = Clamp01(percent);
 

@@ -2185,8 +2185,13 @@ Ví dụ không hợp lệ:
                                     string seqLen = root.TryGetProperty("seqLen", out var q1) ? q1.ToString() : "?";
                                     string noProgCount = root.TryGetProperty("noProgCount", out var n1) ? n1.ToString() : "";
                                     string noTotalsCount = root.TryGetProperty("noTotalsCount", out var n2) ? n2.ToString() : "";
+                                    string progSrc = root.TryGetProperty("progSrc", out var ps1) ? (ps1.GetString() ?? ps1.ToString()) : "";
+                                    string progSec = root.TryGetProperty("progSec", out var psec1) ? psec1.ToString() : "";
+                                    string progTail = root.TryGetProperty("progTail", out var pt1) ? (pt1.GetString() ?? pt1.ToString()) : "";
+                                    string seqSrc = root.TryGetProperty("seqSrc", out var ss1) ? (ss1.GetString() ?? ss1.ToString()) : "";
+                                    string userSrc = root.TryGetProperty("userSrc", out var us1) ? (us1.GetString() ?? us1.ToString()) : "";
 
-                                    Log($"[BridgeDiag] where={where} reason={reason} host={host} cc={hasCc} dir={hasDir} getScene={hasGetScene} scene={hasScene} seqLen={seqLen} noProg={noProgCount} noTotals={noTotalsCount} href={href}");
+                                    Log($"[BridgeDiag] where={where} reason={reason} host={host} cc={hasCc} dir={hasDir} getScene={hasGetScene} scene={hasScene} seqLen={seqLen} noProg={noProgCount} noTotals={noTotalsCount} progSrc={progSrc} progSec={progSec} seqSrc={seqSrc} userSrc={userSrc} progTail={progTail} href={href}");
                                     return;
                                 }
 
@@ -2210,7 +2215,8 @@ Ví dụ không hợp lệ:
                                             int secNow = 0;
                                             if (snap.prog.HasValue)
                                             {
-                                                secNow = (int)Math.Round(Math.Clamp(snap.prog.Value, 0.0, 45.0));
+                                                var ratioNow = Math.Clamp(snap.prog.Value, 0.0, 1.0);
+                                                secNow = (int)Math.Round(ratioNow * 45.0);
                                             }
 
                                             // Log khi bắt đầu phiên (sec=45), khi gần hết (sec=0),
@@ -2297,7 +2303,8 @@ Ví dụ không hợp lệ:
 
                                                 if (prog.HasValue)
                                                 {
-                                                    var sec = Math.Clamp(prog.Value, 0.0, MaxSec);
+                                                    var ratio = Math.Clamp(prog.Value, 0.0, 1.0);
+                                                    var sec = Math.Round(ratio * MaxSec);
 
                                                     if (PrgBet != null)
                                                     {
@@ -2309,7 +2316,7 @@ Ví dụ không hợp lệ:
                                                     }
 
                                                     if (LblProg != null)
-                                                        LblProg.Text = $"{(int)Math.Round(MaxSec * prog.Value)}s";
+                                                        LblProg.Text = $"{(int)sec}s";
                                                 }
                                                 else
                                                 {
