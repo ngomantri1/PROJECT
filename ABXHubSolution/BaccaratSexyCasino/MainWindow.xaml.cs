@@ -3958,17 +3958,15 @@ try{
                                 }
                                 else
                                 {
-                                    long settleSeqVersion = snap.seqVersion ?? 0;
-                                    string settleSeqEvent = snap.seqEvent ?? "";
-                                    bool seqDisplayChangedForGate = !string.Equals(seqDisplay, _baseSeqDisplay, StringComparison.Ordinal);
-                                    bool versionAdvanceForGate =
-                                        settleSeqVersion > 0 &&
-                                        (_baseSeqVersion <= 0 || settleSeqVersion > _baseSeqVersion);
-                                    if (seqDisplayChangedForGate || versionAdvanceForGate)
+                                    if (!string.Equals(seqDisplay, _baseSeqDisplay, StringComparison.Ordinal))
                                     {
-                                        bool hasSeqAdvance = versionAdvanceForGate;
+                                        long settleSeqVersion = snap.seqVersion ?? 0;
+                                        string settleSeqEvent = snap.seqEvent ?? "";
+                                        bool hasSeqAdvance = (_baseSeqVersion > 0 && settleSeqVersion > 0)
+                                            ? (settleSeqVersion > _baseSeqVersion)
+                                            : !string.Equals(seqDisplay, _baseSeqDisplay, StringComparison.Ordinal);
                                         char settleTail = seqDisplay.Length > 0 ? seqDisplay[^1] : '-';
-                                        Log($"[SEQ][GATE] hasAdvance={(hasSeqAdvance ? 1 : 0)} | displayChanged={(seqDisplayChangedForGate ? 1 : 0)} | versionAdvance={(versionAdvanceForGate ? 1 : 0)} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | baseEvt={(string.IsNullOrWhiteSpace(_baseSeqEvent) ? "-" : _baseSeqEvent)} | curLen={seqDisplay.Length} | curVer={settleSeqVersion} | curEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)} | curTail={settleTail} | pending={_pendingRows.Count}");
+                                        Log($"[SEQ][GATE] hasAdvance={(hasSeqAdvance ? 1 : 0)} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | baseEvt={(string.IsNullOrWhiteSpace(_baseSeqEvent) ? "-" : _baseSeqEvent)} | curLen={seqDisplay.Length} | curVer={settleSeqVersion} | curEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)} | curTail={settleTail} | pending={_pendingRows.Count}");
                                         if (!hasSeqAdvance)
                                         {
                                             if (_pendingRows.Count > 0)
@@ -4002,7 +4000,7 @@ try{
                                                 'P' => "PLAYER",
                                                 _ => null
                                             };
-                                            Log($"[BET][HIST][SETTLE] trigger=seq-advance | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | baseEvt={_baseSeqEvent} | curLen={seqDisplay.Length} | curVer={settleSeqVersion} | curEvt={settleSeqEvent} | tail={tail} | result={settledResult ?? "-"} | pending={_pendingRows.Count}");
+                                            Log($"[BET][HIST][SETTLE] baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | baseEvt={_baseSeqEvent} | curLen={seqDisplay.Length} | curVer={settleSeqVersion} | curEvt={settleSeqEvent} | tail={tail} | result={settledResult ?? "-"} | pending={_pendingRows.Count}");
 
                                             if (string.Equals(settledResult, "TIE", StringComparison.Ordinal))
                                             {
@@ -4017,7 +4015,7 @@ try{
                                                         seqDisplay,
                                                         settleSeqVersion,
                                                         settleSeqEvent,
-                                                        "tick-seq-advance");
+                                                        "tick-tail-change");
                                                 }
 
                                                 _lockMajorMinorUpdates = false;
@@ -4048,7 +4046,7 @@ try{
                                                         seqDisplay,
                                                         settleSeqVersion,
                                                         settleSeqEvent,
-                                                        "tick-seq-advance");
+                                                        "tick-tail-change");
                                                 }
 
                                                 _lockMajorMinorUpdates = false;
@@ -5859,12 +5857,14 @@ try{
                 Log($"[NETSEQ][BOOT] src={source} | boardLen={jsDisplay.Length} | syncLen={_netSeqDisplay.Length} | ver={_netSeqVersion} | evt={_netSeqEvent}");
             }
 
+            bool boardChanged = !string.Equals(jsDisplay, prevBoardDisplay, StringComparison.Ordinal);
+            bool combinedChanged = !string.Equals(combinedDisplay, _netSeqDisplay, StringComparison.Ordinal);
             bool combinedLonger = combinedDisplay.Length > _netSeqDisplay.Length;
             bool boardVersionAhead = jsSeqVersion > prevBoardVersion;
             bool sameLenBoardAdvance =
                 jsDisplay.Length == prevBoardDisplay.Length &&
                 boardVersionAhead &&
-                jsSeqVersion > _netSeqVersion;
+                (boardChanged || !string.Equals(boardSeqEvent ?? "", "no-change", StringComparison.OrdinalIgnoreCase));
             bool jsLooksStaleForObservedRound =
                 _netObservedTableId > 0 &&
                 (_netSeqTableId == 0 || _netObservedTableId == _netSeqTableId) &&
@@ -5874,7 +5874,7 @@ try{
                 jsDisplay.Length > _netObservedGameRound;
             bool recentNetWinner = _netLastWinnerAt != DateTime.MinValue &&
                                    (DateTime.UtcNow - _netLastWinnerAt).TotalSeconds <= 15;
-            if (combinedLonger || sameLenBoardAdvance)
+            if (combinedLonger || sameLenBoardAdvance || (combinedChanged && combinedDisplay.Length == _netSeqDisplay.Length))
             {
                 if (combinedLonger && jsLooksStaleForObservedRound)
                 {
@@ -5895,7 +5895,7 @@ try{
                     _netSeqVersion = ComputeNextSyncSeqVersion(prevNetVer, prevNetDisplay, _netSeqDisplay, Math.Max(jsSeqVersion, _netSeqDisplay.Length));
                     _netSeqEvent = string.IsNullOrWhiteSpace(boardSeqEvent) ? "js-resync" : "js-resync-" + boardSeqEvent;
                     _netSeqSource = "js-resync";
-                    string resyncReason = combinedLonger ? "len-ahead" : "ver-ahead";
+                    string resyncReason = combinedLonger ? "len-ahead" : "ver-ahead-same-len";
                     Log($"[NETSEQ][RESYNC] src={source} | boardLen={jsDisplay.Length} | boardVer={boardSeqVersion} | prevNetLen={prevNetLen} | prevNetVer={prevNetVer} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | reason={resyncReason}");
                     snap.seq = _netSeqDisplay;
                     snap.seqVersion = _netSeqVersion;
@@ -5904,7 +5904,7 @@ try{
                     return;
                 }
 
-                string keepReason = combinedLonger ? "recent-net-winner-len-ahead" : "recent-net-winner-ver-ahead";
+                string keepReason = combinedLonger ? "recent-net-winner-len-ahead" : "recent-net-winner-ver-ahead-same-len";
                 Log($"[NETSEQ][JS-AHEAD] src={source} | boardLen={jsDisplay.Length} | boardVer={boardSeqVersion} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | keep=network | reason={keepReason}");
             }
 
@@ -11310,12 +11310,26 @@ try{
                     }
                     return true;
                 }
+                bool displayAdvanced = !string.Equals(settleDisplay, row.IssuedSeqDisplay ?? "", StringComparison.Ordinal);
                 bool hasIssueVersion = (row.IssuedSeqVersion ?? 0) > 0;
                 if (hasSettleVersion && hasIssueVersion)
                 {
-                    return settleSeqVersion!.Value > row.IssuedSeqVersion!.Value;
+                    if (settleSeqVersion!.Value > row.IssuedSeqVersion!.Value)
+                        return true;
+                    if (settleSeqVersion!.Value < row.IssuedSeqVersion!.Value &&
+                        row.SawClosedAfterIssue &&
+                        displayAdvanced)
+                    {
+                        if (!advFallbackLogged)
+                        {
+                            advFallbackLogged = true;
+                            Log($"[BET][HIST][ADV-FALLBACK] reason=version-regress-display | issueVer={row.IssuedSeqVersion} | settleVer={settleSeqVersion} | issueLen={row.IssuedSeqDisplay.Length} | settleLen={settleDisplay.Length} | settleEvt={(settleSeqEvent ?? "-")}");
+                        }
+                        return true;
+                    }
+                    return false;
                 }
-                return false;
+                return displayAdvanced;
             }
 
             var pendingSnapshot = _pendingRows.ToList();
