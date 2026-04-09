@@ -511,6 +511,15 @@ namespace BaccaratSexyCasino
         private long _taskRunSeq = 0;
         private DateTime _betWebNavigatingSinceUtc = DateTime.MinValue;
         private DateTime _betWebLastNavDoneUtc = DateTime.MinValue;
+        private DateTime _lastPopupWindowRequestUtc = DateTime.MinValue;
+        private string _lastPopupWindowRequestUrl = "";
+        private DateTime _lastPopupRouteRetryUtc = DateTime.MinValue;
+        private string _lastPopupSourceLogged = "";
+        private string _lastPopupHistoryLogged = "";
+        private string _lastPopupDocReqLogged = "";
+        private string _lastPopupDocRespLogged = "";
+        private string _lastPopupPromotedUrl = "";
+        private string _lastFrameNavStartLogged = "";
         private DateTime _lastAutoStopByNavUtc = DateTime.MinValue;
 
         private readonly SemaphoreSlim _cfgWriteGate = new(1, 1);// Khoá ghi config để không bao giờ ghi song song
@@ -942,16 +951,284 @@ Ví dụ không hợp lệ:
         private const string TOP_FORWARD = @"
 (function(){
   try{
-    if (window.__abxTopForward) return; window.__abxTopForward = 1;
-    window.addEventListener('message', function(ev){
+    function __abxPost(data){
       try{
-        var d = ev && ev.data; if(!d) return;
-        var s = (typeof d==='string') ? d : JSON.stringify(d);
+        var s = (typeof data==='string') ? data : JSON.stringify(data);
         if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage){
           window.chrome.webview.postMessage(s);
+          return;
         }
       }catch(_){}
-    }, true);
+      try{ parent.postMessage(data, '*'); }catch(__){}
+    }
+
+    if (!window.__abxTopForward){
+      window.__abxTopForward = 1;
+      window.addEventListener('message', function(ev){
+        try{
+          var d = ev && ev.data; if(!d) return;
+          __abxPost(d);
+        }catch(_){}
+      }, true);
+    }
+
+    if (window.__abxRouteTap) return;
+    window.__abxRouteTap = 1;
+    var __abxSeen = Object.create(null);
+
+    function __abxAbs(u){
+      try{
+        u = String(u || '').trim();
+        if (!u) return '';
+        return new URL(u, location.href).href;
+      }catch(_){
+        try{ return String(u || '').trim(); }catch(__){ return ''; }
+      }
+    }
+
+    function __abxInteresting(u){
+      try{
+        u = String(u || '').toLowerCase();
+        return (
+          u.indexOf('/pages/game/') >= 0 ||
+          u.indexOf('/player/webmain.jsp') >= 0 ||
+          u.indexOf('/player/singlebactable.jsp') >= 0 ||
+          u.indexOf('/player/gamehall.jsp') >= 0 ||
+          u.indexOf('/player/login/apilogin') >= 0 ||
+          u.indexOf('bpweb.') >= 0 ||
+          u.indexOf('jlyss') >= 0
+        );
+      }catch(_){ return false; }
+    }
+
+    function __abxRoute(kind, url, extra){
+      try{
+        var abs = __abxAbs(url);
+        if (!abs || !__abxInteresting(abs)) return;
+        var key = String(kind || '') + '|' + abs;
+        var now = Date.now();
+        var last = __abxSeen[key] || 0;
+        if ((now - last) < 1000) return;
+        __abxSeen[key] = now;
+        __abxPost({
+          abx: 'route_evt',
+          kind: String(kind || ''),
+          url: abs,
+          href: String(location.href || ''),
+          ready: String(document.readyState || ''),
+          extra: String(extra || ''),
+          ts: now
+        });
+      }catch(_){}
+    }
+
+    function __abxIsGameApiLogin(u){
+      try{
+        u = String(u || '').toLowerCase();
+        if (!u) return false;
+        return u.indexOf('gamecenter/gameapi/login') >= 0;
+      }catch(_){ return false; }
+    }
+
+    function __abxPickGameUrl(obj){
+      try{
+        if (!obj || typeof obj !== 'object') return '';
+        var data = obj.data || {};
+        var u = '';
+        try{ u = String(data.game_url || '').trim(); }catch(_){ u = ''; }
+        if (!u){
+          try{
+            var arr = data.url;
+            if (arr && arr.length){
+              var first = arr[0];
+              if (typeof first === 'string') u = String(first || '').trim();
+              else if (first && typeof first === 'object') u = String(first.url || '').trim();
+            }
+          }catch(_){}
+        }
+        return __abxAbs(u);
+      }catch(_){ return ''; }
+    }
+
+    var __abxGameApiSeen = Object.create(null);
+    function __abxEmitGameApi(apiUrl, payload, hook){
+      try{
+        var apiAbs = __abxAbs(apiUrl);
+        if (!__abxIsGameApiLogin(apiAbs)) return;
+        var txt = '';
+        if (typeof payload === 'string') txt = payload;
+        else if (payload != null) txt = JSON.stringify(payload);
+        if (!txt) return;
+        var obj = null;
+        try{ obj = JSON.parse(txt); }catch(_){ return; }
+        var launch = __abxPickGameUrl(obj);
+        if (!launch) return;
+        var key = String(hook || '') + '|' + launch;
+        var now = Date.now();
+        var last = __abxGameApiSeen[key] || 0;
+        if ((now - last) < 1200) return;
+        __abxGameApiSeen[key] = now;
+        __abxPost({
+          abx: 'game_api_login',
+          apiUrl: apiAbs,
+          launchUrl: launch,
+          hook: String(hook || ''),
+          href: String(location.href || ''),
+          ts: now
+        });
+        __abxRoute('game_api_login', launch, 'hook=' + String(hook || ''));
+      }catch(_){}
+    }
+
+    __abxRoute('doc.init', location.href, '');
+
+    try{
+      var __push = history.pushState;
+      if (__push) history.pushState = function(state, title, url){
+        try{ if (url != null) __abxRoute('history.pushState', url, ''); }catch(_){}
+        return __push.apply(history, arguments);
+      };
+    }catch(_){}
+    try{
+      var __replace = history.replaceState;
+      if (__replace) history.replaceState = function(state, title, url){
+        try{ if (url != null) __abxRoute('history.replaceState', url, ''); }catch(_){}
+        return __replace.apply(history, arguments);
+      };
+    }catch(_){}
+    try{
+      var __assign = location.assign.bind(location);
+      location.assign = function(url){
+        try{ __abxRoute('location.assign', url, ''); }catch(_){}
+        return __assign(url);
+      };
+    }catch(_){}
+    try{
+      var __locReplace = location.replace.bind(location);
+      location.replace = function(url){
+        try{ __abxRoute('location.replace', url, ''); }catch(_){}
+        return __locReplace(url);
+      };
+    }catch(_){}
+    try{
+      var __open = window.open;
+      if (__open) window.open = function(url, name, specs){
+        try{ __abxRoute('window.open', url, 'name=' + String(name || '')); }catch(_){}
+        return __open.apply(window, arguments);
+      };
+    }catch(_){}
+
+    try{ window.addEventListener('popstate', function(){ __abxRoute('popstate', location.href, ''); }, true); }catch(_){}
+    try{ window.addEventListener('hashchange', function(){ __abxRoute('hashchange', location.href, ''); }, true); }catch(_){}
+
+    try{
+      window.addEventListener('click', function(ev){
+        try{
+          var t = ev && ev.target;
+          if (!t || !t.closest) return;
+          var a = t.closest('a[href]');
+          if (!a) return;
+          var href = '';
+          try{ href = a.href || a.getAttribute('href') || ''; }catch(_){}
+          if (!href) return;
+          var txt = '';
+          try{ txt = String((a.textContent || '').trim()).slice(0, 60); }catch(_){}
+          __abxRoute('anchor.click', href, txt ? ('txt=' + txt) : '');
+        }catch(_){}
+      }, true);
+    }catch(_){}
+
+    function __abxScanFrames(tag){
+      try{
+        var frames = document.querySelectorAll('iframe,frame');
+        for (var i=0;i<frames.length;i++){
+          var el = frames[i];
+          var src = '';
+          try{ src = String(el.getAttribute('src') || el.src || ''); }catch(_){}
+          if (!src) continue;
+          __abxRoute(tag, src, 'frame#' + i);
+        }
+      }catch(_){}
+    }
+
+    function __abxScanScriptUrls(tag){
+      try{
+        var sList = document.querySelectorAll('script');
+        var rePlain = /https?:\/\/[^\s""'<>\\]+(?:webMain\.jsp|singleBacTable\.jsp|gamehall\.jsp)[^\s""'<>]*/ig;
+        var reEsc = /https?:\\\/\\\/[^\s""'<>]+(?:webMain\.jsp|singleBacTable\.jsp|gamehall\.jsp)[^\s""'<>]*/ig;
+        for (var i=0;i<sList.length;i++){
+          var txt = String((sList[i].textContent || ''));
+          if (!txt) continue;
+          if (txt.length > 150000) txt = txt.slice(0, 150000);
+          var m1 = txt.match(rePlain) || [];
+          for (var j=0;j<m1.length;j++) __abxRoute(tag, m1[j], 'script:plain');
+          var m2 = txt.match(reEsc) || [];
+          for (var k=0;k<m2.length;k++){
+            var u = String(m2[k] || '').replace(/\\\//g, '/').replace(/\\u0026/ig, '&');
+            __abxRoute(tag, u, 'script:esc');
+          }
+        }
+      }catch(_){}
+    }
+
+    __abxScanFrames('frame.scan0');
+    __abxScanScriptUrls('script.scan0');
+    try{
+      if (!window.__abxFetchHooked && typeof window.fetch === 'function'){
+        window.__abxFetchHooked = 1;
+        var __fetch = window.fetch;
+        window.fetch = function(input, init){
+          var reqUrl = '';
+          try{
+            reqUrl = (typeof input === 'string') ? input : ((input && input.url) ? input.url : '');
+            reqUrl = __abxAbs(reqUrl);
+          }catch(_){}
+          var p = __fetch.apply(this, arguments);
+          return Promise.resolve(p).then(function(resp){
+            try{
+              if (resp && __abxIsGameApiLogin(reqUrl)){
+                try{
+                  var c = resp.clone();
+                  c.text().then(function(t){ __abxEmitGameApi(reqUrl, t, 'fetch'); }).catch(function(){});
+                }catch(_){}
+              }
+            }catch(_){}
+            return resp;
+          });
+        };
+      }
+    }catch(_){}
+    try{
+      if (!window.__abxXhrHooked && window.XMLHttpRequest && window.XMLHttpRequest.prototype){
+        window.__abxXhrHooked = 1;
+        var __xo = window.XMLHttpRequest.prototype.open;
+        var __xs = window.XMLHttpRequest.prototype.send;
+        window.XMLHttpRequest.prototype.open = function(method, url){
+          try{ this.__abxUrl = __abxAbs(url); }catch(_){ this.__abxUrl = ''; }
+          return __xo.apply(this, arguments);
+        };
+        window.XMLHttpRequest.prototype.send = function(){
+          try{
+            if (!this.__abxHookBound){
+              this.__abxHookBound = 1;
+              this.addEventListener('readystatechange', function(){
+                try{
+                  if (this.readyState !== 4) return;
+                  var u = this.__abxUrl || '';
+                  if (!__abxIsGameApiLogin(u)) return;
+                  var t = '';
+                  try{ t = this.responseText || ''; }catch(_){ t = ''; }
+                  __abxEmitGameApi(u, t, 'xhr');
+                }catch(_){}
+              });
+            }
+          }catch(_){}
+          return __xs.apply(this, arguments);
+        };
+      }
+    }catch(_){}
+    setTimeout(function(){ __abxScanFrames('frame.scan1'); __abxScanScriptUrls('script.scan1'); }, 2500);
+    setInterval(function(){ __abxScanFrames('frame.scan'); }, 1800);
   }catch(_){}
 })();";
 
@@ -1002,6 +1279,7 @@ Ví dụ không hợp lệ:
         if (/\/player\/webMain\.jsp/i.test(href)) return true;
         if (/\/player\/gamehall\.jsp/i.test(href)) return true;
         if (/\/player\/login\/apiLogin/i.test(href)) return true;
+        if (/\/pages\/game(\/|$)/i.test(href)) return true;
         if (typeof w.__cw_isGamePopupPage === 'function'){
           try{ if (w.__cw_isGamePopupPage()) return true; }catch(_){}
         }
@@ -1041,6 +1319,7 @@ Ví dụ không hợp lệ:
         if (/\/player\/webMain\.jsp/i.test(href)) return true;
         if (/\/player\/gamehall\.jsp/i.test(href)) return true;
         if (/\/player\/login\/apiLogin/i.test(href)) return true;
+        if (/\/pages\/game(\/|$)/i.test(href)) return true;
         if (typeof w.__cw_isGamePopupPage === 'function'){
           try{ if (w.__cw_isGamePopupPage()) return true; }catch(_){}
         }
@@ -1093,7 +1372,8 @@ Ví dụ không hợp lệ:
             if ((/singleBacTable\.jsp/i.test(href) ||
                  /\/player\/webMain\.jsp/i.test(href) ||
                  /\/player\/gamehall\.jsp/i.test(href) ||
-                 /\/player\/login\/apiLogin/i.test(href)) &&
+                 /\/player\/login\/apiLogin/i.test(href) ||
+                 /\/pages\/game(\/|$)/i.test(href)) &&
                 w.__cw_startPush){
               try{ w.__cw_startPush(__abxPushMs()); }catch(_){}
               return;
@@ -1122,7 +1402,8 @@ try{
         if ((/singleBacTable\.jsp/i.test(href) ||
              /\/player\/webMain\.jsp/i.test(href) ||
              /\/player\/gamehall\.jsp/i.test(href) ||
-             /\/player\/login\/apiLogin/i.test(href)) &&
+             /\/player\/login\/apiLogin/i.test(href) ||
+             /\/pages\/game(\/|$)/i.test(href)) &&
             w && w.__cw_startPush){
           w.__cw_startPush(__abxPushMs());
         }
@@ -1484,7 +1765,37 @@ try{
         private void StopLogPump()
         {
             try { _logPumpCts?.Cancel(); } catch { }
+            FlushPendingFileLogs();
             _logPumpCts = null;
+        }
+
+        private void FlushPendingFileLogs()
+        {
+            try
+            {
+                if (_fileLogQueue.IsEmpty)
+                {
+                    while (_jsFileLogQueue.TryDequeue(out _)) { }
+                    return;
+                }
+
+                var sb = new StringBuilder(4096);
+                while (_fileLogQueue.TryDequeue(out var line))
+                {
+                    sb.AppendLine(line);
+                    if (sb.Length > 128 * 1024)
+                        break;
+                }
+
+                if (sb.Length > 0)
+                {
+                    var f = Path.Combine(_logDir, $"{DateTime.Today:yyyyMMdd}.log");
+                    File.AppendAllText(f, sb.ToString(), Encoding.UTF8);
+                }
+
+                while (_jsFileLogQueue.TryDequeue(out _)) { }
+            }
+            catch { }
         }
 
         private bool ShouldSkipNoisyLog(string msg)
@@ -3557,6 +3868,8 @@ try{
             try
             {
                 var target = (e.Uri ?? "").Trim();
+                _lastPopupWindowRequestUtc = DateTime.UtcNow;
+                _lastPopupWindowRequestUrl = target;
                 Log("[NewWindowRequested] " + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target));
 
                 var popupWeb = await EnsurePopupWebReadyAsync();
@@ -3569,7 +3882,146 @@ try{
                         if (PopupHost != null)
                             PopupHost.Visibility = Visibility.Visible;
                     });
+                    bool isPagesGameTarget =
+                        !string.IsNullOrWhiteSpace(target) &&
+                        target.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) >= 0;
+                    string bypassTarget = "";
+                    if (isPagesGameTarget &&
+                        TryGetRecentPlayerFlowGameUrl(300, out var cachedLaunch, out var cacheReason) &&
+                        IsLikelyBetGameUrl(cachedLaunch) &&
+                        cachedLaunch.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) < 0)
+                    {
+                        bypassTarget = cachedLaunch;
+                        Log("[NewWindowRequested] pages-game bypass cache-hit: " +
+                            Shrink(bypassTarget, 260) + " | " + cacheReason);
+                    }
+                    // Ưu tiên giữ luồng window.open gốc để không mất context của trang đích.
                     e.NewWindow = popupWeb.CoreWebView2;
+                    if (isPagesGameTarget)
+                        Log("[NewWindowRequested] routed-to-popup-native-context(pages-game): " + target);
+                    if (isPagesGameTarget)
+                    {
+                        Log("[NewWindowRequested] pages-game rescue-schedule queued");
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                Log("[NewWindowRequested] pages-game rescue-schedule running");
+                                await Task.Delay(280);
+                                await TryRoutePopupPagesGameByStorageKeyAsync("newwindow-pages-game+0.28s");
+                                await Task.Delay(650);
+                                await TryPromoteMainLobbyStoredGameUrlToPopupAsync("newwindow-pages-game+0.65s");
+                                await TryRoutePopupPagesGameByStorageKeyAsync("newwindow-pages-game+0.65s");
+                                await Task.Delay(1300);
+                                await TryPromoteMainLobbyStoredGameUrlToPopupAsync("newwindow-pages-game+1.95s");
+                                await TryRoutePopupPagesGameByStorageKeyAsync("newwindow-pages-game+1.95s");
+                                await Task.Delay(1800);
+                                await TryPromoteMainLobbyStoredGameUrlToPopupAsync("newwindow-pages-game+3.75s");
+                                await TryRoutePopupPagesGameByStorageKeyAsync("newwindow-pages-game+3.75s");
+                            }
+                            catch (Exception ex)
+                            {
+                                Log("[NewWindowRequested] pages-game rescue-schedule err=" + ex.Message);
+                            }
+                        });
+                    }
+                    if (!string.IsNullOrWhiteSpace(bypassTarget))
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await Task.Delay(350);
+                                await Dispatcher.InvokeAsync(() =>
+                                {
+                                    try
+                                    {
+                                        var srcNow = (popupWeb.CoreWebView2?.Source ?? "").Trim();
+                                        if (IsLikelyBetGameReadyUrl(srcNow) &&
+                                            srcNow.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) < 0 &&
+                                            srcNow.IndexOf("/player/login/apilogin", StringComparison.OrdinalIgnoreCase) < 0)
+                                            return;
+                                        popupWeb.CoreWebView2?.Navigate(bypassTarget);
+                                        Log("[NewWindowRequested] pages-game bypass-routed-popup: " + Shrink(bypassTarget, 320));
+                                    }
+                                    catch (Exception navEx)
+                                    {
+                                        Log("[NewWindowRequested.BypassNavigate] " + navEx.Message);
+                                    }
+                                });
+                            }
+                            catch { }
+                        });
+                    }
+                    if (!string.IsNullOrWhiteSpace(target))
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await Task.Delay(isPagesGameTarget ? 20000 : 2500);
+                                if (isPagesGameTarget)
+                                {
+                                    await TryPromoteMainLobbyStoredGameUrlToPopupAsync("newwindow-pages-game+fallback-check");
+                                    await TryRoutePopupPagesGameByStorageKeyAsync("newwindow-pages-game+fallback-check");
+                                }
+                                var srcNow = "";
+                                try
+                                {
+                                    srcNow = (await Dispatcher.InvokeAsync(() =>
+                                    {
+                                        try { return popupWeb.CoreWebView2?.Source ?? ""; }
+                                        catch { return ""; }
+                                    })).Trim();
+                                }
+                                catch { srcNow = ""; }
+                                bool stuckOnPagesGame =
+                                    isPagesGameTarget &&
+                                    !string.IsNullOrWhiteSpace(srcNow) &&
+                                    srcNow.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) >= 0;
+                                bool shouldFallback =
+                                    string.IsNullOrWhiteSpace(srcNow) ||
+                                    string.Equals(srcNow, "about:blank", StringComparison.OrdinalIgnoreCase);
+                                if (stuckOnPagesGame && !string.IsNullOrWhiteSpace(bypassTarget))
+                                    shouldFallback = true;
+                                var navAge = _betWebNavigatingSinceUtc == DateTime.MinValue
+                                    ? TimeSpan.MaxValue
+                                    : (DateTime.UtcNow - _betWebNavigatingSinceUtc);
+                                var hasRecentNavDone = _betWebLastNavDoneUtc != DateTime.MinValue &&
+                                                       (DateTime.UtcNow - _betWebLastNavDoneUtc) <= TimeSpan.FromSeconds(15);
+                                Log("[NewWindowRequested] fallback-check" +
+                                    (isPagesGameTarget ? "(pages-game)" : "") +
+                                    " | srcNow=" + (string.IsNullOrWhiteSpace(srcNow) ? "<empty>" : Shrink(srcNow, 220)) +
+                                    " | shouldFallback=" + (shouldFallback ? "1" : "0") +
+                                    " | navAge=" + (navAge == TimeSpan.MaxValue ? "-" : navAge.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) + "s") +
+                                    " | recentNavDone=" + (hasRecentNavDone ? "1" : "0"));
+                                if (isPagesGameTarget && !shouldFallback)
+                                    return;
+                                if (isPagesGameTarget && shouldFallback)
+                                {
+                                    if (hasRecentNavDone || navAge < TimeSpan.FromSeconds(6))
+                                        return;
+                                }
+                                if (shouldFallback)
+                                {
+                                    var fallbackTarget = string.IsNullOrWhiteSpace(bypassTarget) ? target : bypassTarget;
+                                    await Dispatcher.InvokeAsync(() =>
+                                    {
+                                        try
+                                        {
+                                            popupWeb.CoreWebView2.Navigate(fallbackTarget);
+                                            Log("[NewWindowRequested] fallback-routed-to-popup: " + fallbackTarget);
+                                        }
+                                        catch (Exception navEx)
+                                        {
+                                            Log("[NewWindowRequested.NavigateFallback] " + navEx.Message);
+                                        }
+                                    });
+                                }
+                            }
+                            catch { }
+                        });
+                    }
                     popupWeb.Focus();
                 }
             }
@@ -3637,6 +4089,12 @@ try{
             {
                 popupWeb.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
                 popupWeb.CoreWebView2.WebResourceResponseReceived += CoreWebView2_WebResourceResponseReceived;
+                try
+                {
+                    popupWeb.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+                    popupWeb.CoreWebView2.WebResourceRequested += PopupWeb_WebResourceRequested;
+                }
+                catch { }
                 if (_enableCdpNetworkTap)
                     _ = EnableCdpNetworkTapAsync(popupWeb.CoreWebView2, "popup");
                 _popupWebMsgHooked = true;
@@ -3645,6 +4103,8 @@ try{
 
             popupWeb.CoreWebView2.NewWindowRequested += PopupWeb_NewWindowRequested;
             popupWeb.CoreWebView2.WindowCloseRequested += PopupWeb_WindowCloseRequested;
+            popupWeb.CoreWebView2.SourceChanged += PopupWeb_SourceChanged;
+            popupWeb.CoreWebView2.HistoryChanged += PopupWeb_HistoryChanged;
             popupWeb.NavigationStarting += PopupWeb_NavigationStarting;
             popupWeb.NavigationCompleted += PopupWeb_NavigationCompleted;
             _popupWebHooked = true;
@@ -3762,6 +4222,18 @@ try{
                 if (abxStr == "cwLogBatch")
                 {
                     IngestJsLogBatch(root, source);
+                    return;
+                }
+
+                if (abxStr == "route_evt")
+                {
+                    await HandleRouteEventFromJsAsync(root, source);
+                    return;
+                }
+
+                if (abxStr == "game_api_login")
+                {
+                    await HandleGameApiLoginEventAsync(root, source);
                     return;
                 }
 
@@ -4547,6 +5019,7 @@ try{
                 var f = e.Frame;
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 f.WebMessageReceived += PopupFrame_WebMessageReceived;
+                f.NavigationStarting += Frame_NavigationStarting_Bridge;
                 f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
                 _ = InjectGameBridgeOnFrameIfNeededAsync(f, "frame-created-probe");
                 Log("[PopupWeb] frame bridge armed.");
@@ -4575,6 +5048,8 @@ try{
             try
             {
                 var target = (e.Uri ?? "").Trim();
+                _lastPopupWindowRequestUtc = DateTime.UtcNow;
+                _lastPopupWindowRequestUrl = target;
                 Log("[PopupWeb.NewWindowRequested] " + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target));
                 if (!string.IsNullOrWhiteSpace(target))
                 {
@@ -4594,10 +5069,79 @@ try{
             {
                 _betWebNavigatingSinceUtc = DateTime.UtcNow;
                 var src = (e.Uri ?? "").Trim();
+                Log("[PopupWeb] NavigationStarting: " + (string.IsNullOrWhiteSpace(src) ? "<empty>" : src));
+                if (src.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) >= 0)
+                    _ = RunPopupGateKickScheduleAsync();
                 if (!IsLikelyBetGameUrl(src))
                     AutoStopTasksOnBetPipelineReset("popup-nav-start", src);
             }
             catch { }
+        }
+
+        private void PopupWeb_SourceChanged(object? sender, CoreWebView2SourceChangedEventArgs e)
+        {
+            try
+            {
+                var src = (_popupWeb?.CoreWebView2?.Source ?? "").Trim();
+                if (string.Equals(_lastPopupSourceLogged, src, StringComparison.OrdinalIgnoreCase))
+                    return;
+                _lastPopupSourceLogged = src;
+                Log("[PopupWeb] SourceChanged: " + (string.IsNullOrWhiteSpace(src) ? "<empty>" : src));
+            }
+            catch { }
+        }
+
+        private void PopupWeb_HistoryChanged(object? sender, object e)
+        {
+            try
+            {
+                var src = (_popupWeb?.CoreWebView2?.Source ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(src))
+                    return;
+                if (string.Equals(_lastPopupHistoryLogged, src, StringComparison.OrdinalIgnoreCase))
+                    return;
+                _lastPopupHistoryLogged = src;
+                Log("[PopupWeb] HistoryChanged: " + src);
+            }
+            catch { }
+        }
+
+        private void PopupWeb_WebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
+        {
+            try
+            {
+                var req = e.Request;
+                if (req == null)
+                    return;
+                var url = (req.Uri ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(url))
+                    return;
+                var ctx = e.ResourceContext.ToString();
+                var method = (req.Method ?? "").Trim();
+
+                if (e.ResourceContext == CoreWebView2WebResourceContext.Document)
+                {
+                    if (string.Equals(_lastPopupDocReqLogged, url, StringComparison.OrdinalIgnoreCase))
+                        return;
+                    _lastPopupDocReqLogged = url;
+                    Log("[PopupWeb.RouteTrace][REQ] ctx=" + ctx + " | " + Shrink(url, 360));
+                    return;
+                }
+
+                if (!IsInterestingRouteTraceUrl(url))
+                    return;
+                var dedupeKey = "POP_REQ|" + ctx + "|" + method + "|" + url;
+                if (_pktLastPreviewByKey.TryGetValue(dedupeKey, out _))
+                    return;
+                _pktLastPreviewByKey[dedupeKey] = "1";
+                Log("[PopupWeb.RouteTrace][REQ] ctx=" + ctx +
+                    (string.IsNullOrWhiteSpace(method) ? "" : (" | method=" + method)) +
+                    " | " + Shrink(url, 360));
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb.RouteTrace][REQ] " + ex.Message);
+            }
         }
 
         private async void PopupWeb_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
@@ -4608,6 +5152,20 @@ try{
                 Log("[PopupWeb] NavigationCompleted: " + (e.IsSuccess ? "OK" : ("Err " + e.WebErrorStatus)) + " | " + src);
                 _betWebNavigatingSinceUtc = DateTime.MinValue;
                 _betWebLastNavDoneUtc = DateTime.UtcNow;
+                if (!e.IsSuccess &&
+                    e.WebErrorStatus == CoreWebView2WebErrorStatus.ConnectionAborted &&
+                    string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase) &&
+                    TryGetRecentPopupLaunchTarget(20, out var retryTarget) &&
+                    _popupWeb?.CoreWebView2 != null)
+                {
+                    var now = DateTime.UtcNow;
+                    if ((now - _lastPopupRouteRetryUtc) > TimeSpan.FromSeconds(1))
+                    {
+                        _lastPopupRouteRetryUtc = now;
+                        Log("[PopupWeb] retry route after about:blank abort: " + retryTarget);
+                        try { _popupWeb.CoreWebView2.Navigate(retryTarget); } catch { }
+                    }
+                }
                 if (TryParseProviderErrorUrl(src, out var providerStatus, out var providerDesc, out var providerExternal))
                 {
                     Log("[PopupWeb][ProviderError] status=" +
@@ -4620,9 +5178,568 @@ try{
                     if (!IsLikelyBetGameUrl(src))
                         AutoStopTasksOnBetPipelineReset("popup-nav-done-non-game", src);
                     await InjectOnPopupDocAsync();
+                    if (src.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        _ = RunPopupGateKickScheduleAsync();
+                    }
                 }
             }
             catch { }
+        }
+
+        private async Task RunPopupGateKickScheduleAsync()
+        {
+            try
+            {
+                Log("[PopupWeb] pages-game gate-kick schedule running");
+                await Task.Delay(1200);
+                await TryPromoteMainLobbyStoredGameUrlToPopupAsync("popup-pages-game-nav+1.2s");
+                await TryRoutePopupPagesGameByStorageKeyAsync("popup-pages-game-nav+1.2s");
+                await TryKickPopupLoadingGateAsync("popup-pages-game-nav+1.2s");
+                await TryPromotePopupEmbeddedGameUrlAsync("popup-pages-game-nav+1.2s");
+                await Task.Delay(2200);
+                await TryPromoteMainLobbyStoredGameUrlToPopupAsync("popup-pages-game-nav+3.4s");
+                await TryRoutePopupPagesGameByStorageKeyAsync("popup-pages-game-nav+3.4s");
+                await TryKickPopupLoadingGateAsync("popup-pages-game-nav+3.4s");
+                await TryPromotePopupEmbeddedGameUrlAsync("popup-pages-game-nav+3.4s");
+                await Task.Delay(2600);
+                await TryPromoteMainLobbyStoredGameUrlToPopupAsync("popup-pages-game-nav+6.0s");
+                await TryRoutePopupPagesGameByStorageKeyAsync("popup-pages-game-nav+6.0s");
+                await TryPromotePopupEmbeddedGameUrlAsync("popup-pages-game-nav+6.0s");
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb] pages-game gate-kick schedule err=" + ex.Message);
+            }
+        }
+
+        private async Task TryPromoteMainLobbyStoredGameUrlToPopupAsync(string stage)
+        {
+            try
+            {
+                if (!Dispatcher.CheckAccess())
+                {
+                    await Dispatcher.InvokeAsync(async () => await TryPromoteMainLobbyStoredGameUrlToPopupAsync(stage)).Task.Unwrap();
+                    return;
+                }
+                if (Web?.CoreWebView2 == null || _popupWeb?.CoreWebView2 == null)
+                    return;
+                if (!IsPopupBetViewActive())
+                    return;
+
+                const string js = @"
+(function(){
+  try{
+    const out = { key:'', kind:'', launchUrl:'', pageUrl:'' };
+    const latestKey = (prefix) => {
+      let best = '';
+      let bestTs = -1;
+      try{
+        for (let i = 0; i < localStorage.length; i++){
+          const k = String(localStorage.key(i) || '');
+          if (!k || k.indexOf(prefix) !== 0) continue;
+          let ts = -1;
+          try{
+            const m = k.match(/_(\d+)$/);
+            if (m && m[1]) ts = parseInt(m[1], 10);
+          }catch(_){}
+          if (ts > bestTs || (ts === bestTs && k > best)){
+            best = k;
+            bestTs = ts;
+          }
+        }
+      }catch(_){}
+      return best;
+    };
+
+    const keyUrl = latestKey('web_lobby_url_redirect_');
+    if (keyUrl){
+      out.key = keyUrl;
+      out.kind = 'url';
+      try{
+        const raw = String(localStorage.getItem(keyUrl) || '').trim();
+        if (raw){
+          try{
+            const abs = new URL(raw, location.href).href;
+            if (/^https?:\/\//i.test(abs)) out.launchUrl = abs;
+          }catch(_){}
+        }
+      }catch(_){}
+      out.pageUrl = String(location.origin || '') + '/pages/game/index.html?keyType=url&storageKey=' + encodeURIComponent(keyUrl);
+      return JSON.stringify(out);
+    }
+
+    const keyHtml = latestKey('web_lobby_htmlData_');
+    if (keyHtml){
+      out.key = keyHtml;
+      out.kind = 'html';
+      out.pageUrl = String(location.origin || '') + '/pages/game/index.html?keyType=html&storageKey=' + encodeURIComponent(keyHtml);
+      return JSON.stringify(out);
+    }
+  }catch(_){}
+  return '';
+})();";
+
+                var raw = await Web.CoreWebView2.ExecuteScriptAsync(js);
+                var payload = (JsonSerializer.Deserialize<string>(raw) ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(payload))
+                {
+                    var srcNow = (Web.CoreWebView2.Source ?? "").Trim();
+                    var dedupeKey = "MAIN_STORE_PROBE_EMPTY|" + stage + "|" + srcNow;
+                    if (!_pktLastPreviewByKey.TryGetValue(dedupeKey, out _))
+                    {
+                        _pktLastPreviewByKey[dedupeKey] = "1";
+                        Log("[MainStoreProbe] stage=" + stage +
+                            " | no-storage-key | src=" + (string.IsNullOrWhiteSpace(srcNow) ? "-" : Shrink(srcNow, 220)));
+                    }
+                    return;
+                }
+
+                using var doc = JsonDocument.Parse(payload);
+                var root = doc.RootElement;
+                var storageKey = (GetJsonStringLoose(root, "key") ?? "").Trim();
+                var kind = (GetJsonStringLoose(root, "kind") ?? "").Trim();
+                var launchUrl = (GetJsonStringLoose(root, "launchUrl") ?? "").Trim();
+                var pageUrl = (GetJsonStringLoose(root, "pageUrl") ?? "").Trim();
+
+                if (!string.IsNullOrWhiteSpace(launchUrl) &&
+                    Uri.TryCreate(launchUrl, UriKind.Absolute, out var launchAbs))
+                {
+                    launchUrl = launchAbs.ToString();
+                    if (IsLikelyBetGameUrl(launchUrl))
+                    {
+                        var dedupeKey = "MAIN_STORE_PROBE|" + stage + "|" + launchUrl;
+                        if (!_pktLastPreviewByKey.TryGetValue(dedupeKey, out _))
+                        {
+                            _pktLastPreviewByKey[dedupeKey] = "1";
+                            Log("[MainStoreProbe] stage=" + stage +
+                                " | key=" + (string.IsNullOrWhiteSpace(storageKey) ? "-" : storageKey) +
+                                " | kind=" + (string.IsNullOrWhiteSpace(kind) ? "-" : kind) +
+                                " | launch=" + Shrink(launchUrl, 320));
+                        }
+                        RememberPlayerFlowGameUrl(launchUrl);
+                        await TryPromotePopupToSpecificUrlAsync(launchUrl, stage + ":main-store-launch");
+                        return;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(pageUrl) &&
+                    Uri.TryCreate(pageUrl, UriKind.Absolute, out var pageAbs))
+                {
+                    pageUrl = pageAbs.ToString();
+                    if (pageUrl.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                        pageUrl.IndexOf("storageKey=", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        var dedupeKey = "MAIN_STORE_PROBE_PAGE|" + stage + "|" + pageUrl;
+                        if (!_pktLastPreviewByKey.TryGetValue(dedupeKey, out _))
+                        {
+                            _pktLastPreviewByKey[dedupeKey] = "1";
+                            Log("[MainStoreProbe] stage=" + stage +
+                                " | key=" + (string.IsNullOrWhiteSpace(storageKey) ? "-" : storageKey) +
+                                " | kind=" + (string.IsNullOrWhiteSpace(kind) ? "-" : kind) +
+                                " | route-page=" + Shrink(pageUrl, 320));
+                        }
+                        await TryPromotePopupToSpecificUrlAsync(pageUrl, stage + ":main-store-page");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[MainStoreProbe] stage=" + stage + " | err=" + ex.Message);
+            }
+        }
+
+        private async Task TryRoutePopupPagesGameByStorageKeyAsync(string stage)
+        {
+            try
+            {
+                if (!Dispatcher.CheckAccess())
+                {
+                    await Dispatcher.InvokeAsync(async () => await TryRoutePopupPagesGameByStorageKeyAsync(stage)).Task.Unwrap();
+                    return;
+                }
+                if (_popupWeb?.CoreWebView2 == null)
+                    return;
+                if (!IsPopupBetViewActive())
+                    return;
+
+                var srcNow = (_popupWeb.CoreWebView2.Source ?? "").Trim();
+                var allowProbe =
+                    string.IsNullOrWhiteSpace(srcNow) ||
+                    string.Equals(srcNow, "about:blank", StringComparison.OrdinalIgnoreCase) ||
+                    srcNow.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (!allowProbe)
+                    return;
+
+                const string js = @"
+(function(){
+  try{
+    const out = { href:String(location.href||''), key:'', kind:'', launchUrl:'', pageUrl:'' };
+    const latestKey = (prefix) => {
+      let best = '';
+      let bestTs = -1;
+      try{
+        for (let i = 0; i < localStorage.length; i++){
+          const k = String(localStorage.key(i) || '');
+          if (!k || k.indexOf(prefix) !== 0) continue;
+          let ts = -1;
+          try{
+            const m = k.match(/_(\d+)$/);
+            if (m && m[1]) ts = parseInt(m[1], 10);
+          }catch(_){}
+          if (ts > bestTs || (ts === bestTs && k > best)){
+            best = k;
+            bestTs = ts;
+          }
+        }
+      }catch(_){}
+      return best;
+    };
+    const makePage = (kind, key) => {
+      try{
+        const origin = String(location.origin || '').trim();
+        if (!/^https?:\/\//i.test(origin)) return '';
+        return origin + '/pages/game/index.html?keyType=' + encodeURIComponent(kind) + '&storageKey=' + encodeURIComponent(key);
+      }catch(_){
+        return '';
+      }
+    };
+
+    const keyUrl = latestKey('web_lobby_url_redirect_');
+    if (keyUrl){
+      out.key = keyUrl;
+      out.kind = 'url';
+      try{
+        const raw = String(localStorage.getItem(keyUrl) || '').trim();
+        if (raw){
+          let candidate = raw;
+          try{
+            const obj = JSON.parse(raw);
+            if (obj && typeof obj === 'object'){
+              candidate = String(obj.game_url || obj.url || obj.launchUrl || candidate || '').trim();
+            }
+          }catch(_){}
+          try { candidate = decodeURIComponent(candidate); } catch(_){}
+          try{
+            const abs = new URL(candidate, location.href).href;
+            if (/^https?:\/\//i.test(abs)) out.launchUrl = abs;
+          }catch(_){}
+        }
+      }catch(_){}
+      out.pageUrl = makePage('url', keyUrl);
+      return JSON.stringify(out);
+    }
+
+    const keyHtml = latestKey('web_lobby_htmlData_');
+    if (keyHtml){
+      out.key = keyHtml;
+      out.kind = 'html';
+      out.pageUrl = makePage('html', keyHtml);
+      return JSON.stringify(out);
+    }
+  }catch(_){}
+  return '';
+})();";
+
+                var raw = await _popupWeb.CoreWebView2.ExecuteScriptAsync(js);
+                var payload = (JsonSerializer.Deserialize<string>(raw) ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(payload))
+                {
+                    var dedupeKey = "POPUP_STORE_PROBE_EMPTY|" + stage + "|" + srcNow;
+                    if (!_pktLastPreviewByKey.TryGetValue(dedupeKey, out _))
+                    {
+                        _pktLastPreviewByKey[dedupeKey] = "1";
+                        Log("[PopupStoreProbe] stage=" + stage +
+                            " | no-storage-key | src=" + (string.IsNullOrWhiteSpace(srcNow) ? "-" : Shrink(srcNow, 220)));
+                    }
+                    return;
+                }
+
+                using var doc = JsonDocument.Parse(payload);
+                var root = doc.RootElement;
+                var href = (GetJsonStringLoose(root, "href") ?? "").Trim();
+                var storageKey = (GetJsonStringLoose(root, "key") ?? "").Trim();
+                var kind = (GetJsonStringLoose(root, "kind") ?? "").Trim();
+                var launchUrl = (GetJsonStringLoose(root, "launchUrl") ?? "").Trim();
+                var pageUrl = (GetJsonStringLoose(root, "pageUrl") ?? "").Trim();
+
+                if (!string.IsNullOrWhiteSpace(launchUrl) &&
+                    Uri.TryCreate(launchUrl, UriKind.Absolute, out var launchAbs))
+                {
+                    launchUrl = launchAbs.ToString();
+                    if (IsLikelyBetGameUrl(launchUrl))
+                    {
+                        var dedupeKey = "POPUP_STORE_PROBE|" + stage + "|" + launchUrl;
+                        if (!_pktLastPreviewByKey.TryGetValue(dedupeKey, out _))
+                        {
+                            _pktLastPreviewByKey[dedupeKey] = "1";
+                            Log("[PopupStoreProbe] stage=" + stage +
+                                " | key=" + (string.IsNullOrWhiteSpace(storageKey) ? "-" : storageKey) +
+                                " | kind=" + (string.IsNullOrWhiteSpace(kind) ? "-" : kind) +
+                                " | src=" + (string.IsNullOrWhiteSpace(href) ? "-" : Shrink(href, 220)) +
+                                " | launch=" + Shrink(launchUrl, 320));
+                        }
+                        RememberPlayerFlowGameUrl(launchUrl);
+                        await TryPromotePopupToSpecificUrlAsync(launchUrl, stage + ":popup-store-launch");
+                        return;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(pageUrl) &&
+                    Uri.TryCreate(pageUrl, UriKind.Absolute, out var pageAbs))
+                {
+                    pageUrl = pageAbs.ToString();
+                    if (pageUrl.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                        pageUrl.IndexOf("storageKey=", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        var dedupeKey = "POPUP_STORE_PROBE_PAGE|" + stage + "|" + pageUrl;
+                        if (!_pktLastPreviewByKey.TryGetValue(dedupeKey, out _))
+                        {
+                            _pktLastPreviewByKey[dedupeKey] = "1";
+                            Log("[PopupStoreProbe] stage=" + stage +
+                                " | key=" + (string.IsNullOrWhiteSpace(storageKey) ? "-" : storageKey) +
+                                " | kind=" + (string.IsNullOrWhiteSpace(kind) ? "-" : kind) +
+                                " | src=" + (string.IsNullOrWhiteSpace(href) ? "-" : Shrink(href, 220)) +
+                                " | route-page=" + Shrink(pageUrl, 320));
+                        }
+                        await TryPromotePopupToSpecificUrlAsync(pageUrl, stage + ":popup-store-page");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupStoreProbe] stage=" + stage + " | err=" + ex.Message);
+            }
+        }
+
+        private async Task TryPromotePopupEmbeddedGameUrlAsync(string stage)
+        {
+            try
+            {
+                if (!Dispatcher.CheckAccess())
+                {
+                    await Dispatcher.InvokeAsync(async () => await TryPromotePopupEmbeddedGameUrlAsync(stage)).Task.Unwrap();
+                    return;
+                }
+                if (_popupWeb?.CoreWebView2 == null)
+                    return;
+                if (!IsPopupBetViewActive())
+                    return;
+
+                var currentSrc = (_popupWeb.CoreWebView2.Source ?? "").Trim();
+                if (currentSrc.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) < 0)
+                    return;
+
+                const string js = @"
+(function(){
+  try{
+    const found = [];
+    const seen = {};
+    const add = (u) => {
+      try{
+        if (!u) return;
+        u = String(u).trim();
+        if (!u) return;
+        try { u = decodeURIComponent(u); } catch(_){}
+        try { u = new URL(u, location.href).href; } catch(_){}
+        if (!/^https?:\/\//i.test(u)) return;
+        if (!(/\/player\/webMain\.jsp/i.test(u) || /\/player\/singleBacTable\.jsp/i.test(u) || /\/player\/gamehall\.jsp/i.test(u) || /bpweb\./i.test(u) || /\/pages\/game\//i.test(u))) return;
+        const key = u.toLowerCase();
+        if (seen[key]) return;
+        seen[key] = 1;
+        found.push(u);
+      }catch(_){}
+    };
+
+    add(location.href);
+    try{
+      const els = document.querySelectorAll('iframe,frame,a[href],link[href]');
+      for (const el of els){
+        add(el.getAttribute('src') || el.getAttribute('href') || '');
+        try { add(el.src || el.href || ''); } catch(_){}
+      }
+    }catch(_){}
+
+    try{
+      const keys = ['externalUrl','gameUrl','launchUrl','redirectUrl','url','jumpUrl'];
+      for (const k of keys){
+        try{ add(window[k]); }catch(_){}
+      }
+    }catch(_){}
+
+    try{
+      const re = /https?:\/\/[^\s""'<>]+(?:webMain\.jsp|singleBacTable\.jsp|gamehall\.jsp)[^\s""'<>]*/ig;
+      const reEsc = /https?:\\\/\\\/[^\s""'<>]+(?:webMain\.jsp|singleBacTable\.jsp|gamehall\.jsp)[^\s""'<>]*/ig;
+      const scripts = document.querySelectorAll('script');
+      for (const s of scripts){
+        const txt = String((s.textContent || '')).slice(0, 120000);
+        if (!txt) continue;
+        const m = txt.match(re) || [];
+        for (const u of m) add(u);
+        const mEsc = txt.match(reEsc) || [];
+        for (const uEsc of mEsc){
+          const u = String(uEsc || '').replace(/\\\//g, '/').replace(/\\u0026/ig, '&');
+          add(u);
+        }
+      }
+    }catch(_){}
+
+    if (!found.length) return '';
+
+    const score = (u) => {
+      let s = 0;
+      if (/\/player\/webMain\.jsp/i.test(u)) s += 120;
+      if (/\/player\/singleBacTable\.jsp/i.test(u)) s += 100;
+      if (/\/player\/gamehall\.jsp/i.test(u)) s += 90;
+      if (/bpweb\./i.test(u)) s += 35;
+      if (/dm=1/i.test(u)) s += 20;
+      if (/title=1/i.test(u)) s += 15;
+      return s;
+    };
+    found.sort((a,b)=>score(b)-score(a));
+    return found[0] || '';
+  }catch(_){
+    return '';
+  }
+})();";
+
+                var raw = await _popupWeb.CoreWebView2.ExecuteScriptAsync(js);
+                var candidate = (JsonSerializer.Deserialize<string>(raw) ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(candidate))
+                {
+                    Log("[PopupWeb.RoutePromote] stage=" + stage + " | no-candidate");
+                    return;
+                }
+
+                if (!Uri.TryCreate(candidate, UriKind.Absolute, out var abs))
+                    return;
+                candidate = abs.ToString();
+
+                if (!IsLikelyBetGameReadyUrl(candidate))
+                {
+                    Log("[PopupWeb.RoutePromote] stage=" + stage + " | skip-non-game: " + Shrink(candidate, 260));
+                    return;
+                }
+                await TryPromotePopupToSpecificUrlAsync(candidate, stage);
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb.RoutePromote] stage=" + stage + " | err=" + ex.Message);
+            }
+        }
+
+        private async Task TryPromotePopupToSpecificUrlAsync(string candidate, string stage)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(candidate))
+                    return;
+
+                if (!Uri.TryCreate(candidate.Trim(), UriKind.Absolute, out var u))
+                    return;
+                candidate = u.ToString();
+
+                if (!IsLikelyBetGameUrl(candidate))
+                    return;
+
+                if (!Dispatcher.CheckAccess())
+                {
+                    await Dispatcher.InvokeAsync(async () => await TryPromotePopupToSpecificUrlAsync(candidate, stage)).Task.Unwrap();
+                    return;
+                }
+                if (_popupWeb?.CoreWebView2 == null)
+                    return;
+                if (!IsPopupBetViewActive())
+                    return;
+
+                var currentSrc = (_popupWeb.CoreWebView2.Source ?? "").Trim();
+                if (IsLikelyBetGameReadyUrl(currentSrc) &&
+                    currentSrc.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    currentSrc.IndexOf("/player/login/apilogin", StringComparison.OrdinalIgnoreCase) < 0)
+                    return;
+
+                if (string.Equals(candidate, currentSrc, StringComparison.OrdinalIgnoreCase))
+                    return;
+                if (string.Equals(_lastPopupPromotedUrl, candidate, StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                _lastPopupPromotedUrl = candidate;
+                Log("[PopupWeb.RoutePromote] stage=" + stage + " | navigate=" + Shrink(candidate, 320));
+                _popupWeb.CoreWebView2.Navigate(candidate);
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb.RoutePromote] stage=" + stage + " | err=" + ex.Message);
+            }
+        }
+
+        private async Task TryKickPopupLoadingGateAsync(string stage)
+        {
+            try
+            {
+                if (!Dispatcher.CheckAccess())
+                {
+                    await Dispatcher.InvokeAsync(async () => await TryKickPopupLoadingGateAsync(stage)).Task.Unwrap();
+                    return;
+                }
+                if (_popupWeb?.CoreWebView2 == null)
+                    return;
+                if (!IsPopupBetViewActive())
+                    return;
+                var src = _popupWeb.CoreWebView2.Source ?? "";
+                if (src.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) < 0)
+                    return;
+
+                const string js = @"
+(function(){
+  try{
+    const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[đĐ]/g,'d');}catch(_){return String(s||'').replace(/[đĐ]/g,'d');}};
+    const low=s=>rm(String(s||'').trim().toLowerCase());
+    const vis=el=>{ if(!el) return false; const r=el.getBoundingClientRect(), cs=getComputedStyle(el);
+      return r.width>6 && r.height>6 && cs.display!=='none' && cs.visibility!=='hidden' && cs.pointerEvents!=='none' && r.bottom>0 && r.right>0; };
+    const deny=/dang xuat|logout|nap tien|rut tien|deposit|withdraw|register|dang ky|close|dong|tat|help|ho tro/;
+    const allow=/full\\s*screen|fullscreen|click\\s*to\\s*continue|tap\\s*to\\s*start|start\\s*game|continue|choi\\s*ngay|vao\\s*game|bat\\s*dau|start|play/;
+    const cands = Array.from(document.querySelectorAll('button,a,[role=""button""],.btn,.base-button,div,span'))
+      .filter(el=>vis(el))
+      .map(el=>{
+        const txt = low(el.textContent || el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '');
+        if (!txt) return null;
+        if (deny.test(txt)) return null;
+        if (!allow.test(txt)) return null;
+        const r = el.getBoundingClientRect();
+        let score = 0;
+        if (/full\\s*screen|fullscreen/.test(txt)) score += 120;
+        if (/start\\s*game|tap\\s*to\\s*start|click\\s*to\\s*continue/.test(txt)) score += 90;
+        if (/continue|bat\\s*dau|start|play/.test(txt)) score += 60;
+        if (r.top < 220) score += 20;
+        if (r.width < 380) score += 10;
+        return {el, txt:txt.slice(0,120), score, x:Math.floor(r.left+r.width/2), y:Math.floor(r.top+r.height/2)};
+      })
+      .filter(Boolean)
+      .sort((a,b)=>b.score-a.score);
+    if (!cands.length) return 'no-gate';
+    const best = cands[0];
+    const target = document.elementFromPoint(best.x, best.y) || best.el;
+    const seq = ['pointerover','mouseover','pointerenter','mouseenter','pointerdown','mousedown','pointerup','mouseup','click'];
+    for(const t of seq){
+      try{ target.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,clientX:best.x,clientY:best.y,view:window})); }catch(_){}
+    }
+    try{ target.click(); }catch(_){}
+    try{ best.el.click(); }catch(_){}
+    return 'clicked-gate|score=' + best.score + '|txt=' + best.txt;
+  }catch(e){
+    return 'gate-err:' + ((e && e.message) ? e.message : String(e));
+  }
+})();";
+                var raw = await _popupWeb.CoreWebView2.ExecuteScriptAsync(js);
+                var res = JsonSerializer.Deserialize<string>(raw) ?? raw ?? "";
+                if (!string.IsNullOrWhiteSpace(res))
+                    Log("[PopupWeb.GateKick] stage=" + stage + " | " + res);
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb.GateKick] stage=" + stage + " | err=" + ex.Message);
+            }
         }
 
         private async void BtnClosePopup_Click(object sender, RoutedEventArgs e)
@@ -4688,6 +5805,11 @@ try{
             _popupBridgeRegistered = false;
             _popupDevToolsOpened = false;
             _popupLastDocKey = null;
+            _lastPopupSourceLogged = "";
+            _lastPopupHistoryLogged = "";
+            _lastPopupDocReqLogged = "";
+            _lastPopupDocRespLogged = "";
+            _lastPopupPromotedUrl = "";
             _betWebNavigatingSinceUtc = DateTime.MinValue;
             _betWebLastNavDoneUtc = DateTime.MinValue;
 
@@ -4702,6 +5824,9 @@ try{
                     popupWeb.CoreWebView2.WebResourceResponseReceived -= CoreWebView2_WebResourceResponseReceived;
                     popupWeb.CoreWebView2.NewWindowRequested -= PopupWeb_NewWindowRequested;
                     popupWeb.CoreWebView2.WindowCloseRequested -= PopupWeb_WindowCloseRequested;
+                    popupWeb.CoreWebView2.SourceChanged -= PopupWeb_SourceChanged;
+                    popupWeb.CoreWebView2.HistoryChanged -= PopupWeb_HistoryChanged;
+                    popupWeb.CoreWebView2.WebResourceRequested -= PopupWeb_WebResourceRequested;
                     popupWeb.CoreWebView2.FrameCreated -= PopupCore_FrameCreated_Bridge;
                     popupWeb.CoreWebView2.DOMContentLoaded -= PopupCore_DOMContentLoaded_Bridge;
                     try { popupWeb.CoreWebView2.Stop(); } catch { }
@@ -6061,6 +7186,75 @@ try{
                 var url = e?.Request?.Uri ?? "";
                 var response = e?.Response;
                 if (response == null) return;
+                string body = "";
+                bool bodyLoaded = false;
+
+                async Task EnsureBodyLoadedAsync()
+                {
+                    if (bodyLoaded) return;
+                    bodyLoaded = true;
+                    try
+                    {
+                        using var stream = await response.GetContentAsync();
+                        if (stream != null)
+                        {
+                            using var reader = new StreamReader(stream, Encoding.UTF8, true, 4096, leaveOpen: false);
+                            body = await reader.ReadToEndAsync();
+                        }
+                    }
+                    catch
+                    {
+                        body = "";
+                    }
+                }
+
+                if (ReferenceEquals(sender, _popupWeb?.CoreWebView2))
+                {
+                    try
+                    {
+                        var status = response.StatusCode;
+                        string contentType = "";
+                        try { contentType = response.Headers?.GetHeader("Content-Type") ?? ""; } catch { }
+                        string location = "";
+                        try { location = response.Headers?.GetHeader("Location") ?? ""; } catch { }
+                        var isRedirect = status >= 300 && status < 400;
+                        var isHtml =
+                            contentType.IndexOf("text/html", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            contentType.IndexOf("application/xhtml+xml", StringComparison.OrdinalIgnoreCase) >= 0;
+                        var isInterestingRoute = IsInterestingRouteTraceUrl(url);
+                        if (isRedirect || isHtml || isInterestingRoute)
+                        {
+                            var key = status.ToString(CultureInfo.InvariantCulture) + "|" + url + "|" + location;
+                            if (!string.Equals(_lastPopupDocRespLogged, key, StringComparison.Ordinal))
+                            {
+                                _lastPopupDocRespLogged = key;
+                                var tracePreview = "status=" + status +
+                                                   (string.IsNullOrWhiteSpace(location) ? "" : (" | location=" + Shrink(location, 220)));
+                                if (!string.IsNullOrWhiteSpace(contentType))
+                                    tracePreview += " | ct=" + Shrink(contentType, 80);
+                                Log("[PopupWeb.RouteTrace][RESP] " + tracePreview + " | " + Shrink(url, 360));
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                if (IsGameCenterLoginApiUrl(url))
+                {
+                    await EnsureBodyLoadedAsync();
+                    if (!string.IsNullOrWhiteSpace(body) &&
+                        TryExtractGameLaunchUrlFromLoginApiJson(body, out var launchUrl))
+                    {
+                        RememberPlayerFlowGameUrl(launchUrl);
+                        var dedupeKey = "HTTP.gameApiLogin.launch|" + launchUrl;
+                        if (!_pktLastPreviewByKey.TryGetValue(dedupeKey, out _))
+                        {
+                            _pktLastPreviewByKey[dedupeKey] = "1";
+                            Log("[PlayerFlowCache] game-url-from-gameApi-login=" + Shrink(launchUrl, 260));
+                        }
+                        await TryPromotePopupToSpecificUrlAsync(launchUrl, "gameApi-login");
+                    }
+                }
 
                 if (IsPlayerFlowUrl(url))
                 {
@@ -6078,21 +7272,8 @@ try{
 
                 if (!_enableHttpResponseBodyTap) return;
                 if (!IsInterestingHttpUrl(url)) return;
-
-                string body = "";
-                try
-                {
-                    using var stream = await response.GetContentAsync();
-                    if (stream != null)
-                    {
-                        using var reader = new StreamReader(stream, Encoding.UTF8, true, 4096, leaveOpen: false);
-                        body = await reader.ReadToEndAsync();
-                    }
-                }
-                catch
-                {
-                    return;
-                }
+                await EnsureBodyLoadedAsync();
+                if (string.IsNullOrWhiteSpace(body)) return;
 
                 if (ShouldLogHttpResponse(url, body, out var preview, out var reason))
                     LogPacket("HTTP.resp/" + reason, url, preview, false);
@@ -6439,6 +7620,21 @@ try{
             {
                 return false;
             }
+        }
+
+        private bool IsPopupLaunchRecent(int withinSeconds = 10)
+        {
+            if (_lastPopupWindowRequestUtc == DateTime.MinValue)
+                return false;
+            return (DateTime.UtcNow - _lastPopupWindowRequestUtc) <= TimeSpan.FromSeconds(Math.Max(1, withinSeconds));
+        }
+
+        private bool TryGetRecentPopupLaunchTarget(int withinSeconds, out string url)
+        {
+            url = (_lastPopupWindowRequestUrl ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(url))
+                return false;
+            return IsPopupLaunchRecent(withinSeconds);
         }
 
         private async Task<bool> DispatchTrustedMouseClickAsync(CoreWebView2 core, int x, int y)
@@ -6868,7 +8064,16 @@ try{
 
                     gameReady = await WaitForBetGameUrlAsync(2500);
                     if (!gameReady)
+                    {
                         gameReady = await WaitForGameSignalAsync(1200);
+                        if (!gameReady && IsPopupLaunchRecent(12))
+                        {
+                            Log("[VaoXocDia] popup launch detected, extend warm wait.");
+                            gameReady = await WaitForBetGameUrlAsync(7000);
+                            if (!gameReady)
+                                gameReady = await WaitForGameSignalAsync(4500);
+                        }
+                    }
 
                     if (!gameReady && IsCurrentHostAllowUnboundHistory())
                     {
@@ -7578,6 +8783,10 @@ try{
                 return true;
             if (path.IndexOf("/player/gamehall.jsp", StringComparison.OrdinalIgnoreCase) >= 0)
                 return true;
+            if (path.IndexOf("/pages/game/index.html", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (path.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
             return false;
         }
 
@@ -7644,11 +8853,163 @@ try{
             if (string.IsNullOrWhiteSpace(url))
                 return false;
             return
+                url.IndexOf("gamecenter/gameapi/login", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 url.IndexOf("/player/login/apilogin", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 url.IndexOf("/player/webmain.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 url.IndexOf("/player/gamehall.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 url.IndexOf("/player/singlebactable.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                url.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 url.IndexOf("/error?", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsGameCenterLoginApiUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return false;
+            return url.IndexOf("gamecenter/gameapi/login", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool TryExtractGameLaunchUrlFromLoginApiJson(string? body, out string launchUrl)
+        {
+            launchUrl = "";
+            if (string.IsNullOrWhiteSpace(body))
+                return false;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                var root = doc.RootElement;
+                if (!root.TryGetProperty("data", out var dataEl))
+                    return false;
+
+                string candidate = "";
+                if (dataEl.ValueKind == JsonValueKind.Object &&
+                    dataEl.TryGetProperty("game_url", out var gameUrlEl) &&
+                    gameUrlEl.ValueKind == JsonValueKind.String)
+                {
+                    candidate = (gameUrlEl.GetString() ?? "").Trim();
+                }
+
+                if (string.IsNullOrWhiteSpace(candidate) &&
+                    dataEl.ValueKind == JsonValueKind.Object &&
+                    dataEl.TryGetProperty("url", out var arrEl) &&
+                    arrEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in arrEl.EnumerateArray())
+                    {
+                        if (item.ValueKind == JsonValueKind.String)
+                        {
+                            candidate = (item.GetString() ?? "").Trim();
+                        }
+                        else if (item.ValueKind == JsonValueKind.Object &&
+                                 item.TryGetProperty("url", out var urlEl) &&
+                                 urlEl.ValueKind == JsonValueKind.String)
+                        {
+                            candidate = (urlEl.GetString() ?? "").Trim();
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(candidate))
+                            break;
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(candidate))
+                    return false;
+                if (!Uri.TryCreate(candidate, UriKind.Absolute, out var u))
+                    return false;
+
+                var abs = u.ToString();
+                if (!IsLikelyBetGameReadyUrl(abs) &&
+                    abs.IndexOf("/player/login/apilogin", StringComparison.OrdinalIgnoreCase) < 0)
+                    return false;
+
+                launchUrl = abs;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsInterestingRouteTraceUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return false;
+            if (IsPlayerFlowUrl(url))
+                return true;
+            return
+                url.IndexOf("bpweb.", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                url.IndexOf("intplaynet.", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                url.IndexOf("jlyss", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                url.IndexOf("/player/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                url.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private async Task HandleRouteEventFromJsAsync(JsonElement root, string source)
+        {
+            var kind = (GetJsonStringLoose(root, "kind") ?? "").Trim();
+            var url = (GetJsonStringLoose(root, "url") ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(url))
+                return;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var abs))
+                return;
+            url = abs.ToString();
+            if (!IsInterestingRouteTraceUrl(url))
+                return;
+
+            var href = (GetJsonStringLoose(root, "href") ?? "").Trim();
+            var extra = (GetJsonStringLoose(root, "extra") ?? "").Trim();
+            var dedupeKey = "ROUTE_EVT|" + kind + "|" + url;
+            var dedupeVal = (string.IsNullOrWhiteSpace(href) ? "-" : href) + "|" + (string.IsNullOrWhiteSpace(extra) ? "-" : extra);
+            if (!_pktLastPreviewByKey.TryGetValue(dedupeKey, out var prev) ||
+                !string.Equals(prev, dedupeVal, StringComparison.Ordinal))
+            {
+                _pktLastPreviewByKey[dedupeKey] = dedupeVal;
+                Log("[RouteEvt] src=" + source +
+                    " | kind=" + (string.IsNullOrWhiteSpace(kind) ? "-" : kind) +
+                    " | url=" + Shrink(url, 320) +
+                    (string.IsNullOrWhiteSpace(href) ? "" : (" | href=" + Shrink(href, 220))) +
+                    (string.IsNullOrWhiteSpace(extra) ? "" : (" | extra=" + Shrink(extra, 120))));
+            }
+
+            if (IsLikelyBetGameUrl(url))
+                RememberPlayerFlowGameUrl(url);
+
+            await TryPromotePopupToSpecificUrlAsync(url, "route-evt:" + (string.IsNullOrWhiteSpace(kind) ? "unknown" : kind));
+        }
+
+        private async Task HandleGameApiLoginEventAsync(JsonElement root, string source)
+        {
+            var apiUrl = (GetJsonStringLoose(root, "apiUrl") ?? "").Trim();
+            var launchUrl = (GetJsonStringLoose(root, "launchUrl") ?? "").Trim();
+            var hook = (GetJsonStringLoose(root, "hook") ?? "").Trim();
+            var href = (GetJsonStringLoose(root, "href") ?? "").Trim();
+
+            if (string.IsNullOrWhiteSpace(launchUrl))
+                return;
+            if (!Uri.TryCreate(launchUrl, UriKind.Absolute, out var abs))
+                return;
+            launchUrl = abs.ToString();
+
+            if (!IsLikelyBetGameUrl(launchUrl))
+                return;
+
+            var dedupeKey = "GAME_API_LOGIN_EVT|" + launchUrl + "|" + hook;
+            var dedupeVal = (string.IsNullOrWhiteSpace(apiUrl) ? "-" : apiUrl) + "|" + (string.IsNullOrWhiteSpace(href) ? "-" : href);
+            if (!_pktLastPreviewByKey.TryGetValue(dedupeKey, out var prev) ||
+                !string.Equals(prev, dedupeVal, StringComparison.Ordinal))
+            {
+                _pktLastPreviewByKey[dedupeKey] = dedupeVal;
+                Log("[GameApiLoginEvt] src=" + source +
+                    " | hook=" + (string.IsNullOrWhiteSpace(hook) ? "-" : hook) +
+                    " | launch=" + Shrink(launchUrl, 320) +
+                    (string.IsNullOrWhiteSpace(apiUrl) ? "" : (" | api=" + Shrink(apiUrl, 220))) +
+                    (string.IsNullOrWhiteSpace(href) ? "" : (" | href=" + Shrink(href, 160))));
+            }
+
+            RememberPlayerFlowGameUrl(launchUrl);
+            await TryPromotePopupToSpecificUrlAsync(launchUrl, "game_api_login_evt:" + (string.IsNullOrWhiteSpace(hook) ? "unknown" : hook));
         }
 
         private static string TryExtractHost(string? rawUrl)
@@ -7702,7 +9063,7 @@ try{
         {
             if (string.IsNullOrWhiteSpace(url))
                 return;
-            if (!IsLikelyBetGameReadyUrl(url))
+            if (!IsLikelyBetGameUrl(url))
                 return;
 
             var now = DateTime.UtcNow;
@@ -7743,6 +9104,11 @@ try{
             if (string.IsNullOrWhiteSpace(cachedUrl))
             {
                 reason = "empty";
+                return false;
+            }
+            if (!IsLikelyBetGameUrl(cachedUrl))
+            {
+                reason = "invalid-cached-url";
                 return false;
             }
 
@@ -10274,6 +11640,7 @@ try{
                 {
                     _ = frame.ExecuteScriptAsync(FRAME_SHIM);
                     frame.WebMessageReceived += MainFrame_WebMessageReceived_Bridge;
+                    frame.NavigationStarting += Frame_NavigationStarting_Bridge;
                     frame.NavigationCompleted += Frame_NavigationCompleted_Bridge;
                 }
 
@@ -10529,6 +11896,7 @@ try{
                 href.IndexOf("singleBacTable.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 href.IndexOf("webMain.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 href.IndexOf("/player/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                href.IndexOf("/pages/game/", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 href.IndexOf("xoc", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 href.IndexOf("baccarat", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 href.IndexOf("table", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -10616,14 +11984,36 @@ try{
         {
             try
             {
-                if (!e.IsSuccess) return;
                 var f = sender as CoreWebView2Frame;
                 if (f == null) return;
+                if (!e.IsSuccess)
+                {
+                    Log("[Bridge.Frame NavigationCompleted] Err " + e.WebErrorStatus);
+                    return;
+                }
                 await InjectGameBridgeOnFrameIfNeededAsync(f, "nav-completed");
             }
             catch (Exception ex)
             {
                 Log("[Bridge.Frame NavigationCompleted] " + ex.Message);
+            }
+        }
+
+        private void Frame_NavigationStarting_Bridge(object? sender, CoreWebView2NavigationStartingEventArgs e)
+        {
+            try
+            {
+                var url = (e.Uri ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(url))
+                    return;
+                if (string.Equals(_lastFrameNavStartLogged, url, StringComparison.OrdinalIgnoreCase))
+                    return;
+                _lastFrameNavStartLogged = url;
+                Log("[Bridge.Frame NavigationStarting] " + Shrink(url, 300));
+            }
+            catch (Exception ex)
+            {
+                Log("[Bridge.Frame NavigationStarting] " + ex.Message);
             }
         }
 
