@@ -212,11 +212,21 @@ namespace BaccaratWM.Tasks
                     "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
                 var r = await ctx.EvalJsAsync(js);
-                ctx.Log?.Invoke($"[BET-JS] table={tableId} side={side} amount={amount} result={r}");
+                var rNorm = (r ?? "").Trim().Trim('"');
+                ctx.Log?.Invoke($"[BET-JS] table={tableId} side={side} amount={amount} raw={r} norm={rNorm}");
 
                 // C# gọi được __cw_bet(...) thì coi như bet thành công.
                 // Chỉ fail khi không có hàm để gọi.
-                var ok = !string.Equals(r, "no", StringComparison.OrdinalIgnoreCase);
+                var n = rNorm.ToLowerInvariant();
+                var ok = !(string.IsNullOrWhiteSpace(n) ||
+                           n == "no" ||
+                           n == "null" ||
+                           n == "undefined" ||
+                           n == "{}" ||
+                           n == "[]" ||
+                           n == "false" ||
+                           n.StartsWith("err:", StringComparison.Ordinal) ||
+                           n.StartsWith("fail:", StringComparison.Ordinal));
 
                 if (ok)
                     _lastBetOkByTable[tableId] = now; // kích hoạt khóa 1.2s

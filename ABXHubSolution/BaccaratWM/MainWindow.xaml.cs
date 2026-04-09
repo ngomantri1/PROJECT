@@ -448,7 +448,7 @@ namespace BaccaratWM
                                                  // Bridge đăng ký toàn cục
         private string? _autoStartId;        // id script FRAME_AUTOSTART (đăng ký toàn cục)
         private bool _domHooked;             // đã gắn DOMContentLoaded cho top chưa
-        private const string BuildMarker = "wrapper-frame-v1";
+        private const string BuildMarker = "diag-probe-matrix-v1";
 
         // === License/Trial run state ===
 
@@ -539,6 +539,12 @@ namespace BaccaratWM
         private readonly object _pendingBetGate = new();
         private string _lastBetSig = "";
         private long _lastBetSigAtMs = 0;
+        private long _lastBetResultSigAtMs = 0;
+        private string _lastBetResultSig = "";
+        private DateTime _betPathNavBlockUntilUtc = DateTime.MinValue;
+        private string _betPathNavBlockReason = "";
+        private long _betProbeSeq = 0;
+        private int _popupWarmRouteBusy = 0;
         private const int MaxHistory = 1000;   // tổng số bản ghi giữ trong bộ nhớ & khi load
 
 
@@ -8766,6 +8772,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 var target = (e.Uri ?? "").Trim();
+                if (IsBetPathNavBlocked(out var remainMs, out var blockReason))
+                {
+                    e.Handled = true;
+                    Log($"[POPUPNAV][BLOCK] stage=new-window remainMs={remainMs} reason={ClipForLog(blockReason, 48)} uri={ClipForLog(target, 180)}");
+                    return;
+                }
                 Log("[PopupWeb.NewWindowRequested] " + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target));
                 if (!string.IsNullOrWhiteSpace(target))
                 {
@@ -8801,6 +8813,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             try
             {
+                if (IsBetPathNavBlocked(out var remainMs, out var blockReason))
+                {
+                    e.Cancel = true;
+                    Log($"[POPUPNAV][BLOCK] stage=nav-start remainMs={remainMs} reason={ClipForLog(blockReason, 48)} uri={ClipForLog(e.Uri ?? "", 180)}");
+                    return;
+                }
                 ClearLatestNetworkRooms("popup-nav-start");
                 Log("[PopupWeb] NavigationStarting: " + (e.Uri ?? ""));
             }
@@ -9162,6 +9180,17 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 return true;
             }
 
+            if (abxStr == "bet_result")
+            {
+                string tableId = root.TryGetProperty("tableId", out var tidEl) ? (tidEl.GetString() ?? "") : "";
+                string side = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "?") : "?";
+                long amount = root.TryGetProperty("amount", out var ae) ? ReadJsonLong(ae) : 0;
+                long ok = root.TryGetProperty("ok", out var okEl) ? ReadJsonLong(okEl) : 0;
+                string reason = root.TryGetProperty("reason", out var reasonEl) ? (reasonEl.GetString() ?? "") : "";
+                Log($"[BET][RESULT] table={tableId} side={side} amount={amount} ok={ok} reason={ClipForLog(reason, 120)}");
+                return true;
+            }
+
             return false;
         }
 
@@ -9175,6 +9204,26 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var abx = (abxEl.GetString() ?? "").Trim();
                 if (string.IsNullOrWhiteSpace(abx))
                     return;
+
+                if (string.Equals(abx, "bet_result", StringComparison.OrdinalIgnoreCase))
+                {
+                    var tableId = root.TryGetProperty("tableId", out var tidEl) ? (tidEl.GetString() ?? "") : "";
+                    var name = root.TryGetProperty("name", out var nameEl) ? (nameEl.GetString() ?? "") : "";
+                    var side = root.TryGetProperty("side", out var sideEl) ? (sideEl.GetString() ?? "") : "";
+                    var amount = root.TryGetProperty("amount", out var amountEl) ? ReadJsonLong(amountEl) : 0;
+                    var ok = root.TryGetProperty("ok", out var okEl) ? ReadJsonLong(okEl) : 0;
+                    var reason = root.TryGetProperty("reason", out var reasonEl) ? (reasonEl.GetString() ?? "") : "";
+                    var src = root.TryGetProperty("source", out var srcEl) ? (srcEl.GetString() ?? "") : "";
+                    var sig = $"{scope}|{tableId}|{side}|{amount}|{ok}|{reason}";
+                    var nowMs = Environment.TickCount64;
+                    if (!string.Equals(sig, _lastBetResultSig, StringComparison.Ordinal) || (nowMs - _lastBetResultSigAtMs) > 800)
+                    {
+                        _lastBetResultSig = sig;
+                        _lastBetResultSigAtMs = nowMs;
+                        Log($"[BETRESULT] scope={scope} table={tableId} name={ClipForLog(name, 80)} side={side} amount={amount:N0} ok={ok} reason={ClipForLog(reason, 140)} source={src}");
+                    }
+                    return;
+                }
 
                 if (string.Equals(abx, "bet", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(abx, "bet_error", StringComparison.OrdinalIgnoreCase))
@@ -10810,7 +10859,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
         }
 
-        private async Task<bool> EnsurePopupRoutedToLastLaunchGameAsync(WebView2? active, string reason)
+        private async Task<bool> EnsurePopupRoutedToLastLaunchGameAsync(WebView2? active, string reason, bool allowNavigate = true)
         {
             try
             {
@@ -10850,6 +10899,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     await SetWrapperOverlayLockAsync(true, "popup-reuse");
                     Log($"[POPUPROUTE][READY] reuse=1 host={ClipForLog(launchHost, 60)} popup={ClipForLog(_popupWeb?.CoreWebView2?.Source ?? _popupWeb?.Source?.ToString(), 160)}");
                     return true;
+                }
+
+                if (!allowNavigate)
+                {
+                    Log($"[POPUPROUTE][WAIT] reason=nav-disabled active={ClipForLog(activeUrl, 120)} popup={ClipForLog(popupUrl, 120)} launchHost={ClipForLog(launchHost, 60)}");
+                    return false;
                 }
 
                 Log($"[POPUPROUTE][TRY] reason={ClipForLog(reason, 48)} active={ClipForLog(activeUrl, 120)} popup={ClipForLog(popupUrl, 120)} launchHost={ClipForLog(launchHost, 60)} launchUrl={ClipForLog(launchUrl, 160)}");
@@ -10941,6 +10996,62 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 Log("[POPUPROUTE][ERR] " + ex.Message);
                 return false;
+            }
+        }
+
+        private async Task WarmPopupToLastLaunchGameAsync(string reason)
+        {
+            if (!ShouldDisableOverlayRoomResolve())
+                return;
+
+            if (Interlocked.Exchange(ref _popupWarmRouteBusy, 1) == 1)
+            {
+                Log($"[POPUPWARM][SKIP] reason=busy src={ClipForLog(reason, 48)}");
+                return;
+            }
+
+            try
+            {
+                var launchUrl = (_wmLastLaunchGameUrl ?? "").Trim();
+                var launchHost = (_wmLastLaunchHost ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(launchUrl) || string.IsNullOrWhiteSpace(launchHost))
+                {
+                    Log($"[POPUPWARM][SKIP] reason=no-launch-game src={ClipForLog(reason, 48)}");
+                    return;
+                }
+
+                if ((DateTime.UtcNow - _wmLastLaunchAtUtc) > TimeSpan.FromMinutes(10))
+                {
+                    Log($"[POPUPWARM][SKIP] reason=launch-stale src={ClipForLog(reason, 48)} host={ClipForLog(launchHost, 60)} ageSec={(DateTime.UtcNow - _wmLastLaunchAtUtc).TotalSeconds:0}");
+                    return;
+                }
+
+                var active = GetActiveRoomHostWebView();
+                var activeName =
+                    ReferenceEquals(active, _popupWeb) ? "PopupWeb" :
+                    ReferenceEquals(active, Web) ? "Web" :
+                    active == null ? "null" : "OtherWeb";
+                var activeUrl = active?.CoreWebView2?.Source ?? active?.Source?.ToString() ?? "";
+                var popupUrl = _popupWeb?.CoreWebView2?.Source ?? _popupWeb?.Source?.ToString() ?? "";
+                var warmReason = (reason ?? "").Trim();
+                var reuseOnly =
+                    string.Equals(warmReason, "run-all", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(warmReason, "start-table", StringComparison.OrdinalIgnoreCase);
+                var navMode = reuseOnly ? "reuse-only" : "allow-nav";
+
+                Log($"[POPUPWARM][TRY] src={ClipForLog(reason, 48)} navMode={navMode} active={activeName} activeUrl={ClipForLog(activeUrl, 120)} popup={ClipForLog(popupUrl, 120)} launchHost={ClipForLog(launchHost, 60)}");
+
+                var routed = await EnsurePopupRoutedToLastLaunchGameAsync(active, "warm-" + (reason ?? ""), allowNavigate: !reuseOnly);
+                popupUrl = _popupWeb?.CoreWebView2?.Source ?? _popupWeb?.Source?.ToString() ?? "";
+                Log($"[POPUPWARM][READY] src={ClipForLog(reason, 48)} navMode={navMode} routed={(routed ? 1 : 0)} popup={ClipForLog(popupUrl, 160)}");
+            }
+            catch (Exception ex)
+            {
+                Log("[POPUPWARM][ERR] " + ex.Message);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _popupWarmRouteBusy, 0);
             }
         }
 
@@ -14802,6 +14913,133 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }).Task.Unwrap();
         }
 
+        private void ArmBetPathNavBlock(string reason, int holdMs = 4500)
+        {
+            if (holdMs < 1200)
+                holdMs = 1200;
+            _betPathNavBlockUntilUtc = DateTime.UtcNow.AddMilliseconds(holdMs);
+            _betPathNavBlockReason = string.IsNullOrWhiteSpace(reason) ? "bet-path" : reason.Trim();
+        }
+
+        private bool IsBetPathNavBlocked(out int remainMs, out string reason)
+        {
+            var now = DateTime.UtcNow;
+            if (_betPathNavBlockUntilUtc > now)
+            {
+                remainMs = Math.Max(1, (int)(_betPathNavBlockUntilUtc - now).TotalMilliseconds);
+                reason = string.IsNullOrWhiteSpace(_betPathNavBlockReason) ? "bet-path" : _betPathNavBlockReason;
+                return true;
+            }
+
+            remainMs = 0;
+            reason = "";
+            return false;
+        }
+
+        private static string NormalizeEvalResultText(string raw)
+        {
+            var t = (raw ?? "").Trim();
+            if (t.Length == 0)
+                return "";
+            if (t.StartsWith("\"", StringComparison.Ordinal) && t.EndsWith("\"", StringComparison.Ordinal))
+            {
+                try
+                {
+                    return (JsonSerializer.Deserialize<string>(t) ?? "").Trim();
+                }
+                catch { }
+            }
+            return t.Trim('"').Trim();
+        }
+
+        private static bool IsBetDispatchFailureResult(string normalized)
+        {
+            var s = (normalized ?? "").Trim().ToLowerInvariant();
+            if (s.Length == 0)
+                return true;
+            if (s == "undefined" || s == "null" || s == "no" || s == "{}" || s == "[]" || s == "false")
+                return true;
+            if (s.StartsWith("err:", StringComparison.Ordinal) || s.StartsWith("fail:", StringComparison.Ordinal))
+                return true;
+            if (s.Contains("is not defined", StringComparison.Ordinal) || s.Contains("cannot read", StringComparison.Ordinal))
+                return true;
+            return false;
+        }
+
+        private static string DecodeJsStringToken(string token)
+        {
+            token = (token ?? "").Trim();
+            if (token.Length >= 2 && token[0] == '"' && token[token.Length - 1] == '"')
+            {
+                try { return JsonSerializer.Deserialize<string>(token) ?? ""; } catch { return token.Trim('"'); }
+            }
+            if (token.Length >= 2 && token[0] == '\'' && token[token.Length - 1] == '\'')
+            {
+                var inner = token.Substring(1, token.Length - 2);
+                return inner.Replace("\\\\", "\\").Replace("\\'", "'").Replace("\\\"", "\"");
+            }
+            return token;
+        }
+
+        private static bool TryExtractBetProbeArgs(string js, out string tableId, out string side, out long amount)
+        {
+            tableId = "";
+            side = "";
+            amount = 0;
+            if (string.IsNullOrWhiteSpace(js))
+                return false;
+
+            var m = Regex.Match(
+                js,
+                "__cw_bet\\s*\\(\\s*(?<tid>(?:\"(?:\\\\.|[^\"])*\"|'(?:\\\\.|[^'])*'))\\s*,\\s*(?<side>(?:\"(?:\\\\.|[^\"])*\"|'(?:\\\\.|[^'])*'))\\s*,\\s*(?<amt>-?\\d+(?:\\.\\d+)?)",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            if (!m.Success)
+                return false;
+
+            tableId = DecodeJsStringToken(m.Groups["tid"].Value).Trim();
+            side = DecodeJsStringToken(m.Groups["side"].Value).Trim();
+            if (string.IsNullOrWhiteSpace(tableId) || string.IsNullOrWhiteSpace(side))
+                return false;
+
+            var amtText = (m.Groups["amt"].Value ?? "").Trim();
+            if (!double.TryParse(amtText, NumberStyles.Any, CultureInfo.InvariantCulture, out var amt))
+                return false;
+            amount = (long)Math.Round(amt, MidpointRounding.AwayFromZero);
+            return amount > 0;
+        }
+
+        private static string BuildBetProbeScript(string tableId, string side, long amount)
+        {
+            var tableIdJson = JsonSerializer.Serialize(tableId ?? "");
+            var sideJson = JsonSerializer.Serialize(side ?? "");
+            var amountJs = amount.ToString(CultureInfo.InvariantCulture);
+            return "(function(){try{" +
+                   "var helper=(typeof window.__cw_bet==='function')?1:0;" +
+                   "var finder=(typeof window.findCardRootByName==='function')?1:0;" +
+                   "var ready=String((document&&document.readyState)||'');" +
+                   "var roomRoots=0;try{roomRoots=document.querySelectorAll('[id$=\"_roadmap\"], [id*=\"cardRoadmap\"]').length;}catch(_){roomRoots=0;}" +
+                   "var href=String((location&&location.href)||'');" +
+                   "var host=String((location&&location.host)||'');" +
+                   "if(typeof window.__cw_bet_probe!=='function'){" +
+                   "return JSON.stringify({score:-120,msg:'probe-missing',host:host,href:href,helper:helper,finder:finder,ready:ready,roomRoots:roomRoots});}" +
+                   "var p=window.__cw_bet_probe(" + tableIdJson + "," + sideJson + "," + amountJs + ");" +
+                   "if(!p||typeof p!=='object'){return JSON.stringify({score:-121,msg:'probe-non-object',host:host,href:href,helper:helper,finder:finder,ready:ready,roomRoots:roomRoots});}" +
+                   "var score=Number(p.score||0)||0;" +
+                   "if(p.rootId) score+=40;" +
+                   "if(p.targetId) score+=40;" +
+                   "if(p.confirmId) score+=12;" +
+                   "if(p.chipToken) score+=10;" +
+                   "if(p.chipDocSameAsRoot) score+=6;" +
+                   "if(/singleBacTable\\.jsp|webMain\\.jsp|gamehall\\.jsp|m8810\\.com|wmvn\\./i.test(href)) score+=8;" +
+                   "if(helper<=0) score-=180;" +
+                   "if(finder<=0) score-=70;" +
+                   "if(roomRoots<=0) score-=20;" +
+                   "p.score=score; p.host=host; p.href=href;" +
+                   "p.helper=helper; p.finder=finder; p.ready=ready; p.roomRoots=roomRoots;" +
+                   "return JSON.stringify(p);" +
+                   "}catch(e){return JSON.stringify({score:-122,msg:String((e&&e.message)||e||'probe-exception'),helper:(typeof window.__cw_bet==='function')?1:0,finder:(typeof window.findCardRootByName==='function')?1:0});}})();";
+        }
+
         private Task<string> EvalJsActiveRoomHostLockedAsync(string js)
         {
             return Dispatcher.InvokeAsync(async () =>
@@ -14814,6 +15052,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     var isBetCall = !string.IsNullOrWhiteSpace(js) &&
                         (js.IndexOf("__cw_bet", StringComparison.OrdinalIgnoreCase) >= 0 ||
                          js.IndexOf("__cw_forceStakeLevel1", StringComparison.OrdinalIgnoreCase) >= 0);
+                    var isBetDispatch = !string.IsNullOrWhiteSpace(js) &&
+                        js.IndexOf("__cw_bet(", StringComparison.OrdinalIgnoreCase) >= 0;
                     var popupRouted = false;
                     void AddCandidate(WebView2? web)
                     {
@@ -14834,7 +15074,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     {
                         await LogBetHostProbeAsync("before-route-active", active);
                         await LogBetHostProbeAsync("before-route-popup", _popupWeb);
-                        var shouldShortCircuitMain = ShouldDisableOverlayRoomResolve() && ReferenceEquals(active, Web);
+                        // Keep bet host routing close to baseline: avoid main-frame short-circuit
+                        // so wrapper bets can still route to PopupWeb when needed.
+                        var shouldShortCircuitMain = false;
                         var preRouteMainFrame = shouldShortCircuitMain
                             ? await TryGetReadyMainGameFrameAsync("pre-route-main")
                             : null;
@@ -14849,35 +15091,22 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         }
                         else
                         {
-                            popupRouted = await EnsurePopupRoutedToLastLaunchGameAsync(active, "bet-host");
+                            var warmInFlight = Interlocked.CompareExchange(ref _popupWarmRouteBusy, 0, 0) == 1;
+                            if (warmInFlight)
+                                Log("[POPUPROUTE][WAIT] reason=warm-in-flight");
+                            popupRouted = await EnsurePopupRoutedToLastLaunchGameAsync(
+                                active,
+                                warmInFlight ? "bet-host-warm-busy" : "bet-host",
+                                allowNavigate: true);
                         }
                         active = GetActiveRoomHostWebView();
                         await LogBetHostProbeAsync("after-route-active", active);
                         await LogBetHostProbeAsync("after-route-popup", _popupWeb);
                     }
-                    var useTrackedGameFrame = isBetCall && ShouldUseTrackedWmGameFrameForBet(active);
-                    if (useTrackedGameFrame)
+                    var useTrackedGameFrame = false;
+                    if (isBetCall && ShouldUseTrackedWmGameFrameForBet(active))
                     {
-                        var (trackedFrame, target) = await TryGetReadyTrackedWmGameFrameAsync(active, "bet-host");
-                        if (trackedFrame == null)
-                        {
-                            await SetWrapperOverlayLockAsync(false, "tracked-frame-not-ready");
-                            Log("[JSHOST][FRAME] selected=none reason=tracked-frame-not-ready");
-                            return "no";
-                        }
-
-                        try
-                        {
-                            var frameResult = await trackedFrame.ExecuteScriptAsync(js);
-                            Log($"[JSHOST][FRAME] selected={target}");
-                            return frameResult;
-                        }
-                        catch (Exception ex)
-                        {
-                            await SetWrapperOverlayLockAsync(false, "tracked-frame-exec-fail");
-                            Log($"[JSHOST][FRAME] fail selected={target} msg={ClipForLog(ex.Message, 160)}");
-                            return "no";
-                        }
+                        Log("[JSHOST][FRAME] skip=1 reason=diagnostic-probe-matrix");
                     }
                     var preferPopup = isBetCall && (popupRouted || ShouldPreferPopupForBetHost(active));
                     if (preferPopup)
@@ -14892,11 +15121,143 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         AddCandidate(Web);
                         AddCandidate(_popupWeb);
                     }
+
+                    var scoredCandidates = candidates
+                        .Where(w => w?.CoreWebView2 != null)
+                        .Select(w => (web: w!, score: -999))
+                        .ToList();
+                    var probeMeta = new Dictionary<WebView2, (int score, int helper, int finder, int roomRoots, string href)>();
+
+                    if (isBetDispatch && TryExtractBetProbeArgs(js, out var probeTableId, out var probeSide, out var probeAmount))
+                    {
+                        var probeSeq = Interlocked.Increment(ref _betProbeSeq);
+                        var probeScript = BuildBetProbeScript(probeTableId, probeSide, probeAmount);
+                        var probeRows = new List<string>();
+                        for (int i = 0; i < scoredCandidates.Count; i++)
+                        {
+                            var web = scoredCandidates[i].web;
+                            var hostName = DescribeWebView(web);
+                            try
+                            {
+                                var probeRaw = await web.ExecuteScriptAsync(probeScript);
+                                var probeNorm = NormalizeEvalResultText(probeRaw);
+                                var score = -130;
+                                var summary = "";
+                                if (!string.IsNullOrWhiteSpace(probeNorm))
+                                {
+                                    try
+                                    {
+                                        using var probeDoc = JsonDocument.Parse(probeNorm);
+                                        var pr = probeDoc.RootElement;
+                                        if (pr.TryGetProperty("score", out var scoreEl))
+                                        {
+                                            if (scoreEl.ValueKind == JsonValueKind.Number)
+                                                score = (int)Math.Round(scoreEl.GetDouble(), MidpointRounding.AwayFromZero);
+                                            else if (scoreEl.ValueKind == JsonValueKind.String &&
+                                                     int.TryParse(scoreEl.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
+                                                score = parsed;
+                                        }
+                                        var rootId = pr.TryGetProperty("rootId", out var rootEl) ? (rootEl.GetString() ?? "") : "";
+                                        var targetId = pr.TryGetProperty("targetId", out var targetEl) ? (targetEl.GetString() ?? "") : "";
+                                        var confirmId = pr.TryGetProperty("confirmId", out var confirmEl) ? (confirmEl.GetString() ?? "") : "";
+                                        var chipToken = pr.TryGetProperty("chipToken", out var chipEl) ? (chipEl.GetString() ?? "") : "";
+                                        var href = pr.TryGetProperty("href", out var hrefEl) ? (hrefEl.GetString() ?? "") : "";
+                                        var helper = pr.TryGetProperty("helper", out var helperEl) ? I(helperEl.ToString(), 0) : 0;
+                                        var finder = pr.TryGetProperty("finder", out var finderEl) ? I(finderEl.ToString(), 0) : 0;
+                                        var roomRoots = pr.TryGetProperty("roomRoots", out var roomRootsEl) ? I(roomRootsEl.ToString(), 0) : 0;
+                                        probeMeta[web] = (score, helper, finder, roomRoots, href);
+                                        summary = $"score={score} helper={helper} finder={finder} roomRoots={roomRoots} root={ClipForLog(rootId, 52)} target={ClipForLog(targetId, 52)} confirm={ClipForLog(confirmId, 52)} chip={ClipForLog(chipToken, 24)} href={ClipForLog(href, 120)}";
+                                    }
+                                    catch
+                                    {
+                                        summary = "score=-131 raw=" + ClipForLog(probeNorm, 120);
+                                        score = -131;
+                                        probeMeta[web] = (score, 0, 0, 0, "");
+                                    }
+                                }
+                                else
+                                {
+                                    summary = "score=-132 raw-empty";
+                                    score = -132;
+                                    probeMeta[web] = (score, 0, 0, 0, "");
+                                }
+
+                                scoredCandidates[i] = (web, score);
+                                probeRows.Add($"{hostName}:{score}");
+                                Log($"[JSHOST][PROBE] seq={probeSeq} host={hostName} {summary}");
+                            }
+                            catch (Exception ex)
+                            {
+                                scoredCandidates[i] = (web, -133);
+                                probeRows.Add($"{hostName}:-133");
+                                probeMeta[web] = (-133, 0, 0, 0, "");
+                                Log($"[JSHOST][PROBE] seq={probeSeq} host={hostName} score=-133 msg={ClipForLog(ex.Message, 140)}");
+                            }
+                        }
+
+                        if (probeRows.Count > 0)
+                            Log($"[JSHOST][PROBE-MATRIX] seq={probeSeq} {string.Join(" | ", probeRows)}");
+
+                        scoredCandidates = scoredCandidates
+                            .OrderByDescending(x => x.score)
+                            .ThenBy(x => ReferenceEquals(x.web, active) ? 0 : 1)
+                            .ToList();
+                        candidates = scoredCandidates.Select(x => (WebView2?)x.web).ToList();
+
+                        if (ShouldDisableOverlayRoomResolve())
+                        {
+                            var guarded = new List<WebView2?>();
+                            var dropped = 0;
+                            foreach (var candidate in candidates)
+                            {
+                                if (candidate?.CoreWebView2 == null)
+                                    continue;
+
+                                if (!probeMeta.TryGetValue(candidate, out var pm))
+                                {
+                                    guarded.Add(candidate);
+                                    continue;
+                                }
+
+                                string? guardReason = null;
+                                if (pm.helper <= 0)
+                                    guardReason = "probe-helper-missing";
+                                else if (pm.finder <= 0 && pm.score < 80)
+                                    guardReason = "probe-finder-missing";
+                                else if (pm.roomRoots <= 0 && pm.score < 60)
+                                    guardReason = "probe-roomroots-low";
+                                else if (pm.score < 25)
+                                    guardReason = "probe-score-low";
+
+                                if (!string.IsNullOrWhiteSpace(guardReason))
+                                {
+                                    dropped++;
+                                    Log($"[JSHOST][SKIP] selected={DescribeWebView(candidate)} reason={guardReason} score={pm.score} helper={pm.helper} finder={pm.finder} roomRoots={pm.roomRoots} href={ClipForLog(pm.href, 120)}");
+                                    continue;
+                                }
+
+                                guarded.Add(candidate);
+                            }
+
+                            if (guarded.Count > 0 && dropped > 0)
+                            {
+                                Log($"[JSHOST][GUARD] wrapper=1 keep={guarded.Count} drop={dropped}");
+                                candidates = guarded;
+                            }
+                            else if (guarded.Count == 0 && dropped > 0)
+                            {
+                                Log($"[JSHOST][GUARD] wrapper=1 keep=0 drop={dropped} fallback=1");
+                            }
+                        }
+                    }
+
                     if (isBetCall)
                     {
                         Log($"[JSHOST][TRY] active={DescribeWebView(active)} preferPopup={(preferPopup ? 1 : 0)} popupRouted={(popupRouted ? 1 : 0)} launchHost={ClipForLog(_wmLastLaunchHost, 60)} launchUrl={ClipForLog(_wmLastLaunchGameUrl, 120)} candidates={string.Join(',', candidates.Select(DescribeWebView))}");
+                        ArmBetPathNavBlock("bet-dispatch", 4500);
                     }
 
+                    string firstRaw = "";
                     foreach (var web in candidates)
                     {
                         if (web?.CoreWebView2 == null)
@@ -14904,16 +15265,30 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         try
                         {
                             var result = await web.ExecuteScriptAsync(js);
+                            if (string.IsNullOrWhiteSpace(firstRaw))
+                                firstRaw = result ?? "";
                             if (isBetCall)
-                                Log($"[JSHOST][OK] selected={DescribeWebView(web)}");
+                            {
+                                var norm = NormalizeEvalResultText(result);
+                                if (IsBetDispatchFailureResult(norm))
+                                {
+                                    Log($"[JSHOST][SKIP] selected={DescribeWebView(web)} result={ClipForLog(norm, 140)}");
+                                    continue;
+                                }
+                                Log($"[JSHOST][OK] selected={DescribeWebView(web)} result={ClipForLog(norm, 96)}");
+                            }
                             return result;
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            if (isBetCall)
+                                Log($"[JSHOST][SKIP] selected={DescribeWebView(web)} reason=exec-ex msg={ClipForLog(ex.Message, 140)}");
+                        }
                     }
 
                     if (isBetCall)
                         Log("[JSHOST][FAIL] no webview could execute bet script");
-                    return "";
+                    return firstRaw;
                 }
                 finally
                 {
@@ -16053,6 +16428,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                     if (!await EnsureGameReadyForBetAsync())
                         return;
+                    await WarmPopupToLastLaunchGameAsync("start-table");
 
                     if (CheckLicense)
                     {
@@ -16340,6 +16716,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 await EnsureWebReadyAsync();
                 if (!await EnsureGameReadyForBetAsync())
                     return;
+                await WarmPopupToLastLaunchGameAsync("run-all");
                 if (CheckLicense)
                 {
                     var ok = await EnsureLicenseOnceAsync();

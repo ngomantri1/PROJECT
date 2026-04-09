@@ -2365,6 +2365,27 @@
         return false;
     }
 
+    function betFindCardRootByNameSafe(name, logBetWarn) {
+        const raw = String(name || '').trim();
+        if (!raw)
+            return null;
+        try {
+            if (typeof findCardRootByName === 'function')
+                return findCardRootByName(raw);
+        } catch (err) {
+            try {
+                if (typeof logBetWarn === 'function')
+                    logBetWarn('findCardRootByName failed name=' + raw + ' msg=' + String((err && err.message) || err || 'unknown'));
+            } catch (_) {}
+            return null;
+        }
+        try {
+            if (typeof logBetWarn === 'function')
+                logBetWarn('findCardRootByName missing name=' + raw);
+        } catch (_) {}
+        return null;
+    }
+
     async function betResolveRootForBetAsync(id, roomName, logBetWarn) {
         const resolvedName = String(roomName || '').trim();
         const rememberResolvedRoot = (root) => {
@@ -2387,7 +2408,7 @@
             if (!root)
                 root = betFindCardRootById(id);
             if (!root && resolvedName) {
-                root = betResolveRootFromOverlay(resolvedName) || findCardRootByName(resolvedName);
+                root = betResolveRootFromOverlay(resolvedName) || betFindCardRootByNameSafe(resolvedName, logBetWarn);
             }
             return rememberResolvedRoot(root || null);
         };
@@ -2492,6 +2513,7 @@
 
     window.__cw_bet = function (tableId, side, amount, isVirtual, waitDone, tableName) {
         let sent = false;
+        let resultSent = false;
         let diagTableId = String(tableId || '').trim();
         let diagRoomName = String(tableName || '').trim();
         let diagSideLabel = '';
@@ -2515,6 +2537,28 @@
                 });
                 if (!bridgeOk)
                     sent = false;
+            } catch (_) {}
+        };
+        const emitBetResult = (ok, reason, extra) => {
+            try {
+                const payload = Object.assign({
+                    abx: 'bet_result',
+                    tableId: String(diagTableId || tableId || '').trim(),
+                    name: String(diagRoomName || tableName || '').trim(),
+                    side: String(diagSideLabel || betNormalizeSide(side) || ''),
+                    amount: Number(diagAmountValue || amount || 0) || 0,
+                    ok: ok ? 1 : 0,
+                    reason: String(reason || ''),
+                    ui: 'game',
+                    source: 'cw_bet',
+                    ts: Date.now()
+                }, extra || {});
+                if (!payload.tableId) payload.tableId = String(tableId || '').trim();
+                if (!payload.name) payload.name = String(tableName || '').trim();
+                if (!payload.side) payload.side = String(betNormalizeSide(side) || '');
+                if (!payload.amount) payload.amount = Number(amount || 0) || 0;
+                betPostBridgePayload(payload);
+                resultSent = true;
             } catch (_) {}
         };
         const logBetWarn = (msg) => {
@@ -2565,12 +2609,13 @@
                 virtual: isVirtual === true ? 1 : 0
             });
 
-            if (id && sideLabel) {
-                if (isVirtual === true) {
-                    diagPhase = 'virtual';
-                    sendOnce(id, sideLabel, amountValue, roomName);
-                    return 'ok';
-                }
+                if (id && sideLabel) {
+                    if (isVirtual === true) {
+                        diagPhase = 'virtual';
+                        sendOnce(id, sideLabel, amountValue, roomName);
+                        emitBetResult(true, 'virtual', { phase: diagPhase });
+                        return 'ok';
+                    }
                 const idCandidates = betGetTableIdCandidates(id);
                 diagPhase = 'resolve_root';
                 let root = betResolveRootFromOverlay(id);
@@ -2583,11 +2628,12 @@
                         root = overlayRoot;
                         trustedRoot = true;
                     } else {
-                        root = findCardRootByName(roomName);
+                        root = betFindCardRootByNameSafe(roomName, logBetWarn);
                     }
                 }
                 if (!root) {
                     logBetWarn('root not found for tableId=' + id + ' name=' + roomName + ' side=' + sideLabel + ' amount=' + amountValue);
+                    emitBetResult(false, 'err:root', { phase: 'resolve_root' });
                     return 'err:root';
                 }
                 diagPhase = 'root_ready';
@@ -2624,6 +2670,7 @@
                 }
                 if (!target) {
                     logBetWarn('target not found for tableId=' + id + ' name=' + roomName + ' side=' + sideLabel + ' amount=' + amountValue);
+                    emitBetResult(false, 'err:target', { phase: 'resolve_target' });
                     return 'err:target';
                 }
                 const rootDoc = root ? (root.ownerDocument || document) : document;
@@ -2653,6 +2700,7 @@
                     const planResult = betBuildChipPlan(amountValue, rootDoc);
                     if (!planResult.plan.length || planResult.remaining > 0) {
                         logBetWarn('cannot build chip plan amount=' + amountValue + ' remaining=' + planResult.remaining);
+                        emitBetResult(false, 'err:plan', { phase: 'build_plan', remaining: Number(planResult.remaining || 0) || 0 });
                         return 'err:plan';
                     }
                     diagPhase = 'plan_ready';
@@ -2829,6 +2877,10 @@
                                 ok: ok ? 1 : 0,
                                 multi: useMultiFlow ? 1 : 0
                             });
+                            emitBetResult(!!ok, ok ? 'ok' : 'err:exec', {
+                                phase: 'queue_done',
+                                multi: useMultiFlow ? 1 : 0
+                            });
                             return ok ? 'ok' : 'err:exec';
                         });
                     const tail = (typeof cssTail === 'function') ? cssTail(clickTarget) : '';
@@ -2855,6 +2907,7 @@
                 if (console && console.warn)
                     console.warn('[BET][EXCEPTION]', { phase: diagPhase, name: errName, message: errMsg });
             } catch (_) {}
+            emitBetResult(false, 'err:exception', { phase: diagPhase, errorName: errName, errorMessage: errMsg });
             return 'err:exception';
         }
 
@@ -2868,9 +2921,25 @@
         const s = betNormalizeSide(side);
         const amountValue = Number(amount) || 0;
         const root = betResolveRootFromOverlay(id) || betFindCardRootById(id);
-        const target = root ? betFindMultiTargetByRoot(root, s) : null;
+        const targetTail = s === 'player' ? BET_PLAYER_TAIL : BET_BANKER_TAIL;
+        const selector = s === 'player'
+            ? '.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt'
+            : '.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru';
+        let target = root
+            ? (betFindMultiTargetByRoot(root, s) || betFindByTail(root, targetTail) || betFindFirstVisible(root, selector))
+            : null;
+        if (!target)
+            target = betFindTargetByTableId(id, s);
         const confirmBtn = root ? betFindMultiConfirmByRoot(root) : null;
         const chipNode = betFindChipByAmount(amountValue, root ? (root.ownerDocument || document) : document);
+        const href = String((location && location.href) || '');
+        let score = 0;
+        if (root) score += 40;
+        if (target) score += 40;
+        if (confirmBtn) score += 12;
+        if (chipNode) score += 10;
+        if (chipNode && root && ((chipNode.ownerDocument || document) === (root.ownerDocument || document))) score += 6;
+        if (/singleBacTable\.jsp|webMain\.jsp|gamehall\.jsp|m8810\.com|wmvn\./i.test(href)) score += 8;
         const info = {
             rev: HOME_JS_REV,
             tableId: id,
@@ -2880,7 +2949,11 @@
             targetId: (target && target.id) || '',
             confirmId: (confirmBtn && confirmBtn.id) || '',
             chipToken: chipNode ? betParseMultiChipTokenFromNode(chipNode) : '',
-            chipDocSameAsRoot: !!(chipNode && root && ((chipNode.ownerDocument || document) === (root.ownerDocument || document)))
+            chipDocSameAsRoot: !!(chipNode && root && ((chipNode.ownerDocument || document) === (root.ownerDocument || document))),
+            href: href,
+            host: String((location && location.host) || ''),
+            ready: String((document && document.readyState) || ''),
+            score: score
         };
         try {
             console.log('[BET-WM] probe', info);
