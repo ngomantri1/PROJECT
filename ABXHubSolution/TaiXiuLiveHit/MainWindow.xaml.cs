@@ -749,6 +749,7 @@ Ví dụ không hợp lệ:
         private CancellationTokenSource? _leaseHbCts;
         private CancellationTokenSource? _bridgeProbeCts;
         private string _lastBridgeProbeState = "";
+        private DateTime _lastDevToolsOpenUtc = DateTime.MinValue;
 
 
 
@@ -779,6 +780,7 @@ Ví dụ không hợp lệ:
             BetGrid.ItemsSource = _betPage;
             // gọi async sau khi cửa sổ đã load
             this.Loaded += MainWindow_Loaded;
+            this.PreviewKeyDown += MainWindow_PreviewKeyDown;
 
         }
 
@@ -2609,9 +2611,10 @@ Ví dụ không hợp lệ:
                 if (settings != null)
                 {
                     settings.IsWebMessageEnabled = true;
+                    settings.AreDevToolsEnabled = true;
+                    settings.AreBrowserAcceleratorKeysEnabled = true;
                     // (tuỳ chọn khác, giữ nguyên nếu bạn không cần)
                     // settings.AreDefaultContextMenusEnabled = false;
-                    // settings.AreDevToolsEnabled = true;
                 }
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
@@ -2637,6 +2640,47 @@ Ví dụ không hợp lệ:
             catch (Exception ex)
             {
                 Log("[HookWebViewEventsOnce] " + ex);
+            }
+        }
+
+        private async void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.F12) return;
+            e.Handled = true;
+
+            try
+            {
+                if (Web?.CoreWebView2 == null)
+                    await EnsureWebReadyAsync();
+                TryOpenDevTools("F12");
+            }
+            catch (Exception ex)
+            {
+                Log("[DevTools] hotkey error: " + ex.Message);
+            }
+        }
+
+        private void TryOpenDevTools(string source)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                if ((now - _lastDevToolsOpenUtc).TotalMilliseconds < 500)
+                    return;
+                _lastDevToolsOpenUtc = now;
+
+                if (Web?.CoreWebView2 == null)
+                {
+                    Log("[DevTools] CoreWebView2 not ready (" + source + ")");
+                    return;
+                }
+
+                Web.CoreWebView2.OpenDevToolsWindow();
+                Log("[DevTools] opened (" + source + ")");
+            }
+            catch (Exception ex)
+            {
+                Log("[DevTools] open failed (" + source + "): " + ex.Message);
             }
         }
 
