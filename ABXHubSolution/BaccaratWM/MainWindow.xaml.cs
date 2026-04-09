@@ -14957,7 +14957,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var s = (normalized ?? "").Trim().ToLowerInvariant();
             if (s.Length == 0)
                 return true;
-            if (s == "undefined" || s == "null" || s == "no" || s == "{}" || s == "[]" || s == "false")
+            if (s == "undefined" || s == "null" || s == "no" || s == "false")
                 return true;
             if (s.StartsWith("err:", StringComparison.Ordinal) || s.StartsWith("fail:", StringComparison.Ordinal))
                 return true;
@@ -15040,6 +15040,128 @@ private async Task<CancellationTokenSource> DebounceAsync(
                    "}catch(e){return JSON.stringify({score:-122,msg:String((e&&e.message)||e||'probe-exception'),helper:(typeof window.__cw_bet==='function')?1:0,finder:(typeof window.findCardRootByName==='function')?1:0});}})();";
         }
 
+        private static bool TryParseBetProbeSnapshot(
+            string normalized,
+            out int score,
+            out int helper,
+            out int finder,
+            out int roomRoots,
+            out string rootId,
+            out string targetId,
+            out string href)
+        {
+            score = -999;
+            helper = 0;
+            finder = 0;
+            roomRoots = 0;
+            rootId = "";
+            targetId = "";
+            href = "";
+            if (string.IsNullOrWhiteSpace(normalized))
+                return false;
+
+            try
+            {
+                using var probeDoc = JsonDocument.Parse(normalized);
+                var root = probeDoc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                    return false;
+
+                static int ReadInt(JsonElement el, int fallback = 0)
+                {
+                    if (el.ValueKind == JsonValueKind.Number)
+                        return (int)Math.Round(el.GetDouble(), MidpointRounding.AwayFromZero);
+                    if (el.ValueKind == JsonValueKind.String &&
+                        int.TryParse(el.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
+                        return parsed;
+                    return fallback;
+                }
+
+                if (root.TryGetProperty("score", out var scoreEl))
+                    score = ReadInt(scoreEl, -999);
+                if (root.TryGetProperty("helper", out var helperEl))
+                    helper = ReadInt(helperEl, 0);
+                if (root.TryGetProperty("finder", out var finderEl))
+                    finder = ReadInt(finderEl, 0);
+                if (root.TryGetProperty("roomRoots", out var roomRootsEl))
+                    roomRoots = ReadInt(roomRootsEl, 0);
+                if (root.TryGetProperty("rootId", out var rootEl))
+                    rootId = rootEl.GetString() ?? "";
+                if (root.TryGetProperty("targetId", out var targetEl))
+                    targetId = targetEl.GetString() ?? "";
+                if (root.TryGetProperty("href", out var hrefEl))
+                    href = hrefEl.GetString() ?? "";
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private async Task<bool> WaitForPopupBetProbeReadyAsync(string tableId, string side, long amount, string reason, int timeoutMs)
+        {
+            try
+            {
+                var popup = _popupWeb;
+                if (popup?.CoreWebView2 == null)
+                {
+                    Log($"[POPUPBET][WAIT] reason={ClipForLog(reason, 48)} table={tableId} side={side} amount={amount} state=popup-null");
+                    return false;
+                }
+
+                var probeScript = BuildBetProbeScript(tableId, side, amount);
+                var watch = Stopwatch.StartNew();
+                var attempts = 0;
+                var lastDetail = "";
+                Log($"[POPUPBET][WAIT] reason={ClipForLog(reason, 48)} table={tableId} side={side} amount={amount} timeoutMs={timeoutMs}");
+
+                while (watch.ElapsedMilliseconds < timeoutMs)
+                {
+                    attempts++;
+                    var probeRaw = await popup.ExecuteScriptAsync(probeScript);
+                    var probeNorm = NormalizeEvalResultText(probeRaw);
+                    if (TryParseBetProbeSnapshot(probeNorm, out var score, out var helper, out var finder, out var roomRoots, out var rootId, out var targetId, out var href))
+                    {
+                        var ready = helper > 0 &&
+                                    !string.IsNullOrWhiteSpace(rootId) &&
+                                    !string.IsNullOrWhiteSpace(targetId);
+                        lastDetail =
+                            $"score={score} helper={helper} finder={finder} roomRoots={roomRoots} root={ClipForLog(rootId, 52)} target={ClipForLog(targetId, 52)} href={ClipForLog(href, 120)}";
+
+                        if (ready)
+                        {
+                            if (attempts > 1)
+                                Log($"[POPUPBET][READY] reason={ClipForLog(reason, 48)} attempt={attempts} elapsedMs={(int)watch.ElapsedMilliseconds} {lastDetail}");
+                            return true;
+                        }
+
+                        if (attempts == 1 || attempts % 5 == 0)
+                            Log($"[POPUPBET][PROBE] reason={ClipForLog(reason, 48)} attempt={attempts} {lastDetail}");
+                    }
+                    else
+                    {
+                        lastDetail = "raw=" + ClipForLog(probeNorm, 140);
+                        if (attempts == 1 || attempts % 5 == 0)
+                            Log($"[POPUPBET][PROBE] reason={ClipForLog(reason, 48)} attempt={attempts} {lastDetail}");
+                    }
+
+                    var remainMs = timeoutMs - (int)watch.ElapsedMilliseconds;
+                    if (remainMs <= 0)
+                        break;
+                    await Task.Delay(Math.Min(280, Math.Max(120, remainMs)));
+                }
+
+                Log($"[POPUPBET][TIMEOUT] reason={ClipForLog(reason, 48)} elapsedMs={(int)watch.ElapsedMilliseconds} attempts={attempts} {lastDetail}");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Log($"[POPUPBET][ERR] reason={ClipForLog(reason, 48)} msg={ClipForLog(ex.Message, 160)}");
+                return false;
+            }
+        }
+
         private Task<string> EvalJsActiveRoomHostLockedAsync(string js)
         {
             return Dispatcher.InvokeAsync(async () =>
@@ -15054,6 +15176,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
                          js.IndexOf("__cw_forceStakeLevel1", StringComparison.OrdinalIgnoreCase) >= 0);
                     var isBetDispatch = !string.IsNullOrWhiteSpace(js) &&
                         js.IndexOf("__cw_bet(", StringComparison.OrdinalIgnoreCase) >= 0;
+                    string probeTableId = "";
+                    string probeSide = "";
+                    long probeAmount = 0;
+                    var hasBetProbeArgs = isBetDispatch &&
+                                          TryExtractBetProbeArgs(js, out probeTableId, out probeSide, out probeAmount);
                     var popupRouted = false;
                     void AddCandidate(WebView2? web)
                     {
@@ -15102,6 +15229,20 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         active = GetActiveRoomHostWebView();
                         await LogBetHostProbeAsync("after-route-active", active);
                         await LogBetHostProbeAsync("after-route-popup", _popupWeb);
+                        if (hasBetProbeArgs)
+                        {
+                            var shouldWaitPopupReady =
+                                popupRouted ||
+                                ReferenceEquals(active, _popupWeb) ||
+                                IsPopupWmVisible() ||
+                                IsPopupOnLastLaunchHost();
+                            if (shouldWaitPopupReady)
+                            {
+                                var waitReason = popupRouted ? "bet-host-route" : "bet-host-reuse";
+                                var waitTimeoutMs = popupRouted ? 6500 : 1800;
+                                await WaitForPopupBetProbeReadyAsync(probeTableId, probeSide, probeAmount, waitReason, waitTimeoutMs);
+                            }
+                        }
                     }
                     var useTrackedGameFrame = false;
                     if (isBetCall && ShouldUseTrackedWmGameFrameForBet(active))
@@ -15128,7 +15269,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         .ToList();
                     var probeMeta = new Dictionary<WebView2, (int score, int helper, int finder, int roomRoots, string href)>();
 
-                    if (isBetDispatch && TryExtractBetProbeArgs(js, out var probeTableId, out var probeSide, out var probeAmount))
+                    if (hasBetProbeArgs)
                     {
                         var probeSeq = Interlocked.Increment(ref _betProbeSeq);
                         var probeScript = BuildBetProbeScript(probeTableId, probeSide, probeAmount);

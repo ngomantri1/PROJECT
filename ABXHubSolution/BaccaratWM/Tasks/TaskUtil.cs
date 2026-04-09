@@ -222,8 +222,6 @@ namespace BaccaratWM.Tasks
                            n == "no" ||
                            n == "null" ||
                            n == "undefined" ||
-                           n == "{}" ||
-                           n == "[]" ||
                            n == "false" ||
                            n.StartsWith("err:", StringComparison.Ordinal) ||
                            n.StartsWith("fail:", StringComparison.Ordinal));
