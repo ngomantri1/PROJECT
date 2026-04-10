@@ -223,6 +223,7 @@ namespace TaiXiuLiveHit
         private bool _didStartupNav = false;
         private bool _webHooked = false;
         private CancellationTokenSource? _navCts, _userCts, _passCts, _stakeCts, _sideRateCts;
+        private readonly Dictionary<string, DateTime> _logThrottle = new();
 
         // ====== JS Awaiters ======
         private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _jsAwaiters =
@@ -880,6 +881,34 @@ Ví dụ không hợp lệ:
             var line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
             EnqueueUi(line);
             EnqueueFile(line);
+        }
+
+        private bool ShouldLogNow(string key, int minMs)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                lock (_logThrottle)
+                {
+                    if (_logThrottle.TryGetValue(key, out var last))
+                    {
+                        if ((now - last).TotalMilliseconds < minMs)
+                            return false;
+                    }
+                    _logThrottle[key] = now;
+                    return true;
+                }
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private void LogThrottled(string key, string msg, int minMs)
+        {
+            if (ShouldLogNow(key, minMs))
+                Log(msg);
         }
 
         private void SetModeUi(bool isGame)
@@ -2190,8 +2219,23 @@ Ví dụ không hợp lệ:
                                     string progTail = root.TryGetProperty("progTail", out var pt1) ? (pt1.GetString() ?? pt1.ToString()) : "";
                                     string seqSrc = root.TryGetProperty("seqSrc", out var ss1) ? (ss1.GetString() ?? ss1.ToString()) : "";
                                     string userSrc = root.TryGetProperty("userSrc", out var us1) ? (us1.GetString() ?? us1.ToString()) : "";
+                                    bool shouldLog = true;
+                                    if (string.Equals(reason, "progress_null", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        if (int.TryParse(noProgCount, out var nProg))
+                                            shouldLog = (nProg <= 1) || (nProg % 120 == 0);
+                                    }
+                                    else if (string.Equals(reason, "totals_null", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        if (int.TryParse(noTotalsCount, out var nTot))
+                                            shouldLog = (nTot <= 1) || (nTot % 120 == 0);
+                                    }
 
-                                    Log($"[BridgeDiag] where={where} reason={reason} host={host} cc={hasCc} dir={hasDir} getScene={hasGetScene} scene={hasScene} seqLen={seqLen} noProg={noProgCount} noTotals={noTotalsCount} progSrc={progSrc} progSec={progSec} seqSrc={seqSrc} userSrc={userSrc} progTail={progTail} href={href}");
+                                    if (shouldLog)
+                                    {
+                                        var line = $"[BridgeDiag] where={where} reason={reason} host={host} cc={hasCc} dir={hasDir} getScene={hasGetScene} scene={hasScene} seqLen={seqLen} noProg={noProgCount} noTotals={noTotalsCount} progSrc={progSrc} progSec={progSec} seqSrc={seqSrc} userSrc={userSrc} progTail={progTail} href={href}";
+                                        LogThrottled($"bridge.diag.{reason}.{host}", line, 4000);
+                                    }
                                     return;
                                 }
 
@@ -5935,7 +5979,7 @@ Ví dụ không hợp lệ:
                         var probe = await Dispatcher.InvokeAsync(() => ProbeBridgeStateAsync()).Task.Unwrap();
                         if (probe == null)
                         {
-                            if (i == 1 || i % 5 == 0)
+                            if (i == 1 || i % 15 == 0)
                                 Log($"[BridgeProbe] doc={docKey} try={i} probe=null");
                             await Task.Delay(700, cts.Token);
                             continue;
@@ -5944,7 +5988,7 @@ Ví dụ không hợp lệ:
                         string state =
                             $"host={probe.Host} cc={(probe.HasCc ? 1 : 0)} dir={(probe.HasDirector ? 1 : 0)} getScene={(probe.HasGetScene ? 1 : 0)} scene={(probe.HasScene ? 1 : 0)} bet={(probe.HasBet ? 1 : 0)} push={(probe.HasPush ? 1 : 0)} prog={(probe.HasProg ? 1 : 0)} seqLen={probe.SeqLen}";
 
-                        if (i == 1 || i % 5 == 0 || !string.Equals(state, _lastBridgeProbeState, StringComparison.Ordinal))
+                        if (i == 1 || i % 15 == 0 || !string.Equals(state, _lastBridgeProbeState, StringComparison.Ordinal))
                             Log($"[BridgeProbe] doc={docKey} try={i} {state}");
                         _lastBridgeProbeState = state;
 
@@ -5955,7 +5999,7 @@ Ví dụ không hợp lệ:
                                 try
                                 {
                                     await Dispatcher.InvokeAsync(() => Web.CoreWebView2.ExecuteScriptAsync(_appJs)).Task.Unwrap();
-                                    Log($"[BridgeProbe] reinject appJs (try={i})");
+                                    LogThrottled("bridge.probe.reinject", $"[BridgeProbe] reinject appJs (try={i})", 5000);
                                 }
                                 catch (Exception ex)
                                 {
@@ -6044,7 +6088,7 @@ Ví dụ không hợp lệ:
                 if (!string.IsNullOrEmpty(_appJs))
                     _ = f.ExecuteScriptAsync(_appJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
-                Log("[Bridge] Frame injected + autostart armed.");
+                LogThrottled("bridge.frame.injected", "[Bridge] Frame injected + autostart armed.", 8000);
 
                 // Hook lifecycle của CHÍNH frame này
                 f.DOMContentLoaded += Frame_DOMContentLoaded_Bridge;
@@ -6093,7 +6137,7 @@ Ví dụ không hợp lệ:
                     _ = f.ExecuteScriptAsync(_appJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
 
-                Log("[Bridge] Frame DOMContentLoaded -> reinjected + autostart.");
+                LogThrottled("bridge.frame.domloaded", "[Bridge] Frame DOMContentLoaded -> reinjected + autostart.", 8000);
             }
             catch (Exception ex)
             {
@@ -6114,7 +6158,7 @@ Ví dụ không hợp lệ:
                     _ = f.ExecuteScriptAsync(_appJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
 
-                Log("[Bridge] Frame NavigationCompleted -> reinjected + autostart.");
+                LogThrottled("bridge.frame.navcompleted", "[Bridge] Frame NavigationCompleted -> reinjected + autostart.", 8000);
             }
             catch (Exception ex)
             {
