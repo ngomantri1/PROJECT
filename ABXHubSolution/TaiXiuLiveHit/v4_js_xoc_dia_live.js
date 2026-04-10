@@ -3289,7 +3289,7 @@
 
                 if (!(typeof p === 'number' && !isNaN(p))) {
                     _diagNoProgCount++;
-                    if (_diagNoProgCount === 1 || _diagNoProgCount % 120 === 0) {
+                    if (_diagNoProgCount === 1 || _diagNoProgCount % 20 === 0) {
                         safePost({
                             abx: 'cw_diag',
                             where: 'push',
@@ -3315,7 +3315,7 @@
 
                 if (!snap.totals) {
                     _diagNoTotalsCount++;
-                    if (_diagNoTotalsCount === 1 || _diagNoTotalsCount % 120 === 0) {
+                    if (_diagNoTotalsCount === 1 || _diagNoTotalsCount % 20 === 0) {
                         safePost({
                             abx: 'cw_diag',
                             where: 'push',
