@@ -3557,6 +3557,8 @@ try{
             try
             {
                 var target = (e.Uri ?? "").Trim();
+                var deferBlankPopupForHost = IsCurrentHostB8Pro07() &&
+                    string.Equals(target, "about:blank", StringComparison.OrdinalIgnoreCase);
                 Log("[NewWindowRequested] " + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target));
 
                 var popupWeb = await EnsurePopupWebReadyAsync();
@@ -3564,13 +3566,19 @@ try{
                 {
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        if (Web != null)
-                            Web.Visibility = Visibility.Collapsed;
-                        if (PopupHost != null)
-                            PopupHost.Visibility = Visibility.Visible;
+                        if (!deferBlankPopupForHost)
+                        {
+                            if (Web != null)
+                                Web.Visibility = Visibility.Collapsed;
+                            if (PopupHost != null)
+                                PopupHost.Visibility = Visibility.Visible;
+                        }
                     });
                     e.NewWindow = popupWeb.CoreWebView2;
-                    popupWeb.Focus();
+                    if (!deferBlankPopupForHost)
+                        popupWeb.Focus();
+                    else
+                        Log("[NewWindowRequested] defer popup activation until host iframe yields a real game URL.");
                 }
             }
             catch (Exception ex) { Log("[NewWindowRequested] " + ex); }
@@ -4594,7 +4602,9 @@ try{
             {
                 _betWebNavigatingSinceUtc = DateTime.UtcNow;
                 var src = (e.Uri ?? "").Trim();
-                if (!IsLikelyBetGameUrl(src))
+                var keepMainHostVisible = IsCurrentHostB8Pro07() &&
+                    string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase);
+                if (!keepMainHostVisible && !IsLikelyBetGameUrl(src))
                     AutoStopTasksOnBetPipelineReset("popup-nav-start", src);
             }
             catch { }
@@ -4605,6 +4615,11 @@ try{
             try
             {
                 var src = _popupWeb?.CoreWebView2?.Source ?? "";
+                var keepMainHostVisible = IsCurrentHostB8Pro07() &&
+                    string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase);
+                var revealDeferredPopup = IsCurrentHostB8Pro07() &&
+                    !string.IsNullOrWhiteSpace(src) &&
+                    !string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase);
                 Log("[PopupWeb] NavigationCompleted: " + (e.IsSuccess ? "OK" : ("Err " + e.WebErrorStatus)) + " | " + src);
                 _betWebNavigatingSinceUtc = DateTime.MinValue;
                 _betWebLastNavDoneUtc = DateTime.UtcNow;
@@ -4617,8 +4632,34 @@ try{
                 }
                 if (e.IsSuccess)
                 {
-                    if (!IsLikelyBetGameUrl(src))
+                    if (keepMainHostVisible)
+                    {
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            if (PopupHost != null)
+                                PopupHost.Visibility = Visibility.Collapsed;
+                            if (Web != null)
+                                Web.Visibility = Visibility.Visible;
+                        });
+                        Log("[PopupWeb] keep main web active while popup is still about:blank on b8pro07.");
+                    }
+                    else
+                    {
+                        if (revealDeferredPopup)
+                        {
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                if (Web != null)
+                                    Web.Visibility = Visibility.Collapsed;
+                                if (PopupHost != null)
+                                    PopupHost.Visibility = Visibility.Visible;
+                                _popupWeb?.Focus();
+                            });
+                            Log("[PopupWeb] reveal deferred popup on b8pro07 | " + src);
+                        }
+                        if (!IsLikelyBetGameUrl(src))
                         AutoStopTasksOnBetPipelineReset("popup-nav-done-non-game", src);
+                    }
                     await InjectOnPopupDocAsync();
                 }
             }
@@ -6422,6 +6463,21 @@ try{
             }
         }
 
+        private bool IsCurrentHostB8Pro07()
+        {
+            try
+            {
+                var src = GetBetWebViewSource(Web);
+                if (string.IsNullOrWhiteSpace(src))
+                    src = Web?.CoreWebView2?.Source ?? "";
+                return src.IndexOf("b8pro07.com", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private bool IsCurrentHostAllowUnboundHistory()
         {
             try
@@ -6433,7 +6489,8 @@ try{
                     return false;
 
                 return src.IndexOf("vipbet389.com", StringComparison.OrdinalIgnoreCase) >= 0
-                    || src.IndexOf("rr5309.com", StringComparison.OrdinalIgnoreCase) >= 0;
+                    || src.IndexOf("rr5309.com", StringComparison.OrdinalIgnoreCase) >= 0
+                    || src.IndexOf("b8pro07.com", StringComparison.OrdinalIgnoreCase) >= 0;
             }
             catch
             {
@@ -7562,6 +7619,17 @@ try{
             return IsLikelyBetGameReadyUrl(rawUrl) || IsLikelyBetGatewayUrl(rawUrl);
         }
 
+        private static bool IsLikelyGame8bPopupUrl(string? rawUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rawUrl))
+                return false;
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var u))
+                return false;
+
+            var host = (u.Host ?? "").ToLowerInvariant();
+            return string.Equals(host, "app.lucky-wheel.game8b.com", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static bool IsLikelyBetGameReadyUrl(string? rawUrl)
         {
             if (string.IsNullOrWhiteSpace(rawUrl))
@@ -7570,6 +7638,8 @@ try{
                 return false;
             var host = (u.Host ?? "").ToLowerInvariant();
             if (host.StartsWith("bpweb.") || host.StartsWith("games."))
+                return true;
+            if (IsLikelyGame8bPopupUrl(rawUrl))
                 return true;
             var path = u.AbsolutePath ?? "";
             if (path.IndexOf("/player/webMain.jsp", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -7648,6 +7718,7 @@ try{
                 url.IndexOf("/player/webmain.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 url.IndexOf("/player/gamehall.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 url.IndexOf("/player/singlebactable.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                IsLikelyGame8bPopupUrl(url) ||
                 url.IndexOf("/error?", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
@@ -8089,6 +8160,8 @@ try{
       if (u.indexOf('/player/webmain.jsp') >= 0) s += 90;
       if (u.indexOf('/player/gamehall.jsp') >= 0) s += 80;
       if (u.indexOf('/player/login/apilogin') >= 0) s += 70;
+      if (u.indexOf('app.lucky-wheel.game8b.com') >= 0) s += 95;
+      if (u.indexOf('game8b.com') >= 0) s += 35;
       if (u.indexOf('bpweb.') >= 0) s += 40;
       if (u.indexOf('usplaynet.com') >= 0) s += 30;
       if (u.indexOf('balikko.com') >= 0) s += 30;
