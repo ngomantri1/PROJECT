@@ -146,9 +146,6 @@
             var isApiLogin =
                 path.indexOf('/player/login/apilogin') >= 0 ||
                 href.indexOf('/player/login/apilogin') >= 0;
-            var isPagesGame =
-                path.indexOf('/pages/game/') >= 0 ||
-                href.indexOf('/pages/game/') >= 0;
 
             // Cho phép webMain cả top document và iframe (vipbet389 thường chạy trong iframe).
             if (isWebMain)
@@ -164,10 +161,6 @@
 
             // vipbet389 có thể giữ URL apiLogin trong iframe nhưng render game nội bộ theo flow SPA.
             if (isApiLogin && !__cw_isTopDocument())
-                return true;
-
-            // Route mới của một số cổng sexy.
-            if (isPagesGame)
                 return true;
 
             return false;
@@ -10607,16 +10600,13 @@
                     return true;
                 if (/\/player\/login\/apiLogin/i.test(href) && !__cw_isTopDocument())
                     return true;
-                if (/\/pages\/game(\/|$)/i.test(href))
-                    return true;
                 if (/xoc[\-_]?dia/i.test(href))
                     return true;
             } catch (_) {}
             try {
                 var href2 = String((location && location.href) || '');
                 // Chỉ fallback theo Cocos cho trang player để tránh khởi động nhầm ở frame phụ.
-                if ((/\/player\//i.test(href2) || /\/pages\/game(\/|$)/i.test(href2)) &&
-                    typeof __cw_hasCocos === 'function' && __cw_hasCocos())
+                if (/\/player\//i.test(href2) && typeof __cw_hasCocos === 'function' && __cw_hasCocos())
                     return true;
             } catch (_) {}
             return false;
