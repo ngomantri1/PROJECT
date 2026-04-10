@@ -396,6 +396,7 @@ namespace BaccaratWM
         private Task<bool>? _licenseCheckTask;
         private string? _licenseCheckUser;
         private int _runAllInProgress = 0;
+        private int _runAllStopRequested = 0;
         private const int NiSeqMax = 50;
         private readonly System.Text.StringBuilder _niSeq = new(NiSeqMax);
 
@@ -788,8 +789,10 @@ Ví dụ không hợp lệ:
             public string TableName { get; set; } = "";
             public CancellationTokenSource? Cts;
             public IBetTask? Task;
+            public Task? RunningTask;
             public bool AutoStartRequested;
             public int DeferredStartScheduled;
+            public int StartRequestVersion;
             public DecisionState Decision = new();
             public bool Cooldown;
             public int StakeLevelIndexForUi = -1;
@@ -815,6 +818,8 @@ Ví dụ không hợp lệ:
             public bool ForceStakeLevel1Applied;
             public TabStats Stats { get; set; } = new TabStats();
         }
+
+        private sealed record RoomRunTarget(string Id, string Name);
 
         private sealed class TableOverlayState
         {
@@ -3341,10 +3346,22 @@ Ví dụ không hợp lệ:
 }})();";
         }
 
-        private async Task<bool> EnsurePopupReadyForCdpBetProbeAsync()
+        private async Task<bool> EnsurePopupReadyForCdpBetProbeAsync(string tableId, string? tableName = null)
         {
+            var targetId = (tableId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(targetId))
+            {
+                Log("[CDPBET][OPEN] no table selected");
+                return false;
+            }
+
+            var targetName = !string.IsNullOrWhiteSpace(tableName) ? tableName.Trim() : ResolveRoomName(targetId).Trim();
+
             if (PopupHost?.Visibility == Visibility.Visible && _popupWeb?.CoreWebView2 != null)
-                return true;
+            {
+                if (await WaitForPopupBetProbeReadyAsync(targetId, "player", 10, "cdpbet-reuse", 700))
+                    return true;
+            }
 
             if (Web?.CoreWebView2 == null)
             {
@@ -3352,20 +3369,12 @@ Ví dụ không hợp lệ:
                 return false;
             }
 
-            var tableId = (_activeTableId ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(tableId))
-            {
-                Log("[CDPBET][OPEN] no active table selected");
-                return false;
-            }
+            Log($"[CDPBET][OPEN] table={targetId} name={ClipForCdpProbe(targetName, 80)}");
 
-            var tableName = ResolveRoomName(tableId).Trim();
-            Log($"[CDPBET][OPEN] activeTable={tableId} name={ClipForCdpProbe(tableName, 80)}");
-
-            try { await ScrollRoomIntoViewAsync(tableName); } catch { }
+            try { await ScrollRoomIntoViewAsync(targetName); } catch { }
             await Task.Delay(180);
 
-            var openRaw = await Web.ExecuteScriptAsync(BuildCdpBetProbeOpenRoomJs(tableId, tableName));
+            var openRaw = await Web.ExecuteScriptAsync(BuildCdpBetProbeOpenRoomJs(targetId, targetName));
             var open = DeserializeScriptResult<CdpBetProbeOpenRoomResult>(openRaw);
             if (open == null)
             {
@@ -3382,14 +3391,18 @@ Ví dụ không hợp lệ:
             {
                 if (PopupHost?.Visibility == Visibility.Visible && _popupWeb?.CoreWebView2 != null)
                 {
-                    await Task.Delay(900);
-                    try { _popupWeb.Focus(); } catch { }
-                    return true;
+                    var ready = await WaitForPopupBetProbeReadyAsync(targetId, "player", 10, "cdpbet-open", 4000);
+                    if (ready)
+                    {
+                        await Task.Delay(300);
+                        try { _popupWeb.Focus(); } catch { }
+                        return true;
+                    }
                 }
                 await Task.Delay(150);
             }
 
-            Log("[CDPBET][OPEN] popup-timeout");
+            Log("[CDPBET][OPEN] popup-timeout table=" + targetId);
             return false;
         }
 
@@ -3634,7 +3647,8 @@ Ví dụ không hợp lệ:
 
                 try
                 {
-                    if (!await EnsurePopupReadyForCdpBetProbeAsync())
+                    var probeTableId = (_activeTableId ?? "").Trim();
+                    if (!await EnsurePopupReadyForCdpBetProbeAsync(probeTableId, ResolveRoomName(probeTableId)))
                     {
                         Log("[CDPBET] popup room not ready");
                         return;
@@ -7853,15 +7867,17 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
         }
 
-        private async Task SpawnTableOverlayAsync()
+        private async Task SpawnTableOverlayAsync(IEnumerable<RoomRunTarget>? targets = null)
         {
-            var selectedRooms = _roomOptions
-                .Where(it => it.IsSelected)
+            var selectedRooms = (targets ?? GetSelectedRunTargets())
+                .Where(it => it != null && !string.IsNullOrWhiteSpace(it.Id))
                 .Select(it => new
                 {
-                    id = string.IsNullOrWhiteSpace(it.Id) ? it.Name : it.Id,
-                    name = it.Name
+                    id = NormalizeSelectedRoomId(it.Id),
+                    name = string.IsNullOrWhiteSpace(it.Name) ? ResolveRoomName(it.Id) : it.Name
                 })
+                .Where(it => !string.IsNullOrWhiteSpace(it.id))
+                .DistinctBy(it => it.id, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             if (selectedRooms.Count == 0)
@@ -8071,6 +8087,144 @@ private async Task<CancellationTokenSource> DebounceAsync(
             _cfg.SelectedRooms = _selectedRooms.ToList();
             var after = BuildRoomsSignature(_selectedRooms);
             return !string.Equals(before, after, StringComparison.Ordinal);
+        }
+
+        private string NormalizeSelectedRoomId(string? value)
+        {
+            var raw = (value ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(raw))
+                return "";
+            if (_roomList.Any(r => string.Equals(r.Id, raw, StringComparison.OrdinalIgnoreCase)))
+                return raw;
+            if (_roomOptions.Any(r => string.Equals(r.Id, raw, StringComparison.OrdinalIgnoreCase)))
+                return raw;
+
+            var norm = TextNorm.U(raw);
+            if (string.IsNullOrWhiteSpace(norm))
+                return raw;
+
+            var roomHit = _roomList.FirstOrDefault(r => string.Equals(TextNorm.U(r.Name), norm, StringComparison.Ordinal));
+            if (roomHit != null && !string.IsNullOrWhiteSpace(roomHit.Id))
+                return roomHit.Id;
+
+            var optHit = _roomOptions.FirstOrDefault(r => string.Equals(TextNorm.U(r.Name), norm, StringComparison.Ordinal));
+            if (optHit != null && !string.IsNullOrWhiteSpace(optHit.Id))
+                return optHit.Id;
+
+            return raw;
+        }
+
+        private List<RoomRunTarget> GetSelectedRunTargets()
+        {
+            var map = new Dictionary<string, RoomRunTarget>(StringComparer.OrdinalIgnoreCase);
+
+            void add(string? id, string? name)
+            {
+                var canonicalId = NormalizeSelectedRoomId(id);
+                if (string.IsNullOrWhiteSpace(canonicalId))
+                    return;
+                if (map.ContainsKey(canonicalId))
+                    return;
+                var resolvedName = (name ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(resolvedName))
+                    resolvedName = ResolveRoomName(canonicalId).Trim();
+                if (string.IsNullOrWhiteSpace(resolvedName))
+                    resolvedName = canonicalId;
+                map[canonicalId] = new RoomRunTarget(canonicalId, resolvedName);
+            }
+
+            foreach (var option in _roomOptions)
+            {
+                if (option?.IsSelected != true)
+                    continue;
+                add(option.Id, option.Name);
+            }
+
+            if (map.Count == 0)
+            {
+                foreach (var raw in _selectedRooms)
+                    add(raw, ResolveRoomName(raw));
+            }
+
+            return map.Values.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        private bool IsSelectedRunTarget(string? tableId)
+        {
+            var raw = (tableId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(raw))
+                return false;
+            return GetSelectedRunTargets().Any(t => string.Equals(t.Id, raw, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private void PersistSelectedRoomsFromTargets(IEnumerable<RoomRunTarget> targets)
+        {
+            var ids = targets
+                .Select(t => NormalizeSelectedRoomId(t.Id))
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            _cfg.SelectedRooms = ids;
+        }
+
+        private void EnsureRoomSelectedForRun(string tableId, string? tableName = null)
+        {
+            var canonicalId = NormalizeSelectedRoomId(tableId);
+            if (string.IsNullOrWhiteSpace(canonicalId))
+                return;
+
+            if (!_selectedRooms.Contains(canonicalId))
+                _selectedRooms.Add(canonicalId);
+
+            var option = _roomOptions.FirstOrDefault(r => string.Equals(r.Id, canonicalId, StringComparison.OrdinalIgnoreCase));
+            if (option != null && !option.IsSelected)
+                option.IsSelected = true;
+
+            PersistSelectedRoomsFromTargets(GetSelectedRunTargets());
+        }
+
+        private async Task<bool> EnsureOverlayContainsTargetsAsync(IEnumerable<RoomRunTarget>? targets = null, string reason = "", int timeoutMs = 12000)
+        {
+            var wanted = (targets ?? GetSelectedRunTargets())
+                .Where(t => !string.IsNullOrWhiteSpace(t.Id))
+                .GroupBy(t => t.Id, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+
+            if (wanted.Count == 0)
+            {
+                Log("[TABLE][OVERLAY] no selected targets to sync.");
+                return false;
+            }
+
+            var current = _overlayActiveRooms
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var desired = wanted
+                .Select(t => t.Id)
+                .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (current.SequenceEqual(desired, StringComparer.OrdinalIgnoreCase))
+                return true;
+
+            var safeTimeoutMs = Math.Max(1000, timeoutMs);
+            Log($"[TABLE][OVERLAY] sync begin reason={ClipForLog(reason, 48)} timeoutMs={safeTimeoutMs} current={string.Join(",", current)} desired={string.Join(",", desired)}");
+
+            var spawnTask = SpawnTableOverlayAsync(wanted);
+            var completed = await Task.WhenAny(spawnTask, Task.Delay(safeTimeoutMs));
+            if (completed != spawnTask)
+            {
+                var partial = desired.All(id => _overlayActiveRooms.Contains(id));
+                Log($"[TABLE][OVERLAY] sync timeout reason={ClipForLog(reason, 48)} timeoutMs={safeTimeoutMs} partial={(partial ? 1 : 0)}");
+                return partial;
+            }
+
+            await spawnTask;
+            var synced = desired.All(id => _overlayActiveRooms.Contains(id));
+            Log($"[TABLE][OVERLAY] sync done reason={ClipForLog(reason, 48)} ok={(synced ? 1 : 0)}");
+            return synced;
         }
 
         private void UpdateRoomSummary()
@@ -10999,7 +11153,85 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
         }
 
-        private async Task WarmPopupToLastLaunchGameAsync(string reason)
+        private async Task<bool> EnsurePopupRoutedToTableAsync(string tableId, string? tableName, WebView2? active, string reason, bool allowNavigate = true, string? probeSide = null, long probeAmount = 0)
+        {
+            var targetId = (tableId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(targetId))
+            {
+                Log("[POPUPROUTE][SKIP] reason=no-table-id");
+                return false;
+            }
+
+            var targetName = !string.IsNullOrWhiteSpace(tableName) ? tableName.Trim() : ResolveRoomName(targetId).Trim();
+            var side = string.IsNullOrWhiteSpace(probeSide) ? "player" : probeSide.Trim();
+            var amount = probeAmount > 0 ? probeAmount : 10;
+
+            try
+            {
+                var activeUrl = active?.CoreWebView2?.Source ?? active?.Source?.ToString() ?? "";
+                var popupUrl = _popupWeb?.CoreWebView2?.Source ?? _popupWeb?.Source?.ToString() ?? "";
+
+                if (_popupWeb?.CoreWebView2 != null)
+                {
+                    var reuseReady = await WaitForPopupBetProbeReadyAsync(targetId, side, amount, reason + "-reuse", allowNavigate ? 700 : 400);
+                    if (reuseReady)
+                    {
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            if (Web != null)
+                                Web.Visibility = Visibility.Collapsed;
+                            if (PopupHost != null)
+                                PopupHost.Visibility = Visibility.Visible;
+                        });
+                        try { _popupWeb.Focus(); } catch { }
+                        await SetWrapperOverlayLockAsync(true, "popup-table-reuse");
+                        Log($"[POPUPROUTE][READY] table={targetId} reuse=1 active={ClipForLog(activeUrl, 120)} popup={ClipForLog(popupUrl, 160)}");
+                        return true;
+                    }
+                }
+
+                if (!allowNavigate)
+                {
+                    Log($"[POPUPROUTE][WAIT] reason=nav-disabled table={targetId} active={ClipForLog(activeUrl, 120)} popup={ClipForLog(popupUrl, 120)}");
+                    return false;
+                }
+
+                Log($"[POPUPROUTE][TRY] reason={ClipForLog(reason, 48)} table={targetId} name={ClipForLog(targetName, 80)} active={ClipForLog(activeUrl, 120)} popup={ClipForLog(popupUrl, 120)}");
+                if (!await EnsurePopupReadyForCdpBetProbeAsync(targetId, targetName))
+                {
+                    Log($"[POPUPROUTE][FAIL] table={targetId} reason=popup-open-failed");
+                    return false;
+                }
+
+                var ready = await WaitForPopupBetProbeReadyAsync(targetId, side, amount, reason + "-open", 6500);
+                if (!ready)
+                {
+                    popupUrl = _popupWeb?.CoreWebView2?.Source ?? _popupWeb?.Source?.ToString() ?? "";
+                    Log($"[POPUPROUTE][TIMEOUT] table={targetId} popup={ClipForLog(popupUrl, 160)}");
+                    return false;
+                }
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (Web != null)
+                        Web.Visibility = Visibility.Collapsed;
+                    if (PopupHost != null)
+                        PopupHost.Visibility = Visibility.Visible;
+                });
+                try { _popupWeb?.Focus(); } catch { }
+                await SetWrapperOverlayLockAsync(true, "popup-table-ready");
+                popupUrl = _popupWeb?.CoreWebView2?.Source ?? _popupWeb?.Source?.ToString() ?? "";
+                Log($"[POPUPROUTE][READY] table={targetId} reuse=0 popup={ClipForLog(popupUrl, 160)}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log($"[POPUPROUTE][ERR] table={targetId} msg={ClipForLog(ex.Message, 160)}");
+                return false;
+            }
+        }
+
+        private async Task WarmPopupToTableAsync(string tableId, string? tableName, string reason)
         {
             if (!ShouldDisableOverlayRoomResolve())
                 return;
@@ -11012,17 +11244,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             try
             {
-                var launchUrl = (_wmLastLaunchGameUrl ?? "").Trim();
-                var launchHost = (_wmLastLaunchHost ?? "").Trim();
-                if (string.IsNullOrWhiteSpace(launchUrl) || string.IsNullOrWhiteSpace(launchHost))
+                var targetId = (tableId ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(targetId))
                 {
-                    Log($"[POPUPWARM][SKIP] reason=no-launch-game src={ClipForLog(reason, 48)}");
-                    return;
-                }
-
-                if ((DateTime.UtcNow - _wmLastLaunchAtUtc) > TimeSpan.FromMinutes(10))
-                {
-                    Log($"[POPUPWARM][SKIP] reason=launch-stale src={ClipForLog(reason, 48)} host={ClipForLog(launchHost, 60)} ageSec={(DateTime.UtcNow - _wmLastLaunchAtUtc).TotalSeconds:0}");
+                    Log($"[POPUPWARM][SKIP] reason=no-table src={ClipForLog(reason, 48)}");
                     return;
                 }
 
@@ -11033,17 +11258,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     active == null ? "null" : "OtherWeb";
                 var activeUrl = active?.CoreWebView2?.Source ?? active?.Source?.ToString() ?? "";
                 var popupUrl = _popupWeb?.CoreWebView2?.Source ?? _popupWeb?.Source?.ToString() ?? "";
-                var warmReason = (reason ?? "").Trim();
-                var reuseOnly =
-                    string.Equals(warmReason, "run-all", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(warmReason, "start-table", StringComparison.OrdinalIgnoreCase);
-                var navMode = reuseOnly ? "reuse-only" : "allow-nav";
+                var targetName = !string.IsNullOrWhiteSpace(tableName) ? tableName.Trim() : ResolveRoomName(targetId).Trim();
 
-                Log($"[POPUPWARM][TRY] src={ClipForLog(reason, 48)} navMode={navMode} active={activeName} activeUrl={ClipForLog(activeUrl, 120)} popup={ClipForLog(popupUrl, 120)} launchHost={ClipForLog(launchHost, 60)}");
+                Log($"[POPUPWARM][TRY] src={ClipForLog(reason, 48)} table={targetId} name={ClipForLog(targetName, 80)} active={activeName} activeUrl={ClipForLog(activeUrl, 120)} popup={ClipForLog(popupUrl, 120)}");
 
-                var routed = await EnsurePopupRoutedToLastLaunchGameAsync(active, "warm-" + (reason ?? ""), allowNavigate: !reuseOnly);
+                var routed = await EnsurePopupRoutedToTableAsync(targetId, targetName, active, "warm-" + (reason ?? ""), allowNavigate: false);
                 popupUrl = _popupWeb?.CoreWebView2?.Source ?? _popupWeb?.Source?.ToString() ?? "";
-                Log($"[POPUPWARM][READY] src={ClipForLog(reason, 48)} navMode={navMode} routed={(routed ? 1 : 0)} popup={ClipForLog(popupUrl, 160)}");
+                Log($"[POPUPWARM][READY] src={ClipForLog(reason, 48)} table={targetId} routed={(routed ? 1 : 0)} popup={ClipForLog(popupUrl, 160)}");
             }
             catch (Exception ex)
             {
@@ -15221,10 +15442,24 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             var warmInFlight = Interlocked.CompareExchange(ref _popupWarmRouteBusy, 0, 0) == 1;
                             if (warmInFlight)
                                 Log("[POPUPROUTE][WAIT] reason=warm-in-flight");
-                            popupRouted = await EnsurePopupRoutedToLastLaunchGameAsync(
-                                active,
-                                warmInFlight ? "bet-host-warm-busy" : "bet-host",
-                                allowNavigate: true);
+                            if (hasBetProbeArgs)
+                            {
+                                popupRouted = await EnsurePopupRoutedToTableAsync(
+                                    probeTableId,
+                                    ResolveRoomName(probeTableId),
+                                    active,
+                                    warmInFlight ? "bet-host-warm-busy" : "bet-host",
+                                    allowNavigate: true,
+                                    probeSide,
+                                    probeAmount);
+                            }
+                            else
+                            {
+                                popupRouted = await EnsurePopupRoutedToLastLaunchGameAsync(
+                                    active,
+                                    warmInFlight ? "bet-host-warm-busy" : "bet-host",
+                                    allowNavigate: true);
+                            }
                         }
                         active = GetActiveRoomHostWebView();
                         await LogBetHostProbeAsync("after-route-active", active);
@@ -15394,7 +15629,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                     if (isBetCall)
                     {
-                        Log($"[JSHOST][TRY] active={DescribeWebView(active)} preferPopup={(preferPopup ? 1 : 0)} popupRouted={(popupRouted ? 1 : 0)} launchHost={ClipForLog(_wmLastLaunchHost, 60)} launchUrl={ClipForLog(_wmLastLaunchGameUrl, 120)} candidates={string.Join(',', candidates.Select(DescribeWebView))}");
+                        Log($"[JSHOST][TRY] table={ClipForLog(probeTableId, 24)} side={ClipForLog(probeSide, 16)} amount={probeAmount} active={DescribeWebView(active)} preferPopup={(preferPopup ? 1 : 0)} popupRouted={(popupRouted ? 1 : 0)} launchHost={ClipForLog(_wmLastLaunchHost, 60)} launchUrl={ClipForLog(_wmLastLaunchGameUrl, 120)} candidates={string.Join(',', candidates.Select(DescribeWebView))}");
                         ArmBetPathNavBlock("bet-dispatch", 4500);
                     }
 
@@ -15957,6 +16192,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private static bool IsTableRunning(TableTaskState state)
         {
+            if (state == null)
+                return false;
+
+            var runningTask = state.RunningTask;
+            if (runningTask != null && !runningTask.IsCompleted)
+                return true;
+
             return state.Cts != null && !state.Cts.IsCancellationRequested;
         }
 
@@ -15988,6 +16230,35 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
 
             return false;
+        }
+
+        private bool IsRunAllStopRequested()
+        {
+            return Interlocked.CompareExchange(ref _runAllStopRequested, 0, 0) == 1;
+        }
+
+        private async Task<bool> WaitForRunAllStopSettledAsync(int timeoutMs = 10000, int pollMs = 80)
+        {
+            if (pollMs < 20)
+                pollMs = 20;
+
+            var sw = Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                var runAllBusy = Interlocked.CompareExchange(ref _runAllInProgress, 0, 0) == 1;
+                if (!runAllBusy && !HasActiveTableRequests())
+                    return true;
+                await Task.Delay(pollMs);
+            }
+
+            return Interlocked.CompareExchange(ref _runAllInProgress, 0, 0) == 0 && !HasActiveTableRequests();
+        }
+
+        private bool IsStartRequestCurrent(TableTaskState state, int requestVersion)
+        {
+            if (state == null)
+                return false;
+            return Interlocked.CompareExchange(ref state.StartRequestVersion, 0, 0) == requestVersion;
         }
 
         private bool HasRunnableTableGameData(string tableId, out CwSnapshot snap)
@@ -16026,20 +16297,22 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return false;
         }
 
-        private bool ShouldKeepDeferredStart(TableTaskState state)
+        private bool ShouldKeepDeferredStart(TableTaskState state, int requestVersion)
         {
             if (state == null || string.IsNullOrWhiteSpace(state.TableId))
+                return false;
+            if (Interlocked.CompareExchange(ref state.StartRequestVersion, 0, 0) != requestVersion)
                 return false;
             if (!state.AutoStartRequested)
                 return false;
             if (IsTableRunning(state))
                 return false;
-            if (!_overlayActiveRooms.Contains(state.TableId))
+            if (!IsSelectedRunTarget(state.TableId))
                 return false;
             return true;
         }
 
-        private void ScheduleDeferredTableStart(TableTaskState state, string? tableName, bool skipGlobalChecks)
+        private void ScheduleDeferredTableStart(TableTaskState state, string? tableName, bool skipGlobalChecks, bool abortOnRunAllStop, bool triggerStartPush, int requestVersion)
         {
             if (state == null || string.IsNullOrWhiteSpace(state.TableId))
                 return;
@@ -16057,7 +16330,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     {
                         await Task.Delay(1500);
 
-                        if (!ShouldKeepDeferredStart(state))
+                        if (!ShouldKeepDeferredStart(state, requestVersion))
                             return;
 
                         if (!HasRunnableTableGameData(tableId, out var readySnap))
@@ -16066,8 +16339,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         Log($"[TASK] synced -> auto start table={tableId} src={readySnap.abx} session={readySnap.session} seqLen={readySnap.seq?.Length ?? 0} prog={readySnap.prog?.ToString() ?? ""}");
                         await Dispatcher.InvokeAsync(async () =>
                         {
-                            if (ShouldKeepDeferredStart(state))
-                                await StartTableTaskAsync(tableId, tableName, skipGlobalChecks);
+                            if (ShouldKeepDeferredStart(state, requestVersion))
+                                await StartTableTaskAsync(tableId, tableName, skipGlobalChecks, abortOnRunAllStop, triggerStartPush);
                         });
                         return;
                     }
@@ -16088,6 +16361,17 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (BtnRunAllTables == null) return;
 
             var anyActive = HasActiveTableRequests();
+            var stopRequested = IsRunAllStopRequested();
+            var stopping = anyActive && stopRequested;
+            if (stopping)
+            {
+                BtnRunAllTables.Content = "\u0110ang d\u1eebng t\u1ea5t c\u1ea3 ...";
+                var dangerStopping = TryFindResource("DangerButton") as Style;
+                if (dangerStopping != null) BtnRunAllTables.Style = dangerStopping;
+                BtnRunAllTables.IsEnabled = false;
+                SetPlayButtonState(anyActive);
+                return;
+            }
             if (anyActive)
             {
                 BtnRunAllTables.Content = "Dừng chạy tất cả";
@@ -16119,6 +16403,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private async Task ToggleTablePlayAsync(string tableId, string? tableName = null)
         {
             if (string.IsNullOrWhiteSpace(tableId)) return;
+            EnsureRoomSelectedForRun(tableId, tableName);
             var state = GetOrCreateTableTaskState(tableId, tableName);
             if (IsTableRunning(state) || state.AutoStartRequested)
             {
@@ -16531,7 +16816,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             };
         }
 
-        private async Task StartTableTaskAsync(string tableId, string? tableName = null, bool skipGlobalChecks = false)
+        private async Task StartTableTaskAsync(string tableId, string? tableName = null, bool skipGlobalChecks = false, bool abortOnRunAllStop = false, bool triggerStartPush = true)
         {
             if (string.IsNullOrWhiteSpace(tableId))
                 return;
@@ -16563,35 +16848,85 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     return;
                 }
 
+                var requestVersion = Interlocked.Increment(ref state.StartRequestVersion);
+
+                bool ShouldAbortStart(string stage)
+                {
+                    if (!IsStartRequestCurrent(state, requestVersion))
+                    {
+                        Log($"[TASK] abort stale start table={tableId} stage={stage}");
+                        return true;
+                    }
+                    if (abortOnRunAllStop && IsRunAllStopRequested())
+                    {
+                        Log($"[TASK] abort start due to stop request table={tableId} stage={stage}");
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (!IsSelectedRunTarget(tableId))
+                {
+                    EnsureRoomSelectedForRun(tableId, tableName);
+                    Log("[TASK] auto-select room for run: " + tableId);
+                }
+
+                if (ShouldAbortStart("pre-check"))
+                    return;
+
                 if (!skipGlobalChecks)
                 {
                     await EnsureWebReadyAsync();
+                    if (ShouldAbortStart("after-web-ready"))
+                        return;
 
                     if (!await EnsureGameReadyForBetAsync())
                         return;
-                    await WarmPopupToLastLaunchGameAsync("start-table");
+                    if (ShouldAbortStart("after-game-ready"))
+                        return;
 
                     if (CheckLicense)
                     {
                         var ok = await EnsureLicenseOnceAsync();
                         if (!ok) return;
+                        if (ShouldAbortStart("after-license"))
+                            return;
                     }
                 }
+
+                if (!await EnsureOverlayContainsTargetsAsync(reason: "start-" + tableId))
+                {
+                    Log("[TASK] overlay sync failed: " + tableId);
+                    return;
+                }
+
+                if (ShouldAbortStart("after-overlay-sync"))
+                    return;
 
                 state.AutoStartRequested = true;
                 _ = SetOverlayPlayStateAsync(tableId, true);
                 UpdateRunAllButtonState();
+                Log($"[TASK] start state table={tableId} selected={(IsSelectedRunTarget(tableId) ? 1 : 0)} overlayActive={(_overlayActiveRooms.Contains(tableId) ? 1 : 0)}");
 
-                await EvalJsLockedAsync("window.__cw_startPush && window.__cw_startPush(240);");
-                Log("[CW] ensure push 240ms");
+                if (triggerStartPush)
+                {
+                    await EvalJsLockedAsync("window.__cw_startPush && window.__cw_startPush(240);");
+                    Log("[CW] ensure push 240ms");
+                }
+                if (ShouldAbortStart(triggerStartPush ? "after-cw-startpush" : "skip-cw-startpush"))
+                    return;
 
                 if (!HasRunnableTableGameData(tableId, out var readySnap))
                 {
                     Log($"[TASK] waiting sync before start: table={tableId}");
-                    ScheduleDeferredTableStart(state, tableName, skipGlobalChecks);
+                    if (ShouldAbortStart("before-defer-sync"))
+                        return;
+                    ScheduleDeferredTableStart(state, tableName, skipGlobalChecks, abortOnRunAllStop, triggerStartPush, requestVersion);
                     return;
                 }
 
+                if (ShouldAbortStart("before-start-loop"))
+                    return;
                 Log($"[TASK] start with synced data: table={tableId} src={readySnap.abx} session={readySnap.session} seqLen={readySnap.seq?.Length ?? 0} prog={readySnap.prog?.ToString() ?? ""}");
 
                 state.Decision = new DecisionState();
@@ -16636,12 +16971,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 UpdateRunAllButtonState();
 
                 var running = Task.Run(() => RunTableTaskAsync(setting, state, task, state.Cts.Token));
+                state.RunningTask = running;
                 running.ContinueWith(t =>
                 {
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
                         state.Cts = null;
                         state.Task = null;
+                        state.RunningTask = null;
                         state.Cooldown = false;
 
                         if (t.IsFaulted)
@@ -16693,6 +17030,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             try { state.Cts?.Cancel(); } catch { }
             state.AutoStartRequested = false;
+            Interlocked.Increment(ref state.StartRequestVersion);
+            Interlocked.Exchange(ref state.DeferredStartScheduled, 0);
             state.HasJsProfit = false;
             state.WinTotalFromJs = 0;
             state.WinTotal = 0;
@@ -16744,6 +17083,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             try { state.Cts?.Cancel(); } catch { }
             state.AutoStartRequested = false;
+            Interlocked.Increment(ref state.StartRequestVersion);
+            Interlocked.Exchange(ref state.DeferredStartScheduled, 0);
 
             if (!string.IsNullOrWhiteSpace(reason))
                 Log("[TASK] stop " + reason);
@@ -16838,46 +17179,99 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private async void BtnRunAllTables_Click(object sender, RoutedEventArgs e)
         {
             if (!_uiReady) return;
-            if (Interlocked.Exchange(ref _runAllInProgress, 1) == 1) return;
+
+            if (HasActiveTableRequests() || Interlocked.CompareExchange(ref _runAllInProgress, 0, 0) == 1)
+            {
+                var stopAlreadyRequested = IsRunAllStopRequested();
+                Interlocked.Exchange(ref _runAllStopRequested, 1);
+                UpdateRunAllButtonState();
+                if (!stopAlreadyRequested)
+                    Log("[STOP] run-all stop requested");
+                StopAllTables("manual");
+                var settled = await WaitForRunAllStopSettledAsync();
+                if (!settled)
+                    Log("[STOP] wait settle timeout");
+                return;
+            }
+
+            if (Interlocked.Exchange(ref _runAllInProgress, 1) == 1)
+            {
+                Interlocked.Exchange(ref _runAllStopRequested, 1);
+                UpdateRunAllButtonState();
+                Log("[STOP] run-all stop requested while busy");
+                StopAllTables("manual");
+                return;
+            }
             try
             {
-                if (HasActiveTableRequests())
-                {
-                    StopAllTables("manual");
-                    return;
-                }
+                Interlocked.Exchange(ref _runAllStopRequested, 0);
 
-                var targets = _overlayActiveRooms.ToList();
+                var targets = GetSelectedRunTargets();
                 if (targets.Count == 0)
                 {
-                    Log("[TABLE] Khong co ban dang mo de chay.");
+                    Log("[TABLE] Khong co ban duoc chon de chay.");
                     return;
                 }
 
+                Log("[TABLE] run-all preflight begin targets=" + string.Join(",", targets.Select(t => t.Id)));
+
+                Log("[TABLE] run-all preflight step=web-ready begin");
                 await EnsureWebReadyAsync();
-                if (!await EnsureGameReadyForBetAsync())
+                Log("[TABLE] run-all preflight step=web-ready ok");
+                if (IsRunAllStopRequested())
                     return;
-                await WarmPopupToLastLaunchGameAsync("run-all");
+
+                Log("[TABLE] run-all preflight step=overlay-sync begin");
+                var overlayOk = await EnsureOverlayContainsTargetsAsync(targets, "run-all");
+                Log($"[TABLE] run-all preflight step=overlay-sync result={(overlayOk ? 1 : 0)}");
+                if (!overlayOk)
+                    return;
+                if (IsRunAllStopRequested())
+                    return;
+
+                Log("[TABLE] run-all preflight step=game-ready begin");
+                var gameReadyOk = await EnsureGameReadyForBetAsync();
+                Log($"[TABLE] run-all preflight step=game-ready result={(gameReadyOk ? 1 : 0)}");
+                if (!gameReadyOk)
+                    return;
+                if (IsRunAllStopRequested())
+                    return;
+
                 if (CheckLicense)
                 {
-                    var ok = await EnsureLicenseOnceAsync();
-                    if (!ok) return;
+                    Log("[TABLE] run-all preflight step=license begin");
+                    var licenseOk = await EnsureLicenseOnceAsync();
+                    Log($"[TABLE] run-all preflight step=license result={(licenseOk ? 1 : 0)}");
+                    if (!licenseOk)
+                        return;
+                    if (IsRunAllStopRequested())
+                        return;
                 }
 
-                async Task StartOneAsync(string id, string name, int delayMs)
+                Log("[TABLE] run-all preflight step=cw-startpush begin");
+                await EvalJsLockedAsync("window.__cw_startPush && window.__cw_startPush(240);");
+                Log("[TABLE] run-all preflight step=cw-startpush ok");
+                if (IsRunAllStopRequested())
+                    return;
+
+                Log("[TABLE] run-all targets=" + string.Join(",", targets.Select(t => t.Id)));
+
+                async Task StartOneAsync(RoomRunTarget target, int delayMs)
                 {
                     if (delayMs > 0)
                         await Task.Delay(delayMs);
-                    await StartTableTaskAsync(id, name, skipGlobalChecks: true);
+                    if (IsRunAllStopRequested())
+                        return;
+
+                    Log($"[TABLE] run-all start table={target.Id} name={target.Name}");
+                    await StartTableTaskAsync(target.Id, target.Name, skipGlobalChecks: true, abortOnRunAllStop: true, triggerStartPush: false);
                 }
 
-                var tasks = new List<Task>();
+                var tasks = new List<Task>(targets.Count);
                 var idx = 0;
-                foreach (var id in targets)
+                foreach (var target in targets)
                 {
-                    var name = ResolveRoomName(id);
-                    var delayMs = idx * 60;
-                    tasks.Add(StartOneAsync(id, name, delayMs));
+                    tasks.Add(StartOneAsync(target, idx * 60));
                     idx++;
                 }
                 await Task.WhenAll(tasks);
@@ -16898,6 +17292,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 return;
             }
 
+            EnsureRoomSelectedForRun(tableId, ResolveRoomName(tableId));
             var state = GetOrCreateTableTaskState(tableId, ResolveRoomName(tableId));
             if (IsTableRunning(state))
             {
@@ -18510,8 +18905,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 foreach (var state in _tableTasks.Values)
                 {
-                    if (state?.Cts == null) continue;
-                    if (state.Cts.IsCancellationRequested) continue;
+                    if (state == null) continue;
+                    if (!IsTableRunning(state)) continue;
                     if (!state.HasJsProfit) continue;
                     state.WinTotal = state.WinTotalFromJs;
                     state.HasJsProfit = false;
