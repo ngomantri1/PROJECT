@@ -4408,44 +4408,6 @@ Ví dụ không hợp lệ:
                     }
                 }
 
-                if (!popupRoomHost && list.Count > 0 && roomSource.IndexOf("protocol21", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    var visibleRooms = await TryGetVisibleLobbyRoomsAsync(targetWeb);
-                    if (visibleRooms.Count > 0)
-                    {
-                        var visibleByKey = visibleRooms
-                            .Select(r => new { Room = r, Key = BuildRoomMatchKey(r.Id, r.Name) })
-                            .Where(x => !string.IsNullOrWhiteSpace(x.Key))
-                            .GroupBy(x => x.Key, StringComparer.Ordinal)
-                            .ToDictionary(g => g.Key, g => g.First().Room, StringComparer.Ordinal);
-
-                        var matched = list
-                            .Select(room =>
-                            {
-                                var key = BuildRoomMatchKey(room.Id, room.Name);
-                                if (string.IsNullOrWhiteSpace(key))
-                                    return null;
-                                if (!visibleByKey.TryGetValue(key, out var visible))
-                                    return null;
-                                return new RoomEntry
-                                {
-                                    Id = string.IsNullOrWhiteSpace(visible.Id) ? room.Id : visible.Id,
-                                    Name = string.IsNullOrWhiteSpace(visible.Name) ? room.Name : visible.Name
-                                };
-                            })
-                            .Where(room => room != null)
-                            .Cast<RoomEntry>()
-                            .ToList();
-
-                        LogDebug($"[ROOMDBG][VisibleFilter] protocol21 raw={list.Count} visible={visibleRooms.Count} matched={matched.Count} sample={Sample(matched.Select(r => r.Name))}");
-                        if (matched.Count > 0)
-                        {
-                            list = matched;
-                            roomSource += " +visible";
-                        }
-                    }
-                }
-
                 var clean = list
                     .Select(r =>
                     {
@@ -9676,7 +9638,6 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 RegisterDispatchBetAck(sig, nowMs);
                 Log($"[HIST][ACKREG] table={tableId} side={side} amount={amount:N0} source={source}");
             }
-
             return true;
         }
 
@@ -9718,12 +9679,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             if (abxStr == "bet_result")
             {
+                string betId = root.TryGetProperty("betId", out var betIdEl) ? (betIdEl.GetString() ?? "") : "";
                 string tableId = root.TryGetProperty("tableId", out var tidEl) ? (tidEl.GetString() ?? "") : "";
                 string side = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "?") : "?";
                 long amount = root.TryGetProperty("amount", out var ae) ? ReadJsonLong(ae) : 0;
                 long ok = root.TryGetProperty("ok", out var okEl) ? ReadJsonLong(okEl) : 0;
                 string reason = root.TryGetProperty("reason", out var reasonEl) ? (reasonEl.GetString() ?? "") : "";
-                Log($"[BET][RESULT] table={tableId} side={side} amount={amount} ok={ok} reason={ClipForLog(reason, 120)}");
+                Log($"[BET][RESULT] betId={ClipForLog(betId, 48)} table={tableId} side={side} amount={amount} ok={ok} reason={ClipForLog(reason, 120)}");
                 return true;
             }
 
@@ -9743,6 +9705,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 if (string.Equals(abx, "bet_result", StringComparison.OrdinalIgnoreCase))
                 {
+                    var betId = root.TryGetProperty("betId", out var betIdEl) ? (betIdEl.GetString() ?? "") : "";
                     var tableId = root.TryGetProperty("tableId", out var tidEl) ? (tidEl.GetString() ?? "") : "";
                     var name = root.TryGetProperty("name", out var nameEl) ? (nameEl.GetString() ?? "") : "";
                     var side = root.TryGetProperty("side", out var sideEl) ? (sideEl.GetString() ?? "") : "";
@@ -9750,13 +9713,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     var ok = root.TryGetProperty("ok", out var okEl) ? ReadJsonLong(okEl) : 0;
                     var reason = root.TryGetProperty("reason", out var reasonEl) ? (reasonEl.GetString() ?? "") : "";
                     var src = root.TryGetProperty("source", out var srcEl) ? (srcEl.GetString() ?? "") : "";
-                    var sig = $"{scope}|{tableId}|{side}|{amount}|{ok}|{reason}";
+                    var sig = $"{scope}|{betId}|{tableId}|{side}|{amount}|{ok}|{reason}";
                     var nowMs = Environment.TickCount64;
                     if (!string.Equals(sig, _lastBetResultSig, StringComparison.Ordinal) || (nowMs - _lastBetResultSigAtMs) > 800)
                     {
                         _lastBetResultSig = sig;
                         _lastBetResultSigAtMs = nowMs;
-                        Log($"[BETRESULT] scope={scope} table={tableId} name={ClipForLog(name, 80)} side={side} amount={amount:N0} ok={ok} reason={ClipForLog(reason, 140)} source={src}");
+                        Log($"[BETRESULT] scope={scope} betId={ClipForLog(betId, 48)} table={tableId} name={ClipForLog(name, 80)} side={side} amount={amount:N0} ok={ok} reason={ClipForLog(reason, 140)} source={src}");
                     }
                     return;
                 }
@@ -9764,6 +9727,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (string.Equals(abx, "bet", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(abx, "bet_error", StringComparison.OrdinalIgnoreCase))
                 {
+                    var betId = root.TryGetProperty("betId", out var betIdEl) ? (betIdEl.GetString() ?? "") : "";
                     var tableId = root.TryGetProperty("tableId", out var tidEl) ? (tidEl.GetString() ?? "") : "";
                     if (string.IsNullOrWhiteSpace(tableId) && root.TryGetProperty("id", out var idEl))
                         tableId = idEl.GetString() ?? "";
@@ -9772,13 +9736,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     var amount = root.TryGetProperty("amount", out var amountEl) ? ReadJsonLong(amountEl) : 0;
                     var src = root.TryGetProperty("source", out var srcEl) ? (srcEl.GetString() ?? "") : "";
                     var ui = root.TryGetProperty("ui", out var uiEl) ? (uiEl.GetString() ?? "") : "";
-                    Log($"[BETDIAG][BridgeRx] scope={scope} abx={abx} table={tableId} name={ClipForLog(name, 80)} side={side} amount={amount:N0} ui={ui} source={src}");
+                    Log($"[BETDIAG][BridgeRx] scope={scope} abx={abx} betId={ClipForLog(betId, 48)} table={tableId} name={ClipForLog(name, 80)} side={side} amount={amount:N0} ui={ui} source={src}");
                     return;
                 }
 
                 if (string.Equals(abx, "bet_diag", StringComparison.OrdinalIgnoreCase))
                 {
                     var stage = root.TryGetProperty("stage", out var stageEl) ? (stageEl.GetString() ?? "") : "";
+                    var betId = root.TryGetProperty("betId", out var betIdEl) ? (betIdEl.GetString() ?? "") : "";
                     var tableId = root.TryGetProperty("tableId", out var tidEl) ? (tidEl.GetString() ?? "") : "";
                     var name = root.TryGetProperty("name", out var nameEl) ? (nameEl.GetString() ?? "") : "";
                     var side = root.TryGetProperty("side", out var sideEl) ? (sideEl.GetString() ?? "") : "";
@@ -9790,7 +9755,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     var ok = root.TryGetProperty("ok", out var okEl)
                         ? (okEl.ValueKind == JsonValueKind.Number ? okEl.GetRawText() : (okEl.GetString() ?? ""))
                         : "";
-                    Log($"[BETDIAG][{ClipForLog(stage, 32)}] scope={scope} table={tableId} name={ClipForLog(name, 80)} side={side} amount={amount:N0} ok={ok} root={ClipForLog(rootId, 72)} target={ClipForLog(targetId, 72)} confirm={ClipForLog(confirmId, 72)} msg={ClipForLog(msg, 180)}");
+                    Log($"[BETDIAG][{ClipForLog(stage, 32)}] scope={scope} betId={ClipForLog(betId, 48)} table={tableId} name={ClipForLog(name, 80)} side={side} amount={amount:N0} ok={ok} root={ClipForLog(rootId, 72)} target={ClipForLog(targetId, 72)} confirm={ClipForLog(confirmId, 72)} msg={ClipForLog(msg, 180)}");
                     return;
                 }
 
@@ -14120,7 +14085,17 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (tableStatus <= 0 && string.IsNullOrWhiteSpace(tableStatusText))
                 tableStatus = 1;
 
-            if (!TryMapVisibleRoomNameFromProtocol21(gameId, groupType, groupId, tableSort, tableSort2, tableStatus, out var name, out var sort, out rejectReason))
+            if (!TryMapVisibleRoomNameFromProtocol21(
+                    gameId,
+                    groupType,
+                    groupId,
+                    tableSort,
+                    tableSort2,
+                    tableStatus,
+                    ShouldAllowInactiveProtocol21Mapping(url),
+                    out var name,
+                    out var sort,
+                    out rejectReason))
                 return false;
 
             var lowerUrl = (url ?? "").ToLowerInvariant();
@@ -14179,7 +14154,17 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 : lowerUrl.Contains("hip288") ? "hip288"
                 : "popup";
 
-            if (!TryMapVisibleRoomNameFromProtocol21(gameId, groupType, groupId, tableSort, tableSort2, tableStatus, out var name, out var sort, out rejectReason))
+            if (!TryMapVisibleRoomNameFromProtocol21(
+                    gameId,
+                    groupType,
+                    groupId,
+                    tableSort,
+                    tableSort2,
+                    tableStatus,
+                    ShouldAllowInactiveProtocol21Mapping(url),
+                    out var name,
+                    out var sort,
+                    out rejectReason))
             {
                 if (string.Equals(rejectReason, "tableStatus<=0", StringComparison.Ordinal) && string.IsNullOrWhiteSpace(tableStatusText))
                     rejectReason = "tableStatus=missing";
@@ -14200,13 +14185,25 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return true;
         }
 
-        private bool TryMapVisibleRoomNameFromProtocol21(int gameId, int groupType, int groupId, int tableSort, int tableSort2, int tableStatus, out string name, out int sort, out string rejectReason)
+        private bool ShouldAllowInactiveProtocol21Mapping(string? url)
+        {
+            try
+            {
+                return IsWrappedMainWmMode(url);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryMapVisibleRoomNameFromProtocol21(int gameId, int groupType, int groupId, int tableSort, int tableSort2, int tableStatus, bool allowInactiveTable, out string name, out int sort, out string rejectReason)
         {
             name = "";
             sort = int.MaxValue;
             rejectReason = "";
 
-            if (tableStatus <= 0)
+            if (tableStatus <= 0 && !allowInactiveTable)
             {
                 rejectReason = "tableStatus<=0";
                 return false;
@@ -16023,7 +16020,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     Log($"[JSHOST][FASTBET][FALLBACK] table={ClipForLog(fastTableId, 24)} side={ClipForLog(fastSide, 16)} amount={fastAmount}");
                 }
 
-                await _domActionLock.WaitAsync();
+                var holdDomActionLock = !isBetDispatchFast;
+                if (holdDomActionLock)
+                {
+                    await _domActionLock.WaitAsync();
+                }
+                else
+                {
+                    Log("[JSHOST][SERIALIZE][SKIP] reason=bet-dispatch");
+                }
                 try
                 {
                     var candidates = new List<WebView2?>();
@@ -16052,6 +16057,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         return false;
                     }
                     var popupRouted = false;
+                    var isEmbeddedWrapperBet = false;
                     void AddCandidate(WebView2? web)
                     {
                         if (web == null)
@@ -16072,57 +16078,69 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         if (ShouldAbortBetHost("pre-route"))
                             return "\"no\"";
 
-                        await LogBetHostProbeAsync("before-route-active", active);
-                        await LogBetHostProbeAsync("before-route-popup", _popupWeb);
-                        // Keep bet host routing close to baseline: avoid main-frame short-circuit
-                        // so wrapper bets can still route to PopupWeb when needed.
-                        var shouldShortCircuitMain = false;
-                        var preRouteMainFrame = shouldShortCircuitMain
-                            ? await TryGetReadyMainGameFrameAsync("pre-route-main")
-                            : null;
-                        if (preRouteMainFrame != null)
+                        var activeUrlBeforeRoute = active?.CoreWebView2?.Source ?? active?.Source?.ToString() ?? "";
+                        isEmbeddedWrapperBet = IsEmbeddedWmWrapperUrl(activeUrlBeforeRoute);
+                        if (isEmbeddedWrapperBet)
                         {
-                            await SetWrapperOverlayLockAsync(true, "main-frame-pre-route");
-                        }
-                        else if (shouldShortCircuitMain && HasFreshMainTopLevelWmHint())
-                        {
-                            await SetWrapperOverlayLockAsync(true, "main-top-hint-pre-route");
-                            Log($"[MAINFRAME][EARLY] stage=pre-route-main-short-circuit hint={ClipForLog(_mainTopLevelWmFrameHint, 220)} href={ClipForLog(_mainTopLevelWmFrameHref, 180)}");
+                            Log($"[POPUPROUTE][SKIP] reason=embedded-wrapper table={ClipForLog(probeTableId, 24)} active={ClipForLog(activeUrlBeforeRoute, 180)}");
                         }
                         else
                         {
-                            var warmInFlight = Interlocked.CompareExchange(ref _popupWarmRouteBusy, 0, 0) == 1;
-                            if (warmInFlight)
-                                Log("[POPUPROUTE][WAIT] reason=warm-in-flight");
-                            if (hasBetProbeArgs)
+                            await LogBetHostProbeAsync("before-route-active", active);
+                            await LogBetHostProbeAsync("before-route-popup", _popupWeb);
+                            // Keep bet host routing close to baseline: avoid main-frame short-circuit
+                            // so wrapper bets can still route to PopupWeb when needed.
+                            var shouldShortCircuitMain = false;
+                            var preRouteMainFrame = shouldShortCircuitMain
+                                ? await TryGetReadyMainGameFrameAsync("pre-route-main")
+                                : null;
+                            if (preRouteMainFrame != null)
                             {
-                                if (ShouldAbortBetHost("before-route-table"))
-                                    return "\"no\"";
-                                popupRouted = await EnsurePopupRoutedToTableAsync(
-                                    probeTableId,
-                                    ResolveRoomName(probeTableId),
-                                    active,
-                                    warmInFlight ? "bet-host-warm-busy" : "bet-host",
-                                    allowNavigate: true,
-                                    probeSide,
-                                    probeAmount);
+                                await SetWrapperOverlayLockAsync(true, "main-frame-pre-route");
+                            }
+                            else if (shouldShortCircuitMain && HasFreshMainTopLevelWmHint())
+                            {
+                                await SetWrapperOverlayLockAsync(true, "main-top-hint-pre-route");
+                                Log($"[MAINFRAME][EARLY] stage=pre-route-main-short-circuit hint={ClipForLog(_mainTopLevelWmFrameHint, 220)} href={ClipForLog(_mainTopLevelWmFrameHref, 180)}");
                             }
                             else
                             {
-                                if (ShouldAbortBetHost("before-route-launch"))
-                                    return "\"no\"";
-                                popupRouted = await EnsurePopupRoutedToLastLaunchGameAsync(
-                                    active,
-                                    warmInFlight ? "bet-host-warm-busy" : "bet-host",
-                                    allowNavigate: true);
+                                var warmInFlight = Interlocked.CompareExchange(ref _popupWarmRouteBusy, 0, 0) == 1;
+                                if (warmInFlight)
+                                    Log("[POPUPROUTE][WAIT] reason=warm-in-flight");
+                                if (hasBetProbeArgs)
+                                {
+                                    if (ShouldAbortBetHost("before-route-table"))
+                                        return "\"no\"";
+                                    popupRouted = await EnsurePopupRoutedToTableAsync(
+                                        probeTableId,
+                                        ResolveRoomName(probeTableId),
+                                        active,
+                                        warmInFlight ? "bet-host-warm-busy" : "bet-host",
+                                        allowNavigate: true,
+                                        probeSide,
+                                        probeAmount);
+                                }
+                                else
+                                {
+                                    if (ShouldAbortBetHost("before-route-launch"))
+                                        return "\"no\"";
+                                    popupRouted = await EnsurePopupRoutedToLastLaunchGameAsync(
+                                        active,
+                                        warmInFlight ? "bet-host-warm-busy" : "bet-host",
+                                        allowNavigate: true);
+                                }
                             }
                         }
                         if (ShouldAbortBetHost("after-route"))
                             return "\"no\"";
                         active = GetActiveRoomHostWebView();
-                        await LogBetHostProbeAsync("after-route-active", active);
-                        await LogBetHostProbeAsync("after-route-popup", _popupWeb);
-                        if (hasBetProbeArgs)
+                        if (!isEmbeddedWrapperBet)
+                        {
+                            await LogBetHostProbeAsync("after-route-active", active);
+                            await LogBetHostProbeAsync("after-route-popup", _popupWeb);
+                        }
+                        if (hasBetProbeArgs && !isEmbeddedWrapperBet)
                         {
                             var shouldWaitPopupReady =
                                 popupRouted ||
@@ -16161,7 +16179,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             Log($"[JSHOST][FRAME] ready={(useTrackedGameFrame ? 1 : 0)} target={ClipForLog(trackedGameFrameTarget, 72)} activeUrl={ClipForLog(activeUrl, 180)}");
                         }
                     }
-                    var preferPopup = isBetCall && (popupRouted || ShouldPreferPopupForBetHost(active));
+                    var preferPopup = isBetCall && !isEmbeddedWrapperBet && (popupRouted || ShouldPreferPopupForBetHost(active));
                     if (preferPopup)
                     {
                         AddCandidate(_popupWeb);
@@ -16372,7 +16390,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 }
                 finally
                 {
-                    _domActionLock.Release();
+                    if (holdDomActionLock)
+                        _domActionLock.Release();
                 }
             }).Task.Unwrap();
         }

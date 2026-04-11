@@ -1394,25 +1394,70 @@
         });
     }
 
+    function betGetDelayScale() {
+        const scale = Number(window.__abx_bet_delay_scale);
+        if (Number.isFinite(scale) && scale > 0)
+            return scale;
+        const hc = Number((navigator && navigator.hardwareConcurrency) || 0) || 0;
+        if (hc > 0 && hc <= 2)
+            return 0.8;
+        if (hc > 0 && hc <= 4)
+            return 0.9;
+        return 1.0;
+    }
+
+    function betDelay(ms) {
+        let delayMs = Number(ms) || 0;
+        const scale = betGetDelayScale();
+        if (Number.isFinite(scale) && scale > 0)
+            delayMs = delayMs * scale;
+        delayMs = Math.max(20, Math.round(delayMs));
+        return new Promise(r => setTimeout(r, delayMs));
+    }
+
     async function betSelectMultiChipValueAsync(value, doc) {
         const chipNode = betFindChipByAmount(value, doc);
         if (!chipNode)
             return { ok: false, token: '', selected: null, activeMatch: 0, clickOk: 0, msg: 'chip-not-found' };
         const token = betParseMultiChipTokenFromNode(chipNode);
-        const clickOk1 = betTryClickDirect(chipNode, null, 'chip');
-        await new Promise(r => setTimeout(r, 220));
-        const clickOk2 = betTryClickDirect(chipNode, null, 'chip');
-        await new Promise(r => setTimeout(r, 220));
-        const selected = betGetSelectedChipAmount(doc);
-        const activeMatch = betIsChipActive(chipNode) ? 1 : 0;
-        const ok = selected === value || (!!activeMatch && (!selected || selected === value));
+        let clickOk1 = betTryClickDirect(chipNode, null, 'chip');
+        await betDelay(220);
+        let clickOk2 = betTryClickDirect(chipNode, null, 'chip');
+        await betDelay(220);
+        let selected = betGetSelectedChipAmount(doc);
+        let activeMatch = betIsChipActive(chipNode) ? 1 : 0;
+        let clickOk = (clickOk1 && clickOk2) ? 1 : 0;
+        let verifyRound = 0;
+
+        // VPS often needs extra settle time for chip highlight/state propagation.
+        while (selected !== value && !activeMatch && verifyRound < 3) {
+            verifyRound++;
+            const clickRetry = betTryClickDirect(chipNode, null, 'chip');
+            clickOk = (clickOk || clickRetry) ? 1 : 0;
+            await betDelay(180);
+            selected = betGetSelectedChipAmount(doc);
+            activeMatch = betIsChipActive(chipNode) ? 1 : 0;
+        }
+
+        if (selected !== value && activeMatch) {
+            for (let i = 0; i < 2; i++) {
+                await betDelay(120);
+                selected = betGetSelectedChipAmount(doc);
+                if (selected === value)
+                    break;
+            }
+        }
+
+        const ok = selected === value || activeMatch === 1;
+        const mode = selected === value ? 'selected' : (activeMatch ? 'active_fallback' : 'mismatch');
         return {
             ok,
             token,
             selected,
             activeMatch,
-            clickOk: (clickOk1 && clickOk2) ? 1 : 0,
-            msg: ok ? '' : ('selected=' + (selected == null ? '' : selected) + ' active=' + activeMatch + ' click=' + ((clickOk1 && clickOk2) ? 1 : 0))
+            clickOk: clickOk,
+            msg: (ok ? ('mode=' + mode + ' selected=' + (selected == null ? '' : selected)) : ('selected=' + (selected == null ? '' : selected))) +
+                ' active=' + activeMatch + ' click=' + clickOk + ' retry=' + verifyRound
         };
     }
 
@@ -1502,7 +1547,9 @@
                 logBetWarn('confirm not found rootId=' + ((root && root.id) || ''));
             return false;
         }
+        const chipT0 = Date.now();
         const selected = await betSelectMultiChipValueAsync(amountValue, doc);
+        const chipMs = Date.now() - chipT0;
         if (!selected || !selected.ok) {
             betEmitDiag('chip_select', {
                 rootId: (root && root.id) || '',
@@ -1514,7 +1561,8 @@
                 token: (selected && selected.token) || '',
                 activeMatch: (selected && selected.activeMatch) || 0,
                 clickOk: (selected && selected.clickOk) || 0,
-                msg: (selected && selected.msg) || ''
+                msg: (selected && selected.msg) || '',
+                tookMs: chipMs
             });
             if (typeof logBetWarn === 'function')
                 logBetWarn('chip select failed amount=' + amountValue + ' selected=' + ((selected && selected.selected) || '') + ' active=' + ((selected && selected.activeMatch) || 0) + ' click=' + ((selected && selected.clickOk) || 0) + ' rootId=' + ((root && root.id) || ''));
@@ -1529,7 +1577,8 @@
             selected: (selected && selected.selected) || '',
             token: (selected && selected.token) || '',
             activeMatch: (selected && selected.activeMatch) || 0,
-            clickOk: (selected && selected.clickOk) || 0
+            clickOk: (selected && selected.clickOk) || 0,
+            tookMs: chipMs
         });
         try {
             console.log('[BET-WM] chip selected', {
@@ -1555,7 +1604,7 @@
           });
           if (!targetOk)
               return false;
-          await new Promise(r => setTimeout(r, 260));
+          await betDelay(260);
           try {
               console.log('[BET-WM] confirm click', {
                   rootId: (root && root.id) || '',
@@ -1572,7 +1621,7 @@
           });
           if (!confirmOk)
               return false;
-          await new Promise(r => setTimeout(r, 240));
+          await betDelay(240);
           return true;
       }
 
@@ -1730,6 +1779,44 @@
         });
     }
 
+    function betGetAdaptiveQueueTimeoutMs(meta, requestedTimeoutMs) {
+        const req = Number(requestedTimeoutMs);
+        if (Number.isFinite(req) && req > 0)
+            return Math.max(1200, Math.min(10000, Math.round(req)));
+
+        let base = Number(window.__abx_bet_timeout_ms);
+        if (!Number.isFinite(base) || base <= 0) {
+            const hc = Number((navigator && navigator.hardwareConcurrency) || 0) || 0;
+            if (hc > 0 && hc <= 2)
+                base = 4200;
+            else if (hc > 0 && hc <= 4)
+                base = 3200;
+            else
+                base = 2400;
+        }
+
+        if (meta && meta.multi)
+            base = Math.max(base, 8000);
+
+        const qSize = Array.isArray(window.__abx_bet_queue) ? window.__abx_bet_queue.length : 0;
+        if (qSize >= 4)
+            base += 400;
+        if (qSize >= 7)
+            base += 500;
+
+        return Math.max(1200, Math.min(10000, Math.round(base)));
+    }
+
+    function betGetQueueGraceMs(timeoutMs) {
+        const configured = Number(window.__abx_bet_timeout_grace_ms);
+        if (Number.isFinite(configured) && configured > 0)
+            return Math.max(400, Math.min(4000, Math.round(configured)));
+        const base = Number(timeoutMs);
+        if (Number.isFinite(base) && base > 0)
+            return Math.max(1600, Math.min(5000, Math.round(base * 0.6)));
+        return 2000;
+    }
+
     function betEnqueueTask(fn, timeoutMs, meta) {
         try {
             if (!Array.isArray(window.__abx_bet_queue))
@@ -1740,19 +1827,25 @@
                 window.__abx_bet_seq = 0;
             window.__abx_bet_chain = null;
             return new Promise(resolve => {
+                const effectiveTimeoutMs = betGetAdaptiveQueueTimeoutMs(meta, timeoutMs);
                 const item = {
                     seq: ++window.__abx_bet_seq,
                     fn,
-                    timeoutMs: Math.max(1000, Number(timeoutMs) || 6000),
+                    timeoutMs: effectiveTimeoutMs,
+                    graceMs: betGetQueueGraceMs(effectiveTimeoutMs),
                     resolve,
                     enqueuedAt: Date.now(),
-                    meta: Object.assign({}, meta || {})
+                    meta: Object.assign({}, meta || {}),
+                    ctx: { expired: false, seq: 0, betId: '', progress: 0, confirmed: false }
                 };
+                item.ctx.seq = item.seq;
+                item.ctx.betId = String(item.meta && item.meta.betId ? item.meta.betId : '');
                 window.__abx_bet_queue.push(item);
                 try {
                     betEmitDiag('queue_enqueue', Object.assign({}, item.meta, {
                         seq: item.seq,
                         timeoutMs: item.timeoutMs,
+                        graceMs: item.graceMs,
                         queueSize: window.__abx_bet_queue.length
                     }));
                 } catch (_) {}
@@ -1785,11 +1878,11 @@
                             rev: HOME_JS_REV,
                             seq: item.seq,
                             waitedMs: Date.now() - item.enqueuedAt,
-                            remain: window.__abx_bet_queue.length
-                        });
-                    } catch (_) {}
+                        remain: window.__abx_bet_queue.length
+                    });
+                        } catch (_) {}
                     let timeoutHandle = 0;
-                    const work = Promise.resolve().then(item.fn).catch(err => {
+                    const work = Promise.resolve().then(() => item.fn(item.ctx)).catch(err => {
                         try {
                             betEmitDiag('queue_item_exception', Object.assign({}, item.meta, {
                                 seq: item.seq,
@@ -1805,25 +1898,59 @@
                         } catch (_) {}
                         return false;
                     });
-                    Promise.race([
-                        work,
-                        new Promise(done => {
-                            timeoutHandle = setTimeout(() => {
-                            try {
-                                betEmitDiag('queue_timeout', Object.assign({}, item.meta, {
-                                    seq: item.seq,
-                                    ok: 0,
-                                    timeoutMs: item.timeoutMs
-                                }));
-                            } catch (_) {}
-                            try {
-                                if (console && console.warn)
-                                        console.warn('[BET-WM][queue] timeout', { seq: item.seq, timeoutMs: item.timeoutMs });
-                            } catch (_) {}
-                            done(false);
-                            }, item.timeoutMs);
-                        })
-                    ]).then(result => {
+                    (async () => {
+                        let result = false;
+                        const first = await Promise.race([
+                            work.then(v => ({ kind: 'work', value: v })),
+                            new Promise(done => {
+                                timeoutHandle = setTimeout(() => {
+                                    try {
+                                        betEmitDiag('queue_timeout', Object.assign({}, item.meta, {
+                                            seq: item.seq,
+                                            ok: 0,
+                                            timeoutMs: item.timeoutMs
+                                        }));
+                                    } catch (_) {}
+                                    try {
+                                        if (console && console.warn)
+                                            console.warn('[BET-WM][queue] timeout', { seq: item.seq, timeoutMs: item.timeoutMs });
+                                    } catch (_) {}
+                                    done({ kind: 'timeout' });
+                                }, item.timeoutMs);
+                            })
+                        ]);
+
+                        if (first && first.kind === 'work') {
+                            result = !!first.value;
+                        } else {
+                            const late = await Promise.race([
+                                work.then(v => ({ kind: 'late', value: v })),
+                                new Promise(done => setTimeout(() => done({ kind: 'grace' }), item.graceMs))
+                            ]);
+                            if (late && late.kind === 'late') {
+                                result = !!late.value;
+                                try {
+                                    betEmitDiag('queue_timeout_recovered', Object.assign({}, item.meta, {
+                                        seq: item.seq,
+                                        ok: result ? 1 : 0,
+                                        timeoutMs: item.timeoutMs,
+                                        graceMs: item.graceMs
+                                    }));
+                                } catch (_) {}
+                            } else {
+                                item.ctx.expired = true;
+                                result = false;
+                                try {
+                                    betEmitDiag('queue_expired', Object.assign({}, item.meta, {
+                                        seq: item.seq,
+                                        ok: 0,
+                                        timeoutMs: item.timeoutMs,
+                                        graceMs: item.graceMs
+                                    }));
+                                } catch (_) {}
+                            }
+                        }
+
                         if (timeoutHandle)
                             clearTimeout(timeoutHandle);
                         try {
@@ -1842,7 +1969,7 @@
                         try {
                             item.resolve(!!result);
                         } catch (_) {}
-                    }).finally(() => {
+                    })().finally(() => {
                         setTimeout(drain, 0);
                     });
                 };
@@ -2511,6 +2638,20 @@
         return '';
     }
 
+    function betCreateTraceId(prefix) {
+        try {
+            if (!Number.isFinite(window.__abx_bet_trace_seq))
+                window.__abx_bet_trace_seq = 0;
+            window.__abx_bet_trace_seq++;
+            const p = String(prefix || 'bet');
+            const ts = Date.now().toString(36);
+            const seq = window.__abx_bet_trace_seq.toString(36);
+            const rnd = Math.floor(Math.random() * 0xfff).toString(36);
+            return p + '-' + ts + '-' + seq + '-' + rnd;
+        } catch (_) {}
+        return 'bet-' + Date.now();
+    }
+
     function betEmitDiag(stage, data) {
         try {
             const payload = Object.assign({
@@ -2523,6 +2664,8 @@
                 title: betDiagText(document && document.title || '', 120),
                 ts: Date.now()
             }, data || {});
+            if (!payload.betId && window.__abx_bet_trace_active)
+                payload.betId = String(window.__abx_bet_trace_active);
             if (payload.msg)
                 payload.msg = betDiagText(payload.msg, 220);
             if (payload.name)
@@ -2537,7 +2680,7 @@
         } catch (_) {}
     }
 
-    window.__cw_bet = function (tableId, side, amount, isVirtual, waitDone, tableName) {
+    window.__cw_bet = function (tableId, side, amount, isVirtual, waitDone, tableName, betId) {
         let sent = false;
         let resultSent = false;
         let diagTableId = String(tableId || '').trim();
@@ -2545,6 +2688,10 @@
         let diagSideLabel = '';
         let diagAmountValue = Number(amount) || 0;
         let diagPhase = 'init';
+        const diagBetId = betDiagText((betId || betCreateTraceId('bet')), 96);
+        const emitDiag = (stage, data) => {
+            betEmitDiag(stage, Object.assign({ betId: diagBetId }, data || {}));
+        };
         const sendOnce = (id, sideLabel, amountValue, roomName) => {
             if (sent)
                 return;
@@ -2552,9 +2699,9 @@
             if (!id || !sideLabel)
                 return;
             try {
-                const payload = { abx: 'bet', tableId: id, name: String(roomName || '').trim(), side: sideLabel, amount: amountValue, ui: 'game', source: 'cw_bet', ts: Date.now() };
+                const payload = { abx: 'bet', betId: diagBetId, tableId: id, name: String(roomName || '').trim(), side: sideLabel, amount: amountValue, ui: 'game', source: 'cw_bet', ts: Date.now() };
                 const bridgeOk = betPostBridgePayload(payload);
-                betEmitDiag('send_once', {
+                emitDiag('send_once', {
                     tableId: id,
                     name: String(roomName || '').trim(),
                     side: sideLabel,
@@ -2569,6 +2716,7 @@
             try {
                 const payload = Object.assign({
                     abx: 'bet_result',
+                    betId: diagBetId,
                     tableId: String(diagTableId || tableId || '').trim(),
                     name: String(diagRoomName || tableName || '').trim(),
                     side: String(diagSideLabel || betNormalizeSide(side) || ''),
@@ -2588,7 +2736,7 @@
             } catch (_) {}
         };
         const logBetWarn = (msg) => {
-            betEmitDiag('warn', {
+            emitDiag('warn', {
                 tableId: String(tableId || '').trim(),
                 name: String(tableName || '').trim(),
                 side: betNormalizeSide(side),
@@ -2627,7 +2775,7 @@
 
             diagPhase = 'start';
             logBetWarn('start tableId=' + id + ' name=' + roomName + ' side=' + sideLabel + ' amount=' + amountValue + ' virtual=' + (isVirtual === true));
-            betEmitDiag('start', {
+            emitDiag('start', {
                 tableId: id,
                 name: roomName,
                 side: sideLabel,
@@ -2664,7 +2812,7 @@
                 }
                 diagPhase = 'root_ready';
                 logBetWarn('root ok for tableId=' + id + ' rootId=' + ((root && root.id) || '') + ' visible=' + betIsVisible(root) + ' multi=' + betIsMultiBetRoot(root));
-                betEmitDiag('root', {
+                emitDiag('root', {
                     tableId: id,
                     name: roomName,
                     side: sideLabel,
@@ -2703,7 +2851,7 @@
                 const useMultiFlow = !!(root && betIsMultiBetRoot(root) && betFindMultiTargetByRoot(root, s));
                 diagPhase = 'target_ready';
                 logBetWarn('target ok tableId=' + id + ' targetId=' + ((target && target.id) || '') + ' useMulti=' + useMultiFlow);
-                betEmitDiag('target', {
+                emitDiag('target', {
                     tableId: id,
                     name: roomName,
                     side: sideLabel,
@@ -2731,7 +2879,7 @@
                     }
                     diagPhase = 'plan_ready';
                     logBetWarn('plan ok tableId=' + id + ' steps=' + planResult.plan.length + ' remaining=' + planResult.remaining + ' multi=' + useMultiFlow);
-                    betEmitDiag('plan', {
+                    emitDiag('plan', {
                         tableId: id,
                         name: roomName,
                         side: sideLabel,
@@ -2744,6 +2892,7 @@
                     });
                     const stakeRoot = betResolveStakeRoot(clickTarget, root) || root;
                     const queueMeta = {
+                        betId: diagBetId,
                         tableId: id,
                         name: roomName,
                         side: sideLabel,
@@ -2752,11 +2901,12 @@
                         targetId: (target && target.id) || '',
                         multi: useMultiFlow ? 1 : 0
                     };
-                    const runBetTask = async () => {
+                    const runBetTask = async (queueCtx) => {
                         const confirmBtn = useMultiFlow ? betFindMultiConfirmByRoot(root) : null;
                         try {
+                            window.__abx_bet_trace_active = diagBetId;
                             diagPhase = useMultiFlow ? 'run_multi' : 'run_single';
-                            betEmitDiag('run_phase', Object.assign({}, queueMeta, {
+                            emitDiag('run_phase', Object.assign({}, queueMeta, {
                                 confirmId: (confirmBtn && confirmBtn.id) || '',
                                 msg: useMultiFlow ? 'run_multi:start' : 'run_single:start'
                             }));
@@ -2777,14 +2927,14 @@
                             let okMulti = false;
                             if (useDirectSingleChip) {
                                 diagPhase = 'run_multi_direct';
-                                betEmitDiag('run_phase', Object.assign({}, queueMeta, {
+                                emitDiag('run_phase', Object.assign({}, queueMeta, {
                                     confirmId: (confirmBtn && confirmBtn.id) || '',
                                     msg: 'multi_direct_single'
                                 }));
                                 okMulti = await betExecuteMultiDirectAsync(amountValue, target, root, rootDoc, logBetWarn);
                                 if (!okMulti) {
                                     diagPhase = 'run_multi_direct_fallback';
-                                    betEmitDiag('run_phase', Object.assign({}, queueMeta, {
+                                    emitDiag('run_phase', Object.assign({}, queueMeta, {
                                         confirmId: (confirmBtn && confirmBtn.id) || '',
                                         msg: 'multi_direct_single_fallback_plan'
                                     }));
@@ -2792,7 +2942,7 @@
                                 }
                             } else {
                                 diagPhase = 'run_multi_plan';
-                                betEmitDiag('run_phase', Object.assign({}, queueMeta, {
+                                emitDiag('run_phase', Object.assign({}, queueMeta, {
                                     confirmId: (confirmBtn && confirmBtn.id) || '',
                                     msg: 'multi_plan'
                                 }));
@@ -2801,7 +2951,7 @@
                             if (!okMulti) {
                                 logBetWarn((useDirectSingleChip ? 'direct flow failed ' : 'multi plan failed ') +
                                     'tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue + ' rootId=' + ((root && root.id) || ''));
-                                betEmitDiag('run_result', {
+                                emitDiag('run_result', {
                                     tableId: id,
                                     name: roomName,
                                     side: sideLabel,
@@ -2814,8 +2964,18 @@
                                 });
                                 return false;
                             }
+                            if (queueCtx)
+                                queueCtx.confirmed = true;
+                            if (queueCtx && queueCtx.expired === true && !queueCtx.confirmed) {
+                                emitDiag('run_drop_expired', Object.assign({}, queueMeta, {
+                                    confirmId: (confirmBtn && confirmBtn.id) || '',
+                                    ok: 0,
+                                    msg: 'queue-expired-after-run'
+                                }));
+                                return false;
+                            }
                             sendOnce(id, sideLabel, amountValue, roomName);
-                            betEmitDiag('run_result', {
+                            emitDiag('run_result', {
                                 tableId: id,
                                 name: roomName,
                                 side: sideLabel,
@@ -2837,7 +2997,7 @@
                             return true;
                         }
                         diagPhase = 'run_single_schedule';
-                        betEmitDiag('run_phase', Object.assign({}, queueMeta, {
+                        emitDiag('run_phase', Object.assign({}, queueMeta, {
                             confirmId: (confirmBtn && confirmBtn.id) || '',
                             msg: 'single_schedule'
                         }));
@@ -2860,7 +3020,7 @@
                             }
                         }
                         // Giống behavior cũ: đã chạy plan xong thì vẫn gửi để lưu lịch sử
-                        betEmitDiag('confirm_state', {
+                        emitDiag('confirm_state', {
                             tableId: id,
                             name: roomName,
                             side: sideLabel,
@@ -2871,10 +3031,19 @@
                             beforeCount: beforeCount,
                             beforeActive: beforeActive ? 1 : 0
                         });
+                        if (queueCtx)
+                            queueCtx.confirmed = confirmed;
+                        if (queueCtx && queueCtx.expired === true && !queueCtx.confirmed) {
+                            emitDiag('run_drop_expired', Object.assign({}, queueMeta, {
+                                ok: 0,
+                                msg: 'queue-expired-before-send_once'
+                            }));
+                            return false;
+                        }
                         sendOnce(id, sideLabel, amountValue, roomName);
                         return confirmed;
                         } catch (err) {
-                            betEmitDiag('run_exception', Object.assign({}, queueMeta, {
+                            emitDiag('run_exception', Object.assign({}, queueMeta, {
                                 confirmId: (confirmBtn && confirmBtn.id) || '',
                                 ok: 0,
                                 msg: 'phase=' + diagPhase + ' ' + ((err && err.message) ? err.message : String(err || ''))
@@ -2887,13 +3056,16 @@
                                 });
                             } catch (_) {}
                             return false;
+                        } finally {
+                            if (window.__abx_bet_trace_active === diagBetId)
+                                window.__abx_bet_trace_active = '';
                         }
                     };
-                    const queued = betEnqueueTask(runBetTask, useMultiFlow ? 12000 : 7000, queueMeta);
+                    const queued = betEnqueueTask(runBetTask, 0, queueMeta);
                     if (waitDone === true)
                         return queued.then(ok => {
                             diagPhase = 'queue_done';
-                            betEmitDiag('queue_result', {
+                            emitDiag('queue_result', {
                                 tableId: id,
                                 name: roomName,
                                 side: sideLabel,
@@ -2922,7 +3094,7 @@
             const errMsg = (() => {
                 try { return String((err && err.message) || err || 'unknown'); } catch (_) { return 'unknown'; }
             })();
-            betEmitDiag('exception', {
+            emitDiag('exception', {
                 tableId: diagTableId,
                 name: diagRoomName,
                 side: diagSideLabel,

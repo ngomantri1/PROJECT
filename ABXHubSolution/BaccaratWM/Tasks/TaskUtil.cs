@@ -8,6 +8,7 @@ using System.Collections.Concurrent;
 using System.Windows;
 using System.Windows.Controls;
 using System.Text.Json;
+using System.Diagnostics;
 
 namespace BaccaratWM.Tasks
 {
@@ -205,10 +206,17 @@ namespace BaccaratWM.Tasks
                 var tableNameJson = JsonSerializer.Serialize(ctx.TableName ?? "");
                 var sideJson = JsonSerializer.Serialize(side ?? "");
                 var virtualJs = isVirtual ? "true" : "false";
-                ctx.Log?.Invoke($"[BET-REQ] table={tableId} name={ctx.TableName ?? ""} side={side} amount={amount} virtual={(isVirtual ? 1 : 0)}");
+                var betReqId = $"bet-{tableId}-{now}";
+                var betReqIdJson = JsonSerializer.Serialize(betReqId);
+                ctx.Log?.Invoke($"[BET-REQ] betId={betReqId} table={tableId} name={ctx.TableName ?? ""} side={side} amount={amount} virtual={(isVirtual ? 1 : 0)}");
+                var swTotal = Stopwatch.StartNew();
+                long uiMs = 0;
                 try
                 {
+                    var swUi = Stopwatch.StartNew();
                     await ctx.UiDispatcher.InvokeAsync(() => ctx.UiOnBetDispatch?.Invoke(side ?? "", amount));
+                    swUi.Stop();
+                    uiMs = swUi.ElapsedMilliseconds;
                 }
                 catch (Exception ex)
                 {
@@ -219,13 +227,16 @@ namespace BaccaratWM.Tasks
                 var js =
                     "(function(){try{" +
                     " if (typeof window.__cw_bet==='function'){" +
-                    "   return window.__cw_bet(" + tableIdJson + ", " + sideJson + ", " + amount + ", " + virtualJs + ", false, " + tableNameJson + ");" +
+                    "   return window.__cw_bet(" + tableIdJson + ", " + sideJson + ", " + amount + ", " + virtualJs + ", false, " + tableNameJson + ", " + betReqIdJson + ");" +
                     " } else { return 'no'; }" +
                     "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
+                var swEval = Stopwatch.StartNew();
                 var r = await ctx.EvalJsAsync(js);
+                swEval.Stop();
+                swTotal.Stop();
                 var rNorm = (r ?? "").Trim().Trim('"');
-                ctx.Log?.Invoke($"[BET-JS] table={tableId} side={side} amount={amount} raw={r} norm={rNorm}");
+                ctx.Log?.Invoke($"[BET-JS] betId={betReqId} table={tableId} side={side} amount={amount} raw={r} norm={rNorm} uiMs={uiMs} evalMs={swEval.ElapsedMilliseconds} totalMs={swTotal.ElapsedMilliseconds}");
 
                 // C# gọi được __cw_bet(...) thì coi như bet thành công.
                 // Chỉ fail khi không có hàm để gọi.
