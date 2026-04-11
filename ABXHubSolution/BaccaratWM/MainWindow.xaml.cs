@@ -5324,9 +5324,18 @@ Ví dụ không hợp lệ:
             UpdateStatsUi(s);
         }
 
-        private void UpdateTableStatsStake(TableTaskState state, double amount)
+        private void UpdateTableStatsStake(TableTaskState state, double amount, string? side)
         {
             var rounded = (long)Math.Round(amount);
+            var normSide = NormalizeSide(side ?? "");
+            if (string.Equals(normSide, "T", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normSide, "TIE", StringComparison.OrdinalIgnoreCase))
+            {
+                _statsByTable[state.TableId] = state.Stats;
+                UpdateStatsUiAggregated();
+                _ = SaveStatsAsync();
+                return;
+            }
             if (rounded > 0)
                 state.Stats.TotalBetAmount += rounded;
             _statsByTable[state.TableId] = state.Stats;
@@ -16766,7 +16775,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             ? $"{state.StakeLevelIndexForUi + 1}/{stakeSeq.Length}"
                             : "";
                     }
-                    UpdateTableStatsStake(state, state.LastBetAmount);
+                    UpdateTableStatsStake(state, state.LastBetAmount, state.LastBetSide);
                     _ = PushBetPlanToOverlayAsync(tableId, state.LastBetSide, state.LastBetAmount, state.LastBetLevelText);
                     if (!IsActiveTable(tableId))
                         return;

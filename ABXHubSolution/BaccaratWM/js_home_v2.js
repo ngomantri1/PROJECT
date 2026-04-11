@@ -4,6 +4,16 @@
     try {
         window.__cw_home_js_rev = HOME_JS_REV;
     } catch (_) {}
+    try {
+        if (typeof window.__abx_skip_chip_verify_after_first === 'undefined')
+            window.__abx_skip_chip_verify_after_first = true;
+        if (typeof window.__abx_last_chip_amount === 'undefined')
+            window.__abx_last_chip_amount = null;
+        if (typeof window.__abx_last_chip_at === 'undefined')
+            window.__abx_last_chip_at = 0;
+        if (typeof window.__abx_chip_active_verified === 'undefined')
+            window.__abx_chip_active_verified = false;
+    } catch (_) {}
     // Muốn hiện và ẩn bảng điều khiển home watch thì tìm dòng sau : showPanel: false // ⬅️ false = ẩn panel; true = hiện panel
     function isWmGameLikeLocation(hostname, href, frameName) {
         const host = String(hostname || '').toLowerCase();
@@ -1397,21 +1407,50 @@
     async function betSelectMultiChipValueAsync(value, doc) {
         const chipNode = betFindChipByAmount(value, doc);
         if (!chipNode)
-            return { ok: false, token: '', selected: null, activeMatch: 0, clickOk: 0, msg: 'chip-not-found' };
+            return { ok: false, token: '', selected: null, activeMatch: 0, clickOk: 0, tookMs: 0, msg: 'chip-not-found' };
         const token = betParseMultiChipTokenFromNode(chipNode);
+        const now = Date.now();
+        try {
+            if (window.__abx_skip_chip_verify_after_first) {
+                const lastAmount = Number(window.__abx_last_chip_amount);
+                const lastAt = Number(window.__abx_last_chip_at);
+                if (Number.isFinite(lastAmount) && lastAmount === value && Number.isFinite(lastAt) && (now - lastAt) < 10000) {
+                    return { ok: true, token, selected: value, activeMatch: 1, clickOk: 0, tookMs: 0, msg: 'skip-verify' };
+                }
+            }
+        } catch (_) {}
+        const t0 = now;
         const clickOk1 = betTryClickDirect(chipNode, null, 'chip');
         await new Promise(r => setTimeout(r, 220));
         const clickOk2 = betTryClickDirect(chipNode, null, 'chip');
         await new Promise(r => setTimeout(r, 220));
         const selected = betGetSelectedChipAmount(doc);
-        const activeMatch = betIsChipActive(chipNode) ? 1 : 0;
+        let activeMatch = 0;
+        try {
+            if (window.__abx_chip_active_verified) {
+                activeMatch = 1;
+            } else {
+                activeMatch = betIsChipActive(chipNode) ? 1 : 0;
+            }
+        } catch (_) {
+            activeMatch = betIsChipActive(chipNode) ? 1 : 0;
+        }
         const ok = selected === value || (!!activeMatch && (!selected || selected === value));
+        if (ok) {
+            try {
+                window.__abx_last_chip_amount = value;
+                window.__abx_last_chip_at = Date.now();
+                if (!window.__abx_chip_active_verified)
+                    window.__abx_chip_active_verified = true;
+            } catch (_) {}
+        }
         return {
             ok,
             token,
             selected,
             activeMatch,
             clickOk: (clickOk1 && clickOk2) ? 1 : 0,
+            tookMs: Date.now() - t0,
             msg: ok ? '' : ('selected=' + (selected == null ? '' : selected) + ' active=' + activeMatch + ' click=' + ((clickOk1 && clickOk2) ? 1 : 0))
         };
     }
@@ -1440,6 +1479,7 @@
                     token: (selected && selected.token) || '',
                     activeMatch: (selected && selected.activeMatch) || 0,
                     clickOk: (selected && selected.clickOk) || 0,
+                    tookMs: (selected && selected.tookMs) || 0,
                     msg: (selected && selected.msg) || ''
                 });
                 if (typeof logBetWarn === 'function')
@@ -1455,7 +1495,8 @@
                 selected: (selected && selected.selected) || '',
                 token: (selected && selected.token) || '',
                 activeMatch: (selected && selected.activeMatch) || 0,
-                clickOk: (selected && selected.clickOk) || 0
+                clickOk: (selected && selected.clickOk) || 0,
+                tookMs: (selected && selected.tookMs) || 0
             });
             try {
                 console.log('[BET-WM] chip selected', {
@@ -1514,6 +1555,7 @@
                 token: (selected && selected.token) || '',
                 activeMatch: (selected && selected.activeMatch) || 0,
                 clickOk: (selected && selected.clickOk) || 0,
+                tookMs: (selected && selected.tookMs) || 0,
                 msg: (selected && selected.msg) || ''
             });
             if (typeof logBetWarn === 'function')
@@ -1529,7 +1571,8 @@
             selected: (selected && selected.selected) || '',
             token: (selected && selected.token) || '',
             activeMatch: (selected && selected.activeMatch) || 0,
-            clickOk: (selected && selected.clickOk) || 0
+            clickOk: (selected && selected.clickOk) || 0,
+            tookMs: (selected && selected.tookMs) || 0
         });
         try {
             console.log('[BET-WM] chip selected', {
@@ -1621,6 +1664,7 @@
                 sameDoc: chipDoc === rootDoc
             });
         } catch (_) {}
+        const chipT0 = Date.now();
         betTryClickDirect(chipNode, logBetWarn, 'chip');
         await new Promise(r => setTimeout(r, 220));
         betTryClickDirect(chipNode, logBetWarn, 'chip');
@@ -1634,7 +1678,8 @@
                 amount: amountValue,
                 ok: 0,
                 selected,
-                token: chipToken || ''
+                token: chipToken || '',
+                tookMs: Date.now() - chipT0
             });
             if (typeof logBetWarn === 'function')
                 logBetWarn('abx-flow chip mismatch expected=' + amountValue + ' actual=' + selected + ' rootId=' + ((root && root.id) || ''));
@@ -1647,7 +1692,8 @@
             amount: amountValue,
             ok: 1,
             selected,
-            token: chipToken || ''
+            token: chipToken || '',
+            tookMs: Date.now() - chipT0
         });
         try {
             console.log('[BET-WM] chip selected', {
