@@ -3355,12 +3355,25 @@ Ví dụ không hợp lệ:
                 return false;
             }
 
+            bool ShouldAbortOpen(string stage)
+            {
+                if (!ShouldAbortBetPipeline(targetId))
+                    return false;
+                Log($"[CDPBET][ABORT] table={targetId} stage={stage}");
+                return true;
+            }
+
+            if (ShouldAbortOpen("pre-check"))
+                return false;
+
             var targetName = !string.IsNullOrWhiteSpace(tableName) ? tableName.Trim() : ResolveRoomName(targetId).Trim();
 
             if (PopupHost?.Visibility == Visibility.Visible && _popupWeb?.CoreWebView2 != null)
             {
                 if (await WaitForPopupBetProbeReadyAsync(targetId, "player", 10, "cdpbet-reuse", 700))
                     return true;
+                if (ShouldAbortOpen("after-reuse-probe"))
+                    return false;
             }
 
             if (Web?.CoreWebView2 == null)
@@ -3372,7 +3385,11 @@ Ví dụ không hợp lệ:
             Log($"[CDPBET][OPEN] table={targetId} name={ClipForCdpProbe(targetName, 80)}");
 
             try { await ScrollRoomIntoViewAsync(targetName); } catch { }
+            if (ShouldAbortOpen("before-open-delay"))
+                return false;
             await Task.Delay(180);
+            if (ShouldAbortOpen("after-open-delay"))
+                return false;
 
             var openRaw = await Web.ExecuteScriptAsync(BuildCdpBetProbeOpenRoomJs(targetId, targetName));
             var open = DeserializeScriptResult<CdpBetProbeOpenRoomResult>(openRaw);
@@ -3389,17 +3406,29 @@ Ví dụ không hợp lệ:
             var t0 = DateTime.UtcNow;
             while ((DateTime.UtcNow - t0).TotalMilliseconds < 12000)
             {
+                if (ShouldAbortOpen("open-loop"))
+                    return false;
                 if (PopupHost?.Visibility == Visibility.Visible && _popupWeb?.CoreWebView2 != null)
                 {
                     var ready = await WaitForPopupBetProbeReadyAsync(targetId, "player", 10, "cdpbet-open", 4000);
+                    if (ShouldAbortOpen("after-open-probe"))
+                        return false;
                     if (ready)
                     {
+                        if (ShouldAbortOpen("before-focus-delay"))
+                            return false;
                         await Task.Delay(300);
+                        if (ShouldAbortOpen("after-focus-delay"))
+                            return false;
                         try { _popupWeb.Focus(); } catch { }
                         return true;
                     }
                 }
+                if (ShouldAbortOpen("before-loop-delay"))
+                    return false;
                 await Task.Delay(150);
+                if (ShouldAbortOpen("after-loop-delay"))
+                    return false;
             }
 
             Log("[CDPBET][OPEN] popup-timeout table=" + targetId);
@@ -8183,8 +8212,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
             PersistSelectedRoomsFromTargets(GetSelectedRunTargets());
         }
 
-        private async Task<bool> EnsureOverlayContainsTargetsAsync(IEnumerable<RoomRunTarget>? targets = null, string reason = "", int timeoutMs = 12000)
+        private async Task<bool> EnsureOverlayContainsTargetsAsync(IEnumerable<RoomRunTarget>? targets = null, string reason = "", int timeoutMs = 12000, Func<bool>? shouldAbort = null)
         {
+            if (shouldAbort?.Invoke() == true)
+            {
+                Log($"[TABLE][OVERLAY] sync abort reason={ClipForLog(reason, 48)} stage=pre-check");
+                return false;
+            }
+
             var wanted = (targets ?? GetSelectedRunTargets())
                 .Where(t => !string.IsNullOrWhiteSpace(t.Id))
                 .GroupBy(t => t.Id, StringComparer.OrdinalIgnoreCase)
@@ -8213,8 +8248,22 @@ private async Task<CancellationTokenSource> DebounceAsync(
             Log($"[TABLE][OVERLAY] sync begin reason={ClipForLog(reason, 48)} timeoutMs={safeTimeoutMs} current={string.Join(",", current)} desired={string.Join(",", desired)}");
 
             var spawnTask = SpawnTableOverlayAsync(wanted);
-            var completed = await Task.WhenAny(spawnTask, Task.Delay(safeTimeoutMs));
-            if (completed != spawnTask)
+            var deadline = DateTime.UtcNow.AddMilliseconds(safeTimeoutMs);
+            while (!spawnTask.IsCompleted)
+            {
+                if (shouldAbort?.Invoke() == true)
+                {
+                    Log($"[TABLE][OVERLAY] sync abort reason={ClipForLog(reason, 48)} stage=wait");
+                    return false;
+                }
+
+                var remainMs = (int)(deadline - DateTime.UtcNow).TotalMilliseconds;
+                if (remainMs <= 0)
+                    break;
+
+                await Task.WhenAny(spawnTask, Task.Delay(Math.Min(220, Math.Max(90, remainMs))));
+            }
+            if (!spawnTask.IsCompleted)
             {
                 var partial = desired.All(id => _overlayActiveRooms.Contains(id));
                 Log($"[TABLE][OVERLAY] sync timeout reason={ClipForLog(reason, 48)} timeoutMs={safeTimeoutMs} partial={(partial ? 1 : 0)}");
@@ -11017,6 +11066,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             try
             {
+                if (IsRunAllStopRequested())
+                {
+                    Log("[POPUPROUTE][ABORT] reason=stop-request");
+                    return false;
+                }
+
                 var launchUrl = (_wmLastLaunchGameUrl ?? "").Trim();
                 var launchHost = (_wmLastLaunchHost ?? "").Trim();
                 var activeUrl = active?.CoreWebView2?.Source ?? active?.Source?.ToString() ?? "";
@@ -11109,13 +11164,25 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 popupWeb.NavigationCompleted += Handler;
                 try
                 {
+                    if (IsRunAllStopRequested())
+                        return false;
+
                     ClearPopupGameFrameCache("popup-route-nav");
                     Log($"[POPUPROUTE][NAV] url={ClipForLog(launchUrl, 180)}");
                     popupWeb.CoreWebView2.Navigate(launchUrl);
-                    var completed = await Task.WhenAny(tcs.Task, Task.Delay(12000));
                     var routeOk = false;
-                    if (ReferenceEquals(completed, tcs.Task))
-                        routeOk = await tcs.Task;
+                    var navDeadline = DateTime.UtcNow.AddMilliseconds(12000);
+                    while (DateTime.UtcNow < navDeadline)
+                    {
+                        if (IsRunAllStopRequested())
+                            return false;
+                        var completed = await Task.WhenAny(tcs.Task, Task.Delay(200));
+                        if (ReferenceEquals(completed, tcs.Task))
+                        {
+                            routeOk = await tcs.Task;
+                            break;
+                        }
+                    }
 
                     var finalPopupUrl = popupWeb.CoreWebView2.Source ?? popupWeb.Source?.ToString() ?? "";
                     if (!routeOk)
@@ -11135,7 +11202,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             PopupHost.Visibility = Visibility.Visible;
                     });
                     try { popupWeb.Focus(); } catch { }
+                    if (IsRunAllStopRequested())
+                        return false;
                     await Task.Delay(900);
+                    if (IsRunAllStopRequested())
+                        return false;
                     try { await InjectOnPopupDocAsync(); } catch { }
                     await SetWrapperOverlayLockAsync(true, "popup-route-ready");
                     Log($"[POPUPROUTE][READY] reuse=0 host={ClipForLog(launchHost, 60)} popup={ClipForLog(finalPopupUrl, 160)}");
@@ -11161,6 +11232,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 Log("[POPUPROUTE][SKIP] reason=no-table-id");
                 return false;
             }
+            if (ShouldAbortBetPipeline(targetId))
+            {
+                Log($"[POPUPROUTE][ABORT] reason=stop-request table={targetId}");
+                return false;
+            }
 
             var targetName = !string.IsNullOrWhiteSpace(tableName) ? tableName.Trim() : ResolveRoomName(targetId).Trim();
             var side = string.IsNullOrWhiteSpace(probeSide) ? "player" : probeSide.Trim();
@@ -11174,6 +11250,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (_popupWeb?.CoreWebView2 != null)
                 {
                     var reuseReady = await WaitForPopupBetProbeReadyAsync(targetId, side, amount, reason + "-reuse", allowNavigate ? 700 : 400);
+                    if (ShouldAbortBetPipeline(targetId))
+                        return false;
                     if (reuseReady)
                     {
                         await Dispatcher.InvokeAsync(() =>
@@ -11202,8 +11280,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     Log($"[POPUPROUTE][FAIL] table={targetId} reason=popup-open-failed");
                     return false;
                 }
+                if (ShouldAbortBetPipeline(targetId))
+                    return false;
 
                 var ready = await WaitForPopupBetProbeReadyAsync(targetId, side, amount, reason + "-open", 6500);
+                if (ShouldAbortBetPipeline(targetId))
+                    return false;
                 if (!ready)
                 {
                     popupUrl = _popupWeb?.CoreWebView2?.Source ?? _popupWeb?.Source?.ToString() ?? "";
@@ -15339,6 +15421,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 while (watch.ElapsedMilliseconds < timeoutMs)
                 {
+                    if (ShouldAbortBetPipeline(tableId))
+                    {
+                        Log($"[POPUPBET][ABORT] reason={ClipForLog(reason, 48)} table={tableId} side={side} amount={amount} elapsedMs={(int)watch.ElapsedMilliseconds}");
+                        return false;
+                    }
+
                     attempts++;
                     var probeRaw = await popup.ExecuteScriptAsync(probeScript);
                     var probeNorm = NormalizeEvalResultText(probeRaw);
@@ -15370,6 +15458,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     var remainMs = timeoutMs - (int)watch.ElapsedMilliseconds;
                     if (remainMs <= 0)
                         break;
+
+                    if (ShouldAbortBetPipeline(tableId))
+                    {
+                        Log($"[POPUPBET][ABORT] reason={ClipForLog(reason, 48)} table={tableId} side={side} amount={amount} elapsedMs={(int)watch.ElapsedMilliseconds}");
+                        return false;
+                    }
                     await Task.Delay(Math.Min(280, Math.Max(120, remainMs)));
                 }
 
@@ -15402,6 +15496,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     long probeAmount = 0;
                     var hasBetProbeArgs = isBetDispatch &&
                                           TryExtractBetProbeArgs(js, out probeTableId, out probeSide, out probeAmount);
+                    bool ShouldAbortBetHost(string stage)
+                    {
+                        if (!isBetCall)
+                            return false;
+
+                        if (ShouldAbortBetPipeline(hasBetProbeArgs ? probeTableId : null))
+                        {
+                            Log($"[JSHOST][ABORT] stage={stage} table={ClipForLog(probeTableId, 24)} side={ClipForLog(probeSide, 16)} amount={probeAmount}");
+                            return true;
+                        }
+
+                        return false;
+                    }
                     var popupRouted = false;
                     void AddCandidate(WebView2? web)
                     {
@@ -15420,6 +15527,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     }
                     if (isBetCall)
                     {
+                        if (ShouldAbortBetHost("pre-route"))
+                            return "\"no\"";
+
                         await LogBetHostProbeAsync("before-route-active", active);
                         await LogBetHostProbeAsync("before-route-popup", _popupWeb);
                         // Keep bet host routing close to baseline: avoid main-frame short-circuit
@@ -15444,6 +15554,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                                 Log("[POPUPROUTE][WAIT] reason=warm-in-flight");
                             if (hasBetProbeArgs)
                             {
+                                if (ShouldAbortBetHost("before-route-table"))
+                                    return "\"no\"";
                                 popupRouted = await EnsurePopupRoutedToTableAsync(
                                     probeTableId,
                                     ResolveRoomName(probeTableId),
@@ -15455,12 +15567,16 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             }
                             else
                             {
+                                if (ShouldAbortBetHost("before-route-launch"))
+                                    return "\"no\"";
                                 popupRouted = await EnsurePopupRoutedToLastLaunchGameAsync(
                                     active,
                                     warmInFlight ? "bet-host-warm-busy" : "bet-host",
                                     allowNavigate: true);
                             }
                         }
+                        if (ShouldAbortBetHost("after-route"))
+                            return "\"no\"";
                         active = GetActiveRoomHostWebView();
                         await LogBetHostProbeAsync("after-route-active", active);
                         await LogBetHostProbeAsync("after-route-popup", _popupWeb);
@@ -15475,7 +15591,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             {
                                 var waitReason = popupRouted ? "bet-host-route" : "bet-host-reuse";
                                 var waitTimeoutMs = popupRouted ? 6500 : 1800;
+                                if (ShouldAbortBetHost("before-popup-ready-wait"))
+                                    return "\"no\"";
                                 await WaitForPopupBetProbeReadyAsync(probeTableId, probeSide, probeAmount, waitReason, waitTimeoutMs);
+                                if (ShouldAbortBetHost("after-popup-ready-wait"))
+                                    return "\"no\"";
                             }
                         }
                     }
@@ -15511,6 +15631,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         var probeRows = new List<string>();
                         for (int i = 0; i < scoredCandidates.Count; i++)
                         {
+                            if (ShouldAbortBetHost("probe-candidates"))
+                                return "\"no\"";
                             var web = scoredCandidates[i].web;
                             var hostName = DescribeWebView(web);
                             try
@@ -15636,6 +15758,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     string firstRaw = "";
                     foreach (var web in candidates)
                     {
+                        if (ShouldAbortBetHost("dispatch-loop"))
+                            return "\"no\"";
                         if (web?.CoreWebView2 == null)
                             continue;
                         try
@@ -16237,6 +16361,34 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return Interlocked.CompareExchange(ref _runAllStopRequested, 0, 0) == 1;
         }
 
+        private bool IsTableCancellationSignaled(string? tableId)
+        {
+            var id = (tableId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(id))
+                return false;
+
+            lock (_tableTasksGate)
+            {
+                if (!_tableTasks.TryGetValue(id, out var state) || state == null)
+                    return false;
+
+                if (state.Cts != null && state.Cts.IsCancellationRequested)
+                    return true;
+
+                if (!state.AutoStartRequested && state.Cts == null)
+                    return true;
+
+                return false;
+            }
+        }
+
+        private bool ShouldAbortBetPipeline(string? tableId)
+        {
+            if (IsRunAllStopRequested())
+                return true;
+            return IsTableCancellationSignaled(tableId);
+        }
+
         private async Task<bool> WaitForRunAllStopSettledAsync(int timeoutMs = 10000, int pollMs = 80)
         {
             if (pollMs < 20)
@@ -16312,7 +16464,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return true;
         }
 
-        private void ScheduleDeferredTableStart(TableTaskState state, string? tableName, bool skipGlobalChecks, bool abortOnRunAllStop, bool triggerStartPush, int requestVersion)
+        private void ScheduleDeferredTableStart(TableTaskState state, string? tableName, bool skipGlobalChecks, bool abortOnRunAllStop, bool triggerStartPush, bool skipOverlaySync, int fallbackStartAfterMs, int requestVersion)
         {
             if (state == null || string.IsNullOrWhiteSpace(state.TableId))
                 return;
@@ -16320,29 +16472,61 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 return;
 
             var tableId = state.TableId;
-            Log($"[TASK] defer start until synced: {tableId}");
+            Log($"[TASK] defer start until synced: {tableId} fallbackMs={fallbackStartAfterMs}");
 
             _ = Task.Run(async () =>
             {
                 try
                 {
+                    var startedAt = DateTime.UtcNow;
                     while (true)
                     {
-                        await Task.Delay(1500);
+                        await Task.Delay(900);
 
                         if (!ShouldKeepDeferredStart(state, requestVersion))
                             return;
 
-                        if (!HasRunnableTableGameData(tableId, out var readySnap))
-                            continue;
-
-                        Log($"[TASK] synced -> auto start table={tableId} src={readySnap.abx} session={readySnap.session} seqLen={readySnap.seq?.Length ?? 0} prog={readySnap.prog?.ToString() ?? ""}");
-                        await Dispatcher.InvokeAsync(async () =>
+                        if (HasRunnableTableGameData(tableId, out var readySnap))
                         {
-                            if (ShouldKeepDeferredStart(state, requestVersion))
-                                await StartTableTaskAsync(tableId, tableName, skipGlobalChecks, abortOnRunAllStop, triggerStartPush);
-                        });
-                        return;
+                            Log($"[TASK] synced -> auto start table={tableId} src={readySnap.abx} session={readySnap.session} seqLen={readySnap.seq?.Length ?? 0} prog={readySnap.prog?.ToString() ?? ""}");
+                            await Dispatcher.InvokeAsync(async () =>
+                            {
+                                if (ShouldKeepDeferredStart(state, requestVersion))
+                                    await StartTableTaskAsync(
+                                        tableId,
+                                        tableName,
+                                        skipGlobalChecks,
+                                        abortOnRunAllStop,
+                                        triggerStartPush,
+                                        skipOverlaySync,
+                                        allowUnsyncedStart: false,
+                                        deferredFallbackMs: fallbackStartAfterMs);
+                            });
+                            return;
+                        }
+
+                        if (fallbackStartAfterMs > 0)
+                        {
+                            var waitedMs = (int)(DateTime.UtcNow - startedAt).TotalMilliseconds;
+                            if (waitedMs >= fallbackStartAfterMs)
+                            {
+                                Log($"[TASK] fallback start without synced snapshot: table={tableId} waitedMs={waitedMs}");
+                                await Dispatcher.InvokeAsync(async () =>
+                                {
+                                    if (ShouldKeepDeferredStart(state, requestVersion))
+                                        await StartTableTaskAsync(
+                                            tableId,
+                                            tableName,
+                                            skipGlobalChecks,
+                                            abortOnRunAllStop,
+                                            triggerStartPush,
+                                            skipOverlaySync,
+                                            allowUnsyncedStart: true,
+                                            deferredFallbackMs: 0);
+                                });
+                                return;
+                            }
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -16362,19 +16546,30 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             var anyActive = HasActiveTableRequests();
             var stopRequested = IsRunAllStopRequested();
-            var stopping = anyActive && stopRequested;
+            var runAllBusy = Interlocked.CompareExchange(ref _runAllInProgress, 0, 0) == 1;
+            var runningAll = runAllBusy && !stopRequested;
+            var stopping = stopRequested && (anyActive || runAllBusy);
             if (stopping)
             {
                 BtnRunAllTables.Content = "\u0110ang d\u1eebng t\u1ea5t c\u1ea3 ...";
                 var dangerStopping = TryFindResource("DangerButton") as Style;
                 if (dangerStopping != null) BtnRunAllTables.Style = dangerStopping;
                 BtnRunAllTables.IsEnabled = false;
-                SetPlayButtonState(anyActive);
+                SetPlayButtonState(anyActive || runAllBusy);
+                return;
+            }
+            if (runningAll)
+            {
+                BtnRunAllTables.Content = "\u0110ang ch\u1ea1y t\u1ea5t c\u1ea3 b\u00e0n ...";
+                var primaryRunning = TryFindResource("PrimaryButton") as Style;
+                if (primaryRunning != null) BtnRunAllTables.Style = primaryRunning;
+                BtnRunAllTables.IsEnabled = false;
+                SetPlayButtonState(true);
                 return;
             }
             if (anyActive)
             {
-                BtnRunAllTables.Content = "Dừng chạy tất cả";
+                BtnRunAllTables.Content = "D\u1eebng t\u1ea5t c\u1ea3 b\u00e0n";
                 var danger = TryFindResource("DangerButton") as Style;
                 if (danger != null) BtnRunAllTables.Style = danger;
             }
@@ -16386,7 +16581,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
 
             BtnRunAllTables.IsEnabled = true;
-            SetPlayButtonState(anyActive);
+            SetPlayButtonState(anyActive || runAllBusy);
         }
 
         private async Task SetOverlayPlayStateAsync(string tableId, bool isRunning)
@@ -16816,7 +17011,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             };
         }
 
-        private async Task StartTableTaskAsync(string tableId, string? tableName = null, bool skipGlobalChecks = false, bool abortOnRunAllStop = false, bool triggerStartPush = true)
+        private async Task StartTableTaskAsync(string tableId, string? tableName = null, bool skipGlobalChecks = false, bool abortOnRunAllStop = false, bool triggerStartPush = true, bool skipOverlaySync = false, bool allowUnsyncedStart = false, int deferredFallbackMs = 0)
         {
             if (string.IsNullOrWhiteSpace(tableId))
                 return;
@@ -16894,14 +17089,23 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     }
                 }
 
-                if (!await EnsureOverlayContainsTargetsAsync(reason: "start-" + tableId))
+                if (!skipOverlaySync)
                 {
-                    Log("[TASK] overlay sync failed: " + tableId);
-                    return;
-                }
+                    if (!await EnsureOverlayContainsTargetsAsync(
+                            reason: "start-" + tableId,
+                            shouldAbort: abortOnRunAllStop ? IsRunAllStopRequested : null))
+                    {
+                        Log("[TASK] overlay sync failed: " + tableId);
+                        return;
+                    }
 
-                if (ShouldAbortStart("after-overlay-sync"))
-                    return;
+                    if (ShouldAbortStart("after-overlay-sync"))
+                        return;
+                }
+                else
+                {
+                    Log("[TASK] skip overlay sync (preflight done): " + tableId);
+                }
 
                 state.AutoStartRequested = true;
                 _ = SetOverlayPlayStateAsync(tableId, true);
@@ -16916,18 +17120,37 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (ShouldAbortStart(triggerStartPush ? "after-cw-startpush" : "skip-cw-startpush"))
                     return;
 
-                if (!HasRunnableTableGameData(tableId, out var readySnap))
+                var hasReadySnap = HasRunnableTableGameData(tableId, out var readySnap);
+                if (!hasReadySnap)
                 {
-                    Log($"[TASK] waiting sync before start: table={tableId}");
-                    if (ShouldAbortStart("before-defer-sync"))
+                    if (!allowUnsyncedStart)
+                    {
+                        Log($"[TASK] waiting sync before start: table={tableId}");
+                        if (ShouldAbortStart("before-defer-sync"))
+                            return;
+
+                        var fallbackMs = deferredFallbackMs;
+                        if (fallbackMs <= 0 && abortOnRunAllStop)
+                            fallbackMs = 5000;
+                        ScheduleDeferredTableStart(
+                            state,
+                            tableName,
+                            skipGlobalChecks,
+                            abortOnRunAllStop,
+                            triggerStartPush,
+                            skipOverlaySync,
+                            fallbackMs,
+                            requestVersion);
                         return;
-                    ScheduleDeferredTableStart(state, tableName, skipGlobalChecks, abortOnRunAllStop, triggerStartPush, requestVersion);
-                    return;
+                    }
+
+                    Log($"[TASK] start with fallback data: table={tableId} src={readySnap.abx} session={readySnap.session} seqLen={readySnap.seq?.Length ?? 0} prog={readySnap.prog?.ToString() ?? ""}");
                 }
 
                 if (ShouldAbortStart("before-start-loop"))
                     return;
-                Log($"[TASK] start with synced data: table={tableId} src={readySnap.abx} session={readySnap.session} seqLen={readySnap.seq?.Length ?? 0} prog={readySnap.prog?.ToString() ?? ""}");
+                if (hasReadySnap)
+                    Log($"[TASK] start with synced data: table={tableId} src={readySnap.abx} session={readySnap.session} seqLen={readySnap.seq?.Length ?? 0} prog={readySnap.prog?.ToString() ?? ""}");
 
                 state.Decision = new DecisionState();
                 state.Cooldown = false;
@@ -17205,6 +17428,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 Interlocked.Exchange(ref _runAllStopRequested, 0);
+                UpdateRunAllButtonState();
 
                 var targets = GetSelectedRunTargets();
                 if (targets.Count == 0)
@@ -17264,7 +17488,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         return;
 
                     Log($"[TABLE] run-all start table={target.Id} name={target.Name}");
-                    await StartTableTaskAsync(target.Id, target.Name, skipGlobalChecks: true, abortOnRunAllStop: true, triggerStartPush: false);
+                    await StartTableTaskAsync(
+                        target.Id,
+                        target.Name,
+                        skipGlobalChecks: true,
+                        abortOnRunAllStop: true,
+                        triggerStartPush: false,
+                        skipOverlaySync: true,
+                        allowUnsyncedStart: false,
+                        deferredFallbackMs: 5000);
                 }
 
                 var tasks = new List<Task>(targets.Count);
