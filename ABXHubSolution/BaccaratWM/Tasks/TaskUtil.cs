@@ -15,7 +15,6 @@ namespace BaccaratWM.Tasks
     {
         // Khóa chống bắn đúp: 3s kể từ lần place bet THÀNH CÔNG gần nhất
         private static readonly ConcurrentDictionary<string, long> _lastBetOkByTable = new ConcurrentDictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-        private static readonly SemaphoreSlim _betQueue = new SemaphoreSlim(1, 1);
         private static readonly ConcurrentDictionary<string, long> _lastWaitLogByTable = new ConcurrentDictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
         // (tùy chọn) reset khi dừng task
@@ -49,6 +48,14 @@ namespace BaccaratWM.Tasks
                 return null;
             var lastSide = ParityCharToSide(DigitToParity(lastDigit));
             return string.Equals(betSide, lastSide, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsUsableSessionKey(string? session)
+        {
+            var s = (session ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(s))
+                return false;
+            return !string.Equals(s, "0", StringComparison.OrdinalIgnoreCase);
         }
 
         private static void UiResetRoundControls()
@@ -186,28 +193,33 @@ namespace BaccaratWM.Tasks
             if (isVirtual)
                 ctx.Log?.Invoke($"[BET-MODE] virtual table={tableId} side={side} amount={amount}");
 
-            await _betQueue.WaitAsync(ct);
-            try
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var last = _lastBetOkByTable.TryGetValue(tableId, out var lastMs) ? lastMs : 0;
+            if (now - last < 1200)
             {
-                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                var last = _lastBetOkByTable.TryGetValue(tableId, out var lastMs) ? lastMs : 0;
-                if (now - last < 1200)
-                {
-                    ctx.Log?.Invoke($"[BET] cooldown 1.2s active, skip ({1200 - (now - last)}ms left)");
-                    return false;
-                }
+                ctx.Log?.Invoke($"[BET] cooldown 1.2s active, skip ({1200 - (now - last)}ms left)");
+                return false;
+            }
 
                 var tableIdJson = JsonSerializer.Serialize(tableId);
                 var tableNameJson = JsonSerializer.Serialize(ctx.TableName ?? "");
                 var sideJson = JsonSerializer.Serialize(side ?? "");
                 var virtualJs = isVirtual ? "true" : "false";
                 ctx.Log?.Invoke($"[BET-REQ] table={tableId} name={ctx.TableName ?? ""} side={side} amount={amount} virtual={(isVirtual ? 1 : 0)}");
+                try
+                {
+                    await ctx.UiDispatcher.InvokeAsync(() => ctx.UiOnBetDispatch?.Invoke(side ?? "", amount));
+                }
+                catch (Exception ex)
+                {
+                    ctx.Log?.Invoke($"[HIST][DISPATCH][ERR] table={tableId} side={side} amount={amount} msg={ex.Message}");
+                }
 
             // GỌI __cw_bet AN TOÀN (giữ nguyên như code hiện tại)
                 var js =
                     "(function(){try{" +
                     " if (typeof window.__cw_bet==='function'){" +
-                    "   return window.__cw_bet(" + tableIdJson + ", " + sideJson + ", " + amount + ", " + virtualJs + ", true, " + tableNameJson + ");" +
+                    "   return window.__cw_bet(" + tableIdJson + ", " + sideJson + ", " + amount + ", " + virtualJs + ", false, " + tableNameJson + ");" +
                     " } else { return 'no'; }" +
                     "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
@@ -230,11 +242,6 @@ namespace BaccaratWM.Tasks
                     _lastBetOkByTable[tableId] = now; // kích hoạt khóa 1.2s
 
                 return ok;
-            }
-            finally
-            {
-                _betQueue.Release();
-            }
         }
 
 
@@ -249,6 +256,20 @@ namespace BaccaratWM.Tasks
                 var s = ctx.GetSnap?.Invoke();
                 var curSeq = s?.seq ?? "";
                 var curSession = s?.session ?? "";
+                if (!IsUsableSessionKey(baseSession))
+                {
+                    if (IsUsableSessionKey(curSession))
+                        baseSession = curSession;
+                    await Task.Delay(120, ct);
+                    continue;
+                }
+
+                if (!IsUsableSessionKey(curSession))
+                {
+                    await Task.Delay(120, ct);
+                    continue;
+                }
+
                 if (!string.Equals(curSession, baseSession, StringComparison.Ordinal))
                 {
                     char lastDigit = '\0';
