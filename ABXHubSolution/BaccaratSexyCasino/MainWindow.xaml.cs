@@ -530,7 +530,6 @@ namespace BaccaratSexyCasino
 
         private static readonly TimeSpan GameTickFresh = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan HomeTickFresh = TimeSpan.FromSeconds(1.5);
-        private static readonly TimeSpan UiCountdownHoldFresh = TimeSpan.FromMilliseconds(1500);
         // Master switch: đặt false để bỏ qua kiểm tra Trial/License (không UI, không config, true kiểm tra bình thường)
         private bool CheckLicense = true;
 
@@ -3781,13 +3780,6 @@ try{
                     if (snap == null)
                         return;
 
-                    CwSnapshot? prevUiSnap;
-                    lock (_snapLock) prevUiSnap = CloneSnapRaw(_lastSnap);
-                    var prevUiFresh =
-                        prevUiSnap != null &&
-                        _lastGameTickUtc != DateTime.MinValue &&
-                        (DateTime.UtcNow - _lastGameTickUtc) <= UiCountdownHoldFresh;
-
                     if (snap != null)
                     {
                         var boardSeqDisplay = FilterResultDisplaySeq(snap.seq ?? "");
@@ -3799,19 +3791,22 @@ try{
                         }
 
                         string statusRaw = GetJsonStringLoose(jrootTick, "status") ?? "";
-                        string statusUi = BuildStatusUiText(statusRaw, snap.prog);
-                        string statusUiDisplay = statusUi;
-                        double? progUi = snap.prog;
-                        if (prevUiFresh)
+                        string statusUi = statusRaw;
+                        if (statusRaw.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase))
                         {
-                            if (!progUi.HasValue && prevUiSnap?.prog.HasValue == true)
-                                progUi = prevUiSnap.prog;
-
-                            if (string.IsNullOrWhiteSpace(statusUiDisplay))
+                            var p = snap?.prog;
+                            if (p.HasValue)
                             {
-                                var prevStatusUi = BuildStatusUiText(prevUiSnap?.status, prevUiSnap?.prog);
-                                if (!string.IsNullOrWhiteSpace(prevStatusUi))
-                                    statusUiDisplay = prevStatusUi;
+                                var pv = p.Value;
+                                if (pv <= 0.5) statusUi = "Đang mở bài";
+                                else if (pv <= 1.5) statusUi = "Tạm ngừng đặt cược";
+                                else if (pv <= 5.5) statusUi = "Nắm giữ cơ hội này nhé";
+                                else if (pv <= 18.5) statusUi = "Chúc may mắn";
+                                else statusUi = "Bắt đầu đặt cược";
+                            }
+                            else
+                            {
+                                statusUi = "";
                             }
                         }
                         var seqDisplayRaw = snap.seq ?? "";
@@ -4085,10 +4080,10 @@ try{
                         {
                             try
                             {
-                                if (progUi.HasValue)
+                                if (snap.prog.HasValue)
                                 {
                                     const double progMaxSec = 20;
-                                    var sec = Math.Max(0, Math.Min(progMaxSec, progUi.Value));
+                                    var sec = Math.Max(0, Math.Min(progMaxSec, snap.prog.Value));
                                     var secInt = (int)Math.Round(sec, MidpointRounding.AwayFromZero);
                                     var ratio = (progMaxSec > 0) ? (sec / progMaxSec) : 0;
                                     if (PrgBet != null)
@@ -4103,7 +4098,7 @@ try{
                                 {
                                     if (PrgBet != null) PrgBet.Value = 0;
                                     if (LblProg != null)
-                                        LblProg.Text = !string.IsNullOrWhiteSpace(statusUiDisplay) ? "0s" : "-";
+                                        LblProg.Text = !string.IsNullOrWhiteSpace(statusUi) ? "0s" : "-";
                                 }
 
                                 var seqStrLocal = snap.seq ?? "";
@@ -4134,9 +4129,9 @@ try{
 
                                 if (LblStatusText != null)
                                 {
-                                    if (!string.IsNullOrWhiteSpace(statusUiDisplay))
+                                    if (!string.IsNullOrWhiteSpace(statusUi))
                                     {
-                                        LblStatusText.Text = statusUiDisplay;
+                                        LblStatusText.Text = statusUi;
                                         LblStatusText.Visibility = Visibility.Visible;
                                     }
                                     else
@@ -11131,23 +11126,6 @@ try{
                 }
             }
             catch { /* ignore */ }
-        }
-
-        private static string BuildStatusUiText(string? statusRaw, double? prog)
-        {
-            statusRaw = (statusRaw ?? "").Trim();
-            if (!statusRaw.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase))
-                return statusRaw;
-
-            if (!prog.HasValue)
-                return "";
-
-            var pv = prog.Value;
-            if (pv <= 0.5) return "Đang mở bài";
-            if (pv <= 1.5) return "Tạm ngừng đặt cược";
-            if (pv <= 5.5) return "Nắm giữ cơ hội này nhé";
-            if (pv <= 18.5) return "Chúc may mắn";
-            return "Bắt đầu đặt cược";
         }
 
 
