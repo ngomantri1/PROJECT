@@ -365,10 +365,12 @@ namespace BaccaratWM
         private List<RoomEntry> _bufferedWrappedProtocol21Rooms = new();
         private string _bufferedWrappedProtocol21Source = "";
         private DateTime _bufferedWrappedProtocol21At = DateTime.MinValue;
+        private DateTime _bufferedWrappedProtocol21FirstAt = DateTime.MinValue;
         private int _bufferedWrappedProtocol21Version = 0;
         private bool _wrappedProtocol21SnapshotPublished = false;
         private int _wrappedProtocol21LastPublishedCount = 0;
         private DateTime _wrappedProtocol21LastPublishedAt = DateTime.MinValue;
+        private const bool EnableWrappedProtocol21RoomBuffer = false;
         private readonly Dictionary<string, FrameNetTapChunkBuffer> _frameNetTapChunks = new(StringComparer.Ordinal);
         private readonly Dictionary<string, PopupServerRoadState> _popupServerRoadStates = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _popupPreferredRoadRouteByTableId = new(StringComparer.OrdinalIgnoreCase);
@@ -3223,16 +3225,26 @@ Ví dụ không hợp lệ:
       }}
     }};
     const norm = (s) => strip(String(s || '').trim().toLowerCase()).replace(/\s+/g, ' ');
+    const isOverlayEl = (el) => {{
+      try {{
+        if (!el || !el.closest) return false;
+        return !!el.closest('#__abx_table_overlay_root,#__abx_overlay,.__abx_table_panel,[id^=""__abx_table_""],[class*=""__abx_table_""]');
+      }} catch (_ ) {{
+        return false;
+      }}
+    }};
     const isVis = (el) => {{
       if (!el || !el.isConnected) return false;
+      if (isOverlayEl(el)) return false;
       const cs = getComputedStyle(el);
       if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity || '1') < 0.05) return false;
       const r = el.getBoundingClientRect();
       return r.width > 4 && r.height > 4;
     }};
-    const textOf = (el) => norm(
-      (el && (el.textContent || el.innerText || el.getAttribute?.('aria-label') || el.getAttribute?.('title'))) || ''
-    );
+    const textOf = (el) => {{
+      if (!el || isOverlayEl(el)) return '';
+      return norm((el.textContent || el.innerText || el.getAttribute?.('aria-label') || el.getAttribute?.('title')) || '');
+    }};
     const wants = [roomName, roomId].map(norm).filter(Boolean);
     if (!wants.length) return {{ ok:false, error:'room-empty' }};
 
@@ -3243,8 +3255,10 @@ Ví dụ không hợp lệ:
 
     const enterRx = /\b(di vao|vao game|vao|enter|join|play|open)\b/;
     const rejectRx = /\b(player|banker|hoa|tie|next p|next b|xu ly|quyet toan|settings?|mute|volume)\b/;
+    const panelControlRx = /\b(dung|chay|stop|start|dong tat ca ban|tao ban choi|dat lai man hinh|dat lai chien luoc|khoa chuot)\b/;
     const clickLike = (el) => {{
       if (!el) return false;
+      if (isOverlayEl(el)) return false;
       try {{ el.scrollIntoView({{ block:'center', inline:'center' }}); }} catch (_ ) {{}}
       const r = el.getBoundingClientRect();
       const cx = Math.max(0, Math.min(window.innerWidth - 1, Math.round(r.left + Math.max(1, r.width) / 2)));
@@ -3271,6 +3285,7 @@ Ví dụ không hợp lệ:
     const scoreButton = (btn) => {{
       if (!btn || !isVis(btn)) return -9999;
       const txt = textOf(btn);
+      if (panelControlRx.test(txt)) return -9999;
       let score = 0;
       if (enterRx.test(txt)) score += 20;
       if (/di vao/.test(txt)) score += 12;
@@ -3284,6 +3299,7 @@ Ví dụ không hợp lệ:
     }};
     const findButtonInRoot = (root) => {{
       if (!root) return null;
+      if (isOverlayEl(root)) return null;
       const nodes = Array.from(root.querySelectorAll('a,button,[role=button],[onclick],.mouse_pointer'));
       let best = null;
       let bestScore = -9999;
@@ -3300,6 +3316,7 @@ Ví dụ không hợp lệ:
     const matches = [];
     const addRoot = (root, matchText) => {{
       if (!root || seen.has(root) || !isVis(root)) return;
+      if (isOverlayEl(root)) return;
       seen.add(root);
       const btn = findButtonInRoot(root);
       if (!btn) return;
@@ -4304,6 +4321,47 @@ Ví dụ không hợp lệ:
                     await Task.Delay(350);
                 }
 
+                var wrappedMainBootstrap = !popupRoomHost && IsWrappedMainWmMode(targetUrl);
+                if (wrappedMainBootstrap && list.Count < 20)
+                {
+                    var beforeCount = list.Count;
+
+                    var (directRooms, directSource) = await TryCollectRoomsViaInjectedCollectorsAsync(targetWeb);
+                    if (directRooms.Count > 0)
+                    {
+                        var merged = MergeRoomEntriesForBootstrap(list, directRooms);
+                        if (merged.Count > list.Count)
+                        {
+                            list = merged;
+                            roomSource = string.IsNullOrWhiteSpace(directSource)
+                                ? "bootstrap/direct via table_update"
+                                : directSource;
+                        }
+                    }
+
+                    if (list.Count < 20)
+                    {
+                        var visibleRooms = await TryGetVisibleLobbyRoomsAsync(targetWeb);
+                        if (visibleRooms.Count > 0)
+                        {
+                            var merged = MergeRoomEntriesForBootstrap(list, visibleRooms);
+                            if (merged.Count > list.Count)
+                            {
+                                list = merged;
+                                roomSource = roomSource.IndexOf("table_update", StringComparison.OrdinalIgnoreCase) >= 0
+                                    ? roomSource
+                                    : "bootstrap/visible via table_update";
+                            }
+                        }
+                    }
+
+                    if (list.Count > beforeCount)
+                    {
+                        LogDebug(
+                            $"[ROOMDBG][RefreshRoomList] bootstrap wrapped-main before={beforeCount} after={list.Count} source={roomSource} sample={Sample(list.Select(r => r.Name))}");
+                    }
+                }
+
                 if (userTriggered)
                 {
                     int protocolCacheCount;
@@ -4735,6 +4793,70 @@ Ví dụ không hợp lệ:
 
             var normName = TextNorm.U(name ?? "");
             return string.IsNullOrWhiteSpace(normName) ? "" : "NM:" + normName;
+        }
+
+        private List<RoomEntry> MergeRoomEntriesForBootstrap(IEnumerable<RoomEntry>? baseRooms, IEnumerable<RoomEntry>? extraRooms)
+        {
+            var merged = new Dictionary<string, RoomEntry>(StringComparer.Ordinal);
+
+            static RoomEntry CloneRoom(RoomEntry room)
+            {
+                return new RoomEntry
+                {
+                    Id = (room.Id ?? "").Trim(),
+                    Name = (room.Name ?? "").Trim()
+                };
+            }
+
+            void AddOrMerge(RoomEntry room)
+            {
+                var id = (room.Id ?? "").Trim();
+                var name = (room.Name ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(id) && string.IsNullOrWhiteSpace(name))
+                    return;
+
+                var key = BuildRoomMatchKey(id, name);
+                if (string.IsNullOrWhiteSpace(key))
+                    return;
+
+                if (!merged.TryGetValue(key, out var current))
+                {
+                    merged[key] = new RoomEntry
+                    {
+                        Id = string.IsNullOrWhiteSpace(id) ? name : id,
+                        Name = string.IsNullOrWhiteSpace(name) ? id : name
+                    };
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(current.Id) && !string.IsNullOrWhiteSpace(id))
+                    current.Id = id;
+                if (string.IsNullOrWhiteSpace(current.Name) && !string.IsNullOrWhiteSpace(name))
+                    current.Name = name;
+            }
+
+            if (baseRooms != null)
+            {
+                foreach (var room in baseRooms)
+                {
+                    if (room == null) continue;
+                    AddOrMerge(CloneRoom(room));
+                }
+            }
+
+            if (extraRooms != null)
+            {
+                foreach (var room in extraRooms)
+                {
+                    if (room == null) continue;
+                    AddOrMerge(CloneRoom(room));
+                }
+            }
+
+            return merged.Values
+                .Where(r => !string.IsNullOrWhiteSpace(r.Name) || !string.IsNullOrWhiteSpace(r.Id))
+                .OrderBy(r => BuildRoomDisplaySortKey(r.Name), StringComparer.Ordinal)
+                .ToList();
         }
 
         // ====== Helpers ======
@@ -10360,6 +10482,39 @@ private async Task<CancellationTokenSource> DebounceAsync(
                    && url.IndexOf("seamless", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private bool IsEmbeddedWmWrapperUrl(string? url)
+        {
+            var raw = (url ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(raw))
+                return false;
+            if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri))
+                return false;
+
+            var host = (uri.Host ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(host))
+                return false;
+            if (host.StartsWith("games.", StringComparison.OrdinalIgnoreCase))
+                return false;
+            if (host.IndexOf("wmvn.", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                host.IndexOf("m8810.com", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                host.IndexOf("qqhrsbjx", StringComparison.OrdinalIgnoreCase) >= 0)
+                return false;
+
+            var lowerUrl = raw.ToLowerInvariant();
+            var looksWmRef =
+                lowerUrl.Contains("co=wm") ||
+                lowerUrl.Contains("wmvn.") ||
+                lowerUrl.Contains("m8810.com") ||
+                lowerUrl.Contains("qqhrsbjx") ||
+                lowerUrl.Contains("/singlebactable.jsp") ||
+                lowerUrl.Contains("/webmain.jsp") ||
+                lowerUrl.Contains("/gamehall.jsp");
+            if (!looksWmRef)
+                return false;
+
+            return true;
+        }
+
         private bool ShouldDisableOverlayRoomResolve()
         {
             try
@@ -11574,6 +11729,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (string.IsNullOrWhiteSpace(url))
                 return false;
             return url.IndexOf("/wps/game/launchGame", StringComparison.OrdinalIgnoreCase) >= 0
+                   || url.IndexOf("/api/game/enter", StringComparison.OrdinalIgnoreCase) >= 0
                    || url.IndexOf("/api/user/launch-game", StringComparison.OrdinalIgnoreCase) >= 0
                    || url.IndexOf("/launch-game", StringComparison.OrdinalIgnoreCase) >= 0;
         }
@@ -12246,6 +12402,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     gameUrl = gameUrlElRoot.GetString() ?? "";
                 else if (root.TryGetProperty("game_url", out var gameUrlOldElRoot))
                     gameUrl = gameUrlOldElRoot.GetString() ?? "";
+                else if (root.TryGetProperty("data", out var dataElRoot) && dataElRoot.ValueKind == JsonValueKind.Object)
+                {
+                    if (dataElRoot.TryGetProperty("url", out var dataUrlEl))
+                        gameUrl = dataUrlEl.GetString() ?? "";
+                    if (string.IsNullOrWhiteSpace(gameUrl) && dataElRoot.TryGetProperty("gameUrl", out var dataGameUrlEl))
+                        gameUrl = dataGameUrlEl.GetString() ?? "";
+                    if (string.IsNullOrWhiteSpace(gameUrl) && dataElRoot.TryGetProperty("game_url", out var dataGameUrlOldEl))
+                        gameUrl = dataGameUrlOldEl.GetString() ?? "";
+                }
                 if (root.TryGetProperty("status", out var statusElRoot))
                     status = statusElRoot.ValueKind == JsonValueKind.String ? (statusElRoot.GetString() ?? "") : statusElRoot.GetRawText();
 
@@ -13411,6 +13576,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 _bufferedWrappedProtocol21Rooms.Clear();
                 _bufferedWrappedProtocol21Source = "";
                 _bufferedWrappedProtocol21At = DateTime.MinValue;
+                _bufferedWrappedProtocol21FirstAt = DateTime.MinValue;
                 _bufferedWrappedProtocol21Version = 0;
                 _wrappedProtocol21SnapshotPublished = false;
                 _wrappedProtocol21LastPublishedCount = 0;
@@ -13664,8 +13830,24 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (!hasWmTarget)
                     return false;
 
-                return startReason.IndexOf("launchGame", StringComparison.OrdinalIgnoreCase) >= 0
-                    || IsLaunchGameUrl(startUrl);
+                var hasLaunchSignal =
+                    startReason.IndexOf("launchGame", StringComparison.OrdinalIgnoreCase) >= 0
+                    || IsLaunchGameUrl(startUrl)
+                    || IsLaunchGameUrl(activeUrl)
+                    || IsLaunchGameUrl(candidateUrl);
+                if (hasLaunchSignal)
+                    return true;
+
+                if (IsWmUrl(activeUrl) || IsWmUrl(candidateUrl))
+                    return true;
+
+                if (HasFreshMainTopLevelWmHint() || IsMainWmFrameVisible())
+                    return true;
+
+                if (TryGetFreshMainCdpFrameHint(activeUrl, out var _))
+                    return true;
+
+                return false;
             }
             catch
             {
@@ -14236,7 +14418,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (rooms.Count == 0)
                 return;
 
-            if (TryDelayWrappedProtocol21Publish(rooms, source))
+            if (EnableWrappedProtocol21RoomBuffer && TryDelayWrappedProtocol21Publish(rooms, source))
                 return;
 
             PublishLatestNetworkRoomsCore(rooms, source);
@@ -14257,6 +14439,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     _bufferedWrappedProtocol21Rooms.Clear();
                     _bufferedWrappedProtocol21Source = "";
                     _bufferedWrappedProtocol21At = DateTime.MinValue;
+                    _bufferedWrappedProtocol21FirstAt = DateTime.MinValue;
                     _wrappedProtocol21SnapshotPublished = true;
                     _wrappedProtocol21LastPublishedCount = rooms.Count;
                     _wrappedProtocol21LastPublishedAt = DateTime.UtcNow;
@@ -14319,22 +14502,28 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 _bufferedWrappedProtocol21Rooms = rooms.Select(r => new RoomEntry { Id = r.Id, Name = r.Name }).ToList();
                 _bufferedWrappedProtocol21Source = source;
                 _bufferedWrappedProtocol21At = now;
+                if (_bufferedWrappedProtocol21FirstAt == DateTime.MinValue)
+                    _bufferedWrappedProtocol21FirstAt = now;
                 version = ++_bufferedWrappedProtocol21Version;
                 lastCount = _wrappedProtocol21LastPublishedCount;
 
                 if (!_wrappedProtocol21SnapshotPublished)
                 {
-                    if (rooms.Count >= 30)
+                    var warmupAge = now - _bufferedWrappedProtocol21FirstAt;
+                    if (rooms.Count >= 24 ||
+                        (rooms.Count >= 8 && warmupAge >= TimeSpan.FromMilliseconds(900)) ||
+                        warmupAge >= TimeSpan.FromMilliseconds(1500))
                     {
                         _wrappedProtocol21SnapshotPublished = true;
                         _wrappedProtocol21LastPublishedCount = rooms.Count;
                         _wrappedProtocol21LastPublishedAt = now;
+                        _bufferedWrappedProtocol21FirstAt = DateTime.MinValue;
                         publishNow = true;
-                        stage = "release-threshold";
+                        stage = "release-bootstrap";
                     }
                     else
                     {
-                        due = rooms.Count >= 20 ? TimeSpan.FromMilliseconds(900) : TimeSpan.FromMilliseconds(1400);
+                        due = TimeSpan.FromMilliseconds(280);
                         stage = "buffer-first";
                     }
                 }
@@ -14342,7 +14531,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 {
                     var countDelta = rooms.Count - _wrappedProtocol21LastPublishedCount;
                     var age = now - _wrappedProtocol21LastPublishedAt;
-                    if (countDelta >= 6 || age >= TimeSpan.FromSeconds(6))
+                    if (countDelta >= 3 || age >= TimeSpan.FromMilliseconds(1800))
                     {
                         _wrappedProtocol21LastPublishedCount = rooms.Count;
                         _wrappedProtocol21LastPublishedAt = now;
@@ -14351,7 +14540,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     }
                     else
                     {
-                        due = TimeSpan.FromMilliseconds(1600);
+                        due = TimeSpan.FromMilliseconds(700);
                         stage = "buffer-delta";
                     }
                 }
@@ -14405,11 +14594,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 if (!_wrappedProtocol21SnapshotPublished)
                 {
-                    if (rooms.Count < 12 && (now - _bufferedWrappedProtocol21At) < TimeSpan.FromSeconds(3))
+                    var firstSeenAt = _bufferedWrappedProtocol21FirstAt == DateTime.MinValue
+                        ? _bufferedWrappedProtocol21At
+                        : _bufferedWrappedProtocol21FirstAt;
+                    if (rooms.Count < 8 && (now - firstSeenAt) < TimeSpan.FromMilliseconds(1200))
                         return;
                     _wrappedProtocol21SnapshotPublished = true;
                     _wrappedProtocol21LastPublishedCount = rooms.Count;
                     _wrappedProtocol21LastPublishedAt = now;
+                    _bufferedWrappedProtocol21FirstAt = DateTime.MinValue;
                     shouldPublish = true;
                 }
                 else if (rooms.Count > _wrappedProtocol21LastPublishedCount)
@@ -14441,9 +14634,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
                 var now = DateTime.UtcNow;
                 var hasUiRooms = false;
+                var uiRoomCount = 0;
                 try
                 {
                     hasUiRooms = _roomList.Count > 0 && _roomOptions.Count > 0;
+                    uiRoomCount = _roomList.Count;
                 }
                 catch { }
 
@@ -14458,14 +14653,24 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     due = TimeSpan.Zero;
                 }
 
-                if (IsWrappedMainWmMode(source) &&
+                if (EnableWrappedProtocol21RoomBuffer &&
+                    IsWrappedMainWmMode(source) &&
                     source.IndexOf("protocol21", StringComparison.OrdinalIgnoreCase) >= 0 &&
                     source.IndexOf("protocol35", StringComparison.OrdinalIgnoreCase) < 0 &&
                     roomCount < 20)
                 {
-                    immediate = false;
-                    minGap = TimeSpan.FromMilliseconds(900);
-                    due = TimeSpan.FromMilliseconds(900);
+                    if (uiRoomCount <= 0)
+                    {
+                        immediate = true;
+                        minGap = TimeSpan.FromMilliseconds(80);
+                        due = TimeSpan.Zero;
+                    }
+                    else
+                    {
+                        immediate = false;
+                        minGap = TimeSpan.FromMilliseconds(300);
+                        due = TimeSpan.FromMilliseconds(220);
+                    }
                 }
 
                 if (_roomListLoading == 0 && (now - _lastRoomFeedRefreshAt) >= minGap)
@@ -15795,15 +16000,25 @@ private async Task<CancellationTokenSource> DebounceAsync(
                                        TryExtractBetProbeArgs(js, out fastTableId, out fastSide, out fastAmount);
                 if (isBetDispatchFast)
                 {
+                    var fastActive = GetActiveRoomHostWebView();
+                    var fastActiveUrl = fastActive?.CoreWebView2?.Source ?? fastActive?.Source?.ToString() ?? "";
+                    var bypassFast = IsEmbeddedWmWrapperUrl(fastActiveUrl);
                     if (ShouldAbortBetPipeline(hasFastProbeArgs ? fastTableId : null))
                     {
                         Log($"[JSHOST][ABORT] stage=fast-pre table={ClipForLog(fastTableId, 24)} side={ClipForLog(fastSide, 16)} amount={fastAmount}");
                         return "\"no\"";
                     }
 
-                    var fast = await TryEvalJsBetDispatchFastAsync(js, fastTableId, fastSide, fastAmount);
-                    if (fast.handled)
-                        return fast.raw;
+                    if (bypassFast)
+                    {
+                        Log($"[JSHOST][FASTBET][BYPASS] reason=embedded-wrapper activeUrl={ClipForLog(fastActiveUrl, 180)}");
+                    }
+                    else
+                    {
+                        var fast = await TryEvalJsBetDispatchFastAsync(js, fastTableId, fastSide, fastAmount);
+                        if (fast.handled)
+                            return fast.raw;
+                    }
 
                     Log($"[JSHOST][FASTBET][FALLBACK] table={ClipForLog(fastTableId, 24)} side={ClipForLog(fastSide, 16)} amount={fastAmount}");
                 }
@@ -15927,9 +16142,24 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         }
                     }
                     var useTrackedGameFrame = false;
-                    if (isBetCall && ShouldUseTrackedWmGameFrameForBet(active))
+                    CoreWebView2Frame? trackedGameFrame = null;
+                    string trackedGameFrameTarget = "";
+                    if (isBetCall)
                     {
-                        Log("[JSHOST][FRAME] skip=1 reason=diagnostic-probe-matrix");
+                        var activeUrl = active?.CoreWebView2?.Source ?? active?.Source?.ToString() ?? "";
+                        var shouldTryTrackedGameFrame =
+                            ShouldUseTrackedWmGameFrameForBet(active) ||
+                            IsEmbeddedWmWrapperUrl(activeUrl);
+                        if (shouldTryTrackedGameFrame)
+                        {
+                            if (ShouldAbortBetHost("frame-resolve"))
+                                return "\"no\"";
+                            var tracked = await TryGetReadyTrackedWmGameFrameAsync(active, "bet-host");
+                            trackedGameFrame = tracked.frame;
+                            trackedGameFrameTarget = tracked.target;
+                            useTrackedGameFrame = trackedGameFrame != null;
+                            Log($"[JSHOST][FRAME] ready={(useTrackedGameFrame ? 1 : 0)} target={ClipForLog(trackedGameFrameTarget, 72)} activeUrl={ClipForLog(activeUrl, 180)}");
+                        }
                     }
                     var preferPopup = isBetCall && (popupRouted || ShouldPreferPopupForBetHost(active));
                     if (preferPopup)
@@ -16083,6 +16313,29 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     }
 
                     string firstRaw = "";
+                    if (isBetCall && useTrackedGameFrame && trackedGameFrame != null)
+                    {
+                        if (ShouldAbortBetHost("frame-dispatch"))
+                            return "\"no\"";
+                        try
+                        {
+                            var frameResult = await trackedGameFrame.ExecuteScriptAsync(js);
+                            if (string.IsNullOrWhiteSpace(firstRaw))
+                                firstRaw = frameResult ?? "";
+                            var frameNorm = NormalizeEvalResultText(frameResult);
+                            if (!IsBetDispatchFailureResult(frameNorm))
+                            {
+                                Log($"[JSHOST][FRAME][OK] target={ClipForLog(trackedGameFrameTarget, 72)} result={ClipForLog(frameNorm, 96)}");
+                                return frameResult;
+                            }
+                            Log($"[JSHOST][FRAME][SKIP] target={ClipForLog(trackedGameFrameTarget, 72)} result={ClipForLog(frameNorm, 140)}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"[JSHOST][FRAME][SKIP] target={ClipForLog(trackedGameFrameTarget, 72)} reason=exec-ex msg={ClipForLog(ex.Message, 140)}");
+                        }
+                    }
+
                     foreach (var web in candidates)
                     {
                         if (ShouldAbortBetHost("dispatch-loop"))
