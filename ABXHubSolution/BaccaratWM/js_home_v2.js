@@ -15,26 +15,8 @@
             window.__abx_chip_active_verified = false;
     } catch (_) {}
     // Muốn hiện và ẩn bảng điều khiển home watch thì tìm dòng sau : showPanel: false // ⬅️ false = ẩn panel; true = hiện panel
-    function isWmGameLikeLocation(hostname, href, frameName) {
-        const host = String(hostname || '').toLowerCase();
-        const url = String(href || '').toLowerCase();
-        const name = String(frameName || '').toLowerCase();
-        if (!host && !url)
-            return false;
-        if (/^games\./i.test(host))
-            return true;
-        if (host.includes('wmvn.') || host.includes('m8810.com') || host.includes('qqhrsbjx'))
-            return true;
-        if (url.includes('co=wm') || url.includes('wmvn.') || url.includes('m8810.com') || url.includes('qqhrsbjx'))
-            return true;
-        if (name.includes('seamless-game') || /^iframe_\d+$/i.test(name))
-            return true;
-        if (/singlebactable\.jsp|webmain\.jsp|gamehall\.jsp/i.test(url))
-            return true;
-        return false;
-    }
     if (window.self !== window.top) {
-        if (!isWmGameLikeLocation(location.hostname, location.href, window.name)) {
+        if (!/^games\./i.test(location.hostname)) {
             return;
         }
     }
@@ -2433,14 +2415,6 @@
         const raw = String(name || '').trim();
         if (!raw)
             return null;
-        try {
-            const ov = window.__abxTableOverlay;
-            if (ov && typeof ov.resolveRoomDom === 'function') {
-                const root = ov.resolveRoomDom(raw);
-                if (root)
-                    return root;
-            }
-        } catch (_) {}
         try {
             if (typeof findCardRootByName === 'function')
                 return findCardRootByName(raw);
@@ -9597,9 +9571,6 @@
                 }
                 return null;
                 }
-        try {
-            window.findCardRootByName = findCardRootByName;
-        } catch (_) {}
 
         function highlightOnce(el, ms = 1200) {
             if (!el) return;
