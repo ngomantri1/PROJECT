@@ -1,6 +1,11 @@
 (function () {
     'use strict';
-    const HOME_JS_REV = 'wm-bet-20260325-v4';
+    const HOME_JS_REV = 'wm-bet-20260412-v2';
+    const BET_QUEUE_NEXT_DELAY_MS = 100;
+    const BET_CONFIRM_PRE_CLICK_DELAY_MS = 90;
+    const BET_CONFIRM_RETRY_COUNT = 1;
+    const BET_CONFIRM_RETRY_DELAY_MS = 90;
+    const BET_CONFIRM_TIMEOUT_MS = 2500;
     try {
         window.__cw_home_js_rev = HOME_JS_REV;
     } catch (_) {}
@@ -1311,9 +1316,9 @@
         let idx = 0;
         let currentChipValue = null;
         let chipRetry = 0;
-        const CHIP_SWITCH_DELAY = 240;
-        const BET_CLICK_DELAY = 160;
-        const CHIP_DOUBLE_CLICK_GAP = 80;
+        const CHIP_SWITCH_DELAY = 140;
+        const BET_CLICK_DELAY = 100;
+        const CHIP_DOUBLE_CLICK_GAP = 60;
         const CHIP_VERIFY_RETRY = 3;
         let finished = false;
         const finish = (ok) => {
@@ -1403,9 +1408,9 @@
         } catch (_) {}
         const t0 = now;
         const clickOk1 = betTryClickDirect(chipNode, null, 'chip');
-        await new Promise(r => setTimeout(r, 220));
+        await new Promise(r => setTimeout(r, 120));
         const clickOk2 = betTryClickDirect(chipNode, null, 'chip');
-        await new Promise(r => setTimeout(r, 220));
+        await new Promise(r => setTimeout(r, 120));
         const selected = betGetSelectedChipAmount(doc);
         let activeMatch = 0;
         try {
@@ -1440,11 +1445,11 @@
     async function betExecuteMultiPlanAsync(plan, target, root, doc, logBetWarn) {
         if (!plan || !plan.length || !target || !root)
             return false;
+        const tStart = Date.now();
         const confirmBtn = betFindMultiConfirmByRoot(root);
         if (!confirmBtn) {
             if (typeof logBetWarn === 'function')
                 logBetWarn('confirm not found rootId=' + ((root && root.id) || ''));
-            return false;
         }
         for (const item of plan) {
             if (!item || !item.value || !item.count)
@@ -1489,41 +1494,42 @@
                 });
             } catch (_) {}
             for (let i = 0; i < item.count; i++) {
+                const tTarget = Date.now();
                 const targetOk = betTryClickDirect(target, logBetWarn, 'target');
                 betEmitDiag('target_click', {
                     rootId: (root && root.id) || '',
                     targetId: (target && target.id) || '',
                     confirmId: (confirmBtn && confirmBtn.id) || '',
                     amount: item.value,
-                    ok: targetOk ? 1 : 0
+                    ok: targetOk ? 1 : 0,
+                    tookMs: Date.now() - tTarget
                 });
                 if (!targetOk)
                     return false;
-                await new Promise(r => setTimeout(r, 260));
+                await new Promise(r => setTimeout(r, 150));
             }
         }
-        await new Promise(r => setTimeout(r, 350));
-        const confirmOk = betTryClickDirect(confirmBtn, logBetWarn, 'confirm');
-        betEmitDiag('confirm_click', {
-            rootId: (root && root.id) || '',
-            targetId: (target && target.id) || '',
-            confirmId: (confirmBtn && confirmBtn.id) || '',
-            ok: confirmOk ? 1 : 0
-        });
-        if (!confirmOk)
-            return false;
-        await new Promise(r => setTimeout(r, 240));
+        try {
+            betEmitDiag('bet_timing', {
+                rootId: (root && root.id) || '',
+                targetId: (target && target.id) || '',
+                confirmId: (confirmBtn && confirmBtn.id) || '',
+                ok: 1,
+                phase: 'target_ready',
+                totalMs: Date.now() - tStart
+            });
+        } catch (_) {}
         return true;
     }
 
     async function betExecuteMultiDirectAsync(amountValue, target, root, doc, logBetWarn) {
         if (!amountValue || !target || !root)
             return false;
+        const tStart = Date.now();
         const confirmBtn = betFindMultiConfirmByRoot(root);
         if (!confirmBtn) {
             if (typeof logBetWarn === 'function')
                 logBetWarn('confirm not found rootId=' + ((root && root.id) || ''));
-            return false;
         }
         const selected = await betSelectMultiChipValueAsync(amountValue, doc);
         if (!selected || !selected.ok) {
@@ -1570,34 +1576,29 @@
                   targetId: (target && target.id) || ''
               });
           } catch (_) {}
+          const tTarget = Date.now();
           const targetOk = betTryClickDirect(target, logBetWarn, 'target');
           betEmitDiag('target_click', {
               rootId: (root && root.id) || '',
               targetId: (target && target.id) || '',
               confirmId: (confirmBtn && confirmBtn.id) || '',
               amount: amountValue,
-              ok: targetOk ? 1 : 0
+              ok: targetOk ? 1 : 0,
+              tookMs: Date.now() - tTarget
           });
           if (!targetOk)
               return false;
-          await new Promise(r => setTimeout(r, 260));
           try {
-              console.log('[BET-WM] confirm click', {
+              betEmitDiag('bet_timing', {
                   rootId: (root && root.id) || '',
-                  confirmId: (confirmBtn && confirmBtn.id) || ''
+                  targetId: (target && target.id) || '',
+                  confirmId: (confirmBtn && confirmBtn.id) || '',
+                  amount: amountValue,
+                  ok: 1,
+                  phase: 'target_ready',
+                  totalMs: Date.now() - tStart
               });
           } catch (_) {}
-          const confirmOk = betTryClickDirect(confirmBtn, logBetWarn, 'confirm');
-          betEmitDiag('confirm_click', {
-              rootId: (root && root.id) || '',
-              targetId: (target && target.id) || '',
-              confirmId: (confirmBtn && confirmBtn.id) || '',
-              amount: amountValue,
-              ok: confirmOk ? 1 : 0
-          });
-          if (!confirmOk)
-              return false;
-          await new Promise(r => setTimeout(r, 240));
           return true;
       }
 
@@ -1648,9 +1649,9 @@
         } catch (_) {}
         const chipT0 = Date.now();
         betTryClickDirect(chipNode, logBetWarn, 'chip');
-        await new Promise(r => setTimeout(r, 220));
+        await new Promise(r => setTimeout(r, 120));
         betTryClickDirect(chipNode, logBetWarn, 'chip');
-        await new Promise(r => setTimeout(r, 220));
+        await new Promise(r => setTimeout(r, 120));
         const selected = betGetSelectedChipAmount(chipDoc);
         if (selected != null && selected !== amountValue) {
             betEmitDiag('chip_select', {
@@ -1685,77 +1686,201 @@
                 selected
             });
         } catch (_) {}
-        await new Promise(r => setTimeout(r, 180));
+        await new Promise(r => setTimeout(r, 120));
           try {
               console.log('[BET-WM] target click', {
                   rootId: (root && root.id) || '',
                   targetId: (target && target.id) || ''
               });
           } catch (_) {}
+          const tTarget = Date.now();
           const targetOk = betTryClickDirect(target, logBetWarn, 'target');
           betEmitDiag('target_click', {
               rootId: (root && root.id) || '',
               targetId: (target && target.id) || '',
               confirmId: (confirmBtn && confirmBtn.id) || '',
               amount: amountValue,
-              ok: targetOk ? 1 : 0
+              ok: targetOk ? 1 : 0,
+              tookMs: Date.now() - tTarget
           });
           if (!targetOk)
               return false;
-          await new Promise(r => setTimeout(r, 120));
-          await new Promise(r => setTimeout(r, 150));
+          await new Promise(r => setTimeout(r, 90));
+          await new Promise(r => setTimeout(r, 90));
           try {
               console.log('[BET-WM] confirm click', {
                   rootId: (root && root.id) || '',
                   confirmId: (confirmBtn && confirmBtn.id) || ''
               });
           } catch (_) {}
+          const tConfirm = Date.now();
           const confirmOk = betTryClickDirect(confirmBtn, logBetWarn, 'confirm');
           betEmitDiag('confirm_click', {
               rootId: (root && root.id) || '',
               targetId: (target && target.id) || '',
               confirmId: (confirmBtn && confirmBtn.id) || '',
               amount: amountValue,
-              ok: confirmOk ? 1 : 0
+              ok: confirmOk ? 1 : 0,
+              tookMs: Date.now() - tConfirm
           });
           if (!confirmOk)
               return false;
-          await new Promise(r => setTimeout(r, 120));
+          await new Promise(r => setTimeout(r, 90));
           return true;
       }
 
-    function betWaitBetConfirmAsync(root, side, beforeVal, beforeSideVal, beforeCount, beforeActive, timeoutMs) {
-        const end = Date.now() + (Number(timeoutMs) || 0);
-        let last = beforeSideVal || beforeVal || '';
-        return new Promise(resolve => {
-            const check = () => {
-                const nowVal = betReadStakeValue(root, side);
-                if (nowVal)
-                    last = nowVal;
-                const sideVal = betReadSideValue(root, side);
-                if (sideVal)
-                    last = sideVal;
-                const count = betCountChips(root, side);
-                const active = betIsAreaActive(root, side);
-                const hasChipValue = betHasChipValue(root, side);
-                if ((nowVal && nowVal !== beforeVal) ||
-                    (sideVal && sideVal !== beforeSideVal) ||
-                    (count > beforeCount) ||
-                    (!beforeActive && active) ||
-                    (!beforeSideVal && sideVal) ||
-                    (!beforeVal && nowVal) ||
-                    hasChipValue) {
-                    resolve({ ok: true, value: last });
+    function betConfirmResolveButton(item) {
+        try {
+            if (item && item.confirmBtn && item.confirmBtn.isConnected !== false)
+                return item.confirmBtn;
+        } catch (_) {}
+        const root = (item && item.root) || null;
+        const doc = (root && root.ownerDocument) || (item && item.doc) || document;
+        let btn = null;
+        if (root)
+            btn = betFindMultiConfirmByRoot(root);
+        if (!btn && item && item.confirmId && doc && typeof doc.getElementById === 'function')
+            btn = doc.getElementById(item.confirmId);
+        if (!btn && item && item.rootId && doc && typeof doc.getElementById === 'function') {
+            const rootById = doc.getElementById(item.rootId);
+            if (rootById)
+                btn = betFindMultiConfirmByRoot(rootById);
+        }
+        return btn || null;
+    }
+
+    async function betConfirmRunTask(item) {
+        if (!item)
+            return false;
+        if (BET_CONFIRM_PRE_CLICK_DELAY_MS > 0)
+            await new Promise(r => setTimeout(r, BET_CONFIRM_PRE_CLICK_DELAY_MS));
+        const maxAttempt = Math.max(0, Number(BET_CONFIRM_RETRY_COUNT) || 0) + 1;
+        for (let attempt = 1; attempt <= maxAttempt; attempt++) {
+            const confirmBtn = betConfirmResolveButton(item);
+            const tConfirm = Date.now();
+            if (confirmBtn) {
+                const ok = betTryClickDirect(confirmBtn, item.logBetWarn, 'confirm');
+                betEmitDiag('confirm_click', {
+                    tableId: item.tableId || '',
+                    name: item.name || '',
+                    side: item.side || '',
+                    amount: Number(item.amount) || 0,
+                    rootId: item.rootId || ((item.root && item.root.id) || ''),
+                    targetId: item.targetId || '',
+                    confirmId: (confirmBtn && confirmBtn.id) || item.confirmId || '',
+                    ok: ok ? 1 : 0,
+                    tookMs: Date.now() - tConfirm,
+                    attempt
+                });
+                if (ok)
+                    return true;
+            } else {
+                betEmitDiag('confirm_click', {
+                    tableId: item.tableId || '',
+                    name: item.name || '',
+                    side: item.side || '',
+                    amount: Number(item.amount) || 0,
+                    rootId: item.rootId || ((item.root && item.root.id) || ''),
+                    targetId: item.targetId || '',
+                    confirmId: item.confirmId || '',
+                    ok: 0,
+                    tookMs: Date.now() - tConfirm,
+                    attempt,
+                    msg: 'confirm-not-found'
+                });
+            }
+            if (attempt < maxAttempt)
+                await new Promise(r => setTimeout(r, BET_CONFIRM_RETRY_DELAY_MS));
+        }
+        return false;
+    }
+
+    function betEnqueueConfirmTask(job) {
+        try {
+            if (!job)
+                return;
+            if (!Array.isArray(window.__abx_confirm_queue))
+                window.__abx_confirm_queue = [];
+            if (window.__abx_confirm_running !== true)
+                window.__abx_confirm_running = false;
+            if (!Number.isFinite(window.__abx_confirm_seq))
+                window.__abx_confirm_seq = 0;
+            const item = Object.assign({}, job, {
+                seq: ++window.__abx_confirm_seq,
+                enqueuedAt: Date.now()
+            });
+            window.__abx_confirm_queue.push(item);
+            betEmitDiag('confirm_enqueued', {
+                tableId: item.tableId || '',
+                name: item.name || '',
+                side: item.side || '',
+                amount: Number(item.amount) || 0,
+                rootId: item.rootId || '',
+                targetId: item.targetId || '',
+                confirmId: item.confirmId || '',
+                seq: item.seq,
+                queueSize: window.__abx_confirm_queue.length
+            });
+            if (window.__abx_confirm_running)
+                return;
+            const drain = () => {
+                const next = window.__abx_confirm_queue.shift();
+                if (!next) {
+                    window.__abx_confirm_running = false;
                     return;
                 }
-                if (Date.now() >= end) {
-                    resolve({ ok: false, value: last });
-                    return;
-                }
-                setTimeout(check, 50);
+                window.__abx_confirm_running = true;
+                betEmitDiag('confirm_start', {
+                    tableId: next.tableId || '',
+                    name: next.name || '',
+                    side: next.side || '',
+                    amount: Number(next.amount) || 0,
+                    rootId: next.rootId || '',
+                    targetId: next.targetId || '',
+                    confirmId: next.confirmId || '',
+                    seq: next.seq,
+                    waitedMs: Date.now() - next.enqueuedAt,
+                    remain: window.__abx_confirm_queue.length
+                });
+                let timeoutHandle = 0;
+                Promise.race([
+                    betConfirmRunTask(next),
+                    new Promise(done => {
+                        timeoutHandle = setTimeout(() => done(false), BET_CONFIRM_TIMEOUT_MS);
+                    })
+                ]).then(ok => {
+                    if (timeoutHandle)
+                        clearTimeout(timeoutHandle);
+                    betEmitDiag(ok ? 'confirm_done' : 'confirm_fail', {
+                        tableId: next.tableId || '',
+                        name: next.name || '',
+                        side: next.side || '',
+                        amount: Number(next.amount) || 0,
+                        rootId: next.rootId || '',
+                        targetId: next.targetId || '',
+                        confirmId: next.confirmId || '',
+                        seq: next.seq,
+                        ok: ok ? 1 : 0
+                    });
+                }).catch(err => {
+                    betEmitDiag('confirm_fail', {
+                        tableId: next.tableId || '',
+                        name: next.name || '',
+                        side: next.side || '',
+                        amount: Number(next.amount) || 0,
+                        rootId: next.rootId || '',
+                        targetId: next.targetId || '',
+                        confirmId: next.confirmId || '',
+                        seq: next.seq,
+                        ok: 0,
+                        msg: (err && err.message) ? err.message : String(err || 'confirm-worker-error')
+                    });
+                }).finally(() => {
+                    setTimeout(drain, 0);
+                });
             };
-            check();
-        });
+            drain();
+        } catch (_) {}
     }
 
     function betEnqueueTask(fn, timeoutMs, meta) {
@@ -2762,7 +2887,6 @@
                         remaining: planResult.remaining,
                         multi: useMultiFlow ? 1 : 0
                     });
-                    const stakeRoot = betResolveStakeRoot(clickTarget, root) || root;
                     const queueMeta = {
                         tableId: id,
                         name: roomName,
@@ -2834,6 +2958,18 @@
                                 });
                                 return false;
                             }
+                            betEnqueueConfirmTask(Object.assign({}, queueMeta, {
+                                confirmId: (confirmBtn && confirmBtn.id) || '',
+                                confirmBtn: confirmBtn || null,
+                                root: root || null,
+                                doc: rootDoc || document,
+                                logBetWarn
+                            }));
+                            betEmitDiag('run_phase', Object.assign({}, queueMeta, {
+                                confirmId: (confirmBtn && confirmBtn.id) || '',
+                                msg: 'confirm_async_enqueued'
+                            }));
+                            await new Promise(r => setTimeout(r, BET_QUEUE_NEXT_DELAY_MS));
                             sendOnce(id, sideLabel, amountValue, roomName);
                             betEmitDiag('run_result', {
                                 tableId: id,
@@ -2844,7 +2980,8 @@
                                 targetId: (target && target.id) || '',
                                 confirmId: (confirmBtn && confirmBtn.id) || '',
                                 ok: 1,
-                                multi: 1
+                                multi: 1,
+                                confirmAsync: 1
                             });
                             try {
                                 console.log('[BET-WM] done', {
@@ -2861,25 +2998,13 @@
                             confirmId: (confirmBtn && confirmBtn.id) || '',
                             msg: 'single_schedule'
                         }));
-                        const beforeVal = stakeRoot ? betReadStakeValue(stakeRoot, s) : null;
-                        const beforeSideVal = stakeRoot ? betReadSideValue(stakeRoot, s) : null;
-                        const beforeCount = stakeRoot ? betCountChips(stakeRoot, s) : 0;
-                        const beforeActive = stakeRoot ? betIsAreaActive(stakeRoot, s) : false;
                         const ok = await betSchedulePlanAsync(planResult.plan, clickTarget, rootDoc);
                         if (!ok) {
                             logBetWarn('plan not completed tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue);
                             return false;
                         }
-                        let confirmed = true;
-                        if (stakeRoot) {
-                            const waitMs = useMultiFlow ? 1400 : 800;
-                            const result = await betWaitBetConfirmAsync(stakeRoot, s, beforeVal, beforeSideVal, beforeCount, beforeActive, waitMs);
-                            confirmed = !!(result && result.ok);
-                            if (!confirmed) {
-                                logBetWarn('stake not changed tableId=' + id + ' side=' + sideLabel + ' amount=' + amountValue + (useMultiFlow ? ' rootId=' + ((root && root.id) || '') : ''));
-                            }
-                        }
-                        // Giống behavior cũ: đã chạy plan xong thì vẫn gửi để lưu lịch sử
+                        await new Promise(r => setTimeout(r, BET_QUEUE_NEXT_DELAY_MS));
+                        // Keep history behavior: plan completed -> still send once for bridge/history.
                         betEmitDiag('confirm_state', {
                             tableId: id,
                             name: roomName,
@@ -2887,12 +3012,12 @@
                             amount: amountValue,
                             rootId: (root && root.id) || '',
                             targetId: (target && target.id) || '',
-                            ok: confirmed ? 1 : 0,
-                            beforeCount: beforeCount,
-                            beforeActive: beforeActive ? 1 : 0
+                            ok: 1,
+                            fastRelease: 1,
+                            waitSkipped: 1
                         });
                         sendOnce(id, sideLabel, amountValue, roomName);
-                        return confirmed;
+                        return true;
                         } catch (err) {
                             betEmitDiag('run_exception', Object.assign({}, queueMeta, {
                                 confirmId: (confirmBtn && confirmBtn.id) || '',
@@ -2929,7 +3054,6 @@
                             });
                             return ok ? 'ok' : 'err:exec';
                         });
-                    const tail = (typeof cssTail === 'function') ? cssTail(clickTarget) : '';
                 }
             } else {
                 diagPhase = 'bridge_only';

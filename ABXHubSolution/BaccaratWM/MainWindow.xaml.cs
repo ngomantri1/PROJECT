@@ -9673,11 +9673,35 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     var rootId = root.TryGetProperty("rootId", out var rootIdEl) ? (rootIdEl.GetString() ?? "") : "";
                     var targetId = root.TryGetProperty("targetId", out var targetIdEl) ? (targetIdEl.GetString() ?? "") : "";
                     var confirmId = root.TryGetProperty("confirmId", out var confirmIdEl) ? (confirmIdEl.GetString() ?? "") : "";
+                    var selected = root.TryGetProperty("selected", out var selectedEl)
+                        ? (selectedEl.ValueKind == JsonValueKind.Number ? selectedEl.GetRawText() : (selectedEl.GetString() ?? ""))
+                        : "";
+                    var token = root.TryGetProperty("token", out var tokenEl)
+                        ? (tokenEl.ValueKind == JsonValueKind.Number ? tokenEl.GetRawText() : (tokenEl.GetString() ?? ""))
+                        : "";
+                    var activeMatch = root.TryGetProperty("activeMatch", out var activeMatchEl) ? ReadJsonLong(activeMatchEl) : -1;
+                    var clickOk = root.TryGetProperty("clickOk", out var clickOkEl) ? ReadJsonLong(clickOkEl) : -1;
+                    var tookMs = root.TryGetProperty("tookMs", out var tookMsEl) ? ReadJsonLong(tookMsEl) : -1;
+                    var totalMs = root.TryGetProperty("totalMs", out var totalMsEl) ? ReadJsonLong(totalMsEl) : -1;
                     var msg = root.TryGetProperty("msg", out var msgEl) ? (msgEl.GetString() ?? "") : "";
                     var ok = root.TryGetProperty("ok", out var okEl)
                         ? (okEl.ValueKind == JsonValueKind.Number ? okEl.GetRawText() : (okEl.GetString() ?? ""))
                         : "";
-                    Log($"[BETDIAG][{ClipForLog(stage, 32)}] scope={scope} table={tableId} name={ClipForLog(name, 80)} side={side} amount={amount:N0} ok={ok} root={ClipForLog(rootId, 72)} target={ClipForLog(targetId, 72)} confirm={ClipForLog(confirmId, 72)} msg={ClipForLog(msg, 180)}");
+                    var timingInfo = "";
+                    if (tookMs >= 0)
+                        timingInfo += $" tookMs={tookMs}";
+                    if (totalMs >= 0)
+                        timingInfo += $" totalMs={totalMs}";
+                    var chipInfo = "";
+                    if (!string.IsNullOrWhiteSpace(selected))
+                        chipInfo += $" selected={selected}";
+                    if (!string.IsNullOrWhiteSpace(token))
+                        chipInfo += $" token={ClipForLog(token, 48)}";
+                    if (activeMatch >= 0)
+                        chipInfo += $" active={activeMatch}";
+                    if (clickOk >= 0)
+                        chipInfo += $" click={clickOk}";
+                    Log($"[BETDIAG][{ClipForLog(stage, 32)}] scope={scope} table={tableId} name={ClipForLog(name, 80)} side={side} amount={amount:N0} ok={ok}{timingInfo}{chipInfo} root={ClipForLog(rootId, 72)} target={ClipForLog(targetId, 72)} confirm={ClipForLog(confirmId, 72)} msg={ClipForLog(msg, 180)}");
                     return;
                 }
 
