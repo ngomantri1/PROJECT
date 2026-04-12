@@ -351,10 +351,23 @@ namespace BaccaratSexyCasino
         // ====== CDP / Packet tap ======
         private bool _cdpNetworkOn = false;
         private readonly ConcurrentDictionary<string, byte> _cdpTapOwners = new();
+        private readonly ConcurrentDictionary<string, int> _cdpTapOwnerCoreHash = new();
+        private readonly ConcurrentDictionary<string, long> _cdpTapOwnerGeneration = new();
         private readonly ConcurrentDictionary<string, string> _wsUrlByRequestId = new();
         private readonly ConcurrentDictionary<string, string> _pktLastPreviewByKey = new();
         private readonly ConcurrentDictionary<string, byte> _recordedValidBetKeys = new();
         private readonly ConcurrentDictionary<string, byte> _bridgeProbeSeen = new();
+        private long _cdpTapGenerationSeed = 0;
+        private long _cdpDiagWsCreated = 0;
+        private long _cdpDiagWsRecv = 0;
+        private long _cdpDiagWsSent = 0;
+        private long _cdpDiagObservedPackets = 0;
+        private long _cdpDiagWinnerPackets = 0;
+        private long _cdpDiagMissingContextRows = 0;
+        private long _cdpDiagLastPulseTicksUtc = 0;
+        private long _cdpDiagLastObservedTicksUtc = 0;
+        private long _cdpDiagLastWinnerTicksUtc = 0;
+        private long _cdpDiagLastMissingContextLogTicksUtc = 0;
         private readonly string[] _pktInterestingHints = new[] { "wss://", "websocket", "hytsocesk", "xoc", "live", "socket" };
         private readonly string[] _pktPayloadInterestingHints = new[] { "result", "winner", "banker", "player", "tie", "road", "history", "countdown", "status", "settle", "open", "close", "\"b\"", "\"p\"", "\"t\"" };
         private readonly string[] _httpInterestingHints = new[] { "/player/query/", "querywebgamehallroad", "queryenablefunctionforwebsite", "hallroad", "road", "result", "winner", "history" };
@@ -890,6 +903,7 @@ Ví dụ không hợp lệ:
         private const int CW_PUSH_MS_DEFAULT = 360;
         private const int CW_PUSH_MS_DEBUG_DEFAULT = 240;
         private bool _enableCdpNetworkTap = false;
+        private bool _enableCdpObservedContextTap = true;
         private bool _enableHttpResponseBodyTap = false;
         private bool _enableJsFileLog = false;
         private bool _enableJsPushDebug = false;
@@ -1978,6 +1992,89 @@ try{
             return ms;
         }
 
+        private bool ShouldAttachCdpNetworkTap()
+        {
+            return _enableCdpObservedContextTap || _enableCdpNetworkTap;
+        }
+
+        private static string FormatDiagAgeSeconds(long ticksUtc, DateTime nowUtc)
+        {
+            if (ticksUtc <= 0) return "-";
+            try
+            {
+                var ts = nowUtc - new DateTime(ticksUtc, DateTimeKind.Utc);
+                if (ts.TotalSeconds < 0) return "0";
+                return ((long)ts.TotalSeconds).ToString(CultureInfo.InvariantCulture);
+            }
+            catch
+            {
+                return "-";
+            }
+        }
+
+        private void LogCdpDiagPulse(string reason, bool force = false)
+        {
+            var nowUtc = DateTime.UtcNow;
+            long nowTicks = nowUtc.Ticks;
+            long lastPulseTicks = Interlocked.Read(ref _cdpDiagLastPulseTicksUtc);
+            if (!force && lastPulseTicks > 0 && (nowTicks - lastPulseTicks) < TimeSpan.FromSeconds(30).Ticks)
+                return;
+            Interlocked.Exchange(ref _cdpDiagLastPulseTicksUtc, nowTicks);
+
+            long observedTableId;
+            long observedGameShoe;
+            long observedRound;
+            long seqTableId;
+            long seqGameShoe;
+            long seqRound;
+            lock (_roundStateLock)
+            {
+                observedTableId = _netObservedTableId;
+                observedGameShoe = _netObservedGameShoe;
+                observedRound = _netObservedGameRound;
+                seqTableId = _netSeqTableId;
+                seqGameShoe = _netSeqGameShoe;
+                seqRound = _netSeqLastRound;
+            }
+
+            var ownerCoreMap = _cdpTapOwnerCoreHash.Count == 0
+                ? "-"
+                : string.Join(",", _cdpTapOwnerCoreHash.Select(kv => $"{kv.Key}:{kv.Value}"));
+
+            Log($"[NETSEQ][CDP-DIAG] reason={reason} | profile={_cfg?.RuntimeProfile ?? "-"} | tap={(ShouldAttachCdpNetworkTap() ? 1 : 0)} | tapDbg={(_enableCdpNetworkTap ? 1 : 0)} | tapCtx={(_enableCdpObservedContextTap ? 1 : 0)} | owners={Shrink(ownerCoreMap, 160)} | wsC={Interlocked.Read(ref _cdpDiagWsCreated)} | wsR={Interlocked.Read(ref _cdpDiagWsRecv)} | wsS={Interlocked.Read(ref _cdpDiagWsSent)} | obsPkt={Interlocked.Read(ref _cdpDiagObservedPackets)} | winnerPkt={Interlocked.Read(ref _cdpDiagWinnerPackets)} | obsAgeSec={FormatDiagAgeSeconds(Interlocked.Read(ref _cdpDiagLastObservedTicksUtc), nowUtc)} | winnerAgeSec={FormatDiagAgeSeconds(Interlocked.Read(ref _cdpDiagLastWinnerTicksUtc), nowUtc)} | obsCtx={observedTableId}/{observedGameShoe}/{observedRound} | netCtx={seqTableId}/{seqGameShoe}/{seqRound}");
+        }
+
+        private void LogMissingContextDiagnostics(string reason, string side, long amount, long roundId, long issuedTableId, long issuedGameShoe, long issuedObservedRound)
+        {
+            long count = Interlocked.Increment(ref _cdpDiagMissingContextRows);
+            long nowTicks = DateTime.UtcNow.Ticks;
+            long lastTicks = Interlocked.Read(ref _cdpDiagLastMissingContextLogTicksUtc);
+            bool shouldLog = count <= 3 || (count % 20) == 0 || (lastTicks <= 0) || (nowTicks - lastTicks) >= TimeSpan.FromSeconds(30).Ticks;
+            if (!shouldLog)
+                return;
+            Interlocked.Exchange(ref _cdpDiagLastMissingContextLogTicksUtc, nowTicks);
+
+            long observedTableId;
+            long observedGameShoe;
+            long observedRound;
+            long seqTableId;
+            long seqGameShoe;
+            long seqRound;
+            lock (_roundStateLock)
+            {
+                observedTableId = _netObservedTableId;
+                observedGameShoe = _netObservedGameShoe;
+                observedRound = _netObservedGameRound;
+                seqTableId = _netSeqTableId;
+                seqGameShoe = _netSeqGameShoe;
+                seqRound = _netSeqLastRound;
+            }
+
+            var nowUtc = new DateTime(nowTicks, DateTimeKind.Utc);
+            Log($"[BET][HIST][DIAG] reason={reason} | side={side} | stake={amount:N0} | round={roundId} | issued={issuedTableId}/{issuedGameShoe}/{issuedObservedRound} | observed={observedTableId}/{observedGameShoe}/{observedRound} | net={seqTableId}/{seqGameShoe}/{seqRound} | hallCache={_hallRoundCache.Count} | wsR={Interlocked.Read(ref _cdpDiagWsRecv)} | obsPkt={Interlocked.Read(ref _cdpDiagObservedPackets)} | winnerPkt={Interlocked.Read(ref _cdpDiagWinnerPackets)} | obsAgeSec={FormatDiagAgeSeconds(Interlocked.Read(ref _cdpDiagLastObservedTicksUtc), nowUtc)} | winnerAgeSec={FormatDiagAgeSeconds(Interlocked.Read(ref _cdpDiagLastWinnerTicksUtc), nowUtc)} | count={count}");
+            LogCdpDiagPulse("missing-context", force: true);
+        }
+
         private void ApplyRuntimeProfileFromConfig(bool log = false)
         {
             if (_cfg == null) return;
@@ -1993,6 +2090,7 @@ try{
             _cfg.PushIntervalMs = _cwPushMs;
 
             _enableCdpNetworkTap = isDebug;
+            _enableCdpObservedContextTap = true;
             _enableHttpResponseBodyTap = isDebug;
             _enableJsFileLog = isDebug;
             _enableJsPushDebug = isDebug;
@@ -2000,16 +2098,19 @@ try{
 
             if (log)
             {
-                Log($"[RuntimeProfile] profile={profile} | pushMs={_cwPushMs} | cdp={(_enableCdpNetworkTap ? 1 : 0)} | httpTap={(_enableHttpResponseBodyTap ? 1 : 0)} | jsFileLog={(_enableJsFileLog ? 1 : 0)} | jsPushDbg={(_enableJsPushDebug ? 1 : 0)} | perfLog={(_enablePerfTimingLog ? 1 : 0)}");
+                Log($"[RuntimeProfile] profile={profile} | pushMs={_cwPushMs} | cdp={(ShouldAttachCdpNetworkTap() ? 1 : 0)} | cdpDbg={(_enableCdpNetworkTap ? 1 : 0)} | cdpCtx={(_enableCdpObservedContextTap ? 1 : 0)} | httpTap={(_enableHttpResponseBodyTap ? 1 : 0)} | jsFileLog={(_enableJsFileLog ? 1 : 0)} | jsPushDbg={(_enableJsPushDebug ? 1 : 0)} | perfLog={(_enablePerfTimingLog ? 1 : 0)}");
             }
 
-            if (_enableCdpNetworkTap)
+            if (ShouldAttachCdpNetworkTap())
             {
                 if (Web?.CoreWebView2 != null)
                     _ = EnableCdpNetworkTapAsync();
                 if (_popupWeb?.CoreWebView2 != null)
                     _ = EnableCdpNetworkTapAsync(_popupWeb.CoreWebView2, "popup");
             }
+
+            if (log)
+                LogCdpDiagPulse("runtime-profile", force: true);
 
             if (Web?.CoreWebView2 != null || _popupWeb?.CoreWebView2 != null)
                 _ = ApplyRuntimePerfToBetWebAsync();
@@ -2909,7 +3010,7 @@ try{
                 Web.CoreWebView2.WebResourceResponseReceived += CoreWebView2_WebResourceResponseReceived;
 
                 // Bật CDP network tap (không cần await)
-                if (_enableCdpNetworkTap)
+                if (ShouldAttachCdpNetworkTap())
                     _ = EnableCdpNetworkTapAsync();
 
                 // Cập nhật nền ngay theo trạng thái hiện tại (trắng khi chưa nhập URL, trong suốt khi đã điều hướng)
@@ -3646,7 +3747,7 @@ try{
             {
                 popupWeb.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
                 popupWeb.CoreWebView2.WebResourceResponseReceived += CoreWebView2_WebResourceResponseReceived;
-                if (_enableCdpNetworkTap)
+                if (ShouldAttachCdpNetworkTap())
                     _ = EnableCdpNetworkTapAsync(popupWeb.CoreWebView2, "popup");
                 _popupWebMsgHooked = true;
                 Log("[PopupWeb] WebMessageReceived hooked");
@@ -5049,83 +5150,125 @@ try{
         private async Task EnableCdpNetworkTapAsync(CoreWebView2 core, string ownerTag)
         {
             if (core == null) return;
-            if (!_cdpTapOwners.TryAdd(ownerTag, 1)) return;
+            if (!ShouldAttachCdpNetworkTap()) return;
+
+            int coreHash = RuntimeHelpers.GetHashCode(core);
+            bool hadOwner = _cdpTapOwnerCoreHash.TryGetValue(ownerTag, out var prevCoreHash);
+            if (hadOwner && prevCoreHash == coreHash)
+                return;
+
+            bool isRebind = hadOwner && prevCoreHash != coreHash;
+            long generation = Interlocked.Increment(ref _cdpTapGenerationSeed);
+            _cdpTapOwners[ownerTag] = 1;
+            _cdpTapOwnerCoreHash[ownerTag] = coreHash;
+            _cdpTapOwnerGeneration[ownerTag] = generation;
+
             try
             {
                 await core.CallDevToolsProtocolMethodAsync("Network.enable", "{}");
                 if (string.Equals(ownerTag, "main", StringComparison.OrdinalIgnoreCase))
                     _cdpNetworkOn = true;
 
-                core
-                   .GetDevToolsProtocolEventReceiver("Network.webSocketCreated")
-                   .DevToolsProtocolEventReceived += (s, e) =>
-                   {
-                       try
-                       {
-                           using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
-                           var root = doc.RootElement;
-                           var reqId = root.GetProperty("requestId").GetString() ?? "";
-                           var url = root.TryGetProperty("url", out var u) ? (u.GetString() ?? "") : "";
-                           if (!string.IsNullOrEmpty(reqId)) _wsUrlByRequestId[reqId] = url;
-                           if (IsInteresting(url)) LogPacket("WS.created/" + ownerTag, url, "", false);
-                       }
-                       catch (Exception ex) { Log("[CDP wsCreated/" + ownerTag + "] " + ex.Message); }
-                   };
+                var wsCreatedReceiver = core.GetDevToolsProtocolEventReceiver("Network.webSocketCreated");
+                wsCreatedReceiver.DevToolsProtocolEventReceived += (s, e) =>
+                {
+                    try
+                    {
+                        if (!_cdpTapOwnerGeneration.TryGetValue(ownerTag, out var activeGeneration) || activeGeneration != generation)
+                            return;
 
-                core
-                   .GetDevToolsProtocolEventReceiver("Network.webSocketFrameReceived")
-                   .DevToolsProtocolEventReceived += (s, e) =>
-                   {
-                       try
-                       {
-                           using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
-                           var root = doc.RootElement;
-                           var reqId = root.GetProperty("requestId").GetString() ?? "";
-                           _wsUrlByRequestId.TryGetValue(reqId, out var url);
-                           var resp = root.GetProperty("response");
-                           var payload = resp.TryGetProperty("payloadData", out var pd) ? (pd.GetString() ?? "") : "";
-                           var opcode = resp.TryGetProperty("opcode", out var op) ? op.GetInt32() : 1;
-                           var isBin = opcode != 1;
-                           ObserveNetworkGameState(payload, isBin);
-                           TryProcessNetworkWinnerPacket(payload, isBin, ownerTag, url);
-                           if (ShouldLogPacketFrame("WS.recv", url, payload, isBin, out var preview, out var reason))
-                               LogPacket("WS.recv/" + ownerTag + "/" + reason, url, preview, isBin);
-                       }
-                       catch (Exception ex) { Log("[CDP wsRecv/" + ownerTag + "] " + ex.Message); }
-                   };
+                        long wsCreatedCount = Interlocked.Increment(ref _cdpDiagWsCreated);
+                        using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
+                        var root = doc.RootElement;
+                        var reqId = root.TryGetProperty("requestId", out var reqEl) ? (reqEl.GetString() ?? "") : "";
+                        var url = root.TryGetProperty("url", out var u) ? (u.GetString() ?? "") : "";
+                        if (!string.IsNullOrEmpty(reqId)) _wsUrlByRequestId[reqId] = url;
+                        if (_enableCdpNetworkTap && IsInteresting(url))
+                            LogPacket("WS.created/" + ownerTag, url, "", false);
+                        if (wsCreatedCount % 120 == 0)
+                            LogCdpDiagPulse("ws-created");
+                    }
+                    catch (Exception ex) { Log("[CDP wsCreated/" + ownerTag + "] " + ex.Message); }
+                };
 
-                core
-                   .GetDevToolsProtocolEventReceiver("Network.webSocketFrameSent")
-                   .DevToolsProtocolEventReceived += (s, e) =>
-                   {
-                       try
-                       {
-                           using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
-                           var root = doc.RootElement;
-                           var reqId = root.GetProperty("requestId").GetString() ?? "";
-                           _wsUrlByRequestId.TryGetValue(reqId, out var url);
-                           var resp = root.GetProperty("response");
-                           var payload = resp.TryGetProperty("payloadData", out var pd) ? (pd.GetString() ?? "") : "";
-                           var opcode = resp.TryGetProperty("opcode", out var op) ? op.GetInt32() : 1;
-                           var isBin = opcode != 1;
-                           if (ShouldLogPacketFrame("WS.send", url, payload, isBin, out var preview, out var reason))
-                               LogPacket("WS.send/" + ownerTag + "/" + reason, url, preview, isBin);
-                       }
-                       catch (Exception ex) { Log("[CDP wsSend/" + ownerTag + "] " + ex.Message); }
-                   };
+                var wsRecvReceiver = core.GetDevToolsProtocolEventReceiver("Network.webSocketFrameReceived");
+                wsRecvReceiver.DevToolsProtocolEventReceived += (s, e) =>
+                {
+                    try
+                    {
+                        if (!_cdpTapOwnerGeneration.TryGetValue(ownerTag, out var activeGeneration) || activeGeneration != generation)
+                            return;
 
-                Log("[CDP] Network tap enabled | owner=" + ownerTag);
+                        long wsRecvCount = Interlocked.Increment(ref _cdpDiagWsRecv);
+                        using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
+                        var root = doc.RootElement;
+                        var reqId = root.TryGetProperty("requestId", out var reqEl) ? (reqEl.GetString() ?? "") : "";
+                        _wsUrlByRequestId.TryGetValue(reqId, out var url);
+                        var resp = root.GetProperty("response");
+                        var payload = resp.TryGetProperty("payloadData", out var pd) ? (pd.GetString() ?? "") : "";
+                        var opcode = resp.TryGetProperty("opcode", out var op) ? op.GetInt32() : 1;
+                        var isBin = opcode != 1;
+                        ObserveNetworkGameState(payload, isBin);
+                        TryProcessNetworkWinnerPacket(payload, isBin, ownerTag, url);
+                        if (_enableCdpNetworkTap && ShouldLogPacketFrame("WS.recv", url, payload, isBin, out var preview, out var reason))
+                            LogPacket("WS.recv/" + ownerTag + "/" + reason, url, preview, isBin);
+                        if (wsRecvCount % 240 == 0)
+                            LogCdpDiagPulse("ws-recv");
+                    }
+                    catch (Exception ex) { Log("[CDP wsRecv/" + ownerTag + "] " + ex.Message); }
+                };
+
+                var wsSendReceiver = core.GetDevToolsProtocolEventReceiver("Network.webSocketFrameSent");
+                wsSendReceiver.DevToolsProtocolEventReceived += (s, e) =>
+                {
+                    try
+                    {
+                        if (!_cdpTapOwnerGeneration.TryGetValue(ownerTag, out var activeGeneration) || activeGeneration != generation)
+                            return;
+
+                        long wsSentCount = Interlocked.Increment(ref _cdpDiagWsSent);
+                        using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
+                        var root = doc.RootElement;
+                        var reqId = root.TryGetProperty("requestId", out var reqEl) ? (reqEl.GetString() ?? "") : "";
+                        _wsUrlByRequestId.TryGetValue(reqId, out var url);
+                        var resp = root.GetProperty("response");
+                        var payload = resp.TryGetProperty("payloadData", out var pd) ? (pd.GetString() ?? "") : "";
+                        var opcode = resp.TryGetProperty("opcode", out var op) ? op.GetInt32() : 1;
+                        var isBin = opcode != 1;
+                        if (_enableCdpNetworkTap && ShouldLogPacketFrame("WS.send", url, payload, isBin, out var preview, out var reason))
+                            LogPacket("WS.send/" + ownerTag + "/" + reason, url, preview, isBin);
+                        if (wsSentCount % 240 == 0)
+                            LogCdpDiagPulse("ws-send");
+                    }
+                    catch (Exception ex) { Log("[CDP wsSend/" + ownerTag + "] " + ex.Message); }
+                };
+
+                if (isRebind)
+                    Log($"[CDP] Network tap rebound | owner={ownerTag} | oldCore={prevCoreHash} | newCore={coreHash}");
+
+                string mode = _enableCdpNetworkTap ? "debug" : "context-only";
+                Log($"[CDP] Network tap enabled | owner={ownerTag} | core={coreHash} | mode={mode}");
+                LogCdpDiagPulse("tap-enabled", force: true);
             }
             catch (Exception ex)
             {
                 _cdpTapOwners.TryRemove(ownerTag, out _);
+                _cdpTapOwnerCoreHash.TryRemove(ownerTag, out _);
+                _cdpTapOwnerGeneration.TryRemove(ownerTag, out _);
                 Log("[CDP] Enable failed | owner=" + ownerTag + " | " + ex.Message);
             }
         }
 
         private async Task DisableCdpNetworkTapAsync()
         {
-            if (!_cdpNetworkOn || Web?.CoreWebView2 == null) return;
+            if (!_cdpNetworkOn || Web?.CoreWebView2 == null)
+            {
+                _cdpTapOwners.Clear();
+                _cdpTapOwnerCoreHash.Clear();
+                _cdpTapOwnerGeneration.Clear();
+                _wsUrlByRequestId.Clear();
+                return;
+            }
             try
             {
                 await Web.CoreWebView2.CallDevToolsProtocolMethodAsync("Network.disable", "{}");
@@ -5133,6 +5276,13 @@ try{
                 Log("[CDP] Network tap disabled");
             }
             catch (Exception ex) { Log("[CDP] Disable failed: " + ex.Message); }
+            finally
+            {
+                _cdpTapOwners.Clear();
+                _cdpTapOwnerCoreHash.Clear();
+                _cdpTapOwnerGeneration.Clear();
+                _wsUrlByRequestId.Clear();
+            }
         }
 
         private bool IsInteresting(string? url)
@@ -5569,6 +5719,8 @@ try{
             ObserveHallRoundCache(payload, isBinary);
             if (!TryParseObservedGameInfoPacket(payload, isBinary, out var tableId, out var gameShoe, out var gameRound))
                 return;
+            Interlocked.Increment(ref _cdpDiagObservedPackets);
+            Interlocked.Exchange(ref _cdpDiagLastObservedTicksUtc, DateTime.UtcNow.Ticks);
 
             bool didReset = false;
             lock (_roundStateLock)
@@ -5622,6 +5774,7 @@ try{
                 void Cleanup() => InvalidatePendingRowsForContextReset(tableId, gameShoe, gameRound);
                 if (Dispatcher.CheckAccess()) Cleanup();
                 else Dispatcher.Invoke(Cleanup);
+                LogCdpDiagPulse("obs-reset", force: true);
             }
         }
 
@@ -5770,6 +5923,8 @@ try{
         {
             if (!TryParseNetworkWinnerPacket(payload, isBinary, ownerTag, url, out var packet) || packet == null)
                 return;
+            Interlocked.Increment(ref _cdpDiagWinnerPackets);
+            Interlocked.Exchange(ref _cdpDiagLastWinnerTicksUtc, DateTime.UtcNow.Ticks);
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
@@ -8935,6 +9090,7 @@ try{
                     LblAmount.Text = "-";
             }
 
+            string pendingReason = "";
             if (!hasIssuedContext || isTableSwitchResetIssue)
             {
                 if (issuedObservedRound <= 0)
@@ -8947,7 +9103,8 @@ try{
                 if (issuedTableId <= 0 && TryInferTableIdFromStatus(issuedSnap?.status, out var inferredTableId))
                     issuedTableId = inferredTableId;
 
-                Log($"[BET][HIST][INFO] reason={(isTableSwitchResetIssue ? "table-switch-reset-recorded" : "missing-context-recorded")} | action=record-pending | at={DateTime.Now:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqEvt={(string.IsNullOrWhiteSpace(issuedSeqEvent) ? "-" : issuedSeqEvent)} | seqLen={issuedSeqDisplay.Length}");
+                pendingReason = isTableSwitchResetIssue ? "table-switch-reset-recorded" : "missing-context-recorded";
+                Log($"[BET][HIST][INFO] reason={pendingReason} | action=record-pending | at={DateTime.Now:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqEvt={(string.IsNullOrWhiteSpace(issuedSeqEvent) ? "-" : issuedSeqEvent)} | seqLen={issuedSeqDisplay.Length}");
             }
 
             var row = new BetRow
@@ -8976,6 +9133,14 @@ try{
             if (issuedTableId <= 0 || issuedGameShoe <= 0 || roundId <= 0)
             {
                 Log($"[BET][HIST][INFO] pending-recorded-without-context | at={row.At:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound}");
+                LogMissingContextDiagnostics(
+                    string.IsNullOrWhiteSpace(pendingReason) ? "pending-recorded-without-context" : pendingReason,
+                    side,
+                    amount,
+                    roundId,
+                    issuedTableId,
+                    issuedGameShoe,
+                    issuedObservedRound);
             }
 
             _betAll.Insert(0, row);

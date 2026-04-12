@@ -8605,6 +8605,7 @@
                 node: c.el,
                 el: c.el,
                 rect: c.rect,
+                value: c.val,
                 selected: !!c.selected,
                 source: c.source,
                 tail: c.tail
@@ -9608,6 +9609,72 @@
     var LOCK = (window.__cwBetLockFix = window.__cwBetLockFix || {
             busy: false
         });
+    var CHIP_FOCUS_STATE = (window.__cw_chip_focus_state = window.__cw_chip_focus_state || {});
+    if (!CHIP_FOCUS_STATE.dom)
+        CHIP_FOCUS_STATE.dom = { verified: false, val: 0 };
+    if (!CHIP_FOCUS_STATE.cocos)
+        CHIP_FOCUS_STATE.cocos = { verified: false, val: 0 };
+    function chipFocusBucket(isDomMode) {
+        return isDomMode ? CHIP_FOCUS_STATE.dom : CHIP_FOCUS_STATE.cocos;
+    }
+    function resetChipFocusState(isDomMode, reason) {
+        var bucket = chipFocusBucket(isDomMode);
+        bucket.verified = false;
+        bucket.val = 0;
+        try {
+            cwBetDbg('[cwBet++] chip_focus reset', {
+                mode: isDomMode ? 'dom' : 'cocos',
+                reason: String(reason || '')
+            });
+        } catch (_) {}
+    }
+    async function ensureChipFocusedForBet(isDomMode, map, amount) {
+        var val = Math.max(0, Math.floor(+amount || 0));
+        var bucket = chipFocusBucket(isDomMode);
+        if (bucket.verified && bucket.val === val) {
+            try {
+                cwBetDbg('[cwBet++] chip_focus skip', {
+                    mode: isDomMode ? 'dom' : 'cocos',
+                    chipUnits: val
+                });
+            } catch (_) {}
+            return true;
+        }
+        var ok = false;
+        if (isDomMode) {
+            ok = await domFocusChipInfo(map ? map[String(val)] : null, val).catch(function () {
+                return false;
+            });
+            if (!ok) {
+                ok = await window.cwFocusChip(val).catch(function () {
+                    return false;
+                });
+            }
+        } else {
+            ok = await window.cwFocusChip(val).catch(function () {
+                return false;
+            });
+        }
+        if (!ok) {
+            resetChipFocusState(isDomMode, 'focus-failed');
+            try {
+                cwBetDbg('[cwBet++] chip_focus failed', {
+                    mode: isDomMode ? 'dom' : 'cocos',
+                    chipUnits: val
+                });
+            } catch (_) {}
+            return false;
+        }
+        bucket.verified = true;
+        bucket.val = val;
+        try {
+            cwBetDbg('[cwBet++] chip_focus set', {
+                mode: isDomMode ? 'dom' : 'cocos',
+                chipUnits: val
+            });
+        } catch (_) {}
+        return true;
+    }
     async function withLock(fn) {
         // chờ ngắn nếu đang bận để tránh trượt lệnh khi bắn liên tục nhiều cửa
         for (var i = 0; i < 4 && LOCK.busy; i++) {
@@ -9719,21 +9786,7 @@
             }
 
             if (availSet[String(X)]) {
-                var focusOne = false;
-                if (isDomMode) {
-                    focusOne = await domFocusChipInfo(map[String(X)], X).catch(function () {
-                        return false;
-                    });
-                    if (!focusOne) {
-                        focusOne = await window.cwFocusChip(X).catch(function () {
-                            return false;
-                        });
-                    }
-                } else {
-                    focusOne = await window.cwFocusChip(X).catch(function () {
-                        return false;
-                    });
-                }
+                var focusOne = await ensureChipFocusedForBet(isDomMode, map, X);
                 if (!focusOne) {
                     console.warn('[cwBet++] không focus được chip exact-hit', X);
                     return failBet('focus exact chip failed', { side: side, amount: raw, chipUnits: X });
@@ -9766,6 +9819,7 @@
                         side: side,
                         amount: X
                     });
+                    resetChipFocusState(false, 'exact-hit-not-reflected');
                     return failBet('bet click not reflected for exact chip', { side: side, amount: raw, chipUnits: X });
                 }
                 if (isDomMode) {
@@ -9777,12 +9831,14 @@
                                 amount: X,
                                 targetClicked: !!targetClickedOne
                             });
+                            resetChipFocusState(true, 'exact-hit-not-reflected');
                             return failBet('bet click not reflected for exact chip', { side: side, amount: raw, chipUnits: X, targetClicked: !!targetClickedOne });
                         }
                         console.warn('[cwBet++] confirm failed', {
                             side: side,
                             amount: X
                         });
+                        resetChipFocusState(true, 'exact-hit-confirm-failed');
                         return failBet('confirm failed', { side: side, amount: raw, chipUnits: X });
                     }
                 }
@@ -9814,21 +9870,7 @@
 
             for (var s = 0; s < plan.length; s++) {
                 var step = plan[s];
-                var ok = false;
-                if (isDomMode) {
-                    ok = await domFocusChipInfo(map[String(step.val)], step.val).catch(function () {
-                        return false;
-                    });
-                    if (!ok) {
-                        ok = await window.cwFocusChip(step.val).catch(function () {
-                            return false;
-                        });
-                    }
-                } else {
-                    ok = await window.cwFocusChip(step.val).catch(function () {
-                        return false;
-                    });
-                }
+                var ok = await ensureChipFocusedForBet(isDomMode, map, step.val);
                 if (!ok) {
                     console.warn('[cwBet++] không focus được chip', step.val);
                     return failBet('focus chip failed', { side: side, amount: raw, chipUnits: step.val });
@@ -9852,6 +9894,7 @@
                                 denom: step.val,
                                 turn: i2 + 1
                             });
+                            resetChipFocusState(false, 'plan-not-reflected');
                             return failBet('bet click not reflected', { side: side, amount: raw, chipUnits: step.val, turn: i2 + 1 });
                         }
                     }
@@ -9865,6 +9908,7 @@
                         side: side,
                         amount: X
                     });
+                    resetChipFocusState(true, 'plan-confirm-failed');
                     return failBet('confirm failed', { side: side, amount: raw, chipUnits: X });
                 }
             }

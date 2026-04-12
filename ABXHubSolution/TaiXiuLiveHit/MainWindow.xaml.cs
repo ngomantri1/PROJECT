@@ -2239,6 +2239,75 @@ Ví dụ không hợp lệ:
                                     return;
                                 }
 
+                                if (abxStr == "bet_perf")
+                                {
+                                    double ReadNum(string key)
+                                    {
+                                        if (!root.TryGetProperty(key, out var el)) return 0;
+                                        if (el.ValueKind == JsonValueKind.Number && el.TryGetDouble(out var dNum)) return dNum;
+                                        if (el.ValueKind == JsonValueKind.String &&
+                                            double.TryParse(el.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var dStr))
+                                            return dStr;
+                                        return 0;
+                                    }
+                                    long ReadLong(string key)
+                                    {
+                                        if (!root.TryGetProperty(key, out var el)) return 0;
+                                        if (el.ValueKind == JsonValueKind.Number && el.TryGetInt64(out var lNum)) return lNum;
+                                        if (el.ValueKind == JsonValueKind.String &&
+                                            long.TryParse(el.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var lStr))
+                                            return lStr;
+                                        return 0;
+                                    }
+                                    bool ReadBool(string key)
+                                    {
+                                        if (!root.TryGetProperty(key, out var el)) return false;
+                                        if (el.ValueKind == JsonValueKind.True) return true;
+                                        if (el.ValueKind == JsonValueKind.False) return false;
+                                        if (el.ValueKind == JsonValueKind.String &&
+                                            bool.TryParse(el.GetString(), out var bStr))
+                                            return bStr;
+                                        return false;
+                                    }
+                                    string ReadStr(string key)
+                                    {
+                                        if (!root.TryGetProperty(key, out var el)) return "";
+                                        if (el.ValueKind == JsonValueKind.String) return el.GetString() ?? "";
+                                        return el.ToString();
+                                    }
+
+                                    long id = ReadLong("id");
+                                    string side = ReadStr("side");
+                                    long amount = ReadLong("amount");
+                                    bool ok = ReadBool("ok");
+                                    string error = ReadStr("error");
+                                    string stage = ReadStr("txStage");
+                                    string txErr = ReadStr("txError");
+
+                                    double queueWaitMs = ReadNum("queueWaitMs");
+                                    double betMoneyMs = ReadNum("betMoneyMs");
+                                    double preConfirmMs = ReadNum("preConfirmMs");
+                                    double confirmMs = ReadNum("confirmMs");
+                                    double waitTotalsMs = ReadNum("waitTotalsMs");
+                                    double txTotalMs = ReadNum("txTotalMs");
+                                    double totalMs = ReadNum("totalMs");
+                                    double maxTotalMs = ReadNum("maxTotalMs");
+
+                                    bool fallbackUsed = ReadBool("fallbackUsed");
+                                    double fallbackMs = ReadNum("fallbackMs");
+                                    int queueLeft = (int)ReadLong("queueLeft");
+                                    int sampleCount = (int)ReadLong("sampleCount");
+
+                                    string errFinal = !string.IsNullOrWhiteSpace(error) ? error : txErr;
+                                    Log(
+                                        $"[BET_PERF] id={id} side={side} amt={amount:N0} ok={(ok ? 1 : 0)} " +
+                                        $"queue={queueWaitMs:0.#}ms bet={betMoneyMs:0.#}ms preCf={preConfirmMs:0.#}ms cf={confirmMs:0.#}ms " +
+                                        $"wait={waitTotalsMs:0.#}ms tx={txTotalMs:0.#}ms total={totalMs:0.#}ms maxTotal={maxTotalMs:0.#}ms " +
+                                        $"fb={(fallbackUsed ? 1 : 0)} fbMs={fallbackMs:0.#}ms qLeft={queueLeft} n={sampleCount} " +
+                                        $"stage={stage} err={(string.IsNullOrWhiteSpace(errFinal) ? "-" : errFinal)}");
+                                    return;
+                                }
+
                                 // 2) tick: cập nhật snapshot + UI + (NI & finalize khi đuôi đổi)
                                 if (abxStr == "tick")
                                 {

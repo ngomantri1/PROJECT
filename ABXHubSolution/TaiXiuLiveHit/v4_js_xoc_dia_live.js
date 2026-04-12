@@ -3571,9 +3571,63 @@
         chipToSide: 60, // sau khi chọn phỉnh -> đợi rất ngắn rồi click cửa
         sideToChip: 80, // sau khi click cửa -> đợi ngắn trước vòng kế
         chipToChip: 80, // giữa các vòng click liên tiếp
-        afterChipsBeforeConfirm: 260 // giữ nguyên nhịp xác nhận như trước
+        afterChipsBeforeConfirm: 120 // giảm nhịp chờ trước confirm để tăng tốc
     };
     var _txLastErr = '';
+    var _txPerfLast = null;
+    var _betJobSeq = window.__cwBetJobSeq || 0;
+    var BET_PERF_STATS = window.__cwBetPerfStats = window.__cwBetPerfStats || {
+        count: 0,
+        maxTotalMs: 0,
+        maxBetMoneyMs: 0,
+        maxConfirmMs: 0,
+        maxQueueWaitMs: 0,
+        maxWaitTotalsMs: 0,
+        last: null
+    };
+    function nowMs() {
+        try {
+            if (typeof performance !== 'undefined' && performance && typeof performance.now === 'function')
+                return performance.now();
+        } catch (_) {}
+        return Date.now();
+    }
+    function ms1(v) {
+        var n = Number(v);
+        if (!isFinite(n))
+            return 0;
+        return Math.round(n * 10) / 10;
+    }
+    function maxMetric(obj, key, val) {
+        var n = Number(val);
+        if (!isFinite(n))
+            return;
+        if (!(obj[key] >= 0) || n > obj[key])
+            obj[key] = n;
+    }
+    function postBetPerf(rec) {
+        try {
+            safePost(rec);
+        } catch (_) {}
+        try {
+            console.log('[BET_PERF]', JSON.stringify(rec));
+        } catch (_) {}
+    }
+    function updateBetPerfStats(rec) {
+        BET_PERF_STATS.count = (BET_PERF_STATS.count || 0) + 1;
+        maxMetric(BET_PERF_STATS, 'maxTotalMs', rec.totalMs);
+        maxMetric(BET_PERF_STATS, 'maxBetMoneyMs', rec.betMoneyMs);
+        maxMetric(BET_PERF_STATS, 'maxConfirmMs', rec.confirmMs);
+        maxMetric(BET_PERF_STATS, 'maxQueueWaitMs', rec.queueWaitMs);
+        maxMetric(BET_PERF_STATS, 'maxWaitTotalsMs', rec.waitTotalsMs);
+        BET_PERF_STATS.last = rec;
+        rec.sampleCount = BET_PERF_STATS.count;
+        rec.maxTotalMs = BET_PERF_STATS.maxTotalMs;
+        rec.maxBetMoneyMs = BET_PERF_STATS.maxBetMoneyMs;
+        rec.maxConfirmMs = BET_PERF_STATS.maxConfirmMs;
+        rec.maxQueueWaitMs = BET_PERF_STATS.maxQueueWaitMs;
+        rec.maxWaitTotalsMs = BET_PERF_STATS.maxWaitTotalsMs;
+    }
     function txSetErr(msg) {
         _txLastErr = String(msg || '').trim() || 'click_failed';
         return false;
@@ -3788,37 +3842,77 @@
             console.warn('[cwBetTx] click ĐẶT CƯỢC thất bại');
             return txSetErr('datcuoc_click_failed');
         }
-        await sleep(180);
+        await sleep(100);
         return true;
     }
 
     // ĐẶT CƯỢC: dùng đúng flow cũ đã hoạt động ổn:
     // chọn cửa 1 lần -> bấm chip theo plan -> xác nhận 1 lần.
     async function cwBetTxByChip(side, amount) {
+        var tTx0 = nowMs();
+        var perf = {
+            txStartMs: ms1(tTx0),
+            side: '',
+            amount: 0,
+            scanChipMs: 0,
+            buildPlanMs: 0,
+            sideMs: 0,
+            sideClickMs: 0,
+            sideToChipWaitMs: 0,
+            chipMs: 0,
+            chipClicksPlanned: 0,
+            chipClicksDone: 0,
+            preConfirmMs: 0,
+            confirmMs: 0,
+            betMoneyMs: 0,
+            txTotalMs: 0,
+            stage: 'init',
+            error: ''
+        };
+        function finishTx(ok, stage, err) {
+            perf.stage = stage || perf.stage;
+            perf.error = err ? String(err) : '';
+            perf.betMoneyMs = ms1((perf.sideMs || 0) + (perf.chipMs || 0));
+            perf.txTotalMs = ms1(nowMs() - tTx0);
+            _txPerfLast = perf;
+            return !!ok;
+        }
+
         _txLastErr = '';
         side = String(side || '').toUpperCase();
         side = (side === 'TAI') ? 'TAI' : 'XIU';
+        perf.side = side;
 
         var amt = Math.max(0, Math.floor(Number(amount) || 0));
+        perf.amount = amt;
         if (!amt) {
             console.warn('[cwBetTx] amount = 0');
-            return txSetErr('amount_invalid');
+            txSetErr('amount_invalid');
+            return finishTx(false, 'validate', _txLastErr);
         }
 
         // 1) Lấy danh sách chip ở menuMoney
+        var tScan0 = nowMs();
         var chips = txScanMenuChips();
+        perf.scanChipMs = ms1(nowMs() - tScan0);
         if (!chips.length) {
             console.warn('[cwBetTx] Không tìm thấy chip menuMoney nào');
-            return txSetErr('chip_not_found');
+            txSetErr('chip_not_found');
+            return finishTx(false, 'scan_chip', _txLastErr);
         }
 
         // 2) Lập plan tách số tiền
+        var tPlan0 = nowMs();
         var plan = txBuildPlan(amt, chips);
         var steps = plan.steps;
         var rest = plan.rest;
+        perf.buildPlanMs = ms1(nowMs() - tPlan0);
+        for (var p0 = 0; p0 < steps.length; p0++)
+            perf.chipClicksPlanned += Number(steps[p0].count) || 0;
         if (!steps.length || rest > 0) {
             console.warn('[cwBetTx] Không lập được plan cho amount =', amt, 'rest =', rest);
-            return txSetErr('chip_plan_invalid');
+            txSetErr('chip_plan_invalid');
+            return finishTx(false, 'build_plan', _txLastErr);
         }
 
         try {
@@ -3832,37 +3926,51 @@
         } catch (e) {}
 
         // 3) Chọn cửa 1 lần trước, rồi mới rải chip theo đúng cơ chế cũ.
+        var tSide0 = nowMs();
         var okSideOnce = txClickSide(side);
+        perf.sideClickMs = ms1(nowMs() - tSide0);
         if (!okSideOnce) {
             console.warn('[cwBetTx] click cửa lần đầu thất bại', side);
-            return false;
+            return finishTx(false, 'click_side', _txLastErr || 'side_click_failed');
         }
+        var tSideWait0 = nowMs();
         await sleep(TX_BET_DELAY.sideToChip);
+        perf.sideToChipWaitMs = ms1(nowMs() - tSideWait0);
+        perf.sideMs = ms1(nowMs() - tSide0);
 
         // 4) Sau khi đã chọn cửa, chỉ bấm chip theo plan.
+        var tChip0 = nowMs();
         for (var s = 0; s < steps.length; s++) {
             var step = steps[s];
             for (var i = 0; i < step.count; i++) {
                 var okChip = txClickMenuChipOnce(step.chip);
                 if (!okChip) {
                     console.warn('[cwBetTx] click chip thất bại', step.chip.amount);
-                    return txSetErr('chip_click_failed_' + step.chip.amount);
+                    txSetErr('chip_click_failed_' + step.chip.amount);
+                    perf.chipMs = ms1(nowMs() - tChip0);
+                    return finishTx(false, 'click_chip', _txLastErr);
                 }
+                perf.chipClicksDone++;
                 await sleep(TX_BET_DELAY.chipToChip);
             }
         }
+        perf.chipMs = ms1(nowMs() - tChip0);
 
         // 5) Đợi thêm một nhịp để game gom hết phỉnh rồi mới nhấn ĐẶT CƯỢC
+        var tBeforeConfirm0 = nowMs();
         await sleep(TX_BET_DELAY.afterChipsBeforeConfirm);
+        perf.preConfirmMs = ms1(nowMs() - tBeforeConfirm0);
 
         // 6) Cuối cùng nhấn ĐẶT CƯỢC 1 lần để xác nhận, KHÔNG dùng tip
+        var tConfirm0 = nowMs();
         var okDat = await txClickDatCuoc();
+        perf.confirmMs = ms1(nowMs() - tConfirm0);
         if (!okDat) {
             console.warn('[cwBetTx] click ĐẶT CƯỢC thất bại');
-            return false;
+            return finishTx(false, 'confirm_click', _txLastErr || 'datcuoc_click_failed');
         }
 
-        return true;
+        return finishTx(true, 'confirm_done', '');
     }
 
     // Hàng đợi đặt cược tuần tự: C# cứ đẩy xuống, JS tự xếp hàng và bắn lần lượt
@@ -3879,6 +3987,13 @@
             var side = job.side,
             amt = job.amt;
             var result = 'fail';
+            var tJobStart = nowMs();
+            var queueWaitMs = ms1(tJobStart - (Number(job.enqueuedAtMs) || tJobStart));
+            var txPerf = null;
+            var fallbackUsed = false;
+            var fallbackMs = 0;
+            var waitTotalsMs = 0;
+            var errText = '';
 
             try {
                 var before = (typeof window.readTotalsSafe === 'function'
@@ -3886,8 +4001,11 @@
                      : null) || {};
 
                 var ok = await cwBetTxByChip(side, amt);
+                txPerf = _txPerfLast;
                 if (!ok) {
                     // fallback: thử engine cũ nếu nhánh TX-tail bị lệch trên 1 số host
+                    fallbackUsed = true;
+                    var tFallback0 = nowMs();
                     try {
                         if (typeof window.cwBet === 'function') {
                             var okClassic = await window.cwBet(side, amt);
@@ -3898,6 +4016,7 @@
                             }
                         }
                     } catch (_) {}
+                    fallbackMs = ms1(nowMs() - tFallback0);
                 }
                 if (!ok) {
                     throw new Error(_txLastErr || 'click_failed');
@@ -3906,7 +4025,9 @@
                 var changed = true;
                 try {
                     if (typeof waitForTotalsChange === 'function') {
+                        var tWaitTotals0 = nowMs();
                         changed = await waitForTotalsChange(before, side, 1600);
+                        waitTotalsMs = ms1(nowMs() - tWaitTotals0);
                     }
                 } catch (_) {
                     changed = true;
@@ -3924,14 +4045,44 @@
                 });
                 result = 'ok';
             } catch (err) {
+                errText = String(err && err.message || err);
                 safePost({
                     abx: 'bet_error',
                     side: side,
                     amount: amt,
-                    error: String(err && err.message || err),
+                    error: errText,
                     ts: Date.now()
                 });
-                result = 'fail:' + String(err && err.message || err);
+                result = 'fail:' + errText;
+            } finally {
+                var totalMs = ms1(nowMs() - tJobStart);
+                var perfRecord = {
+                    abx: 'bet_perf',
+                    id: Number(job.id) || 0,
+                    side: side,
+                    amount: amt,
+                    ok: (result === 'ok'),
+                    error: errText,
+                    queueWaitMs: queueWaitMs,
+                    waitTotalsMs: waitTotalsMs,
+                    fallbackUsed: !!fallbackUsed,
+                    fallbackMs: fallbackMs,
+                    txTotalMs: txPerf && isFinite(Number(txPerf.txTotalMs)) ? ms1(txPerf.txTotalMs) : 0,
+                    betMoneyMs: txPerf && isFinite(Number(txPerf.betMoneyMs)) ? ms1(txPerf.betMoneyMs) : 0,
+                    confirmMs: txPerf && isFinite(Number(txPerf.confirmMs)) ? ms1(txPerf.confirmMs) : 0,
+                    preConfirmMs: txPerf && isFinite(Number(txPerf.preConfirmMs)) ? ms1(txPerf.preConfirmMs) : 0,
+                    sideMs: txPerf && isFinite(Number(txPerf.sideMs)) ? ms1(txPerf.sideMs) : 0,
+                    chipMs: txPerf && isFinite(Number(txPerf.chipMs)) ? ms1(txPerf.chipMs) : 0,
+                    chipClicksPlanned: txPerf && isFinite(Number(txPerf.chipClicksPlanned)) ? Number(txPerf.chipClicksPlanned) : 0,
+                    chipClicksDone: txPerf && isFinite(Number(txPerf.chipClicksDone)) ? Number(txPerf.chipClicksDone) : 0,
+                    txStage: txPerf && txPerf.stage ? String(txPerf.stage) : '',
+                    txError: txPerf && txPerf.error ? String(txPerf.error) : '',
+                    totalMs: totalMs,
+                    queueLeft: BET_QUEUE.length,
+                    ts: Date.now()
+                };
+                updateBetPerfStats(perfRecord);
+                postBetPerf(perfRecord);
             }
 
             if (typeof job.resolve === 'function') {
@@ -3954,9 +4105,13 @@
                 throw new Error('amount_invalid');
             }
 
+            _betJobSeq += 1;
+            window.__cwBetJobSeq = _betJobSeq;
             BET_QUEUE.push({
+                id: _betJobSeq,
                 side: side,
                 amt: amt,
+                enqueuedAtMs: nowMs(),
                 resolve: null
             });
             processBetQueue();
