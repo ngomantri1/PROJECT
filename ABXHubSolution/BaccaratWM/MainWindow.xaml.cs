@@ -917,6 +917,10 @@ Ví dụ không hợp lệ:
         // Packet lines -> UI? (tắt để tránh tràn UI, chỉ log file)
         private const bool SHOW_PACKET_LINES_IN_UI = false;
         private const int PACKET_UI_SAMPLE_EVERY_N = 2;
+        private static readonly bool PRODUCTION_LOG_MODE = true;
+        private static readonly bool KEEP_PACKET_FILE_LOGS_IN_PRODUCTION = false;
+        private static readonly bool KEEP_WM_PACKET_DIAG_IN_PRODUCTION = false;
+        private static readonly bool KEEP_WM_DIAG_FOR_INACTIVE_TABLES = false;
         private int _pktUiSample = 0;
         private bool _mainLockJsRegistered = false;
         private bool _popupLockJsRegistered = false;
@@ -2060,8 +2064,35 @@ Ví dụ không hợp lệ:
             _logPumpCts = null;
         }
 
+        private bool ShouldKeepWmDiagInProduction(string msg)
+        {
+            if (string.IsNullOrWhiteSpace(msg))
+                return false;
+            return msg.Contains("[WM_DIAG][WMNoRoom]", StringComparison.Ordinal)
+                || msg.Contains("[WM_DIAG][Protocol21NoRoom]", StringComparison.Ordinal)
+                || msg.Contains("[WM_DIAG][Protocol35NoRoom]", StringComparison.Ordinal)
+                || msg.Contains("[WM_DIAG][PopupRoadSnapshotMiss]", StringComparison.Ordinal)
+                || msg.Contains("[WM_DIAG][RefreshSourceMismatch]", StringComparison.Ordinal)
+                || msg.Contains("[WM_DIAG][FrameRuntimeNet] error", StringComparison.Ordinal);
+        }
+
+        private bool ShouldWriteLogMessage(string msg)
+        {
+            if (!PRODUCTION_LOG_MODE)
+                return true;
+            if (string.IsNullOrWhiteSpace(msg))
+                return false;
+            if (msg.Contains("[PKT]", StringComparison.Ordinal))
+                return false;
+            if (msg.Contains("[WM_DIAG]", StringComparison.Ordinal))
+                return ShouldKeepWmDiagInProduction(msg);
+            return true;
+        }
+
         private void Log(string msg)
         {
+            if (!ShouldWriteLogMessage(msg))
+                return;
             var line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
             //EnqueueUi(line);
             EnqueueFile(line);
@@ -12338,6 +12369,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private void LogWmPacketDiagIfNeeded(string scope, string kind, string? url, string? mime, string payload, bool isBinary, string? frameId = null, string? frameHint = null)
         {
+            if (PRODUCTION_LOG_MODE && !KEEP_WM_PACKET_DIAG_IN_PRODUCTION)
+                return;
             if (string.IsNullOrWhiteSpace(payload))
                 return;
 
@@ -12378,6 +12411,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private void LogHttpBodyCodecDiagIfNeeded(string scope, string kind, string? url, string? mime, string payload, bool isBinary, string? contentEncoding, string? contentLength, string? frameId = null, string? frameHint = null)
         {
+            if (PRODUCTION_LOG_MODE && !KEEP_WM_PACKET_DIAG_IN_PRODUCTION)
+                return;
             if (string.IsNullOrWhiteSpace(url) && string.IsNullOrWhiteSpace(payload))
                 return;
 
@@ -12406,6 +12441,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private void LogPacket(string kind, string? url, string preview, bool isBinary)
         {
+            if (PRODUCTION_LOG_MODE && !KEEP_PACKET_FILE_LOGS_IN_PRODUCTION)
+            {
+                if (!kind.EndsWith(".HTTP.fail", StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
             var line = $"[PKT] {DateTime.Now:HH:mm:ss} {kind} {url ?? ""} {preview}";
             // Ghi file luôn (không chọn)
             EnqueueFile(line);
@@ -12530,6 +12570,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     if (gameId <= 0 || string.IsNullOrWhiteSpace(tableId))
                         continue;
                     if (!TryResolvePopupServerTable(gameId, tableId, url, out var routeKey, out var resolvedId, out var resolvedName))
+                        continue;
+                    if (PRODUCTION_LOG_MODE && !ShouldProcessOverlayRoadTable(resolvedId, gameId))
                         continue;
 
                     if (protocol == 26)
@@ -12807,6 +12849,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var countdown = state?.Countdown?.ToString("0.###", CultureInfo.InvariantCulture) ?? "";
                 var overlayActive = !string.IsNullOrWhiteSpace(tableId) && _overlayActiveRooms.Contains(tableId) ? 1 : 0;
                 var selected = !string.IsNullOrWhiteSpace(tableId) && _selectedRooms.Contains(tableId) ? 1 : 0;
+                if (PRODUCTION_LOG_MODE && !KEEP_WM_DIAG_FOR_INACTIVE_TABLES && !ShouldProcessOverlayRoadTable(tableId, state?.GameId ?? 0))
+                    return;
                 var sig =
                     $"{scope}|{normalizedKind}|p={protocol}|table={tableId}|route={routeKey}|session={session}|hist={histLen}|countdown={countdown}|overlay={overlayActive}|sel={selected}";
                 var msg =
@@ -13024,6 +13068,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private void UpdatePopupServerRoadState(string routeKey, string tableId, string tableName, int gameId, Action<PopupServerRoadState> apply, string source)
         {
+            tableId = (tableId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(tableId))
+                return;
+            if (PRODUCTION_LOG_MODE && !ShouldProcessOverlayRoadTable(tableId, gameId))
+                return;
+
             PopupServerRoadState snapshot;
             bool shouldFinalize = false;
             string finalizeToken = "";
@@ -13237,6 +13287,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             try
             {
+                if (PRODUCTION_LOG_MODE && !ShouldProcessOverlayRoadTable(state?.TableId, state?.GameId ?? 0))
+                    return;
                 if (GetActiveRoomHostWebView()?.CoreWebView2 == null && Web?.CoreWebView2 == null && _popupWeb?.CoreWebView2 == null)
                     return;
 
@@ -19935,6 +19987,14 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 Log("[CUT] " + reason);
             }
             catch { /* ignore */ }
+        }
+
+        private bool ShouldProcessOverlayRoadTable(string? tableId, int expectedGameId = 0)
+        {
+            var id = (tableId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(id))
+                return false;
+            return _selectedRooms.Contains(id);
         }
 
         private bool HasPendingBetForTable(string tableId, int expectedGameId = 0)

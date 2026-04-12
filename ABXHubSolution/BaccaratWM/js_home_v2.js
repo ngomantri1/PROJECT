@@ -1,7 +1,9 @@
 (function () {
     'use strict';
-    const HOME_JS_REV = 'wm-bet-20260412-v2';
+    const HOME_JS_REV = 'wm-bet-20260412-v3';
     const BET_QUEUE_NEXT_DELAY_MS = 100;
+    const BET_QUEUE_TIMEOUT_MULTI_MS = 30000;
+    const BET_QUEUE_TIMEOUT_SINGLE_MS = 18000;
     const BET_CONFIRM_PRE_CLICK_DELAY_MS = 90;
     const BET_CONFIRM_RETRY_COUNT = 1;
     const BET_CONFIRM_RETRY_DELAY_MS = 90;
@@ -3034,7 +3036,11 @@
                             return false;
                         }
                     };
-                    const queued = betEnqueueTask(runBetTask, useMultiFlow ? 12000 : 7000, queueMeta);
+                    const queued = betEnqueueTask(
+                        runBetTask,
+                        useMultiFlow ? BET_QUEUE_TIMEOUT_MULTI_MS : BET_QUEUE_TIMEOUT_SINGLE_MS,
+                        queueMeta
+                    );
                     if (waitDone === true)
                         return queued.then(ok => {
                             diagPhase = 'queue_done';
@@ -8484,9 +8490,11 @@
         const roomDomRegistry = new Map();
         const pinSyncState = new Map();
         const pinRetryState = new Map();
-        const PIN_RETRY_MAX = 12;
-        const PIN_RETRY_DELAY = 450;
-        const PIN_RETRY_RENEW_MS = 2200;
+        const pinScrollProbeAt = new Map();
+        const PIN_RETRY_MAX = 4;
+        const PIN_RETRY_DELAY = 900;
+        const PIN_RETRY_RENEW_MS = 10000;
+        const PIN_NOT_FOUND_PROBE_INTERVAL_MS = 4000;
         let pinTimer = null;
         let desiredPinIds = new Set();
         let lastReportedPinSig = '';
@@ -9713,6 +9721,16 @@
             const card = findCardRootByName(roomId);
             const postProbe = (ok, node, reason) => {
                 try {
+                    const probeId = String(roomId || '');
+                    if (!ok && reason === 'not-found') {
+                        const now = Date.now();
+                        const lastAt = Number(pinScrollProbeAt.get(probeId) || 0);
+                        if ((now - lastAt) < PIN_NOT_FOUND_PROBE_INTERVAL_MS)
+                            return;
+                        pinScrollProbeAt.set(probeId, now);
+                    } else if (ok && probeId) {
+                        pinScrollProbeAt.delete(probeId);
+                    }
                     const el = node instanceof Element ? node : null;
                     const info = el ? [
                         (el.tagName || '').toLowerCase(),
@@ -10040,6 +10058,7 @@
             if (st && st.timer)
                 clearTimeout(st.timer);
             pinRetryState.delete(roomId);
+            pinScrollProbeAt.delete(roomId);
         }
 
         function schedulePinRetry(roomId, shouldPin) {
@@ -10088,6 +10107,11 @@
                 return;
             const root = findCardRootByName(roomId);
             if (!root) {
+                if (!shouldPin) {
+                    clearPinRetry(roomId);
+                    setPinSync(roomId, false);
+                    return;
+                }
                 if (shouldPin)
                     scrollCardIntoView(roomId, { behavior: 'auto', block: 'center', highlight: false });
                 schedulePinRetry(roomId, shouldPin);
@@ -10095,6 +10119,11 @@
         }
             const btn = resolvePinButton(root);
             if (!btn) {
+                if (!shouldPin) {
+                    clearPinRetry(roomId);
+                    setPinSync(roomId, false);
+                    return;
+                }
                 if (shouldPin)
                     scrollCardIntoView(roomId, { behavior: 'auto', block: 'center', highlight: false });
                 schedulePinRetry(roomId, shouldPin);
@@ -10103,6 +10132,11 @@
             const desired = !!shouldPin;
             const current = isPinActive(btn);
             if (current == null) {
+                if (!desired) {
+                    clearPinRetry(roomId);
+                    setPinSync(roomId, false);
+                    return;
+                }
                 schedulePinRetry(roomId, desired);
                 return;
             }
@@ -11743,7 +11777,8 @@
                             && typeof current.countdown === 'number'
                             && Number.isFinite(current.countdown)
                             && current.countdown > 0);
-                        if (current && (hasRenderableRoadData(current) || holdShuffleReset || st.hasRoadSynced))
+                        const hasLiveCurrent = !!(current && hasRenderableLiveData(current, st));
+                        if (current && (hasRenderableRoadData(current) || hasLiveCurrent || holdShuffleReset || st.hasRoadSynced))
                             renderPanelState(current);
                         else if (!st.hasRoadSynced)
                             renderSyncPlaceholder(st);
@@ -12464,8 +12499,11 @@
                 const serverState = st.serverState || serverStateById.get(serverStateKey) || null;
                 const candidate = st.resolve(room.id);
                 const src = candidate && candidate.isConnected ? candidate : findCardRootByName(room.id || room.name);
-                if ((!src || !src.isConnected) && !serverState)
-                    return null;
+                if ((!src || !src.isConnected) && !serverState) {
+                    const hasLocalUiState = hasActiveBetPlan(st) || !!st.betStats;
+                    if (!hasLocalUiState)
+                        return null;
+                }
                 const serverCountdown = (serverState && typeof serverState.countdown === 'number' && Number.isFinite(serverState.countdown) && serverState.countdown >= 0)
                     ? serverState.countdown
                     : null;
@@ -12679,6 +12717,27 @@
             return total || raw.length;
         }
 
+        function hasActiveBetPlan(st) {
+            if (!st || !st.betPlan || typeof st.betPlan !== 'object')
+                return false;
+            const side = String(st.betPlan.side || '').trim();
+            const amount = Number(st.betPlan.amount);
+            const levelText = String(st.betPlan.levelText || '').trim();
+            return !!(side || (Number.isFinite(amount) && amount > 0) || levelText);
+        }
+
+        function hasRenderableLiveData(data, st) {
+            if (!data || typeof data !== 'object')
+                return hasActiveBetPlan(st);
+            const hasCountdown = typeof data.countdown === 'number' && Number.isFinite(data.countdown) && data.countdown >= 0;
+            const hasStage = typeof data.gameStage === 'number' && Number.isFinite(data.gameStage);
+            const hasSession = typeof data.sessionKey === 'string' && data.sessionKey.trim().length > 0;
+            const hasResult = typeof data.centerResult === 'string' && data.centerResult.trim().length > 0;
+            const hasFlags = !!(data.wantShuffle || data.wantEnd);
+            const hasBetSignals = hasAnyBet(data.betAreas || null, data.betExtra || null, data.betChips || null);
+            return hasCountdown || hasStage || hasSession || hasResult || hasFlags || hasBetSignals || hasActiveBetPlan(st);
+        }
+
         function deriveStatusFromCountdown(countdown, stats, history, historyRaw) {
             const total = (stats && stats.total && Number.isFinite(stats.total.value))
                 ? stats.total.value
@@ -12717,7 +12776,8 @@
             const wantsEnd = !!(data && data.wantEnd);
             const isResultPhase = wantsEnd || gameStage === 2 || gameStage === 3;
             const isShufflePhase = wantsShuffle || pendingShuffleForSession || gameStage === 0 || gameStage === 4;
-            if (st && !st.hasRoadSynced && !historyCount)
+            const hasLiveSyncHint = hasRenderableLiveData(data, st);
+            if (st && !st.hasRoadSynced && !historyCount && !hasLiveSyncHint)
                 return { phase: 'sync', text: 'Đang đồng bộ dữ liệu...', color: '#f59e0b' };
             if (isResultPhase)
                 return { phase: 'result', text: 'Đợi kết quả chia bài', color: '#ef4444' };
@@ -12725,8 +12785,11 @@
                 return { phase: 'betting', text: 'Bắt đầu đặt cược', color: '#22c55e' };
             if (isShufflePhase)
                 return { phase: 'shuffle', text: 'Đang xáo bài', color: '#f59e0b' };
-            if (!historyCount)
+            if (!historyCount) {
+                if (hasLiveSyncHint)
+                    return { phase: 'result', text: 'Đợi kết quả chia bài', color: '#ef4444' };
                 return { phase: st && st.hasRoadSynced ? 'result' : 'sync', text: st && st.hasRoadSynced ? 'Đợi kết quả chia bài' : 'Đang đồng bộ dữ liệu...', color: st && st.hasRoadSynced ? '#ef4444' : '#f59e0b' };
+            }
             const fallback = deriveStatusFromCountdown(countdown, data && data.stats || null, data && data.history || [], data && data.historyRaw || []);
             return { phase: fallback.text === 'Bắt đầu đặt cược' ? 'betting' : (fallback.text === 'Đang xáo bài' ? 'shuffle' : 'result'), text: fallback.text, color: fallback.color };
         }
@@ -13473,7 +13536,8 @@ function deriveWinLoseColor(text) {
             const historySig = data.historySig || '';
             if (!st.hasRoadSynced) {
                 const hasRoadNow = !!(historySig || (Array.isArray(data.historyRaw) && data.historyRaw.length) || (Array.isArray(data.history) && data.history.length));
-                if (hasRoadNow)
+                const hasLiveNow = hasRenderableLiveData(data, st) || shouldDeferShuffleReset || shouldFlushShuffleReset;
+                if (hasRoadNow || hasLiveNow)
                     st.hasRoadSynced = true;
             }
             const betPlan = shouldClearBetPlan ? null : (st.betPlan || null);
