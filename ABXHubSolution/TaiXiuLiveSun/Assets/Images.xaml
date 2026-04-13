@@ -1,0 +1,16 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <BitmapImage x:Key="ImgCHAN" UriSource="/TaiXiuLiveSun;component/Assets/side/CHAN.png" />
+    <BitmapImage x:Key="ImgLE" UriSource="/TaiXiuLiveSun;component/Assets/side/LE.png" />
+    <BitmapImage x:Key="ImgTHANG" UriSource="/TaiXiuLiveSun;component/Assets/kq/THANG.png" />
+    <BitmapImage x:Key="ImgTHUA" UriSource="/TaiXiuLiveSun;component/Assets/kq/THUA.png" />
+    <BitmapImage x:Key="ImgBALL0" UriSource="/TaiXiuLiveSun;component/Assets/side/TU_TRANG.png" />
+    <BitmapImage x:Key="ImgBALL1" UriSource="/TaiXiuLiveSun;component/Assets/side/1TRANG_3DO.png" />
+    <BitmapImage x:Key="ImgBALL2" UriSource="/TaiXiuLiveSun;component/Assets/side/SAP_DOI.png" />
+    <BitmapImage x:Key="ImgBALL3" UriSource="/TaiXiuLiveSun;component/Assets/side/1DO_3TRANG.png" />
+    <BitmapImage x:Key="ImgBALL4" UriSource="/TaiXiuLiveSun;component/Assets/side/TU_DO.png" />
+    <BitmapImage x:Key="ImgTU_TRANG" UriSource="/TaiXiuLiveSun;component/Assets/side/TU_TRANG.png" />
+    <BitmapImage x:Key="ImgTU_DO" UriSource="/TaiXiuLiveSun;component/Assets/side/TU_DO.png" />
+    <BitmapImage x:Key="ImgSAP_DOI" UriSource="/TaiXiuLiveSun;component/Assets/side/SAP_DOI.png" />
+    <BitmapImage x:Key="ImgTRANG3_DO1" UriSource="/TaiXiuLiveSun;component/Assets/side/1DO_3TRANG.png" />
+    <BitmapImage x:Key="ImgDO3_TRANG1" UriSource="/TaiXiuLiveSun;component/Assets/side/1TRANG_3DO.png" />
+</ResourceDictionary>

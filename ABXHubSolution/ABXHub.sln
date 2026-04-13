@@ -2,7 +2,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AviatorHit", "AviatorHit\AviatorHit.csproj", "{324D2884-9AC0-4743-9F01-2D8848A9D133}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaiXiuLiveSun", "TaiXiuLiveSun\TaiXiuLiveSun.csproj", "{324D2884-9AC0-4743-9F01-2D8848A9D133}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AviatorHit", "AviatorHit\AviatorHit.csproj", "{C7341CE8-10F0-49FA-AEA2-00B024AFF432}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BaccaratWM", "BaccaratWM\BaccaratWM.csproj", "{0E35714C-339C-4329-B65E-C6BEC9BDAE32}"
 EndProject
@@ -38,6 +40,10 @@ Global
 		{324D2884-9AC0-4743-9F01-2D8848A9D133}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{324D2884-9AC0-4743-9F01-2D8848A9D133}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{324D2884-9AC0-4743-9F01-2D8848A9D133}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C7341CE8-10F0-49FA-AEA2-00B024AFF432}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C7341CE8-10F0-49FA-AEA2-00B024AFF432}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C7341CE8-10F0-49FA-AEA2-00B024AFF432}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C7341CE8-10F0-49FA-AEA2-00B024AFF432}.Release|Any CPU.Build.0 = Release|Any CPU
 		{0E35714C-339C-4329-B65E-C6BEC9BDAE32}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{0E35714C-339C-4329-B65E-C6BEC9BDAE32}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0E35714C-339C-4329-B65E-C6BEC9BDAE32}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -89,5 +95,8 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {1F8A07EF-CB84-4149-A00E-DF66B0144EB3}
 	EndGlobalSection
 EndGlobal
