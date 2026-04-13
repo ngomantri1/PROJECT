@@ -8397,6 +8397,15 @@ try{
                 return (false, $"nav-cooldown age={(now - _betWebLastNavDoneUtc).TotalMilliseconds:0}ms");
             }
 
+            // Guard: chỉ cho phép tối đa 1 lệnh đang chờ settle ở chế độ thường.
+            // Điều này ngăn trường hợp restart run nhưng hàng chờ cũ còn tồn tại, dẫn tới dồn kết quả (push bù).
+            if (!HasJackpotMultiSideRunning() && _pendingRows.Count > 0)
+            {
+                var oldest = _pendingRows[0];
+                var ageSec = Math.Max(0, (DateTime.Now - oldest.At).TotalSeconds);
+                return (false, $"pending-unsettled count={_pendingRows.Count} age={ageSec:0}s round={oldest.IssuedRoundId}");
+            }
+
             var betWeb = GetBetWebView();
             if (betWeb?.CoreWebView2 == null)
                 return (false, "bet-web-null");
@@ -11636,6 +11645,29 @@ try{
             var rowsToFinalize = hasSettleContext
                 ? pendingSnapshot.Where(row => IsRowContextMatch(row) && IsRowSeqAdvanced(row)).ToList()
                 : pendingSnapshot.Where(IsRowContextMatch).ToList();
+
+            if (!HasJackpotMultiSideRunning() && rowsToFinalize.Count > 1)
+            {
+                var orderedMatches = rowsToFinalize
+                    .OrderBy(row => row.At)
+                    .ToList();
+                var duplicateMatches = orderedMatches.Skip(1).ToList();
+                if (duplicateMatches.Count > 0)
+                {
+                    foreach (var row in duplicateMatches)
+                    {
+                        row.Result = "RESET-DUP";
+                        row.WinLose = "Bỏ qua";
+                        row.Account = balanceAfter;
+                        Log($"[BET][HIST][DROP] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=multi-match-guard");
+                        _pendingRows.Remove(row);
+                    }
+                }
+                rowsToFinalize = orderedMatches.Take(1).ToList();
+                pendingSnapshot = _pendingRows.ToList();
+                contextSkipCount = pendingSnapshot.Count(row => !IsRowContextMatch(row));
+            }
+
             int holdCount = pendingSnapshot.Count(row => IsRowContextMatch(row)) - rowsToFinalize.Count;
 
             Log($"[BET][HIST][CHECK] reason={(string.IsNullOrWhiteSpace(settleReason) ? "-" : settleReason)} | result={resultText} | pending={pendingSnapshot.Count} | matched={rowsToFinalize.Count} | hold={holdCount} | ctxSkip={contextSkipCount} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | settleLen={settleDisplay.Length} | settleVer={(hasSettleVersion ? settleSeqVersion!.Value.ToString() : "-")} | settleEvt={(settleSeqEvent ?? "-")} | settleTail={settleTail}");
