@@ -451,6 +451,7 @@ namespace BaccaratSexyCasino
         private bool _domHooked;             // đã gắn DOMContentLoaded cho top chưa
         private readonly ConcurrentDictionary<ulong, byte> _mainFrameBridgeArmed = new();
         private readonly ConcurrentDictionary<ulong, CoreWebView2Frame> _mainFrameRefs = new();
+        private readonly ConcurrentDictionary<int, CoreWebView2Frame> _popupFrameRefs = new();
         private readonly ConcurrentDictionary<int, string> _frameInjectedDocKeys = new();
         private DateTime _lastMainFramesRearmUtc = DateTime.MinValue;
         private int _popupInjectBusy = 0;
@@ -4659,6 +4660,7 @@ try{
             try
             {
                 var f = e.Frame;
+                TrackPopupFrameRef(f);
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 f.WebMessageReceived += PopupFrame_WebMessageReceived;
                 f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
@@ -4835,6 +4837,7 @@ try{
             _popupBridgeRegistered = false;
             _popupDevToolsOpened = false;
             _popupLastDocKey = null;
+            _popupFrameRefs.Clear();
             _betWebNavigatingSinceUtc = DateTime.MinValue;
             _betWebLastNavDoneUtc = DateTime.MinValue;
 
@@ -7371,6 +7374,7 @@ try{
                 _navModeHooked = false;
                 _mainFrameBridgeArmed.Clear();
                 _mainFrameRefs.Clear();
+                _popupFrameRefs.Clear();
                 _frameInjectedDocKeys.Clear();
 
                 try { await DeleteDirectoryWithRetryAsync(Wv2UserDataDir); }
@@ -8647,6 +8651,7 @@ try{
                     if (IsDisposedFrameException(ex))
                     {
                         DropMainFrameRef(frame);
+                        DropPopupFrameRef(frame);
                         return;
                     }
                     var key = $"{owner}|{stage}|err:{ex.Message}";
@@ -8675,6 +8680,41 @@ try{
                         _mainFrameRefs[id] = f;
                         frames.Add((id, f));
                     }
+                }
+            }
+            catch { }
+            return frames;
+        }
+
+        private static int GetFrameRefKey(CoreWebView2Frame? frame)
+        {
+            if (frame == null) return 0;
+            return RuntimeHelpers.GetHashCode(frame);
+        }
+
+        private void TrackPopupFrameRef(CoreWebView2Frame? frame)
+        {
+            var key = GetFrameRefKey(frame);
+            if (key == 0 || frame == null) return;
+            _popupFrameRefs[key] = frame;
+        }
+
+        private void DropPopupFrameRef(CoreWebView2Frame? frame)
+        {
+            var key = GetFrameRefKey(frame);
+            if (key == 0) return;
+            _popupFrameRefs.TryRemove(key, out _);
+        }
+
+        private List<(int key, CoreWebView2Frame frame)> GetPopupArmedFramesSnapshot()
+        {
+            var frames = new List<(int key, CoreWebView2Frame frame)>();
+            try
+            {
+                foreach (var kv in _popupFrameRefs.ToArray().OrderByDescending(k => k.Key))
+                {
+                    if (kv.Value != null)
+                        frames.Add((kv.Key, kv.Value));
                 }
             }
             catch { }
@@ -8738,38 +8778,77 @@ try{
                 if (!IsBridgeCommandScript(js))
                     return await target.ExecuteScriptAsync(js);
 
-                var frames = GetMainArmedFramesSnapshot();
-                if (frames.Count == 0 && IsCurrentHostAllowUnboundHistory())
+                var usePopupFrames = ReferenceEquals(target, _popupWeb);
+                var mainFrames = new List<(ulong id, CoreWebView2Frame frame)>();
+                var popupFrames = new List<(int key, CoreWebView2Frame frame)>();
+
+                if (usePopupFrames)
                 {
-                    var reArmed = ReArmExistingMainFrames("exec-bridge-wrapper");
-                    if (reArmed > 0)
-                        frames = GetMainArmedFramesSnapshot();
+                    popupFrames = GetPopupArmedFramesSnapshot();
                 }
+                else
+                {
+                    mainFrames = GetMainArmedFramesSnapshot();
+                    if (mainFrames.Count == 0 && IsCurrentHostAllowUnboundHistory())
+                    {
+                        var reArmed = ReArmExistingMainFrames("exec-bridge-wrapper");
+                        if (reArmed > 0)
+                            mainFrames = GetMainArmedFramesSnapshot();
+                    }
+                }
+
                 string firstFrameRaw = "";
                 string firstFrameOk = "";
 
-                // Với bridge script, ưu tiên chạy trên frame đã armed (vipbet dùng game trong cross-origin frame).
-                foreach (var item in frames)
+                if (usePopupFrames)
                 {
-                    try
+                    foreach (var item in popupFrames)
                     {
-                        var frameRaw = await item.frame.ExecuteScriptAsync(js);
-                        if (string.IsNullOrWhiteSpace(firstFrameRaw))
-                            firstFrameRaw = frameRaw;
-
-                        var frameNorm = NormalizeJsEvalResult(frameRaw);
-                        if (!IsBridgeFailureResult(frameNorm))
+                        try
                         {
-                            firstFrameOk = frameRaw;
-                            break;
+                            var frameRaw = await item.frame.ExecuteScriptAsync(js);
+                            if (string.IsNullOrWhiteSpace(firstFrameRaw))
+                                firstFrameRaw = frameRaw;
+
+                            var frameNorm = NormalizeJsEvalResult(frameRaw);
+                            if (!IsBridgeFailureResult(frameNorm))
+                            {
+                                firstFrameOk = frameRaw;
+                                break;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            if (IsDisposedFrameException(ex))
+                                _popupFrameRefs.TryRemove(item.key, out _);
                         }
                     }
-                    catch (Exception ex)
+                }
+                else
+                {
+                    // Với bridge script, ưu tiên chạy trên frame đã armed (host chạy game trong cross-origin frame).
+                    foreach (var item in mainFrames)
                     {
-                        if (IsDisposedFrameException(ex))
+                        try
                         {
-                            _mainFrameRefs.TryRemove(item.id, out _);
-                            _mainFrameBridgeArmed.TryRemove(item.id, out _);
+                            var frameRaw = await item.frame.ExecuteScriptAsync(js);
+                            if (string.IsNullOrWhiteSpace(firstFrameRaw))
+                                firstFrameRaw = frameRaw;
+
+                            var frameNorm = NormalizeJsEvalResult(frameRaw);
+                            if (!IsBridgeFailureResult(frameNorm))
+                            {
+                                firstFrameOk = frameRaw;
+                                break;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            if (IsDisposedFrameException(ex))
+                            {
+                                _mainFrameRefs.TryRemove(item.id, out _);
+                                _mainFrameBridgeArmed.TryRemove(item.id, out _);
+                            }
                         }
                     }
                 }
@@ -9295,7 +9374,9 @@ try{
                 var betWeb = GetBetWebView();
                 var typeBetJson = await ExecuteOnBetWebAsync("typeof window.__cw_bet");
                 var typeBet = typeBetJson?.Trim('"');
-                var armedFrameCount = GetMainArmedFramesSnapshot().Count;
+                var armedFrameCount = ReferenceEquals(betWeb, _popupWeb)
+                    ? GetPopupArmedFramesSnapshot().Count
+                    : GetMainArmedFramesSnapshot().Count;
                 Log("[PlayStart] betType=" + (string.IsNullOrWhiteSpace(typeBet) ? "-" : typeBet) +
                     " | armedFrames=" + armedFrameCount +
                     " | betWeb=" + GetBetWebViewName(betWeb) +
@@ -10875,6 +10956,15 @@ try{
             }
             catch (Exception ex)
             {
+                if (IsDisposedFrameException(ex))
+                {
+                    if (sender is CoreWebView2Frame disposedFrame)
+                    {
+                        DropMainFrameRef(disposedFrame);
+                        DropPopupFrameRef(disposedFrame);
+                    }
+                    return;
+                }
                 Log("[Bridge.Frame NavigationCompleted] " + ex.Message);
             }
         }
@@ -11279,6 +11369,7 @@ try{
             _domHooked = false;
             _mainFrameBridgeArmed.Clear();
             _mainFrameRefs.Clear();
+            _popupFrameRefs.Clear();
             _frameInjectedDocKeys.Clear();
         }
 
