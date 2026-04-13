@@ -22,7 +22,7 @@ using System.Windows.Documents;
 using System.Reflection;
 using System.Diagnostics;
 using System.IO.Compression;
-using Microsoft.Web.WebView2.Wpf;  // <-- cÃ¡i nÃ y Ä‘á»ƒ cÃ³ CoreWebView2Creation
+using Microsoft.Web.WebView2.Wpf;  // <-- cái này để có CoreWebView2Creation
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.ComponentModel;
@@ -40,8 +40,8 @@ using System.Net.NetworkInformation;
 
 namespace TaiXiuLiveSun
 {
-    // Fallback loader: náº¿u SharedIcons chÆ°a cÃ³, náº¡p tá»« Assets (pack URI).
-    // Fallback loader: náº¿u SharedIcons chÆ°a cÃ³, náº¡p tá»« Resources (pack URI).
+    // Fallback loader: nếu SharedIcons chưa có, nạp từ Assets (pack URI).
+    // Fallback loader: nếu SharedIcons chưa có, nạp từ Resources (pack URI).
     internal static class FallbackIcons
     {
         private const string SideChanPng = "Assets/side/CHAN.png";
@@ -98,11 +98,11 @@ namespace TaiXiuLiveSun
                 }
                 catch
                 {
-                    // thá»­ uri tiáº¿p theo
+                    // thử uri tiếp theo
                 }
             }
 
-            // Fallback Ä‘á»c file váº­t lÃ½ cáº¡nh DLL khi pack URI khÃ´ng resolve (plugin)
+            // Fallback đọc file vật lý cạnh DLL khi pack URI không resolve (plugin)
             try
             {
                 var asmDir = Path.GetDirectoryName(typeof(FallbackIcons).Assembly.Location) ?? "";
@@ -127,7 +127,7 @@ namespace TaiXiuLiveSun
 
         private static ImageSource? Load(string relativePath)
         {
-            // Quan trá»ng: tráº£ null náº¿u táº¥t cáº£ URI tháº¥t báº¡i Ä‘á»ƒ DataTemplate fallback sang text.
+            // Quan trọng: trả null nếu tất cả URI thất bại để DataTemplate fallback sang text.
             return LoadPackImage(relativePath);
         }
     }
@@ -175,7 +175,7 @@ namespace TaiXiuLiveSun
             if (_ballIcons.TryGetValue(d, out var img))
                 return img;
 
-            // Æ¯u tiÃªn áº£nh Ä‘Ã£ merge vÃ o App.Resources (PackRes Ä‘Ã£ lÃ m)
+            // Ưu tiên ảnh đã merge vào App.Resources (PackRes đã làm)
             try
             {
                 if (System.Windows.Application.Current?.Resources != null)
@@ -197,7 +197,7 @@ namespace TaiXiuLiveSun
                 _ => null
             };
             _ballIcons[d] = img;
-            return img; // cÃ³ thá»ƒ null -> XAML sáº½ hiá»ƒn thá»‹ chá»¯ thay tháº¿
+            return img; // có thể null -> XAML sẽ hiển thị chữ thay thế
         }
 
         public object Convert(object value, Type t, object p, CultureInfo c)
@@ -317,7 +317,7 @@ namespace TaiXiuLiveSun
         private const double TabStripRightInset = 16;
 
 
-        private const string AppLocalDirName = "TaiXiuLiveSun"; // Ä‘á»•i thÃ nh tÃªn báº¡n muá»‘n
+        private const string AppLocalDirName = "TaiXiuLiveSun"; // đổi thành tên bạn muốn
         // ====== App paths ======
         private readonly string _appDataDir;
         private readonly string _cfgPath;
@@ -332,6 +332,8 @@ namespace TaiXiuLiveSun
         private bool _uiReady = false;
         private bool _didStartupNav = false;
         private bool _webHooked = false;
+        private DateTime _cwPageLastLogUtc = DateTime.MinValue;
+        private string _cwPageLastSig = "";
         private CancellationTokenSource? _navCts, _userCts, _passCts, _stakeCts, _sideRateCts;
 
         // ====== JS Awaiters ======
@@ -341,7 +343,7 @@ namespace TaiXiuLiveSun
         // ====== CDP / Packet tap ======
         private bool _cdpNetworkOn = false;
         private readonly ConcurrentDictionary<string, string> _wsUrlByRequestId = new();
-        private readonly string[] _pktInterestingHints = new[] { "wss://", "websocket", "hytsocesk", "xoc", "live", "socket" };
+        private readonly string[] _pktInterestingHints = new[] { "ws-taixiu", "taixiu", "xocdia", "xoc", "xdlive", "livearena", "hytsocesk" };
 
         // ==== Auto-login watcher ====
         private CancellationTokenSource? _autoLoginWatchCts;
@@ -354,7 +356,7 @@ namespace TaiXiuLiveSun
         private const int NiSeqMax = 50;
         private readonly System.Text.StringBuilder _niSeq = new(NiSeqMax);
 
-        // Tá»•ng C/L cá»§a vÃ¡n Ä‘ang diá»…n ra (Ä‘á»ƒ dÃ¹ng khi vÃ¡n vá»«a khÃ©p láº¡i)
+        // Tổng C/L của ván đang diễn ra (để dùng khi ván vừa khép lại)
         private long _roundTotalsC = 0;
         private long _roundTotalsL = 0;
         private int _lastSeqLenNi = 0;
@@ -365,36 +367,37 @@ namespace TaiXiuLiveSun
         private long[] _stakeSeq = Array.Empty<long>();
         private System.Collections.Generic.List<long[]> _stakeChains = new();
         private long[] _stakeChainTotals = Array.Empty<long>();
-        // Chá»‰ dÃ¹ng cho hiá»ƒn thá»‹ LblLevel: vá»‹ trÃ­ hiá»‡n táº¡i trong _stakeSeq
+        // Chỉ dùng cho hiển thị LblLevel: vị trí hiện tại trong _stakeSeq
         private int _stakeLevelIndexForUi = -1;
 
         private double _decisionPercent = 5; // 5s
 
-        // Chá»‘ng báº¯n trÃ¹ng khi vá»«a cÆ°á»£c
+        // Chống bắn trùng khi vừa cược
         private bool _cooldown = false;
 
-        // Cache & cá» Ä‘á»ƒ khÃ´ng inject láº·p láº¡i
+        // Cache & cờ để không inject lặp lại
         private string? _appJs;
-        private string? _homeJs;  // ná»™i dung js_home_v2.js
-        private bool _webMsgHooked; // Ä‘á»ƒ gáº¯n WebMessageReceived Ä‘Ãºng 1 láº§n
+        private string? _homeJs;  // nội dung js_home_v2.js
+        private bool _webMsgHooked; // để gắn WebMessageReceived đúng 1 lần
 
 
 
 
         private string? _topForwardId, _appJsRegId;           // id script TOP_FORWARD
-                                                              // ID riÃªng cho autostart cá»§a trang Home (Ä‘á»«ng dÃ¹ng chung vá»›i _homeJsRegId)
+                                                              // ID riêng cho autostart của trang Home (đừng dùng chung với _homeJsRegId)
         private string? _homeAutoStartId;
         private string? _homeJsRegId;
-        private bool _frameHooked;               // Ä‘Ã£ gáº¯n FrameCreated?
-        private string? _lastDocKey;             // key document hiá»‡n táº¡i (performance.timeOrigin)
-                                                 // Bridge Ä‘Äƒng kÃ½ toÃ n cá»¥c
-        private string? _autoStartId;        // id script FRAME_AUTOSTART (Ä‘Äƒng kÃ½ toÃ n cá»¥c)
-        private bool _domHooked;             // Ä‘Ã£ gáº¯n DOMContentLoaded cho top chÆ°a
+        private bool _frameHooked;               // đã gắn FrameCreated?
+        private string? _lastDocKey;             // key document hiện tại (performance.timeOrigin)
+                                                 // Bridge đăng ký toàn cục
+        private string? _autoStartId;        // id script FRAME_AUTOSTART (đăng ký toàn cục)
+        private bool _domHooked;             // đã gắn DOMContentLoaded cho top chưa
+        private int _injectDocBusy = 0;
 
         // === License/Trial run state ===
 
-        private System.Threading.Timer? _expireTimer;      // timer tick má»—i giÃ¢y Ä‘á»ƒ cáº­p nháº­t Ä‘áº¿m ngÆ°á»£c
-        private DateTimeOffset? _runExpiresAt;             // má»‘c háº¿t háº¡n cá»§a phiÃªn Ä‘ang cháº¡y (trial hoáº·c license)
+        private System.Threading.Timer? _expireTimer;      // timer tick mỗi giây để cập nhật đếm ngược
+        private DateTimeOffset? _runExpiresAt;             // mốc hết hạn của phiên đang chạy (trial hoặc license)
         private string _expireMode = "";                   // "trial" | "license"
         private string _leaseClientId = "";
         private string _deviceId = "";
@@ -405,181 +408,181 @@ namespace TaiXiuLiveSun
         private string _licenseUser = "";
         private string _licensePass = "";
         public string TrialUntil { get; set; } = "";
-        // === License periodic re-check (5 phÃºt/láº§n) ===
+        // === License periodic re-check (5 phút/lần) ===
         private System.Threading.Timer? _licenseCheckTimer;
-        private int _licenseCheckBusy = 0; // guard chá»‘ng chá»“ng lá»‡nh
+        private int _licenseCheckBusy = 0; // guard chống chồng lệnh
         private bool _licenseVerified = false;
-        // === Username láº¥y tá»« Home (authoritative) ===
-        private string? _homeUsername;                 // username chuáº©n láº¥y tá»« home_tick
-        private DateTime _homeUsernameAt = DateTime.MinValue; // má»‘c thá»i gian báº¯t Ä‘Æ°á»£c
-        private bool _homeLoggedIn = false; // chá»‰ true khi phÃ¡t hiá»‡n cÃ³ nÃºt ÄÄƒng xuáº¥t (Ä‘Ã£ login)
-        private bool _navModeHooked = false;   // Ä‘Ã£ gáº¯n handler NavigationCompleted Ä‘á»ƒ cáº­p nháº­t UI nhanh vá» Home?
+        // === Username lấy từ Home (authoritative) ===
+        private string? _homeUsername;                 // username chuẩn lấy từ home_tick
+        private DateTime _homeUsernameAt = DateTime.MinValue; // mốc thời gian bắt được
+        private bool _homeLoggedIn = false; // chỉ true khi phát hiện có nút Đăng xuất (đã login)
+        private bool _navModeHooked = false;   // đã gắn handler NavigationCompleted để cập nhật UI nhanh về Home?
 
 
-        private int _playStartInProgress = 0;// NgÄƒn PlayXocDia_Click cháº¡y song song
+        private int _playStartInProgress = 0;// Ngăn PlayXocDia_Click chạy song song
 
-        private readonly SemaphoreSlim _cfgWriteGate = new(1, 1);// KhoÃ¡ ghi config Ä‘á»ƒ khÃ´ng bao giá» ghi song song
+        private readonly SemaphoreSlim _cfgWriteGate = new(1, 1);// Khoá ghi config để không bao giờ ghi song song
         private readonly SemaphoreSlim _statsWriteGate = new(1, 1);
                                                                  // --- UI mode monitor ---
         private DateTime _lastGameTickUtc = DateTime.MinValue;
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
-        private bool _isGameUi = false;              // tráº¡ng thÃ¡i UI hiá»‡n hÃ nh
+        private bool _isGameUi = false;              // trạng thái UI hiện hành
         private System.Windows.Threading.DispatcherTimer? _uiModeTimer;
-        private int _gameNavWatchdogGen = 0;         // phÃ¢n tháº¿ há»‡ cho watchdog navigation
+        private int _gameNavWatchdogGen = 0;         // phân thế hệ cho watchdog navigation
         private bool _wv2Resetting = false;
         private DateTime _lastWv2ResetUtc = DateTime.MinValue;
         private string? _lastGameUrl = null;
 
         private static readonly TimeSpan GameTickFresh = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan HomeTickFresh = TimeSpan.FromSeconds(1.5);
-        // Master switch: Ä‘áº·t false Ä‘á»ƒ bá» qua kiá»ƒm tra Trial/License (khÃ´ng UI, khÃ´ng config, true kiá»ƒm tra bÃ¬nh thÆ°á»ng)
+        // Master switch: đặt false để bỏ qua kiểm tra Trial/License (không UI, không config, true kiểm tra bình thường)
         private bool CheckLicense = true;
 
-        // 2) Bá»™ nhá»› vÃ  phÃ¢n trang
-        private readonly List<BetRow> _betAll = new();                  // táº¥t cáº£ báº£n ghi (tá»‘i Ä‘a 1000 khi load)
-        private readonly ObservableCollection<BetRow> _betPage = new(); // trang hiá»‡n táº¡i
+        // 2) Bộ nhớ và phân trang
+        private readonly List<BetRow> _betAll = new();                  // tất cả bản ghi (tối đa 1000 khi load)
+        private readonly ObservableCollection<BetRow> _betPage = new(); // trang hiện tại
         private int _pageIndex = 0;
-        private int PageSize = 10;// Cho phÃ©p Ä‘á»•i PageSize tá»« UI
-        private bool _autoFollowNewest = true;// true = Ä‘ang bÃ¡m trang má»›i nháº¥t (trang 1); false = Ä‘ang xem trang cÅ©, KHÃ”NG auto nháº£y
+        private int PageSize = 10;// Cho phép đổi PageSize từ UI
+        private bool _autoFollowNewest = true;// true = đang bám trang mới nhất (trang 1); false = đang xem trang cũ, KHÔNG auto nhảy
 
-        // 3) Giá»¯ pending bet Ä‘á»ƒ chá» káº¿t quáº£
+        // 3) Giữ pending bet để chờ kết quả
         private readonly List<BetRow> _pendingRows = new();
-        private const int MaxHistory = 1000;   // tá»•ng sá»‘ báº£n ghi giá»¯ trong bá»™ nhá»› & khi load
+        private const int MaxHistory = 1000;   // tổng số bản ghi giữ trong bộ nhớ & khi load
 
 
 
-        private const string DEFAULT_URL = "https://web.sunwin.ec/?affId=Sunwin"; // URL máº·c Ä‘á»‹nh báº¡n muá»‘n
-        // === License repo/worker settings (CHá»ˆNH Láº I CHO PHÃ™ Há»¢P) ===
-        const string LicenseOwner = "ngomantri1";    // <- Ä‘á»•i theo repo cá»§a báº¡n
-        const string LicenseRepo = "licenses";  // <- Ä‘á»•i theo repo cá»§a báº¡n
-        const string LicenseBranch = "main";          // <- nhÃ¡nh
-        const string LicenseNameGame = "auto";          // <- nhÃ¡nh
+        private const string DEFAULT_URL = "https://web.sunwin.ec/?affId=Sunwin"; // URL mặc định bạn muốn
+        // === License repo/worker settings (CHỈNH LẠI CHO PHÙ HỢP) ===
+        const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
+        const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn
+        const string LicenseBranch = "main";          // <- nhánh
+        const string LicenseNameGame = "auto";          // <- nhánh
         const string LeaseBaseUrl = "https://net88.ngomantri1.workers.dev/lease/auto";
-        private const bool EnableLeaseCloudflare = true; // true=báº­t gá»i Cloudflare
-        private const string TrialConsumedTodayMessage = "Háº¿t lÆ°á»£t dÃ¹ng thá»­ trong ngÃ y. HÃ£y quay láº¡i dÃ¹ng thá»­ vÃ o ngÃ y mai.";
+        private const bool EnableLeaseCloudflare = true; // true=bật gọi Cloudflare
+        private const string TrialConsumedTodayMessage = "Hết lượt dùng thử trong ngày. Hãy quay lại dùng thử vào ngày mai.";
 
         // ===================== TOOLTIP TEXTS =====================
         const string TIP_SEQ_CL =
-        @"Chuá»—i Cáº¦U (C/L) â€” Chiáº¿n lÆ°á»£c 1
-â€¢ Ã nghÄ©a: C = CHáº´N, L = Láºº (khÃ´ng phÃ¢n biá»‡t hoa/thÆ°á»ng).
-â€¢ CÃº phÃ¡p: chá»‰ gá»“m kÃ½ tá»± C hoáº·c L; kÃ½ tá»± khÃ¡c khÃ´ng há»£p lá»‡.
-â€¢ Khoáº£ng tráº¯ng/tab/xuá»‘ng dÃ²ng: Ä‘Æ°á»£c phÃ©p; há»‡ thá»‘ng tá»± bá» qua.
-â€¢ Thá»© tá»± Ä‘á»c: tá»« trÃ¡i sang pháº£i; háº¿t chuá»—i sáº½ láº·p láº¡i tá»« Ä‘áº§u.
-â€¢ Äá»™ dÃ i khuyáº¿n nghá»‹: 2â€“50 kÃ½ tá»±.
-VÃ­ dá»¥ há»£p lá»‡:
+        @"Chuỗi CẦU (C/L) — Chiến lược 1
+• Ý nghĩa: C = CHẴN, L = LẺ (không phân biệt hoa/thường).
+• Cú pháp: chỉ gồm ký tự C hoặc L; ký tự khác không hợp lệ.
+• Khoảng trắng/tab/xuống dòng: được phép; hệ thống tự bỏ qua.
+• Thứ tự đọc: từ trái sang phải; hết chuỗi sẽ lặp lại từ đầu.
+• Độ dài khuyến nghị: 2–50 ký tự.
+Ví dụ hợp lệ:
   - CLLC
   - C L L C
-VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
-  - C,X,L     (cÃ³ dáº¥u pháº©y)
-  - CL1C      (cÃ³ sá»‘)
-  - C L _ C   (kÃ½ tá»± ngoÃ i C/L).";
+Ví dụ không hợp lệ:
+  - C,X,L     (có dấu phẩy)
+  - CL1C      (có số)
+  - C L _ C   (ký tự ngoài C/L).";
 
         const string TIP_SEQ_NI =
-        @"Chuá»—i Cáº¦U (Ãt/Nhiá»u) â€” Chiáº¿n lÆ°á»£c 3
-â€¢ Ã nghÄ©a: I = bÃªn ÃT tiá»n, N = bÃªn NHIá»€U tiá»n (khÃ´ng phÃ¢n biá»‡t hoa/thÆ°á»ng).
-â€¢ CÃº phÃ¡p: chá»‰ gá»“m kÃ½ tá»± I hoáº·c N; má»i kÃ½ tá»± khÃ¡c Ä‘á»u khÃ´ng há»£p lá»‡.
-â€¢ Dáº¥u phÃ¢n tÃ¡ch: khoáº£ng tráº¯ng/tab/xuá»‘ng dÃ²ng Ä‘Æ°á»£c phÃ©p vÃ  sáº½ bá»‹ bá» qua.
-â€¢ Thá»© tá»± Ä‘á»c: tá»« trÃ¡i sang pháº£i; háº¿t chuá»—i sáº½ láº·p láº¡i tá»« Ä‘áº§u.
-â€¢ Äá»™ dÃ i khuyáº¿n nghá»‹: 2â€“50 kÃ½ tá»±.
-VÃ­ dá»¥ há»£p lá»‡:
+        @"Chuỗi CẦU (Ít/Nhiều) — Chiến lược 3
+• Ý nghĩa: I = bên ÍT tiền, N = bên NHIỀU tiền (không phân biệt hoa/thường).
+• Cú pháp: chỉ gồm ký tự I hoặc N; mọi ký tự khác đều không hợp lệ.
+• Dấu phân tách: khoảng trắng/tab/xuống dòng được phép và sẽ bị bỏ qua.
+• Thứ tự đọc: từ trái sang phải; hết chuỗi sẽ lặp lại từ đầu.
+• Độ dài khuyến nghị: 2–50 ký tự.
+Ví dụ hợp lệ:
   - INNI
   - I N N I
-VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
-  - I,K,N     (cÃ³ dáº¥u pháº©y)
-  - IN1I      (cÃ³ sá»‘)
-  - I _ N I   (kÃ½ tá»± ngoÃ i I/N).";
+Ví dụ không hợp lệ:
+  - I,K,N     (có dấu phẩy)
+  - IN1I      (có số)
+  - I _ N I   (ký tự ngoài I/N).";
 
         const string TIP_THE_CL =
-        @"Tháº¿ Cáº¦U (C/L) â€” Chiáº¿n lÆ°á»£c 2
-â€¢ Ã nghÄ©a: C = CHáº´N, L = Láºº (khÃ´ng phÃ¢n biá»‡t hoa/thÆ°á»ng).
-â€¢ Má»™t quy táº¯c (má»—i dÃ²ng): <máº«u_quÃ¡_khá»©> -> <cá»­a_káº¿_tiáº¿p>  (hoáº·c dÃ¹ng dáº¥u - thay cho ->).
-â€¢ PhÃ¢n tÃ¡ch nhiá»u quy táº¯c: báº±ng dáº¥u ',', ';', '|', hoáº·c xuá»‘ng dÃ²ng.
-â€¢ Khoáº£ng tráº¯ng: Ä‘Æ°á»£c phÃ©p quanh kÃ½ hiá»‡u vÃ  giá»¯a cÃ¡c quy táº¯c; 
-  Cho phÃ©p khoáº£ng tráº¯ng BÃŠN TRONG <cá»­a_káº¿_tiáº¿p>.
-â€¢ So khá»›p: xÃ©t K káº¿t quáº£ gáº§n nháº¥t vá»›i K = Ä‘á»™ dÃ i <máº«u_quÃ¡_khá»©>; náº¿u khá»›p thÃ¬ Ä‘áº·t theo <cá»­a_káº¿_tiáº¿p>.
-â€¢ <cá»­a_káº¿_tiáº¿p>: cÃ³ thá»ƒ lÃ  1 kÃ½ tá»± (C/L) hoáº·c má»™t chuá»—i C/L (vÃ­ dá»¥: CLL).
-â€¢ Äá»™ dÃ i khuyáº¿n nghá»‹ cho <máº«u_quÃ¡_khá»©>: 1â€“10 kÃ½ tá»±.
-VÃ­ dá»¥ há»£p lá»‡:
+        @"Thế CẦU (C/L) — Chiến lược 2
+• Ý nghĩa: C = CHẴN, L = LẺ (không phân biệt hoa/thường).
+• Một quy tắc (mỗi dòng): <mẫu_quá_khứ> -> <cửa_kế_tiếp>  (hoặc dùng dấu - thay cho ->).
+• Phân tách nhiều quy tắc: bằng dấu ',', ';', '|', hoặc xuống dòng.
+• Khoảng trắng: được phép quanh ký hiệu và giữa các quy tắc; 
+  Cho phép khoảng trắng BÊN TRONG <cửa_kế_tiếp>.
+• So khớp: xét K kết quả gần nhất với K = độ dài <mẫu_quá_khứ>; nếu khớp thì đặt theo <cửa_kế_tiếp>.
+• <cửa_kế_tiếp>: có thể là 1 ký tự (C/L) hoặc một chuỗi C/L (ví dụ: CLL).
+• Độ dài khuyến nghị cho <mẫu_quá_khứ>: 1–10 ký tự.
+Ví dụ hợp lệ:
   CCL -> C
   LLL -> L C
   CL  -> CLL
-VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
+Ví dụ không hợp lệ:
   C, X, L -> C
   CL -> C L
   CL -> C1";
 
 
         const string TIP_THE_NI =
-        @"Tháº¿ Cáº¦U (Ãt/Nhiá»u) â€” Chiáº¿n lÆ°á»£c 4
-â€¢ Ã nghÄ©a: I = bÃªn ÃT tiá»n, N = bÃªn NHIá»€U tiá»n (khÃ´ng phÃ¢n biá»‡t hoa/thÆ°á»ng).
-â€¢ Má»™t quy táº¯c (má»—i dÃ²ng): <máº«u_quÃ¡_khá»©> -> <cá»­a_káº¿_tiáº¿p>  (hoáº·c dÃ¹ng dáº¥u - thay cho ->).
-â€¢ PhÃ¢n tÃ¡ch nhiá»u quy táº¯c: báº±ng dáº¥u ',', ';', '|', hoáº·c xuá»‘ng dÃ²ng.
-â€¢ Khoáº£ng tráº¯ng: Ä‘Æ°á»£c phÃ©p quanh kÃ½ hiá»‡u vÃ  giá»¯a cÃ¡c quy táº¯c; 
-  Cho phÃ©p khoáº£ng tráº¯ng BÃŠN TRONG <cá»­a_káº¿_tiáº¿p>.
-â€¢ So khá»›p: xÃ©t K káº¿t quáº£ gáº§n nháº¥t vá»›i K = Ä‘á»™ dÃ i <máº«u_quÃ¡_khá»©>; náº¿u khá»›p thÃ¬ Ä‘áº·t theo <cá»­a_káº¿_tiáº¿p>.
-â€¢ <cá»­a_káº¿_tiáº¿p>: cÃ³ thá»ƒ lÃ  1 kÃ½ tá»± (I/N) hoáº·c má»™t chuá»—i I/N (vÃ­ dá»¥: INNN).
-â€¢ Äá»™ dÃ i khuyáº¿n nghá»‹ cho <máº«u_quÃ¡_khá»©>: 1â€“10 kÃ½ tá»±.
-VÃ­ dá»¥ há»£p lá»‡:
+        @"Thế CẦU (Ít/Nhiều) — Chiến lược 4
+• Ý nghĩa: I = bên ÍT tiền, N = bên NHIỀU tiền (không phân biệt hoa/thường).
+• Một quy tắc (mỗi dòng): <mẫu_quá_khứ> -> <cửa_kế_tiếp>  (hoặc dùng dấu - thay cho ->).
+• Phân tách nhiều quy tắc: bằng dấu ',', ';', '|', hoặc xuống dòng.
+• Khoảng trắng: được phép quanh ký hiệu và giữa các quy tắc; 
+  Cho phép khoảng trắng BÊN TRONG <cửa_kế_tiếp>.
+• So khớp: xét K kết quả gần nhất với K = độ dài <mẫu_quá_khứ>; nếu khớp thì đặt theo <cửa_kế_tiếp>.
+• <cửa_kế_tiếp>: có thể là 1 ký tự (I/N) hoặc một chuỗi I/N (ví dụ: INNN).
+• Độ dài khuyến nghị cho <mẫu_quá_khứ>: 1–10 ký tự.
+Ví dụ hợp lệ:
   INN -> I
   NNN -> N I
   IN  -> INNN
-VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
+Ví dụ không hợp lệ:
   I, K, N -> I
   IN -> I  N
   IN -> I1";
 
 
         const string TIP_STAKE_CSV =
-         @"Chuá»—i TIá»€N (StakeCsv)
-â€¢ CÃ³ thá»ƒ nháº­p 1 chuá»—i hoáº·c NHIá»€U chuá»—i tiá»n.
-â€¢ Náº¿u nháº­p NHIá»€U chuá»—i: Má»–I CHUá»–I 1 DÃ’NG. VÃ­ dá»¥:
+         @"Chuỗi TIỀN (StakeCsv)
+• Có thể nhập 1 chuỗi hoặc NHIỀU chuỗi tiền.
+• Nếu nhập NHIỀU chuỗi: MỖI CHUỖI 1 DÒNG. Ví dụ:
   1000-2000-4000-8000
   2000-4000-8000-16000
   4000-8000-16000-32000
-â€¢ Náº¿u chá»‰ nháº­p 1 chuá»—i thÃ¬ dÃ¹ng nhÆ° cÅ©: 1000,1000,2000,3000,5000
-â€¢ PhÃ¢n tÃ¡ch cháº¥p nháº­n: dáº¥u pháº©y ',', dáº¥u gáº¡ch '-', dáº¥u cháº¥m pháº©y ';' hoáº·c khoáº£ng tráº¯ng.
-â€¢ ÄÆ¡n vá»‹: VNÄ (sá»‘ nguyÃªn). Cho phÃ©p trÃ¹ng giÃ¡ trá»‹.
-â€¢ Háº¿t chuá»—i sáº½ quay láº¡i Ä‘áº§u (náº¿u chiáº¿n lÆ°á»£c dÃ¹ng láº·p).
-â€¢ DÃ¹ng cho quáº£n lÃ½ vá»‘n ""5. Äa táº§ng chuá»—i tiá»n"": thua háº¿t 1 dÃ²ng â†’ sang dÃ²ng káº¿; chuá»—i sau tháº¯ng Ä‘á»§ tá»•ng chuá»—i trÆ°á»›c â†’ quay vá» chuá»—i trÆ°á»›c.
-â€¢ VÃ­ dá»¥ há»£p lá»‡:
+• Nếu chỉ nhập 1 chuỗi thì dùng như cũ: 1000,1000,2000,3000,5000
+• Phân tách chấp nhận: dấu phẩy ',', dấu gạch '-', dấu chấm phẩy ';' hoặc khoảng trắng.
+• Đơn vị: VNĐ (số nguyên). Cho phép trùng giá trị.
+• Hết chuỗi sẽ quay lại đầu (nếu chiến lược dùng lặp).
+• Dùng cho quản lý vốn ""5. Đa tầng chuỗi tiền"": thua hết 1 dòng → sang dòng kế; chuỗi sau thắng đủ tổng chuỗi trước → quay về chuỗi trước.
+• Ví dụ hợp lệ:
   1000,1000,2000,3000,5000
   1000-1000-2000-3000-5000
   1000 1000 2000 3000 5000
   1000-2000-4000-8000
   2000-4000-8000-16000
-â€¢ VÃ­ dá»¥ sai: 1k, 2k, 3k (khÃ´ng dÃ¹ng chá»¯ k).";
+• Ví dụ sai: 1k, 2k, 3k (không dùng chữ k).";
 
 
         const string TIP_CUT_PROFIT =
-        @"Cáº®T LÃƒI
-â€¢ Nháº­p sá»‘ tiá»n (>= 0). Khi tá»•ng lÃ£i tÃ­ch lÅ©y â‰¥ giÃ¡ trá»‹ nÃ y â†’ tá»± Ä‘á»™ng dá»«ng Ä‘áº·t cÆ°á»£c.
-â€¢ Äá»ƒ trá»‘ng hoáº·c 0 = khÃ´ng dÃ¹ng cáº¯t lÃ£i.
-â€¢ VÃ­ dá»¥: 200000 (khi lÃ£i â‰¥ 200.000Ä‘ thÃ¬ dá»«ng).";
+        @"CẮT LÃI
+• Nhập số tiền (>= 0). Khi tổng lãi tích lũy ≥ giá trị này → tự động dừng đặt cược.
+• Để trống hoặc 0 = không dùng cắt lãi.
+• Ví dụ: 200000 (khi lãi ≥ 200.000đ thì dừng).";
 
         const string TIP_CUT_LOSS =
-        @"Cáº®T Lá»–
-â€¢ Nháº­p sá»‘ tiá»n (>= 0). Khi tá»•ng lÃ£i tÃ­ch lÅ©y â‰¤ -giÃ¡ trá»‹ nÃ y â†’ tá»± Ä‘á»™ng dá»«ng Ä‘áº·t cÆ°á»£c.
-â€¢ Äá»ƒ trá»‘ng hoáº·c 0 = khÃ´ng dÃ¹ng cáº¯t lá»—.
-â€¢ VÃ­ dá»¥: 150000 (khi lá»— â‰¥ 150.000Ä‘ thÃ¬ dá»«ng).";
+        @"CẮT LỖ
+• Nhập số tiền (>= 0). Khi tổng lãi tích lũy ≤ -giá trị này → tự động dừng đặt cược.
+• Để trống hoặc 0 = không dùng cắt lỗ.
+• Ví dụ: 150000 (khi lỗ ≥ 150.000đ thì dừng).";
 
         const string TIP_DECISION_PERCENT_GENERAL =
-        @"Äáº¶T KHI CÃ’N % THá»œI GIAN
-â€¢ Nháº­p pháº§n trÄƒm (0â€“100). Há»‡ thá»‘ng quy vá» 0.00â€“1.00 ná»™i bá»™.
-â€¢ Ã nghÄ©a: chá»‰ Ä‘áº·t cÆ°á»£c khi thanh thá»i gian cÃ²n láº¡i â‰¤ giÃ¡ trá»‹ % nÃ y.
-â€¢ VÃ­ dá»¥: 25 = Ä‘áº·t khi cÃ²n ~25% thá»i gian phiÃªn.";
+        @"ĐẶT KHI CÒN % THỜI GIAN
+• Nhập phần trăm (0–100). Hệ thống quy về 0.00–1.00 nội bộ.
+• Ý nghĩa: chỉ đặt cược khi thanh thời gian còn lại ≤ giá trị % này.
+• Ví dụ: 25 = đặt khi còn ~25% thời gian phiên.";
 
         const string TIP_DECISION_PERCENT_NI =
-        @"Äáº¶T KHI CÃ’N % THá»œI GIAN (khuyáº¿n nghá»‹ cho chiáº¿n lÆ°á»£c Ãt/Nhiá»u)
-â€¢ Nháº­p pháº§n trÄƒm (0â€“100), KHÃ”NG pháº£i giÃ¢y.
-â€¢ NÃªn Ä‘á»ƒ khoáº£ng 15% Ä‘á»ƒ bÃ¡m sÃ¡t dÃ²ng tiá»n hai cá»­a.
-â€¢ VÃ­ dá»¥: 15 = Ä‘áº·t khi cÃ²n ~15% thá»i gian phiÃªn.";
+        @"ĐẶT KHI CÒN % THỜI GIAN (khuyến nghị cho chiến lược Ít/Nhiều)
+• Nhập phần trăm (0–100), KHÔNG phải giây.
+• Nên để khoảng 15% để bám sát dòng tiền hai cửa.
+• Ví dụ: 15 = đặt khi còn ~15% thời gian phiên.";
 
         const string TIP_SIDE_RATIO =
-        @"Cá»¬A Äáº¶T & Tá»ˆ Lá»† (Chiáº¿n lÆ°á»£c 17)
-- Nháº­p má»—i dÃ²ng: <cá»­a>:<tá»‰ lá»‡>, khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.
-- Cá»­a há»£p lá»‡: 4DO, 4TRANG, 1TRANG3DO, 1DO3TRANG, 2DO2TRANG, CHAN, LE (cháº¥p nháº­n viáº¿t táº¯t 1T3D/1D3T/SAPDOI/4R/4W giá»‘ng normalizeSide).
-- KhÃ´ng dÃ¹ng kÃ½ tá»± ';' hoáº·c dáº¥u cÃ¡ch trong tÃªn cá»­a; chá»‰ cho phÃ©p khoáº£ng tráº¯ng quanh dáº¥u ':'.
-- DÃ£y máº·c Ä‘á»‹nh Ä‘áº§y Ä‘á»§:
+        @"CỬA ĐẶT & TỈ LỆ (Chiến lược 17)
+- Nhập mỗi dòng: <cửa>:<tỉ lệ>, không được để trống.
+- Cửa hợp lệ: 4DO, 4TRANG, 1TRANG3DO, 1DO3TRANG, 2DO2TRANG, CHAN, LE (chấp nhận viết tắt 1T3D/1D3T/SAPDOI/4R/4W giống normalizeSide).
+- Không dùng ký tự ';' hoặc dấu cách trong tên cửa; chỉ cho phép khoảng trắng quanh dấu ':'.
+- Dãy mặc định đầy đủ:
   4DO:1
   4TRANG:1
   1TRANG3DO:3
@@ -587,7 +590,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
   2DO2TRANG:5
   CHAN:6
   LE:6
-- CÃ³ thá»ƒ nháº­p má»™t pháº§n danh sÃ¡ch (vÃ­ dá»¥ chá»‰ 4DO/4TRANG hoáº·c SAPDOI/CHAN/LE).";
+- Có thể nhập một phần danh sách (ví dụ chỉ 4DO/4TRANG hoặc SAPDOI/CHAN/LE).";
         // =========================================================
 
 
@@ -620,23 +623,23 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             public string LastHomeUsername { get; set; } = "";
             public string TrialUntil { get; set; } = "";
             public string TrialSessionKey { get; set; } = "";
-            public int BetStrategyIndex { get; set; } = 4; // máº·c Ä‘á»‹nh "5. Theo cáº§u trÆ°á»›c thÃ´ng minh"
-            public string BetSeq { get; set; } = "";       // giÃ¡ trá»‹ Ã´ "CHUá»–I Cáº¦U"
-            public string BetPatterns { get; set; } = "";  // giÃ¡ trá»‹ Ã´ "CÃC THáº¾ Cáº¦U"
+            public int BetStrategyIndex { get; set; } = 4; // mặc định "5. Theo cầu trước thông minh"
+            public string BetSeq { get; set; } = "";       // giá trị ô "CHUỖI CẦU"
+            public string BetPatterns { get; set; } = "";  // giá trị ô "CÁC THẾ CẦU"
             public string MoneyStrategy { get; set; } = "IncreaseWhenLose";//IncreaseWhenLose
             public bool S7ResetOnProfit { get; set; } = true;
-            public double CutProfit { get; set; } = 0; // 0 = táº¯t cáº¯t lÃ£i
-            public double CutLoss { get; set; } = 0; // 0 = táº¯t cáº¯t lá»—
-            public string BetSeqCL { get; set; } = "";        // cho Chiáº¿n lÆ°á»£c 1
-            public string BetSeqNI { get; set; } = "";        // cho Chiáº¿n lÆ°á»£c 3
-            public string BetPatternsCL { get; set; } = "";   // cho Chiáº¿n lÆ°á»£c 2
-            public string BetPatternsNI { get; set; } = "";   // cho Chiáº¿n lÆ°á»£c 4
+            public double CutProfit { get; set; } = 0; // 0 = tắt cắt lãi
+            public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
+            public string BetSeqCL { get; set; } = "";        // cho Chiến lược 1
+            public string BetSeqNI { get; set; } = "";        // cho Chiến lược 3
+            public string BetPatternsCL { get; set; } = "";   // cho Chiến lược 2
+            public string BetPatternsNI { get; set; } = "";   // cho Chiến lược 4
             public string SideRateText { get; set; } = TaiXiuLiveSun.Tasks.SideRateParser.DefaultText;
 
-            // LÆ°u chuá»—i tiá»n theo tá»«ng MoneyStrategy
+            // Lưu chuỗi tiền theo từng MoneyStrategy
             public Dictionary<string, string> StakeCsvByMoney { get; set; } = new();
 
-            /// <summary>ÄÆ°á»ng dáº«n file lÆ°u tráº¡ng thÃ¡i AI n-gram (JSON). Bá» trá»‘ng => dÃ¹ng máº·c Ä‘á»‹nh %LOCALAPPDATA%\Automino\ai\ngram_state_v1.json</summary>
+            /// <summary>Đường dẫn file lưu trạng thái AI n-gram (JSON). Bỏ trống => dùng mặc định %LOCALAPPDATA%\Automino\ai\ngram_state_v1.json</summary>
             public string AiNGramStatePath { get; set; } = "";
 
 
@@ -740,23 +743,23 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
 
-        // 1) Model 1 dÃ²ng log Ä‘áº·t cÆ°á»£c
+        // 1) Model 1 dòng log đặt cược
         private sealed class BetRow
         {
-            public DateTime At { get; set; }                 // Thá»i gian Ä‘áº·t
-            public string Game { get; set; } = "XÃ³c Ä‘Ä©a live";
-            public long Stake { get; set; }                  // Tiá»n cÆ°á»£c
+            public DateTime At { get; set; }                 // Thời gian đặt
+            public string Game { get; set; } = "Xóc đĩa live";
+            public long Stake { get; set; }                  // Tiền cược
             public string Side { get; set; } = "";           // CHAN/LE
-            public string Result { get; set; } = "";         // Káº¿t quáº£ "CHAN"/"LE"
-            public string WinLose { get; set; } = "";        // "Tháº¯ng"/"Thua"
-            public long Account { get; set; }                // Sá»‘ dÆ° sau vÃ¡n
+            public string Result { get; set; } = "";         // Kết quả "CHAN"/"LE"
+            public string WinLose { get; set; } = "";        // "Thắng"/"Thua"
+            public long Account { get; set; }                // Số dư sau ván
         }
 
         public static class SharedIcons
         {
-            public static ImageSource? SideChan, SideLe;        // áº£nh â€œCá»­a Ä‘áº·tâ€ CHáº´N/Láºº
-            public static ImageSource? ResultChan, ResultLe;    // áº£nh â€œKáº¿t quáº£â€ CHáº´N/Láºº
-            public static ImageSource? Win, Loss;               // áº£nh â€œTháº¯ng/Thuaâ€
+            public static ImageSource? SideChan, SideLe;        // ảnh “Cửa đặt” CHẴN/LẺ
+            public static ImageSource? ResultChan, ResultLe;    // ảnh “Kết quả” CHẴN/LẺ
+            public static ImageSource? Win, Loss;               // ảnh “Thắng/Thua”
             public static ImageSource? TuTrang, TuDo, SapDoi, Trang3Do1, Do3Trang1;
         }
 
@@ -771,10 +774,10 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         private bool _tabDragArmed;
         private AppConfig _cfg = new();
 
-        // ====== LOGGING (má»›i: batch, khÃ´ng Ä‘Æ¡ UI) ======
+        // ====== LOGGING (mới: batch, không đơ UI) ======
         // UI
         private readonly ConcurrentQueue<string> _uiLogQueue = new();
-        private readonly LinkedList<string> _uiLines = new(); // buffer giá»¯ tá»‘i Ä‘a N dÃ²ng
+        private readonly LinkedList<string> _uiLines = new(); // buffer giữ tối đa N dòng
         private const int UI_MAX_LINES = 1000;
         private const int UI_FLUSH_MS = 300;
 
@@ -785,21 +788,27 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         // Pump
         private CancellationTokenSource? _logPumpCts;
 
-        // Packet lines -> UI? (máº·c Ä‘á»‹nh: khÃ´ng)
+        // Packet lines -> UI? (mặc định: không)
         private const bool SHOW_PACKET_LINES_IN_UI = false;
-        private const int PACKET_UI_SAMPLE_EVERY_N = 20; // náº¿u báº­t á»Ÿ trÃªn, má»—i N gÃ³i má»›i Ä‘áº©y 1 dÃ²ng lÃªn UI
+        private const int PACKET_UI_SAMPLE_EVERY_N = 20; // nếu bật ở trên, mỗi N gói mới đẩy 1 dòng lên UI
+        private static readonly bool SHOW_RAW_JS_MESSAGES =
+            string.Equals(Environment.GetEnvironmentVariable("TXLS_JS_RAW"), "1", StringComparison.OrdinalIgnoreCase);
+        private static readonly bool ENABLE_CDP_NETWORK_TAP =
+            string.Equals(Environment.GetEnvironmentVariable("TXLS_CDP_TAP"), "1", StringComparison.OrdinalIgnoreCase);
+        private static readonly bool LOG_FRAME_INJECT_VERBOSE =
+            string.Equals(Environment.GetEnvironmentVariable("TXLS_FRAME_LOG"), "1", StringComparison.OrdinalIgnoreCase);
         private int _pktUiSample = 0;
         private bool _lockJsRegistered = false;
-        // Map áº£nh cho tá»«ng kÃ½ tá»±
+        // Map ảnh cho từng ký tự
         private readonly Dictionary<char, ImageSource> _seqIconMap = new();
 
         private string _lastSeqTailShown = "";
-        // Tá»•ng tiá»n tháº¯ng lÅ©y káº¿ cá»§a phiÃªn hiá»‡n táº¡i
+        // Tổng tiền thắng lũy kế của phiên hiện tại
         private double _winTotal = 0;
         private CoreWebView2Environment? _webEnv;
         private bool _webInitDone;
         private const string Wv2ZipResNameX64 = "TaiXiuLiveSun.ThirdParty.WebView2Fixed_win-x64.zip";
-        // ThÆ° má»¥c cache bá»n vá»¯ng cho runtime (khÃ´ng bá»‹ dá»n nhÆ° %TEMP%)
+        // Thư mục cache bền vững cho runtime (không bị dọn như %TEMP%)
         private static string Wv2BaseDir =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                          AppLocalDirName, "WebView2Fixed");
@@ -865,7 +874,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
     (function tick(){
       try{
         if (window.__cw_startPush && window.cc && cc.director && cc.director.getScene){
-          try{ window.__cw_startPush(240); }catch(_){}
+          try{ window.__cw_startPush(320); }catch(_){}
           return;
         }
       }catch(_){}
@@ -881,7 +890,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
     var key = String((performance && performance.timeOrigin) || Date.now());
     if (window.__hw_autostart_key === key) return;
     window.__hw_autostart_key = key;
-    // Má»šI: 1-shot bÃ¡o hiá»‡u Ä‘Ã£ á»Ÿ trang game/Ä‘ang cÃ³ iframe game
+    // MỚI: 1-shot báo hiệu đã ở trang game/đang có iframe game
     if (!window.__abx_gameHintSent) window.__abx_gameHintSent = 0;
     function sendGameHint(){
       try{
@@ -895,7 +904,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         }
       }catch(_){}
     }
-    // â¬‡ï¸ Má»šI: phÃ¡t hiá»‡n xem top-page cÃ³ iframe games.* khÃ´ng
+    // ⬇️ MỚI: phát hiện xem top-page có iframe games.* không
     function hasGameFrame(){
       try{
         var ifs = Array.from(document.querySelectorAll('iframe'));
@@ -914,11 +923,11 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
     (function tick(){
       try{
         var h = String(location.hostname||'');
-        // Náº¿u báº£n thÃ¢n Ä‘ang á»Ÿ games.* => báº¯n hint ngay (khÃ´ng cáº§n home-push)
+        // Nếu bản thân đang ở games.* => bắn hint ngay (không cần home-push)
         if (/^games\./i.test(h)) { sendGameHint(); return; }
-        // Náº¿u cÃ²n á»Ÿ Home nhÆ°ng Ä‘Ã£ nhÃºng iframe game => báº¯n hint Ä‘á»ƒ C# chuyá»ƒn UI tá»©c thÃ¬
-        if (hasGameFrame()) { sendGameHint(); /* váº«n khÃ´ng start home_push */ }
-        // â¬‡ï¸ CHá»ˆ start push khi KHÃ”NG pháº£i games.* VÃ€ cÅ©ng KHÃ”NG cÃ³ iframe games.*
+        // Nếu còn ở Home nhưng đã nhúng iframe game => bắn hint để C# chuyển UI tức thì
+        if (hasGameFrame()) { sendGameHint(); /* vẫn không start home_push */ }
+        // ⬇️ CHỈ start push khi KHÔNG phải games.* VÀ cũng KHÔNG có iframe games.*
         if (!/^games\./i.test(h) && !hasGameFrame() && typeof window.__abx_hw_startPush==='function'){
           try{ window.__abx_hw_startPush(__INTERVAL__); }catch(_){}
           return;
@@ -932,14 +941,13 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
 
 
-        // Guard chá»‘ng re-entrancy (Ä‘áº·t á»Ÿ class level)
+        // Guard chống re-entrancy (đặt ở class level)
         private bool _ensuringWeb = false;
 
         private bool _frameHookedAlways;
 
-        private WebView2LiveBridge? _bridge;
         private bool _inputEventsHooked;
-        // Interval push cá»§a Home (ms)
+        // Interval push của Home (ms)
         private int _homePushMs = 800;
         // Home-flow state flags (per-document)
         private bool _homeAutoLoginDone = false;
@@ -951,7 +959,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         // ====== ctor ======
         public MainWindow()
         {
-            // 1) Khá»Ÿi táº¡o Ä‘Æ°á»ng dáº«n trÆ°á»›c khi WPF dá»±ng UI (trÃ¡nh event sá»›m)
+            // 1) Khởi tạo đường dẫn trước khi WPF dựng UI (tránh event sớm)
             _appDataDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 AppLocalDirName);
@@ -967,16 +975,16 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             Directory.CreateDirectory(_logDir);
             CleanupOldLogs();
 
-            // 2) Sau Ä‘Ã³ má»›i dá»±ng UI
+            // 2) Sau đó mới dựng UI
             InitializeComponent();
             _strategyTabs.CollectionChanged += StrategyTabs_CollectionChanged;
-            this.ShowInTaskbar = true;                       // cÃ³ icon riÃªng
-            this.WindowStartupLocation = WindowStartupLocation.CenterScreen; // tuá»³, cho Ä‘áº¹p
+            this.ShowInTaskbar = true;                       // có icon riêng
+            this.WindowStartupLocation = WindowStartupLocation.CenterScreen; // tuỳ, cho đẹp
             this.PreviewKeyDown += MainWindow_PreviewKeyDown; // F12/Ctrl+Shift+I -> DevTools
-            // Ä‘áº£m báº£o vá» Home UI lÃºc khá»Ÿi Ä‘á»™ng
+            // đảm bảo về Home UI lúc khởi động
             SetModeUi(false);
             BetGrid.ItemsSource = _betPage;
-            // gá»i async sau khi cá»­a sá»• Ä‘Ã£ load
+            // gọi async sau khi cửa sổ đã load
             this.Loaded += MainWindow_Loaded;
 
         }
@@ -1085,13 +1093,13 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             {
                 Dispatcher.Invoke(() =>
                 {
-                    // NÃºt cÅ© (Ä‘Ã£ cÃ³ sáºµn)
+                    // Nút cũ (đã có sẵn)
                     //if (BtnVaoXocDia != null)
                     //    BtnVaoXocDia.Visibility = isGame ? Visibility.Collapsed : Visibility.Visible;
                     //if (BtnPlay != null)
                     //    BtnPlay.Visibility = isGame ? Visibility.Visible : Visibility.Collapsed;
 
-                    // NhÃ³m má»›i: áº©n/hiá»‡n theo báº£n quyá»n + tráº¡ng thÃ¡i game
+                    // Nhóm mới: ẩn/hiện theo bản quyền + trạng thái game
                     var showPanels = isGame || _licenseVerified;
 
                     if (GroupLoginNav != null)
@@ -1125,7 +1133,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
         private string GetAiNGramStatePath()
         {
-            // _appDataDir báº¡n Ä‘Ã£ táº¡o á»Ÿ Startup: %LOCALAPPDATA%\TaiXiuLiveSun
+            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\TaiXiuLiveSun
             var aiDir = System.IO.Path.Combine(_appDataDir, "ai");
             System.IO.Directory.CreateDirectory(aiDir);
             return System.IO.Path.Combine(aiDir, "ngram_state_v1.json");
@@ -1138,7 +1146,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 var src = Web?.Source?.ToString() ?? "";
                 if (string.IsNullOrWhiteSpace(src)) return _isGameUi;
                 var host = new Uri(src).Host;
-                // games.* => Ä‘ang á»Ÿ trang game
+                // games.* => đang ở trang game
                 return host.StartsWith("games.", StringComparison.OrdinalIgnoreCase);
             }
             catch { return _isGameUi; }
@@ -1146,7 +1154,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
         private void RecomputeUiMode()
         {
-            // Æ¯u tiÃªn URL: náº¿u KHÃ”NG á»Ÿ games.* thÃ¬ vá» Home ngay Ä‘á»ƒ trÃ¡nh timer lÃ´i vá» GAME
+            // Ưu tiên URL: nếu KHÔNG ở games.* thì về Home ngay để tránh timer lôi về GAME
             if (!GetIsGameByUrlFallback())
             {
                 ApplyUiMode(false);
@@ -1160,53 +1168,53 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             bool nextIsGame;
             if (recentGame && !recentHome) nextIsGame = true;
             else if (!recentGame && recentHome) nextIsGame = false;
-            else if (recentGame && recentHome) nextIsGame = true;   // giá»¯ logic cÅ©
+            else if (recentGame && recentHome) nextIsGame = true;   // giữ logic cũ
             else nextIsGame = GetIsGameByUrlFallback();
 
             ApplyUiMode(nextIsGame);
         }
-        // KhÃ³a/má»Ÿ cáº¥u hÃ¬nh khi Start/Stop:
-        // - enabled = true  => Ä‘ang "Báº¯t Äáº§u CÆ°á»£c" (chÆ°a cháº¡y)  => má»Ÿ háº¿t Ä‘á»ƒ sá»­a
-        // - enabled = false => Ä‘ang "Dá»«ng Äáº·t CÆ°á»£c" (Ä‘ang cháº¡y) => chá»‰ khÃ³a chiáº¿n lÆ°á»£c, chuá»—i/tháº¿ cáº§u, combo quáº£n lÃ½ vá»‘n
+        // Khóa/mở cấu hình khi Start/Stop:
+        // - enabled = true  => đang "Bắt Đầu Cược" (chưa chạy)  => mở hết để sửa
+        // - enabled = false => đang "Dừng Đặt Cược" (đang chạy) => chỉ khóa chiến lược, chuỗi/thế cầu, combo quản lý vốn
         private void SetConfigEditable(bool enabled)
         {
-            // NhÃ³m Chiáº¿n lÆ°á»£c
-            if (CmbBetStrategy != null) CmbBetStrategy.IsEnabled = enabled;   // KHÃ“A khi Ä‘ang cháº¡y
-            if (TxtChuoiCau != null) TxtChuoiCau.IsReadOnly = !enabled;   // KHÃ“A khi Ä‘ang cháº¡y
-            if (TxtTheCau != null) TxtTheCau.IsReadOnly = !enabled;   // KHÃ“A khi Ä‘ang cháº¡y
-            if (TxtSideRatio != null) TxtSideRatio.IsReadOnly = !enabled;   // Cá»­a Ä‘áº·t & tá»· lá»‡ (chiáº¿n lÆ°á»£c 17)
+            // Nhóm Chiến lược
+            if (CmbBetStrategy != null) CmbBetStrategy.IsEnabled = enabled;   // KHÓA khi đang chạy
+            if (TxtChuoiCau != null) TxtChuoiCau.IsReadOnly = !enabled;   // KHÓA khi đang chạy
+            if (TxtTheCau != null) TxtTheCau.IsReadOnly = !enabled;   // KHÓA khi đang chạy
+            if (TxtSideRatio != null) TxtSideRatio.IsReadOnly = !enabled;   // Cửa đặt & tỷ lệ (chiến lược 17)
             if (BtnResetSideRatio != null) BtnResetSideRatio.IsEnabled = enabled;
 
-            // NhÃ³m Quáº£n lÃ½ vá»‘n
-            if (CmbMoneyStrategy != null) CmbMoneyStrategy.IsEnabled = enabled; // KHÃ“A khi Ä‘ang cháº¡y (chá»‰ khÃ³a chá»n chiáº¿n lÆ°á»£c vá»‘n)
+            // Nhóm Quản lý vốn
+            if (CmbMoneyStrategy != null) CmbMoneyStrategy.IsEnabled = enabled; // KHÓA khi đang chạy (chỉ khóa chọn chiến lược vốn)
 
-            // CÃ¡c Ã´ dÆ°á»›i Ä‘Ã¢y LUÃ”N cho phÃ©p nháº­p (ká»ƒ cáº£ khi Ä‘ang cháº¡y)
-            if (TxtStakeCsv != null) TxtStakeCsv.IsReadOnly = false; // Chuá»—i tiá»n
-            if (TxtDecisionSecond != null) TxtDecisionSecond.IsReadOnly = false; // Äáº·t khi cÃ²n %
-            if (TxtCutProfit != null) TxtCutProfit.IsReadOnly = false; // Cáº¯t lÃ£i
-            if (TxtCutLoss != null) TxtCutLoss.IsReadOnly = false; // Cáº¯t lá»—
+            // Các ô dưới đây LUÔN cho phép nhập (kể cả khi đang chạy)
+            if (TxtStakeCsv != null) TxtStakeCsv.IsReadOnly = false; // Chuỗi tiền
+            if (TxtDecisionSecond != null) TxtDecisionSecond.IsReadOnly = false; // Đặt khi còn %
+            if (TxtCutProfit != null) TxtCutProfit.IsReadOnly = false; // Cắt lãi
+            if (TxtCutLoss != null) TxtCutLoss.IsReadOnly = false; // Cắt lỗ
         }
 
 
 
         private void ApplyUiMode(bool isGame)
         {
-            // so sÃ¡nh tráº¡ng thÃ¡i cÅ©/má»›i
+            // so sánh trạng thái cũ/mới
             bool wasGame = _isGameUi;
             _isGameUi = isGame;
 
-            // Chá»‰ Ä‘á»•i layout nÃºt khi cháº¿ Ä‘á»™ tháº­t sá»± Ä‘á»•i
+            // Chỉ đổi layout nút khi chế độ thật sự đổi
             if (isGame != wasGame)
             {
-                SetModeUi(isGame); // áº©n/hiá»‡n BtnVaoXocDia vs BtnPlay (HÃ€M CÅ¨)
+                SetModeUi(isGame); // ẩn/hiện BtnVaoXocDia vs BtnPlay (HÀM CŨ)
                 Log($"SetModeUi(isGame); " + isGame);
             }
 
-            // DÃ™ mode khÃ´ng Ä‘á»•i, khi Ä‘ang á»Ÿ Home váº«n cáº§n cáº­p nháº­t nhÃ£n theo username
+            // DÙ mode không đổi, khi đang ở Home vẫn cần cập nhật nhãn theo username
             if (!isGame && BtnVaoXocDia != null)
             {
-                var desired = "ÄÄƒng Nháº­p Tool";
-                // trÃ¡nh set láº¡i náº¿u khÃ´ng thay Ä‘á»•i gÃ¬
+                var desired = "Đăng Nhập Tool";
+                // tránh set lại nếu không thay đổi gì
                 if (!Equals(BtnVaoXocDia.Content as string, desired))
                     BtnVaoXocDia.Content = desired;
             }
@@ -1432,7 +1440,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             return new AppConfig
             {
                 TabId = Guid.NewGuid().ToString("N"),
-                TabName = $"Chiáº¿n lÆ°á»£c {index}"
+                TabName = $"Chiến lược {index}"
             };
         }
 
@@ -1488,7 +1496,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 {
                     TxtStakeCsv.Text = _cfg.StakeCsv;
                     RebuildStakeSeq(_cfg.StakeCsv);
-                    Log($"[StakeCsv] loaded: {_cfg.StakeCsv} -> {_stakeSeq.Length} má»©c");
+                    Log($"[StakeCsv] loaded: {_cfg.StakeCsv} -> {_stakeSeq.Length} mức");
                 }
                 if (CmbBetStrategy != null)
                     CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 17) ? _cfg.BetStrategyIndex : 16;
@@ -1603,13 +1611,13 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         {
             var trimmed = (name ?? "").Trim();
             if (string.IsNullOrWhiteSpace(trimmed))
-                return $"Chiáº¿n lÆ°á»£c {index}";
+                return $"Chiến lược {index}";
 
             if (trimmed.Equals($"Chi?n l??c {index}", StringComparison.OrdinalIgnoreCase) ||
                 trimmed.Equals($"Chi?n lu?c {index}", StringComparison.OrdinalIgnoreCase) ||
                 trimmed.Equals($"Chi?n l?c {index}", StringComparison.OrdinalIgnoreCase))
             {
-                return $"Chiáº¿n lÆ°á»£c {index}";
+                return $"Chiến lược {index}";
             }
 
             return name ?? "";
@@ -1624,7 +1632,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 if (!string.IsNullOrWhiteSpace(tab.EditBackupName))
                     name = tab.EditBackupName;
                 else
-                    name = $"Chiáº¿n lÆ°á»£c {_strategyTabs.IndexOf(tab) + 1}";
+                    name = $"Chiến lược {_strategyTabs.IndexOf(tab) + 1}";
             }
             return name;
         }
@@ -1855,7 +1863,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         {
             if (_strategyTabs.Count >= MaxTabs)
             {
-                ShowTabHint("Chá»‰ Ä‘Æ°á»£c má»Ÿ tá»‘i Ä‘a 5 chiáº¿n lÆ°á»£c");
+                ShowTabHint("Chỉ được mở tối đa 5 chiến lược");
                 return;
             }
 
@@ -1887,7 +1895,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
             if (_strategyTabs.Count <= 1)
             {
-                ShowTabHint("Cáº§n tá»‘i thiá»ƒu 1 chiáº¿n lÆ°á»£c");
+                ShowTabHint("Cần tối thiểu 1 chiến lược");
                 return;
             }
 
@@ -1995,7 +2003,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             _ensuringWeb = true;
             try
             {
-                // 1) Khá»Ÿi táº¡o CoreWebView2 (Æ°u tiÃªn fixed runtime, fallback Evergreen)
+                // 1) Khởi tạo CoreWebView2 (ưu tiên fixed runtime, fallback Evergreen)
                 if (Web.CoreWebView2 == null)
                 {
                     if (_webEnv == null)
@@ -2034,12 +2042,12 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     }
 
                     Log("[Web] ready");
-                    HookWebViewEventsOnce(); // gáº¯n cÃ¡c hook háº¡ táº§ng (cÃ³ _webHooked guard)
+                    HookWebViewEventsOnce(); // gắn các hook hạ tầng (có _webHooked guard)
                 }
 
                 if (Web.CoreWebView2 == null) return;
 
-                // 2) Gáº¯n WebMessageReceived Ä‘Ãºng 1 láº§n
+                // 2) Gắn WebMessageReceived đúng 1 lần
                 if (!_webMsgHooked)
                 {
                     _webMsgHooked = true;
@@ -2050,7 +2058,8 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                             var msg = e.TryGetWebMessageAsString() ?? "";
                             if (string.IsNullOrWhiteSpace(msg)) return;
 
-                            EnqueueUi($"[JS] {msg}"); // chá»‰ hiá»ƒn thá»‹ UI, khÃ´ng ghi ra file
+                            if (SHOW_RAW_JS_MESSAGES)
+                                EnqueueUi($"[JS] {msg}"); // chỉ bật khi debug sâu
 
                             try
                             {
@@ -2070,7 +2079,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                                     return;
                                 }
 
-                                // 1.b) cw_page_probe: JS bÃ¡o context URL/frame + scene probe Ä‘á»ƒ cháº©n Ä‘oÃ¡n chá»n trang
+                                // 1.b) cw_page_probe: JS báo context URL/frame + scene probe để chẩn đoán chọn trang
                                 if (abxStr == "cw_page_probe")
                                 {
                                     string reason = root.TryGetProperty("reason", out var rEl) ? (rEl.GetString() ?? "") : "";
@@ -2082,22 +2091,53 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                                     string frame = root.TryGetProperty("frame", out var frEl) ? (frEl.GetString() ?? "") : "";
                                     string prefab = root.TryGetProperty("prefab", out var pfEl) ? (pfEl.GetString() ?? "") : "";
                                     string rootHint = root.TryGetProperty("root", out var rtEl) ? (rtEl.GetString() ?? "") : "";
-
+                                    try
+                                    {
+                                        var sig = string.Join("|", reason, ok ? "1" : "0", host, frame, prefab, rootHint);
+                                        var nowUtc = DateTime.UtcNow;
+                                        var noisyWait = reason.StartsWith("wait_", StringComparison.OrdinalIgnoreCase);
+                                        if (noisyWait &&
+                                            string.Equals(sig, _cwPageLastSig, StringComparison.Ordinal) &&
+                                            (nowUtc - _cwPageLastLogUtc) < TimeSpan.FromSeconds(30))
+                                        {
+                                            return;
+                                        }
+                                        _cwPageLastSig = sig;
+                                        _cwPageLastLogUtc = nowUtc;
+                                    }
+                                    catch { }
                                     Log($"[CW_PAGE] reason={reason} ok={ok} score={score} urlScore={urlScore} frame={frame} host={host} prefab={prefab} root={rootHint} href={href}");
                                     return;
                                 }
+                                if (abxStr == "cw_ui_state")
+                                {
+                                    var state = root.TryGetProperty("state", out var stEl) ? (stEl.GetString() ?? "") : "";
+                                    var host = root.TryGetProperty("host", out var hoEl) ? (hoEl.GetString() ?? "") : "";
+                                    var href = root.TryGetProperty("href", out var hfEl) ? (hfEl.GetString() ?? "") : "";
+                                    Log($"[CW_UI] state={state} host={host} href={href}");
+                                    return;
+                                }
+                                if (abxStr == "cw_js_error")
+                                {
+                                    var emsg = root.TryGetProperty("msg", out var mEl) ? (mEl.GetString() ?? "") : "";
+                                    var src = root.TryGetProperty("src", out var sEl) ? (sEl.GetString() ?? "") : "";
+                                    var line = root.TryGetProperty("line", out var lEl) && lEl.TryGetInt32(out var ln) ? ln : 0;
+                                    var col = root.TryGetProperty("col", out var cEl) && cEl.TryGetInt32(out var cn) ? cn : 0;
+                                    Log($"[CW_JS_ERR] {emsg} @ {src}:{line}:{col}");
+                                    return;
+                                }
 
-                                // 2) tick: cáº­p nháº­t snapshot + UI + (NI & finalize khi Ä‘uÃ´i Ä‘á»•i)
+                                // 2) tick: cập nhật snapshot + UI + (NI & finalize khi đuôi đổi)
                                 if (abxStr == "tick")
                                 {
-                                    // Äá»•i tÃªn biáº¿n JSON Ä‘á»ƒ khÃ´ng Ä‘á»¥ng 'doc'/'root' bÃªn ngoÃ i
+                                    // Đổi tên biến JSON để không đụng 'doc'/'root' bên ngoài
                                     using var jdocTick = System.Text.Json.JsonDocument.Parse(msg);
                                     var jrootTick = jdocTick.RootElement;
 
                                     var snap = System.Text.Json.JsonSerializer.Deserialize<CwSnapshot>(msg);
                                     if (snap != null)
                                     {
-                                        // Ghi nháº­n username tá»« tick game (dÃ¹ng lÃ m _homeUsername náº¿u Home chÆ°a gá»­i)
+                                        // Ghi nhận username từ tick game (dùng làm _homeUsername nếu Home chưa gửi)
                                         try
                                         {
                                             var userVal = snap.username ?? "";
@@ -2116,13 +2156,13 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                                         }
                                         catch { /* ignore */ }
 
-                                        // === NI-SEQUENCE & finalize Ä‘Ãºng thá»i Ä‘iá»ƒm (Ä‘uÃ´i seq Ä‘á»•i) ===
+                                        // === NI-SEQUENCE & finalize đúng thời điểm (đuôi seq đổi) ===
                                         try
                                         {
                                             double progNow = snap.prog ?? 0;
                                             var seqStr = snap.seq ?? "";
 
-                                            // Náº¿u Ä‘ang khÃ³a theo dÃµi vÃ  chuá»—i Ä‘Ã£ thay Ä‘á»•i so vá»›i _baseSeq => vÃ¡n cÅ© khÃ©p
+                                            // Nếu đang khóa theo dõi và chuỗi đã thay đổi so với _baseSeq => ván cũ khép
                                             if (_lockMajorMinorUpdates == true &&
                                                 !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
                                             {
@@ -2130,7 +2170,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                                                 bool winIsChan = (tail == 'C');
 
                                                 long prevC = _roundTotalsC, prevL = _roundTotalsL;
-                                                // Ni: náº¿u cá»­a THáº®NG lÃ  cá»­a cÃ³ tá»•ng tiá»n lá»›n hÆ¡n trong vÃ¡n Ä‘Ã³ => 'N', ngÆ°á»£c láº¡i 'I'
+                                                // Ni: nếu cửa THẮNG là cửa có tổng tiền lớn hơn trong ván đó => 'N', ngược lại 'I'
                                                 char ni = winIsChan ? ((prevC >= prevL) ? 'N' : 'I')
                                                                     : ((prevL >= prevC) ? 'N' : 'I');
 
@@ -2140,22 +2180,22 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
                                                 Log($"[NI] add={ni} | seq={_niSeq} | tail={tail} | C={prevC} | L={prevL}");
 
-                                                // âœ… CHá»T DÃ’NG BET Ä‘ang chá» NGAY Táº I THá»œI ÄIá»‚M VÃN KHÃ‰P
+                                                // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
                                                 var kqStr = winIsChan ? "CHAN" : "LE";
                                                 long? accNow2 = snap?.totals?.A;
                                                 if (_pendingRows.Count > 0 && accNow2.HasValue)
                                                 {
-                                                    // Chiáº¿n lÆ°á»£c 17 tá»± finalize nhiá»u cá»­a theo winners
+                                                    // Chiến lược 17 tự finalize nhiều cửa theo winners
                                                     if (!HasJackpotMultiSideRunning())
                                                     {
                                         FinalizeLastBet(kqStr, accNow2.Value);
                                                     }
                                                 }
 
-                                                _lockMajorMinorUpdates = false; // xong chu ká»³ nÃ y
+                                                _lockMajorMinorUpdates = false; // xong chu kỳ này
                                             }
 
-                                            // Khi vÃ o vÃ¡n má»›i (prog == 0) â†’ láº¥y má»‘c base & totals Ä‘á»ƒ so sÃ¡nh cho vÃ¡n sáº¯p khÃ©p
+                                            // Khi vào ván mới (prog == 0) → lấy mốc base & totals để so sánh cho ván sắp khép
                                             if (_lockMajorMinorUpdates == false)
                                             {
                                                 if (progNow == 0)
@@ -2168,21 +2208,21 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                                                 }
                                             }
                                         }
-                                        catch { /* an toÃ n */ }
+                                        catch { /* an toàn */ }
 
-                                        // Ghi láº¡i niSeq vÃ o snapshot cho UI
+                                        // Ghi lại niSeq vào snapshot cho UI
                                         snap.niSeq = _niSeq.ToString();
                                         lock (_snapLock) _lastSnap = snap;
 
-                                        // --- NEW: láº¥y status tá»« JSON (JS Ä‘Ã£ bÆ¡m vÃ o tick) ---
+                                        // --- NEW: lấy status từ JSON (JS đã bơm vào tick) ---
                                         string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
 
-                                        // --- Cáº­p nháº­t UI ---
+                                        // --- Cập nhật UI ---
                                         _ = Dispatcher.BeginInvoke(new Action(() =>
                                         {
                                             try
                                             {
-                                                // Progress / thá»i gian Ä‘áº¿m ngÆ°á»£c (giÃ¢y)
+                                                // Progress / thời gian đếm ngược (giây)
                                                 if (snap.prog.HasValue)
                                                 {
                                                     const double progMaxSec = 20;
@@ -2203,14 +2243,14 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                                                     if (LblProg != null) LblProg.Text = "-";
                                                 }
 
-                                                // Káº¿t quáº£ gáº§n nháº¥t tá»« chuá»—i seq
+                                                // Kết quả gần nhất từ chuỗi seq
                                                 var seqStrLocal = snap.seq ?? "";
                                                 char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
                                                 var kq = (last == 'C') ? "CHAN"
                                                          : (last == 'L') ? "LE" : "";
                                                 SetLastResultUI(kq);
 
-                                                // Tá»•ng tiá»n
+                                                // Tổng tiền
                                                 var amt = snap?.totals?.A;
                                                 if (LblAmount != null)
                                                     LblAmount.Text = amt.HasValue
@@ -2221,10 +2261,10 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                                                     LblUserName.Text = !string.IsNullOrWhiteSpace(name) ? name : "-";
                                                 }
 
-                                                // Chuá»—i káº¿t quáº£
+                                                // Chuỗi kết quả
                                                 UpdateSeqUI(snap.seq ?? "");
 
-                                                // ðŸ”¸ Tráº¡ng thÃ¡i: "PhiÃªn má»›i" / "Ngá»«ng Ä‘áº·t cÆ°á»£c" / "Äang chá» káº¿t quáº£"
+                                                // 🔸 Trạng thái: "Phiên mới" / "Ngừng đặt cược" / "Đang chờ kết quả"
                                                 if (LblStatusText != null)
                                                 {
                                                     if (!string.IsNullOrWhiteSpace(statusUi))
@@ -2249,7 +2289,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
 
 
-                                // 2.b) game_hint: Home bÃ¡o Ä‘Ã£ cÃ³ game/iframe â†’ chuyá»ƒn UI tá»©c thÃ¬
+                                // 2.b) game_hint: Home báo đã có game/iframe → chuyển UI tức thì
                                 if (abxStr == "game_hint")
                                 {
                                     _lastGameTickUtc = DateTime.UtcNow; // synthetic tick
@@ -2257,7 +2297,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                                     return;
                                 }
 
-                                // 3) bet ok â†’ táº¡o dÃ²ng placeholder (Result/WinLose = "-") vÃ  SHOW TRANG 1
+                                // 3) bet ok → tạo dòng placeholder (Result/WinLose = "-") và SHOW TRANG 1
                                 if (abxStr == "bet")
                                 {
                                     string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
@@ -2274,7 +2314,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                                     var row = new BetRow
                                     {
                                         At = DateTime.Now,
-                                        Game = "XÃ³c Ä‘Ä©a live",
+                                        Game = "Xóc đĩa live",
                                         Stake = amount,
                                         Side = side,
                                         Result = "-",
@@ -2282,18 +2322,18 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                                         Account = accNow
                                     };
 
-                                    // Má»šI NHáº¤T á»ž Äáº¦U DANH SÃCH (trang 1)
+                                    // MỚI NHẤT Ở ĐẦU DANH SÁCH (trang 1)
                                     _betAll.Insert(0, row);
                                     if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
                                     _pendingRows.Add(row);
-                                    // Chá»‰ vá» trang 1 náº¿u Ä‘ang bÃ¡m trang má»›i nháº¥t; cÃ²n Ä‘ang xem trang cÅ© thÃ¬ giá»¯ nguyÃªn
+                                    // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
                                     if (_autoFollowNewest)
                                     {
                                         ShowFirstPage();
                                     }
                                     else
                                     {
-                                        RefreshCurrentPage();   // (má»¥c 3 bÃªn dÆ°á»›i)
+                                        RefreshCurrentPage();   // (mục 3 bên dưới)
                                     }
                                     return;
                                 }
@@ -2309,7 +2349,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                                     return;
                                 }
 
-                                // 5) home_tick: username/balance/url tá»« Home
+                                // 5) home_tick: username/balance/url từ Home
                                 if (abxStr == "home_tick")
                                 {
                                     var uname = root.TryGetProperty("username", out var uEl) ? (uEl.GetString() ?? "") : "";
@@ -2345,7 +2385,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                                             if (LblAmount != null) LblAmount.Text = bal;
                                         });
 
-                                        // cáº­p nháº­t tráº¡ng thÃ¡i Ä‘Ã£ Ä‘Äƒng nháº­p dá»±a trÃªn nÃºt Logout/Login
+                                        // cập nhật trạng thái đã đăng nhập dựa trên nút Logout/Login
                                         try
                                         {
                                             var jsLogged = @"
@@ -2358,9 +2398,9 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
     const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
 
     const hasLogoutVis = qa('a,button,[role=""button""],.btn,.base-button')
-        .some(el => vis(el) && /dang\\s*xuat|Ä‘Äƒng\\s*xuáº¥t|logout|sign\\s*out/i.test(low(el.textContent)));
+        .some(el => vis(el) && /dang\\s*xuat|đăng\\s*xuất|logout|sign\\s*out/i.test(low(el.textContent)));
     const hasLoginVis = qa('a,button,[role=""button""],.btn,.base-button')
-        .some(el => vis(el) && /dang\\s*nhap|Ä‘Äƒng\\s*nháº­p|login|sign\\s*in/i.test(low(el.textContent)));
+        .some(el => vis(el) && /dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
 
     return (hasLogoutVis && !hasLoginVis) ? '1' : '0';
   }catch(e){ return '0'; }
@@ -2388,7 +2428,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     };
                 }
 
-                // 3) Hook NavigationCompleted Ä‘á»ƒ chuyá»ƒn UI theo URL ngay khi Ä‘iá»u hÆ°á»›ng xong
+                // 3) Hook NavigationCompleted để chuyển UI theo URL ngay khi điều hướng xong
                 if (!_navModeHooked && Web != null)
                 {
                     _navModeHooked = true;
@@ -2460,7 +2500,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
         private async Task ApplyBackgroundForStateAsync()
         {
-            // ChÆ°a cÃ³ CoreWebView2 â‡’ Ä‘á»ƒ ná»n Ä‘en (WebHost Ä‘ang Black)
+            // Chưa có CoreWebView2 ⇒ để nền đen (WebHost đang Black)
             if (Web?.CoreWebView2 == null)
                 return;
 
@@ -2468,25 +2508,25 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
             if (string.IsNullOrWhiteSpace(url))
             {
-                // ÄÃ£ cÃ³ WebView2 nhÆ°ng chÆ°a nháº­p URL â‡’ ná»n tráº¯ng
+                // Đã có WebView2 nhưng chưa nhập URL ⇒ nền trắng
                 SetWebViewBackground(System.Windows.Media.Colors.White);
-                await ShowBlankWhiteAsync();   // trang tráº¯ng gá»£i Ã½
+                await ShowBlankWhiteAsync();   // trang trắng gợi ý
             }
             else
             {
-                // Äang/Ä‘Ã£ Ä‘iá»u hÆ°á»›ng â‡’ Ä‘á»ƒ trang quyáº¿t Ä‘á»‹nh (trong suá»‘t)
+                // Đang/đã điều hướng ⇒ để trang quyết định (trong suốt)
                 SetWebViewBackground(System.Windows.Media.Colors.Transparent);
             }
         }
 
 
-        // Hiá»ƒn thá»‹ má»™t trang tráº¯ng tá»‘i giáº£n trong WebView2
+        // Hiển thị một trang trắng tối giản trong WebView2
         private async Task ShowBlankWhiteAsync(string? message = null)
         {
             if (Web?.CoreWebView2 == null) return;
 
-            // Trang HTML tráº¯ng, cÃ³ dÃ²ng gá»£i Ã½ nhá» á»Ÿ giá»¯a (tuá»³ chá»n)
-            string note = string.IsNullOrWhiteSpace(message) ? "ChÆ°a cÃ³ URL / Nháº­p URL Ä‘á»ƒ Ä‘iá»u hÆ°á»›ng" : message;
+            // Trang HTML trắng, có dòng gợi ý nhỏ ở giữa (tuỳ chọn)
+            string note = string.IsNullOrWhiteSpace(message) ? "Chưa có URL / Nhập URL để điều hướng" : message;
             string html = @"<!doctype html>
 <html><head><meta charset='utf-8'>
 <style>
@@ -2505,7 +2545,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         {
             try
             {
-                // chuyá»ƒn Media.Color -> Drawing.Color
+                // chuyển Media.Color -> Drawing.Color
                 var d = System.Drawing.Color.FromArgb(c.A, c.R, c.G, c.B);
                 Web.DefaultBackgroundColor = d;
             }
@@ -2513,13 +2553,13 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         }
 
 
-        // Gá»i hÃ m nÃ y TRÆ¯á»šC má»i EnsureCoreWebView2Async
+        // Gọi hàm này TRƯỚC mọi EnsureCoreWebView2Async
         private async Task InitWebView2WithFixedRuntimeAsync()
         {
-            // Náº¿u Ä‘Ã£ init hoáº·c Ä‘Ã£ cÃ³ CoreWebView2 thÃ¬ bá» qua
+            // Nếu đã init hoặc đã có CoreWebView2 thì bỏ qua
             if (_webInitDone || Web?.CoreWebView2 != null) return;
 
-            // 1) Báº£o Ä‘áº£m fixed runtime Ä‘Æ°á»£c bung ra vÃ  láº¥y thÆ° má»¥c (cÃ³ thá»ƒ null náº¿u thiáº¿u resource)
+            // 1) Bảo đảm fixed runtime được bung ra và lấy thư mục (có thể null nếu thiếu resource)
             string? fixedDir = null;
             try
             {
@@ -2531,32 +2571,32 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 fixedDir = null;
             }
 
-            // 2) Báº£o Ä‘áº£m thÆ° má»¥c user-data tá»“n táº¡i (khá»›p vá»›i XAML)
+            // 2) Bảo đảm thư mục user-data tồn tại (khớp với XAML)
             System.IO.Directory.CreateDirectory(Wv2UserDataDir);
 
             try
             {
-                // 3) Táº¡o environment trá» tá»›i fixed runtime + user-data riÃªng
+                // 3) Tạo environment trỏ tới fixed runtime + user-data riêng
                 _webEnv = await CoreWebView2Environment.CreateAsync(
                     browserExecutableFolder: fixedDir,
                     userDataFolder: Wv2UserDataDir,
-                    options: null /* trÃ¡nh trÃ¹ng "--disable-gpu" vÃ¬ XAML Ä‘Ã£ set */
+                    options: null /* tránh trùng "--disable-gpu" vì XAML đã set */
                 );
 
-                // DÃ¹ng overload cÃ³ _webEnv Ä‘á»ƒ cháº¯c cháº¯n dÃ¹ng fixed runtime
+                // Dùng overload có _webEnv để chắc chắn dùng fixed runtime
                 await Web!.EnsureCoreWebView2Async(_webEnv);
             }
             catch (ArgumentException ex) when (ex.Message.Contains("already initialized"))
             {
-                // ÄÃ£ bá»‹ init trÆ°á»›c báº±ng env khÃ¡c â†’ dÃ¹ng luÃ´n env hiá»‡n cÃ³
-                Log("[WV2] Already initialized with another environment â†’ use existing.");
-                _webEnv = null; // Ä‘á»ƒ nÆ¡i khÃ¡c khÃ´ng cá»‘ Ã©p env khÃ¡c
-                                // Caller sáº½ tiáº¿p tá»¥c flow (HookWebViewEventsOnce/EnsureWebReadyAsync) sau.
+                // Đã bị init trước bằng env khác → dùng luôn env hiện có
+                Log("[WV2] Already initialized with another environment → use existing.");
+                _webEnv = null; // để nơi khác không cố ép env khác
+                                // Caller sẽ tiếp tục flow (HookWebViewEventsOnce/EnsureWebReadyAsync) sau.
             }
             catch (Exception ex)
             {
-                // 4) Fallback: dÃ¹ng Evergreen, nhÆ°ng váº«n cá»‘ Ä‘á»‹nh user-data (khÃ´ng sinh *.exe.WebView2)
-                Log("[WV2] Fixed runtime failed â†’ fallback system: " + ex.Message);
+                // 4) Fallback: dùng Evergreen, nhưng vẫn cố định user-data (không sinh *.exe.WebView2)
+                Log("[WV2] Fixed runtime failed → fallback system: " + ex.Message);
                 _webEnv = await CoreWebView2Environment.CreateAsync(
                     browserExecutableFolder: null,
                     userDataFolder: Wv2UserDataDir,
@@ -2565,7 +2605,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 await Web!.EnsureCoreWebView2Async(_webEnv);
             }
 
-            // 5) Gáº¯n event 1 láº§n (Ä‘Ã£ cÃ³ _webHooked guard bÃªn trong)
+            // 5) Gắn event 1 lần (đã có _webHooked guard bên trong)
             HookWebViewEventsOnce();
             _webInitDone = true;
         }
@@ -2579,38 +2619,39 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
             try
             {
-                // Báº­t WebMessages (Ä‘áº£m báº£o chrome.webview.postMessage hoáº¡t Ä‘á»™ng tá»« trang & iframe)
+                // Bật WebMessages (đảm bảo chrome.webview.postMessage hoạt động từ trang & iframe)
                 var settings = Web.CoreWebView2.Settings;
                 if (settings != null)
                 {
                     settings.IsWebMessageEnabled = true;
                     settings.AreDevToolsEnabled = true;
                     settings.AreBrowserAcceleratorKeysEnabled = true;
-                    // (tuá»³ chá»n khÃ¡c, giá»¯ nguyÃªn náº¿u báº¡n khÃ´ng cáº§n)
+                    // (tuỳ chọn khác, giữ nguyên nếu bạn không cần)
                     // settings.AreDefaultContextMenusEnabled = false;
                     // settings.AreDevToolsEnabled = true;
                 }
 
                 // try { Web.CoreWebView2.OpenDevToolsWindow(); } catch { }
 
-                // KhÃ´ng gáº¯n WebMessageReceived á»Ÿ Ä‘Ã¢y (Ä‘Ã£ gáº¯n trong EnsureWebReadyAsync)
-                // Äiá»u hÆ°á»›ng má»i window.open vá» cÃ¹ng WebView2
+                // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
+                // Điều hướng mọi window.open về cùng WebView2
                 _ = Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(@"
             (function(){
                 try { window.open = function(u){ try { location.href = u; } catch(e){} }; } catch(e){}
             })();
         ");
 
-                // Cháº·n má»Ÿ cá»­a sá»• má»›i â†’ Ä‘iá»u hÆ°á»›ng trong cÃ¹ng control
+                // Chặn mở cửa sổ mới → điều hướng trong cùng control
                 Web.CoreWebView2.NewWindowRequested += NewWindowRequested;
 
-                // Theo dÃµi Ä‘iá»u hÆ°á»›ng Ä‘á»ƒ Ä‘á»“ng bá»™ ná»n/tráº¡ng thÃ¡i
+                // Theo dõi điều hướng để đồng bộ nền/trạng thái
                 Web.NavigationCompleted += Web_NavigationCompleted;
 
-                // Báº­t CDP network tap (khÃ´ng cáº§n await)
-                _ = EnableCdpNetworkTapAsync();
+                // CDP tap chỉ bật khi debug để tránh tăng tải I/O log
+                if (ENABLE_CDP_NETWORK_TAP)
+                    _ = EnableCdpNetworkTapAsync();
 
-                // Cáº­p nháº­t ná»n ngay theo tráº¡ng thÃ¡i hiá»‡n táº¡i (tráº¯ng khi chÆ°a nháº­p URL, trong suá»‘t khi Ä‘Ã£ Ä‘iá»u hÆ°á»›ng)
+                // Cập nhật nền ngay theo trạng thái hiện tại (trắng khi chưa nhập URL, trong suốt khi đã điều hướng)
                 _ = ApplyBackgroundForStateAsync();
             }
             catch (Exception ex)
@@ -2619,9 +2660,9 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             }
         }
 
-        private async Task<string> EnsureFixedRuntimePresentAsync()
+        private async Task<string?> EnsureFixedRuntimePresentAsync()
         {
-            // 0) Náº¿u Ä‘ang cháº¡y nhÆ° plugin trong AutoBetHub â‡’ Æ°u tiÃªn dÃ¹ng runtime dÃ¹ng chung
+            // 0) Nếu đang chạy như plugin trong AutoBetHub ⇒ ưu tiên dùng runtime dùng chung
             try
             {
                 var entryName = Assembly.GetEntryAssembly()?.GetName().Name;
@@ -2644,26 +2685,27 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             }
             catch
             {
-                // Bá» qua lá»—i detect host, sáº½ fallback sang runtime riÃªng bÃªn dÆ°á»›i
+                // Bỏ qua lỗi detect host, sẽ fallback sang runtime riêng bên dưới
             }
 
-            // 1) Runtime riÃªng cá»§a XocDiaSoiLiveKH24 (dÃ¹ng khi cháº¡y EXE Ä‘á»™c láº­p)
+            // 1) Runtime riêng của XocDiaSoiLiveKH24 (dùng khi chạy EXE độc lập)
             var baseDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 AppLocalDirName, "WebView2Fixed");
             var targetDir = Path.Combine(baseDir, "fixed");
 
-            // Náº¿u Ä‘Ã£ cÃ³ exe chÃ­nh => coi nhÆ° Ä‘Ã£ bung
+            // Nếu đã có exe chính => coi như đã bung
             if (File.Exists(Path.Combine(targetDir, "msedgewebview2.exe")))
                 return targetDir;
 
             Directory.CreateDirectory(targetDir);
 
-            var resName = FindResourceName("ThirdParty.WebView2Fixed_win-x64.zip")
-                          ?? Wv2ZipResNameX64;
+            var resName = FindResourceName("ThirdParty.WebView2Fixed_win-x64.zip");
 
-            // Æ¯u tiÃªn resource nhÃºng; fallback sang file ngoÃ i náº¿u cháº¡y Debug khÃ´ng nhÃºng
-            Stream? zipStream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resName);
+            // Ưu tiên resource nhúng; fallback sang file ngoài nếu chạy Debug không nhúng
+            Stream? zipStream = null;
+            if (!string.IsNullOrWhiteSpace(resName))
+                zipStream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resName);
             if (zipStream == null)
             {
                 var exeDir = AppDomain.CurrentDomain.BaseDirectory;
@@ -2677,7 +2719,9 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 }
             }
 
-            using var s = zipStream ?? throw new FileNotFoundException("Missing WebView2Fixed zip: " + resName);
+            if (zipStream == null)
+                return null;
+            using var s = zipStream;
             using var za = new System.IO.Compression.ZipArchive(
                 s, System.IO.Compression.ZipArchiveMode.Read);
 
@@ -2686,7 +2730,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 var outPath = Path.Combine(targetDir, e.FullName);
                 var dir = Path.GetDirectoryName(outPath);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                if (string.IsNullOrEmpty(e.Name)) continue; // bá» folder rá»—ng
+                if (string.IsNullOrEmpty(e.Name)) continue; // bỏ folder rỗng
 
                 using var es = e.Open();
                 using var fs = File.Create(outPath);
@@ -2703,8 +2747,8 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             if (string.IsNullOrEmpty(ver))
             {
                 MessageBox.Show(
-                    "Thiáº¿u Microsoft Edge WebView2 Runtime.\nHÃ£y cÃ i Evergreen x64 rá»“i má»Ÿ láº¡i á»©ng dá»¥ng.",
-                    "Thiáº¿u WebView2", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    "Thiếu Microsoft Edge WebView2 Runtime.\nHãy cài Evergreen x64 rồi mở lại ứng dụng.",
+                    "Thiếu WebView2", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             return true;
@@ -2727,7 +2771,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         }
 
         // ====== Auto fill ======
-        // Äiá»n cáº£ 2 trÆ°á»ng (nhanh + cháº¯c cháº¯n), KHÃ”NG dÃ¹ng postMessage
+        // Điền cả 2 trường (nhanh + chắc chắn), KHÔNG dùng postMessage
         private async Task AutoFillLoginAsync()
         {
             if (Web == null) return;
@@ -2741,7 +2785,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             if (string.IsNullOrEmpty(u) && string.IsNullOrEmpty(p))
             {
                 Log("[AutoFill] skipped (empty creds)");
-                return;        }            // Fast pass: thá»­ Ä‘iá»n nhanh cáº£ 2 trong 1 láº§n â€“ Ä‘á»“ng bá»™
+                return;        }            // Fast pass: thử điền nhanh cả 2 trong 1 lần – đồng bộ
             string fastJs =
         @"(function(u,p){
   const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}};
@@ -2754,20 +2798,20 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
   function openLogin(d){
     try{
       const btn = qa('a,button,[role=""button""],.btn,.base-button,.el-button,.ant-btn,.v-btn', d)
-        .find(el=>/dang\\s*nhap|Ä‘Äƒng\\s*nháº­p|login|sign\\s*in/i.test(low(el.textContent)));
+        .find(el=>/dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
       if(btn) btn.click();
     }catch(_){}
   }
   function pickUser(d){
-    const ss=['input[autocomplete=""username""]','input[placeholder*=""Ä‘Äƒng nháº­p"" i]','input[placeholder*=""ten dang nhap"" i]',
-              'input[placeholder*=""tÃ i khoáº£n"" i]','input[placeholder*=""tai khoan"" i]',
+    const ss=['input[autocomplete=""username""]','input[placeholder*=""đăng nhập"" i]','input[placeholder*=""ten dang nhap"" i]',
+              'input[placeholder*=""tài khoản"" i]','input[placeholder*=""tai khoan"" i]',
               'input[name*=""user"" i]','input[name*=""account"" i]','input[id*=""user"" i]',
               'input[type=""email""]','input[type=""text""]'];
     for(const s of ss){const el=q(s,d); if(el&&vis(el)) return el;} return null;
   }
   function pickPass(d){
     const ss=['input[type=""password""]','input[autocomplete=""current-password""]',
-              'input[placeholder*=""máº­t kháº©u"" i]','input[placeholder*=""mat khau"" i]',
+              'input[placeholder*=""mật khẩu"" i]','input[placeholder*=""mat khau"" i]',
               'input[name*=""pass"" i]','input[id*=""pass"" i]'];
     for(const s of ss){const el=q(s,d); if(el&&vis(el)) return el;} return null;
   }
@@ -2791,21 +2835,21 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             try { fast = await ExecJsAsyncStr(fastJs); Log("[AutoFillFast] " + fast); }
             catch (Exception ex) { Log("[AutoFillFast] " + ex); }
 
-            // Fallback cháº¯c cháº¯n: náº¿u chÆ°a Ä‘á»§ cáº£ 2 trÆ°á»ng thÃ¬ Ä‘iá»n láº¡i tá»«ng trÆ°á»ng
+            // Fallback chắc chắn: nếu chưa đủ cả 2 trường thì điền lại từng trường
             if (fast != "3")
             {
                 try { await SyncLoginFieldAsync("user", u); } catch { }
                 try { await SyncLoginFieldAsync("pass", p); } catch { }
             }
 
-            // Báº¥m Ä‘Äƒng nháº­p sá»›m (táº¡m táº¯t auto-login Ä‘á»ƒ dÃ¹ng tay khi cáº§n)
+            // Bấm đăng nhập sớm (tạm tắt auto-login để dùng tay khi cần)
             //await TryAutoLoginAsync(500, force: true);
         }
 
 
 
-        // ====== Äiá»n user/pass trong má»i frame (khÃ´ng timeout) ======
-        // Äiá»n 1 trÆ°á»ng (user/pass) trong má»i iframe same-origin â€“ cháº¡y Ä‘á»“ng bá»™, khÃ´ng phá»¥ thuá»™c postMessage
+        // ====== Điền user/pass trong mọi frame (không timeout) ======
+        // Điền 1 trường (user/pass) trong mọi iframe same-origin – chạy đồng bộ, không phụ thuộc postMessage
         private async Task SyncLoginFieldAsync(string which, string value)
         {
             if (Web == null) return;
@@ -2823,21 +2867,21 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
   function openLogin(d){
     try{
       const btn = qa('a,button,[role=""button""],.btn,.base-button,.el-button,.ant-btn,.v-btn', d)
-        .find(el=>/dang\\s*nhap|Ä‘Äƒng\\s*nháº­p|login|sign\\s*in/i.test(low(el.textContent)));
+        .find(el=>/dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
       if(btn) btn.click();
     }catch(_){}
   }
 
   function pickUser(d){
-    const ss=['input[autocomplete=""username""]','input[placeholder*=""Ä‘Äƒng nháº­p"" i]','input[placeholder*=""ten dang nhap"" i]',
-              'input[placeholder*=""tÃ i khoáº£n"" i]','input[placeholder*=""tai khoan"" i]',
+    const ss=['input[autocomplete=""username""]','input[placeholder*=""đăng nhập"" i]','input[placeholder*=""ten dang nhap"" i]',
+              'input[placeholder*=""tài khoản"" i]','input[placeholder*=""tai khoan"" i]',
               'input[name*=""user"" i]','input[name*=""account"" i]','input[id*=""user"" i]',
               'input[type=""email""]','input[type=""text""]'];
     for(const s of ss){ const el=q(s,d); if(el&&vis(el)) return el; } return null;
   }
   function pickPass(d){
     const ss=['input[type=""password""]','input[autocomplete=""current-password""]',
-              'input[placeholder*=""máº­t kháº©u"" i]','input[placeholder*=""mat khau"" i]',
+              'input[placeholder*=""mật khẩu"" i]','input[placeholder*=""mat khau"" i]',
               'input[name*=""pass"" i]','input[id*=""pass"" i]'];
     for(const s of ss){ const el=q(s,d); if(el&&vis(el)) return el; } return null;
   }
@@ -2871,14 +2915,14 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             catch (Exception ex) { Log("[SyncLoginField] " + ex); }
         }
 
-        // Báº¥m 'ChÆ¡i XÃ³c ÄÄ©a Live' tá»« Home:
-        // 1) Æ¯u tiÃªn gá»i API JS náº¿u cÃ³ (__abx_hw_clickPlayXDL), 
+        // Bấm 'Chơi Xóc Đĩa Live' từ Home:
+        // 1) Ưu tiên gọi API JS nếu có (__abx_hw_clickPlayXDL), 
         // 2) fallback sang C# ClickXocDiaTitleAsync(timeout)
         private async Task<bool> TryPlayXocDiaFromHomeAsync()
         {
             try
             {
-                Log("[HOME] Play XÃ³c ÄÄ©a Live: try js api");
+                Log("[HOME] Play Xóc Đĩa Live: try js api");
                 var js = @"
         (function(){
           try{
@@ -2897,7 +2941,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 }
 
                 Log("[HOME] Play XDL via JS not available, fallback C#");
-                var r2 = await ClickXocDiaTitleAsync(12000); // hÃ m C# báº¡n Ä‘Ã£ cÃ³
+                var r2 = await ClickXocDiaTitleAsync(12000); // hàm C# bạn đã có
                 Log("[HOME] Play XDL via C#: " + r2);
                 return string.Equals(r2, "clicked", StringComparison.OrdinalIgnoreCase);
             }
@@ -2919,21 +2963,21 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             try
             {
                 StartLogPump();
-                // NEW: gáº¯n logger Ä‘á»ƒ MoneyHelper ghi ra file log hiá»‡n táº¡i
+                // NEW: gắn logger để MoneyHelper ghi ra file log hiện tại
                 MoneyHelper.Logger = Log;
                 LoadConfig();
                 InitSeqIcons();
 
-                // NEW: Ä‘á»“ng bá»™ ná»™i dung theo chiáº¿n lÆ°á»£c Ä‘ang chá»n + gáº¯n tooltip ngay khi má»Ÿ app
-                // (cÃ¡c helper Ä‘Ã£ gá»­i: SyncStrategyFieldsToUI(), UpdateTooltips())
-                SyncStrategyFieldsToUI();     // Ä‘á»• Ä‘Ãºng Chuá»—i/Tháº¿ theo chiáº¿n lÆ°á»£c 1/2/3/4
-                UpdateTooltips();             // gáº¯n TIP_* cho Chuá»—i/Tháº¿ + StakeCsv/Cáº¯t lÃ£i/Cáº¯t lá»—/% thá»i gian
+                // NEW: đồng bộ nội dung theo chiến lược đang chọn + gắn tooltip ngay khi mở app
+                // (các helper đã gửi: SyncStrategyFieldsToUI(), UpdateTooltips())
+                SyncStrategyFieldsToUI();     // đổ đúng Chuỗi/Thế theo chiến lược 1/2/3/4
+                UpdateTooltips();             // gắn TIP_* cho Chuỗi/Thế + StakeCsv/Cắt lãi/Cắt lỗ/% thời gian
 
-                // NEW: náº¡p chuá»—i tiá»n theo â€œQuáº£n lÃ½ vá»‘nâ€ hiá»‡n táº¡i Ä‘á»ƒ UI hiá»ƒn thá»‹ Ä‘Ãºng ngay tá»« Ä‘áº§u
-                // (helper Ä‘Ã£ gá»­i: LoadStakeCsvForCurrentMoneyStrategy())
+                // NEW: nạp chuỗi tiền theo “Quản lý vốn” hiện tại để UI hiển thị đúng ngay từ đầu
+                // (helper đã gửi: LoadStakeCsvForCurrentMoneyStrategy())
                 LoadStakeCsvForCurrentMoneyStrategy();
 
-                // gáº¯n handler input nhÆ° trÆ°á»›c
+                // gắn handler input như trước
                 if (!_inputEventsHooked)
                 {
                     if (TxtUrl != null) TxtUrl.TextChanged += TxtUrl_TextChanged;
@@ -2953,24 +2997,15 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 if (ChkLockMouse != null)
                     ChkLockMouse.IsChecked = _cfg.LockMouse;
 
-                // giá»¯ nguyÃªn 2 hÃ m cÅ©
+                // giữ nguyên 2 hàm cũ
                 await InitWebView2WithFixedRuntimeAsync();
                 await ApplyBackgroundForStateAsync();
 
-                // WebView2 ready (giá»¯ hook cÅ© cá»§a báº¡n)
+                // WebView2 ready (giữ hook cũ của bạn)
                 await EnsureWebReadyAsync();
 
                 await EnsureBridgeRegisteredAsync();
                 await InjectOnNewDocAsync();
-
-                // Bridge dÃ¹ng chung
-                if (_bridge == null)
-                {
-                    // DÃ¹ng láº¡i _appJs Ä‘Ã£ náº¡p 1 láº§n (embedded)
-                    _bridge = new WebView2LiveBridge(Web, _appJs ?? "", msg => Log(msg));
-                    await _bridge.EnsureAsync();
-                    await _bridge.InjectIfNewDocAsync();
-                }
 
                 //StartAutoLoginWatcher();
 
@@ -2980,13 +3015,13 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     _didStartupNav = true;
                     await NavigateIfNeededAsync(start.Trim());
 
-                    await ApplyBackgroundForStateAsync(); // Ä‘Ãºng hÃ nh vi cÅ© sau khi cÃ³ URL
+                    await ApplyBackgroundForStateAsync(); // đúng hành vi cũ sau khi có URL
                 }
 
-                SetPlayButtonState(_activeTab?.IsRunning == true); // (náº¿u trong SetPlayButtonState cÃ³ SetConfigEditable thÃ¬ sáº½ khÃ³a/má»Ÿ cÃ¡c Ã´)
+                SetPlayButtonState(_activeTab?.IsRunning == true); // (nếu trong SetPlayButtonState có SetConfigEditable thì sẽ khóa/mở các ô)
                 ApplyMouseShieldFromCheck();
 
-                // --- Báº®T Äáº¦U GIÃM SÃT UI MODE ---
+                // --- BẮT ĐẦU GIÁM SÁT UI MODE ---
                 if (_uiModeTimer == null)
                 {
                     _uiModeTimer = new System.Windows.Threading.DispatcherTimer
@@ -3023,7 +3058,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         {
             try { await SaveConfigAsync(); } catch { }
             try { await DisableCdpNetworkTapAsync(); } catch { }
-            StopLogPump();       // <-- táº¯t pump
+            StopLogPump();       // <-- tắt pump
             StopAutoLoginWatcher();
             StopExpiryCountdown();
 
@@ -3037,7 +3072,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         private void Exit_Click(object sender, RoutedEventArgs e) => Close();
         private void StartLoop_Click(object sender, RoutedEventArgs e)
         {
-            PlayXocDia_Click(sender, e); // delegate sang nÃºt Báº¯t Äáº§u CÆ°á»£c
+            PlayXocDia_Click(sender, e); // delegate sang nút Bắt Đầu Cược
         }
 
         private void StopLoop_Click(object sender, RoutedEventArgs e)
@@ -3046,7 +3081,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         }
 
 
-        // Checkbox Remember (Ä‘Ã£ thÃªm á»Ÿ XAML)
+        // Checkbox Remember (đã thêm ở XAML)
         private async void ChkRemember_Click(object sender, RoutedEventArgs e)
         {
             try { await SaveConfigAsync(); Log("[Remember] " + ((ChkRemember?.IsChecked == true) ? "ON" : "OFF")); }
@@ -3061,11 +3096,11 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 SetWebViewBackground(System.Windows.Media.Colors.Transparent);
                 if (!e.IsSuccess) return;
 
-                // Bá»” SUNG: Ä‘áº£m báº£o cáº§u ná»‘i vÃ  tiÃªm náº¿u doc má»›i
+                // BỔ SUNG: đảm bảo cầu nối và tiêm nếu doc mới
                 _ = EnsureBridgeRegisteredAsync();
                 _ = InjectOnNewDocAsync();
 
-                // HÃ€NH VI CÅ¨
+                // HÀNH VI CŨ
                 _ = AutoFillLoginAsync();
                 //StartAutoLoginWatcher();
                 Dispatcher.BeginInvoke(new Action(ApplyMouseShieldFromCheck));
@@ -3088,7 +3123,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 var url = T(TxtUrl).Trim();
                 if (string.IsNullOrWhiteSpace(url))
                 {
-                    await ApplyBackgroundForStateAsync();   // URL trá»‘ng -> ná»n tráº¯ng + about:blank
+                    await ApplyBackgroundForStateAsync();   // URL trống -> nền trắng + about:blank
                 }
                 else
                 {
@@ -3171,7 +3206,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
             if (!IsAnyTabRunning() || IsActiveTabRunning())
                 TaiXiuLiveSun.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
-            // NEW: má»—i â€œQuáº£n lÃ½ vá»‘nâ€ cÃ³ chuá»—i tiá»n riÃªng â†’ náº¡p láº¡i Ã´ StakeCsv
+            // NEW: mỗi “Quản lý vốn” có chuỗi tiền riêng → nạp lại ô StakeCsv
             LoadStakeCsvForCurrentMoneyStrategy();
             UpdateS7ResetOptionUI();
             await SaveConfigAsync();
@@ -3179,91 +3214,91 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         }
 
 
-        // === REPLACE: thay toÃ n bá»™ hÃ m UpdateTooltips() báº±ng báº£n nÃ y ===
+        // === REPLACE: thay toàn bộ hàm UpdateTooltips() bằng bản này ===
         private void UpdateTooltips()
         {
-            // NhÃ³m Quáº£n lÃ½ vá»‘n
+            // Nhóm Quản lý vốn
             AttachTip(TxtStakeCsv, TIP_STAKE_CSV);
             AttachTip(TxtCutProfit, TIP_CUT_PROFIT);
             AttachTip(TxtCutLoss, TIP_CUT_LOSS);
             AttachTip(TxtSideRatio, TIP_SIDE_RATIO);
 
-            // % thá»i gian
+            // % thời gian
             int idx = CmbBetStrategy?.SelectedIndex ?? 4;
             AttachTip(TxtDecisionSecond,
                 (idx == 2 || idx == 3) ? TIP_DECISION_PERCENT_NI : TIP_DECISION_PERCENT_GENERAL);
 
-            // Chuá»—i/Tháº¿ cáº§u
+            // Chuỗi/Thế cầu
             AttachTip(TxtChuoiCau,
                 (idx == 0) ? TIP_SEQ_CL :
                 (idx == 2) ? TIP_SEQ_NI :
-                "Chá»n chiáº¿n lÆ°á»£c 1 hoáº·c 3 Ä‘á»ƒ nháº­p Chuá»—i cáº§u.");
+                "Chọn chiến lược 1 hoặc 3 để nhập Chuỗi cầu.");
 
             AttachTip(TxtTheCau,
                 (idx == 1) ? TIP_THE_CL :
                 (idx == 3) ? TIP_THE_NI :
-                "Chá»n chiáº¿n lÆ°á»£c 2 hoáº·c 4 Ä‘á»ƒ nháº­p Tháº¿ cáº§u.");
-            // ==== Báº®T Äáº¦U: Tooltip cho chiáº¿n lÆ°á»£c Ä‘áº·t cÆ°á»£c ====
+                "Chọn chiến lược 2 hoặc 4 để nhập Thế cầu.");
+            // ==== BẮT ĐẦU: Tooltip cho chiến lược đặt cược ====
             string tip = idx switch
             {
-                0 => "1) Chuá»—i C/L tá»± nháº­p: So khá»›p chuá»—i C/L cáº¥u hÃ¬nh thá»§ cÃ´ng (cÅ©â†’má»›i); khi khá»›p máº«u gáº§n nháº¥t sáº½ Ä‘áº·t theo cá»­a chá»‰ Ä‘á»‹nh; khÃ´ng khá»›p dÃ¹ng logic máº·c Ä‘á»‹nh.",
-                1 => "2) Tháº¿ cáº§u C/L tá»± nháº­p: Ãnh xáº¡ 'máº«u quÃ¡ khá»© â†’ cá»­a káº¿ tiáº¿p' theo danh sÃ¡ch quy táº¯c; Æ°u tiÃªn máº«u dÃ i vÃ  khá»›p gáº§n nháº¥t; há»— trá»£ ',', ';', '|', hoáº·c xuá»‘ng dÃ²ng.",
-                2 => "3) Chuá»—i I/N: So khá»›p dÃ£y Ãt/Nhiá»u (I/N) cáº¥u hÃ¬nh thá»§ cÃ´ng; khá»›p thÃ¬ Ä‘áº·t theo chá»‰ Ä‘á»‹nh; khÃ´ng khá»›p dÃ¹ng logic máº·c Ä‘á»‹nh.",
-                3 => "4) Tháº¿ cáº§u I/N: Ãnh xáº¡ máº«u I/N â†’ cá»­a káº¿ tiáº¿p; Æ°u tiÃªn máº«u dÃ i; cho phÃ©p nhiá»u luáº­t trong cÃ¹ng danh sÃ¡ch.",
-                4 => "5) Theo cáº§u trÆ°á»›c (thÃ´ng minh): Dá»±a vÃ o vÃ¡n gáº§n nháº¥t vÃ  heuristics ná»™i bá»™; Ä‘Ã¡nh liÃªn tá»¥c; quáº£n lÃ½ vá»‘n theo chuá»—i tiá»n, cut_profit/cut_loss.",
-                5 => "6) Cá»­a Ä‘áº·t ngáº«u nhiÃªn: Má»—i vÃ¡n chá»n CHáº´N/Láºº ngáº«u nhiÃªn; váº«n tuÃ¢n theo MoneyManager vÃ  ngÆ°á»¡ng cáº¯t lÃ£i/lá»—.",
-                6 => "7) BÃ¡m cáº§u C/L (thá»‘ng kÃª): Duyá»‡t k tá»« lá»›nâ†’nhá» (k=6 máº·c Ä‘á»‹nh); Ä‘áº¿m táº§n suáº¥t C/L sau cÃ¡c láº§n khá»›p Ä‘uÃ´i; chá»n phÃ­a Ä‘a sá»‘; hÃ²a â†’ Ä‘áº£o 1â€“1; khÃ´ng cÃ³ máº«u â†’ theo vÃ¡n cuá»‘i; Ä‘Ã¡nh liÃªn tá»¥c.",
-                7 => "8) Xu hÆ°á»›ng chuyá»ƒn tráº¡ng thÃ¡i: Thá»‘ng kÃª 6 chuyá»ƒn gáº§n nháº¥t giá»¯a cÃ¡c vÃ¡n ('láº·p' vs 'Ä‘áº£o'); náº¿u 'Ä‘áº£o' nhiá»u hÆ¡n â†’ Ä‘Ã¡nh ngÆ°á»£c vÃ¡n cuá»‘i; ngÆ°á»£c láº¡i â†’ theo vÃ¡n cuá»‘i; Ä‘Ã¡nh liÃªn tá»¥c.",
-                8 => "9) Run-length (dÃ i chuá»—i): TÃ­nh Ä‘á»™ dÃ i chuá»—i kÃ½ tá»± cuá»‘i; náº¿u run â‰¥ T (máº·c Ä‘á»‹nh T=3) â†’ Ä‘áº£o Ä‘á»ƒ mean-revert; náº¿u run ngáº¯n â†’ theo Ä‘Ã  (momentum); Ä‘Ã¡nh liÃªn tá»¥c.",
-                9 => "10) ChuyÃªn gia bá» phiáº¿u: Káº¿t há»£p 5 chuyÃªn gia (theo-last, Ä‘áº£o-last, run-length, transition, AI-stat); chá»n phÃ­a Ä‘a sá»‘; hÃ²a â†’ Ä‘áº£o; Ä‘Ã¡nh liÃªn tá»¥c Ä‘á»ƒ phá»§ nhiá»u ká»‹ch báº£n.",
-                10 => "11) Lá»‹ch cháº» 10 tay: Tay 1â€“5 theo vÃ¡n cuá»‘i, tay 6â€“10 Ä‘áº£o vÃ¡n cuá»‘i; láº·p láº¡i block cá»‘ Ä‘á»‹nh; Ä‘Æ¡n giáº£n, dá»… dá»± bÃ¡o nhá»‹p.",
-                11 => "12) KNN chuá»—i con: So khá»›p gáº§n Ä‘Ãºng tail k (k=6..3) vá»›i Hamming â‰¤ 1; exact-match tÃ­nh 2 Ä‘iá»ƒm, near-match 1 Ä‘iá»ƒm; chá»n phÃ­a Ä‘iá»ƒm cao hÆ¡n; hÃ²a â†’ Ä‘áº£o; khÃ´ng match â†’ theo vÃ¡n cuá»‘i; Ä‘Ã¡nh liÃªn tá»¥c.",
-                12 => "13) Lá»‹ch hai lá»›p: Lá»‹ch pha trá»™n 10 bÆ°á»›c (1â€“3 theo-last, 4 Ä‘áº£o, 5â€“7 AI-stat, 8 Ä‘áº£o, 9 theo, 10 AI-stat); láº·p láº¡i; cÃ¢n báº±ng giá»¯a momentum/mean-revert/thá»‘ng kÃª; Ä‘Ã¡nh liÃªn tá»¥c.",
-                13 => "14) AI há»c táº¡i chá»— (n-gram): Há»c dáº§n tá»« káº¿t quáº£ tháº­t; dÃ¹ng táº§n suáº¥t cÃ³ lÃ m má»‹n + backoff; hÃ²a â†’ Ä‘áº£o 1â€“1; bá»™ nhá»› cá»‘ Ä‘á»‹nh, khÃ´ng phÃ¬nh.",
-                14 => "15) Bá» phiáº¿u Top10 cÃ³ Ä‘iá»u kiá»‡n; Loss-Guard Ä‘á»™ng; Hard-guard tá»± báº­t khi Lâ‰¥5 vÃ  tá»± gá»¡ khi tháº¯ng 2 vÃ¡n liÃªn tá»¥c hoáº·c w20>55%; hÃ²a 5â€“5 Ä‘Ã¡nh ngáº«u nhiÃªn; 6â€“4 nhÆ°ng conf<0.60 thÃ¬ fallback theo Regime (ZIGZAG=ZigFollow, cÃ²n láº¡i=FollowPrev). Æ¯u tiÃªn â€œÄƒn trendâ€ khi guard ON. Re-seed sau má»—i vÃ¡n (tá»‘i Ä‘a 50 tay)",
-                15 => "16) TOP10 TÃCH LÅ¨Y (khá»Ÿi tá»« 50 C/L). Khá»Ÿi táº¡o thá»‘ng kÃª tá»« 50 káº¿t quáº£ Ä‘áº§u vÃ o (C/L). Má»—i káº¿t quáº£ má»›i: cá»™ng dá»“n cho chuá»—i dÃ i 10 â€œmá»›i vá»â€. LuÃ´n Ä‘Ã¡nh theo chuá»—i cÃ³ bá»™ Ä‘áº¿m lá»›n nháº¥t; chá»‰ chuyá»ƒn chuá»—i khi THáº®NG vÃ  chuá»—i má»›i cÃ³ Ä‘áº¿m â‰¥ hiá»‡n táº¡i.",
-                16 => "17) ÄÃ¡nh cÃ¡c cá»­a Äƒn ná»• hÅ©: Äá»c cáº¥u hÃ¬nh \"Cá»­a Ä‘áº·t & tá»‰ lá»‡\", nhÃ¢n tá»‰ lá»‡ vá»›i má»©c tiá»n hiá»‡n táº¡i Ä‘á»ƒ Ä‘áº·t tá»‘i Ä‘a 7 cá»­a (CHAN/LE/SAPDOI/1TRANG3DO/1DO3TRANG/4DO/4TRANG); tháº¯ng náº¿u báº¥t ká»³ cá»­a nÃ o trÃºng theo chuá»—i káº¿t quáº£ 0/1/2/3/4.",
-                17 => "18) Chuá»—i cáº§u C/L hay vá»: Tá»± phÃ¢n tÃ­ch seq 52 kÃ½ tá»±, loáº¡i máº«u Ä‘Ã£ xuáº¥t hiá»‡n (theo quy táº¯c Ä‘áº£o); chá»n ngáº«u nhiÃªn má»™t máº«u cÃ²n láº¡i Ä‘á»ƒ Ä‘Ã¡nh; háº¿t chuá»—i thÃ¬ tÃ¬m láº¡i; khÃ´ng cÃ²n máº«u thÃ¬ Ä‘Ã¡nh ngáº«u nhiÃªn.",
-                _ => "Chiáº¿n lÆ°á»£c chÆ°a xÃ¡c Ä‘á»‹nh."
+                0 => "1) Chuỗi C/L tự nhập: So khớp chuỗi C/L cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
+                1 => "2) Thế cầu C/L tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
+                2 => "3) Chuỗi I/N: So khớp dãy Ít/Nhiều (I/N) cấu hình thủ công; khớp thì đặt theo chỉ định; không khớp dùng logic mặc định.",
+                3 => "4) Thế cầu I/N: Ánh xạ mẫu I/N → cửa kế tiếp; ưu tiên mẫu dài; cho phép nhiều luật trong cùng danh sách.",
+                4 => "5) Theo cầu trước (thông minh): Dựa vào ván gần nhất và heuristics nội bộ; đánh liên tục; quản lý vốn theo chuỗi tiền, cut_profit/cut_loss.",
+                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn CHẴN/LẺ ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
+                6 => "7) Bám cầu C/L (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất C/L sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
+                7 => "8) Xu hướng chuyển trạng thái: Thống kê 6 chuyển gần nhất giữa các ván ('lặp' vs 'đảo'); nếu 'đảo' nhiều hơn → đánh ngược ván cuối; ngược lại → theo ván cuối; đánh liên tục.",
+                8 => "9) Run-length (dài chuỗi): Tính độ dài chuỗi ký tự cuối; nếu run ≥ T (mặc định T=3) → đảo để mean-revert; nếu run ngắn → theo đà (momentum); đánh liên tục.",
+                9 => "10) Chuyên gia bỏ phiếu: Kết hợp 5 chuyên gia (theo-last, đảo-last, run-length, transition, AI-stat); chọn phía đa số; hòa → đảo; đánh liên tục để phủ nhiều kịch bản.",
+                10 => "11) Lịch chẻ 10 tay: Tay 1–5 theo ván cuối, tay 6–10 đảo ván cuối; lặp lại block cố định; đơn giản, dễ dự báo nhịp.",
+                11 => "12) KNN chuỗi con: So khớp gần đúng tail k (k=6..3) với Hamming ≤ 1; exact-match tính 2 điểm, near-match 1 điểm; chọn phía điểm cao hơn; hòa → đảo; không match → theo ván cuối; đánh liên tục.",
+                12 => "13) Lịch hai lớp: Lịch pha trộn 10 bước (1–3 theo-last, 4 đảo, 5–7 AI-stat, 8 đảo, 9 theo, 10 AI-stat); lặp lại; cân bằng giữa momentum/mean-revert/thống kê; đánh liên tục.",
+                13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
+                14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
+                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 C/L). Khởi tạo thống kê từ 50 kết quả đầu vào (C/L). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
+                16 => "17) Đánh các cửa ăn nổ hũ: Đọc cấu hình \"Cửa đặt & tỉ lệ\", nhân tỉ lệ với mức tiền hiện tại để đặt tối đa 7 cửa (CHAN/LE/SAPDOI/1TRANG3DO/1DO3TRANG/4DO/4TRANG); thắng nếu bất kỳ cửa nào trúng theo chuỗi kết quả 0/1/2/3/4.",
+                17 => "18) Chuỗi cầu C/L hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
+                _ => "Chiến lược chưa xác định."
             };
 
             if (CmbBetStrategy != null)
             {
                 CmbBetStrategy.ToolTip = tip;
 
-                // Tuá»³ chá»n: tinh chá»‰nh thá»i gian hiá»ƒn thá»‹ tooltip
+                // Tuỳ chọn: tinh chỉnh thời gian hiển thị tooltip
                 System.Windows.Controls.ToolTipService.SetShowDuration(CmbBetStrategy, 20000);
                 System.Windows.Controls.ToolTipService.SetInitialShowDelay(CmbBetStrategy, 300);
             }
 
-            // Náº¿u cÃ³ label/panel bao ngoÃ i (vÃ­ dá»¥ LblBetStrategy hoáº·c GridBetStrategy), set kÃ¨m:
+            // Nếu có label/panel bao ngoài (ví dụ LblBetStrategy hoặc GridBetStrategy), set kèm:
             AttachTip(CmbBetStrategy, tip);
-            // ==== Káº¾T THÃšC: Tooltip cho chiáº¿n lÆ°á»£c Ä‘áº·t cÆ°á»£c ====
+            // ==== KẾT THÚC: Tooltip cho chiến lược đặt cược ====
         }
 
         private static string GetStrategyTooltipText(int idx)
         {
             return idx switch
             {
-                0 => "1) Chuá»—i C/L tá»± nháº­p: So khá»›p chuá»—i C/L cáº¥u hÃ¬nh thá»§ cÃ´ng (cÅ©â†’má»›i); khi khá»›p máº«u gáº§n nháº¥t sáº½ Ä‘áº·t theo cá»­a chá»‰ Ä‘á»‹nh; khÃ´ng khá»›p dÃ¹ng logic máº·c Ä‘á»‹nh.",
-                1 => "2) Tháº¿ cáº§u C/L tá»± nháº­p: Ãnh xáº¡ 'máº«u quÃ¡ khá»© â†’ cá»­a káº¿ tiáº¿p' theo danh sÃ¡ch quy táº¯c; Æ°u tiÃªn máº«u dÃ i vÃ  khá»›p gáº§n nháº¥t; há»— trá»£ ',', ';', '|', hoáº·c xuá»‘ng dÃ²ng.",
-                2 => "3) Chuá»—i I/N: So khá»›p dÃ£y Ãt/Nhiá»u (I/N) cáº¥u hÃ¬nh thá»§ cÃ´ng; khá»›p thÃ¬ Ä‘áº·t theo chá»‰ Ä‘á»‹nh; khÃ´ng khá»›p dÃ¹ng logic máº·c Ä‘á»‹nh.",
-                3 => "4) Tháº¿ cáº§u I/N: Ãnh xáº¡ máº«u I/N â†’ cá»­a káº¿ tiáº¿p; Æ°u tiÃªn máº«u dÃ i; cho phÃ©p nhiá»u luáº­t trong cÃ¹ng danh sÃ¡ch.",
-                4 => "5) Theo cáº§u trÆ°á»›c (thÃ´ng minh): Dá»±a vÃ o vÃ¡n gáº§n nháº¥t vÃ  heuristics ná»™i bá»™; Ä‘Ã¡nh liÃªn tá»¥c; quáº£n lÃ½ vá»‘n theo chuá»—i tiá»n, cut_profit/cut_loss.",
-                5 => "6) Cá»­a Ä‘áº·t ngáº«u nhiÃªn: Má»—i vÃ¡n chá»n CHáº´N/Láºº ngáº«u nhiÃªn; váº«n tuÃ¢n theo MoneyManager vÃ  ngÆ°á»¡ng cáº¯t lÃ£i/lá»—.",
-                6 => "7) BÃ¡m cáº§u C/L (thá»‘ng kÃª): Duyá»‡t k tá»« lá»›nâ†’nhá» (k=6 máº·c Ä‘á»‹nh); Ä‘áº¿m táº§n suáº¥t C/L sau cÃ¡c láº§n khá»›p Ä‘uÃ´i; chá»n phÃ­a Ä‘a sá»‘; hÃ²a â†’ Ä‘áº£o 1â€“1; khÃ´ng cÃ³ máº«u â†’ theo vÃ¡n cuá»‘i; Ä‘Ã¡nh liÃªn tá»¥c.",
-                7 => "8) Xu hÆ°á»›ng chuyá»ƒn tráº¡ng thÃ¡i: Thá»‘ng kÃª 6 chuyá»ƒn gáº§n nháº¥t giá»¯a cÃ¡c vÃ¡n ('láº·p' vs 'Ä‘áº£o'); náº¿u 'Ä‘áº£o' nhiá»u hÆ¡n â†’ Ä‘Ã¡nh ngÆ°á»£c vÃ¡n cuá»‘i; ngÆ°á»£c láº¡i â†’ theo vÃ¡n cuá»‘i; Ä‘Ã¡nh liÃªn tá»¥c.",
-                8 => "9) Run-length (dÃ i chuá»—i): TÃ­nh Ä‘á»™ dÃ i chuá»—i kÃ½ tá»± cuá»‘i; náº¿u run â‰¥ T (máº·c Ä‘á»‹nh T=3) â†’ Ä‘áº£o Ä‘á»ƒ mean-revert; náº¿u run ngáº¯n â†’ theo Ä‘Ã  (momentum); Ä‘Ã¡nh liÃªn tá»¥c.",
-                9 => "10) ChuyÃªn gia bá» phiáº¿u: Káº¿t há»£p 5 chuyÃªn gia (theo-last, Ä‘áº£o-last, run-length, transition, AI-stat); chá»n phÃ­a Ä‘a sá»‘; hÃ²a â†’ Ä‘áº£o; Ä‘Ã¡nh liÃªn tá»¥c Ä‘á»ƒ phá»§ nhiá»u ká»‹ch báº£n.",
-                10 => "11) Lá»‹ch cháº» 10 tay: Tay 1â€“5 theo vÃ¡n cuá»‘i, tay 6â€“10 Ä‘áº£o vÃ¡n cuá»‘i; láº·p láº¡i block cá»‘ Ä‘á»‹nh; Ä‘Æ¡n giáº£n, dá»… dá»± bÃ¡o nhá»‹p.",
-                11 => "12) KNN chuá»—i con: So khá»›p gáº§n Ä‘Ãºng tail k (k=6..3) vá»›i Hamming â‰¤ 1; exact-match tÃ­nh 2 Ä‘iá»ƒm, near-match 1 Ä‘iá»ƒm; chá»n phÃ­a Ä‘iá»ƒm cao hÆ¡n; hÃ²a â†’ Ä‘áº£o; khÃ´ng match â†’ theo vÃ¡n cuá»‘i; Ä‘Ã¡nh liÃªn tá»¥c.",
-                12 => "13) Lá»‹ch hai lá»›p: Lá»‹ch pha trá»™n 10 bÆ°á»›c (1â€“3 theo-last, 4 Ä‘áº£o, 5â€“7 AI-stat, 8 Ä‘áº£o, 9 theo, 10 AI-stat); láº·p láº¡i; cÃ¢n báº±ng giá»¯a momentum/mean-revert/thá»‘ng kÃª; Ä‘Ã¡nh liÃªn tá»¥c.",
-                13 => "14) AI há»c táº¡i chá»— (n-gram): Há»c dáº§n tá»« káº¿t quáº£ tháº­t; dÃ¹ng táº§n suáº¥t cÃ³ lÃ m má»‹n + backoff; hÃ²a â†’ Ä‘áº£o 1â€“1; bá»™ nhá»› cá»‘ Ä‘á»‹nh, khÃ´ng phÃ¬nh.",
-                14 => "15) Bá» phiáº¿u Top10 cÃ³ Ä‘iá»u kiá»‡n; Loss-Guard Ä‘á»™ng; Hard-guard tá»± báº­t khi Lâ‰¥5 vÃ  tá»± gá»¡ khi tháº¯ng 2 vÃ¡n liÃªn tá»¥c hoáº·c w20>55%; hÃ²a 5â€“5 Ä‘Ã¡nh ngáº«u nhiÃªn; 6â€“4 nhÆ°ng conf<0.60 thÃ¬ fallback theo Regime (ZIGZAG=ZigFollow, cÃ²n láº¡i=FollowPrev). Æ¯u tiÃªn â€œÄƒn trendâ€ khi guard ON. Re-seed sau má»—i vÃ¡n (tá»‘i Ä‘a 50 tay)",
-                15 => "16) TOP10 TÃCH LÅ¨Y (khá»Ÿi tá»« 50 C/L). Khá»Ÿi táº¡o thá»‘ng kÃª tá»« 50 káº¿t quáº£ Ä‘áº§u vÃ o (C/L). Má»—i káº¿t quáº£ má»›i: cá»™ng dá»“n cho chuá»—i dÃ i 10 â€œmá»›i vá»â€. LuÃ´n Ä‘Ã¡nh theo chuá»—i cÃ³ bá»™ Ä‘áº¿m lá»›n nháº¥t; chá»‰ chuyá»ƒn chuá»—i khi THáº®NG vÃ  chuá»—i má»›i cÃ³ Ä‘áº¿m â‰¥ hiá»‡n táº¡i.",
-                16 => "17) ÄÃ¡nh cÃ¡c cá»­a Äƒn ná»• hÅ©: Äá»c cáº¥u hÃ¬nh \"Cá»­a Ä‘áº·t & tá»‰ lá»‡\", nhÃ¢n tá»‰ lá»‡ vá»›i má»©c tiá»n hiá»‡n táº¡i Ä‘á»ƒ Ä‘áº·t tá»‘i Ä‘a 7 cá»­a (CHAN/LE/SAPDOI/1TRANG3DO/1DO3TRANG/4DO/4TRANG); tháº¯ng náº¿u báº¥t ká»³ cá»­a nÃ o trÃºng theo chuá»—i káº¿t quáº£ 0/1/2/3/4.",
-                17 => "18) Chuá»—i cáº§u C/L hay vá»: Tá»± phÃ¢n tÃ­ch seq 52 kÃ½ tá»±, loáº¡i máº«u Ä‘Ã£ xuáº¥t hiá»‡n (theo quy táº¯c Ä‘áº£o); chá»n ngáº«u nhiÃªn má»™t máº«u cÃ²n láº¡i Ä‘á»ƒ Ä‘Ã¡nh; háº¿t chuá»—i thÃ¬ tÃ¬m láº¡i; khÃ´ng cÃ²n máº«u thÃ¬ Ä‘Ã¡nh ngáº«u nhiÃªn.",
-                _ => "Chiáº¿n lÆ°á»£c chÆ°a xÃ¡c Ä‘á»‹nh."
+                0 => "1) Chuỗi C/L tự nhập: So khớp chuỗi C/L cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
+                1 => "2) Thế cầu C/L tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
+                2 => "3) Chuỗi I/N: So khớp dãy Ít/Nhiều (I/N) cấu hình thủ công; khớp thì đặt theo chỉ định; không khớp dùng logic mặc định.",
+                3 => "4) Thế cầu I/N: Ánh xạ mẫu I/N → cửa kế tiếp; ưu tiên mẫu dài; cho phép nhiều luật trong cùng danh sách.",
+                4 => "5) Theo cầu trước (thông minh): Dựa vào ván gần nhất và heuristics nội bộ; đánh liên tục; quản lý vốn theo chuỗi tiền, cut_profit/cut_loss.",
+                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn CHẴN/LẺ ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
+                6 => "7) Bám cầu C/L (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất C/L sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
+                7 => "8) Xu hướng chuyển trạng thái: Thống kê 6 chuyển gần nhất giữa các ván ('lặp' vs 'đảo'); nếu 'đảo' nhiều hơn → đánh ngược ván cuối; ngược lại → theo ván cuối; đánh liên tục.",
+                8 => "9) Run-length (dài chuỗi): Tính độ dài chuỗi ký tự cuối; nếu run ≥ T (mặc định T=3) → đảo để mean-revert; nếu run ngắn → theo đà (momentum); đánh liên tục.",
+                9 => "10) Chuyên gia bỏ phiếu: Kết hợp 5 chuyên gia (theo-last, đảo-last, run-length, transition, AI-stat); chọn phía đa số; hòa → đảo; đánh liên tục để phủ nhiều kịch bản.",
+                10 => "11) Lịch chẻ 10 tay: Tay 1–5 theo ván cuối, tay 6–10 đảo ván cuối; lặp lại block cố định; đơn giản, dễ dự báo nhịp.",
+                11 => "12) KNN chuỗi con: So khớp gần đúng tail k (k=6..3) với Hamming ≤ 1; exact-match tính 2 điểm, near-match 1 điểm; chọn phía điểm cao hơn; hòa → đảo; không match → theo ván cuối; đánh liên tục.",
+                12 => "13) Lịch hai lớp: Lịch pha trộn 10 bước (1–3 theo-last, 4 đảo, 5–7 AI-stat, 8 đảo, 9 theo, 10 AI-stat); lặp lại; cân bằng giữa momentum/mean-revert/thống kê; đánh liên tục.",
+                13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
+                14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
+                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 C/L). Khởi tạo thống kê từ 50 kết quả đầu vào (C/L). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
+                16 => "17) Đánh các cửa ăn nổ hũ: Đọc cấu hình \"Cửa đặt & tỉ lệ\", nhân tỉ lệ với mức tiền hiện tại để đặt tối đa 7 cửa (CHAN/LE/SAPDOI/1TRANG3DO/1DO3TRANG/4DO/4TRANG); thắng nếu bất kỳ cửa nào trúng theo chuỗi kết quả 0/1/2/3/4.",
+                17 => "18) Chuỗi cầu C/L hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
+                _ => "Chiến lược chưa xác định."
             };
         }
 
@@ -3309,12 +3344,12 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             }
         }
 
-        // ====== Click login (Æ°u tiÃªn selector báº¡n cung cáº¥p) + poll tráº¡ng thÃ¡i ======
+        // ====== Click login (ưu tiên selector bạn cung cấp) + poll trạng thái ======
         private async Task<string> ClickLoginButtonAsync(int timeoutMs = 18000)
         {
             await EnsureWebReadyAsync();
 
-            // 1) Báº¥m nÃºt ÄÄƒng nháº­p theo selector header cá»§a NET88
+            // 1) Bấm nút Đăng nhập theo selector header của NET88
             string clickKnownJs =
         @"(function(){
   try{
@@ -3341,7 +3376,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
       return true;
     }
 
-    // nhiá»u site gÃ¡n handler á»Ÿ content bÃªn trong
+    // nhiều site gán handler ở content bên trong
     const target = btn.querySelector('.base-button--content') || btn;
     if(!vis(target)) return 'not-visible';
     fire(target);
@@ -3352,7 +3387,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             var clickRes = await ExecJsAsyncStr(clickKnownJs);
             Log("[ClickLoginKnown] " + (string.IsNullOrEmpty(clickRes) ? "<empty>" : clickRes));
 
-            // Náº¿u chÆ°a tÃ¬m Ä‘Æ°á»£c button theo selector báº¡n Ä‘Æ°a, thá»­ generic cÃ¡c form/iframe nhÆ° cÅ©
+            // Nếu chưa tìm được button theo selector bạn đưa, thử generic các form/iframe như cũ
             if (clickRes == "no-el" || clickRes == "not-visible")
             {
                 string clickFallbackJs =
@@ -3400,7 +3435,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
     }
     function clickGlobalLogin(d){
       const cand = qa('a,button,[role=""button""],.btn,.base-button,.el-button', d)
-        .find(el=>vis(el)&&/dang\\s*nhap|Ä‘Äƒng\\s*nháº­p|login|sign\\s*in/i.test(low(el.textContent)||low(el.value)));
+        .find(el=>vis(el)&&/dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)||low(el.value)));
       return cand && fire(cand) ? 'clicked-global' : false;
     }
 
@@ -3422,7 +3457,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             if (clickRes.StartsWith("err")) return clickRes;
             if (clickRes == "no-login-button" || clickRes == "not-visible") return clickRes;
 
-            // 2) Poll tráº¡ng thÃ¡i Ä‘Äƒng nháº­p
+            // 2) Poll trạng thái đăng nhập
             var t0 = DateTime.UtcNow;
             while ((DateTime.UtcNow - t0).TotalMilliseconds < timeoutMs)
             {
@@ -3435,9 +3470,9 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                    return r.width>4&&r.height>4&&cs.display!=='none'&&cs.visibility!=='hidden'&&cs.pointerEvents!=='none';};
     const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
     const hasLogout = qa('a,button,[role=""button""],.btn,.base-button')
-        .some(el => /dang\\s*xuat|Ä‘Äƒng\\s*xuáº¥t|logout|sign\\s*out/i.test(low(el.textContent)));
+        .some(el => /dang\\s*xuat|đăng\\s*xuất|logout|sign\\s*out/i.test(low(el.textContent)));
     const hasLogin  = qa('a,button,[role=""button""],.btn,.base-button')
-        .some(el => vis(el) && /dang\\s*nhap|Ä‘Äƒng\\s*nháº­p|login|sign\\s*in/i.test(low(el.textContent)));
+        .some(el => vis(el) && /dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)));
     let passVisible = false;
     try{
       const frames=[window].concat(Array.from(document.querySelectorAll('iframe'))
@@ -3460,9 +3495,9 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         }
 
 
-        // Gá»i Login tá»« HOME:
-        // - Æ¯u tiÃªn gá»i API JS (__abx_hw_clickLogin)
-        // - Fallback: gá»­i lá»‡nh kiá»ƒu "áº¥n nÃºt" xuá»‘ng trang (home_click_login)
+        // Gọi Login từ HOME:
+        // - Ưu tiên gọi API JS (__abx_hw_clickLogin)
+        // - Fallback: gửi lệnh kiểu "ấn nút" xuống trang (home_click_login)
         private async Task<bool> HomeClickLoginAsync()
         {
             try
@@ -3477,7 +3512,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     return true;
                 }
 
-                // fallback: gá»i theo "nÃºt" (host -> page)
+                // fallback: gọi theo "nút" (host -> page)
                 var msg = JsonSerializer.Serialize(new { cmd = "home_click_login" });
                 Web.CoreWebView2.PostWebMessageAsJson(msg);
                 Log("[HOME] sent host cmd: home_click_login");
@@ -3490,9 +3525,9 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             }
         }
 
-        // Gá»i Play XÃ³c ÄÄ©a tá»« HOME:
-        // - Æ¯u tiÃªn gá»i API JS (__abx_hw_clickPlayXDL)
-        // - Fallback: gá»­i lá»‡nh kiá»ƒu "nÃºt" (home_click_xoc)
+        // Gọi Play Xóc Đĩa từ HOME:
+        // - Ưu tiên gọi API JS (__abx_hw_clickPlayXDL)
+        // - Fallback: gửi lệnh kiểu "nút" (home_click_xoc)
         private async Task<bool> HomeClickPlayAsync()
         {
             try
@@ -3507,7 +3542,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     return true;
                 }
 
-                // fallback: gá»i theo "nÃºt" (host -> page)
+                // fallback: gọi theo "nút" (host -> page)
                 var msg = JsonSerializer.Serialize(new { cmd = "home_click_xoc" });
                 Web.CoreWebView2.PostWebMessageAsJson(msg);
                 Log("[HOME] sent host cmd: home_click_xoc");
@@ -3520,7 +3555,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             }
         }
 
-        // (tuá»³ chá»n) kÃ­ch hoáº¡t push thá»§ cÃ´ng tá»« C# vá»›i ms tÃ¹y Ã½
+        // (tuỳ chọn) kích hoạt push thủ công từ C# với ms tùy ý
         private void HomeStartPush(int ms = 800)
         {
             try
@@ -3540,7 +3575,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
         private async Task<string> ExecJsAsyncStr(string js)
         {
-            // náº¿u cá»­a sá»• Ä‘Ã£ bá»‹ host Ä‘Ã³ng thÃ¬ Web sáº½ = null
+            // nếu cửa sổ đã bị host đóng thì Web sẽ = null
             if (!IsWebAlive)
             {
                 Log("**Web** was null. Skip ExecJsAsyncStr.");
@@ -3648,10 +3683,31 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
         private bool IsInteresting(string? url)
         {
-            if (string.IsNullOrWhiteSpace(url)) return true;
+            if (string.IsNullOrWhiteSpace(url)) return false;
             foreach (var hint in _pktInterestingHints)
                 if (url.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0) return true;
             return false;
+        }
+
+        private static string NormalizePacketUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return "";
+            try
+            {
+                if (Uri.TryCreate(url, UriKind.Absolute, out var u))
+                {
+                    var host = u.IsDefaultPort ? u.Host : $"{u.Host}:{u.Port}";
+                    var path = string.IsNullOrEmpty(u.AbsolutePath) ? "/" : u.AbsolutePath;
+                    var compact = $"{u.Scheme}://{host}{path}";
+                    return compact.Length > 220 ? compact.Substring(0, 220) + "…" : compact;
+                }
+            }
+            catch { }
+
+            var s = url ?? "";
+            s = Regex.Replace(s, @"(?i)(token|jwtoken|access_token|auth|sig)=([^&]+)", "$1=<redacted>");
+            if (s.Length > 220) s = s.Substring(0, 220) + "…";
+            return s;
         }
 
         private string PreviewPayload(string payload, bool isBinary)
@@ -3664,34 +3720,37 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     var s = payload.Trim();
                     if (s.StartsWith("{") || s.StartsWith("["))
                     {
-                        if (s.Length > 2000) s = s.Substring(0, 2000) + "â€¦";
+                        if (s.Length > 2000) s = s.Substring(0, 2000) + "…";
                         return s;
                     }
-                    if (s.Length > 2000) s = s.Substring(0, 2000) + "â€¦";
+                    if (s.Length > 2000) s = s.Substring(0, 2000) + "…";
                     return s;
                 }
                 var bytes = Encoding.UTF8.GetBytes(payload);
                 int n = Math.Min(bytes.Length, 64);
                 var sb = new StringBuilder(n * 3);
                 for (int i = 0; i < n; i++) sb.Append(bytes[i].ToString("X2")).Append(' ');
-                if (bytes.Length > n) sb.Append("â€¦");
+                if (bytes.Length > n) sb.Append("…");
                 return "BIN[" + bytes.Length + "]: " + sb.ToString();
             }
             catch
             {
                 var s = payload;
-                if (s.Length > 2000) s = s.Substring(0, 2000) + "â€¦";
+                if (s.Length > 2000) s = s.Substring(0, 2000) + "…";
                 return s;
             }
         }
 
         private void LogPacket(string kind, string? url, string preview, bool isBinary)
         {
-            var line = $"[PKT] {DateTime.Now:HH:mm:ss} {kind} {url ?? ""}\n      {preview}";
-            // Ghi file luÃ´n (khÃ´ng cháº·n)
+            var safeUrl = NormalizePacketUrl(url);
+            var line = string.IsNullOrWhiteSpace(preview)
+                ? $"[PKT] {DateTime.Now:HH:mm:ss} {kind} {safeUrl}"
+                : $"[PKT] {DateTime.Now:HH:mm:ss} {kind} {safeUrl}\n      {preview}";
+            // Ghi file luôn (không chặn)
             EnqueueFile(line);
 
-            // UI: máº·c Ä‘á»‹nh táº¯t, hoáº·c láº¥y máº«u 1/N
+            // UI: mặc định tắt, hoặc lấy mẫu 1/N
             if (SHOW_PACKET_LINES_IN_UI)
             {
                 _pktUiSample++;
@@ -3702,8 +3761,8 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
 
         /// <summary>
-        /// Má»Ÿ live theo index trong .livestream-section__live (0-based).
-        /// Chá»‰ nháº¯m Ä‘Ãºng item-live[index], click overlay/play vÃ  chá» video má»Ÿ.
+        /// Mở live theo index trong .livestream-section__live (0-based).
+        /// Chỉ nhắm đúng item-live[index], click overlay/play và chờ video mở.
         /// </summary>
         private async Task<string> OpenLiveItemImmediatelyAsync(int zeroBasedIndex, int timeoutMs = 20000)
         {
@@ -3751,7 +3810,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
       w
     ].filter(Boolean);
 
-    // báº¯n sá»± kiá»‡n + click 2 láº§n Ä‘á»ƒ vÆ°á»£t overlay
+    // bắn sự kiện + click 2 lần để vượt overlay
     for(let rep=0; rep<2; rep++){{
       for(const el of targets){{
         const r = el.getBoundingClientRect();
@@ -3769,7 +3828,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
     return 'clicked';
   }}
 
-  // Chá» item mount vÃ  visible, rá»“i click
+  // Chờ item mount và visible, rồi click
   const t0 = Date.now();
   while((Date.now()-t0) < timeoutMs){{
     const it = pickByIndex(idx);
@@ -3777,7 +3836,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
       const w = it.querySelector('.player-wrapper') || it;
       fireAll(w);
 
-      // chá» má»Ÿ
+      // chờ mở
       const t1 = Date.now();
       while((Date.now()-t1) < timeoutMs){{
         if(playing(w)) return 'opened';
@@ -3804,14 +3863,14 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         }
 
 
-        // Báº¥m vÃ o "XÃ³c ÄÄ©a Live" theo tiÃªu Ä‘á»/trang HOME.
-        // Tráº£ vá»: "clicked" náº¿u Ä‘Ã£ báº¥m/má»Ÿ Ä‘Æ°á»£c, hoáº·c chuá»—i lá»—i/tráº¡ng thÃ¡i khÃ¡c.
+        // Bấm vào "Xóc Đĩa Live" theo tiêu đề/trang HOME.
+        // Trả về: "clicked" nếu đã bấm/mở được, hoặc chuỗi lỗi/trạng thái khác.
         private async Task<string> ClickXocDiaTitleAsync(int timeoutMs = 20000)
         {
             if (Web == null) return "web-null";
             await EnsureWebReadyAsync();
 
-            // 1) Thá»­ báº¥m trá»±c tiáº¿p anchor/button cÃ³ text "xÃ³c Ä‘Ä©a" (khá»­ dáº¥u)
+            // 1) Thử bấm trực tiếp anchor/button có text "xóc đĩa" (khử dấu)
             const string clickTitleJs = @"
 (function(){
   try{
@@ -3836,12 +3895,12 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
       try{ top.click(); }catch(_){}
     }
 
-    // QuÃ©t cÃ¡c anchor/button
+    // Quét các anchor/button
     const cands = qa('a,button,[role=""button""],.btn,.base-button,.el-button,.v-btn, .item-live a, .item-live .title, .item-live');
     for(const el of cands){
       const txt = low(el.textContent || el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '');
       if (!txt) continue;
-      // cáº§n Ä‘á»“ng thá»i cÃ³ 'xoc' vÃ  'dia'
+      // cần đồng thời có 'xoc' và 'dia'
       if (txt.includes('xoc') && txt.includes('dia') && vis(el)){
         fire(el);
         return 'clicked';
@@ -3861,7 +3920,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 Log("[ClickXocDiaTitle/anchor ERR] " + ex.Message);
             }
 
-            // 2) KhÃ´ng cÃ³ anchor rÃµ rÃ ng -> tÃ¬m index trong danh sÃ¡ch .livestream-section__live .item-live
+            // 2) Không có anchor rõ ràng -> tìm index trong danh sách .livestream-section__live .item-live
             const string findIndexJs = @"
 (function(){
   try{
@@ -3901,7 +3960,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 Log("[ClickXocDiaTitle/find index ERR] " + ex.Message);
             }
 
-            // 3) Fallback cuá»‘i: má»Ÿ item index 1 (giá»‘ng VaoXocDia_Click Ä‘ang dÃ¹ng)
+            // 3) Fallback cuối: mở item index 1 (giống VaoXocDia_Click đang dùng)
             try
             {
                 var res2 = await OpenLiveItemImmediatelyAsync(1, timeoutMs);
@@ -3949,7 +4008,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
             if (string.IsNullOrWhiteSpace(username))
             {
-                MessageBox.Show("ChÆ°a nháº­p tÃªn Ä‘Äƒng nháº­p.", "Automino",
+                MessageBox.Show("Chưa nhập tên đăng nhập.", "Automino",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
@@ -3968,7 +4027,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
             if (string.IsNullOrWhiteSpace(password))
             {
-                MessageBox.Show("ChÆ°a nháº­p máº­t kháº©u.", "Automino",
+                MessageBox.Show("Chưa nhập mật khẩu.", "Automino",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
@@ -3976,26 +4035,26 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             var lic = await FetchLicenseAsync(username);
             if (lic == null)
             {
-                MessageBox.Show("KhÃ´ng tÃ¬m tháº¥y license cho tÃ i khoáº£n nÃ y. HÃ£y liÃªn há»‡ Telegram: @minoauto Ä‘á»ƒ Ä‘Äƒng kÃ½ sá»­ dá»¥ng.",
+                MessageBox.Show("Không tìm thấy license cho tài khoản này. Hãy liên hệ Telegram: @minoauto để đăng ký sử dụng.",
                     "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             if (string.IsNullOrWhiteSpace(lic.exp) || string.IsNullOrWhiteSpace(lic.pass) ||
                 !DateTimeOffset.TryParse(lic.exp, out var expUtc))
             {
-                MessageBox.Show("License khÃ´ng há»£p lá»‡ (exp/pass).", "Automino",
+                MessageBox.Show("License không hợp lệ (exp/pass).", "Automino",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             if (!string.Equals(lic.pass ?? "", password, StringComparison.Ordinal))
             {
-                MessageBox.Show("Máº­t kháº©u license khÃ´ng Ä‘Ãºng.", "Automino",
+                MessageBox.Show("Mật khẩu license không đúng.", "Automino",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             if (DateTimeOffset.UtcNow >= expUtc)
             {
-                MessageBox.Show("Tool cá»§a báº¡n háº¿t háº¡n. HÃ£y liÃªn há»‡ Telegram: @minoauto Ä‘á»ƒ gia háº¡n",
+                MessageBox.Show("Tool của bạn hết hạn. Hãy liên hệ Telegram: @minoauto để gia hạn",
                     "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
@@ -4020,7 +4079,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             EnsureTrialKey();
             if (string.IsNullOrWhiteSpace(_trialKey))
             {
-                MessageBox.Show("KhÃ´ng xÃ¡c Ä‘á»‹nh Ä‘Æ°á»£c DeviceId Ä‘á»ƒ dÃ¹ng thá»­.", "Automino",
+                MessageBox.Show("Không xác định được DeviceId để dùng thử.", "Automino",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
@@ -4060,7 +4119,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
                 if (!EnableLeaseCloudflare)
                 {
-                    MessageBox.Show("Cháº¿ Ä‘á»™ dÃ¹ng thá»­ cáº§n Cloudflare. Vui lÃ²ng báº­t láº¡i Ä‘á»ƒ dÃ¹ng thá»­.", "Automino",
+                    MessageBox.Show("Chế độ dùng thử cần Cloudflare. Vui lòng bật lại để dùng thử.", "Automino",
                         MessageBoxButton.OK, MessageBoxImage.Warning);
                     return false;
                 }
@@ -4105,7 +4164,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
                 if (string.Equals(error, "in-use", StringComparison.OrdinalIgnoreCase))
                 {
-                    MessageBox.Show("Thiáº¿t bá»‹ Ä‘ang cháº¡y á»Ÿ nÆ¡i khÃ¡c. Vui lÃ²ng dá»«ng á»Ÿ mÃ¡y kia trÆ°á»›c.",
+                    MessageBox.Show("Thiết bị đang chạy ở nơi khác. Vui lòng dừng ở máy kia trước.",
                                     "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
                 else if (string.Equals(error, "trial-consumed", StringComparison.OrdinalIgnoreCase))
@@ -4125,7 +4184,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 }
                 else
                 {
-                    MessageBox.Show("KhÃ´ng thá»ƒ báº¯t Ä‘áº§u cháº¿ Ä‘á»™ dÃ¹ng thá»­. Vui lÃ²ng thá»­ láº¡i.",
+                    MessageBox.Show("Không thể bắt đầu chế độ dùng thử. Vui lòng thử lại.",
                                     "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
                 return false;
@@ -4142,7 +4201,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     StartLeaseHeartbeat(_trialKey, _trialKey);
                     return true;
                 }
-                MessageBox.Show("KhÃ´ng thá»ƒ káº¿t ná»‘i cháº¿ Ä‘á»™ dÃ¹ng thá»­.", "Automino",
+                MessageBox.Show("Không thể kết nối chế độ dùng thử.", "Automino",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
@@ -4204,7 +4263,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 {
                     try
                     {
-                        // KhÃ´ng Ä‘á»§ thÃ´ng tin thÃ¬ thÃ´i
+                        // Không đủ thông tin thì thôi
                         var u = T(TxtUser);
                         var p = P(TxtPass);
                         if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(p))
@@ -4213,7 +4272,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                             continue;
                         }
 
-                        // JS: phÃ¡t hiá»‡n â€œcáº§n loginâ€ (nÃºt ÄÄƒng nháº­p visible hoáº·c Ã´ user/pass visible trong báº¥t ká»³ iframe nÃ o)
+                        // JS: phát hiện “cần login” (nút Đăng nhập visible hoặc ô user/pass visible trong bất kỳ iframe nào)
                         string needJs =
         @"(function(){
   const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}};
@@ -4223,7 +4282,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
   const qa=(s,d)=>Array.from((d||document).querySelectorAll(s));
 
   const hasLogin = qa('a,button,[role=""button""],.btn,.base-button')
-     .some(el => vis(el) && /dang\\s*nhap|Ä‘Äƒng\\s*nháº­p|login|sign\\s*in/i.test(low(el.textContent)||low(el.value)));
+     .some(el => vis(el) && /dang\\s*nhap|đăng\\s*nhập|login|sign\\s*in/i.test(low(el.textContent)||low(el.value)));
 
   let userVis=false, passVis=false;
   const frames=[window].concat(Array.from(document.querySelectorAll('iframe'))
@@ -4250,8 +4309,8 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                                 _autoLoginBusy = true;
                                 try
                                 {
-                                    Log("[AutoLoginWatch] need-login â†’ auto-fill + click"); // hÃ m nÃ y Ä‘Ã£ cÃ³ fallback vÃ  tá»± gá»i TryAutoLoginAsync
-                                                                // Trong trÆ°á»ng há»£p trang khÃ´ng má»Ÿ form, Ã©p Click thÃªm láº§n ná»¯a:
+                                    Log("[AutoLoginWatch] need-login → auto-fill + click"); // hàm này đã có fallback và tự gọi TryAutoLoginAsync
+                                                                // Trong trường hợp trang không mở form, ép Click thêm lần nữa:
                                     var res = await ClickLoginButtonAsync(18000);
                                     Log("[AutoLoginWatch] " + res);
                                     _autoLoginLast = DateTime.UtcNow;
@@ -4262,7 +4321,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                         }
                     }
                     catch { }
-                    await Task.Delay(400, cts.Token); // nhá»‹p kiá»ƒm tra
+                    await Task.Delay(400, cts.Token); // nhịp kiểm tra
                 }
             }, cts.Token);
         }
@@ -4376,7 +4435,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             if (DateTime.UtcNow - _lastWv2ResetUtc < TimeSpan.FromSeconds(20))
                 return;
 
-            Log("[WV2] Watchdog: khÃ´ng tháº¥y game tick, reset profile + reload");
+            Log("[WV2] Watchdog: không thấy game tick, reset profile + reload");
             await ResetWebViewProfileAndReloadAsync(url ?? _lastGameUrl);
         }
 
@@ -4415,7 +4474,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
 
 
-        // Vá» trang chá»§ NET88 (Nuxt/Vue) â€“ click logo + dá»n overlay + Ã©p SPA + Ã©p Ä‘iá»u hÆ°á»›ng + fallback C#
+        // Về trang chủ NET88 (Nuxt/Vue) – click logo + dọn overlay + ép SPA + ép điều hướng + fallback C#
         private async Task<string> ClickHomeLogoAsync(int timeoutMs = 12000)
         {
             await EnsureWebReadyAsync();
@@ -4434,7 +4493,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         p=p.toLowerCase();
         if (p==='/'||p==='/vi'||p==='/vn') return true;
       }catch(_){}
-      // Nuxt/Vue: logo active khi Ä‘ang á»Ÿ /
+      // Nuxt/Vue: logo active khi đang ở /
       if (document.querySelector('a.main-logo.router-link-exact-active[aria-current=""page""]')) return true;
       return false;
     }
@@ -4450,7 +4509,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         const zi=parseInt(cs.zIndex||'0',10);
         if (isNaN(zi)||zi<100) continue;
         const r=el.getBoundingClientRect();
-        // overlap Ä‘Æ¡n giáº£n
+        // overlap đơn giản
         if (!(r.right<hr.left||r.left>hr.right||r.bottom<hr.top||r.top>hr.bottom)){
           try{ el.style.pointerEvents='none'; }catch(_){}
         }
@@ -4493,13 +4552,13 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
       const home = location.origin + '/' + '?_=' + Date.now();
       // 1) Router (Nuxt)
       try{ if (window.$nuxt?.$router?.replace){ window.$nuxt.$router.replace('/'); } }catch(_){}
-      // 2) Popstate Ä‘á»ƒ kÃ­ch SPA
+      // 2) Popstate để kích SPA
       try{ history.replaceState({},'', '/'); dispatchEvent(new PopStateEvent('popstate')); }catch(_){}
-      // 3) Äiá»u hÆ°á»›ng cá»©ng
+      // 3) Điều hướng cứng
       try{ location.replace(home); }catch(_){}
     }
 
-    // ---- cháº¡y ----
+    // ---- chạy ----
     if (atHome()) return 'home-ok(already)';
     const end=Date.now()+timeoutMs;
     window.scrollTo({top:0, behavior:'auto'});
@@ -4535,7 +4594,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 if (string.IsNullOrWhiteSpace(res)) res = "home-null";
                 Log("[ClickHomeLogo] " + res);
 
-                // Fallback cuá»‘i tá»« C#: náº¿u JS khÃ´ng Ä‘iá»u hÆ°á»›ng Ä‘Æ°á»£c, tá»± Ä‘iá»u hÆ°á»›ng vá» origin + "/"
+                // Fallback cuối từ C#: nếu JS không điều hướng được, tự điều hướng về origin + "/"
                 if (res == "home-null" || res.StartsWith("err:") || res == "home-timeout")
                 {
                     try
@@ -4549,7 +4608,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                             return res + " + csharp-nav";
                         }
                     }
-                    catch { /* bá» qua */ }
+                    catch { /* bỏ qua */ }
                 }
 
                 return res;
@@ -4568,7 +4627,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             _stakeChains.Clear();
 
             csv ??= "";
-            // chuáº©n hoÃ¡ xuá»‘ng dÃ²ng
+            // chuẩn hoá xuống dòng
             var lines = csv.Replace("\r", "").Split('\n');
 
             var flat = new System.Collections.Generic.List<long>();
@@ -4578,7 +4637,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 var line = (rawLine ?? "").Trim();
                 if (line.Length == 0) continue;
 
-                // giá»‘ng nghiá»‡p vá»¥ cÅ©: tÃ¡ch theo , ; - khoáº£ng tráº¯ng
+                // giống nghiệp vụ cũ: tách theo , ; - khoảng trắng
                 var parts = System.Text.RegularExpressions.Regex.Split(line, @"[,\s;\-]+");
                 var oneChain = new System.Collections.Generic.List<long>();
 
@@ -4591,7 +4650,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     }
                     else
                     {
-                        // náº¿u cÃ³ sá»‘ sai thÃ¬ bá» qua giá»‘ng cÃ¡ch cÅ©, hoáº·c báº¡n cÃ³ thá»ƒ show lá»—i á»Ÿ LblSeqError
+                        // nếu có số sai thì bỏ qua giống cách cũ, hoặc bạn có thể show lỗi ở LblSeqError
                     }
                 }
 
@@ -4602,15 +4661,15 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 }
             }
 
-            // náº¿u user chá»‰ nháº­p 1 dÃ²ng nhÆ° cÅ© thÃ¬ _stakeChains sáº½ chá»‰ cÃ³ 1 pháº§n tá»­
+            // nếu user chỉ nhập 1 dòng như cũ thì _stakeChains sẽ chỉ có 1 phần tử
             _stakeSeq = flat.Count > 0 ? flat.ToArray() : new long[] { 1000 };
 
-            // tÃ­nh tá»•ng tá»«ng chuá»—i Ä‘á»ƒ dÃ¹ng cho Ä‘iá»u kiá»‡n â€œchuá»—i sau tháº¯ng >= tá»•ng chuá»—i trÆ°á»›câ€
+            // tính tổng từng chuỗi để dùng cho điều kiện “chuỗi sau thắng >= tổng chuỗi trước”
             _stakeChainTotals = _stakeChains
                 .Select(ch => ch.Aggregate(0L, (s, x) => s + x))
                 .ToArray();
 
-            // cáº­p nháº­t UI hiá»ƒn thá»‹ lá»—i náº¿u cáº§n
+            // cập nhật UI hiển thị lỗi nếu cần
             ShowSeqError(null);
         }
 
@@ -4628,7 +4687,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 RebuildStakeSeq(csv);
 
                 var id = GetMoneyStrategyFromUI();
-                _cfg.StakeCsv = csv; // váº«n lÆ°u báº£n hiá»‡n hÃ nh
+                _cfg.StakeCsv = csv; // vẫn lưu bản hiện hành
                 _cfg.StakeCsvByMoney ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 if (!string.IsNullOrWhiteSpace(id)) _cfg.StakeCsvByMoney[id] = csv;
 
@@ -4668,9 +4727,9 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             {
                 var idx = CmbBetStrategy?.SelectedIndex ?? 4;
                 if (RowChuoiCau != null)
-                    RowChuoiCau.Visibility = (idx == 0 || idx == 2) ? Visibility.Visible : Visibility.Collapsed; // 1 hoáº·c 3
+                    RowChuoiCau.Visibility = (idx == 0 || idx == 2) ? Visibility.Visible : Visibility.Collapsed; // 1 hoặc 3
                 if (RowTheCau != null)
-                    RowTheCau.Visibility = (idx == 1 || idx == 3) ? Visibility.Visible : Visibility.Collapsed;   // 2 hoáº·c 4
+                    RowTheCau.Visibility = (idx == 1 || idx == 3) ? Visibility.Visible : Visibility.Collapsed;   // 2 hoặc 4
                 if (RowSideRatio != null)
                     RowSideRatio.Visibility = (idx == 16) ? Visibility.Visible : Visibility.Collapsed;
             }
@@ -4682,7 +4741,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             UpdateBetStrategyUi();
             SyncStrategyFieldsToUI();
             UpdateTooltips();
-            ShowErrorsForCurrentStrategy();   // <â€” thÃªm dÃ²ng nÃ y
+            ShowErrorsForCurrentStrategy();   // <— thêm dòng này
 
             if (!_uiReady || _tabSwitching) return;
             _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? 4;
@@ -4773,11 +4832,11 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         private async Task StartTaskAsync(StrategyTabState tab, IBetTask task, CancellationToken ct, bool useRawWinAmount = false)
         {
             tab.ActiveTask = task;
-            _dec = new DecisionState(); // reset tráº¡ng thÃ¡i cho task má»›i
+            _dec = new DecisionState(); // reset trạng thái cho task mới
             tab.DecisionState = new DecisionState();
             TaiXiuLiveSun.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             var ctx = BuildContext(tab, useRawWinAmount);
-            // === Preflight: chá» __cw_bet sáºµn sÃ ng trÆ°á»›c khi cháº¡y chiáº¿n lÆ°á»£c ===
+            // === Preflight: chờ __cw_bet sẵn sàng trước khi chạy chiến lược ===
             for (int i = 0; i < 25; i++) // 25 * 200ms ~= 5s
             {
                 ct.ThrowIfCancellationRequested();
@@ -4828,20 +4887,20 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
         private async void PlayXocDia_Click(object sender, RoutedEventArgs e)
         {
-            // GUARD: khÃ´ng cho 2 luá»“ng start cháº¡y Ä‘á»“ng thá»i
+            // GUARD: không cho 2 luồng start chạy đồng thời
             if (Interlocked.Exchange(ref _playStartInProgress, 1) == 1)
             {
-                Log("[DEC] start is already in progress â†’ ignore");
+                Log("[DEC] start is already in progress → ignore");
                 return;
             }
-            // NgÄƒn double-click trong lÃºc cÃ²n await chuáº©n bá»‹
+            // Ngăn double-click trong lúc còn await chuẩn bị
             if (BtnPlay != null) BtnPlay.IsEnabled = false;
             var activeTab = _activeTab;
             try
             {
                 if (activeTab == null)
                 {
-                    MessageBox.Show("ChÆ°a cÃ³ chiáº¿n lÆ°á»£c Ä‘á»ƒ cháº¡y.", "Automino",
+                    MessageBox.Show("Chưa có chiến lược để chạy.", "Automino",
                         MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
@@ -4852,10 +4911,10 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 }
                 await SaveConfigAsync();
                 await EnsureWebReadyAsync();
-                // âœ… Validate trÆ°á»›c khi báº¯t Ä‘áº§u
+                // ✅ Validate trước khi bắt đầu
                 if (!ValidateInputsForCurrentStrategy())
                 {
-                    if (BtnPlay != null) BtnPlay.IsEnabled = true; // tráº£ láº¡i nÃºt náº¿u Ä‘ang disable vÃ¬ double-click guard
+                    if (BtnPlay != null) BtnPlay.IsEnabled = true; // trả lại nút nếu đang disable vì double-click guard
                     return;
                 }
 
@@ -4877,10 +4936,10 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 var typeBet = typeBetJson?.Trim('"');
                 if (!string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
                 {
-                    Log("[DEC] ChÆ°a tháº¥y bridge JS (__cw_bet) â†’ tá»± Ä‘á»™ng 'XÃ³c ÄÄ©a Live' vÃ  inject.");
+                    Log("[DEC] Chưa thấy bridge JS (__cw_bet) → tự động 'Xóc Đĩa Live' và inject.");
                     VaoXocDia_Click(sender, e);
 
-                    // Poll chá» bridge sáºµn sÃ ng tá»‘i Ä‘a 30s
+                    // Poll chờ bridge sẵn sàng tối đa 30s
                     var t0 = DateTime.UtcNow;
                     const int timeoutBetMs = 30000;
                     while ((DateTime.UtcNow - t0).TotalMilliseconds < timeoutBetMs)
@@ -4897,30 +4956,30 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     }
                     if (!string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase))
                     {
-                        Log("[DEC] KhÃ´ng thá»ƒ vÃ o bÃ n/tiÃªm JS trong thá»i gian chá». Vui lÃ²ng thá»­ láº¡i.");
+                        Log("[DEC] Không thể vào bàn/tiêm JS trong thời gian chờ. Vui lòng thử lại.");
                         return;
                     }
                 }
 
-                // Báº­t kÃªnh push (idempotent)
-                await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
-                Log("[CW] ensure push 240ms");
+                // Bật kênh push (idempotent)
+                await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(320);");
+                Log("[CW] ensure push 320ms");
 
-                // ðŸ”’ Má»šI: Chá» Ä‘á»§ bridge + Cocos + tick Ä‘á»ƒ trÃ¡nh ná»• IndexOutOfRange trong task
+                // 🔒 MỚI: Chờ đủ bridge + Cocos + tick để tránh nổ IndexOutOfRange trong task
                 var ready = await WaitForBridgeAndGameDataAsync(15000);
                 if (!ready)
                 {
-                    Log("[DEC] Dá»¯ liá»‡u chÆ°a sáºµn sÃ ng (bridge/cocos/tick). Thá»­ gia háº¡n push & chá» thÃªm.");
-                    await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
+                    Log("[DEC] Dữ liệu chưa sẵn sàng (bridge/cocos/tick). Thử gia hạn push & chờ thêm.");
+                    await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(320);");
                     ready = await WaitForBridgeAndGameDataAsync(15000);
                     if (!ready)
                     {
-                        Log("[DEC] Váº«n chÆ°a cÃ³ dá»¯ liá»‡u, táº¡m hoÃ£n khá»Ÿi Ä‘á»™ng chiáº¿n lÆ°á»£c.");
+                        Log("[DEC] Vẫn chưa có dữ liệu, tạm hoãn khởi động chiến lược.");
                         return;
                     }
                 }
 
-                // Chuáº©n bá»‹ & cháº¡y Task chiáº¿n lÆ°á»£c (giá»¯ nguyÃªn)
+                // Chuẩn bị & chạy Task chiến lược (giữ nguyên)
                 RebuildStakeSeq((TxtStakeCsv?.Text ?? "1000,2000,4000,8000,16000").Trim());
                 activeTab.RunStakeSeq = _stakeSeq.ToArray();
                 activeTab.RunStakeChains = _stakeChains.Select(a => a.ToArray()).ToList();
@@ -4937,7 +4996,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 _cfg.BetPatterns = (__idx == 1) ? (_cfg.BetPatternsCL ?? "") : (__idx == 3 ? (_cfg.BetPatternsNI ?? "") : "");
 
 
-                // === Khá»Ÿi Ä‘á»™ng task theo lá»±a chá»n CHIáº¾N LÆ¯á»¢C ===
+                // === Khởi động task theo lựa chọn CHIẾN LƯỢC ===
                 activeTab.TaskCts = new CancellationTokenSource();
 
                 bool useRawWinAmount = false;
@@ -5013,7 +5072,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             }
             finally
             {
-                // náº¿u chÆ°a start Ä‘Æ°á»£c task thÃ¬ báº­t láº¡i nÃºt
+                // nếu chưa start được task thì bật lại nút
                 if (activeTab == null)
                 {
                     if (BtnPlay != null) BtnPlay.IsEnabled = true;
@@ -5046,7 +5105,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 if (activeTab == null) return;
 
                 StopTask(activeTab);
-                _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(240);");
+                _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(320);");
 
                 if (!IsAnyTabRunning())
                 {
@@ -5081,14 +5140,14 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
             if (isRunning)
             {
-                BtnPlay.Content = "Dá»«ng Äáº·t CÆ°á»£c";
+                BtnPlay.Content = "Dừng Đặt Cược";
                 BtnPlay.Click += StopXocDia_Click;
                 var danger = TryFindResource("DangerButton") as Style;
                 if (danger != null) BtnPlay.Style = danger;
             }
             else
             {
-                BtnPlay.Content = "Báº¯t Äáº§u CÆ°á»£c";
+                BtnPlay.Content = "Bắt Đầu Cược";
                 BtnPlay.Click += PlayXocDia_Click;
                 var primary = TryFindResource("PrimaryButton") as Style;
                 if (primary != null) BtnPlay.Style = primary;
@@ -5097,7 +5156,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             BtnPlay.IsEnabled = true;
             SetConfigEditable(!isRunning);
 
-            // NEW: refresh tooltip ngay theo tráº¡ng thÃ¡i má»›i
+            // NEW: refresh tooltip ngay theo trạng thái mới
             UpdateTooltips();
         }
 
@@ -5113,7 +5172,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
             try
             {
-                // Chá»‰ cháº¡y khi WebView2 Ä‘Ã£ sáºµn sÃ ng
+                // Chỉ chạy khi WebView2 đã sẵn sàng
                 if (Web?.CoreWebView2 == null)
                 {
                     if (MouseShield != null)
@@ -5121,9 +5180,9 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     return;
                 }
 
-                await EnsureMouseLockScriptAsync(); // Ä‘áº£m báº£o cÃ³ __abx_lockMouse trong trang
+                await EnsureMouseLockScriptAsync(); // đảm bảo có __abx_lockMouse trong trang
 
-                // KhoÃ¡/má»Ÿ chuá»™t báº±ng overlay bÃªn trong DOM (an toÃ n trÃªn VPS/RDP)
+                // Khoá/mở chuột bằng overlay bên trong DOM (an toàn trên VPS/RDP)
                 await Web.ExecuteScriptAsync(
                     $"window.__abx_lockMouse && window.__abx_lockMouse({(locked ? "true" : "false")});");
             }
@@ -5132,11 +5191,11 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 Log("[LockMouse] " + ex.Message);
             }
 
-            // (tuá»³ chá»n) overlay WPF Ä‘á»ƒ hiá»ƒn thá»‹ tooltip/cursor trÃªn app
+            // (tuỳ chọn) overlay WPF để hiển thị tooltip/cursor trên app
             if (MouseShield != null)
                 MouseShield.Visibility = locked ? Visibility.Visible : Visibility.Collapsed;
 
-            // â— Quan trá»ng: KHÃ”NG Ä‘á»¥ng Web.IsEnabled Ä‘á»ƒ trÃ¡nh crash WebView2 trÃªn VPS/RDP
+            // ❗ Quan trọng: KHÔNG đụng Web.IsEnabled để tránh crash WebView2 trên VPS/RDP
             if (Web != null)
                 Web.IsHitTestVisible = !locked;
         }
@@ -5145,18 +5204,18 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
         private async void ChkLockMouse_Checked(object sender, RoutedEventArgs e)
         {
-            if (!_uiReady || _tabSwitching) return;               // â¬…ï¸ cháº·n event khá»Ÿi Ä‘á»™ng sá»›m
+            if (!_uiReady || _tabSwitching) return;               // ⬅️ chặn event khởi động sớm
             ApplyMouseShieldFromCheck();
             _ = SaveConfigAsync();
-            Log("[UI] KhoÃ¡ chuá»™t web: ON");
+            Log("[UI] Khoá chuột web: ON");
         }
 
         private async void ChkLockMouse_Unchecked(object sender, RoutedEventArgs e)
         {
-            if (!_uiReady || _tabSwitching) return;               // â¬…ï¸ cháº·n event khá»Ÿi Ä‘á»™ng sá»›m
+            if (!_uiReady || _tabSwitching) return;               // ⬅️ chặn event khởi động sớm
             ApplyMouseShieldFromCheck();
             _ = SaveConfigAsync();
-            Log("[UI] KhoÃ¡ chuá»™t web: OFF");
+            Log("[UI] Khoá chuột web: OFF");
         }
 
 
@@ -5177,7 +5236,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
           #${KEY} {
             position: fixed; inset: 0; z-index: 2147483647;
             background: rgba(0,0,0,0);
-            pointer-events: auto; /* nháº­n má»i click Ä‘á»ƒ cháº·n xuá»‘ng dÆ°á»›i */
+            pointer-events: auto; /* nhận mọi click để chặn xuống dưới */
           }`;
         (document.head || document.documentElement).appendChild(st);
       }catch(_){}
@@ -5188,7 +5247,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         if(document.getElementById(KEY)) return true;
         const d = document.createElement('div');
         d.id = KEY; d.setAttribute('role','presentation');
-        d.title = 'Äang khoÃ¡ chuá»™t';
+        d.title = 'Đang khoá chuột';
         const stop = e => { e.stopPropagation(); e.preventDefault(); };
         ['click','mousedown','mouseup','pointerdown','pointerup','wheel','touchstart','touchend','contextmenu']
           .forEach(t => d.addEventListener(t, stop, {capture:true}));
@@ -5206,13 +5265,13 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
   }catch(_){} 
 })();";
 
-            // ÄÄƒng kÃ½ cho má»i document trong tÆ°Æ¡ng lai (1 láº§n)
+            // Đăng ký cho mọi document trong tương lai (1 lần)
             if (!_lockJsRegistered)
             {
                 await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(LOCK_JS);
                 _lockJsRegistered = true;
             }
-            // TiÃªm ngay cho document hiá»‡n táº¡i
+            // Tiêm ngay cho document hiện tại
             await Web.ExecuteScriptAsync(LOCK_JS);
         }
 
@@ -5223,9 +5282,9 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             return (s.Length <= take) ? s : s.Substring(s.Length - take, take);
         }
 
-        // Ä‘áº·t trong MainWindow.xaml.cs (project TaiXiuLiveSun)
+        // đặt trong MainWindow.xaml.cs (project TaiXiuLiveSun)
 
-        // load thá»­ láº§n lÆ°á»£t cÃ¡c uri, cÃ¡i nÃ o Ä‘Æ°á»£c thÃ¬ dÃ¹ng, khÃ´ng Ä‘Æ°á»£c thÃ¬ tráº£ vá» null
+        // load thử lần lượt các uri, cái nào được thì dùng, không được thì trả về null
         private static ImageSource? LoadImgSafe(params string[] uris)
         {
             foreach (var uri in uris)
@@ -5242,7 +5301,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 }
                 catch
                 {
-                    // thá»­ uri tiáº¿p theo
+                    // thử uri tiếp theo
                 }
             }
             return null;
@@ -5251,14 +5310,14 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
         private void InitSeqIcons()
         {
-            // Ä‘Ã£ cÃ³ rá»“i thÃ¬ thÃ´i
+            // đã có rồi thì thôi
             if (_seqIconMap.Count > 0)
                 return;
 
-            // tÃªn assembly thá»±c táº¿ cá»§a DLL hiá»‡n táº¡i
+            // tên assembly thực tế của DLL hiện tại
             string asm = GetType().Assembly.GetName().Name!;
 
-            // má»—i cÃ¡i cho 2-3 Ä‘Æ°á»ng dáº«n Ä‘á»ƒ cháº¡y Ä‘Æ°á»£c cáº£ khi lÃ m plugin vÃ  khi cháº¡y Ä‘á»™c láº­p
+            // mỗi cái cho 2-3 đường dẫn để chạy được cả khi làm plugin và khi chạy độc lập
             _seqIconMap['L'] = FallbackIcons.LoadPackImage("Assets/Seq/L.png") ?? LoadImgSafe(
                 $"pack://application:,,,/{asm};component/Assets/Seq/L.png",
                 "pack://application:,,,/Assets/Seq/L.png",
@@ -5276,7 +5335,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         void UpdateSeqUI(string fullSeq)
         {
             var tail = (fullSeq.Length <= 20) ? fullSeq : fullSeq.Substring(fullSeq.Length - 20, 20);
-            if (tail == _lastSeqTailShown) return; // QUAN TRá»ŒNG: Ä‘á»«ng reset animation
+            if (tail == _lastSeqTailShown) return; // QUAN TRỌNG: đừng reset animation
 
             var items = new List<SeqIconVM>(tail.Length);
             for (int i = 0; i < tail.Length; i++)
@@ -5294,7 +5353,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
         private void SetLastResultUI(string? result)
         {
-            // Chuáº©n hoÃ¡ & cháº¥p nháº­n cáº£ tail sá»‘ '0'..'4'
+            // Chuẩn hoá & chấp nhận cả tail số '0'..'4'
             string sRaw = result ?? string.Empty;
             string s = sRaw.Trim().ToUpperInvariant();
 
@@ -5302,18 +5361,18 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
             if (s.Length == 1 && char.IsDigit(s[0]))
             {
-                // tail sá»‘ tá»« chuá»—i káº¿t quáº£: 0/2/4 => CHáº´N, 1/3 => Láºº
+                // tail số từ chuỗi kết quả: 0/2/4 => CHẴN, 1/3 => LẺ
                 char d = s[0];
                 isChan = (d == 'C');
                 isLe = (d == 'L');
             }
             else
             {
-                isChan = (s == "CHAN" || s == "CHáº´N" || s == "C");
-                isLe = (s == "LE" || s == "Láºº" || s == "L");
+                isChan = (s == "CHAN" || s == "CHẴN" || s == "C");
+                isLe = (s == "LE" || s == "LẺ" || s == "L");
             }
 
-            // Helper: fallback hiá»ƒn thá»‹ chá»¯
+            // Helper: fallback hiển thị chữ
             void ShowText(string text)
             {
                 if (ImgKetQua != null) ImgKetQua.Visibility = Visibility.Collapsed;
@@ -5330,7 +5389,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 return;
             }
 
-            // Æ¯u tiÃªn láº¥y áº£nh trong Resource (ImgCHAN/ImgLE) -> náº¿u khÃ´ng cÃ³ thÃ¬ dÃ¹ng SharedIcons
+            // Ưu tiên lấy ảnh trong Resource (ImgCHAN/ImgLE) -> nếu không có thì dùng SharedIcons
             string resKey = isLe ? "ImgLE" : "ImgCHAN";
             var resImg = TryFindResource(resKey) as ImageSource;
 
@@ -5341,29 +5400,29 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
             if (icon != null && ImgKetQua != null)
             {
-                // Hiá»ƒn thá»‹ áº£nh + áº©n chá»¯
+                // Hiển thị ảnh + ẩn chữ
                 ImgKetQua.Source = icon;
                 ImgKetQua.Visibility = Visibility.Visible;
                 if (LblKetQua != null) LblKetQua.Visibility = Visibility.Collapsed;
 
-                // Cache láº¡i Ä‘á»ƒ DataGrid (converters) cÃ³ thá»ƒ "káº¿ thá»«a" tá»« tráº¡ng thÃ¡i
+                // Cache lại để DataGrid (converters) có thể "kế thừa" từ trạng thái
                 if (isChan) SharedIcons.ResultChan = icon;
                 else SharedIcons.ResultLe = icon;
             }
             else
             {
-                // KhÃ´ng cÃ³ áº£nh -> fallback chá»¯ cÃ³ dáº¥u
-                ShowText(isChan ? "CHáº´N" : "Láºº");
+                // Không có ảnh -> fallback chữ có dấu
+                ShowText(isChan ? "CHẴN" : "LẺ");
             }
         }
 
 
         private void SetLastSideUI(string? result)
         {
-            // Chuáº©n hoÃ¡
+            // Chuẩn hoá
             var s = (result ?? "").Trim().ToUpperInvariant();
-            bool isLe = s == "LE" || s == "Láºº" || s == "L";
-            bool isChan = s == "CHAN" || s == "CHáº´N" || s == "C";
+            bool isLe = s == "LE" || s == "LẺ" || s == "L";
+            bool isChan = s == "CHAN" || s == "CHẴN" || s == "C";
 
             void ShowText(string text)
             {
@@ -5490,27 +5549,27 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         }
 
 
-        // === RESET MINI PANEL: THáº®NG/THUA, Cá»¬A Äáº¶T, TIá»€N CÆ¯á»¢C, Má»¨C TIá»€N ===
+        // === RESET MINI PANEL: THẮNG/THUA, CỬA ĐẶT, TIỀN CƯỢC, MỨC TIỀN ===
         private void ResetBetMiniPanel()
         {
             try
             {
                 if (_activeTab != null)
                     ResetTabMiniState(_activeTab);
-                // THáº®NG/THUA: bool? -> null Ä‘á»ƒ xoÃ¡
+                // THẮNG/THUA: bool? -> null để xoá
                 SetWinLossUI(null);
 
-                // Cá»¬A Äáº¶T: string? -> null/"" Ä‘á»u xoÃ¡
+                // CỬA ĐẶT: string? -> null/"" đều xoá
                 SetLastSideUI(null);
 
-                // Káº¾T QUáº¢ (náº¿u cÃ³ hiá»ƒn thá»‹)
+                // KẾT QUẢ (nếu có hiển thị)
                 SetLastResultUI(null);
 
-                // TIá»€N CÆ¯á»¢C & Má»¨C TIá»€N
-                if (LblStake != null) LblStake.Text = "";  // TIá»€N CÆ¯á»¢C
-                if (LblLevel != null) LblLevel.Text = "";  // Má»¨C TIá»€N
+                // TIỀN CƯỢC & MỨC TIỀN
+                if (LblStake != null) LblStake.Text = "";  // TIỀN CƯỢC
+                if (LblLevel != null) LblLevel.Text = "";  // MỨC TIỀN
 
-                // LÆ°u Ã½: KHÃ”NG reset tá»•ng lÃ£i á»Ÿ Ä‘Ã¢y Ä‘á»ƒ Ã´ng chá»§ cÃ²n nhÃ¬n sau khi dá»«ng.
+                // Lưu ý: KHÔNG reset tổng lãi ở đây để ông chủ còn nhìn sau khi dừng.
             }
             catch (Exception ex)
             {
@@ -5518,7 +5577,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             }
         }
 
-        // Cho code ná»n (TaskUtil) gá»i Ä‘Ãºng hÃ m reset gá»‘c
+        // Cho code nền (TaskUtil) gọi đúng hàm reset gốc
         public void ResetBetMiniPanel_External()
         {
             var running = _strategyTabs.Where(t => t.IsRunning).ToList();
@@ -5563,12 +5622,12 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     return;
                 }
 
-                // Thiáº¿u resource â†’ fallback chá»¯
-                ShowText(result.Value ? "THáº®NG" : "THUA");
+                // Thiếu resource → fallback chữ
+                ShowText(result.Value ? "THẮNG" : "THUA");
                 return;
             }
 
-            // ChÆ°a cÃ³ káº¿t quáº£
+            // Chưa có kết quả
             ShowText("");
         }
 
@@ -5576,27 +5635,27 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
 
         /// <summary>
-        /// Báº­t timer re-check license: cá»© sau 5 phÃºt sáº½ kiá»ƒm tra háº¡n license tá»« GitHub.
+        /// Bật timer re-check license: cứ sau 5 phút sẽ kiểm tra hạn license từ GitHub.
         /// </summary>
         private void StartLicenseRecheckTimer(string username)
         {
-            StopLicenseRecheckTimer(); // Ä‘áº£m báº£o khÃ´ng nhÃ¢n báº£n timer
+            StopLicenseRecheckTimer(); // đảm bảo không nhân bản timer
 
-            // Cháº¡y sau 5 phÃºt, láº·p láº¡i má»—i 5 phÃºt (khÃ´ng cháº¡y ngay vÃ¬ lÃºc start Ä‘Ã£ check rá»“i)
+            // Chạy sau 5 phút, lặp lại mỗi 5 phút (không chạy ngay vì lúc start đã check rồi)
             _licenseCheckTimer = new System.Threading.Timer(async _ =>
             {
                 try
                 {
                     await CheckLicenseNowAsync(username);
                 }
-                catch { /* giá»¯ timer sá»‘ng, khÃ´ng throw ra ngoÃ i */ }
+                catch { /* giữ timer sống, không throw ra ngoài */ }
             }, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
 
             Log("[LicenseCheck] timer started (every 5 minutes)");
         }
 
         /// <summary>
-        /// Táº¯t timer re-check license (gá»i khi dá»«ng cÆ°á»£c/thoÃ¡t app).
+        /// Tắt timer re-check license (gọi khi dừng cược/thoát app).
         /// </summary>
         private void StopLicenseRecheckTimer()
         {
@@ -5607,11 +5666,11 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         }
 
         /// <summary>
-        /// Kiá»ƒm tra license tá»©c thá»i: fetch GitHub, cáº­p nháº­t countdown; háº¿t háº¡n thÃ¬ dá»«ng cÆ°á»£c.
+        /// Kiểm tra license tức thời: fetch GitHub, cập nhật countdown; hết hạn thì dừng cược.
         /// </summary>
         private async Task CheckLicenseNowAsync(string username)
         {
-            if (Interlocked.Exchange(ref _licenseCheckBusy, 1) == 1) return; // Ä‘ang cháº¡y -> bá» qua
+            if (Interlocked.Exchange(ref _licenseCheckBusy, 1) == 1) return; // đang chạy -> bỏ qua
             try
             {
                 var lic = await FetchLicenseAsync(username);
@@ -5626,7 +5685,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     Log("[LicenseCheck] invalid license payload");
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        MessageBox.Show("KhÃ´ng xÃ¡c thá»±c Ä‘Æ°á»£c license. Dá»«ng Ä‘áº·t cÆ°á»£c.", "Automino",
+                        MessageBox.Show("Không xác thực được license. Dừng đặt cược.", "Automino",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
                         SetLicenseUi(false);
                         StopAllTasksAndRelease();
@@ -5638,7 +5697,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     Log("[LicenseCheck] password mismatch");
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        MessageBox.Show("Máº­t kháº©u license khÃ´ng Ä‘Ãºng. Dá»«ng Ä‘áº·t cÆ°á»£c.", "Automino",
+                        MessageBox.Show("Mật khẩu license không đúng. Dừng đặt cược.", "Automino",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
                         SetLicenseUi(false);
                         StopAllTasksAndRelease();
@@ -5651,14 +5710,14 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     Log("[LicenseCheck] license expired");
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        MessageBox.Show("License Ä‘Ã£ háº¿t háº¡n. Dá»«ng Ä‘áº·t cÆ°á»£c.", "Automino",
+                        MessageBox.Show("License đã hết hạn. Dừng đặt cược.", "Automino",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
                         SetLicenseUi(false);
                         StopAllTasksAndRelease();
                     });
                     return;
                 }
-                // OK: cáº­p nháº­t láº¡i countdown náº¿u cÃ³ gia háº¡n trÃªn GitHub
+                // OK: cập nhật lại countdown nếu có gia hạn trên GitHub
                 await Dispatcher.InvokeAsync(() =>
                 {
                     StartExpiryCountdown(expUtc, "license");
@@ -5668,7 +5727,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             catch (Exception ex)
             {
                 Log("[LicenseCheck] error " + ex.Message);
-                // Lá»—i máº¡ng táº¡m thá»i: KHÃ”NG dá»«ng cÆ°á»£c, láº§n sau timer sáº½ thá»­ láº¡i.
+                // Lỗi mạng tạm thời: KHÔNG dừng cược, lần sau timer sẽ thử lại.
             }
             finally
             {
@@ -5698,7 +5757,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
         private static string RemoveUtf8Bom(string s)
         {
-            // Náº¿u chuá»—i báº¯t Ä‘áº§u báº±ng BOM (U+FEFF) thÃ¬ bá» Ä‘i
+            // Nếu chuỗi bắt đầu bằng BOM (U+FEFF) thì bỏ đi
             return (!string.IsNullOrEmpty(s) && s[0] == '\uFEFF') ? s.Substring(1) : s;
         }
 
@@ -5841,12 +5900,12 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             return null;
         }
 
-        // Giá»¯ nguyÃªn tÃªn Ä‘á»ƒ khÃ´ng pháº£i sá»­a cÃ¡c callsite
+        // Giữ nguyên tên để không phải sửa các callsite
         private async Task<string> LoadAppJsAsyncFallback()
         {
             try
             {
-                // Äá»c tháº³ng tá»« embedded (KHÃ”NG thá»­ Ä‘á»c tá»« Ä‘Ä©a)
+                // Đọc thẳng từ embedded (KHÔNG thử đọc từ đĩa)
                 var resName = FindResourceName("v4_js_xoc_dia_live.js")
                               ?? "TaiXiuLiveSun.v4_js_xoc_dia_live.js";
                 var text = ReadEmbeddedText(resName);
@@ -5871,10 +5930,11 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         {
             try
             {
-                var resName = FindResourceName("js_home_v2.js")
-                              ?? "TaiXiuLiveSun.js_home_v2.js"; // fallback tÃªn logic
-                var text = ReadEmbeddedText(resName);   // helper sáºµn cÃ³
-                text = RemoveUtf8Bom(text);             // helper sáºµn cÃ³
+                var resName = FindResourceName("js_home_v2.js");
+                if (string.IsNullOrWhiteSpace(resName))
+                    return "";
+                var text = ReadEmbeddedText(resName);   // helper sẵn có
+                text = RemoveUtf8Bom(text);             // helper sẵn có
 
                 if (!string.IsNullOrWhiteSpace(text))
                 {
@@ -5907,7 +5967,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             if (_appJsRegId == null && !string.IsNullOrEmpty(_appJs))
                 _appJsRegId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(_appJs);
 
-            // NEW: Ä‘Äƒng kÃ½ Home JS
+            // NEW: đăng ký Home JS
             if (_homeJsRegId == null && !string.IsNullOrEmpty(_homeJs))
                 _homeJsRegId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(_homeJs);
 
@@ -5915,7 +5975,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 _autoStartId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(FRAME_AUTOSTART);
             if (_homeAutoStartId == null)
             {
-                // ÄÄƒng kÃ½ autostart Home vá»›i interval máº·c Ä‘á»‹nh (_homePushMs)
+                // Đăng ký autostart Home với interval mặc định (_homePushMs)
                 var homeAuto = BuildHomeAutostartJs(_homePushMs);
                 _homeAutoStartId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(homeAuto);
             }
@@ -5949,39 +6009,42 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         private async Task InjectOnNewDocAsync()
         {
             if (Web?.CoreWebView2 == null) return;
+            if (System.Threading.Interlocked.Exchange(ref _injectDocBusy, 1) == 1) return;
 
-            string key = "";
             try
             {
-                var json = await Web.CoreWebView2.ExecuteScriptAsync(
-                    "(function(){try{return String(performance.timeOrigin)}catch(_){return String(Date.now())}})()");
-                key = JsonSerializer.Deserialize<string>(json) ?? "";
-            }
-            catch { }
+                string key = "";
+                try
+                {
+                    var json = await Web.CoreWebView2.ExecuteScriptAsync(
+                        "(function(){try{return String(performance.timeOrigin)}catch(_){return String(Date.now())}})()");
+                    key = JsonSerializer.Deserialize<string>(json) ?? "";
+                }
+                catch { }
 
-            if (!string.IsNullOrEmpty(key) && key != _lastDocKey)
-            {
+                if (string.IsNullOrEmpty(key) || key == _lastDocKey) return;
+                _lastDocKey = key; // reserve key sớm để chống inject trùng do nhiều event song song
                 ResetHomeFlowFlags();
-                // TiÃªm láº¡i ngay trÃªn tÃ i liá»‡u hiá»‡n táº¡i (phÃ²ng khi AddScript chÆ°a ká»‹p cháº¡y vÃ¬ timing)
+                // Tiêm lại ngay trên tài liệu hiện tại (phòng khi AddScript chưa kịp chạy vì timing)
                 await Web.CoreWebView2.ExecuteScriptAsync(TOP_FORWARD);
                 if (!string.IsNullOrEmpty(_appJs))
                     await Web.CoreWebView2.ExecuteScriptAsync(_appJs);
 
-                // NEW: tiÃªm Home JS luÃ´n (an toÃ n trÃªn Game vÃ¬ nÃ³ tá»± no-op)
+                // NEW: tiêm Home JS luôn (an toàn trên Game vì nó tự no-op)
                 if (!string.IsNullOrEmpty(_homeJs))
                     await Web.CoreWebView2.ExecuteScriptAsync(_homeJs);
 
-                // KÃ­ch autostart trÃªn top (idempotent â€“ náº¿u khÃ´ng cÃ³ __cw_startPush thÃ¬ khÃ´ng sao)
+                // Kích autostart trên top (idempotent – nếu không có __cw_startPush thì không sao)
                 await Web.CoreWebView2.ExecuteScriptAsync(FRAME_AUTOSTART);
-                // Náº¿u KHÃ”NG pháº£i host games.* thÃ¬ khá»Ÿi Ä‘á»™ng push cá»§a js_home_v2
+                // Nếu KHÔNG phải host games.* thì khởi động push của js_home_v2
                 await Web.CoreWebView2.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
 
-
-                _lastDocKey = key;
                 Log("[Bridge] Injected on current doc, key=" + key);
             }
-
-
+            finally
+            {
+                System.Threading.Volatile.Write(ref _injectDocBusy, 0);
+            }
         }
 
 
@@ -5991,17 +6054,13 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             {
                 var f = e.Frame;
 
-                // TiÃªm ngay (idempotent)
+                // Tiêm ngay (idempotent)
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = f.ExecuteScriptAsync(_appJs);
-                // NEW: inject Home JS vÃ o frame
-                if (!string.IsNullOrEmpty(_homeJs))
-                    _ = f.ExecuteScriptAsync(_homeJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
-                Log("[Bridge] Frame injected + autostart armed.");
+                if (LOG_FRAME_INJECT_VERBOSE)
+                    Log("[Bridge] Frame shim + autostart armed.");
 
-                // Hook lifecycle cá»§a CHÃNH frame nÃ y
+                // Hook lifecycle của CHÍNH frame này
                 f.DOMContentLoaded += Frame_DOMContentLoaded_Bridge;
                 f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
             }
@@ -6018,12 +6077,12 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             {
                 var t = Web!.CoreWebView2.GetType();
 
-                // API má»›i: GetFrameById
+                // API mới: GetFrameById
                 var mi = t.GetMethod("GetFrameById");
                 if (mi != null)
                     return (CoreWebView2Frame?)mi.Invoke(Web.CoreWebView2, new object[] { frameId });
 
-                // Má»™t sá»‘ runtime cÃ³ TryGetFrame(ulong, out CoreWebView2Frame)
+                // Một số runtime có TryGetFrame(ulong, out CoreWebView2Frame)
                 mi = t.GetMethod("TryGetFrame");
                 if (mi != null)
                 {
@@ -6044,11 +6103,10 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 if (f == null) return;
 
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = f.ExecuteScriptAsync(_appJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
 
-                Log("[Bridge] Frame DOMContentLoaded -> reinjected + autostart.");
+                if (LOG_FRAME_INJECT_VERBOSE)
+                    Log("[Bridge] Frame DOMContentLoaded -> shim + autostart.");
             }
             catch (Exception ex)
             {
@@ -6065,11 +6123,10 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 if (f == null) return;
 
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = f.ExecuteScriptAsync(_appJs);
                 _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
 
-                Log("[Bridge] Frame NavigationCompleted -> reinjected + autostart.");
+                if (LOG_FRAME_INJECT_VERBOSE)
+                    Log("[Bridge] Frame NavigationCompleted -> shim + autostart.");
             }
             catch (Exception ex)
             {
@@ -6085,16 +6142,16 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             {
                 try
                 {
-                    // 1) __cw_bet cÃ³ chÆ°a
+                    // 1) __cw_bet có chưa
                     var typeBet = (await Web.ExecuteScriptAsync("typeof window.__cw_bet"))?.Trim('"');
                     bool hasBet = string.Equals(typeBet, "function", StringComparison.OrdinalIgnoreCase);
 
-                    // 2) Cocos cÃ³ chÆ°a
+                    // 2) Cocos có chưa
                     var cocosJson = await Web.ExecuteScriptAsync(
                         "(function(){try{return !!(window.cc && cc.director && cc.director.getScene);}catch(e){return false;}})()");
                     bool hasCocos = bool.TryParse(cocosJson, out var b) && b;
 
-                    // 3) ÄÃ£ cÃ³ tick chÆ°a (Ã­t nháº¥t 1 kÃ½ tá»± seq)
+                    // 3) Đã có tick chưa (ít nhất 1 ký tự seq)
                     bool hasTick = false;
                     lock (_snapLock)
                     {
@@ -6104,7 +6161,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     if (hasBet && hasCocos && hasTick)
                         return true;
                 }
-                catch { /* tiáº¿p tá»¥c Ä‘á»£i */ }
+                catch { /* tiếp tục đợi */ }
 
                 await Task.Delay(300);
             }
@@ -6112,7 +6169,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         }
 
 
-        // JSON license Ä‘Æ¡n giáº£n trÃªn GitHub
+        // JSON license đơn giản trên GitHub
         private record LicenseDoc(string exp, string pass);
 
         private async Task<LicenseDoc?> FetchLicenseAsync(string username)
@@ -6132,12 +6189,12 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             }
         }
 
-        // Acquire lease 1 láº§n (KHÃ”NG renew theo yÃªu cáº§u)
+        // Acquire lease 1 lần (KHÔNG renew theo yêu cầu)
         private async Task<bool> AcquireLeaseOnceAsync(string username)
         {
             EnsureDeviceId();
             if (!EnableLeaseCloudflare) return true;
-            if (string.IsNullOrWhiteSpace(LeaseBaseUrl)) return true; // chÆ°a cáº¥u hÃ¬nh -> bá» qua
+            if (string.IsNullOrWhiteSpace(LeaseBaseUrl)) return true; // chưa cấu hình -> bỏ qua
             try
             {
                 using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(6) };
@@ -6147,20 +6204,20 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 Log($"[Lease] acquire -> {(int)resp.StatusCode} {resp.ReasonPhrase} | {body}");
                 if ((int)resp.StatusCode == 409)
                 {
-                    // tÃ i khoáº£n Ä‘ang cháº¡y nÆ¡i khÃ¡c
+                    // tài khoản đang chạy nơi khác
                     Log("[Lease] 409 in-use: " + body);
-                    MessageBox.Show("TÃ i khoáº£n Ä‘ang cháº¡y nÆ¡i khÃ¡c. Vui lÃ²ng thá»­ láº¡i sau.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("Tài khoản đang chạy nơi khác. Vui lòng thử lại sau.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return false;
                 }
                 if (resp.IsSuccessStatusCode) return true;
-                MessageBox.Show($"Lease bá»‹ tá»« chá»‘i [{(int)resp.StatusCode}] - {body}", "Automino",
+                MessageBox.Show($"Lease bị từ chối [{(int)resp.StatusCode}] - {body}", "Automino",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             catch (Exception ex)
             {
                 Log("[Lease] acquire error: " + ex.Message);
-                MessageBox.Show("KhÃ´ng káº¿t ná»‘i Ä‘Æ°á»£c trung tÃ¢m lease. Vui lÃ²ng kiá»ƒm tra máº¡ng.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Không kết nối được trung tâm lease. Vui lòng kiểm tra mạng.", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             return false;
         }
@@ -6174,7 +6231,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 using var http = new HttpClient() { Timeout = TimeSpan.FromSeconds(4) };
                 var uname = Uri.EscapeDataString(username);
                 var resp = await http.PostAsJsonAsync($"{LeaseBaseUrl}/release/{uname}", new { clientId = _leaseClientId, sessionId = _leaseSessionId, deviceId = _deviceId, appId = AppLocalDirName });
-                // khÃ´ng cáº§n xá»­ lÃ½ gÃ¬ thÃªm; cá»© fire-and-forget
+                // không cần xử lý gì thêm; cứ fire-and-forget
                 Log("[Lease] release sent: " + (int)resp.StatusCode);
             }
             catch (Exception ex)
@@ -6190,24 +6247,24 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         }
 
 
-        // Khá»Ÿi Ä‘á»™ng Ä‘áº¿m ngÆ°á»£c hiá»ƒn thá»‹ dÆ°á»›i nÃºt vÃ  auto stop khi háº¿t giá»
+        // Khởi động đếm ngược hiển thị dưới nút và auto stop khi hết giờ
         private void StartExpiryCountdown(DateTimeOffset until, string mode)
         {
-            // âœ… Chuáº©n hoÃ¡ vá» LOCAL Ä‘á»ƒ hiá»ƒn thá»‹ & tÃ­nh giá» cho Ä‘Ãºng vá»›i Ä‘á»“ng há»“ mÃ¡y
+            // ✅ Chuẩn hoá về LOCAL để hiển thị & tính giờ cho đúng với đồng hồ máy
             var localUntil = until.ToLocalTime();
             _runExpiresAt = localUntil;
             _expireMode = mode;
 
-            // Cáº­p nháº­t ngay 1 láº§n
+            // Cập nhật ngay 1 lần
             Dispatcher.Invoke(() => UpdateExpireLabelUI());
 
-            // Tick má»—i giÃ¢y
+            // Tick mỗi giây
             _expireTimer?.Dispose();
             _expireTimer = new System.Threading.Timer(_ =>
             {
                 try
                 {
-                    var now = DateTimeOffset.Now;          // â— DÃ¹ng Now (local), khÃ´ng dÃ¹ng UtcNow ná»¯a
+                    var now = DateTimeOffset.Now;          // ❗ Dùng Now (local), không dùng UtcNow nữa
                     var left = (_runExpiresAt ?? now) - now;
 
                     if (left <= TimeSpan.Zero)
@@ -6217,34 +6274,34 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
                         Dispatcher.BeginInvoke(new Action(() =>
                         {
-                            // Tá»± dá»«ng vÃ²ng chÆ¡i náº¿u cÃ²n Ä‘ang cháº¡y
+                            // Tự dừng vòng chơi nếu còn đang chạy
                             if (IsAnyTabRunning())
                             {
                                 StopAllTasksAndRelease();
                             }
 
-                            // ThÃ´ng bÃ¡o theo mode
+                            // Thông báo theo mode
                               if (_expireMode == "trial")
                               {
                                   MessageBox.Show(TrialConsumedTodayMessage, "Automino", MessageBoxButton.OK, MessageBoxImage.Information);
                               }
                               else
                               {
-                                  MessageBox.Show("Tool cá»§a báº¡n háº¿t háº¡n ! HÃ£y liÃªn há»‡ Telegram: @minoauto Ä‘á»ƒ gia háº¡n", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                  MessageBox.Show("Tool của bạn hết hạn ! Hãy liên hệ Telegram: @minoauto để gia hạn", "Automino", MessageBoxButton.OK, MessageBoxImage.Warning);
                               }
 
                               if (ChkTrial != null) ChkTrial.IsChecked = false;
-                              // XoÃ¡ nhÃ£n
+                              // Xoá nhãn
                               if (LblExpire != null) LblExpire.Text = "";
                               _runExpiresAt = null;
-                            // náº¿u lÃ  trial thÃ¬ huá»· vÃ© local Ä‘á»ƒ láº§n sau khÃ´ng resume ná»¯a
+                            // nếu là trial thì huỷ vé local để lần sau không resume nữa
                             try { if (_expireMode == "trial") { ClearLocalTrialState(saveAsync: true); } } catch { }
 
-                            // Ngáº¯t heartbeat trÆ°á»›c khi tráº£ lease
+                            // Ngắt heartbeat trước khi trả lease
                             StopLeaseHeartbeat();
                             SetLicenseUi(false);
                             StopLicenseRecheckTimer();
-                            // Thá»­ tráº£ lease luÃ´n Ä‘á»ƒ nhÆ°á»ng slot
+                            // Thử trả lease luôn để nhường slot
                             var uname = ResolveLeaseUsername();
                             if (!string.IsNullOrWhiteSpace(uname))
                                 _ = ReleaseLeaseAsync(uname);
@@ -6280,31 +6337,31 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 return;
             }
 
-            // â— DÃ¹ng Now (local) Ä‘á»ƒ Ä‘á»“ng bá»™ vá»›i _runExpiresAt (Ä‘Ã£ ToLocalTime á»Ÿ trÃªn)
+            // ❗ Dùng Now (local) để đồng bộ với _runExpiresAt (đã ToLocalTime ở trên)
             var now = DateTimeOffset.Now;
             var left = _runExpiresAt.Value - now;
 
             if (left <= TimeSpan.Zero)
             {
-                LblExpire.Text = "Háº¿t háº¡n";
+                LblExpire.Text = "Hết hạn";
                 return;
             }
 
             string line;
             if (left.TotalDays >= 1)
             {
-                // VÃ­ dá»¥: "CÃ²n láº¡i: 1 ngÃ y 07:12:34  |  Háº¿t háº¡n: 17/11/2025 20:30"
-                line = $"CÃ²n láº¡i: {Math.Floor(left.TotalDays)} ngÃ y {left:hh\\:mm\\:ss}  |  Háº¿t háº¡n: {_runExpiresAt:dd/MM/yyyy HH:mm}";
+                // Ví dụ: "Còn lại: 1 ngày 07:12:34  |  Hết hạn: 17/11/2025 20:30"
+                line = $"Còn lại: {Math.Floor(left.TotalDays)} ngày {left:hh\\:mm\\:ss}  |  Hết hạn: {_runExpiresAt:dd/MM/yyyy HH:mm}";
             }
             else
             {
-                // DÆ°á»›i 1 ngÃ y chá»‰ hiá»‡n giá»/phÃºt/giÃ¢y
-                line = $"CÃ²n láº¡i: {left:hh\\:mm\\:ss}";
+                // Dưới 1 ngày chỉ hiện giờ/phút/giây
+                line = $"Còn lại: {left:hh\\:mm\\:ss}";
             }
             LblExpire.Text = line;
         }
 
-        // Helper build script vá»›i tham sá»‘ interval (ms)
+        // Helper build script với tham số interval (ms)
         private static string BuildHomeAutostartJs(int intervalMs)
         {
             var ms = Math.Max(300, intervalMs);
@@ -6351,7 +6408,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     catch (Exception ex) { Log("[Lease] hb err: " + ex.Message); }
 
                     await Task.Delay(TimeSpan.FromSeconds(600), cts.Token)
-                              .ContinueWith(_ => { }); // nuá»‘t TaskCanceled
+                              .ContinueWith(_ => { }); // nuốt TaskCanceled
                 }
             }, cts.Token);
         }
@@ -6372,7 +6429,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 StopLicenseRecheckTimer();
                 StopExpiryCountdown();
 
-                // ðŸ”´ thÃªm dÃ²ng nÃ y
+                // 🔴 thêm dòng này
                 CleanupWebStuff();
 
                 var uname = ResolveLeaseUsername();
@@ -6390,8 +6447,8 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         {
             try
             {
-                _shutdownCts.Cancel();   // báº¡n Ä‘Ã£ cÃ³
-                CleanupWebStuff();       // ðŸ”´ thÃªm
+                _shutdownCts.Cancel();   // bạn đã có
+                CleanupWebStuff();       // 🔴 thêm
             }
             catch { }
         }
@@ -6400,7 +6457,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
         private void CleanupWebStuff()
         {
-            // 1) há»§y cÃ¡c CTS liÃªn quan Ä‘áº¿n web / auto login
+            // 1) hủy các CTS liên quan đến web / auto login
             try { _navCts?.Cancel(); } catch { }
             _navCts = null;
 
@@ -6416,19 +6473,19 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             try { _autoLoginWatchCts?.Cancel(); } catch { }
             _autoLoginWatchCts = null;
 
-            // 2) táº¯t timer license náº¿u cÃ³
+            // 2) tắt timer license nếu có
             try { _licenseCheckTimer?.Dispose(); } catch { }
             _licenseCheckTimer = null;
 
-            // 3) gá»¡ Ä‘Æ°á»£c cÃ¡i nÃ o cÃ³ tÃªn thÃ¬ gá»¡ cÃ¡i Ä‘Ã³
+            // 3) gỡ được cái nào có tên thì gỡ cái đó
             try
             {
                 if (Web != null)
                 {
-                    // cÃ¡i nÃ y CÃ“ tÃªn nÃªn gá»¡ Ä‘Æ°á»£c
+                    // cái này CÓ tên nên gỡ được
                     try { Web.NavigationCompleted -= Web_NavigationCompleted; } catch { }
 
-                    // Ä‘áº©y web vá» tráº¯ng trÆ°á»›c khi dispose Ä‘á»ƒ nÃ³ ngÆ°ng máº¥y request ná»n
+                    // đẩy web về trắng trước khi dispose để nó ngưng mấy request nền
                     try
                     {
                         if (Web.CoreWebView2 != null)
@@ -6436,14 +6493,14 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     }
                     catch { }
 
-                    // dispose háº³n control
+                    // dispose hẳn control
                     try { Web.Dispose(); } catch { }
                     Web = null;
                 }
             }
             catch { }
 
-            // 4) reset cÃ¡c cá» Ä‘Ã£ hook Ä‘á»ƒ náº¿u má»Ÿ láº¡i thÃ¬ hook láº¡i tá»« Ä‘áº§u
+            // 4) reset các cờ đã hook để nếu mở lại thì hook lại từ đầu
             _webHooked = false;
             _webMsgHooked = false;
             _frameHooked = false;
@@ -6476,9 +6533,9 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         }
 
 
-        // DÃ¹ng láº¡i cá» nÃ y náº¿u báº¡n Ä‘Ã£ cÃ³, hoáº·c thÃªm má»›i:
+        // Dùng lại cờ này nếu bạn đã có, hoặc thêm mới:
 
-        // Parse tiá»n: cho phÃ©p sá»‘ Ã¢m á»Ÿ Ä‘áº§u, bá» dáº¥u cháº¥m pháº©y khoáº£ng tráº¯ng
+        // Parse tiền: cho phép số âm ở đầu, bỏ dấu chấm phẩy khoảng trắng
         private static double ParseMoney(string s)
         {
             if (string.IsNullOrWhiteSpace(s)) return 0;
@@ -6486,7 +6543,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             return double.TryParse(cleaned, out var v) ? v : 0;
         }
 
-        // GÃ¡n UI tá»« config (gá»i á»Ÿ nÆ¡i báº¡n Ä‘Ã£ Ã¡p config ra UI, vÃ­ dá»¥ sau LoadConfig)
+        // Gán UI từ config (gọi ở nơi bạn đã áp config ra UI, ví dụ sau LoadConfig)
         private void ApplyCutUiFromConfig()
         {
             if (TxtCutProfit != null) TxtCutProfit.Text = (_cfg?.CutProfit ?? 0).ToString("N0");
@@ -6495,8 +6552,8 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
         private static double ParseMoneyOrZero(string s)
         {
-            if (string.IsNullOrWhiteSpace(s)) return 0;            // â¬…ï¸ rá»—ng = 0 (táº¯t)
-                                                                   // Cho phÃ©p sá»‘ Ã¢m á»Ÿ Ä‘áº§u, bá» dáº¥u ngÄƒn cÃ¡ch
+            if (string.IsNullOrWhiteSpace(s)) return 0;            // ⬅️ rỗng = 0 (tắt)
+                                                                   // Cho phép số âm ở đầu, bỏ dấu ngăn cách
             var cleaned = new string(s.Where(c => char.IsDigit(c) || (c == '-' && s.IndexOf(c) == 0)).ToArray());
             return double.TryParse(cleaned, out var v) ? v : 0;
         }
@@ -6505,27 +6562,27 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         {
             if (!_uiReady || _tabSwitching) return;
 
-            // Äá»c & chuáº©n hoÃ¡ (chuá»—i rá»—ng = 0 => táº¯t)
+            // Đọc & chuẩn hoá (chuỗi rỗng = 0 => tắt)
             var newCutProfit = ParseMoneyOrZero(T(TxtCutProfit));
             var newCutLoss = ParseMoneyOrZero(T(TxtCutLoss));
 
-            // TrÃ¡nh ghi file khi khÃ´ng Ä‘á»•i
+            // Tránh ghi file khi không đổi
             if (_cfg != null && _cfg.CutProfit == newCutProfit && _cfg.CutLoss == newCutLoss)
             {
-                // váº«n format láº¡i UI cho Ä‘áº¹p sá»‘
+                // vẫn format lại UI cho đẹp số
                 ApplyCutUiFromConfig();
                 return;
             }
 
-            // Cáº­p nháº­t _cfg vÃ  lÆ°u cho láº§n sau
+            // Cập nhật _cfg và lưu cho lần sau
             _cfg.CutProfit = newCutProfit;
             _cfg.CutLoss = newCutLoss;
             await SaveConfigAsync();
 
-            // Format láº¡i UI theo "N0"
+            // Format lại UI theo "N0"
             ApplyCutUiFromConfig();
 
-            // Náº¿u Ä‘ang cháº¡y thÃ¬ kiá»ƒm tra & cáº¯t ngay náº¿u Ä‘á»§ Ä‘iá»u kiá»‡n
+            // Nếu đang chạy thì kiểm tra & cắt ngay nếu đủ điều kiện
             CheckCutAndStopIfNeeded();
         }
         private void CheckCutAndStopIfNeeded()
@@ -6589,24 +6646,24 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             {
                 row.Result = resultText;
                 bool win = winSet.Contains(row.Side);
-                row.WinLose = win ? "Tháº¯ng" : "Thua";
+                row.WinLose = win ? "Thắng" : "Thua";
                 row.Account = balanceAfter;
 
-                // â—KHÃ”NG Add láº¡i vÃ o _betAll (Ä‘Ã£ chÃ¨n á»Ÿ thá»i Ä‘iá»ƒm BET)
+                // ❗KHÔNG Add lại vào _betAll (đã chèn ở thời điểm BET)
                 try { AppendBetCsv(row); } catch { /* ignore IO */ }
             }
 
-            // Chá»‰ vá» trang 1 náº¿u Ä‘ang bÃ¡m trang má»›i nháº¥t; cÃ²n Ä‘ang xem trang cÅ© thÃ¬ giá»¯ nguyÃªn
+            // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
             if (_autoFollowNewest)
             {
                 ShowFirstPage();
             }
             else
             {
-                RefreshCurrentPage();   // (má»¥c 3 bÃªn dÆ°á»›i)
+                RefreshCurrentPage();   // (mục 3 bên dưới)
             }
 
-            _pendingRows.Clear(); // sáºµn sÃ ng vÃ¡n tiáº¿p theo
+            _pendingRows.Clear(); // sẵn sàng ván tiếp theo
         }
 
         public void FinalizePendingBetsWithWinners(HashSet<string> winners, string? displayResult = null)
@@ -6709,14 +6766,14 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
                 _betAll.Clear();
                 _betAll.AddRange(tmp.OrderByDescending(r => r.At).Take(maxTotal));
-                // Chá»‰ vá» trang 1 náº¿u Ä‘ang bÃ¡m trang má»›i nháº¥t; cÃ²n Ä‘ang xem trang cÅ© thÃ¬ giá»¯ nguyÃªn
+                // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
                 if (_autoFollowNewest)
                 {
                     ShowFirstPage();
                 }
                 else
                 {
-                    RefreshCurrentPage();   // (má»¥c 3 bÃªn dÆ°á»›i)
+                    RefreshCurrentPage();   // (mục 3 bên dưới)
                 }
             }
             catch { /* ignore */ }
@@ -6732,7 +6789,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         private static string NormalizeWL(string s)
         {
             var u = TextNorm.U(s);
-            if (u.StartsWith("THANG")) return "Tháº¯ng";
+            if (u.StartsWith("THANG")) return "Thắng";
             if (u.StartsWith("THUA")) return "Thua";
             return (s ?? "").Trim();
         }
@@ -6748,10 +6805,10 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             int total = _betAll.Count;
             int pageCount = Math.Max(1, (int)Math.Ceiling(total / (double)PageSize));
 
-            // chá»‘t _pageIndex trong biÃªn
+            // chốt _pageIndex trong biên
             _pageIndex = Math.Max(0, Math.Min(_pageIndex, pageCount - 1));
 
-            // vÃ¬ _betAll Ä‘ang sáº¯p Má»šI â†’ CÅ¨, trang 1 lÃ  index 0
+            // vì _betAll đang sắp MỚI → CŨ, trang 1 là index 0
             int start = _pageIndex * PageSize;
             var slice = _betAll.Skip(start).Take(PageSize);
 
@@ -6781,10 +6838,10 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         private void RefreshCurrentPage() => RefreshBetPage();
 
 
-        // sá»± kiá»‡n nÃºt
+        // sự kiện nút
         private void BtnPrevPage_Click(object sender, RoutedEventArgs e)
         {
-            // trang 1 lÃ  0 â†’ khÃ´ng lÃ¹i Ä‘Æ°á»£c ná»¯a
+            // trang 1 là 0 → không lùi được nữa
             if (_pageIndex > 0)
             {
                 _pageIndex--;
@@ -6814,7 +6871,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 using var sw = new StreamWriter(file, append: true, Encoding.UTF8);
                 if (!exists)
                     sw.WriteLine("At,Game,Stake,Side,Result,WinLose,Account");
-                // CSV Ä‘Æ¡n giáº£n, At lÆ°u ISO Ä‘á»ƒ dá»… parse
+                // CSV đơn giản, At lưu ISO để dễ parse
                 sw.WriteLine($"{r.At:O},{r.Game},{r.Stake},{r.Side},{r.Result},{r.WinLose},{r.Account}");
             }
             catch { }
@@ -6822,8 +6879,8 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
         private async void MainWindow_Loaded(object? sender, RoutedEventArgs e)
         {
-            await LoadBetHistoryAsync(maxTotal: MaxHistory);  // Ä‘á»c tá»‘i Ä‘a MaxHistory báº£n ghi nhiá»u ngÃ y
-            ShowFirstPage();                            // hiá»ƒn thá»‹ 10 dÃ²ng má»›i nháº¥t (trang cuá»‘i)
+            await LoadBetHistoryAsync(maxTotal: MaxHistory);  // đọc tối đa MaxHistory bản ghi nhiều ngày
+            ShowFirstPage();                            // hiển thị 10 dòng mới nhất (trang cuối)
             UpdateTooltips();
         }
 
@@ -6839,14 +6896,14 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             RefreshBetPage();
         }
 
-        /// <summary>Dá»±ng dÃ£y sá»‘ trang: 1 â€¦ 4 5 [6] 7 8 â€¦ 20</summary>
+        /// <summary>Dựng dãy số trang: 1 … 4 5 [6] 7 8 … 20</summary>
         private void BuildPager()
         {
-            // chá»‰ cÃ²n dÃ¹ng Ä‘á»ƒ cáº­p nháº­t LblPage
+            // chỉ còn dùng để cập nhật LblPage
             int total = _betAll.Count;
             int pageCount = Math.Max(1, (int)Math.Ceiling(total / (double)PageSize));
             if (LblPage != null) LblPage.Text = $"{_pageIndex + 1}/{pageCount}";
-            // khÃ´ng dá»±ng cÃ¡c nÃºt sá»‘ ná»¯a
+            // không dựng các nút số nữa
         }
 
 
@@ -6858,7 +6915,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 if (!Directory.Exists(_logDir)) return;
                 string today = DateTime.Today.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
 
-                // Chá»‰ Ä‘á»¥ng tá»›i *.log (C#), KHÃ”NG Ä‘á»¥ng "bets-*.csv"
+                // Chỉ đụng tới *.log (C#), KHÔNG đụng "bets-*.csv"
                 foreach (var f in Directory.EnumerateFiles(_logDir, "*.log", SearchOption.TopDirectoryOnly))
                 {
                     var name = Path.GetFileName(f);
@@ -6872,13 +6929,13 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             catch { /* ignore */ }
         }
 
-        // âŸ² Má»›i nháº¥t
+        // ⟲ Mới nhất
         private void BtnGoNewest_Click(object sender, RoutedEventArgs e)
         {
-            ShowFirstPage();   // trang 1 lÃ  má»›i nháº¥t trong kiáº¿n trÃºc hiá»‡n táº¡i
+            ShowFirstPage();   // trang 1 là mới nhất trong kiến trúc hiện tại
         }
 
-        // Combo chá»n "sá»‘ dÃ²ng / trang"
+        // Combo chọn "số dòng / trang"
         private void CmbPageSize_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (CmbPageSize?.SelectedItem is ComboBoxItem it
@@ -6887,11 +6944,11 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             {
                 PageSize = n;
 
-                ShowFirstPage();   // trang 1 lÃ  má»›i nháº¥t trong kiáº¿n trÃºc hiá»‡n táº¡i
+                ShowFirstPage();   // trang 1 là mới nhất trong kiến trúc hiện tại
             }
         }
 
-        // Ã” "Tá»›i trang â€¦"
+        // Ô "Tới trang …"
         private void BtnGoto_Click(object sender, RoutedEventArgs e)
         {
             if (int.TryParse(TxtGoto?.Text, out var userPage))
@@ -6930,77 +6987,77 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
 
         private static string NormalizeSeq(string raw) =>
-    TextNorm.U(Regex.Replace(raw ?? "", @"[,\s\-]+", "")); // bá» , khoáº£ng tráº¯ng, -
+    TextNorm.U(Regex.Replace(raw ?? "", @"[,\s\-]+", "")); // bỏ , khoảng trắng, -
 
-        // --- Chuá»—i C/L: C,L; 2..50 kÃ½ tá»± sau khi bá» phÃ¢n tÃ¡ch ---
+        // --- Chuỗi C/L: C,L; 2..50 ký tự sau khi bỏ phân tách ---
         private static bool ValidateSeqCL(string s, out string err)
         {
             err = "";
             if (string.IsNullOrWhiteSpace(s))
             {
-                err = "Vui lÃ²ng nháº­p chuá»—i C/L.";
+                err = "Vui lòng nhập chuỗi C/L.";
                 return false;
             }
 
             int count = 0;
             foreach (var ch in s)
             {
-                if (char.IsWhiteSpace(ch)) continue;          // chá»‰ cho phÃ©p khoáº£ng tráº¯ng
+                if (char.IsWhiteSpace(ch)) continue;          // chỉ cho phép khoảng trắng
                 char u = char.ToUpperInvariant(ch);
-                if (u == 'C' || u == 'L') { count++; continue; }  // vÃ  C/L
-                err = "Chá»‰ cho phÃ©p khoáº£ng tráº¯ng vÃ  kÃ½ tá»± C hoáº·c L (khÃ´ng dÃ¹ng dáº¥u pháº©y/gáº¡ch/cháº¥m pháº©y/gáº¡ch dÆ°á»›i, sá»‘, kÃ½ tá»± khÃ¡c).";
+                if (u == 'C' || u == 'L') { count++; continue; }  // và C/L
+                err = "Chỉ cho phép khoảng trắng và ký tự C hoặc L (không dùng dấu phẩy/gạch/chấm phẩy/gạch dưới, số, ký tự khác).";
                 return false;
             }
 
             if (count < 2 || count > 100)
             {
-                err = "Äá»™ dÃ i 2â€“50 kÃ½ tá»± (tÃ­nh theo C/L, bá» qua khoáº£ng tráº¯ng).";
+                err = "Độ dài 2–50 ký tự (tính theo C/L, bỏ qua khoảng trắng).";
                 return false;
             }
 
             return true;
         }
 
-        // --- Chuá»—i I/N: I,N; 2..50 kÃ½ tá»± ---
+        // --- Chuỗi I/N: I,N; 2..50 ký tự ---
         private static bool ValidateSeqNI(string s, out string err)
         {
             err = "";
             if (string.IsNullOrWhiteSpace(s))
             {
-                err = "Vui lÃ²ng nháº­p chuá»—i I/N.";
+                err = "Vui lòng nhập chuỗi I/N.";
                 return false;
             }
 
             int count = 0;
             foreach (var ch in s)
             {
-                if (char.IsWhiteSpace(ch)) continue;          // chá»‰ cho phÃ©p khoáº£ng tráº¯ng
+                if (char.IsWhiteSpace(ch)) continue;          // chỉ cho phép khoảng trắng
                 char u = char.ToUpperInvariant(ch);
-                if (u == 'I' || u == 'N') { count++; continue; }  // vÃ  I/N
-                err = "Chá»‰ cho phÃ©p khoáº£ng tráº¯ng vÃ  kÃ½ tá»± I hoáº·c N (khÃ´ng dÃ¹ng dáº¥u pháº©y/gáº¡ch/cháº¥m pháº©y/gáº¡ch dÆ°á»›i, sá»‘, kÃ½ tá»± khÃ¡c).";
+                if (u == 'I' || u == 'N') { count++; continue; }  // và I/N
+                err = "Chỉ cho phép khoảng trắng và ký tự I hoặc N (không dùng dấu phẩy/gạch/chấm phẩy/gạch dưới, số, ký tự khác).";
                 return false;
             }
 
             if (count < 2 || count > 100)
             {
-                err = "Äá»™ dÃ i 2â€“50 kÃ½ tá»± (tÃ­nh theo I/N, bá» qua khoáº£ng tráº¯ng).";
+                err = "Độ dài 2–50 ký tự (tính theo I/N, bỏ qua khoảng trắng).";
                 return false;
             }
 
             return true;
         }
 
-        // --- Tháº¿ cáº§u C/L: tá»«ng dÃ²ng "<máº«u> - <Ä‘áº·t>", máº«u gá»“m C/L/?, Ä‘áº·t lÃ  C hoáº·c L ---
+        // --- Thế cầu C/L: từng dòng "<mẫu> - <đặt>", mẫu gồm C/L/?, đặt là C hoặc L ---
         private static bool ValidatePatternsCL(string s, out string err)
         {
             err = "";
             if (string.IsNullOrWhiteSpace(s))
             {
-                err = "Vui lÃ²ng nháº­p cÃ¡c tháº¿ cáº§u C/L.";
+                err = "Vui lòng nhập các thế cầu C/L.";
                 return false;
             }
 
-            // TÃ¡ch nhiá»u quy táº¯c: ',', ';', '|', hoáº·c xuá»‘ng dÃ²ng
+            // Tách nhiều quy tắc: ',', ';', '|', hoặc xuống dòng
             var rules = System.Text.RegularExpressions.Regex.Split(s.Replace("\r", ""), @"[,\;\|\n]+");
             int idx = 0;
 
@@ -7010,7 +7067,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 if (line.Length == 0) continue;
                 idx++;
 
-                // <máº«u> (C/L, cho phÃ©p khoáº£ng tráº¯ng)  -> hoáº·c -  <chuá»—i cáº§u> (C/L, CHO PHÃ‰P khoáº£ng tráº¯ng)
+                // <mẫu> (C/L, cho phép khoảng trắng)  -> hoặc -  <chuỗi cầu> (C/L, CHO PHÉP khoảng trắng)
                 var m = System.Text.RegularExpressions.Regex.Match(
                     line,
                     @"^\s*([CLcl\s]+)\s*(?:->|-)\s*([CLcl\s]+)\s*$",
@@ -7018,11 +7075,11 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
                 if (!m.Success)
                 {
-                    err = $"Quy táº¯c {idx} khÃ´ng há»£p lá»‡: â€œ{line}â€. Dáº¡ng Ä‘Ãºng: <máº«u> -> <chuá»—i cáº§u> hoáº·c <máº«u>-<chuá»—i cáº§u>; chá»‰ dÃ¹ng C/L; <chuá»—i cáº§u> cÃ³ thá»ƒ cÃ³ khoáº£ng tráº¯ng.";
+                    err = $"Quy tắc {idx} không hợp lệ: “{line}”. Dạng đúng: <mẫu> -> <chuỗi cầu> hoặc <mẫu>-<chuỗi cầu>; chỉ dùng C/L; <chuỗi cầu> có thể có khoảng trắng.";
                     return false;
                 }
 
-                // LHS: chá»‰ C/L + khoáº£ng tráº¯ng; Ä‘á»™ dÃ i 1â€“10 sau khi bá» khoáº£ng tráº¯ng
+                // LHS: chỉ C/L + khoảng trắng; độ dài 1–10 sau khi bỏ khoảng trắng
                 var lhsRaw = m.Groups[1].Value;
                 var lhsBuf = new System.Text.StringBuilder(lhsRaw.Length);
                 foreach (char ch in lhsRaw)
@@ -7030,16 +7087,16 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     if (char.IsWhiteSpace(ch)) continue;
                     char u = char.ToUpperInvariant(ch);
                     if (u == 'C' || u == 'L') lhsBuf.Append(u);
-                    else { err = $"Quy táº¯c {idx}: <máº«u_quÃ¡_khá»©> chá»‰ gá»“m C/L (cho phÃ©p khoáº£ng tráº¯ng giá»¯a cÃ¡c kÃ½ tá»±)."; return false; }
+                    else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm C/L (cho phép khoảng trắng giữa các ký tự)."; return false; }
                 }
                 var lhs = lhsBuf.ToString();
                 if (lhs.Length < 1 || lhs.Length > 10)
                 {
-                    err = $"Quy táº¯c {idx}: Ä‘á»™ dÃ i <máº«u_quÃ¡_khá»©> pháº£i 1â€“10 kÃ½ tá»± (C/L).";
+                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự (C/L).";
                     return false;
                 }
 
-                // RHS: chuá»—i cáº§u C/L (>=1), CHO PHÃ‰P khoáº£ng tráº¯ng (bá»‹ bá» qua khi kiá»ƒm tra)
+                // RHS: chuỗi cầu C/L (>=1), CHO PHÉP khoảng trắng (bị bỏ qua khi kiểm tra)
                 var rhsRaw = m.Groups[2].Value;
                 var rhsBuf = new System.Text.StringBuilder(rhsRaw.Length);
                 foreach (char ch in rhsRaw)
@@ -7047,11 +7104,11 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     if (char.IsWhiteSpace(ch)) continue;
                     char u = char.ToUpperInvariant(ch);
                     if (u == 'C' || u == 'L') rhsBuf.Append(u);
-                    else { err = $"Quy táº¯c {idx}: <chuá»—i cáº§u> chá»‰ gá»“m C/L (cÃ³ thá»ƒ nhiá»u kÃ½ tá»±), cho phÃ©p khoáº£ng tráº¯ng."; return false; }
+                    else { err = $"Quy tắc {idx}: <chuỗi cầu> chỉ gồm C/L (có thể nhiều ký tự), cho phép khoảng trắng."; return false; }
                 }
                 if (rhsBuf.Length < 1)
                 {
-                    err = $"Quy táº¯c {idx}: <chuá»—i cáº§u> tá»‘i thiá»ƒu 1 kÃ½ tá»± C/L.";
+                    err = $"Quy tắc {idx}: <chuỗi cầu> tối thiểu 1 ký tự C/L.";
                     return false;
                 }
             }
@@ -7062,17 +7119,17 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
 
 
-        // --- Tháº¿ cáº§u I/N: tá»«ng dÃ²ng "<máº«u> - <Ä‘áº·t>", máº«u gá»“m I/N/?, Ä‘áº·t lÃ  I hoáº·c N ---
+        // --- Thế cầu I/N: từng dòng "<mẫu> - <đặt>", mẫu gồm I/N/?, đặt là I hoặc N ---
         private static bool ValidatePatternsNI(string s, out string err)
         {
             err = "";
             if (string.IsNullOrWhiteSpace(s))
             {
-                err = "Vui lÃ²ng nháº­p cÃ¡c tháº¿ cáº§u I/N.";
+                err = "Vui lòng nhập các thế cầu I/N.";
                 return false;
             }
 
-            // TÃ¡ch nhiá»u quy táº¯c: ',', ';', '|', hoáº·c xuá»‘ng dÃ²ng
+            // Tách nhiều quy tắc: ',', ';', '|', hoặc xuống dòng
             var rules = System.Text.RegularExpressions.Regex.Split(s.Replace("\r", ""), @"[,\;\|\n]+");
             int idx = 0;
 
@@ -7082,7 +7139,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 if (line.Length == 0) continue;
                 idx++;
 
-                // <máº«u> (I/N, cho phÃ©p khoáº£ng tráº¯ng)  -> hoáº·c -  <chuá»—i cáº§u> (I/N, CHO PHÃ‰P khoáº£ng tráº¯ng)
+                // <mẫu> (I/N, cho phép khoảng trắng)  -> hoặc -  <chuỗi cầu> (I/N, CHO PHÉP khoảng trắng)
                 var m = System.Text.RegularExpressions.Regex.Match(
                     line,
                     @"^\s*([INin\s]+)\s*(?:->|-)\s*([INin\s]+)\s*$",
@@ -7090,11 +7147,11 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
 
                 if (!m.Success)
                 {
-                    err = $"Quy táº¯c {idx} khÃ´ng há»£p lá»‡: â€œ{line}â€. Dáº¡ng Ä‘Ãºng: <máº«u> -> <chuá»—i cáº§u> hoáº·c <máº«u>-<chuá»—i cáº§u>; chá»‰ dÃ¹ng I/N; <chuá»—i cáº§u> cÃ³ thá»ƒ cÃ³ khoáº£ng tráº¯ng.";
+                    err = $"Quy tắc {idx} không hợp lệ: “{line}”. Dạng đúng: <mẫu> -> <chuỗi cầu> hoặc <mẫu>-<chuỗi cầu>; chỉ dùng I/N; <chuỗi cầu> có thể có khoảng trắng.";
                     return false;
                 }
 
-                // LHS: chá»‰ I/N + khoáº£ng tráº¯ng; Ä‘á»™ dÃ i 1â€“10 sau khi bá» khoáº£ng tráº¯ng
+                // LHS: chỉ I/N + khoảng trắng; độ dài 1–10 sau khi bỏ khoảng trắng
                 var lhsRaw = m.Groups[1].Value;
                 var lhsBuf = new System.Text.StringBuilder(lhsRaw.Length);
                 foreach (char ch in lhsRaw)
@@ -7102,16 +7159,16 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     if (char.IsWhiteSpace(ch)) continue;
                     char u = char.ToUpperInvariant(ch);
                     if (u == 'I' || u == 'N') lhsBuf.Append(u);
-                    else { err = $"Quy táº¯c {idx}: <máº«u_quÃ¡_khá»©> chá»‰ gá»“m I/N (cho phÃ©p khoáº£ng tráº¯ng giá»¯a cÃ¡c kÃ½ tá»±)."; return false; }
+                    else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm I/N (cho phép khoảng trắng giữa các ký tự)."; return false; }
                 }
                 var lhs = lhsBuf.ToString();
                 if (lhs.Length < 1 || lhs.Length > 10)
                 {
-                    err = $"Quy táº¯c {idx}: Ä‘á»™ dÃ i <máº«u_quÃ¡_khá»©> pháº£i 1â€“10 kÃ½ tá»± (I/N).";
+                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự (I/N).";
                     return false;
                 }
 
-                // RHS: chuá»—i cáº§u I/N (>=1), CHO PHÃ‰P khoáº£ng tráº¯ng (bá»‹ bá» qua khi kiá»ƒm tra)
+                // RHS: chuỗi cầu I/N (>=1), CHO PHÉP khoảng trắng (bị bỏ qua khi kiểm tra)
                 var rhsRaw = m.Groups[2].Value;
                 var rhsBuf = new System.Text.StringBuilder(rhsRaw.Length);
                 foreach (char ch in rhsRaw)
@@ -7119,11 +7176,11 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     if (char.IsWhiteSpace(ch)) continue;
                     char u = char.ToUpperInvariant(ch);
                     if (u == 'I' || u == 'N') rhsBuf.Append(u);
-                    else { err = $"Quy táº¯c {idx}: <chuá»—i cáº§u> chá»‰ gá»“m I/N (cÃ³ thá»ƒ nhiá»u kÃ½ tá»±), cho phÃ©p khoáº£ng tráº¯ng."; return false; }
+                    else { err = $"Quy tắc {idx}: <chuỗi cầu> chỉ gồm I/N (có thể nhiều ký tự), cho phép khoảng trắng."; return false; }
                 }
                 if (rhsBuf.Length < 1)
                 {
-                    err = $"Quy táº¯c {idx}: <chuá»—i cáº§u> tá»‘i thiá»ƒu 1 kÃ½ tá»± I/N.";
+                    err = $"Quy tắc {idx}: <chuỗi cầu> tối thiểu 1 ký tự I/N.";
                     return false;
                 }
             }
@@ -7139,13 +7196,13 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             else { LblSeqError.Text = msg; LblSeqError.Visibility = Visibility.Visible; }
         }
 
-        // --- Validate cuá»‘i cÃ¹ng khi báº¥m "Báº¯t Äáº§u CÆ°á»£c" ---
+        // --- Validate cuối cùng khi bấm "Bắt Đầu Cược" ---
         private bool ValidateInputsForCurrentStrategy()
         {
-            ShowErrorsForCurrentStrategy(); // cáº­p nháº­t UI trÆ°á»›c
+            ShowErrorsForCurrentStrategy(); // cập nhật UI trước
 
             int idx = CmbBetStrategy?.SelectedIndex ?? 4;
-            if (idx == 0) // 1. Chuá»—i C/L
+            if (idx == 0) // 1. Chuỗi C/L
             {
                 if (!ValidateSeqCL(T(TxtChuoiCau), out var err))
                 {
@@ -7154,7 +7211,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     return false;
                 }
             }
-            else if (idx == 2) // 3. Chuá»—i I/N
+            else if (idx == 2) // 3. Chuỗi I/N
             {
                 if (!ValidateSeqNI(T(TxtChuoiCau), out var err))
                 {
@@ -7163,7 +7220,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     return false;
                 }
             }
-            else if (idx == 1) // 2. Tháº¿ C/L
+            else if (idx == 1) // 2. Thế C/L
             {
                 if (!ValidatePatternsCL(T(TxtTheCau), out var err))
                 {
@@ -7172,7 +7229,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     return false;
                 }
             }
-            else if (idx == 3) // 4. Tháº¿ I/N
+            else if (idx == 3) // 4. Thế I/N
             {
                 if (!ValidatePatternsNI(T(TxtTheCau), out var err))
                 {
@@ -7182,7 +7239,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 }
             }
 
-            else if (idx == 16) // 17. Cá»­a Ä‘áº·t & tá»‰ lá»‡
+            else if (idx == 16) // 17. Cửa đặt & tỉ lệ
             {
                 if (!TaiXiuLiveSun.Tasks.SideRateParser.TryParse(T(TxtSideRatio), out _, out var err))
                 {
@@ -7191,7 +7248,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     return false;
                 }
             }
-            // CÃ¡c chiáº¿n lÆ°á»£c cÃ²n láº¡i khÃ´ng cáº§n kiá»ƒm tra thÃªm
+            // Các chiến lược còn lại không cần kiểm tra thêm
             return true;
         }
 
@@ -7210,7 +7267,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
         {
             try
             {
-                var id = GetMoneyStrategyFromUI();                    // vÃ­ dá»¥: "Victor2" / "IncreaseWhenLose" ...
+                var id = GetMoneyStrategyFromUI();                    // ví dụ: "Victor2" / "IncreaseWhenLose" ...
                 string csv = _cfg.StakeCsv;                           // fallback
                 if (_cfg.StakeCsvByMoney != null &&
                     !string.IsNullOrWhiteSpace(id) &&
@@ -7220,7 +7277,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     csv = saved;
                 }
 
-                if (TxtStakeCsv != null) TxtStakeCsv.Text = csv;      // -> sáº½ kÃ­ch TextChanged Ä‘á»ƒ rebuild _stakeSeq
+                if (TxtStakeCsv != null) TxtStakeCsv.Text = csv;      // -> sẽ kích TextChanged để rebuild _stakeSeq
                 RebuildStakeSeq(csv);
                 Log($"[StakeCsv.load] id={id} => {csv} -> {_stakeSeq.Length}");
             }
@@ -7236,15 +7293,15 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 0: CL, 2: N/I
             var txt = (TxtChuoiCau?.Text ?? "").Trim();
 
-            // LÆ°u tÃ¡ch báº¡ch cho tá»«ng chiáº¿n lÆ°á»£c
-            if (idx == 0) _cfg.BetSeqCL = txt;    // Chiáº¿n lÆ°á»£c 1: Chuá»—i C/L
-            if (idx == 2) _cfg.BetSeqNI = txt;    // Chiáº¿n lÆ°á»£c 3: Chuá»—i N/I
+            // Lưu tách bạch cho từng chiến lược
+            if (idx == 0) _cfg.BetSeqCL = txt;    // Chiến lược 1: Chuỗi C/L
+            if (idx == 2) _cfg.BetSeqNI = txt;    // Chiến lược 3: Chuỗi N/I
 
-            // Báº£n â€œchungâ€ Ä‘á»ƒ engine Ä‘á»c khi cháº¡y
+            // Bản “chung” để engine đọc khi chạy
             _cfg.BetSeq = txt;
 
-            await SaveConfigAsync();              // <â€” GHI config.json
-            ShowErrorsForCurrentStrategy();       // (náº¿u báº¡n cÃ³ hiá»ƒn thá»‹ lá»—i dÆ°á»›i Ã´)
+            await SaveConfigAsync();              // <— GHI config.json
+            ShowErrorsForCurrentStrategy();       // (nếu bạn có hiển thị lỗi dưới ô)
         }
 
 
@@ -7255,15 +7312,15 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             var idx = CmbBetStrategy?.SelectedIndex ?? -1;       // 1: CL, 3: N/I
             var txt = (TxtTheCau?.Text ?? "").Trim();
 
-            // LÆ°u tÃ¡ch báº¡ch cho tá»«ng chiáº¿n lÆ°á»£c
-            if (idx == 1) _cfg.BetPatternsCL = txt;  // Chiáº¿n lÆ°á»£c 2: Tháº¿ C/L
-            if (idx == 3) _cfg.BetPatternsNI = txt;  // Chiáº¿n lÆ°á»£c 4: Tháº¿ N/I
+            // Lưu tách bạch cho từng chiến lược
+            if (idx == 1) _cfg.BetPatternsCL = txt;  // Chiến lược 2: Thế C/L
+            if (idx == 3) _cfg.BetPatternsNI = txt;  // Chiến lược 4: Thế N/I
 
-            // Báº£n â€œchungâ€ Ä‘á»ƒ engine Ä‘á»c khi cháº¡y
+            // Bản “chung” để engine đọc khi chạy
             _cfg.BetPatterns = txt;
 
-            await SaveConfigAsync();                // <â€” GHI config.json
-            ShowErrorsForCurrentStrategy();         // (náº¿u cÃ³)
+            await SaveConfigAsync();                // <— GHI config.json
+            ShowErrorsForCurrentStrategy();         // (nếu có)
         }
 
 
@@ -7280,7 +7337,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                     MaxWidth = 420,
                     FontSize = 12
                 },
-                // KHÃ”NG set StaysOpen=false (WPF sáº½ quÄƒng NotSupported khi gÃ¡n qua .ToolTip)
+                // KHÔNG set StaysOpen=false (WPF sẽ quăng NotSupported khi gán qua .ToolTip)
                 Placement = System.Windows.Controls.Primitives.PlacementMode.Mouse
             };
         }
@@ -7294,7 +7351,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 return;
             }
 
-            // Hiá»‡n tooltip ngay cáº£ khi control/parent bá»‹ IsEnabled=false
+            // Hiện tooltip ngay cả khi control/parent bị IsEnabled=false
             ToolTipService.SetShowOnDisabled(c, true);
             ToolTipService.SetInitialShowDelay(c, 120);
             ToolTipService.SetBetweenShowDelay(c, 120);
@@ -7323,12 +7380,12 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
             try { fe?.Focus(); } catch { }
         }
 
-        // --- Hiá»ƒn thá»‹ lá»—i live theo chiáº¿n lÆ°á»£c Ä‘ang chá»n ---
+        // --- Hiển thị lỗi live theo chiến lược đang chọn ---
         private void ShowErrorsForCurrentStrategy()
         {
             int idx = CmbBetStrategy?.SelectedIndex ?? 4;
 
-            // Chuá»—i cáº§u (chiáº¿n lÆ°á»£c 1,3)
+            // Chuỗi cầu (chiến lược 1,3)
             if (idx == 0 || idx == 2)
             {
                 string s = (TxtChuoiCau?.Text ?? "");
@@ -7342,7 +7399,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 SetError(LblSeqError, null);
             }
 
-            // Tháº¿ cáº§u (chiáº¿n lÆ°á»£c 2,4)
+            // Thế cầu (chiến lược 2,4)
             if (idx == 1 || idx == 3)
             {
                 string s = (TxtTheCau?.Text ?? "");
@@ -7356,7 +7413,7 @@ VÃ­ dá»¥ khÃ´ng há»£p lá»‡:
                 SetError(LblPatError, null);
             }
 
-            // Cá»­a Ä‘áº·t & tá»‰ lá»‡ (chiáº¿n lÆ°á»£c 17)
+            // Cửa đặt & tỉ lệ (chiến lược 17)
             if (idx == 16)
             {
                 string s = (TxtSideRatio?.Text ?? "");

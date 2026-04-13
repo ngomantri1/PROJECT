@@ -70,6 +70,38 @@
                 window.parent.postMessage(obj, '*');
         } catch (_) {}
     }
+    (function () {
+        try {
+            if (window.__cw_err_hooked)
+                return;
+            window.__cw_err_hooked = 1;
+            window.addEventListener('error', function (ev) {
+                try {
+                    __cw_tryPost({
+                        abx: 'cw_js_error',
+                        msg: String((ev && ev.message) || ''),
+                        src: String((ev && ev.filename) || ''),
+                        line: Number((ev && ev.lineno) || 0),
+                        col: Number((ev && ev.colno) || 0),
+                        ts: Date.now()
+                    });
+                } catch (_) {}
+            }, true);
+            window.addEventListener('unhandledrejection', function (ev) {
+                try {
+                    var reason = ev && ev.reason;
+                    __cw_tryPost({
+                        abx: 'cw_js_error',
+                        msg: String((reason && reason.message) || reason || 'unhandledrejection'),
+                        src: 'promise',
+                        line: 0,
+                        col: 0,
+                        ts: Date.now()
+                    });
+                } catch (_) {}
+            }, true);
+        } catch (_) {}
+    })();
     function __cw_pickBestKey(map) {
         var bestK = '',
         bestV = -1;
@@ -162,7 +194,7 @@
         try {
             cacheKey = String(location.href || '') + '|' + (window === window.top ? 'top' : 'frame') + '|' + String(Number(limitNodes) || 0);
             var cache = window.__cw_probe_cache;
-            if (cache && cache.key === cacheKey && (now0 - (cache.at || 0)) < 950 && cache.val) {
+            if (cache && cache.key === cacheKey && (now0 - (cache.at || 0)) < 1400 && cache.val) {
                 return cache.val;
             }
         } catch (_) {}
@@ -193,9 +225,9 @@
             var scene = cc.director.getScene();
             if (!scene)
                 return info;
-            var maxNodes = Math.max(200, Number(limitNodes) || 2200);
+            var maxNodes = Math.max(160, Number(limitNodes) || 1600);
             if (!info.urlOk)
-                maxNodes = Math.min(maxNodes, 420);
+                maxNodes = Math.min(maxNodes, 280);
             var st = [scene],
             seen = [],
             prefabScore = {},
@@ -269,7 +301,7 @@
             if (info.canvases > 0)
                 info.score += 2;
             info.score += uscore;
-            info.ok = !!(info.prefabKey || info.score >= 24 || (info.urlOk && info.labels > 8));
+            info.ok = !!(info.prefabKey || (info.urlOk && (info.score >= 24 || info.labels > 8)));
         } catch (_) {}
         try {
             window.__cw_probe_cache = {
@@ -314,7 +346,7 @@
     }
     function __cw_emitProbe(reason, probe) {
         try {
-            var p = probe || __cw_probeGameScene(1200);
+            var p = probe || __cw_probeGameScene(700);
             var sig = [
                 String(reason || ''),
                 p.ok ? '1' : '0',
@@ -368,12 +400,12 @@
             return;
         window.__cw_waiting_v4 = 1;
         var tries = 0;
+        var strongSceneHits = 0;
         var timer = setInterval(function () {
             try {
                 var hasCc = !!(window.cc && cc.director && cc.director.getScene);
                 var match = __cw_matchpage();
-                var depth = (tries % 12 === 0) ? 1200 : 260;
-                var probe = hasCc ? __cw_probeGameScene(depth) : {
+                var probe = {
                     ok: false,
                     score: Number(match.score) || 0,
                     urlScore: Number(match.score) || 0,
@@ -384,25 +416,45 @@
                     frameSrc: (match.ctx && match.ctx.frameSrc) || '',
                     frame: (window === window.top ? 'top' : 'frame')
                 };
-                if (!probe.urlOk && (tries % 20 === 0))
-                    __cw_emitProbe('wait_url', probe);
-                if (hasCc && probe.ok && __cw_claimBootOwner(probe)) {
+                if (hasCc) {
+                    var depth = match.ok ? ((tries % 16 === 0) ? 900 : 180) : ((tries % 8 === 0) ? 420 : 120);
+                    probe = __cw_probeGameScene(depth);
+                    if (!match.ok) {
+                        // Chưa đúng URL game: vẫn cho probe nhẹ liên tục để panel lên sớm.
+                        probe.ok = false;
+                        probe.urlOk = false;
+                    }
+                }
+                var sceneStrong = !!(hasCc && !match.ok &&
+                    (Number(probe.score) || 0) >= 120 &&
+                    ((Number(probe.labels) || 0) >= 8 || (Number(probe.canvases) || 0) > 0));
+                if (sceneStrong)
+                    strongSceneHits++;
+                else if (strongSceneHits > 0)
+                    strongSceneHits--;
+                if (!match.ok) {
+                    if (tries % 24 === 0)
+                        __cw_emitProbe('wait_url', probe);
+                } else if (hasCc && (tries % 16 === 0)) {
+                    __cw_emitProbe('wait_cc', probe);
+                }
+                if (sceneStrong && strongSceneHits >= 1)
+                    probe.ok = true;
+                if (hasCc && probe.ok && (match.ok || sceneStrong) && __cw_claimBootOwner(probe)) {
                     clearInterval(timer);
                     window.__cw_waiting_v4 = 0;
                     window.__cw_scene_probe = probe;
-                    __cw_emitProbe('ready_boot', probe);
+                    __cw_emitProbe(sceneStrong && !match.ok ? 'ready_boot_scene' : 'ready_boot', probe);
                     __cw_boot();
                     return;
                 }
-                if (hasCc && (tries % 20 === 0))
-                    __cw_emitProbe('wait_cc', probe);
                 if (++tries > 1800) {
                     clearInterval(timer);
                     window.__cw_waiting_v4 = 0;
                     __cw_emitProbe('wait_timeout', probe);
                 }
             } catch (e) {}
-        }, 500);
+        }, 450);
     }
 
     function __cw_boot() {
@@ -411,7 +463,7 @@
     window.__cw_booted_v4 = 1;
     var __bootProbe = null;
     try {
-        __bootProbe = window.__cw_scene_probe || __cw_probeGameScene(2600);
+        __bootProbe = window.__cw_scene_probe || __cw_probeGameScene(1400);
         if (__bootProbe) {
             if (__bootProbe.prefabKey)
                 window.__cw_prefab_key = __bootProbe.prefabKey;
@@ -420,8 +472,27 @@
             __cw_emitProbe('boot', __bootProbe);
         }
     } catch (_) {}
+    if (!(window.cc && cc.director && cc.director.getScene)) {
+        try {
+            window.__cw_booted_v4 = 0;
+            __cw_emitProbe('boot_defer_cc', __bootProbe || {
+                ok: false,
+                score: 0,
+                urlScore: 0
+            });
+        } catch (_) {}
+        try {
+            __cw_waitReady();
+        } catch (_) {}
+        return;
+    }
     /* ---------------- utils ---------------- */
-    var V2 = (cc.v2 || cc.Vec2);
+    var V2 = ((window.cc && (cc.v2 || cc.Vec2)) || function (x, y) {
+        return {
+            x: x,
+            y: y
+        };
+    });
     var sleep = function (ms) {
         return new Promise(function (r) {
             setTimeout(r, ms);
@@ -651,7 +722,7 @@
             return;
         _gameScopeAt = now;
         try {
-            var probe = window.__cw_scene_probe || __cw_probeGameScene(1800);
+            var probe = window.__cw_scene_probe || __cw_probeGameScene(1200);
             if (!probe)
                 return;
             if (probe.prefabKey)
@@ -1899,9 +1970,9 @@
 
         }
 
-        function buildMoneyFromTextRects() {
+        function buildMoneyFromTextRects(texts) {
 
-            var texts = buildTextRects();
+            texts = texts || buildTextRects();
 
             var out = [];
 
@@ -2087,8 +2158,10 @@
         S.money = buildMoneyRects(); // keep map for overlays & legacy helpers
 
         var list = S.money;
-        var listTextMoney = buildMoneyFromTextRects();
         var listTextAll = buildTextRects();
+        S._lastTextAll = listTextAll;
+        S._lastTextAt = Date.now();
+        var listTextMoney = buildMoneyFromTextRects(listTextAll);
         var mC = pickByXOrderTail(listTextMoney, TAIL_TOTAL_BET, 'min');
         var mL = pickByXOrderTail(listTextMoney, TAIL_TOTAL_BET, 'max');
         if (mC && mL && mC === mL)
@@ -2123,9 +2196,21 @@
         };
     }
 
-    function sampleTotalsNow() {
+    var __cw_totals_cache = {
+        at: 0,
+        val: null
+    };
+    function sampleTotalsNow(forceFresh) {
+        var now = Date.now();
+        if (!forceFresh && __cw_totals_cache.val && (now - (__cw_totals_cache.at || 0)) < 420)
+            return __cw_totals_cache.val;
         try {
-            return totals(S);
+            var v = totals(S);
+            __cw_totals_cache = {
+                at: now,
+                val: v
+            };
+            return v;
         } catch (e) {
             return {
                 C: null,
@@ -2141,7 +2226,7 @@
         var last = before;
         while (((performance && performance.now ? performance.now() : Date.now()) - t0) < timeout) {
             await sleep(90);
-            var cur = sampleTotalsNow();
+            var cur = sampleTotalsNow(true);
             if ((side === 'CHAN' && cur.C !== last.C) || (side === 'LE' && cur.L !== last.L) || (cur.A !== last.A))
                 return true;
             last = cur;
@@ -2153,7 +2238,7 @@
     var S = {
         running: false,
         timer: null,
-        tickMs: 240,
+        tickMs: 320,
         prog: null,
         status: 'ĐỢI MỞ BÁT',
         money: [],
@@ -2181,7 +2266,7 @@
     document.body.appendChild(root);
 
     var panel = document.createElement('div');
-    panel.style.cssText = 'position:fixed;top:10px;right:10px;width:820px;background:#08130f;color:#bff;border:1px solid #0a0;border-radius:10px;padding:8px;font:12px/1.35 Consolas,monospace;pointer-events:auto;z-index:2147483647';
+    panel.style.cssText = 'position:fixed;left:50%;bottom:10px;transform:translateX(-50%);width:min(920px,calc(100vw - 20px));background:#08130f;color:#bff;border:1px solid #0a0;border-radius:10px;padding:8px;font:12px/1.35 Consolas,monospace;pointer-events:auto;z-index:2147483647;max-height:68vh;overflow:auto';
     panel.innerHTML = '' +
         '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;cursor:move">' +
         '<b style="color:#9f9">Canvas Watch</b>' +
@@ -2230,6 +2315,15 @@
         })(b);
     }
     root.appendChild(panel);
+    try {
+        __cw_tryPost({
+            abx: 'cw_ui_state',
+            state: 'mounted',
+            host: String(location.hostname || ''),
+            href: String(location.href || ''),
+            ts: Date.now()
+        });
+    } catch (_) {}
     var cwLogEl = panel.querySelector('#cwLog');
     function setLogHint(s) {
         var h = panel.querySelector('#cwLogHint');
@@ -2307,6 +2401,7 @@
             panel.style.top = startTop + 'px';
             panel.style.right = 'auto';
             panel.style.bottom = 'auto';
+            panel.style.transform = 'none';
             document.addEventListener('mousemove', onMove);
             document.addEventListener('mouseup', onUp);
             e.preventDefault();
@@ -4009,7 +4104,7 @@
     console.log('[READY] CW merged (compat + TextMap + Scan200Text + TK sequence + Totals by (x,tail) + standardized exports).');
 
     /* ---------------- tick & controls ---------------- */
-    function statusByProg(p) {
+    function statusByProg(p, textsHint) {
         // Ngưỡng chống rung cho số thực gần 0
         var EPS = 0.001;
 
@@ -4022,7 +4117,13 @@
         // Chọn text theo tail, so khớp theo kiểu "đuôi" để chống thay đổi prefix
         function pickTextByTailEnd(tailEnd) {
             try {
-                var texts = buildTextRects(); // [{text,x,y,w,h,tail}, ...]
+                var texts = null;
+                if (textsHint && textsHint.length)
+                    texts = textsHint;
+                else if (S && S._lastTextAll && (Date.now() - (S._lastTextAt || 0)) <= 520)
+                    texts = S._lastTextAll;
+                else
+                    texts = buildTextRects(); // [{text,x,y,w,h,tail}, ...]
                 var best = null,
                 bestArea = -1;
                 var tailEndL = String(tailEnd || '').toLowerCase();
@@ -4059,9 +4160,10 @@
         var p = collectProgress();
         if (p != null)
             S.prog = p;
-        S.status = statusByProg(p == null ? null : p);
-        var T = totals(S);
+        var T = sampleTotalsNow();
         S._lastTotals = T;
+        var pNow = (p != null) ? p : S.prog;
+        S.status = statusByProg(pNow == null ? null : pNow, S._lastTextAll || null);
 
         // TK sequence
         var tk = readTKSeq();
@@ -4118,9 +4220,17 @@
             renderMoney();
         }
         if (S.showText) {
-            S.text = buildTextRects();
+            S.text = (S._lastTextAll && (Date.now() - (S._lastTextAt || 0)) <= 520) ? S._lastTextAll : buildTextRects();
             renderText();
         }
+        S._lastSnap = {
+            abx: 'tick',
+            prog: (pNow != null ? pNow : null),
+            totals: T,
+            seq: String(S.seq || ''),
+            status: String(S.status || ''),
+            ts: Date.now()
+        };
         updatePanel();
     }
     function start() {
@@ -4307,8 +4417,15 @@
             return false;
         }
 
+        var __cw_seq_cache = {
+            at: 0,
+            val: ''
+        };
+
         function readProgressVal() {
             try {
+                if (S && typeof S.prog === 'number')
+                    return S.prog;
                 var cp = (typeof collectProgress === 'function') ? collectProgress() : null;
                 if (typeof cp === 'number')
                     return cp; // <— thêm dòng này
@@ -4328,11 +4445,19 @@
             }
         }
 
-        function readSeqSafe() {
+        function readSeqSafe(forceFresh) {
             try {
+                var now = Date.now();
+                if (!forceFresh && (now - (__cw_seq_cache.at || 0)) < 520)
+                    return __cw_seq_cache.val || '';
                 if (typeof readTKSeq === 'function') {
                     var r = readTKSeq();
-                    return (r && r.seq) ? r.seq : '';
+                    var seq = (r && r.seq) ? r.seq : '';
+                    __cw_seq_cache = {
+                        at: now,
+                        val: seq
+                    };
+                    return seq;
                 }
             } catch (_) {}
             return '';
@@ -4341,9 +4466,12 @@
         // Bắt đầu bắn snapshot định kỳ {abx:'tick', prog, totals, seq, status}
         window.__cw_startPush = function (tickMs) {
             try {
-                tickMs = Number(tickMs) || 240;
-                if (tickMs < 120)
-                    tickMs = 120;
+                tickMs = Number(tickMs) || 320;
+                var uiTick = (S && Number(S.tickMs)) || 0;
+                if (uiTick > 0 && tickMs < uiTick)
+                    tickMs = uiTick;
+                if (tickMs < 160)
+                    tickMs = 160;
                 if (tickMs > 1000)
                     tickMs = 1000;
                 if (_pushTimer) {
@@ -4352,17 +4480,35 @@
                 }
                 _lastJson = '';
                 _pushTimer = setInterval(function () {
-                    var p = readProgressVal(); // lấy progress hiện tại
-                    var st = (typeof statusByProg === 'function') // tính status theo rule mới
-                     ? statusByProg(p) : '';
-                    var snap = {
-                        abx: 'tick',
-                        prog: p,
-                        totals: readTotalsSafe(),
-                        seq: readSeqSafe(),
-                        status: String(st || ''), // <-- THÊM TRƯỜNG status
-                        ts: Date.now()
-                    };
+                    var now = Date.now();
+                    var snap = null;
+                    var last = (S && S._lastSnap) ? S._lastSnap : null;
+                    var freshMs = Math.max(260, ((S && Number(S.tickMs)) || 320) + 220);
+                    if (last && (now - (last.ts || 0)) <= freshMs) {
+                        snap = {
+                            abx: 'tick',
+                            prog: (typeof last.prog === 'number') ? last.prog : null,
+                            totals: last.totals || null,
+                            seq: String(last.seq || ''),
+                            status: String(last.status || ''),
+                            ts: now
+                        };
+                    } else {
+                        var p = readProgressVal(); // lấy progress hiện tại
+                        var totalsNow = readTotalsSafe();
+                        var st = (typeof statusByProg === 'function') // tính status theo rule mới
+                         ? statusByProg(p, S && S._lastTextAll ? S._lastTextAll : null) : '';
+                        snap = {
+                            abx: 'tick',
+                            prog: p,
+                            totals: totalsNow,
+                            seq: readSeqSafe(false),
+                            status: String(st || ''),
+                            ts: now
+                        };
+                        if (S)
+                            S._lastSnap = snap;
+                    }
                     if (shallowChanged(snap))
                         safePost(snap);
                 }, tickMs);
@@ -4550,6 +4696,14 @@
         __cw_emitProbe('direct_boot', __cw_probe0);
         __cw_boot();
     } else {
+        // Ưu tiên hiển thị Canvas Watch sớm khi scene đã có cc (dữ liệu chi tiết sẽ hoàn thiện sau).
+        try {
+            if (window.cc && cc.director && cc.director.getScene && __cw_claimBootOwner(__cw_probe0)) {
+                window.__cw_scene_probe = __cw_probe0;
+                __cw_emitProbe('direct_boot_ui', __cw_probe0);
+                __cw_boot();
+            }
+        } catch (_) {}
         __cw_emitProbe('wait_ready', __cw_probe0);
         __cw_waitReady();
     }
