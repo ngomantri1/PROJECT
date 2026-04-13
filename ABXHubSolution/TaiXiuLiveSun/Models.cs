@@ -21,6 +21,7 @@ namespace TaiXiuLiveSun
     {
         public string abx { get; set; }
         public double? prog { get; set; }
+        public bool? progIsSec { get; set; }
         public CwTotals totals { get; set; }
         public string seq { get; set; }
         public string? niSeq { get; set; }

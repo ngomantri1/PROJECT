@@ -773,11 +773,18 @@
             return false;
         }
     }
-    var COUNTDOWN_TAIL_RIGHT = 'node_in_multimode/top/right/xdtl_jackpot_anim_right/lbl_countdown';
-    var COUNTDOWN_TAIL_LEFT = 'node_in_multimode/top/left/xdtl_jackpot_anim_left/lbl_countdown';
+    var COUNTDOWN_TAIL_MAIN = 'root/left/bg_countdown/bg_count_down/lbl_countdown';
     function readCountdownSec() {
-        var right = null,
-        left = null;
+        var picks = [];
+        function parseSec(txt) {
+            var m = String(txt || '').match(/^\s*(\d{1,2})\s*$/);
+            if (!m)
+                return null;
+            var sec = parseInt(m[1], 10);
+            if (!(sec >= 0 && sec <= 60))
+                return null;
+            return sec;
+        }
         walkNodes(function (n) {
             if (!nodeInGame(n))
                 return;
@@ -790,51 +797,41 @@
                         continue;
                     var path = fullPath(n, 80);
                     var pathL = String(path || '').toLowerCase();
-                    if (pathL.indexOf(COUNTDOWN_TAIL_RIGHT) !== -1) {
-                        right = {
-                            text: text,
-                            tail: path
-                        };
-                    } else if (pathL.indexOf(COUNTDOWN_TAIL_LEFT) !== -1) {
-                        left = {
-                            text: text,
-                            tail: path
-                        };
-                    }
+                    if (pathL.indexOf(COUNTDOWN_TAIL_MAIN) === -1)
+                        continue;
+                    var sec = parseSec(text);
+                    if (sec == null)
+                        continue;
+                    var r = wRect(n);
+                    picks.push({
+                        sec: sec,
+                        text: text,
+                        tail: path,
+                        x: r.x,
+                        y: r.y,
+                        w: r.w,
+                        h: r.h
+                    });
                 }
             }
         });
-        function parseSec(txt) {
-            var m = String(txt || '').match(/(\d+)/);
-            return m ? parseInt(m[1], 10) : null;
-        }
-        var secR = right ? parseSec(right.text) : null;
-        var secL = left ? parseSec(left.text) : null;
-        if (secR != null && secR > 0) {
-            S._progTail = right.tail || '';
-            S._progIsSec = true;
-            window.__cw_prog_tail = S._progTail;
-            return secR;
-        }
-        if (secL != null && secL > 0) {
-            S._progTail = left.tail || '';
-            S._progIsSec = true;
-            window.__cw_prog_tail = S._progTail;
-            return secL;
-        }
-        if (secR != null) {
-            S._progTail = right.tail || '';
-            S._progIsSec = true;
-            window.__cw_prog_tail = S._progTail;
-            return secR;
-        }
-        if (secL != null) {
-            S._progTail = left.tail || '';
-            S._progIsSec = true;
-            window.__cw_prog_tail = S._progTail;
-            return secL;
-        }
-        return null;
+        if (!picks.length)
+            return null;
+        picks.sort(function (a, b) {
+            var arA = (a.w || 0) * (a.h || 0);
+            var arB = (b.w || 0) * (b.h || 0);
+            if (arA !== arB)
+                return arB - arA;
+            if (a.y !== b.y)
+                return a.y - b.y;
+            return a.x - b.x;
+        });
+        var pick = picks[0];
+        S._seenCountdown = true;
+        S._progTail = pick.tail || '';
+        S._progIsSec = true;
+        window.__cw_prog_tail = S._progTail;
+        return pick.sec;
     }
     function walkNodes(cb) {
         var scene = cc.director.getScene();
@@ -934,6 +931,14 @@
         var cd = readCountdownSec();
         if (cd != null)
             return cd;
+        // Nếu đã từng bắt được countdown theo selector thì không rơi ngược về ProgressBar,
+        // tránh nháy 0s -> 18s/20s do lấy nhầm progress ratio.
+        if (S && S._seenCountdown) {
+            S._progIsSec = true;
+            if (S._progSecLast != null)
+                return S._progSecLast;
+            return null;
+        }
         S._progIsSec = false;
         var bars = [];
         walkNodes(function (n) {
@@ -971,6 +976,44 @@
         } catch (e) {}
         var pr = (bar && typeof bar.progress !== 'undefined') ? bar.progress : 0;
         return clamp01(Number(pr));
+    }
+    function stabilizeProgSec(p) {
+        if (p == null)
+            return p;
+        if (!S || !S._progIsSec) {
+            if (S) {
+                S._progSecLast = null;
+                S._progRiseCand = null;
+                S._progRiseHits = 0;
+            }
+            return p;
+        }
+        var sec = Math.max(0, Number(p) || 0);
+        if (S._progSecLast == null) {
+            S._progSecLast = sec;
+            return sec;
+        }
+        var prev = Number(S._progSecLast) || 0;
+        var rise = sec - prev;
+        if (rise >= 4) {
+            if (S._progRiseCand != null && sec >= (S._progRiseCand - 2) && sec <= (S._progRiseCand + 3)) {
+                S._progRiseHits = (S._progRiseHits || 0) + 1;
+            } else {
+                S._progRiseCand = sec;
+                S._progRiseHits = 1;
+            }
+            if ((S._progRiseHits || 0) >= 2) {
+                S._progSecLast = sec;
+                S._progRiseCand = null;
+                S._progRiseHits = 0;
+                return sec;
+            }
+            return prev;
+        }
+        S._progSecLast = sec;
+        S._progRiseCand = null;
+        S._progRiseHits = 0;
+        return sec;
     }
 
     /* ---------------- MoneyMap ---------------- */
@@ -2251,7 +2294,11 @@
         showBet: false,
         showText: false,
         stakeK: 1,
-        seq: ''
+        seq: '',
+        _progSecLast: null,
+        _progRiseCand: null,
+        _progRiseHits: 0,
+        _seenCountdown: false
     };
 
     var ROOT = '__cw_root_allin';
@@ -4176,6 +4223,7 @@
 
     function tick() {
         var p = collectProgress();
+        p = stabilizeProgSec(p);
         if (p != null)
             S.prog = p;
         var T = sampleTotalsNow();
@@ -4244,6 +4292,7 @@
         S._lastSnap = {
             abx: 'tick',
             prog: (pNow != null ? pNow : null),
+            progIsSec: !!S._progIsSec,
             totals: T,
             seq: String(S.seq || ''),
             status: String(S.status || ''),
@@ -4445,6 +4494,8 @@
                 if (S && typeof S.prog === 'number')
                     return S.prog;
                 var cp = (typeof collectProgress === 'function') ? collectProgress() : null;
+                if (typeof stabilizeProgSec === 'function')
+                    cp = stabilizeProgSec(cp);
                 if (typeof cp === 'number')
                     return cp; // <— thêm dòng này
                 if (cp && typeof cp.val === 'number')
@@ -4506,6 +4557,7 @@
                         snap = {
                             abx: 'tick',
                             prog: (typeof last.prog === 'number') ? last.prog : null,
+                            progIsSec: !!last.progIsSec,
                             totals: last.totals || null,
                             seq: String(last.seq || ''),
                             status: String(last.status || ''),
@@ -4519,6 +4571,7 @@
                         snap = {
                             abx: 'tick',
                             prog: p,
+                            progIsSec: !!(S && S._progIsSec),
                             totals: totalsNow,
                             seq: readSeqSafe(false),
                             status: String(st || ''),

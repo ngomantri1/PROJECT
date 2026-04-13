@@ -351,6 +351,10 @@ namespace TaiXiuLiveSun
         // === Fields ================================================================
         private volatile CwSnapshot _lastSnap;
         private readonly object _snapLock = new();
+        private double _countdownMaxSec = 20d;
+        private double? _lastCountdownSec = null;
+        private double? _pendingRiseSec = null;
+        private int _pendingRiseHits = 0;
         private CancellationTokenSource _taskCts;
         private IBetTask _activeTask;
         private const int NiSeqMax = 50;
@@ -2216,30 +2220,135 @@ Ví dụ không hợp lệ:
 
                                         // --- NEW: lấy status từ JSON (JS đã bơm vào tick) ---
                                         string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
+                                        bool progIsSec = false;
+                                        try
+                                        {
+                                            if (jrootTick.TryGetProperty("progIsSec", out var psEl) &&
+                                                (psEl.ValueKind == System.Text.Json.JsonValueKind.True ||
+                                                 psEl.ValueKind == System.Text.Json.JsonValueKind.False))
+                                            {
+                                                progIsSec = psEl.GetBoolean();
+                                            }
+                                            else
+                                            {
+                                                progIsSec = snap.progIsSec ?? false;
+                                            }
+                                        }
+                                        catch { progIsSec = snap.progIsSec ?? false; }
 
                                         // --- Cập nhật UI ---
                                         _ = Dispatcher.BeginInvoke(new Action(() =>
                                         {
                                             try
                                             {
-                                                // Progress / thời gian đếm ngược (giây)
+                                                // Progress / thời gian đếm ngược (giây) - max động theo dữ liệu game
                                                 if (snap.prog.HasValue)
                                                 {
-                                                    const double progMaxSec = 20;
-                                                    var sec = Math.Max(0, Math.Min(progMaxSec, snap.prog.Value));
+                                                    var rawProg = snap.prog.Value;
+                                                    double sec;
+                                                    if (progIsSec || rawProg > 1.001)
+                                                    {
+                                                        var secRaw = Math.Max(0, Math.Min(120, rawProg));
+                                                        if (!_lastCountdownSec.HasValue)
+                                                        {
+                                                            sec = secRaw;
+                                                            _countdownMaxSec = Math.Max(1, secRaw);
+                                                            _lastCountdownSec = secRaw;
+                                                            _pendingRiseSec = null;
+                                                            _pendingRiseHits = 0;
+                                                        }
+                                                        else
+                                                        {
+                                                            var prev = _lastCountdownSec.Value;
+                                                            var rise = secRaw - prev;
+                                                            bool significantRise = rise >= 4.0;
+
+                                                            if (significantRise)
+                                                            {
+                                                                // Chống nháy 0s -> 35s -> 0s: chỉ nhận cú nhảy lên khi thấy >=2 tick liên tiếp.
+                                                                if (_pendingRiseSec.HasValue &&
+                                                                    secRaw >= (_pendingRiseSec.Value - 2.0) &&
+                                                                    secRaw <= (_pendingRiseSec.Value + 3.0))
+                                                                {
+                                                                    _pendingRiseHits++;
+                                                                }
+                                                                else
+                                                                {
+                                                                    _pendingRiseSec = secRaw;
+                                                                    _pendingRiseHits = 1;
+                                                                }
+
+                                                                if (_pendingRiseHits >= 2)
+                                                                {
+                                                                    sec = secRaw;
+                                                                    _countdownMaxSec = Math.Max(1, secRaw);
+                                                                    _lastCountdownSec = secRaw;
+                                                                    _pendingRiseSec = null;
+                                                                    _pendingRiseHits = 0;
+                                                                }
+                                                                else
+                                                                {
+                                                                    sec = Math.Max(0, prev);
+                                                                }
+                                                            }
+                                                            else
+                                                            {
+                                                                _pendingRiseSec = null;
+                                                                _pendingRiseHits = 0;
+                                                                sec = secRaw;
+                                                                if (sec > _countdownMaxSec)
+                                                                    _countdownMaxSec = sec;
+                                                                _lastCountdownSec = sec;
+                                                            }
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        // rawProg dạng ratio 0..1.
+                                                        // Chỉ cho phép GIẢM theo ratio (không cho tăng ngược), để tránh nháy lên 18s/20s.
+                                                        var frac = Math.Max(0, Math.Min(1, rawProg));
+                                                        var secFromFrac = Math.Max(0, _countdownMaxSec * frac);
+                                                        if (_lastCountdownSec.HasValue)
+                                                        {
+                                                            sec = Math.Min(Math.Max(0, _lastCountdownSec.Value), secFromFrac);
+                                                            if (secFromFrac <= 0.5)
+                                                                sec = 0;
+                                                        }
+                                                        else
+                                                        {
+                                                            sec = secFromFrac;
+                                                        }
+                                                        _lastCountdownSec = sec;
+                                                        _pendingRiseSec = null;
+                                                        _pendingRiseHits = 0;
+                                                    }
+
                                                     var secInt = (int)Math.Round(sec, MidpointRounding.AwayFromZero);
-                                                    var ratio = (progMaxSec > 0) ? (sec / progMaxSec) : 0;
+                                                    var ratio = (_countdownMaxSec > 0) ? (sec / _countdownMaxSec) : 0;
+                                                    ratio = Math.Max(0, Math.Min(1, ratio));
                                                     if (PrgBet != null)
                                                     {
                                                         PrgBet.Minimum = 0;
                                                         PrgBet.Maximum = 1;
                                                         PrgBet.Value = ratio;
                                                     }
+                                                    if (Fill != null)
+                                                    {
+                                                        // Đổi màu theo thời gian còn lại: xanh -> đỏ.
+                                                        byte rr = (byte)Math.Round(220 + (105 - 220) * ratio);
+                                                        byte gg = (byte)Math.Round(75 + (195 - 75) * ratio);
+                                                        byte bb = (byte)Math.Round(75 + (107 - 75) * ratio);
+                                                        Fill.Background = new SolidColorBrush(Color.FromRgb(rr, gg, bb));
+                                                    }
                                                     if (LblProg != null) LblProg.Text = $"{secInt}s";
                                                 }
                                                 else
                                                 {
+                                                    _lastCountdownSec = null;
+                                                    _pendingRiseSec = null;
+                                                    _pendingRiseHits = 0;
                                                     if (PrgBet != null) PrgBet.Value = 0;
+                                                    if (Fill != null) Fill.Background = new SolidColorBrush(Color.FromRgb(96, 96, 96));
                                                     if (LblProg != null) LblProg.Text = "-";
                                                 }
 
