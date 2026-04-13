@@ -1,7 +1,7 @@
 ﻿(() => {
     'use strict';
     /* =========================================================
-    CanvasWatch + MoneyMap + BetMap + TextMap + Scan200Text
+    CanvasWatch + MoneyMap + BetMap + TextMap + Scan500Text
     + TK Sequence (restore): LEFT→RIGHT columns, zig-zag T↓/B↑
     (Compat build: no spread operator, no optional chaining)
     + FIX: totals CHẴN/LẺ by (x,tail) — CHẴN x=591, LẺ x=973,
@@ -2280,7 +2280,7 @@
         '<button id="bText">TextMap</button>' +
         '<button id="bScanMoney">Scan200Money</button>' +
         '<button id="bScanBet">Scan200Bet</button>' +
-        '<button id="bScanText">Scan200Text</button>' +
+        '<button id="bScanText">Scan500Text</button>' +
         '<button id="bScanTK">ScanTK</button>' +
         '</div>' +
         '<div style="display:flex;gap:10px;align-items:center;margin-bottom:6px">' +
@@ -2689,41 +2689,59 @@
         }
         console.log(btns);
     }
-    function scan200Text() {
-        var texts = buildTextRects().slice(0, 200)
+    function scanText(limit) {
+        var maxN = Number(limit) || 200;
+        if (maxN < 1)
+            maxN = 1;
+        if (maxN > 5000)
+            maxN = 5000;
+
+        var allTexts = buildTextRects();
+        var texts = allTexts.slice(0, maxN)
             .map(function (t) {
                 return {
                     text: t.text,
-                     tail: t.tail,
-                     x: Math.round(t.x),
-                     y: Math.round(t.y),
-                     w: Math.round(t.w),
-                     h: Math.round(t.h)
-                 };
-             });
-         console.log('(Text index x200)	text	x	y	w	h	tail');
-         for (var j = 0; j < texts.length; j++) {
-             var r = texts[j];
-             console.log(j + "	'" + r.text + "'	" + r.x + "	" + r.y + "	" + r.w + "	" + r.h + "	'" + r.tail + "'");
-         }
-         var lines = ['(Text index x200)	text	x	y	w	h	tail'];
-         for (var k = 0; k < texts.length; k++) {
-             var r2 = texts[k];
-             lines.push(k + "	'" + r2.text + "'	" + r2.x + "	" + r2.y + "	" + r2.w + "	" + r2.h + "	'" + r2.tail + "'");
-         }
-         if (!texts.length)
-             lines.push('(empty)');
-         lines.push('');
-         lines = lines.concat(chanLeDebugLines(buildMoneyFromTextRects(), 'Chan/Le by TextMap'));
+                    tail: t.tail,
+                    x: Math.round(t.x),
+                    y: Math.round(t.y),
+                    w: Math.round(t.w),
+                    h: Math.round(t.h)
+                };
+            });
+
+        console.log('(Text index x' + maxN + ')\ttext\tx\ty\tw\th\ttail');
+        for (var j = 0; j < texts.length; j++) {
+            var r = texts[j];
+            console.log(j + "\t'" + r.text + "'\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
+        }
+
+        var lines = ['(Text index x' + maxN + ')\ttext\tx\ty\tw\th\ttail'];
+        lines.push('count=' + texts.length + '/' + allTexts.length + (allTexts.length > maxN ? ' (truncated)' : ''));
+        for (var k = 0; k < texts.length; k++) {
+            var r2 = texts[k];
+            lines.push(k + "\t'" + r2.text + "'\t" + r2.x + "\t" + r2.y + "\t" + r2.w + "\t" + r2.h + "\t'" + r2.tail + "'");
+        }
+        if (!texts.length)
+            lines.push('(empty)');
+        lines.push('');
+        lines = lines.concat(chanLeDebugLines(buildMoneyFromTextRects(allTexts), 'Chan/Le by TextMap'));
         setCwLog(lines.join('\n'));
-         window.__cw_lastTextScan = texts;
-         try {
-             console.table(texts);
-         } catch (e) {
-             console.log(texts);
-         }
-         return texts;
-     }
+        window.__cw_lastTextScan = texts;
+        try {
+            console.table(texts);
+        } catch (e) {
+            console.log(texts);
+        }
+        return texts;
+    }
+
+    function scan200Text() {
+        return scanText(200);
+    }
+
+    function scan500Text() {
+        return scanText(500);
+    }
 
     function scanTK() {
         var r = readTKSeq();
@@ -4101,7 +4119,7 @@
         });
     };
 
-    console.log('[READY] CW merged (compat + TextMap + Scan200Text + TK sequence + Totals by (x,tail) + standardized exports).');
+    console.log('[READY] CW merged (compat + TextMap + Scan500Text + TK sequence + Totals by (x,tail) + standardized exports).');
 
     /* ---------------- tick & controls ---------------- */
     function statusByProg(p, textsHint) {
@@ -4300,7 +4318,7 @@
         scan200Bet();
     };
     panel.querySelector('#bScanText').onclick = function () {
-        scan200Text();
+        scan500Text();
     };
     panel.querySelector('#bScanTK').onclick = function () {
         scanTK();
