@@ -4170,55 +4170,36 @@
 
     /* ---------------- tick & controls ---------------- */
     function statusByProg(p, textsHint) {
-        // Ngưỡng chống rung cho số thực gần 0
-        var EPS = 0.001;
+        var STATUS_TAIL = 'dual/canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/node_noti/lbl_noti';
+        try {
+            var texts = null;
+            if (textsHint && textsHint.length)
+                texts = textsHint;
+            else if (S && S._lastTextAll && (Date.now() - (S._lastTextAt || 0)) <= 520)
+                texts = S._lastTextAll;
+            else
+                texts = buildTextRects();
 
-        // Quy tắc ông chủ yêu cầu:
-        // - p > 0      → lấy text tail 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage'
-        // - p = 0      → lấy text tail 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting'
-        var TAIL_MSG = 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage';
-        var TAIL_WAIT = 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting';
-
-        // Chọn text theo tail, so khớp theo kiểu "đuôi" để chống thay đổi prefix
-        function pickTextByTailEnd(tailEnd) {
-            try {
-                var texts = null;
-                if (textsHint && textsHint.length)
-                    texts = textsHint;
-                else if (S && S._lastTextAll && (Date.now() - (S._lastTextAt || 0)) <= 520)
-                    texts = S._lastTextAll;
-                else
-                    texts = buildTextRects(); // [{text,x,y,w,h,tail}, ...]
-                var best = null,
-                bestArea = -1;
-                var tailEndL = String(tailEnd || '').toLowerCase();
-
-                for (var i = 0; i < texts.length; i++) {
-                    var t = texts[i];
-                    var tl = String(t.tail || '').toLowerCase();
-                    if (!tl.endsWith(tailEndL))
-                        continue;
-
-                    var ar = (t.w || 0) * (t.h || 0);
-                    if (ar > bestArea) {
-                        best = t;
-                        bestArea = ar;
-                    }
+            var best = null;
+            var bestArea = -1;
+            for (var i = 0; i < texts.length; i++) {
+                var t = texts[i];
+                var tl = String(t.tail || '').toLowerCase();
+                if (!tl.endsWith(STATUS_TAIL))
+                    continue;
+                var ar = (t.w || 0) * (t.h || 0);
+                if (ar > bestArea) {
+                    best = t;
+                    bestArea = ar;
                 }
-                return best ? String(best.text || '').trim() : '';
-            } catch (e) {
-                return '';
             }
+            var txt = best ? String(best.text || '').trim() : '';
+            if (/^notification$/i.test(txt))
+                return '';
+            return txt || '';
+        } catch (_) {
+            return '';
         }
-
-        p = +p || 0;
-        var tail = (p > EPS) ? TAIL_MSG : TAIL_WAIT;
-        var txt = pickTextByTailEnd(tail);
-
-        // Fallback nhẹ khi không tìm thấy text
-        if (txt)
-            return txt;
-        return "";
     }
 
     function tick() {
