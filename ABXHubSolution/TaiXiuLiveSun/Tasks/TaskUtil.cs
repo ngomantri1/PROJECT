@@ -25,8 +25,16 @@ namespace TaiXiuLiveSun.Tasks
             _lastBetSideByTab.Clear();
         }
 
-        public static string ParityCharToSide(char ch) => (ch == 'C') ? "CHAN" : "LE";
-        public static char DigitToParity(char d) => (d == 'C') ? 'C' : 'L';
+        public static string ParityCharToSide(char ch) => (DigitToParity(ch) == 'C') ? "CHAN" : "LE";
+        public static char DigitToParity(char d)
+        {
+            return d switch
+            {
+                'C' or 'c' or '0' or '2' or '4' => 'C',
+                'L' or 'l' or '1' or '3' => 'L',
+                _ => '\0'
+            };
+        }
         // TaskUtil.cs (trong class TaskUtil)
         private static readonly object _betLock = new object();
         private static string _lastBetSeq = "";
@@ -37,13 +45,21 @@ namespace TaiXiuLiveSun.Tasks
         {
             if (string.IsNullOrEmpty(digitSeq)) return "";
             char[] a = new char[digitSeq.Length];
-            for (int i = 0; i < digitSeq.Length; i++) a[i] = DigitToParity(digitSeq[i]);
-            return new string(a);
+            int n = 0;
+            for (int i = 0; i < digitSeq.Length; i++)
+            {
+                var p = DigitToParity(digitSeq[i]);
+                if (p == 'C' || p == 'L')
+                    a[n++] = p;
+            }
+            return (n == a.Length) ? new string(a) : new string(a, 0, n);
         }
 
         public static bool IsWin(string betSide, char lastDigit)
         {
-            var lastSide = (lastDigit == 'C') ? "CHAN" : "LE";
+            var p = DigitToParity(lastDigit);
+            if (p != 'C' && p != 'L') return false;
+            var lastSide = (p == 'C') ? "CHAN" : "LE";
             return string.Equals(betSide, lastSide, StringComparison.OrdinalIgnoreCase);
         }
 

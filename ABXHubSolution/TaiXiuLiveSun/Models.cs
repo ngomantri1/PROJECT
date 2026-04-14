@@ -8,13 +8,10 @@ namespace TaiXiuLiveSun
     {
         public long? C { get; set; }
         public long? L { get; set; }
+        public long? T { get; set; }
+        public long? X { get; set; }
         public long? A { get; set; }
         public string N { get; set; }
-        public long? SD { get; set; }
-        public long? TT { get; set; }
-        public long? T3T { get; set; }
-        public long? T3D { get; set; }
-        public long? TD { get; set; }
     }
 
     public sealed class CwSnapshot

@@ -1598,8 +1598,8 @@
                                                     <DataTemplate DataType="{x:Type local:SeqIconVM}">
                                                         <Image
                                                             x:Name="Icon"
-                                                            Width="15"
-                                                            Height="15"
+                                                            Width="18"
+                                                            Height="18"
                                                             Opacity="1"
                                                             Source="{Binding Img}">
                                                             <Image.CacheMode>

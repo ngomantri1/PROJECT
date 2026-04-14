@@ -2171,31 +2171,34 @@ Ví dụ không hợp lệ:
                                                 !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
                                             {
                                                 char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
-                                                bool winIsChan = (tail == 'C');
-
-                                                long prevC = _roundTotalsC, prevL = _roundTotalsL;
-                                                // Ni: nếu cửa THẮNG là cửa có tổng tiền lớn hơn trong ván đó => 'N', ngược lại 'I'
-                                                char ni = winIsChan ? ((prevC >= prevL) ? 'N' : 'I')
-                                                                    : ((prevL >= prevC) ? 'N' : 'I');
-
-                                                _niSeq.Append(ni);
-                                                if (_niSeq.Length > NiSeqMax)
-                                                    _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
-
-                                                Log($"[NI] add={ni} | seq={_niSeq} | tail={tail} | C={prevC} | L={prevL}");
-
-                                                // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
-                                                var kqStr = winIsChan ? "CHAN" : "LE";
-                                                long? accNow2 = snap?.totals?.A;
-                                                if (_pendingRows.Count > 0 && accNow2.HasValue)
+                                                char tailParity = SeqCharToParity(tail);
+                                                if (tailParity == 'C' || tailParity == 'L')
                                                 {
-                                                    // Chiến lược 17 tự finalize nhiều cửa theo winners
-                                                    if (!HasJackpotMultiSideRunning())
+                                                    bool winIsChan = (tailParity == 'C');
+
+                                                    long prevC = _roundTotalsC, prevL = _roundTotalsL;
+                                                    // Ni: nếu cửa THẮNG là cửa có tổng tiền lớn hơn trong ván đó => 'N', ngược lại 'I'
+                                                    char ni = winIsChan ? ((prevC >= prevL) ? 'N' : 'I')
+                                                                        : ((prevL >= prevC) ? 'N' : 'I');
+
+                                                    _niSeq.Append(ni);
+                                                    if (_niSeq.Length > NiSeqMax)
+                                                        _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
+
+                                                    Log($"[NI] add={ni} | seq={_niSeq} | tail={tail} | C={prevC} | L={prevL}");
+
+                                                    // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
+                                                    var kqStr = (tailParity == 'C') ? "CHAN" : "LE";
+                                                    long? accNow2 = snap?.totals?.A;
+                                                    if (_pendingRows.Count > 0 && accNow2.HasValue)
                                                     {
-                                        FinalizeLastBet(kqStr, accNow2.Value);
+                                                        // Chiến lược 17 tự finalize nhiều cửa theo winners
+                                                        if (!HasJackpotMultiSideRunning())
+                                                        {
+                                            FinalizeLastBet(kqStr, accNow2.Value);
+                                                        }
                                                     }
                                                 }
-
                                                 _lockMajorMinorUpdates = false; // xong chu kỳ này
                                             }
 
@@ -2355,8 +2358,9 @@ Ví dụ không hợp lệ:
                                                 // Kết quả gần nhất từ chuỗi seq
                                                 var seqStrLocal = snap.seq ?? "";
                                                 char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
-                                                var kq = (last == 'C') ? "CHAN"
-                                                         : (last == 'L') ? "LE" : "";
+                                                var pLast = SeqCharToParity(last);
+                                                var kq = (pLast == 'C') ? "CHAN"
+                                                         : (pLast == 'L') ? "LE" : "";
                                                 SetLastResultUI(kq);
 
                                                 // Tổng tiền
@@ -5391,6 +5395,16 @@ Ví dụ không hợp lệ:
             return (s.Length <= take) ? s : s.Substring(s.Length - take, take);
         }
 
+        private static char SeqCharToParity(char ch)
+        {
+            return ch switch
+            {
+                'C' or 'c' or '0' or '2' or '4' => 'C',
+                'L' or 'l' or '1' or '3' => 'L',
+                _ => '\0'
+            };
+        }
+
         // đặt trong MainWindow.xaml.cs (project TaiXiuLiveSun)
 
         // load thử lần lượt các uri, cái nào được thì dùng, không được thì trả về null
@@ -5437,6 +5451,31 @@ Ví dụ không hợp lệ:
                 "pack://application:,,,/Assets/Seq/C.png",
                 "pack://application:,/Assets/Seq/C.png"
             );
+            _seqIconMap['0'] = FallbackIcons.LoadPackImage("Assets/Seq/0.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/0.png",
+                "pack://application:,,,/Assets/Seq/0.png",
+                "pack://application:,/Assets/Seq/0.png"
+            );
+            _seqIconMap['1'] = FallbackIcons.LoadPackImage("Assets/Seq/1.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/1.png",
+                "pack://application:,,,/Assets/Seq/1.png",
+                "pack://application:,/Assets/Seq/1.png"
+            );
+            _seqIconMap['2'] = FallbackIcons.LoadPackImage("Assets/Seq/2.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/2.png",
+                "pack://application:,,,/Assets/Seq/2.png",
+                "pack://application:,/Assets/Seq/2.png"
+            );
+            _seqIconMap['3'] = FallbackIcons.LoadPackImage("Assets/Seq/3.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/3.png",
+                "pack://application:,,,/Assets/Seq/3.png",
+                "pack://application:,/Assets/Seq/3.png"
+            );
+            _seqIconMap['4'] = FallbackIcons.LoadPackImage("Assets/Seq/4.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/Seq/4.png",
+                "pack://application:,,,/Assets/Seq/4.png",
+                "pack://application:,/Assets/Seq/4.png"
+            );
         }
 
 
@@ -5450,7 +5489,7 @@ Ví dụ không hợp lệ:
             for (int i = 0; i < tail.Length; i++)
             {
                 var ch = tail[i];
-                if (_seqIconMap.TryGetValue(ch, out var img))
+                if (_seqIconMap.TryGetValue(ch, out var img) && img != null)
                     items.Add(new SeqIconVM { Img = img, IsLatest = (i == tail.Length - 1) });
             }
             SeqIcons.ItemsSource = items;
@@ -5472,8 +5511,8 @@ Ví dụ không hợp lệ:
             {
                 // tail số từ chuỗi kết quả: 0/2/4 => CHẴN, 1/3 => LẺ
                 char d = s[0];
-                isChan = (d == 'C');
-                isLe = (d == 'L');
+                isChan = (d == '0' || d == '2' || d == '4');
+                isLe = (d == '1' || d == '3');
             }
             else
             {

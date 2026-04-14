@@ -1421,44 +1421,22 @@
         return seq.slice(-52);
     }
 
-    function readTKSeqDigits() {
-        var res = tkCellsPrefer('thongke2');
-        var cells = res.cells,
-        which = res.which;
-        if (!cells.length)
-            return {
-                seq: '',
-                which: null,
-                cols: [],
-                cells: []
-            };
-        var cols = clusterByX(cells); // TRA?I?+'PH???I
-        var parts = [],
-        i;
-        for (i = 0; i < cols.length; i++) {
-            var c = cols[i];
-            var topDown = (i % 2 === 0); // c??Tt 1 T?+", c??Tt 2 B?+`, ...
-            var arr = c.items.slice();
-            if (topDown) {
-                arr.reverse();
-            }
-            var s = '',
-            k;
-            for (k = 0; k < arr.length; k++)
-                s += String(arr[k].v);
-            parts.push(s);
-        }
-        var seq = limitSeq52(parts.join(''));
-        return {
-            seq: seq,
-            which: which,
-            cols: cols,
-            cells: cells
-        };
-    }
+    var TAIL_LAST_RESULT_ROWS = 'dual/canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/left/lastresult/results/row-';
+    var TK_ROW_ORDER = [4, 3, 2, 1];
+    var TK_COL_ORDER = [0, 1, 2, 3, 4, 5, 6];
 
-    var TAIL_SOICAU_NORMAL_MULTI = 'prefab_game_14/root/node_in_multimode/HUD/soicau_popup_multi/root/soicau_normal/ig_soicau_xocdia/content';
-    var TAIL_SOICAU_NORMAL_FULL = 'prefab_game_14/root/node_in_fullmode/HUD/soicau_popup_fullmode/root/soicau_normal/ig_soicau_xocdia/content';
+    function soicauCode(name) {
+        var s = String(name || '').toLowerCase();
+        if (s.indexOf('ig_soicau_xiuchan') !== -1)
+            return '0';
+        if (s.indexOf('ig_soicau_xiule') !== -1)
+            return '1';
+        if (s.indexOf('ig_soicau_taichan') !== -1)
+            return '2';
+        if (s.indexOf('ig_soicau_taile') !== -1)
+            return '3';
+        return '';
+    }
 
     function beadVal(name, nodeName) {
         var s = (String(name || '') + ' ' + String(nodeName || '')).toLowerCase();
@@ -1467,6 +1445,137 @@
         if (s.indexOf('le') !== -1)
             return 'L';
         return '?';
+    }
+
+    function readTKSeqLastResult() {
+        var cells = [];
+        walkNodes(function (n) {
+            if (!nodeInGame(n))
+                return;
+            if (!isNodeActive(n))
+                return;
+            var full = fullPath(n, 160);
+            if (!full)
+                return;
+            var fullL = String(full).toLowerCase();
+            if (fullL.indexOf(TAIL_LAST_RESULT_ROWS) === -1)
+                return;
+
+            var mRow = /\/row-(\d{3})\//i.exec(full);
+            var mCol = /\/ig_soicau_[^\/]*-(\d{3})(?:\/|$)/i.exec(full);
+            if (!mRow || !mCol)
+                return;
+
+            var row = parseInt(mRow[1], 10);
+            var col = parseInt(mCol[1], 10);
+            if (isNaN(row) || isNaN(col))
+                return;
+
+            var comps = (n._components || []);
+            var v = '';
+            var sfName = '';
+            for (var i = 0; i < comps.length; i++) {
+                var c = comps[i];
+                var sf = c && (c.spriteFrame || c._spriteFrame);
+                if (!sf)
+                    continue;
+                var name = sf.name || sf._name || (sf._texture && sf._texture.name) || '';
+                var code = soicauCode(name);
+                if (!code)
+                    continue;
+                v = code;
+                sfName = String(name || '');
+                break;
+            }
+            if (!v)
+                return;
+
+            var r = beadRectFallback(n, wRect(n));
+            var bx = pickCoord(r.sx, r.x);
+            var by = pickCoord(r.sy, r.y);
+            var inView = (bx >= -10 && bx <= innerWidth + 10 && by >= -10 && by <= innerHeight + 10);
+
+            cells.push({
+                v: v,
+                row: row,
+                col: col,
+                x: bx,
+                y: by,
+                xRaw: r.x,
+                yRaw: r.y,
+                w: r.w,
+                h: r.h,
+                sx: r.sx,
+                sy: r.sy,
+                sw: r.sw,
+                sh: r.sh,
+                inView: inView,
+                tail: full,
+                fullTail: full,
+                sprite: sfName,
+                node: (n && n.name) || ''
+            });
+        });
+
+        if (!cells.length)
+            return {
+                seq: '',
+                which: null,
+                cols: [],
+                cells: [],
+                groups: [],
+                seqGrouped: ''
+            };
+
+        var matrix = {};
+        for (var j = 0; j < cells.length; j++) {
+            var it = cells[j];
+            if (!matrix[it.row])
+                matrix[it.row] = {};
+            matrix[it.row][it.col] = it;
+        }
+
+        var groups = [];
+        for (var ri = 0; ri < TK_ROW_ORDER.length; ri++) {
+            var rr = TK_ROW_ORDER[ri];
+            var s = '';
+            for (var ci = 0; ci < TK_COL_ORDER.length; ci++) {
+                var cc = TK_COL_ORDER[ci];
+                var cell = matrix[rr] ? matrix[rr][cc] : null;
+                if (cell)
+                    s += String(cell.v || '');
+            }
+            if (s.length)
+                groups.push(s);
+        }
+
+        var cols = [];
+        for (var ci2 = 0; ci2 < TK_COL_ORDER.length; ci2++) {
+            var colN = TK_COL_ORDER[ci2];
+            var items = [];
+            for (var ri2 = 0; ri2 < TK_ROW_ORDER.length; ri2++) {
+                var rowN = TK_ROW_ORDER[ri2];
+                var c2 = matrix[rowN] ? matrix[rowN][colN] : null;
+                if (c2)
+                    items.push(c2);
+            }
+            if (items.length)
+                cols.push({
+                    cx: colN,
+                    items: items
+                });
+        }
+
+        var seqGrouped = groups.join(' ');
+        var seq = limitSeq52(groups.join(''));
+        return {
+            seq: seq,
+            which: 'lastResult_results_305',
+            cols: cols,
+            cells: cells,
+            groups: groups,
+            seqGrouped: seqGrouped
+        };
     }
 
     function isNodeActive(n) {
@@ -1603,99 +1712,25 @@
         return c;
     }
 
-    function readTKSeqBeads() {
-        var cellsMulti = collectBeadsByTail(TAIL_SOICAU_NORMAL_MULTI);
-        var cellsFull = collectBeadsByTail(TAIL_SOICAU_NORMAL_FULL);
-        var cells = [];
-        var which = null;
-        if (cellsMulti.length || cellsFull.length) {
-            var visM = visibleBeadCount(cellsMulti);
-            var visF = visibleBeadCount(cellsFull);
-            if (visM || visF) {
-                if (visM >= visF) {
-                    cells = cellsMulti;
-                    which = 'soicau_normal_multi';
-                } else {
-                    cells = cellsFull;
-                    which = 'soicau_normal_full';
-                }
-                var onlyView = [];
-                for (var i = 0; i < cells.length; i++) {
-                    if (cells[i].inView)
-                        onlyView.push(cells[i]);
-                }
-                if (onlyView.length)
-                    cells = onlyView;
-            } else if (cellsMulti.length >= cellsFull.length) {
-                cells = cellsMulti;
-                which = 'soicau_normal_multi';
-            } else {
-                cells = cellsFull;
-                which = 'soicau_normal_full';
-            }
-        }
-        if (!cells.length)
-            return {
-                seq: '',
-                which: null,
-                cols: [],
-                cells: []
-            };
-        var cols = clusterByX(cells); // x asc
-        var parts = [],
-        i;
-        for (i = 0; i < cols.length; i++) {
-            var c = cols[i];
-            var arr = c.items.slice().sort(function (a, b) {
-                return (i % 2 === 0) ? (a.y - b.y) : (b.y - a.y);
-            });
-            var s = '',
-            k;
-            for (k = 0; k < arr.length; k++)
-                s += String(arr[k].v);
-            parts.push(s);
-        }
-        var seq = limitSeq52(parts.join(''));
-        return {
-            seq: seq,
-            which: which,
-            cols: cols,
-            cells: cells
-        };
-    }
-
     function readTKSeq() {
-        var r = readTKSeqBeads();
-        if (r && r.seq && r.seq.length)
-            return r;
-        return readTKSeqDigits();
+        return readTKSeqLastResult();
     }
 
 
 
         /* ---------------- helpers for totals by (y, tail) ---------------- */
 
-        var TAIL_TOTAL_BET = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/lbl_total_bet';
+        var TAIL_BET_CHAN = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_chan';
 
-        var TAIL_TUDO = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_4th/lbl_total_bet';
+        var TAIL_BET_LE = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_le';
 
-        var TAIL_TUTRANG = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_4tr/lbl_total_bet';
+        var TAIL_BET_TAI = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_tai';
 
-        var TAIL_3TRANG = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_3tr/lbl_total_bet';
+        var TAIL_BET_XIU = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_xiu';
 
-        var TAIL_3DO = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_3th/lbl_total_bet';
+        var TAIL_ACC = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/left/avatar_node/lbl_money';
 
-        var TAIL_ACC = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/playersview/lbl_user_money';
-
-        var X_ACC = 303;
-
-        var TAIL_USER_NAME = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/playersview/lbl_user_name';
-
-        var X_USER_NAME = 274;
-
-        var Y_CHAN = 641;
-
-        var Y_LE = 643;
+        var TAIL_USER_NAME = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/left/avatar_node/lbl_username';
 
 
         function tailEquals(t, exact) {
@@ -2065,13 +2100,9 @@
             for (var i = 0; i < list.length; i++) {
 
                 var it = list[i];
-
-                if (tailEquals(tailOfMoney(it), TAIL_TOTAL_BET))
-
-                    arr.push({
-                        idx: i,
-                        it: it
-                    });
+                var tail = tailOfMoney(it);
+                if (tailEquals(tail, TAIL_BET_CHAN) || tailEquals(tail, TAIL_BET_LE) || tailEquals(tail, TAIL_BET_TAI) || tailEquals(tail, TAIL_BET_XIU))
+                    arr.push({ idx: i, it: it });
 
             }
 
@@ -2081,7 +2112,7 @@
 
             });
 
-            var lines = ['(' + (title || 'Chan/Le candidates by tail') + ') idx\ttxt\tval\tx\ty\tsx\tsy\tsw\tsh'];
+            var lines = ['(' + (title || 'Bet candidates by tail') + ') idx\ttxt\tval\tx\ty\tsx\tsy\tsw\tsh\ttail'];
 
             for (var j = 0; j < arr.length; j++) {
 
@@ -2090,7 +2121,7 @@
                 lines.push((j + 1) + ':' + arr[j].idx + "\t'" + r.txt + "'\t" + r.val + "\t" +
                     Math.round(xOf(r)) + "\t" + Math.round(yOf(r)) + "\t" +
                     Math.round(r.sx || 0) + "\t" + Math.round(r.sy || 0) + "\t" +
-                    Math.round(r.sw || 0) + "\t" + Math.round(r.sh || 0));
+                    Math.round(r.sw || 0) + "\t" + Math.round(r.sh || 0) + "\t'" + String(tailOfMoney(r) || '') + "'");
 
             }
 
@@ -2099,14 +2130,14 @@
                 lines.push('(empty)');
 
             } else {
-
-                var min = arr[0].it;
-
-                var max = arr[arr.length - 1].it;
-
-                lines.push('pick CHAN(minX): ' + Math.round(xOf(min)) + " -> '" + min.txt + "'");
-
-                lines.push('pick LE(maxX): ' + Math.round(xOf(max)) + " -> '" + max.txt + "'");
+                var pickC = pickByTail(list, TAIL_BET_CHAN);
+                var pickL = pickByTail(list, TAIL_BET_LE);
+                var pickT = pickByTail(list, TAIL_BET_TAI);
+                var pickX = pickByTail(list, TAIL_BET_XIU);
+                lines.push('pick CHẴN: ' + (pickC ? ("'" + pickC.txt + "'") : '(none)'));
+                lines.push('pick LẺ  : ' + (pickL ? ("'" + pickL.txt + "'") : '(none)'));
+                lines.push('pick TÀI : ' + (pickT ? ("'" + pickT.txt + "'") : '(none)'));
+                lines.push('pick XỈU : ' + (pickX ? ("'" + pickX.txt + "'") : '(none)'));
 
             }
 
@@ -2131,15 +2162,19 @@
         window.pickByTail = pickByTail;
 
         window.cwPickChan = function () {
-
-            return pickByXOrderTail(buildMoneyFromTextRects(), TAIL_TOTAL_BET, 'min');
+            return pickByTail(buildMoneyFromTextRects(), TAIL_BET_CHAN);
 
         };
 
         window.cwPickLe = function () {
+            return pickByTail(buildMoneyFromTextRects(), TAIL_BET_LE);
 
-            return pickByXOrderTail(buildMoneyFromTextRects(), TAIL_TOTAL_BET, 'max');
-
+        };
+        window.cwPickTai = function () {
+            return pickByTail(buildMoneyFromTextRects(), TAIL_BET_TAI);
+        };
+        window.cwPickXiu = function () {
+            return pickByTail(buildMoneyFromTextRects(), TAIL_BET_XIU);
         };
 
 
@@ -2205,37 +2240,26 @@
         S._lastTextAll = listTextAll;
         S._lastTextAt = Date.now();
         var listTextMoney = buildMoneyFromTextRects(listTextAll);
-        var mC = pickByXOrderTail(listTextMoney, TAIL_TOTAL_BET, 'min');
-        var mL = pickByXOrderTail(listTextMoney, TAIL_TOTAL_BET, 'max');
-        if (mC && mL && mC === mL)
-            mL = null;
-        var mSD = null;
-        var mTT = pickByTail(list, TAIL_TUTRANG);
-        var m3T = pickByTail(list, TAIL_3TRANG);
-        var m3D = pickByTail(list, TAIL_3DO);
-        var mTD = pickByTail(list, TAIL_TUDO);
+        var mC = pickByTail(listTextMoney, TAIL_BET_CHAN);
+        var mL = pickByTail(listTextMoney, TAIL_BET_LE);
+        var mT = pickByTail(listTextMoney, TAIL_BET_TAI);
+        var mX = pickByTail(listTextMoney, TAIL_BET_XIU);
         var mA = pickByTailMinY(listTextMoney, TAIL_ACC);
         var mN = pickByTailMinY(listTextAll, TAIL_USER_NAME);
 
         return {
             C: mC ? mC.val : null,
             L: mL ? mL.val : null,
+            T: mT ? mT.val : null,
+            X: mX ? mX.val : null,
             A: mA ? mA.val : null,
             N: mN ? String(mN.text != null ? mN.text : '') : null,
-            SD: mSD ? mSD.val : null,
-            TT: mTT ? mTT.val : null,
-            T3T: m3T ? m3T.val : null,
-            T3D: m3D ? m3D.val : null,
-            TD: mTD ? mTD.val : null,
             rawC: mC ? mC.txt : null,
             rawL: mL ? mL.txt : null,
+            rawT: mT ? mT.txt : null,
+            rawX: mX ? mX.txt : null,
             rawA: mA ? mA.txt : null,
-            rawN: mN ? String(mN.text != null ? mN.text : '') : null,
-            rawSD: mSD ? mSD.txt : null,
-            rawTT: mTT ? mTT.txt : null,
-            rawT3T: m3T ? m3T.txt : null,
-            rawT3D: m3D ? m3D.txt : null,
-            rawTD: mTD ? mTD.txt : null
+            rawN: mN ? String(mN.text != null ? mN.text : '') : null
         };
     }
 
@@ -2258,6 +2282,8 @@
             return {
                 C: null,
                 L: null,
+                T: null,
+                X: null,
                 A: null,
                 N: null
             };
@@ -2657,10 +2683,14 @@
         var t = S._lastTotals || {
             C: null,
             L: null,
+            T: null,
+            X: null,
             A: null,
             N: null,
             rawC: null,
             rawL: null,
+            rawT: null,
+            rawX: null,
             rawA: null,
             rawN: null
         };
@@ -2668,7 +2698,7 @@
         var progText = (S.prog == null ? '--' : (S._progIsSec ? (S.prog + 's') : (((S.prog * 100) | 0) + '%')));
         var base =
             ' Trạng thái: ' + S.status + ' | Prog: ' + progText + '\n' +
-            '• TÊN NHÂN VẬT : ' + (t.N != null && String(t.N).trim() ? String(t.N).trim() : '--') + '|TK : ' + fmt(t.A) + '|CHẴN: ' + fmt(t.C) + '|SẤP ĐÔI: ' + fmt(t.SD) + '|LẺ :' + fmt(t.L) + '|TỨ TRẮNG: ' + fmt(t.TT) + '|3 TRẮNG: ' + fmt(t.T3T) + '|3 ĐỎ: ' + fmt(t.T3D) + '|TỨ ĐỎ: ' + fmt(t.TD) + '\n' +
+            '• TÊN NHÂN VẬT : ' + (t.N != null && String(t.N).trim() ? String(t.N).trim() : '--') + '|TK : ' + fmt(t.A) + '|CHẴN: ' + fmt(t.C) + '|LẺ : ' + fmt(t.L) + '|TÀI : ' + fmt(t.T) + '|XỈU : ' + fmt(t.X) + '\n' +
 
             '• Focus: ' + (f ? f.kind : '-') + '\n' +
             '  idx : ' + (f && f.idx != null ? f.idx : '-') + '\n' +
@@ -2794,33 +2824,33 @@
         var r = readTKSeq();
         var cells = (r && r.cells) ? r.cells.slice() : [];
         cells.sort(function (a, b) {
-            return a.x - b.x || b.y - a.y;
+            return (a.row || 0) - (b.row || 0) || (a.col || 0) - (b.col || 0);
         });
         var lines = [];
         lines.push('(TK sequence) which=' + (r && r.which ? r.which : '-') + ' cells=' + cells.length + ' seq=' + (r && r.seq ? r.seq : ''));
-        lines.push('cells idx\tv\tx\ty\tw\th\ttail');
+        if (r && r.seqGrouped)
+            lines.push('seqGrouped=' + r.seqGrouped);
+        lines.push('cells idx\tv\trow\tcol\tx\ty\tw\th\ttail');
         for (var i = 0; i < cells.length; i++) {
             var c = cells[i];
             var tail = c.fullTail || c.tail || '';
-            lines.push((i + 1) + "\t" + c.v + "\t" + Math.round(c.x) + "\t" + Math.round(c.y) + "\t" +
+            lines.push((i + 1) + "\t" + c.v + "\t" + (c.row != null ? c.row : '-') + "\t" + (c.col != null ? c.col : '-') + "\t" +
+                Math.round(c.x) + "\t" + Math.round(c.y) + "\t" +
                 Math.round(c.w || 0) + "\t" + Math.round(c.h || 0) + "\t'" + tail + "'");
         }
         lines.push('');
-        lines.push('columns (left->right, zig-zag):');
+        lines.push('columns (col 0->6, row 4->1):');
         if (r && r.cols && r.cols.length) {
             for (var j = 0; j < r.cols.length; j++) {
                 var col = r.cols[j];
-                var bottomUp = (j % 2 === 0);
                 var arr = col.items.slice();
-                if (bottomUp)
-                    arr.reverse();
                 var digits = arr.map(function (it) {
                     return it.v;
                 }).join('');
-                var ys = arr.map(function (it) {
-                    return Math.round(it.y);
+                var rows = arr.map(function (it) {
+                    return it.row;
                 }).join(',');
-                lines.push((j + 1) + ": x~" + Math.round(col.cx) + " dir=" + (bottomUp ? 'bottom->top' : 'top->bottom') + " digits=" + digits + " y=" + ys);
+                lines.push("col=" + col.cx + " digits=" + digits + " rows=" + rows);
             }
         } else {
             lines.push('(no columns)');
