@@ -134,18 +134,14 @@ namespace TaiXiuLiveSun
 
             SetImg("ImgCHAN", "Assets/side/CHAN.png");
             SetImg("ImgLE", "Assets/side/LE.png");
+            SetImg("ImgTAI", "Assets/side/TAI.png");
+            SetImg("ImgXIU", "Assets/side/XIU.png");
             SetImg("ImgTHANG", "Assets/kq/THANG.png");
             SetImg("ImgTHUA", "Assets/kq/THUA.png");
-            SetImg("ImgBALL0", "Assets/side/TU_TRANG.png");
-            SetImg("ImgBALL1", "Assets/side/1TRANG_3DO.png");
-            SetImg("ImgBALL2", "Assets/side/SAP_DOI.png");
-            SetImg("ImgBALL3", "Assets/side/1DO_3TRANG.png");
-            SetImg("ImgBALL4", "Assets/side/TU_DO.png");
-            SetImg("ImgTU_TRANG", "Assets/side/TU_TRANG.png");
-            SetImg("ImgTU_DO", "Assets/side/TU_DO.png");
-            SetImg("ImgSAP_DOI", "Assets/side/SAP_DOI.png");
-            SetImg("ImgTRANG3_DO1", "Assets/side/1DO_3TRANG.png");
-            SetImg("ImgDO3_TRANG1", "Assets/side/1TRANG_3DO.png");
+            SetImg("ImgBALL0", "Assets/side/XIUCHAN.png");
+            SetImg("ImgBALL1", "Assets/side/XIULE.png");
+            SetImg("ImgBALL2", "Assets/side/TAICHAN.png");
+            SetImg("ImgBALL3", "Assets/side/TAILE.png");
 
             // giữ lại để các converter trong MainWindow dùng chung
             try
@@ -156,12 +152,6 @@ namespace TaiXiuLiveSun
                 if (dict["ImgLE"] is ImageSource le2) TaiXiuLiveSun.MainWindow.SharedIcons.ResultLe = le2;
                 if (dict["ImgTHANG"] is ImageSource win) TaiXiuLiveSun.MainWindow.SharedIcons.Win = win;
                 if (dict["ImgTHUA"] is ImageSource loss) TaiXiuLiveSun.MainWindow.SharedIcons.Loss = loss;
-                // set thêm các icon mới cho converter
-                if (dict["ImgTU_TRANG"] is ImageSource tuw) TaiXiuLiveSun.MainWindow.SharedIcons.TuTrang = tuw;
-                if (dict["ImgTU_DO"] is ImageSource tur) TaiXiuLiveSun.MainWindow.SharedIcons.TuDo = tur;
-                if (dict["ImgSAP_DOI"] is ImageSource sap) TaiXiuLiveSun.MainWindow.SharedIcons.SapDoi = sap;
-                if (dict["ImgTRANG3_DO1"] is ImageSource t31) TaiXiuLiveSun.MainWindow.SharedIcons.Trang3Do1 = t31;
-                if (dict["ImgDO3_TRANG1"] is ImageSource d31) TaiXiuLiveSun.MainWindow.SharedIcons.Do3Trang1 = d31;
             }
             catch { }
         }

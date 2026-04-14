@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,7 +8,7 @@ namespace TaiXiuLiveSun.Tasks
 {
     public sealed class JackpotMultiSideTask : IBetTask
     {
-        public string DisplayName => "17) Đánh các cửa ăn nổ hũ";
+        public string DisplayName => "17) ÄÃ¡nh cÃ¡c cá»­a Äƒn ná»• hÅ©";
         public string Id => "jackpot-multi-side";
 
         private static async Task<char> WaitForResultAsync(GameContext ctx, string baseSeq, CancellationToken ct)
@@ -32,19 +32,9 @@ namespace TaiXiuLiveSun.Tasks
             {
                 case "CHAN":
                 case "LE":
+                case "TAI":
+                case "XIU":
                     return stake * 0.98;
-                case "SAP_DOI":
-                case "SAPDOI":
-                case "2DO2TRANG":
-                    // SAP_DOI: nếu đặt mức A thì tiền thắng nhận được = A * 1.617
-                    // Dùng decimal để ra đúng hệ số 1.617, rồi trả về double cho delta
-                    return (double)((decimal)stake * 1617m / 1000m);
-                case "TRANG3_DO1":
-                case "DO3_TRANG1":
-                    return stake * 3 * 0.97;
-                case "TU_TRANG":
-                case "TU_DO":
-                    return stake * 15 * 0.96;
                 default:
                     return 0;
             }
@@ -53,7 +43,7 @@ namespace TaiXiuLiveSun.Tasks
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
             if (!SideRateParser.TryParse(ctx.SideRateText ?? SideRateParser.DefaultText, out var plan, out var err))
-                throw new InvalidOperationException("Cửa đặt & tỉ lệ không hợp lệ: " + err);
+                throw new InvalidOperationException("Cá»­a Ä‘áº·t & tá»‰ lá»‡ khÃ´ng há»£p lá»‡: " + err);
 
             var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
 
@@ -61,13 +51,13 @@ namespace TaiXiuLiveSun.Tasks
             {
                 ct.ThrowIfCancellationRequested();
                 await WaitUntilNewRoundStart(ctx, ct);
-                // tắt chờ waitForTotalsChange để đặt nhanh nhiều cửa
+                // táº¯t chá» waitForTotalsChange Ä‘á»ƒ Ä‘áº·t nhanh nhiá»u cá»­a
                 try { _ = ctx.EvalJsAsync("window.waitForTotalsChange = null;"); } catch { }
 
                 var snap = ctx.GetSnap();
                 string baseSeq = snap?.seq ?? string.Empty;
 
-                // mở sẵn bảng chip để giảm thời gian cho nhiều lệnh liên tiếp
+                // má»Ÿ sáºµn báº£ng chip Ä‘á»ƒ giáº£m thá»i gian cho nhiá»u lá»‡nh liÃªn tiáº¿p
                 try { _ = ctx.EvalJsAsync("window.tryOpenChipPanel && window.tryOpenChipPanel();"); } catch { }
 
                 long baseStake = ctx.MoneyStrategyId == "MultiChain"
@@ -86,7 +76,7 @@ namespace TaiXiuLiveSun.Tasks
                 {
                     if (stake <= 0)
                     {
-                        // vẫn gửi xuống JS với tiền 0 để giữ đủ 7 cửa
+                        // váº«n gá»­i xuá»‘ng JS vá»›i tiá»n 0 Ä‘á»ƒ giá»¯ Ä‘á»§ 7 cá»­a
                         try { await PlaceBet(ctx, side, stake, ct, ignoreCooldown: true); } catch { }
                         return true;
                     }
@@ -114,11 +104,11 @@ namespace TaiXiuLiveSun.Tasks
                     await Task.Delay(220, ct);
                 }
 
-                ctx.Log?.Invoke($"[Task17] Đã đặt {successes.Count}/{plan.Count} cửa; còn lại: {Math.Max(0, plan.Count - successes.Count)}");
+                ctx.Log?.Invoke($"[Task17] ÄÃ£ Ä‘áº·t {successes.Count}/{plan.Count} cá»­a; cÃ²n láº¡i: {Math.Max(0, plan.Count - successes.Count)}");
 
                 var lastDigit = await WaitForResultAsync(ctx, baseSeq, ct);
                 var winners = SideRateParser.GetWinningSides(lastDigit);
-                // hiển thị kết quả dạng ball0..ball4 cho lịch sử
+                // hiá»ƒn thá»‹ káº¿t quáº£ dáº¡ng ball0..ball4 cho lá»‹ch sá»­
                 string resultDisplay = $"BALL{lastDigit}";
 
                 bool winAny = false;
@@ -139,9 +129,9 @@ namespace TaiXiuLiveSun.Tasks
                 }
 
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(delta));
-                // cập nhật lịch sử cho từng cửa
+                // cáº­p nháº­t lá»‹ch sá»­ cho tá»«ng cá»­a
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiFinalizeMultiBet?.Invoke(winners, resultDisplay));
-                // Chỉ hiển thị WIN/LOSS tổng hợp một lần cho cả vòng
+                // Chá»‰ hiá»ƒn thá»‹ WIN/LOSS tá»•ng há»£p má»™t láº§n cho cáº£ vÃ²ng
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiWinLoss?.Invoke(winAny));
 
                 if (ctx.MoneyStrategyId == "MultiChain")
@@ -170,3 +160,4 @@ namespace TaiXiuLiveSun.Tasks
         }
     }
 }
+

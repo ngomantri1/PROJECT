@@ -348,6 +348,8 @@
         <!--  PACK URI CHO ẢNH  -->
         <BitmapImage x:Key="ImgLE" UriSource="pack://application:,,,/Assets/side/LE.png" />
         <BitmapImage x:Key="ImgCHAN" UriSource="pack://application:,,,/Assets/side/CHAN.png" />
+        <BitmapImage x:Key="ImgTAI" UriSource="pack://application:,,,/Assets/side/TAI.png" />
+        <BitmapImage x:Key="ImgXIU" UriSource="pack://application:,,,/Assets/side/XIU.png" />
         <BitmapImage x:Key="ImgTHANG" UriSource="pack://application:,,,/Assets/kq/THANG.png" />
         <BitmapImage x:Key="ImgTHUA" UriSource="pack://application:,,,/Assets/kq/THUA.png" />
     </Window.Resources>
@@ -799,25 +801,42 @@
                                             Margin="{StaticResource ValueFieldMargin}"
                                             Padding="10,8"
                                             HorizontalAlignment="Stretch"
-                                            SelectedIndex="4">
+                                            SelectedIndex="8">
                                             <ComboBoxItem Content="1) Chuỗi cầu C/L (chẵn/lẻ tự nhập)" />
-                                            <ComboBoxItem Content="2) Thế cầu C/L (chẵn/lẻ tự nhập)" />
-                                            <ComboBoxItem Content="3) Chuỗi cầu I/N (Ít/Nhiều, tự nhập)" />
-                                            <ComboBoxItem Content="4) Thế cầu I/N (Ít/Nhiều, tự nhập)" />
-                                            <ComboBoxItem Content="5) Bám cầu trước (thông minh)" />
-                                            <ComboBoxItem Content="6) Cửa đặt ngẫu nhiên" />
-                                            <ComboBoxItem Content="7) Bám cầu C/L theo thống kê AI" />
-                                            <ComboBoxItem Content="8) Xu hướng chuyển trạng thái" />
-                                            <ComboBoxItem Content="9) Run-length (dài-chuỗi)" />
-                                            <ComboBoxItem Content="10) Chuyên gia bỏ phiếu" />
-                                            <ComboBoxItem Content="11) Lịch chẻ 10 tay" />
-                                            <ComboBoxItem Content="12) KNN chuỗi con" />
-                                            <ComboBoxItem Content="13) Lịch hai lớp" />
-                                            <ComboBoxItem Content="14) AI học tại chỗ (n-gram)" />
-                                            <ComboBoxItem Content="15) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime)" />
-                                            <ComboBoxItem Content="16) Top10 tích lũy (khởi từ 50 C/L)" />
-                                            <ComboBoxItem Content="17) Đánh các cửa ăn nổ hũ" />
-                                            <ComboBoxItem Content="18) Chuỗi cầu C/L hay về" />
+                                            <ComboBoxItem Content="2) Chuỗi cầu T/X (tài/xỉu tự nhập)" />
+                                            <ComboBoxItem Content="3) Thế cầu C/L (chẵn/lẻ tự nhập)" />
+                                            <ComboBoxItem Content="4) Thế cầu T/X (tài/xỉu tự nhập)" />
+                                            <ComboBoxItem Content="5) Chuỗi cầu I/N (Ít/Nhiều, tự nhập) cho chẵn lẻ" />
+                                            <ComboBoxItem Content="6) Chuỗi cầu I/N (Ít/Nhiều, tự nhập) cho tài xỉu" />
+                                            <ComboBoxItem Content="7) Thế cầu I/N (Ít/Nhiều, tự nhập) cho chẵn lẻ" />
+                                            <ComboBoxItem Content="8) Thế cầu I/N (Ít/Nhiều, tự nhập) cho tài xỉu" />
+                                            <ComboBoxItem Content="9) Bám cầu trước (thông minh) cho chẵn lẻ" />
+                                            <ComboBoxItem Content="10) Bám cầu trước (thông minh) cho tài xỉu" />
+                                            <ComboBoxItem Content="11) Cửa đặt ngẫu nhiên cho chẵn lẻ" />
+                                            <ComboBoxItem Content="12) Cửa đặt ngẫu nhiên cho tài xỉu" />
+                                            <ComboBoxItem Content="13) Bám cầu C/L theo thống kê AI" />
+                                            <ComboBoxItem Content="14) Bám cầu T/X theo thống kê AI" />
+                                            <ComboBoxItem Content="15) Xu hướng chuyển trạng thái cho chẵn lẻ" />
+                                            <ComboBoxItem Content="16) Xu hướng chuyển trạng thái cho tài xỉu" />
+                                            <ComboBoxItem Content="17) Run-length (dài-chuỗi) cho chẵn lẻ" />
+                                            <ComboBoxItem Content="18) Run-length (dài-chuỗi) cho tài xỉu" />
+                                            <ComboBoxItem Content="19) Chuyên gia bỏ phiếu cho chẵn lẻ" />
+                                            <ComboBoxItem Content="20) Chuyên gia bỏ phiếu cho tài xỉu" />
+                                            <ComboBoxItem Content="21) Lịch chẻ 10 tay cho chẵn lẻ" />
+                                            <ComboBoxItem Content="22) Lịch chẻ 10 tay cho tài xỉu" />
+                                            <ComboBoxItem Content="23) KNN chuỗi con cho chẵn lẻ" />
+                                            <ComboBoxItem Content="24) KNN chuỗi con cho tài xỉu" />
+                                            <ComboBoxItem Content="25) Lịch hai lớp cho chẵn lẻ" />
+                                            <ComboBoxItem Content="26) Lịch hai lớp cho tài xỉu" />
+                                            <ComboBoxItem Content="27) AI học tại chỗ (n-gram) cho chẵn lẻ" />
+                                            <ComboBoxItem Content="28) AI học tại chỗ (n-gram) cho tài xỉu" />
+                                            <ComboBoxItem Content="29) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime) cho chẵn lẻ" />
+                                            <ComboBoxItem Content="30) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime) cho tài xỉu" />
+                                            <ComboBoxItem Content="31) Top10 tích lũy (khởi từ 50 C/L)" />
+                                            <ComboBoxItem Content="32) Top10 tích lũy (khởi từ 50 T/X)" />
+                                            <ComboBoxItem Content="33) Chuỗi cầu C/L hay về" />
+                                            <ComboBoxItem Content="34) Chuỗi cầu T/X hay về" />
+                                            <ComboBoxItem Content="35) Đánh các cửa ăn nổ hũ" />
                                         </ComboBox>
                                     </Grid>
 

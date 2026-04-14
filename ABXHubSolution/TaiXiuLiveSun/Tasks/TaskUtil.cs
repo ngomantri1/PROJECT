@@ -35,6 +35,16 @@ namespace TaiXiuLiveSun.Tasks
                 _ => '\0'
             };
         }
+        public static string TxCharToSide(char ch) => (DigitToTx(ch) == 'X') ? "XIU" : "TAI";
+        public static char DigitToTx(char d)
+        {
+            return d switch
+            {
+                'X' or 'x' or '0' or '1' => 'X',
+                'T' or 't' or '2' or '3' or '4' or '5' or '6' => 'T',
+                _ => '\0'
+            };
+        }
         // TaskUtil.cs (trong class TaskUtil)
         private static readonly object _betLock = new object();
         private static string _lastBetSeq = "";
@@ -54,13 +64,38 @@ namespace TaiXiuLiveSun.Tasks
             }
             return (n == a.Length) ? new string(a) : new string(a, 0, n);
         }
+        public static string SeqToTxString(string digitSeq)
+        {
+            if (string.IsNullOrEmpty(digitSeq)) return "";
+            char[] a = new char[digitSeq.Length];
+            int n = 0;
+            for (int i = 0; i < digitSeq.Length; i++)
+            {
+                var p = DigitToTx(digitSeq[i]);
+                if (p == 'X' || p == 'T')
+                    a[n++] = p;
+            }
+            return (n == a.Length) ? new string(a) : new string(a, 0, n);
+        }
 
         public static bool IsWin(string betSide, char lastDigit)
         {
-            var p = DigitToParity(lastDigit);
-            if (p != 'C' && p != 'L') return false;
-            var lastSide = (p == 'C') ? "CHAN" : "LE";
-            return string.Equals(betSide, lastSide, StringComparison.OrdinalIgnoreCase);
+            var side = (betSide ?? "").Trim().ToUpperInvariant();
+            if (side == "CHAN" || side == "LE")
+            {
+                var p = DigitToParity(lastDigit);
+                if (p != 'C' && p != 'L') return false;
+                var lastSide = (p == 'C') ? "CHAN" : "LE";
+                return string.Equals(side, lastSide, StringComparison.OrdinalIgnoreCase);
+            }
+            if (side == "TAI" || side == "XIU")
+            {
+                var t = DigitToTx(lastDigit);
+                if (t != 'T' && t != 'X') return false;
+                var lastSide = (t == 'T') ? "TAI" : "XIU";
+                return string.Equals(side, lastSide, StringComparison.OrdinalIgnoreCase);
+            }
+            return false;
         }
 
         private static void UiResetRoundControls()

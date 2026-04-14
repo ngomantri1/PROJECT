@@ -8,18 +8,14 @@
             <!--  Dùng pack URI: pack://application:,,,/Assembly;component/<path>  -->
             <BitmapImage x:Key="ImgLE" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/LE.png" />
             <BitmapImage x:Key="ImgCHAN" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/CHAN.png" />
+            <BitmapImage x:Key="ImgTAI" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/TAI.png" />
+            <BitmapImage x:Key="ImgXIU" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/XIU.png" />
             <BitmapImage x:Key="ImgTHANG" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/kq/THANG.png" />
             <BitmapImage x:Key="ImgTHUA" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/kq/THUA.png" />
-            <BitmapImage x:Key="ImgBALL0" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/TU_TRANG.png" />
-            <BitmapImage x:Key="ImgBALL1" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/1TRANG_3DO.png" />
-            <BitmapImage x:Key="ImgBALL2" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/SAP_DOI.png" />
-            <BitmapImage x:Key="ImgBALL3" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/1DO_3TRANG.png" />
-            <BitmapImage x:Key="ImgBALL4" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/TU_DO.png" />
-            <BitmapImage x:Key="ImgTU_TRANG" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/TU_TRANG.png" />
-            <BitmapImage x:Key="ImgTU_DO" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/TU_DO.png" />
-            <BitmapImage x:Key="ImgSAP_DOI" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/SAP_DOI.png" />
-            <BitmapImage x:Key="ImgTRANG3_DO1" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/1DO_3TRANG.png" />
-            <BitmapImage x:Key="ImgDO3_TRANG1" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/1TRANG_3DO.png" />
+            <BitmapImage x:Key="ImgBALL0" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/XIUCHAN.png" />
+            <BitmapImage x:Key="ImgBALL1" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/XIULE.png" />
+            <BitmapImage x:Key="ImgBALL2" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/TAICHAN.png" />
+            <BitmapImage x:Key="ImgBALL3" UriSource="pack://application:,,,/TaiXiuLiveSun;component/Assets/side/TAILE.png" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

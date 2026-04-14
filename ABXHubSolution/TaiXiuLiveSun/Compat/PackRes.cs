@@ -36,23 +36,18 @@ namespace TaiXiuLiveSun
             // 2. fallback: tự tạo ảnh để dù Images.xaml không load được vẫn không vỡ XAML
             EnsureImage(app.Resources, "ImgLE", "Assets/side/LE.png");
             EnsureImage(app.Resources, "ImgCHAN", "Assets/side/CHAN.png");
+            EnsureImage(app.Resources, "ImgTAI", "Assets/side/TAI.png");
+            EnsureImage(app.Resources, "ImgXIU", "Assets/side/XIU.png");
             EnsureImage(app.Resources, "ImgTHANG", "Assets/kq/THANG.png");
             EnsureImage(app.Resources, "ImgTHUA", "Assets/kq/THUA.png");
-            EnsureImage(app.Resources, "ImgBALL0", "Assets/side/TU_TRANG.png");
-            EnsureImage(app.Resources, "ImgBALL1", "Assets/side/1TRANG_3DO.png");
-            EnsureImage(app.Resources, "ImgBALL2", "Assets/side/SAP_DOI.png");
-            EnsureImage(app.Resources, "ImgBALL3", "Assets/side/1DO_3TRANG.png");
-            EnsureImage(app.Resources, "ImgBALL4", "Assets/side/TU_DO.png");
-            EnsureImage(app.Resources, "ImgTU_TRANG", "Assets/side/TU_TRANG.png");
-            EnsureImage(app.Resources, "ImgTU_DO", "Assets/side/TU_DO.png");
-            EnsureImage(app.Resources, "ImgSAP_DOI", "Assets/side/SAP_DOI.png");
-            EnsureImage(app.Resources, "ImgTRANG3_DO1", "Assets/side/1DO_3TRANG.png");
-            EnsureImage(app.Resources, "ImgDO3_TRANG1", "Assets/side/1TRANG_3DO.png");
-            EnsureImage(app.Resources, "ImgBALL0", "pack://application:,,,/TaiXiuLiveSun;component/Assets/side/TU_TRANG.png");
-            EnsureImage(app.Resources, "ImgBALL1", "pack://application:,,,/TaiXiuLiveSun;component/Assets/side/1TRANG_3DO.png");
-            EnsureImage(app.Resources, "ImgBALL2", "pack://application:,,,/TaiXiuLiveSun;component/Assets/side/SAP_DOI.png");
-            EnsureImage(app.Resources, "ImgBALL3", "pack://application:,,,/TaiXiuLiveSun;component/Assets/side/1DO_3TRANG.png");
-            EnsureImage(app.Resources, "ImgBALL4", "pack://application:,,,/TaiXiuLiveSun;component/Assets/side/TU_DO.png");
+            EnsureImage(app.Resources, "ImgBALL0", "Assets/side/XIUCHAN.png");
+            EnsureImage(app.Resources, "ImgBALL1", "Assets/side/XIULE.png");
+            EnsureImage(app.Resources, "ImgBALL2", "Assets/side/TAICHAN.png");
+            EnsureImage(app.Resources, "ImgBALL3", "Assets/side/TAILE.png");
+            EnsureImage(app.Resources, "ImgBALL0", "pack://application:,,,/TaiXiuLiveSun;component/Assets/side/XIUCHAN.png");
+            EnsureImage(app.Resources, "ImgBALL1", "pack://application:,,,/TaiXiuLiveSun;component/Assets/side/XIULE.png");
+            EnsureImage(app.Resources, "ImgBALL2", "pack://application:,,,/TaiXiuLiveSun;component/Assets/side/TAICHAN.png");
+            EnsureImage(app.Resources, "ImgBALL3", "pack://application:,,,/TaiXiuLiveSun;component/Assets/side/TAILE.png");
 
             // 3. đăng ký converter (XAML của bạn đang dùng StaticResource mấy cái này)
             if (!app.Resources.Contains("SideToIconConverter"))

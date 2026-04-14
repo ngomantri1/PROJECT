@@ -50,14 +50,8 @@ namespace TaiXiuLiveSun
         private const string ResultLePng = "Assets/side/LE.png";
         private const string WinPng = "Assets/kq/THANG.png";
         private const string LossPng = "Assets/kq/THUA.png";
-        private const string TuTrangPng = "Assets/side/TU_TRANG.png";
-        private const string TuDoPng = "Assets/side/TU_DO.png";
-        private const string SapDoiPng = "Assets/side/SAP_DOI.png";
-        private const string Trang3Do1Png = "Assets/side/1DO_3TRANG.png";
-        private const string Do3Trang1Png = "Assets/side/1TRANG_3DO.png";
 
         private static ImageSource? _sideChan, _sideLe, _resultChan, _resultLe, _win, _loss;
-        private static ImageSource? _tuTrang, _tuDo, _sapDoi, _trang3Do1, _do3Trang1;
 
         public static ImageSource? GetSideChan() => SharedIcons.SideChan ?? (_sideChan ??= Load(SideChanPng));
         public static ImageSource? GetSideLe() => SharedIcons.SideLe ?? (_sideLe ??= Load(SideLePng));
@@ -65,11 +59,6 @@ namespace TaiXiuLiveSun
         public static ImageSource? GetResultLe() => SharedIcons.ResultLe ?? (_resultLe ??= Load(ResultLePng));
         public static ImageSource? GetWin() => SharedIcons.Win ?? (_win ??= Load(WinPng));
         public static ImageSource? GetLoss() => SharedIcons.Loss ?? (_loss ??= Load(LossPng));
-        public static ImageSource? GetTuTrang() => SharedIcons.TuTrang ?? (_tuTrang ??= Load(TuTrangPng));
-        public static ImageSource? GetTuDo() => SharedIcons.TuDo ?? (_tuDo ??= Load(TuDoPng));
-        public static ImageSource? GetSapDoi() => SharedIcons.SapDoi ?? (_sapDoi ??= Load(SapDoiPng));
-        public static ImageSource? GetTrang3Do1() => SharedIcons.Trang3Do1 ?? (_trang3Do1 ??= Load(Trang3Do1Png));
-        public static ImageSource? GetDo3Trang1() => SharedIcons.Do3Trang1 ?? (_do3Trang1 ??= Load(Do3Trang1Png));
 
         private static string[] BuildPackUris(string relativePath)
         {
@@ -150,17 +139,25 @@ namespace TaiXiuLiveSun
 
     public sealed class SideToIconConverter : IValueConverter
     {
+        private static ImageSource? LoadByResourceOrPack(string resKey, string relativePath)
+        {
+            try
+            {
+                if (System.Windows.Application.Current?.Resources != null &&
+                    System.Windows.Application.Current.Resources[resKey] is ImageSource resImg)
+                    return resImg;
+            }
+            catch { }
+            return FallbackIcons.LoadPackImage(relativePath);
+        }
+
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
             var u = TextNorm.U(value?.ToString() ?? "");
-            var compact = u.Replace(" ", "").Replace("_", "").Replace("-", "");
+            if (u == "TAI" || u == "T" || u == "BIG") return LoadByResourceOrPack("ImgTAI", "Assets/side/TAI.png");
+            if (u == "XIU" || u == "X" || u == "SMALL") return LoadByResourceOrPack("ImgXIU", "Assets/side/XIU.png");
             if (u == "CHAN" || u == "C") return FallbackIcons.GetSideChan();
             if (u == "LE" || u == "L") return FallbackIcons.GetSideLe();
-            if (u == "TU_TRANG") return FallbackIcons.GetTuTrang();
-            if (u == "TU_DO") return FallbackIcons.GetTuDo();
-            if (u == "SAP_DOI" || u == "SAPDOI" || compact == "SAPDOI" || u == "2D2T") return FallbackIcons.GetSapDoi();
-            if (u == "TRANG3_DO1" || compact == "TRANG3DO1" || compact == "1DO3TRANG") return FallbackIcons.GetTrang3Do1();
-            if (u == "DO3_TRANG1" || compact == "DO3TRANG1" || compact == "1TRANG3DO") return FallbackIcons.GetDo3Trang1();
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -189,11 +186,11 @@ namespace TaiXiuLiveSun
 
             img ??= d switch
             {
-                '0' => FallbackIcons.GetTuTrang(),
-                '1' => FallbackIcons.GetDo3Trang1(),
-                '2' => FallbackIcons.GetSapDoi(),
-                '3' => FallbackIcons.GetTrang3Do1(),
-                '4' => FallbackIcons.GetTuDo(),
+                // Tài xỉu live: map đúng 4 trạng thái mới
+                '0' => FallbackIcons.LoadPackImage("Assets/side/XIUCHAN.png"),
+                '1' => FallbackIcons.LoadPackImage("Assets/side/XIULE.png"),
+                '2' => FallbackIcons.LoadPackImage("Assets/side/TAICHAN.png"),
+                '3' => FallbackIcons.LoadPackImage("Assets/side/TAILE.png"),
                 _ => null
             };
             _ballIcons[d] = img;
@@ -203,14 +200,12 @@ namespace TaiXiuLiveSun
         public object Convert(object value, Type t, object p, CultureInfo c)
         {
             var u = TextNorm.U(value?.ToString() ?? "");
-            var compact = u.Replace(" ", "").Replace("_", "").Replace("-", "");
+            if (u == "TAI" || u == "T" || u == "BIG")
+                return FallbackIcons.LoadPackImage("Assets/side/TAI.png");
+            if (u == "XIU" || u == "X" || u == "SMALL")
+                return FallbackIcons.LoadPackImage("Assets/side/XIU.png");
             if (u == "CHAN" || u == "C") return FallbackIcons.GetResultChan();
             if (u == "LE" || u == "L") return FallbackIcons.GetResultLe();
-            if (u == "TU_TRANG") return FallbackIcons.GetTuTrang();
-            if (u == "TU_DO") return FallbackIcons.GetTuDo();
-            if (u == "SAP_DOI" || u == "SAPDOI" || compact == "SAPDOI" || u == "2D2T") return FallbackIcons.GetSapDoi();
-            if (u == "TRANG3_DO1" || compact == "TRANG3DO1" || compact == "1DO3TRANG") return FallbackIcons.GetTrang3Do1();
-            if (u == "DO3_TRANG1" || compact == "DO3TRANG1" || compact == "1TRANG3DO") return FallbackIcons.GetDo3Trang1();
 
             char digit = '\0';
             if (u.Length == 1 && char.IsDigit(u[0])) digit = u[0];
@@ -222,7 +217,7 @@ namespace TaiXiuLiveSun
                 if (char.IsDigit(cBall)) digit = cBall;
             }
 
-            if (digit >= '0' && digit <= '4')
+            if (digit >= '0' && digit <= '3')
             {
                 return LoadBall(digit);
             }
@@ -582,19 +577,16 @@ Ví dụ không hợp lệ:
 • Ví dụ: 15 = đặt khi còn ~15% thời gian phiên.";
 
         const string TIP_SIDE_RATIO =
-        @"CỬA ĐẶT & TỈ LỆ (Chiến lược 17)
+        @"CỬA ĐẶT & TỈ LỆ (Chiến lược 35)
 - Nhập mỗi dòng: <cửa>:<tỉ lệ>, không được để trống.
-- Cửa hợp lệ: 4DO, 4TRANG, 1TRANG3DO, 1DO3TRANG, 2DO2TRANG, CHAN, LE (chấp nhận viết tắt 1T3D/1D3T/SAPDOI/4R/4W giống normalizeSide).
+- Cửa hợp lệ: TAI, XIU, CHAN, LE.
 - Không dùng ký tự ';' hoặc dấu cách trong tên cửa; chỉ cho phép khoảng trắng quanh dấu ':'.
 - Dãy mặc định đầy đủ:
-  4DO:1
-  4TRANG:1
-  1TRANG3DO:3
-  1DO3TRANG:3
-  2DO2TRANG:5
-  CHAN:6
-  LE:6
-- Có thể nhập một phần danh sách (ví dụ chỉ 4DO/4TRANG hoặc SAPDOI/CHAN/LE).";
+  TAI:1
+  XIU:1
+  CHAN:1
+  LE:1
+- Có thể nhập một phần danh sách (ví dụ chỉ TAI/XIU).";
         // =========================================================
 
 
@@ -627,7 +619,8 @@ Ví dụ không hợp lệ:
             public string LastHomeUsername { get; set; } = "";
             public string TrialUntil { get; set; } = "";
             public string TrialSessionKey { get; set; } = "";
-            public int BetStrategyIndex { get; set; } = 4; // mặc định "5. Theo cầu trước thông minh"
+            public int StrategySchemaVersion { get; set; } = 2;
+            public int BetStrategyIndex { get; set; } = 8; // mặc định "9. Bám cầu trước (thông minh) cho chẵn lẻ"
             public string BetSeq { get; set; } = "";       // giá trị ô "CHUỖI CẦU"
             public string BetPatterns { get; set; } = "";  // giá trị ô "CÁC THẾ CẦU"
             public string MoneyStrategy { get; set; } = "IncreaseWhenLose";//IncreaseWhenLose
@@ -635,9 +628,13 @@ Ví dụ không hợp lệ:
             public double CutProfit { get; set; } = 0; // 0 = tắt cắt lãi
             public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
             public string BetSeqCL { get; set; } = "";        // cho Chiến lược 1
-            public string BetSeqNI { get; set; } = "";        // cho Chiến lược 3
-            public string BetPatternsCL { get; set; } = "";   // cho Chiến lược 2
-            public string BetPatternsNI { get; set; } = "";   // cho Chiến lược 4
+            public string BetSeqTX { get; set; } = "";        // cho Chiến lược 2
+            public string BetSeqNI { get; set; } = "";        // cho Chiến lược 5
+            public string BetSeqNITX { get; set; } = "";      // cho Chiến lược 6
+            public string BetPatternsCL { get; set; } = "";   // cho Chiến lược 3
+            public string BetPatternsTX { get; set; } = "";   // cho Chiến lược 4
+            public string BetPatternsNI { get; set; } = "";   // cho Chiến lược 7
+            public string BetPatternsNITX { get; set; } = ""; // cho Chiến lược 8
             public string SideRateText { get; set; } = TaiXiuLiveSun.Tasks.SideRateParser.DefaultText;
 
             // Lưu chuỗi tiền theo từng MoneyStrategy
@@ -764,7 +761,6 @@ Ví dụ không hợp lệ:
             public static ImageSource? SideChan, SideLe;        // ảnh “Cửa đặt” CHẴN/LẺ
             public static ImageSource? ResultChan, ResultLe;    // ảnh “Kết quả” CHẴN/LẺ
             public static ImageSource? Win, Loss;               // ảnh “Thắng/Thua”
-            public static ImageSource? TuTrang, TuDo, SapDoi, Trang3Do1, Do3Trang1;
         }
 
         private const int MaxTabs = 5;
@@ -805,6 +801,8 @@ Ví dụ không hợp lệ:
         private bool _lockJsRegistered = false;
         // Map ảnh cho từng ký tự
         private readonly Dictionary<char, ImageSource> _seqIconMap = new();
+        // Map ảnh KẾT QUẢ theo mã số mới: 0/1/2/3
+        private readonly Dictionary<char, ImageSource> _resultDigitIconMap = new();
 
         private string _lastSeqTailShown = "";
         // Tổng tiền thắng lũy kế của phiên hiện tại
@@ -1143,6 +1141,13 @@ Ví dụ không hợp lệ:
             return System.IO.Path.Combine(aiDir, "ngram_state_v1.json");
         }
 
+        private string GetAiNGramTxStatePath()
+        {
+            var aiDir = System.IO.Path.Combine(_appDataDir, "ai");
+            System.IO.Directory.CreateDirectory(aiDir);
+            return System.IO.Path.Combine(aiDir, "ngram_state_tx_v1.json");
+        }
+
         private bool GetIsGameByUrlFallback()
         {
             try
@@ -1257,6 +1262,41 @@ Ví dụ không hợp lệ:
         }
 
         // ====== Config I/O ======
+        private static int MigrateOldStrategyIndexToNew(int oldIdx)
+        {
+            return oldIdx switch
+            {
+                0 => 0,   // 1) Seq CL
+                1 => 2,   // 2) Pattern CL
+                2 => 4,   // 3) Seq NI CL
+                3 => 6,   // 4) Pattern NI CL
+                4 => 8,   // 5) SmartPrev CL
+                5 => 10,  // 6) Random CL
+                6 => 12,  // 7) AI Stat CL
+                7 => 14,  // 8) State Transition CL
+                8 => 16,  // 9) RunLength CL
+                9 => 18,  // 10) Ensemble CL
+                10 => 20, // 11) TimeSliced CL
+                11 => 22, // 12) KNN CL
+                12 => 24, // 13) DualSchedule CL
+                13 => 26, // 14) AI NGram CL
+                14 => 28, // 15) AI15 CL
+                15 => 30, // 16) Top10 CL
+                16 => 34, // 17) Jackpot
+                17 => 32, // 18) SeqHot CL
+                _ => 8
+            };
+        }
+
+        private static void MigrateStrategySchema(AppConfig cfg)
+        {
+            if (cfg == null) return;
+            if (cfg.StrategySchemaVersion >= 2) return;
+
+            cfg.BetStrategyIndex = MigrateOldStrategyIndexToNew(cfg.BetStrategyIndex);
+            cfg.StrategySchemaVersion = 2;
+        }
+
         private void LoadConfig()
         {
             try
@@ -1288,6 +1328,7 @@ Ví dụ không hợp lệ:
                 for (int i = 0; i < _rootCfg.Tabs.Count; i++)
                 {
                     var tabCfg = _rootCfg.Tabs[i] ?? new AppConfig();
+                    MigrateStrategySchema(tabCfg);
                     if (string.IsNullOrWhiteSpace(tabCfg.TabId))
                         tabCfg.TabId = Guid.NewGuid().ToString("N");
                     tabCfg.TabName = FixBrokenTabName(tabCfg.TabName, i + 1);
@@ -1503,7 +1544,7 @@ Ví dụ không hợp lệ:
                     Log($"[StakeCsv] loaded: {_cfg.StakeCsv} -> {_stakeSeq.Length} mức");
                 }
                 if (CmbBetStrategy != null)
-                    CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 17) ? _cfg.BetStrategyIndex : 16;
+                    CmbBetStrategy.SelectedIndex = (_cfg.BetStrategyIndex >= 0 && _cfg.BetStrategyIndex <= 34) ? _cfg.BetStrategyIndex : 8;
                 SyncStrategyFieldsToUI();
                 UpdateTooltips();
                 UpdateBetStrategyUi();
@@ -2189,13 +2230,17 @@ Ví dụ không hợp lệ:
 
                                                     // ✅ CHỐT DÒNG BET đang chờ NGAY TẠI THỜI ĐIỂM VÁN KHÉP
                                                     var kqStr = (tailParity == 'C') ? "CHAN" : "LE";
+                                                    var winners = TaiXiuLiveSun.Tasks.SideRateParser.GetWinningSides(tail);
+                                                    if (winners.Count == 0)
+                                                        winners.Add(kqStr);
                                                     long? accNow2 = snap?.totals?.A;
                                                     if (_pendingRows.Count > 0 && accNow2.HasValue)
                                                     {
                                                         // Chiến lược 17 tự finalize nhiều cửa theo winners
                                                         if (!HasJackpotMultiSideRunning())
                                                         {
-                                            FinalizeLastBet(kqStr, accNow2.Value);
+                                                            string? displayResult = char.IsDigit(tail) ? tail.ToString() : null;
+                                                            FinalizeLastBet(kqStr, accNow2.Value, winners, displayResult);
                                                         }
                                                     }
                                                 }
@@ -2355,13 +2400,10 @@ Ví dụ không hợp lệ:
                                                     if (LblProg != null) LblProg.Text = "-";
                                                 }
 
-                                                // Kết quả gần nhất từ chuỗi seq
+                                                // Kết quả gần nhất từ chuỗi seq (mã số 0/1/2/3)
                                                 var seqStrLocal = snap.seq ?? "";
                                                 char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
-                                                var pLast = SeqCharToParity(last);
-                                                var kq = (pLast == 'C') ? "CHAN"
-                                                         : (pLast == 'L') ? "LE" : "";
-                                                SetLastResultUI(kq);
+                                                SetLastResultUI(last != '\0' ? last.ToString() : "");
 
                                                 // Tổng tiền
                                                 var amt = snap?.totals?.A;
@@ -3337,43 +3379,22 @@ Ví dụ không hợp lệ:
             AttachTip(TxtSideRatio, TIP_SIDE_RATIO);
 
             // % thời gian
-            int idx = CmbBetStrategy?.SelectedIndex ?? 4;
+            int idx = CmbBetStrategy?.SelectedIndex ?? 8;
             AttachTip(TxtDecisionSecond,
-                (idx == 2 || idx == 3) ? TIP_DECISION_PERCENT_NI : TIP_DECISION_PERCENT_GENERAL);
+                (idx == 4 || idx == 5 || idx == 6 || idx == 7) ? TIP_DECISION_PERCENT_NI : TIP_DECISION_PERCENT_GENERAL);
 
             // Chuỗi/Thế cầu
             AttachTip(TxtChuoiCau,
-                (idx == 0) ? TIP_SEQ_CL :
-                (idx == 2) ? TIP_SEQ_NI :
-                "Chọn chiến lược 1 hoặc 3 để nhập Chuỗi cầu.");
+                (idx == 0 || idx == 1) ? TIP_SEQ_CL :
+                (idx == 4 || idx == 5) ? TIP_SEQ_NI :
+                "Chọn chiến lược 1, 2, 5 hoặc 6 để nhập Chuỗi cầu.");
 
             AttachTip(TxtTheCau,
-                (idx == 1) ? TIP_THE_CL :
-                (idx == 3) ? TIP_THE_NI :
-                "Chọn chiến lược 2 hoặc 4 để nhập Thế cầu.");
+                (idx == 2 || idx == 3) ? TIP_THE_CL :
+                (idx == 6 || idx == 7) ? TIP_THE_NI :
+                "Chọn chiến lược 3, 4, 7 hoặc 8 để nhập Thế cầu.");
             // ==== BẮT ĐẦU: Tooltip cho chiến lược đặt cược ====
-            string tip = idx switch
-            {
-                0 => "1) Chuỗi C/L tự nhập: So khớp chuỗi C/L cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
-                1 => "2) Thế cầu C/L tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
-                2 => "3) Chuỗi I/N: So khớp dãy Ít/Nhiều (I/N) cấu hình thủ công; khớp thì đặt theo chỉ định; không khớp dùng logic mặc định.",
-                3 => "4) Thế cầu I/N: Ánh xạ mẫu I/N → cửa kế tiếp; ưu tiên mẫu dài; cho phép nhiều luật trong cùng danh sách.",
-                4 => "5) Theo cầu trước (thông minh): Dựa vào ván gần nhất và heuristics nội bộ; đánh liên tục; quản lý vốn theo chuỗi tiền, cut_profit/cut_loss.",
-                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn CHẴN/LẺ ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
-                6 => "7) Bám cầu C/L (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất C/L sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
-                7 => "8) Xu hướng chuyển trạng thái: Thống kê 6 chuyển gần nhất giữa các ván ('lặp' vs 'đảo'); nếu 'đảo' nhiều hơn → đánh ngược ván cuối; ngược lại → theo ván cuối; đánh liên tục.",
-                8 => "9) Run-length (dài chuỗi): Tính độ dài chuỗi ký tự cuối; nếu run ≥ T (mặc định T=3) → đảo để mean-revert; nếu run ngắn → theo đà (momentum); đánh liên tục.",
-                9 => "10) Chuyên gia bỏ phiếu: Kết hợp 5 chuyên gia (theo-last, đảo-last, run-length, transition, AI-stat); chọn phía đa số; hòa → đảo; đánh liên tục để phủ nhiều kịch bản.",
-                10 => "11) Lịch chẻ 10 tay: Tay 1–5 theo ván cuối, tay 6–10 đảo ván cuối; lặp lại block cố định; đơn giản, dễ dự báo nhịp.",
-                11 => "12) KNN chuỗi con: So khớp gần đúng tail k (k=6..3) với Hamming ≤ 1; exact-match tính 2 điểm, near-match 1 điểm; chọn phía điểm cao hơn; hòa → đảo; không match → theo ván cuối; đánh liên tục.",
-                12 => "13) Lịch hai lớp: Lịch pha trộn 10 bước (1–3 theo-last, 4 đảo, 5–7 AI-stat, 8 đảo, 9 theo, 10 AI-stat); lặp lại; cân bằng giữa momentum/mean-revert/thống kê; đánh liên tục.",
-                13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
-                14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
-                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 C/L). Khởi tạo thống kê từ 50 kết quả đầu vào (C/L). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
-                16 => "17) Đánh các cửa ăn nổ hũ: Đọc cấu hình \"Cửa đặt & tỉ lệ\", nhân tỉ lệ với mức tiền hiện tại để đặt tối đa 7 cửa (CHAN/LE/SAPDOI/1TRANG3DO/1DO3TRANG/4DO/4TRANG); thắng nếu bất kỳ cửa nào trúng theo chuỗi kết quả 0/1/2/3/4.",
-                17 => "18) Chuỗi cầu C/L hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
-                _ => "Chiến lược chưa xác định."
-            };
+            string tip = GetStrategyTooltipText(idx);
 
             if (CmbBetStrategy != null)
             {
@@ -3393,24 +3414,41 @@ Ví dụ không hợp lệ:
         {
             return idx switch
             {
-                0 => "1) Chuỗi C/L tự nhập: So khớp chuỗi C/L cấu hình thủ công (cũ→mới); khi khớp mẫu gần nhất sẽ đặt theo cửa chỉ định; không khớp dùng logic mặc định.",
-                1 => "2) Thế cầu C/L tự nhập: Ánh xạ 'mẫu quá khứ → cửa kế tiếp' theo danh sách quy tắc; ưu tiên mẫu dài và khớp gần nhất; hỗ trợ ',', ';', '|', hoặc xuống dòng.",
-                2 => "3) Chuỗi I/N: So khớp dãy Ít/Nhiều (I/N) cấu hình thủ công; khớp thì đặt theo chỉ định; không khớp dùng logic mặc định.",
-                3 => "4) Thế cầu I/N: Ánh xạ mẫu I/N → cửa kế tiếp; ưu tiên mẫu dài; cho phép nhiều luật trong cùng danh sách.",
-                4 => "5) Theo cầu trước (thông minh): Dựa vào ván gần nhất và heuristics nội bộ; đánh liên tục; quản lý vốn theo chuỗi tiền, cut_profit/cut_loss.",
-                5 => "6) Cửa đặt ngẫu nhiên: Mỗi ván chọn CHẴN/LẺ ngẫu nhiên; vẫn tuân theo MoneyManager và ngưỡng cắt lãi/lỗ.",
-                6 => "7) Bám cầu C/L (thống kê): Duyệt k từ lớn→nhỏ (k=6 mặc định); đếm tần suất C/L sau các lần khớp đuôi; chọn phía đa số; hòa → đảo 1–1; không có mẫu → theo ván cuối; đánh liên tục.",
-                7 => "8) Xu hướng chuyển trạng thái: Thống kê 6 chuyển gần nhất giữa các ván ('lặp' vs 'đảo'); nếu 'đảo' nhiều hơn → đánh ngược ván cuối; ngược lại → theo ván cuối; đánh liên tục.",
-                8 => "9) Run-length (dài chuỗi): Tính độ dài chuỗi ký tự cuối; nếu run ≥ T (mặc định T=3) → đảo để mean-revert; nếu run ngắn → theo đà (momentum); đánh liên tục.",
-                9 => "10) Chuyên gia bỏ phiếu: Kết hợp 5 chuyên gia (theo-last, đảo-last, run-length, transition, AI-stat); chọn phía đa số; hòa → đảo; đánh liên tục để phủ nhiều kịch bản.",
-                10 => "11) Lịch chẻ 10 tay: Tay 1–5 theo ván cuối, tay 6–10 đảo ván cuối; lặp lại block cố định; đơn giản, dễ dự báo nhịp.",
-                11 => "12) KNN chuỗi con: So khớp gần đúng tail k (k=6..3) với Hamming ≤ 1; exact-match tính 2 điểm, near-match 1 điểm; chọn phía điểm cao hơn; hòa → đảo; không match → theo ván cuối; đánh liên tục.",
-                12 => "13) Lịch hai lớp: Lịch pha trộn 10 bước (1–3 theo-last, 4 đảo, 5–7 AI-stat, 8 đảo, 9 theo, 10 AI-stat); lặp lại; cân bằng giữa momentum/mean-revert/thống kê; đánh liên tục.",
-                13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
-                14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
-                15 => "16) TOP10 TÍCH LŨY (khởi từ 50 C/L). Khởi tạo thống kê từ 50 kết quả đầu vào (C/L). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 “mới về”. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm ≥ hiện tại.",
-                16 => "17) Đánh các cửa ăn nổ hũ: Đọc cấu hình \"Cửa đặt & tỉ lệ\", nhân tỉ lệ với mức tiền hiện tại để đặt tối đa 7 cửa (CHAN/LE/SAPDOI/1TRANG3DO/1DO3TRANG/4DO/4TRANG); thắng nếu bất kỳ cửa nào trúng theo chuỗi kết quả 0/1/2/3/4.",
-                17 => "18) Chuỗi cầu C/L hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
+                0 => "1) Chuỗi cầu C/L.",
+                1 => "2) Chuỗi cầu T/X.",
+                2 => "3) Thế cầu C/L.",
+                3 => "4) Thế cầu T/X.",
+                4 => "5) Chuỗi cầu I/N cho chẵn/lẻ.",
+                5 => "6) Chuỗi cầu I/N cho tài/xỉu.",
+                6 => "7) Thế cầu I/N cho chẵn/lẻ.",
+                7 => "8) Thế cầu I/N cho tài/xỉu.",
+                8 => "9) Bám cầu trước cho chẵn/lẻ.",
+                9 => "10) Bám cầu trước cho tài/xỉu.",
+                10 => "11) Ngẫu nhiên cho chẵn/lẻ.",
+                11 => "12) Ngẫu nhiên cho tài/xỉu.",
+                12 => "13) AI thống kê C/L.",
+                13 => "14) AI thống kê T/X.",
+                14 => "15) Xu hướng chuyển trạng thái C/L.",
+                15 => "16) Xu hướng chuyển trạng thái T/X.",
+                16 => "17) Run-length C/L.",
+                17 => "18) Run-length T/X.",
+                18 => "19) Ensemble C/L.",
+                19 => "20) Ensemble T/X.",
+                20 => "21) Lịch chẻ 10 tay C/L.",
+                21 => "22) Lịch chẻ 10 tay T/X.",
+                22 => "23) KNN chuỗi con C/L.",
+                23 => "24) KNN chuỗi con T/X.",
+                24 => "25) Lịch hai lớp C/L.",
+                25 => "26) Lịch hai lớp T/X.",
+                26 => "27) AI n-gram C/L.",
+                27 => "28) AI n-gram T/X.",
+                28 => "29) AI15 panel C/L.",
+                29 => "30) AI15 panel T/X.",
+                30 => "31) Top10 tích lũy C/L.",
+                31 => "32) Top10 tích lũy T/X.",
+                32 => "33) Chuỗi cầu C/L hay về.",
+                33 => "34) Chuỗi cầu T/X hay về.",
+                34 => "35) Đánh các cửa ăn nổ hũ.",
                 _ => "Chiến lược chưa xác định."
             };
         }
@@ -4838,13 +4876,13 @@ Ví dụ không hợp lệ:
         {
             try
             {
-                var idx = CmbBetStrategy?.SelectedIndex ?? 4;
+                var idx = CmbBetStrategy?.SelectedIndex ?? 8;
                 if (RowChuoiCau != null)
-                    RowChuoiCau.Visibility = (idx == 0 || idx == 2) ? Visibility.Visible : Visibility.Collapsed; // 1 hoặc 3
+                    RowChuoiCau.Visibility = (idx == 0 || idx == 1 || idx == 4 || idx == 5) ? Visibility.Visible : Visibility.Collapsed;
                 if (RowTheCau != null)
-                    RowTheCau.Visibility = (idx == 1 || idx == 3) ? Visibility.Visible : Visibility.Collapsed;   // 2 hoặc 4
+                    RowTheCau.Visibility = (idx == 2 || idx == 3 || idx == 6 || idx == 7) ? Visibility.Visible : Visibility.Collapsed;
                 if (RowSideRatio != null)
-                    RowSideRatio.Visibility = (idx == 16) ? Visibility.Visible : Visibility.Collapsed;
+                    RowSideRatio.Visibility = (idx == 34) ? Visibility.Visible : Visibility.Collapsed;
             }
             catch { }
         }
@@ -4857,7 +4895,7 @@ Ví dụ không hợp lệ:
             ShowErrorsForCurrentStrategy();   // <— thêm dòng này
 
             if (!_uiReady || _tabSwitching) return;
-            _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? 4;
+            _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? 8;
             await SaveConfigAsync();
         }
         private GameContext BuildContext(StrategyTabState tab, bool useRawWinAmount = false)
@@ -5104,9 +5142,23 @@ Ví dụ không hợp lệ:
                 if (LblWin != null) LblWin.Text = activeTab.WinTotal.ToString("N0");
                 _dec = new DecisionState();
                 _cooldown = false;
-                int __idx = CmbBetStrategy?.SelectedIndex ?? 4;
-                _cfg.BetSeq = (__idx == 0) ? (_cfg.BetSeqCL ?? "") : (__idx == 2 ? (_cfg.BetSeqNI ?? "") : "");
-                _cfg.BetPatterns = (__idx == 1) ? (_cfg.BetPatternsCL ?? "") : (__idx == 3 ? (_cfg.BetPatternsNI ?? "") : "");
+                int __idx = CmbBetStrategy?.SelectedIndex ?? 8;
+                _cfg.BetSeq = __idx switch
+                {
+                    0 => _cfg.BetSeqCL ?? "",
+                    1 => _cfg.BetSeqTX ?? "",
+                    4 => _cfg.BetSeqNI ?? "",
+                    5 => _cfg.BetSeqNITX ?? "",
+                    _ => ""
+                };
+                _cfg.BetPatterns = __idx switch
+                {
+                    2 => _cfg.BetPatternsCL ?? "",
+                    3 => _cfg.BetPatternsTX ?? "",
+                    6 => _cfg.BetPatternsNI ?? "",
+                    7 => _cfg.BetPatternsNITX ?? "",
+                    _ => ""
+                };
 
 
                 // === Khởi động task theo lựa chọn CHIẾN LƯỢC ===
@@ -5115,28 +5167,45 @@ Ví dụ không hợp lệ:
                 bool useRawWinAmount = false;
                 TaiXiuLiveSun.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
                 {
-                    0 => new TaiXiuLiveSun.Tasks.SeqParityFollowTask(),     // 1
-                    1 => new TaiXiuLiveSun.Tasks.PatternParityTask(),       // 2
-                    2 => new TaiXiuLiveSun.Tasks.SeqMajorMinorTask(),       // 3
-                    3 => new TaiXiuLiveSun.Tasks.PatternMajorMinorTask(),   // 4
-                    4 => new TaiXiuLiveSun.Tasks.SmartPrevTask(),           // 5
-                    5 => new TaiXiuLiveSun.Tasks.RandomParityTask(),        // 6
-                    6 => new TaiXiuLiveSun.Tasks.AiStatParityTask(),        // 7
-                    7 => new TaiXiuLiveSun.Tasks.StateTransitionBiasTask(), // 8
-                    8 => new TaiXiuLiveSun.Tasks.RunLengthBiasTask(),       // 9
-                    9 => new TaiXiuLiveSun.Tasks.EnsembleMajorityTask(),    // 10
-                    10 => new TaiXiuLiveSun.Tasks.TimeSlicedHedgeTask(),    // 11
-                    11 => new TaiXiuLiveSun.Tasks.KnnSubsequenceTask(),     // 12
-                    12 => new TaiXiuLiveSun.Tasks.DualScheduleHedgeTask(),  // 13
-                    13 => new TaiXiuLiveSun.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
-                    14 => new TaiXiuLiveSun.Tasks.AiExpertPanelTask(), // 15
-                    15 => new TaiXiuLiveSun.Tasks.Top10PatternFollowTask(), // 16
-                    16 => new TaiXiuLiveSun.Tasks.JackpotMultiSideTask(), // 17
-                    17 => new TaiXiuLiveSun.Tasks.SeqParityHotBackTask(), // 18
+                    0 => new TaiXiuLiveSun.Tasks.SeqParityFollowTask(), // 1
+                    1 => new TaiXiuLiveSun.Tasks.SeqTxFollowTask(), // 2
+                    2 => new TaiXiuLiveSun.Tasks.PatternParityTask(), // 3
+                    3 => new TaiXiuLiveSun.Tasks.PatternTxTask(), // 4
+                    4 => new TaiXiuLiveSun.Tasks.SeqMajorMinorTask(), // 5
+                    5 => new TaiXiuLiveSun.Tasks.SeqMajorMinorTxTask(), // 6
+                    6 => new TaiXiuLiveSun.Tasks.PatternMajorMinorTask(), // 7
+                    7 => new TaiXiuLiveSun.Tasks.PatternMajorMinorTxTask(), // 8
+                    8 => new TaiXiuLiveSun.Tasks.SmartPrevTask(), // 9
+                    9 => new TaiXiuLiveSun.Tasks.SmartPrevTxTask(), // 10
+                    10 => new TaiXiuLiveSun.Tasks.RandomParityTask(), // 11
+                    11 => new TaiXiuLiveSun.Tasks.RandomTxTask(), // 12
+                    12 => new TaiXiuLiveSun.Tasks.AiStatParityTask(), // 13
+                    13 => new TaiXiuLiveSun.Tasks.AiStatTxTask(), // 14
+                    14 => new TaiXiuLiveSun.Tasks.StateTransitionBiasTask(), // 15
+                    15 => new TaiXiuLiveSun.Tasks.StateTransitionBiasTxTask(), // 16
+                    16 => new TaiXiuLiveSun.Tasks.RunLengthBiasTask(), // 17
+                    17 => new TaiXiuLiveSun.Tasks.RunLengthBiasTxTask(), // 18
+                    18 => new TaiXiuLiveSun.Tasks.EnsembleMajorityTask(), // 19
+                    19 => new TaiXiuLiveSun.Tasks.EnsembleMajorityTxTask(), // 20
+                    20 => new TaiXiuLiveSun.Tasks.TimeSlicedHedgeTask(), // 21
+                    21 => new TaiXiuLiveSun.Tasks.TimeSlicedHedgeTxTask(), // 22
+                    22 => new TaiXiuLiveSun.Tasks.KnnSubsequenceTask(), // 23
+                    23 => new TaiXiuLiveSun.Tasks.KnnSubsequenceTxTask(), // 24
+                    24 => new TaiXiuLiveSun.Tasks.DualScheduleHedgeTask(), // 25
+                    25 => new TaiXiuLiveSun.Tasks.DualScheduleHedgeTxTask(), // 26
+                    26 => new TaiXiuLiveSun.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 27
+                    27 => new TaiXiuLiveSun.Tasks.AiOnlineNGramTxTask(GetAiNGramTxStatePath()), // 28
+                    28 => new TaiXiuLiveSun.Tasks.AiExpertPanelTask(), // 29
+                    29 => new TaiXiuLiveSun.Tasks.AiExpertPanelTxTask(), // 30
+                    30 => new TaiXiuLiveSun.Tasks.Top10PatternFollowTask(), // 31
+                    31 => new TaiXiuLiveSun.Tasks.Top10PatternFollowTxTask(), // 32
+                    32 => new TaiXiuLiveSun.Tasks.SeqParityHotBackTask(), // 33
+                    33 => new TaiXiuLiveSun.Tasks.SeqTxHotBackTask(), // 34
+                    34 => new TaiXiuLiveSun.Tasks.JackpotMultiSideTask(), // 35
                     _ => new TaiXiuLiveSun.Tasks.SmartPrevTask(),
                 };
 
-                if (_cfg.BetStrategyIndex == 16) useRawWinAmount = true;
+                if (_cfg.BetStrategyIndex == 34) useRawWinAmount = true;
 
                 activeTab.ActiveTask = task;
 
@@ -5478,6 +5547,42 @@ Ví dụ không hợp lệ:
             );
         }
 
+        private void InitResultDigitIcons()
+        {
+            if (_resultDigitIconMap.Count > 0)
+                return;
+
+            string asm = GetType().Assembly.GetName().Name!;
+
+            var i0 = FallbackIcons.LoadPackImage("Assets/side/XIUCHAN.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/side/XIUCHAN.png",
+                "pack://application:,,,/Assets/side/XIUCHAN.png",
+                "pack://application:,/Assets/side/XIUCHAN.png"
+            );
+            if (i0 != null) _resultDigitIconMap['0'] = i0;
+
+            var i1 = FallbackIcons.LoadPackImage("Assets/side/XIULE.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/side/XIULE.png",
+                "pack://application:,,,/Assets/side/XIULE.png",
+                "pack://application:,/Assets/side/XIULE.png"
+            );
+            if (i1 != null) _resultDigitIconMap['1'] = i1;
+
+            var i2 = FallbackIcons.LoadPackImage("Assets/side/TAICHAN.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/side/TAICHAN.png",
+                "pack://application:,,,/Assets/side/TAICHAN.png",
+                "pack://application:,/Assets/side/TAICHAN.png"
+            );
+            if (i2 != null) _resultDigitIconMap['2'] = i2;
+
+            var i3 = FallbackIcons.LoadPackImage("Assets/side/TAILE.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/side/TAILE.png",
+                "pack://application:,,,/Assets/side/TAILE.png",
+                "pack://application:,/Assets/side/TAILE.png"
+            );
+            if (i3 != null) _resultDigitIconMap['3'] = i3;
+        }
+
 
 
         void UpdateSeqUI(string fullSeq)
@@ -5506,13 +5611,13 @@ Ví dụ không hợp lệ:
             string s = sRaw.Trim().ToUpperInvariant();
 
             bool isChan = false, isLe = false;
+            char digit = '\0';
+
+            InitResultDigitIcons();
 
             if (s.Length == 1 && char.IsDigit(s[0]))
             {
-                // tail số từ chuỗi kết quả: 0/2/4 => CHẴN, 1/3 => LẺ
-                char d = s[0];
-                isChan = (d == '0' || d == '2' || d == '4');
-                isLe = (d == '1' || d == '3');
+                digit = s[0];
             }
             else
             {
@@ -5529,6 +5634,21 @@ Ví dụ không hợp lệ:
                     LblKetQua.Visibility = Visibility.Visible;
                     LblKetQua.Text = string.IsNullOrWhiteSpace(text) ? "-" : text;
                 }
+            }
+
+            if (digit != '\0')
+            {
+                if (_resultDigitIconMap.TryGetValue(digit, out var digitIcon) && digitIcon != null && ImgKetQua != null)
+                {
+                    ImgKetQua.Source = digitIcon;
+                    ImgKetQua.Visibility = Visibility.Visible;
+                    if (LblKetQua != null) LblKetQua.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
+                // Nếu thiếu ảnh map số thì fallback chữ số để dễ debug.
+                ShowText(digit.ToString());
+                return;
             }
 
             if (!isChan && !isLe)
@@ -5571,6 +5691,8 @@ Ví dụ không hợp lệ:
             var s = (result ?? "").Trim().ToUpperInvariant();
             bool isLe = s == "LE" || s == "LẺ" || s == "L";
             bool isChan = s == "CHAN" || s == "CHẴN" || s == "C";
+            bool isTai = s == "TAI" || s == "T";
+            bool isXiu = s == "XIU" || s == "X";
 
             void ShowText(string text)
             {
@@ -5582,9 +5704,12 @@ Ví dụ không hợp lệ:
                 }
             }
 
-            if (isLe || isChan)
+            if (isLe || isChan || isTai || isXiu)
             {
-                var key = isLe ? "ImgLE" : "ImgCHAN";
+                var key = isLe ? "ImgLE"
+                    : isChan ? "ImgCHAN"
+                    : isTai ? "ImgTAI"
+                    : "ImgXIU";
                 var img = TryFindResource(key) as ImageSource;
                 if (img != null && ImgSide != null)
                 {
@@ -6932,6 +7057,8 @@ Ví dụ không hợp lệ:
             var u = TextNorm.U(s);
             if (u == "C" || u == "CHAN") return "CHAN";
             if (u == "L" || u == "LE") return "LE";
+            if (u == "T" || u == "TAI" || u == "BIG") return "TAI";
+            if (u == "X" || u == "XIU" || u == "SMALL") return "XIU";
             return (s ?? "").Trim();
         }
         private static string NormalizeWL(string s)
@@ -7166,6 +7293,34 @@ Ví dụ không hợp lệ:
             return true;
         }
 
+        // --- Chuỗi T/X: T,X hoặc số 0..6 (0,1=>X; 2..6=>T); 2..100 ký tự ---
+        private static bool ValidateSeqTX(string s, out string err)
+        {
+            err = "";
+            if (string.IsNullOrWhiteSpace(s))
+            {
+                err = "Vui lòng nhập chuỗi T/X.";
+                return false;
+            }
+
+            int count = 0;
+            foreach (var ch in s)
+            {
+                if (char.IsWhiteSpace(ch)) continue;
+                if (TaiXiuLiveSun.Tasks.TaskUtil.DigitToTx(ch) != '\0') { count++; continue; }
+                err = "Chỉ cho phép khoảng trắng và ký tự T/X hoặc số 0..6.";
+                return false;
+            }
+
+            if (count < 2 || count > 100)
+            {
+                err = "Độ dài 2–100 ký tự (tính theo T/X, bỏ qua khoảng trắng).";
+                return false;
+            }
+
+            return true;
+        }
+
         // --- Chuỗi I/N: I,N; 2..50 ký tự ---
         private static bool ValidateSeqNI(string s, out string err)
         {
@@ -7264,6 +7419,71 @@ Ví dụ không hợp lệ:
             return true;
         }
 
+        // --- Thế cầu T/X: từng dòng "<mẫu> - <đặt>", mẫu gồm T/X hoặc số 0..6 ---
+        private static bool ValidatePatternsTX(string s, out string err)
+        {
+            err = "";
+            if (string.IsNullOrWhiteSpace(s))
+            {
+                err = "Vui lòng nhập các thế cầu T/X.";
+                return false;
+            }
+
+            var rules = System.Text.RegularExpressions.Regex.Split(s.Replace("\r", ""), @"[,\;\|\n]+");
+            int idx = 0;
+
+            foreach (var raw in rules)
+            {
+                var line = raw.Trim();
+                if (line.Length == 0) continue;
+                idx++;
+
+                var m = System.Text.RegularExpressions.Regex.Match(
+                    line,
+                    @"^\s*([TXtx0-6\s]+)\s*(?:->|-)\s*([TXtx0-6\s]+)\s*$",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+                if (!m.Success)
+                {
+                    err = $"Quy tắc {idx} không hợp lệ: “{line}”. Dạng đúng: <mẫu> -> <chuỗi cầu> hoặc <mẫu>-<chuỗi cầu>; chỉ dùng T/X hoặc 0..6.";
+                    return false;
+                }
+
+                var lhsRaw = m.Groups[1].Value;
+                var lhsBuf = new System.Text.StringBuilder(lhsRaw.Length);
+                foreach (char ch in lhsRaw)
+                {
+                    if (char.IsWhiteSpace(ch)) continue;
+                    char tx = TaiXiuLiveSun.Tasks.TaskUtil.DigitToTx(ch);
+                    if (tx == 'T' || tx == 'X') lhsBuf.Append(tx);
+                    else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm T/X hoặc 0..6."; return false; }
+                }
+                var lhs = lhsBuf.ToString();
+                if (lhs.Length < 1 || lhs.Length > 10)
+                {
+                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự (T/X).";
+                    return false;
+                }
+
+                var rhsRaw = m.Groups[2].Value;
+                var rhsBuf = new System.Text.StringBuilder(rhsRaw.Length);
+                foreach (char ch in rhsRaw)
+                {
+                    if (char.IsWhiteSpace(ch)) continue;
+                    char tx = TaiXiuLiveSun.Tasks.TaskUtil.DigitToTx(ch);
+                    if (tx == 'T' || tx == 'X') rhsBuf.Append(tx);
+                    else { err = $"Quy tắc {idx}: <chuỗi cầu> chỉ gồm T/X hoặc 0..6."; return false; }
+                }
+                if (rhsBuf.Length < 1)
+                {
+                    err = $"Quy tắc {idx}: <chuỗi cầu> tối thiểu 1 ký tự T/X.";
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
 
 
 
@@ -7349,7 +7569,7 @@ Ví dụ không hợp lệ:
         {
             ShowErrorsForCurrentStrategy(); // cập nhật UI trước
 
-            int idx = CmbBetStrategy?.SelectedIndex ?? 4;
+            int idx = CmbBetStrategy?.SelectedIndex ?? 8;
             if (idx == 0) // 1. Chuỗi C/L
             {
                 if (!ValidateSeqCL(T(TxtChuoiCau), out var err))
@@ -7359,7 +7579,16 @@ Ví dụ không hợp lệ:
                     return false;
                 }
             }
-            else if (idx == 2) // 3. Chuỗi I/N
+            else if (idx == 1) // 2. Chuỗi T/X
+            {
+                if (!ValidateSeqTX(T(TxtChuoiCau), out var err))
+                {
+                    SetError(LblSeqError, err);
+                    BringBelow(TxtChuoiCau);
+                    return false;
+                }
+            }
+            else if (idx == 4 || idx == 5) // 5,6. Chuỗi I/N
             {
                 if (!ValidateSeqNI(T(TxtChuoiCau), out var err))
                 {
@@ -7368,7 +7597,7 @@ Ví dụ không hợp lệ:
                     return false;
                 }
             }
-            else if (idx == 1) // 2. Thế C/L
+            else if (idx == 2) // 3. Thế C/L
             {
                 if (!ValidatePatternsCL(T(TxtTheCau), out var err))
                 {
@@ -7377,7 +7606,16 @@ Ví dụ không hợp lệ:
                     return false;
                 }
             }
-            else if (idx == 3) // 4. Thế I/N
+            else if (idx == 3) // 4. Thế T/X
+            {
+                if (!ValidatePatternsTX(T(TxtTheCau), out var err))
+                {
+                    SetError(LblPatError, err);
+                    BringBelow(TxtTheCau);
+                    return false;
+                }
+            }
+            else if (idx == 6 || idx == 7) // 7,8. Thế I/N
             {
                 if (!ValidatePatternsNI(T(TxtTheCau), out var err))
                 {
@@ -7387,7 +7625,7 @@ Ví dụ không hợp lệ:
                 }
             }
 
-            else if (idx == 16) // 17. Cửa đặt & tỉ lệ
+            else if (idx == 34) // 35. Cửa đặt & tỉ lệ
             {
                 if (!TaiXiuLiveSun.Tasks.SideRateParser.TryParse(T(TxtSideRatio), out _, out var err))
                 {
@@ -7402,13 +7640,17 @@ Ví dụ không hợp lệ:
 
         private void SyncStrategyFieldsToUI()
         {
-            int idx = CmbBetStrategy?.SelectedIndex ?? 4;
+            int idx = CmbBetStrategy?.SelectedIndex ?? 8;
             if (idx == 0) { if (TxtChuoiCau != null) TxtChuoiCau.Text = _cfg.BetSeqCL ?? ""; }
-            else if (idx == 2) { if (TxtChuoiCau != null) TxtChuoiCau.Text = _cfg.BetSeqNI ?? ""; }
+            else if (idx == 1) { if (TxtChuoiCau != null) TxtChuoiCau.Text = _cfg.BetSeqTX ?? ""; }
+            else if (idx == 4) { if (TxtChuoiCau != null) TxtChuoiCau.Text = _cfg.BetSeqNI ?? ""; }
+            else if (idx == 5) { if (TxtChuoiCau != null) TxtChuoiCau.Text = _cfg.BetSeqNITX ?? ""; }
 
-            if (idx == 1) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsCL ?? ""; }
-            else if (idx == 3) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsNI ?? ""; }
-            if (idx == 16 && TxtSideRatio != null) TxtSideRatio.Text = _cfg.SideRateText ?? TaiXiuLiveSun.Tasks.SideRateParser.DefaultText;
+            if (idx == 2) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsCL ?? ""; }
+            else if (idx == 3) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsTX ?? ""; }
+            else if (idx == 6) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsNI ?? ""; }
+            else if (idx == 7) { if (TxtTheCau != null) TxtTheCau.Text = _cfg.BetPatternsNITX ?? ""; }
+            if (idx == 34 && TxtSideRatio != null) TxtSideRatio.Text = _cfg.SideRateText ?? TaiXiuLiveSun.Tasks.SideRateParser.DefaultText;
         }
 
         private void LoadStakeCsvForCurrentMoneyStrategy()
@@ -7443,7 +7685,9 @@ Ví dụ không hợp lệ:
 
             // Lưu tách bạch cho từng chiến lược
             if (idx == 0) _cfg.BetSeqCL = txt;    // Chiến lược 1: Chuỗi C/L
-            if (idx == 2) _cfg.BetSeqNI = txt;    // Chiến lược 3: Chuỗi N/I
+            if (idx == 1) _cfg.BetSeqTX = txt;    // Chiến lược 2: Chuỗi T/X
+            if (idx == 4) _cfg.BetSeqNI = txt;    // Chiến lược 5: Chuỗi N/I CL
+            if (idx == 5) _cfg.BetSeqNITX = txt;  // Chiến lược 6: Chuỗi N/I TX
 
             // Bản “chung” để engine đọc khi chạy
             _cfg.BetSeq = txt;
@@ -7461,8 +7705,10 @@ Ví dụ không hợp lệ:
             var txt = (TxtTheCau?.Text ?? "").Trim();
 
             // Lưu tách bạch cho từng chiến lược
-            if (idx == 1) _cfg.BetPatternsCL = txt;  // Chiến lược 2: Thế C/L
-            if (idx == 3) _cfg.BetPatternsNI = txt;  // Chiến lược 4: Thế N/I
+            if (idx == 2) _cfg.BetPatternsCL = txt;    // Chiến lược 3: Thế C/L
+            if (idx == 3) _cfg.BetPatternsTX = txt;    // Chiến lược 4: Thế T/X
+            if (idx == 6) _cfg.BetPatternsNI = txt;    // Chiến lược 7: Thế N/I CL
+            if (idx == 7) _cfg.BetPatternsNITX = txt;  // Chiến lược 8: Thế N/I TX
 
             // Bản “chung” để engine đọc khi chạy
             _cfg.BetPatterns = txt;
@@ -7531,15 +7777,17 @@ Ví dụ không hợp lệ:
         // --- Hiển thị lỗi live theo chiến lược đang chọn ---
         private void ShowErrorsForCurrentStrategy()
         {
-            int idx = CmbBetStrategy?.SelectedIndex ?? 4;
+            int idx = CmbBetStrategy?.SelectedIndex ?? 8;
 
-            // Chuỗi cầu (chiến lược 1,3)
-            if (idx == 0 || idx == 2)
+            // Chuỗi cầu (1,2,5,6)
+            if (idx == 0 || idx == 1 || idx == 4 || idx == 5)
             {
                 string s = (TxtChuoiCau?.Text ?? "");
-                bool ok = (idx == 0)
-                    ? ValidateSeqCL(s, out var e1)
-                    : ValidateSeqNI(s, out e1);
+                bool ok;
+                string? e1;
+                if (idx == 0) ok = ValidateSeqCL(s, out e1);
+                else if (idx == 1) ok = ValidateSeqTX(s, out e1);
+                else ok = ValidateSeqNI(s, out e1);
                 SetError(LblSeqError, ok ? null : e1);
             }
             else
@@ -7547,13 +7795,15 @@ Ví dụ không hợp lệ:
                 SetError(LblSeqError, null);
             }
 
-            // Thế cầu (chiến lược 2,4)
-            if (idx == 1 || idx == 3)
+            // Thế cầu (3,4,7,8)
+            if (idx == 2 || idx == 3 || idx == 6 || idx == 7)
             {
                 string s = (TxtTheCau?.Text ?? "");
-                bool ok = (idx == 1)
-                    ? ValidatePatternsCL(s, out var e2)
-                    : ValidatePatternsNI(s, out e2);
+                bool ok;
+                string? e2;
+                if (idx == 2) ok = ValidatePatternsCL(s, out e2);
+                else if (idx == 3) ok = ValidatePatternsTX(s, out e2);
+                else ok = ValidatePatternsNI(s, out e2);
                 SetError(LblPatError, ok ? null : e2);
             }
             else
@@ -7561,8 +7811,8 @@ Ví dụ không hợp lệ:
                 SetError(LblPatError, null);
             }
 
-            // Cửa đặt & tỉ lệ (chiến lược 17)
-            if (idx == 16)
+            // Cửa đặt & tỉ lệ (chiến lược 35)
+            if (idx == 34)
             {
                 string s = (TxtSideRatio?.Text ?? "");
                 bool ok = TaiXiuLiveSun.Tasks.SideRateParser.TryParse(s, out _, out var e3);

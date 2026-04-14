@@ -21,16 +21,14 @@ namespace TaiXiuLiveSun.Tasks
     internal static class SideRateParser
     {
 public const string DefaultText =
-@"4DO:1
-4TRANG:1
-1TRANG3DO:2
-1DO3TRANG:2
-CHAN:6
-LE:4";
+@"TAI:1
+XIU:1
+CHAN:1
+LE:1";
 
         private static readonly HashSet<string> AllowedSides = new(StringComparer.OrdinalIgnoreCase)
         {
-            "CHAN", "LE", "TRANG3_DO1", "DO3_TRANG1", "TU_TRANG", "TU_DO"
+            "TAI", "XIU", "CHAN", "LE"
         };
 
         private static string NormalizeRaw(string raw)
@@ -45,12 +43,10 @@ LE:4";
             if (string.IsNullOrWhiteSpace(raw)) return "";
             var s = NormalizeRaw(raw);
 
+            if (s == "TAI" || s == "BIG") return "TAI";
+            if (s == "XIU" || s == "SMALL") return "XIU";
             if (s == "CHAN" || s == "EVEN") return "CHAN";
             if (s == "LE" || s == "ODD") return "LE";
-            if (s == "TRANG3_DO1" || s == "3TRANG1DO" || s == "3T1D" || s == "3W1R" || s == "1DO3TRANG" || s == "1D3T" || s == "1R3W") return "TRANG3_DO1";
-            if (s == "DO3_TRANG1" || s == "3DO1TRANG" || s == "3D1T" || s == "3R1W" || s == "1TRANG3DO" || s == "1T3D" || s == "1W3R") return "DO3_TRANG1";
-            if (s == "TU_TRANG" || s == "TUTRANG" || s == "4TRANG" || s == "4W") return "TU_TRANG";
-            if (s == "TU_DO" || s == "TUDO" || s == "4DO" || s == "4R") return "TU_DO";
             return "";
         }
 
@@ -123,10 +119,10 @@ LE:4";
         public static HashSet<string> GetWinningSides(char digit)
         {
             var res = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (digit == '0') res.Add("TU_TRANG");
-            else if (digit == '4') res.Add("TU_DO");
-            else if (digit == '1') res.Add("DO3_TRANG1");
-            else if (digit == '3') res.Add("TRANG3_DO1");
+
+            var tx = TaskUtil.DigitToTx(digit);
+            if (tx == 'T') res.Add("TAI");
+            else if (tx == 'X') res.Add("XIU");
 
             var parity = TaskUtil.DigitToParity(digit);
             if (parity == 'C') res.Add("CHAN");
