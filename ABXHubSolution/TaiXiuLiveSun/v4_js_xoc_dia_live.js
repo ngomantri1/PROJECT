@@ -2371,7 +2371,7 @@
         '</div>' +
         '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
+    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -3425,38 +3425,29 @@
         var s = NORM(raw || '').replace(/[^A-Z0-9]+/g, '_');
         if (!s)
             return 'LE'; // giữ nguyên hành vi cũ: không nhận => mặc định Lẻ
+        // TX Live: thêm nhánh rõ cho TÀI/XỈU
+        if (s === 'TAI' || s === 'BIG')
+            return 'TAI';
+        if (s === 'XIU' || s === 'SMALL')
+            return 'XIU';
         if (s === 'CHAN' || s === 'EVEN')
             return 'CHAN';
         if (s === 'LE' || s === 'ODD')
             return 'LE';
-        if (s === 'SAP_DOI' || s === 'SAPDOI' || s === '2DO2TRANG' || s === '2D2T' || s === '2R2W')
-            return 'SAP_DOI';
-        if (s === 'TRANG3_DO1' || s === '3TRANG1DO' || s === '3T1D' || s === '3W1R' || s === '1DO3TRANG' || s === '1D3T' || s === '1R3W')
-            return 'TRANG3_DO1';
-        if (s === 'DO3_TRANG1' || s === '3DO1TRANG' || s === '3D1T' || s === '3R1W' || s === '1TRANG3DO' || s === '1T3D' || s === '1W3R')
-            return 'DO3_TRANG1';
-        if (s === 'TU_TRANG' || s === 'TUTRANG' || s === '4TRANG' || s === '4W')
-            return 'TU_TRANG';
-        if (s === 'TU_DO' || s === 'TUDO' || s === '4DO' || s === '4R')
-            return 'TU_DO';
         return s;
     }
     var SIDE_REGEX = {
-        CHAN: /(CHAN|EVEN)\b/i,
-        LE: /(\bLE\b|ODD)\b/i,
-        SAP_DOI: /(SAP\s*DOI|SAPDOI|2\s*DO\s*2\s*TRANG|2D2T|2R2W|2DO2TRANG)/i,
-        TRANG3_DO1: /(3\s*TRANG\s*1\s*DO|3T1D|3W1R|3TRANG1DO|1\s*DO\s*3\s*TRANG|1D3T|1R3W|1DO3TRANG)/i,
-        DO3_TRANG1: /(3\s*DO\s*1\s*TRANG|3D1T|3R1W|3DO1TRANG|1\s*TRANG\s*3\s*DO|1T3D|1W3R|1TRANG3DO)/i,
-        TU_TRANG: /(TU\s*TRANG|4\s*TRANG|4W|TUTRANG)/i,
-        TU_DO: /(TU\s*DO|4\s*DO|4R|TUDO)/i
+        // Không dùng \b vì tail có dạng snake_case (..._bet_tai, ..._bet_xiu)
+        TAI: /(?:^|[^A-Z0-9])(TAI|BIG)(?:$|[^A-Z0-9])/i,
+        XIU: /(?:^|[^A-Z0-9])(XIU|SMALL)(?:$|[^A-Z0-9])/i,
+        CHAN: /(?:^|[^A-Z0-9])(CHAN|EVEN)(?:$|[^A-Z0-9])/i,
+        LE: /(?:^|[^A-Z0-9])(LE|ODD)(?:$|[^A-Z0-9])/i
     };
     var BET_TAILS = {
-        CHAN: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/ig_xocdia_chan',
-        LE: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/ig_xocdia_le',
-        TU_DO: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_4th',
-        TU_TRANG: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_4tr',
-        DO3_TRANG1: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_3th',
-        TRANG3_DO1: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_3tr'
+        TAI: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_tai',
+        XIU: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_xiu',
+        CHAN: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_chan',
+        LE: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_le'
     };
     var CHIP_TAILS = {
         '500000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value7',
