@@ -21,15 +21,8 @@ namespace TaiXiuLiveSun.Tasks
 
         private static string FilterSeqCL(string seq)
         {
-            if (string.IsNullOrEmpty(seq)) return string.Empty;
-            var buf = new char[seq.Length];
-            int n = 0;
-            foreach (var ch in seq)
-            {
-                char u = char.ToUpperInvariant(ch);
-                if (u == 'C' || u == 'L') buf[n++] = u;
-            }
-            return n == 0 ? string.Empty : new string(buf, 0, n);
+            // Chuẩn hoá toàn bộ nguồn seq (0/1/2/3 hoặc C/L) -> C/L
+            return SeqToParityString(seq ?? string.Empty);
         }
 
         private static string ReverseString(string s)
