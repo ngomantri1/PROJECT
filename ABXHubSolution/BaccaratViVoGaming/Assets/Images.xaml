@@ -1,0 +1,18 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <BitmapImage x:Key="ImgBANKER" UriSource="/BaccaratViVoGaming;component/Assets/side/BANKER.png" />
+    <BitmapImage x:Key="ImgPLAYER" UriSource="/BaccaratViVoGaming;component/Assets/side/PLAYER.png" />
+    <BitmapImage x:Key="ImgTHANG" UriSource="/BaccaratViVoGaming;component/Assets/kq/THANG.png" />
+    <BitmapImage x:Key="ImgTHUA" UriSource="/BaccaratViVoGaming;component/Assets/kq/THUA.png" />
+    <BitmapImage x:Key="ImgHOA" UriSource="/BaccaratViVoGaming;component/Assets/kq/HOA.png" />
+    <BitmapImage x:Key="ImgBALL0" UriSource="/BaccaratViVoGaming;component/Assets/side/TU_TRANG.png" />
+    <BitmapImage x:Key="ImgBALL1" UriSource="/BaccaratViVoGaming;component/Assets/side/1TRANG_3DO.png" />
+    <BitmapImage x:Key="ImgBALL2" UriSource="/BaccaratViVoGaming;component/Assets/side/SAP_DOI.png" />
+    <BitmapImage x:Key="ImgBALL3" UriSource="/BaccaratViVoGaming;component/Assets/side/1DO_3TRANG.png" />
+    <BitmapImage x:Key="ImgBALL4" UriSource="/BaccaratViVoGaming;component/Assets/side/TU_DO.png" />
+    <BitmapImage x:Key="ImgTU_TRANG" UriSource="/BaccaratViVoGaming;component/Assets/side/TU_TRANG.png" />
+    <BitmapImage x:Key="ImgTU_DO" UriSource="/BaccaratViVoGaming;component/Assets/side/TU_DO.png" />
+    <BitmapImage x:Key="ImgSAP_DOI" UriSource="/BaccaratViVoGaming;component/Assets/side/SAP_DOI.png" />
+    <BitmapImage x:Key="ImgTRANG3_DO1" UriSource="/BaccaratViVoGaming;component/Assets/side/1DO_3TRANG.png" />
+    <BitmapImage x:Key="ImgDO3_TRANG1" UriSource="/BaccaratViVoGaming;component/Assets/side/1TRANG_3DO.png" />
+</ResourceDictionary>
+

@@ -1,125 +1,182 @@
-Project : BaccaratSexyCasino
+Project : \BaccaratViVoGaming
 Dưới đây là tóm tắt bối cảnh từ một chat cũ.
 Hãy coi như bạn đã đọc toàn bộ lịch sử và code tương ứng, nhưng chỉ dùng thông tin trong tóm tắt này:
 
 
-# Context tóm tắt cho chat mới
+# Context Tóm Tắt Cho Chat Mới
 
 ## Mục tiêu chính của project / bug
-- Project `BaccaratSexyCasino` là app desktop tự động theo dõi dữ liệu game live (đặc biệt Baccarat/Xóc Đĩa), đọc trạng thái ván từ trang game qua WebView2 + JS bridge, rồi chạy chiến lược cược.
-- Bug chính hiện tại: chạy `new.wencheng.cc` thì đọc dữ liệu game OK, nhưng chạy `vipbet389.com` thì không bắt được dữ liệu game.
-- Trọng tâm bug: `vipbet389.com` bọc game trong iframe cross-origin (`gci.usplaynet.com`), luồng vào game không chuyển sang URL game thật (`singleBacTable/webMain/gamehall`) nên bridge không có tick dữ liệu.
+- Project: công cụ desktop WPF để bọc WebView2, vào game Baccarat (VivoGaming), đọc trạng thái game realtime, đồng bộ dữ liệu sang bảng điều khiển để auto-bet.
+- Bug gốc: từ site cũ (Sexy) chuyển sang Vivo thì `Canvas Watch` không hiện hoặc hiện thiếu dữ liệu.
+- Bug hiện tại cần xử lý tiếp: khi load vào game app bị đơ, bảng điều khiển bị lag/không thao tác ổn, có lúc không bấm được `Đăng nhập Tool`.
+- Yêu cầu nghiệp vụ đã chốt:
+1. `Đăng nhập Tool` chỉ check bản quyền/tài khoản hoạt động.
+2. Không gắn luồng detect need-login/autofill/click login như trước.
+3. Countdown đồng bộ theo `% Prog` (không theo giây).
+4. Hỗ trợ URL Vivo (`games.vivogaming.com`, `selectedgame=baccarat`), bỏ ràng buộc `singleBac only`.
 
 ## Tech stack (ngôn ngữ, framework, DB…)
-- Ngôn ngữ chính: `C#` + `JavaScript`.
-- UI/Desktop: `WPF` (.NET, project đang build theo `net8.0-windows`).
-- Browser engine: `Microsoft.Web.WebView2` (main web + popup web + frame hook).
-- Data local: file JSON (`config.json`, `stats.json`) và log text theo ngày.
-- Không thấy DB server trong scope bug hiện tại.
-- Có tích hợp `ABX.Core` (dependency nội bộ, hiện build local đang thiếu dll ở vài lần build test).
+- Ngôn ngữ: C#, JavaScript.
+- UI/Desktop: WPF (.NET 8, `net8.0-windows`).
+- Web embed: `Microsoft.Web.WebView2`.
+- Kiến trúc: desktop app + JS bridge inject vào WebView2/frame.
+- Dữ liệu lưu local: JSON config/stats trong `%LOCALAPPDATA%\BaccaratViVoGaming`.
+- Log local: `%LOCALAPPDATA%\BaccaratViVoGaming\logs\yyyyMMdd.log`.
+- Bản quyền: fetch JSON từ GitHub raw (không DB server nội bộ).
+- Chế độ build:
+1. Debug dùng plugin mode cho AutoBetHub/ABX.Core.
+2. Release self-contained single-file.
 
 ## Các file / module quan trọng đang liên quan
-- [MainWindow.xaml](d:\PROJECT\ABXHubSolution\BaccaratSexyCasino\MainWindow.xaml)
-- [MainWindow.xaml.cs](d:\PROJECT\ABXHubSolution\BaccaratSexyCasino\MainWindow.xaml.cs)
-- [v4_js_xoc_dia_live.js](d:\PROJECT\ABXHubSolution\BaccaratSexyCasino\v4_js_xoc_dia_live.js)
-- [devtool_probe_bridge_handshake.js](d:\PROJECT\ABXHubSolution\BaccaratSexyCasino\devtool_probe_bridge_handshake.js)
-- [devtool_probe_bridge_context.js](d:\PROJECT\ABXHubSolution\BaccaratSexyCasino\devtool_probe_bridge_context.js)
-- Log runtime chính để debug:
-  - `C:\Users\Admin\AppData\Local\BaccaratSexyCasino\logs\20260329.log`
+- `MainWindow.xaml`
+- `MainWindow.xaml.cs`
+- `v4_js_xoc_dia_live.js` (embedded resource, bridge + scan logic)
+- `WebView2LiveBridge.cs`
+- `Models.cs` (`CwSnapshot`, `CwTotals`...)
+- `ProgressWidthConverter.cs`
+- `MainWindow.Startup.cs`
+- `Tasks/TaskUtil.cs` và các `Tasks/*.cs` strategy
+- Log runtime:
+1. `C:\Users\Admin\AppData\Local\BaccaratViVoGaming\logs\20260415.log`
+2. `C:\Users\Admin\AppData\Local\BaccaratViVoGaming\logs\20260416.log` (nếu phát sinh mới)
 
 ## Logic chính đã thiết kế (tên hàm, class, luồng xử lý)
-- Class trung tâm: `MainWindow`.
-- Luồng bấm vào game: `VaoXocDia_Click(...)`.
-- Các hàm hạ tầng bridge/web:
-  - `EnsureWebReadyAsync()`
-  - `EnsureToolBridgeInjectedAsync()`
-  - `InjectOnPopupDocAsync()`, hook frame/popup events
-  - `CoreWebView2_WebMessageReceived(...)` + `HandleIncomingWebMessageAsync(...)`
-- Các hàm nhận diện URL game:
-  - `IsLikelyBetGameUrl(...)`
-  - `IsLikelyBetGameReadyUrl(...)` (webMain/singleBacTable/gamehall)
-  - `IsLikelyBetGatewayUrl(...)` (apiLogin gateway)
-- Các hàm wait/route:
-  - `WaitForBetGameUrlAsync(...)`
-  - `TryRouteHostIframeToPopupAsync()`
-  - `GetBestGameIframeUrlFromHostAsync()`
-- Các hàm probe/log mới:
-  - `LogBridgeProbeAsync(...)`, `LogBridgeProbeOnWebViewAsync(...)`, `ProbeFrameBridgeAsync(...)`
-  - `HostLaunchProbeScript`, `LogHostLaunchProbeAsync(...)`, `TraceHostLaunchAfterClickAsync(...)`
-  - `TryParseProviderErrorUrl(...)`
-  - `IsPlayerFlowUrl(...)` + log `HTTP.resp/player-flow`
-- Các hàm fallback mới thêm gần cuối:
-  - `WaitForGameSignalAsync(...)`, `HasRecentGameSignal(...)`
-  - `ForceReloadLikelyGameIframeAsync()`
-- Logic JS chính:
-  - Trong `v4_js_xoc_dia_live.js`, `__cw_isGamePopupPage()` đã mở rộng cho `/player/singleBacTable.jsp` và `/player/gamehall.jsp`.
-  - Bridge function chính cần có trong context game: `__cw_readSnapshot`, `__cw_startPush`, `__cw_bet`.
-- Pipeline cược:
-  - `GetBetPipeReadyState(...)` trước đây chặn cứng nếu `src` không phải game URL.
-  - Đã nới điều kiện: nếu `src` không phải game URL nhưng có `tick` mới thì cho phép chạy (`allow-by-recent-tick`).
+- `VaoXocDia_Click(...)`
+- Vai trò hiện tại: chỉ xác thực bản quyền (`EnsureLicenseAsync`) + đảm bảo bridge.
+- Không còn check game-ready ở nút login tool.
+
+- `PlayXocDia_Click(...)`
+- Vai trò: bắt đầu cược, có check context game bằng `EnsureGameContextReadyForPlayAsync(...)`.
+
+- `EnsureGameContextReadyForPlayAsync(...)`
+- Chuỗi fallback khi chưa thấy game:
+1. check tín hiệu game gần nhất
+2. wait URL game (`WaitForBetGameUrlAsync`)
+3. wait tick game (`WaitForGameSignalAsync`)
+4. route/reload iframe/popup fallback
+5. log probe chẩn đoán nếu fail
+
+- `HandleIncomingWebMessageAsync(string msg, string source)`
+- Nhận message bridge (`tick`, `cwLogBatch`, `result`, ...).
+- Parse snapshot bằng `ParseCwSnapshotLoose`.
+- Gộp nguồn tick từ `main-msg`, `main-frame`, `popup-frame`, `popup-pull`.
+- Cập nhật UI progress/status/kết quả/username/số dư.
+
+- `TryPullPopupTickFallbackAsync()`
+- Poll fallback từ popup khi không có tick push.
+- Execute JS `PULL_POPUP_TICK_NOW`.
+
+- `NormalizeProgressPercent(double? prog, string? source)`
+- Chuẩn hóa `prog` về %.
+- Nhận diện source ratio/seconds để map đúng.
+
+- `BuildStatusUiText(statusRaw, prog)`
+- Map status DOM thành text UI.
+
+- `SetModeUi(bool isGame)` + `ApplyUiMode(bool isGame)`
+- Điều khiển ẩn/hiện nhóm login, strategy, status, stats.
+
+- `ApplyMouseShieldFromCheck()`
+- Điều khiển khóa chuột WebView theo checkbox/tab running.
 
 ## Những lỗi đã gặp & nguyên nhân chính
-- Lỗi kỹ thuật quan sát được từ log:
-  - `Blocked a frame with origin "https://vipbet389.com" from accessing a cross-origin frame.`
-  - Khi route popup trực tiếp vào `apiLogin` từng gặp:
-    - `status=1008`
-    - `WalletLiveToken is not match`
-- Tình trạng mới nhất (sau các patch):
-  - `HTTP.resp/player-flow` chỉ thấy `apiLogin ... status=200`.
-  - `HostLaunchProbe` cho thấy iframe luôn là `apiLogin`, không đổi sang `singleBacTable/webMain/gamehall`.
-  - `WaitForBetGameUrl` timeout nhiều lần.
-  - `BridgeProbe` tại top luôn `read/start/bet = undefined`.
-- Nguyên nhân chính hiện tại:
-  - Click hiện tại khả năng bấm nhầm target UI (promo/card), không kích hoạt đúng flow mở game table.
-  - Hoặc flow mở game thực sự chạy trong iframe cross-origin mà app chưa inject được vào context frame đang hoạt động.
-  - Popup-route bằng `apiLogin` không bền vì token/session có thể ràng buộc theo flow gốc (gây mismatch).
+- Canvas Watch không load lúc chuyển sang Vivo.
+- Nguyên nhân: điều kiện JS/URL cũ ưu tiên `singleBacTable.jsp` + chưa match đủ Vivo host/query.
+
+- Canvas Watch hiện nhưng thiếu dữ liệu (tên nhân vật, tài khoản, trạng thái).
+- Nguyên nhân: tail selector cũ không còn đúng với DOM Vivo.
+
+- `TextMap` lúc đầu không hoạt động đúng ở trang mới.
+- Nguyên nhân: context/frame/tail cũ, lấy nhầm trang lobby hoặc link cũ.
+
+- Nút `Đăng nhập Tool` từng không bấm được hoặc bị chặn logic.
+- Nguyên nhân: trước đó có check game context/ready không phù hợp với nghiệp vụ login-only.
+
+- Countdown/prog không đẩy JS -> C# hoặc hiển thị sai.
+- Nguyên nhân:
+1. Chuyển đổi seconds/ratio/% chưa đồng nhất.
+2. Tick nguồn yếu (`popup-pull`) có `prog=-` ghi đè.
+3. UI hiển thị từng bị neo theo giây cũ.
+
+- Thời gian trạng thái từng bị “kẹt 1s”.
+- Nguyên nhân: pipeline cũ chưa đồng bộ hoàn chỉnh sang `%`.
+
+- Hiện tượng app đơ khi vào game, bảng điều khiển lag/khó bấm.
+- Nguyên nhân chính nghi ngờ cao: burst tick `popup-frame` + log/perf message quá dày + nhiều `Dispatcher.BeginInvoke` liên tục, làm nghẽn UI thread.
+- Log xác nhận: có thời điểm hàng chục dòng `[PERF][MSG] abx=tick | src=popup-frame` trong cùng 1 giây.
+
+- Vùng login từng không tự ẩn sau login thành công.
+- Nguyên nhân: `SetModeUi` có giai đoạn bị hardcode `GroupLoginNav.Visibility = Visible`.
 
 ## Các giải pháp đã thử, giải pháp hiện tại đang dùng
-- Đã thử và giữ:
-  - Mở rộng nhận diện trang game trong JS (`singleBacTable/gamehall`).
-  - Bổ sung bridge probe toàn diện (`[BridgeProbe]`) ở main/popup/frame.
-  - Bổ sung probe host theo thời gian (`[HostLaunchProbe]`) trước/sau click + trace 12s.
-  - Bổ sung log network `player-flow` để bắt URL `/player/*`.
-  - Parse và log provider error (`[PopupWeb][ProviderError]`, `[VaoXocDia][provider-error]`).
-  - Nới gate pipeline bằng tín hiệu tick thay vì phụ thuộc tuyệt đối vào `Web.Source`.
-- Đã thử nhưng không giữ làm đường chính:
-  - Route popup sang iframe `apiLogin` để lấy context game.
-  - Kết quả từng rơi vào `WalletLiveToken is not match`, nên hiện có chặn route popup nếu candidate chỉ là `apiLogin`.
-- Giải pháp hiện tại trong code:
-  - Ưu tiên giữ trên host, click mở game.
-  - Nếu chưa có game signal thì force reload iframe candidate để kích lại frame lifecycle/injection.
-  - Theo dõi thêm bằng `TickDiag`, `WaitForGameSignal`, `HostLaunchProbe`, `player-flow`.
+- Đã mở rộng điều kiện nhận diện Vivo URL trong bridge.
+- Đã bỏ ràng buộc `singleBac only`.
+- Đã update tail mới theo DOM Vivo cho:
+1. Tài khoản/số dư (balance)
+2. Trạng thái status text
+- Đã bỏ fallback về tail cũ theo yêu cầu user ở một số nhánh tail chính.
+
+- Đã bỏ nghiệp vụ detect need-login -> autofill -> click login.
+- `Đăng nhập Tool` hiện theo hướng check license/account-only.
+
+- Đã nghiên cứu countdown pseudo-element:
+1. quét `::before/::after`
+2. lấy `pseudoAfterW/rootW`
+3. chuẩn hóa về `%` còn lại
+4. đẩy vào `prog` pipeline
+
+- Đã đổi UI “ĐẶT KHI CÒN” sang `%`.
+- Đã thêm clamp/sync decision percent:
+1. `ClampDecisionPercent`
+2. `SyncDecisionPercentFromConfig`
+3. `SyncDecisionPercentFromUi`
+
+- Đã thêm nhánh ổn định tick/progress gần đây:
+1. giữ `prog` trước đó lâu hơn khi source `popup-pull` thiếu dữ liệu
+2. giảm spam perf tick log
+3. lọc duplicate burst tick gần nhau
+4. throttle cập nhật UI tick
+
+- Đã sửa lại `SetModeUi` để login panel có thể `Collapsed` khi panel chính đã bật (`isGame || _licenseVerified`).
 
 ## Việc còn dang dở / TODO
-- TODO 1: Xác nhận click target đúng cho `vipbet389`:
-  - Hiện `HostLaunchProbe.xocDiaHits` cho thấy text bị dính nội dung promo dài.
-  - Cần khóa selector theo container game-list thật của site này (không click card quảng bá).
-- TODO 2: Chốt luồng mở game thật:
-  - Sau click phải thấy ít nhất một URL `/player/singleBacTable.jsp` hoặc `/player/gamehall.jsp` hoặc `/player/webMain.jsp` trong `player-flow`/probe.
-- TODO 3: Nếu site giữ iframe `apiLogin` nhưng game render nội bộ:
-  - Cần đảm bảo inject vào `CoreWebView2Frame` hiện hữu (frame đã tạo trước khi hook).
-  - Cân nhắc cơ chế “re-arm frame bridge” cho frame existing ngay sau `EnsureToolBridgeInjectedAsync`.
-- TODO 4: Theo dõi log mới sau patch:
-  - Bắt các tag: `[VaoXocDia]`, `[HostLaunchProbe]`, `[ForceReloadIframe]`, `[WaitForGameSignal]`, `[TickDiag]`, `HTTP.resp/player-flow`.
-- TODO 5: Sau khi có `TickDiag` ổn định:
-  - Verify `GetBetPipeReadyState` và luồng task cược không bị stop sai do `bet-src-not-game`.
-- TODO 6: Build environment:
-  - Build debug đôi lúc fail do lock file exe/dll hoặc thiếu `ABX.Core.dll` path; đây là vấn đề môi trường build, không phải logic bug chính.
+- Reproduce lại bug mới nhất: “vào game xong app đơ, không bấm được Đăng nhập Tool”.
+- Thu log mới đúng thời điểm freeze (2–5 phút quanh lúc đơ), tập trung:
+1. tần suất `[PERF][MSG] abx=tick`
+2. `TickDiag` source mix (`popup-frame` vs `popup-pull`)
+3. có/không `LockMouse` bị bật nhầm
 
-## Snapshot trạng thái hiện tại
-- `new.wencheng.cc`: đang hoạt động tốt.
-- `vipbet389.com`: chưa bắt được dữ liệu game.
-- Kết luận ngắn gọn: app đang vào được host + thấy iframe `apiLogin`, nhưng chưa kích hoạt/đi tới context table game để bridge phát tick.
+- Kiểm tra lại tương tác UI panel phải luôn click được:
+1. xác nhận không có overlay WPF đè lên panel phải
+2. xác nhận `MouseShield` chỉ phủ web area, không phủ control panel
 
+- Tối ưu thêm luồng tick trên UI thread:
+1. giảm tần suất `Dispatcher.BeginInvoke`
+2. tách cập nhật nặng (seq icon/result image/log) khỏi mỗi tick
+3. chỉ cập nhật khi thay đổi dữ liệu thực sự
 
+- Ưu tiên nguồn prog:
+1. ưu tiên `popup-frame` có `dom-pseudo-countdown`
+2. không để `popup-pull` trống kéo tụt UI state
 
-Xem log : 
-C:\Users\Admin\AppData\Local\BaccaratSexyCasino\logs\20260329.log
-Vẫn không lấy được dữ liệu
+- Xác nhận lại hành vi ẩn/hiện panel login sau license success trong mọi mode:
+1. home
+2. popup game
+3. khi quay lại lobby
 
+- Chốt test regression end-to-end:
+1. login tool
+2. mở game
+3. canvas watch đủ dữ liệu
+4. prog % chạy mượt
+5. panel không đơ, button click ổn
 
+## Gợi ý điểm bắt đầu cho chat mới
+- Bắt đầu từ `MainWindow.xaml.cs` các đoạn:
+1. `SetModeUi`
+2. `HandleIncomingWebMessageAsync`
+3. `TryPullPopupTickFallbackAsync`
+4. `ApplyMouseShieldFromCheck`
+5. `VaoXocDia_Click`
+- Đính kèm log mới nhất khi tái hiện freeze để khoanh vùng chính xác.
 
-Lưy ý : Kiểm tra và sửa lại code cho chính xác, chỉ sửa phần thay đổi của file, không gây ảnh hưởng đến nghiệp vụ khác
-Đọc/ghi file bằng UTF-8, Encoding UTF8, viết code chuẩn UTF-8
-Sửa file không được làm lỗi ký tự UTF8 trong code và ký tự tiếng việt
-Giao tiếp bằng tiếng việt
