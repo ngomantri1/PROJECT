@@ -7589,8 +7589,9 @@
             chips = res.chips;
             if (!plan.length) {
                 if (!__cw_hasCocos()) {
-                    console.warn('[CW BET] DOM mode fallback: tap target with current selected chip');
-                    await tapSide(side);
+                    // Không fallback click cửa khi chưa xác định được plan/chip:
+                    // dễ gây cộng dồn sai nếu chip đang chọn không đúng.
+                    console.warn('[CW BET] DOM mode: plan rỗng, bỏ qua để tránh bet sai');
                     return;
                 }
                 console.warn('[CW BET] Không lập được plan');
@@ -8123,6 +8124,7 @@
                     node: domTgt.el,
                     el: domTgt.el,
                     dom: true,
+                    side: wantDom,
                     source: domTgt.source,
                     text: domTgt.text,
                     tail: domTgt.tail,
@@ -8151,8 +8153,10 @@
                 if (list.length && (!best || (list[0].area || 0) > (best.area || 0)))
                     best = list[0];
             }
-            if (best && best.node)
+            if (best && best.node) {
+                best.side = WANT;
                 return best;
+            }
         }
         var btn = findSide(side);
         if (!btn)
@@ -8160,7 +8164,8 @@
         return {
             node: btn,
             rect: rectFromNodeCompat(btn),
-            area: 0
+            area: 0,
+            side: WANT
         };
     }
     function emitBtnToggle(node) {
@@ -8849,19 +8854,124 @@
             return null;
         return val;
     }
+    function domStakeUnitsFromMoneyValue(raw) {
+        try {
+            if (raw == null)
+                return null;
+            if (typeof raw === 'number' && isFinite(raw)) {
+                if (raw > 1000 && (raw % 1000) === 0)
+                    return Math.floor(raw / 1000);
+                if (raw > 1 && raw < 1000)
+                    return Math.floor(raw);
+            }
+            var amt = parseAmountLoose(String(raw || ''));
+            if (amt != null && amt > 0)
+                return Math.floor(amt / 1000);
+            return parseStakeUnitsLoose(raw);
+        } catch (_) {
+            return null;
+        }
+    }
+    function domCollectLabelRectsFromDoc(doc, source) {
+        var out = [];
+        if (!doc || !doc.querySelectorAll)
+            return out;
+        var all = [];
+        try {
+            all = doc.querySelectorAll('body *');
+        } catch (_) {
+            all = [];
+        }
+        var seen = {};
+        for (var i = 0; i < all.length; i++) {
+            var el = all[i];
+            if (!domVisible(el))
+                continue;
+            var txt = '';
+            try {
+                txt = domCollapse(el.innerText || el.textContent || '');
+            } catch (_) {
+                txt = '';
+            }
+            if (!isTextCandidate(txt))
+                continue;
+            var r = null;
+            try {
+                r = el.getBoundingClientRect();
+            } catch (_) {
+                r = null;
+            }
+            if (!r || r.width < 4 || r.height < 4)
+                continue;
+            var key = Math.round(r.left) + '|' + Math.round(r.top) + '|' + Math.round(r.width) + '|' + Math.round(r.height) + '|' + txt.slice(0, 40);
+            if (seen[key])
+                continue;
+            seen[key] = 1;
+            var tail = '';
+            try {
+                tail = domTailOfEl(el) || '';
+            } catch (_) {
+                tail = '';
+            }
+            out.push({
+                idx: out.length + 1,
+                text: txt,
+                x: Math.round(r.left),
+                y: Math.round(r.top),
+                w: Math.round(r.width),
+                h: Math.round(r.height),
+                sx: Math.round(r.left),
+                sy: Math.round(r.top),
+                sw: Math.round(r.width),
+                sh: Math.round(r.height),
+                n: null,
+                tail: tail,
+                tl: String(tail || '').toLowerCase(),
+                element: el,
+                source: String(source || '')
+            });
+        }
+        return out;
+    }
     function domReadTargetStakeUnits(tgt, expectedUnits) {
         try {
             if (!tgt || !tgt.rect)
                 return null;
+            // Ưu tiên đọc trực tiếp trên target trước khi scan label xung quanh.
+            if (tgt.el) {
+                var ownUnits = parseStakeUnitsLoose(domTextOf(tgt.el));
+                if (!(ownUnits > 0)) {
+                    var ownMoney = parseAmountLoose(domTextOf(tgt.el));
+                    if (ownMoney != null && ownMoney > 0)
+                        ownUnits = Math.floor(ownMoney / 1000);
+                }
+                if (ownUnits > 0) {
+                    return {
+                        val: ownUnits,
+                        text: domTextOf(tgt.el) || '',
+                        tail: domTailOf(tgt.el),
+                        x: Math.round(tgt.rect.x + tgt.rect.w * 0.5),
+                        y: Math.round(tgt.rect.y + tgt.rect.h * 0.5),
+                        via: 'target-text'
+                    };
+                }
+            }
             var rect = tgt.rect;
             var cx0 = rect.x + rect.w / 2;
             var cy0 = rect.y + rect.h / 2;
-            var texts = buildTextRects();
+            var texts = [];
+            var doc = tgt && tgt.el && tgt.el.ownerDocument ? tgt.el.ownerDocument : null;
+            if (doc)
+                texts = domCollectLabelRectsFromDoc(doc, tgt.source || '');
+            if (!texts || !texts.length)
+                texts = buildTextRects();
             var best = null;
             var bestScore = -1e9;
             for (var i = 0; i < texts.length; i++) {
                 var t = texts[i];
                 var val = parseStakeUnitsLoose(t.text);
+                if (!(val > 0))
+                    val = domStakeUnitsFromMoneyValue(t.text);
                 if (!(val > 0))
                     continue;
                 var cx = t.x + t.w / 2;
@@ -8880,7 +8990,7 @@
                 score -= Math.round(dist2(cx, cy, cx0, cy0) / 12);
                 if (score > bestScore) {
                     bestScore = score;
-                    best = { val: val, text: t.text, tail: t.tail, x: cx, y: cy };
+                    best = { val: val, text: t.text, tail: t.tail, x: cx, y: cy, via: 'near-target' };
                 }
             }
             return best;
@@ -8888,12 +8998,124 @@
             return null;
         }
     }
-    async function domWaitTargetStakeUnits(tgt, expectedUnits, timeout) {
+    function domReadStakeUnitsBySide(side, expectedUnits, preferDoc) {
+        try {
+            var want = normalizeSide(side);
+            if (!want)
+                return null;
+            var candidates = [];
+            var seen = {};
+            function pushCandidate(c, bonus) {
+                if (!c)
+                    return;
+                var key = String(c.source || '') + '|' + Math.round(c.x || 0) + '|' + Math.round(c.y || 0) + '|' + Math.round(c.w || 0) + '|' + Math.round(c.h || 0) + '|' + want;
+                if (seen[key])
+                    return;
+                seen[key] = 1;
+                c._bonus = Number(bonus || 0);
+                candidates.push(c);
+            }
+            var best = domPickBestBetTargets();
+            var bestTgt = best && best.targets ? best.targets[want] : null;
+            if (bestTgt)
+                pushCandidate(bestTgt, 700);
+            var contexts = domGetBetContexts();
+            for (var i = 0; i < contexts.length; i++) {
+                var ctx = contexts[i];
+                var rows = domCollectBetTargetCandidates(ctx.doc, ctx.source);
+                for (var j = 0; j < rows.length; j++) {
+                    var row = rows[j];
+                    if (normalizeSide(row.side) !== want)
+                        continue;
+                    var bonus = 180;
+                    if (ctx.doc === preferDoc)
+                        bonus += 260;
+                    if (String(ctx.source || '') === 'top/frame[1]')
+                        bonus += 90;
+                    pushCandidate(row, bonus);
+                }
+            }
+            function scan(strictDoc) {
+                var bestHit = null;
+                var bestScore = -1e9;
+                for (var k = 0; k < candidates.length; k++) {
+                    var c = candidates[k];
+                    var cdoc = c && c.el && c.el.ownerDocument ? c.el.ownerDocument : null;
+                    if (strictDoc && preferDoc && cdoc !== preferDoc)
+                        continue;
+                    var tgt = {
+                        node: c.el || null,
+                        el: c.el || null,
+                        dom: true,
+                        side: want,
+                        source: c.source || '',
+                        text: c.text || '',
+                        tail: c.tail || '',
+                        rect: {
+                            x: c.x || 0,
+                            y: c.y || 0,
+                            w: c.w || 0,
+                            h: c.h || 0,
+                            sx: c.x || 0,
+                            sy: c.y || 0,
+                            sw: c.w || 0,
+                            sh: c.h || 0
+                        },
+                        area: Number(c.w || 0) * Number(c.h || 0)
+                    };
+                    var hit = domReadTargetStakeUnits(tgt, expectedUnits);
+                    if (!hit || !(hit.val > 0))
+                        continue;
+                    var score = Number(c._bonus || 0);
+                    if (preferDoc && cdoc === preferDoc)
+                        score += 240;
+                    if (expectedUnits != null && hit.val === expectedUnits)
+                        score += 420;
+                    score += Math.min((tgt.area || 0), 60000) / 420;
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestHit = {
+                            val: hit.val,
+                            text: hit.text || '',
+                            tail: hit.tail || '',
+                            x: hit.x,
+                            y: hit.y,
+                            source: tgt.source || '',
+                            side: want,
+                            via: hit.via || 'side-read'
+                        };
+                    }
+                }
+                return bestHit;
+            }
+            return scan(true) || scan(false);
+        } catch (_) {
+            return null;
+        }
+    }
+    function domReadStakeUnitsWithFallback(tgt, expectedUnits, side) {
+        try {
+            var hit = domReadTargetStakeUnits(tgt, expectedUnits);
+            if (hit && hit.val > 0)
+                return hit;
+            var preferDoc = tgt && tgt.el && tgt.el.ownerDocument ? tgt.el.ownerDocument : null;
+            var want = normalizeSide(side || (tgt && tgt.side) || '');
+            if (want) {
+                var sideHit = domReadStakeUnitsBySide(want, expectedUnits, preferDoc);
+                if (sideHit && sideHit.val > 0)
+                    return sideHit;
+            }
+            return hit || null;
+        } catch (_) {
+            return null;
+        }
+    }
+    async function domWaitTargetStakeUnits(tgt, expectedUnits, timeout, side) {
         timeout = timeout || 420;
         var t0 = Date.now();
         while ((Date.now() - t0) < timeout) {
             await sleep(24);
-            var hit = domReadTargetStakeUnits(tgt, expectedUnits);
+            var hit = domReadStakeUnitsWithFallback(tgt, expectedUnits, side);
             if (hit && (expectedUnits == null || hit.val === expectedUnits))
                 return hit;
         }
@@ -8988,6 +9210,186 @@
         }
         return rows;
     }
+    function domLooksLikeClearOrCancelText(text) {
+        var s = NORM(text || '');
+        if (!s)
+            return false;
+        if (s === 'HUY' || s === 'CANCEL' || s === 'CLEAR' || s === 'XOA' || s === 'DELETE' || s === 'RESET')
+            return true;
+        if (s === 'DAT LAI' || s === 'XOA CUOC' || s === 'HUY CUOC' || s === 'HUY DAT')
+            return true;
+        return /(?:^| )(HUY|CANCEL|CLEAR|XOA|DELETE|RESET)(?: |$)/.test(s);
+    }
+    function domCollectClearCandidates(doc, source) {
+        var rows = [];
+        if (!doc || !doc.querySelectorAll)
+            return rows;
+        var all = doc.querySelectorAll('body *');
+        var seen = [];
+        for (var i = 0; i < all.length; i++) {
+            var el = all[i];
+            if (!domVisible(el))
+                continue;
+            var txt = domTextOf(el);
+            if (!domLooksLikeClearOrCancelText(txt))
+                continue;
+            if (domLooksLikeConfirmText(txt) || domLooksLikeRepeatOrDoubleText(txt))
+                continue;
+            var host = el;
+            try {
+                host = el.closest('button,span,p,[role=\"button\"],.btn,.button,.game_btn,.zone_bet_bottom button,.zone_bet_bottom > div,.zone_bet_bottom > li,.zone_bet_bottom li') || el;
+            } catch (_) {
+                host = el;
+            }
+            if (!host || !domVisible(host))
+                continue;
+            if (seen.indexOf(host) >= 0)
+                continue;
+            seen.push(host);
+            var rect = host.getBoundingClientRect();
+            if (rect.width < 26 || rect.height < 16 || rect.width > 240 || rect.height > 100)
+                continue;
+            if (rect.top < doc.defaultView.innerHeight * 0.64)
+                continue;
+            rows.push({
+                el: host,
+                text: domTextOf(host) || txt || '',
+                tail: domTailOf(host),
+                x: Math.round(rect.left),
+                y: Math.round(rect.top),
+                w: Math.round(rect.width),
+                h: Math.round(rect.height),
+                source: source || ''
+            });
+        }
+        return rows;
+    }
+    function domPickBestClearButton(side, preferDoc) {
+        var contexts = domGetBetContexts();
+        var best = null;
+        for (var i = 0; i < contexts.length; i++) {
+            var ctx = contexts[i];
+            var rows = domCollectClearCandidates(ctx.doc, ctx.source);
+            for (var j = 0; j < rows.length; j++) {
+                var c = rows[j];
+                var score = 0;
+                if (preferDoc && ctx.doc === preferDoc)
+                    score += 320;
+                if (String(ctx.source || '') === 'top/frame[1]')
+                    score += 120;
+                score += c.y > ctx.win.innerHeight * 0.78 ? 180 : 0;
+                if (/clear|cancel|huy|xoa|reset/i.test(String(c.text || '')))
+                    score += 120;
+                if (/zone_bet_bottom|betbox|game_btn|btn/i.test(String(c.tail || '')))
+                    score += 80;
+                score += Math.min((c.w || 0) * (c.h || 0), 36000) / 320;
+                c._score = score;
+                if (!best || score > best._score) {
+                    best = {
+                        doc: ctx.doc,
+                        source: c.source || '',
+                        el: c.el,
+                        text: c.text,
+                        tail: c.tail,
+                        x: c.x,
+                        y: c.y,
+                        w: c.w,
+                        h: c.h,
+                        side: normalizeSide(side || ''),
+                        _score: score
+                    };
+                }
+            }
+        }
+        return best;
+    }
+    async function domTryClearStakeForSide(side, timeout) {
+        timeout = timeout || 680;
+        var want = normalizeSide(side || '');
+        var t0 = Date.now();
+        while ((Date.now() - t0) < timeout) {
+            var preferDoc = null;
+            try {
+                var c0 = domGetContext();
+                preferDoc = c0 && c0.doc ? c0.doc : null;
+            } catch (_) {
+                preferDoc = null;
+            }
+            var btn = domPickBestClearButton(want, preferDoc);
+            if (!btn || !btn.el)
+                return false;
+            domMinimalClick(btn.el);
+            await sleep(40);
+            var stake = domReadStakeUnitsBySide(want, null, btn.doc);
+            if (!stake || !stake.val || stake.val <= 0)
+                return true;
+        }
+        return false;
+    }
+    var _domRoundLockByKey = {};
+    var _domRoundLockRoundId = 0;
+    function domGetCurrentRoundIdSafe() {
+        try {
+            if (typeof getRoundIdSafe === 'function')
+                return Number(getRoundIdSafe() || 0);
+        } catch (_) {}
+        try {
+            var seq = readSeqSafe();
+            return (seq && seq.length) ? Number(seq.length) : 0;
+        } catch (_) {
+            return 0;
+        }
+    }
+    function domBuildRoundContextKey(side) {
+        var rid = Number(domGetCurrentRoundIdSafe() || 0);
+        var source = 'top';
+        var href = '';
+        try {
+            var ctx = domGetContext();
+            source = String(ctx && ctx.source || 'top');
+            href = String(ctx && ctx.href || '');
+        } catch (_) {
+            source = 'top';
+            href = '';
+        }
+        if (!href) {
+            try {
+                href = String(location && location.href || '');
+            } catch (_) {
+                href = '';
+            }
+        }
+        href = String(href || '').replace(/[?#].*$/, '').slice(0, 180);
+        var want = normalizeSide(side || '') || 'ANY';
+        return rid + '|' + source + '|' + href + '|' + want;
+    }
+    function domGetRoundLockState(side) {
+        try {
+            var key = domBuildRoundContextKey(side);
+            return _domRoundLockByKey[key] || null;
+        } catch (_) {
+            return null;
+        }
+    }
+    function domArmRoundLock(side, reason, detail) {
+        try {
+            var key = domBuildRoundContextKey(side);
+            _domRoundLockByKey[key] = {
+                at: Date.now(),
+                side: normalizeSide(side || ''),
+                reason: String(reason || 'round-locked'),
+                detail: detail || null,
+                roundId: domGetCurrentRoundIdSafe()
+            };
+        } catch (_) {}
+    }
+    function domClearRoundLock(force) {
+        var rid = Number(domGetCurrentRoundIdSafe() || 0);
+        if (force || (rid !== _domRoundLockRoundId && rid > 0)) {
+            _domRoundLockByKey = {};
+            _domRoundLockRoundId = rid;
+        }
+    }
     function domPickBestConfirm() {
         var contexts = domGetBetContexts();
         var best = null;
@@ -9064,6 +9466,13 @@
                 py: py,
                 expectedStake: extra.expectedStake || null,
                 targetStake: extra.targetStake || null,
+                expectedAfter: extra.expectedAfter || null,
+                beforeStake: extra.beforeStake || null,
+                afterStake: extra.afterStake || null,
+                deltaStake: extra.deltaStake || null,
+                roundKey: extra.roundKey || '',
+                chipUnits: extra.chipUnits || null,
+                side: extra.side || '',
                 hitText: hit ? String(domTextOf(hit) || '') : '',
                 hitTail: hit ? String(domTailOf(hit) || '') : '',
                 hitHtml: hit ? domShortOuterHtml(hit) : ''
@@ -9135,19 +9544,38 @@
         return false;
     }
     async function domClickConfirmAfterBet(tgt, expectedUnits) {
-      var confirm = await domWaitConfirmReady(200);
+        var side = normalizeSide((tgt && tgt.side) || '');
+        var roundKey = domBuildRoundContextKey(side || 'ANY');
+        var beforeStakeHit = domReadStakeUnitsWithFallback(tgt, null, side);
+        var beforeStake = beforeStakeHit && beforeStakeHit.val > 0 ? Number(beforeStakeHit.val) : 0;
+        var expectedDelta = Number(expectedUnits || 0);
+        var expectedAfter = beforeStake + expectedDelta;
+        var confirm = await domWaitConfirmReady(200);
         if (!confirm) {
             console.warn('[cwBet++] không thấy nút xác nhận');
-            return false;
+            return {
+                ok: false,
+                reason: 'confirm-not-found',
+                side: side || '',
+                expectedStake: expectedUnits || null,
+                beforeStake: beforeStake || null,
+                expectedAfter: expectedAfter || null,
+                roundKey: roundKey
+            };
         }
         var shield = null;
         try { shield = domShieldRepeatButtons(confirm.doc); } catch (_) { shield = null; }
         try {
-            var readyStake = domReadTargetStakeUnits(tgt, expectedUnits);
+            var readyStake = domReadStakeUnitsWithFallback(tgt, expectedUnits, side);
             domEmitConfirmDiag('ready', confirm, {
                 shielded: shield ? shield.count : 0,
                 expectedStake: expectedUnits || null,
-                targetStake: readyStake ? readyStake.val : null
+                targetStake: readyStake ? readyStake.val : null,
+                expectedAfter: expectedAfter || null,
+                beforeStake: beforeStake || null,
+                roundKey: roundKey,
+                chipUnits: expectedUnits || null,
+                side: side || ''
             });
             var mode = 'element';
             cwBetDbg('[cwBet++] confirm click', {
@@ -9165,29 +9593,69 @@
                 mode: mode,
                 shielded: shield ? shield.count : 0,
                 expectedStake: expectedUnits || null,
-                targetStake: readyStake ? readyStake.val : null
+                targetStake: readyStake ? readyStake.val : null,
+                expectedAfter: expectedAfter || null,
+                beforeStake: beforeStake || null,
+                roundKey: roundKey,
+                chipUnits: expectedUnits || null,
+                side: side || ''
             });
             domMinimalClick(confirm.el);
-          await sleep(10);
-          var settled = await domWaitConfirmSettled(200);
-            var stakeHit = null;
+            await sleep(10);
+            var settled = await domWaitConfirmSettled(200);
+            var afterHit = null;
             if (expectedUnits != null)
-          stakeHit = await domWaitTargetStakeUnits(tgt, expectedUnits, 140);
+                afterHit = await domWaitTargetStakeUnits(tgt, null, 180, side);
+            var afterStake = afterHit && afterHit.val > 0 ? Number(afterHit.val) : 0;
+            var deltaStake = Math.max(0, afterStake - beforeStake);
+            var stakeHitByDelta = expectedUnits != null && deltaStake === expectedUnits;
+            var stakeHitByAfter = expectedUnits != null && afterStake === expectedAfter;
+            var stakeHitByAbsolute = expectedUnits != null && afterStake === expectedUnits;
+            var matched = (expectedUnits == null) ? true : (stakeHitByDelta || stakeHitByAfter || stakeHitByAbsolute);
             domEmitConfirmDiag('after_click', confirm, {
                 attempt: 1,
                 mode: mode,
                 shielded: shield ? shield.count : 0,
                 settled: settled,
                 expectedStake: expectedUnits || null,
-                targetStake: stakeHit ? stakeHit.val : null
+                targetStake: afterHit ? afterHit.val : null,
+                expectedAfter: expectedAfter || null,
+                beforeStake: beforeStake || null,
+                afterStake: afterStake || null,
+                deltaStake: deltaStake || null,
+                roundKey: roundKey,
+                chipUnits: expectedUnits || null,
+                side: side || ''
             });
-            if (settled && (expectedUnits == null || (stakeHit && stakeHit.val === expectedUnits)))
-                return true;
+            if (settled && matched) {
+                return {
+                    ok: true,
+                    reason: 'ok',
+                    settled: true,
+                    beforeStake: beforeStake,
+                    afterStake: afterStake,
+                    deltaStake: deltaStake,
+                    expectedStake: expectedUnits || null,
+                    expectedAfter: expectedAfter || null,
+                    roundKey: roundKey,
+                    side: side || ''
+                };
+            }
+            return {
+                ok: false,
+                reason: settled ? 'stake-mismatch' : 'confirm-not-settled',
+                settled: !!settled,
+                beforeStake: beforeStake,
+                afterStake: afterStake,
+                deltaStake: deltaStake,
+                expectedStake: expectedUnits || null,
+                expectedAfter: expectedAfter || null,
+                roundKey: roundKey,
+                side: side || ''
+            };
         } finally {
             try { if (shield && shield.restore) shield.restore(); } catch (_) {}
         }
-        console.warn('[cwBet++] xác nhận không hoàn tất');
-        return false;
     }
     window.__cw_diag_confirm_once = async function () {
         return await domClickConfirmAfterBet();
@@ -9756,12 +10224,59 @@
 
         return withLock(async function () {
             clearBetError();
+            domClearRoundLock(false);
             var tgt = findBetTarget(side);
             if (!tgt || !tgt.node) {
                 console.warn('[cwBet++] không thấy nút cửa:', side);
                 return failBet('bet target not found', { side: side });
             }
             var isDomMode = !__cw_hasCocos();
+            var lockState = isDomMode ? domGetRoundLockState(side) : null;
+            if (lockState && lockState.reason) {
+                console.warn('[cwBet++] round locked, skip bet', {
+                    side: side,
+                    reason: lockState.reason
+                });
+                return failBet('round-locked', {
+                    side: side,
+                    amount: raw,
+                    lockReason: lockState.reason,
+                    lockAt: lockState.at || 0
+                });
+            }
+            if (isDomMode) {
+                var preDoc = tgt && tgt.el && tgt.el.ownerDocument ? tgt.el.ownerDocument : null;
+                var preStakeHit = domReadStakeUnitsBySide(side, null, preDoc);
+                var preStake = preStakeHit && preStakeHit.val > 0 ? Number(preStakeHit.val) : 0;
+                if (preStake > 0) {
+                    cwBetDbg('[cwBet++] pre-clear before bet', {
+                        side: side,
+                        preStake: preStake
+                    });
+                    var preCleared = await domTryClearStakeForSide(side, 760).catch(function () { return false; });
+                    await sleep(24);
+                    var afterClearHit = domReadStakeUnitsBySide(side, null, preDoc);
+                    var afterClear = afterClearHit && afterClearHit.val > 0 ? Number(afterClearHit.val) : 0;
+                    if (!preCleared || afterClear > 0) {
+                        domArmRoundLock(side, 'pre-clear-failed', {
+                            beforeStake: preStake,
+                            afterStake: afterClear
+                        });
+                        console.warn('[cwBet++] pre-clear failed, lock round', {
+                            side: side,
+                            beforeStake: preStake,
+                            afterStake: afterClear
+                        });
+                        return failBet('round-locked', {
+                            side: side,
+                            amount: raw,
+                            reason: 'pre-clear-failed',
+                            beforeStake: preStake,
+                            afterStake: afterClear
+                        });
+                    }
+                }
+            }
             // Contract mới: amount input là đơn vị phỉnh.
             // DOM dùng trực tiếp theo mệnh giá phỉnh; non-DOM (Cocos) quy đổi về tiền thật x1000.
             var X = isDomMode ? raw : (raw * 1000);
@@ -9808,7 +10323,7 @@
                         return false;
                     });
                     if (!appliedOne) {
-        var stakeHitOne = await domWaitTargetStakeUnits(tgt, X, 140).catch(function () {
+                        var stakeHitOne = await domWaitTargetStakeUnits(tgt, X, 140, side).catch(function () {
                             return null;
                         });
                         appliedOne = !!(stakeHitOne && stakeHitOne.val === X);
@@ -9824,7 +10339,45 @@
                 }
                 if (isDomMode) {
                     var confirmOne = await domClickConfirmAfterBet(tgt, X);
-                    if (!confirmOne) {
+                    var confirmOneOk = confirmOne === true || (confirmOne && confirmOne.ok === true);
+                    if (!confirmOneOk) {
+                        var confirmOneReason = (confirmOne && confirmOne.reason) ? String(confirmOne.reason) : 'confirm-failed';
+                        // mismatch: thử clear cược và bắn lại 1 lần để tránh cộng dồn sai
+                        if (confirmOneReason === 'stake-mismatch') {
+                            var cleared = await domTryClearStakeForSide(side, 720).catch(function () { return false; });
+                            if (cleared) {
+                                var beforeRetry = sampleTotalsNow();
+                                var targetClickedRetry = clickBetTarget(tgt);
+                                var appliedRetry = await waitForTotalsChange(beforeRetry, side, 180).catch(function () { return false; });
+                                if (!appliedRetry) {
+                                    var stakeHitRetry = await domWaitTargetStakeUnits(tgt, X, 180, side).catch(function () { return null; });
+                                    appliedRetry = !!(stakeHitRetry && stakeHitRetry.val === X);
+                                }
+                                if (appliedRetry) {
+                                    var confirmRetry = await domClickConfirmAfterBet(tgt, X);
+                                    var confirmRetryOk = confirmRetry === true || (confirmRetry && confirmRetry.ok === true);
+                                    if (confirmRetryOk) {
+                                        await sleep(15);
+                                        clearBetError();
+                                        return true;
+                                    }
+                                    confirmOne = confirmRetry;
+                                    confirmOneReason = (confirmRetry && confirmRetry.reason) ? String(confirmRetry.reason) : 'confirm-retry-failed';
+                                } else {
+                                    confirmOneReason = 'retry-not-reflected';
+                                    if (!targetClickedRetry)
+                                        confirmOneReason = 'retry-click-failed';
+                                }
+                            } else {
+                                confirmOneReason = 'clear-failed-after-mismatch';
+                            }
+                        }
+                        if (confirmOneReason === 'stake-mismatch' || confirmOneReason === 'clear-failed-after-mismatch' || confirmOneReason === 'retry-not-reflected' || confirmOneReason === 'confirm-retry-failed' || confirmOneReason === 'retry-click-failed') {
+                            domArmRoundLock(side, 'stake-mismatch', {
+                                amount: X,
+                                detail: confirmOne || null
+                            });
+                        }
                         if (!appliedOne) {
                             console.warn('[cwBet++] click cửa không ghi nhận tiền exact-hit', {
                                 side: side,
@@ -9836,10 +10389,13 @@
                         }
                         console.warn('[cwBet++] confirm failed', {
                             side: side,
-                            amount: X
+                            amount: X,
+                            reason: confirmOneReason
                         });
                         resetChipFocusState(true, 'exact-hit-confirm-failed');
-                        return failBet('confirm failed', { side: side, amount: raw, chipUnits: X });
+                        if (confirmOneReason === 'stake-mismatch' || confirmOneReason === 'clear-failed-after-mismatch' || confirmOneReason === 'retry-not-reflected' || confirmOneReason === 'confirm-retry-failed' || confirmOneReason === 'retry-click-failed')
+                            return failBet('round-locked', { side: side, amount: raw, chipUnits: X, reason: confirmOneReason, confirm: confirmOne || null });
+                        return failBet('confirm failed', { side: side, amount: raw, chipUnits: X, reason: confirmOneReason, confirm: confirmOne || null });
                     }
                 }
                 await sleep(15);
@@ -9903,13 +10459,24 @@
             }
             if (isDomMode) {
                 var confirmOk = await domClickConfirmAfterBet(tgt, X);
-                if (!confirmOk) {
+                var confirmOkFlag = confirmOk === true || (confirmOk && confirmOk.ok === true);
+                if (!confirmOkFlag) {
+                    var confirmReason = (confirmOk && confirmOk.reason) ? String(confirmOk.reason) : 'confirm-failed';
+                    if (confirmReason === 'stake-mismatch') {
+                        domArmRoundLock(side, 'stake-mismatch', {
+                            amount: X,
+                            detail: confirmOk || null
+                        });
+                    }
                     console.warn('[cwBet++] confirm failed', {
                         side: side,
-                        amount: X
+                        amount: X,
+                        reason: confirmReason
                     });
                     resetChipFocusState(true, 'plan-confirm-failed');
-                    return failBet('confirm failed', { side: side, amount: raw, chipUnits: X });
+                    if (confirmReason === 'stake-mismatch')
+                        return failBet('round-locked', { side: side, amount: raw, chipUnits: X, reason: confirmReason, confirm: confirmOk || null });
+                    return failBet('confirm failed', { side: side, amount: raw, chipUnits: X, reason: confirmReason, confirm: confirmOk || null });
                 }
             }
             cwBetDbg('[cwBet++] DONE ►', {
@@ -11211,6 +11778,32 @@
                 return (seq && seq.length) ? seq.length : 0;
             } catch (_) { return 0; }
         }
+        function buildBetContextKey() {
+            try {
+                var rid = Number(getRoundIdSafe() || 0);
+                var source = 'top';
+                var href = '';
+                try {
+                    var ctx = domGetContext();
+                    source = String(ctx && ctx.source || 'top');
+                    href = String(ctx && ctx.href || '');
+                } catch (_) {
+                    source = 'top';
+                    href = '';
+                }
+                if (!href) {
+                    try {
+                        href = String(location && location.href || '');
+                    } catch (_) {
+                        href = '';
+                    }
+                }
+                href = String(href || '').replace(/[?#].*$/, '').slice(0, 180);
+                return rid + '|' + source + '|' + href;
+            } catch (_) {
+                return '';
+            }
+        }
 
         function normalizeIntent(intent) {
             try {
@@ -11226,6 +11819,7 @@
                     amt: amt,
                     tabId: tabId,
                     roundId: roundId,
+                    ctxKey: String(intent.ctxKey || intent.contextKey || buildBetContextKey() || ''),
                     at: Date.now()
                 };
             } catch (_) { return null; }
@@ -11249,6 +11843,21 @@
                             roundId: job.roundId,
                             side: job.side,
                             amount: job.amt,
+                            ts: Date.now()
+                        });
+                        continue;
+                    }
+                    var currentCtxKey = buildBetContextKey();
+                    if (job.ctxKey && currentCtxKey && job.ctxKey !== currentCtxKey) {
+                        safePost({
+                            abx: "bet_dropped",
+                            reason: "stale-context",
+                            tabId: job.tabId,
+                            roundId: job.roundId,
+                            side: job.side,
+                            amount: job.amt,
+                            queuedCtx: job.ctxKey,
+                            currentCtx: currentCtxKey,
                             ts: Date.now()
                         });
                         continue;
@@ -11305,6 +11914,7 @@
                         abx: "bet_queued",
                         tabId: job.tabId,
                         roundId: job.roundId,
+                        ctxKey: job.ctxKey || "",
                         side: job.side,
                         amount: job.amt,
                         ts: Date.now()
