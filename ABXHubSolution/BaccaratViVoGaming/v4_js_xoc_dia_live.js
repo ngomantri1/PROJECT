@@ -1545,7 +1545,7 @@
             parts.push(cols[c].items.map(function (it) { return it.v; }).join(''));
         }
         return {
-            seq: limitSeq52(parts.join('')),
+            seq: normalizeSeqNoLimit(parts.join('')),
             which: 'dom-baccarat',
             cols: cols,
             cells: cells
@@ -3039,12 +3039,9 @@
         return cols;
     }
 
-    function limitSeq52(seq) {
-        if (!seq)
-            return '';
-        if (seq.length <= 50)
-            return seq;
-        return seq.slice(-50);
+    function normalizeSeqNoLimit(seq) {
+        // JS không giới hạn độ dài chuỗi; giới hạn max 50 được xử lý ở C#.
+        return String(seq || '');
     }
 
     function readTKSeqDigits() {
@@ -3074,18 +3071,13 @@
                 s += String(arr[k].v);
             parts.push(s);
         }
-        var seq = limitSeq52(parts.join(''));
+        var seq = normalizeSeqNoLimit(parts.join(''));
         return {
             seq: seq,
             which: which,
             cols: cols,
             cells: cells
         };
-    }
-
-    function limitSeq50(seq) {
-        seq = String(seq || '');
-        return seq.length <= 50 ? seq : seq.slice(seq.length - 50);
     }
 
     function brParseRgb(s) {
@@ -3125,11 +3117,22 @@
             var rgb = brParseRgb(list[i]);
             if (!rgb)
                 continue;
-            if (rgb.r >= 150 && rgb.r > rgb.b * 1.12 && rgb.r > rgb.g * 1.05)
+            var r = Number(rgb.r || 0), g = Number(rgb.g || 0), b = Number(rgb.b || 0);
+            var spread = Math.max(r, g, b) - Math.min(r, g, b);
+            // Bỏ màu trung tính để tránh nhận nhầm marker trắng/xám.
+            if (spread < 18)
+                continue;
+
+            // Giữ B/P tương đối rộng để không mất marker thật ở theme Vivo.
+            if (r >= 140 && r > b * 1.06 && r > g * 1.03)
                 return 'B';
-            if (rgb.b >= 140 && rgb.b > rgb.r * 1.05 && rgb.b >= rgb.g * 0.95)
+            if (b >= 130 && b > r * 1.04 && b >= g * 0.90)
                 return 'P';
-            if (rgb.g >= 120 && rgb.g > rgb.r * 0.85 && rgb.g > rgb.b * 0.9)
+
+            // T: xanh lá trội vừa đủ (Vivo có nhiều shade xanh khác nhau).
+            var gDeltaR = g - r;
+            var gDeltaB = g - b;
+            if (g >= 92 && gDeltaR >= 12 && gDeltaB >= 8 && g > r * 1.04 && g > b * 1.03)
                 return 'T';
         }
         return '';
@@ -3140,15 +3143,27 @@
             return 'B';
         if (/^P$/.test(txt))
             return 'P';
-        if (/^(T|H)$/.test(txt))
+        if (/^(T|H|TIE)$/.test(txt))
             return 'T';
-        if (txt)
-            return '';
+        if (txt) {
+            // Label chữ dài thường là text UI, loại sớm.
+            // Text số (road cell) vẫn cho phép đi tiếp classify theo màu.
+            if (/[A-Z]/.test(txt))
+                return '';
+        }
+        var cssStroke = '';
+        var cssFill = '';
+        try {
+            cssStroke = (cs && cs.stroke != null) ? String(cs.stroke || '') : '';
+            cssFill = (cs && cs.fill != null) ? String(cs.fill || '') : '';
+        } catch (_) {}
         return brClassifyColor([
             cs.backgroundColor,
             cs.borderColor,
             cs.color,
             cs.outlineColor,
+            cssStroke,
+            cssFill,
             el.getAttribute ? el.getAttribute('fill') : '',
             el.getAttribute ? el.getAttribute('stroke') : ''
         ]);
@@ -3177,13 +3192,16 @@
         var out = [];
         var doc = ctx.doc;
         var view = ctx.win || window;
-        var maxX = (view.innerWidth || 1600) * (opts.maxXRatio || 0.18);
+        var viewW = (view.innerWidth || 1600);
+        var minX = viewW * (opts.minXRatio != null ? opts.minXRatio : 0);
+        var maxX = viewW * (opts.maxXRatio != null ? opts.maxXRatio : 1);
         var minY = (view.innerHeight || 900) * (opts.minYRatio || 0.72);
+        var minSize = opts.minSize || 6;
         var maxSize = opts.maxSize || 34;
         var maxChildren = opts.maxChildren || 2;
         var maxChildKeep = opts.maxChildKeep || 1;
         var roundRatio = opts.roundRatio || 0.28;
-        var all = doc.querySelectorAll('div,span,p,b,strong,button,svg,circle,td');
+        var all = doc.querySelectorAll('div,span,p,b,strong,button,svg,circle,ellipse,path,g,td');
         var seen = Object.create(null);
         if (diag) {
             diag.totalNodes = 0;
@@ -3208,15 +3226,16 @@
                 brDiagBump(diag, 'out-negative');
                 continue;
             }
-            if (r.left > maxX || r.top < minY) {
+            if (r.left < minX || r.left > maxX || r.top < minY) {
                 brDiagBump(diag, 'out-target-zone');
                 continue;
             }
-            if (r.width < 10 || r.height < 10 || r.width > maxSize || r.height > maxSize) {
+            if (r.width < minSize || r.height < minSize || r.width > maxSize || r.height > maxSize) {
                 brDiagBump(diag, 'size-filter');
                 brDiagSample(diag, 'size-filter', {
                     w: Math.round(r.width),
                     h: Math.round(r.height),
+                    minSize: minSize,
                     maxSize: maxSize
                 }, 3);
                 continue;
@@ -3235,7 +3254,12 @@
             var borderRadius = cs.borderRadius || '';
             var minSide = Math.min(r.width, r.height);
             var rx = brParseRadiusPx(borderRadius, minSide);
-            var roundHint = tag === 'circle' || /50%|999/.test(borderRadius) || rx >= (minSide * roundRatio);
+            var roundHint =
+                tag === 'circle' ||
+                tag === 'ellipse' ||
+                tag === 'path' ||
+                /50%|999/.test(borderRadius) ||
+                rx >= (minSide * roundRatio);
             if (!roundHint) {
                 brDiagBump(diag, 'not-round');
                 brDiagSample(diag, 'not-round', {
@@ -3394,15 +3418,16 @@
                 if (/^[BPTH]$/.test(String(comp[t].rawText || '').toUpperCase()))
                     textCount++;
             }
-            var allowSmall = (comp.length >= 2
-                    && minX <= screenW * 0.36
+            var allowSmall = (comp.length >= 4
+                    && (minX <= screenW * 0.36 || maxX >= screenW * 0.64)
                     && minY >= screenH * 0.54
                     && width <= 190
                     && height <= 230);
             if (!allowSmall && (comp.length < 8 || colCount < 2))
                 continue;
             var score = comp.length * 30;
-            score += Math.max(0, (screenW * 0.16 - minX)) * 10;
+            var edgeDist = Math.min(minX, Math.max(0, screenW - maxX));
+            score += Math.max(0, (screenW * 0.18 - edgeDist)) * 8;
             score += Math.max(0, (screenH - maxY)) * 0.2;
             score += Math.max(0, (screenH * 0.88 - minY));
             score += textCount * 80;
@@ -3419,10 +3444,10 @@
             if (height < 70) score -= 180;
             if (width < 45) score -= 160;
             if (width >= 45 && width <= 120) score += 260;
+            if (width > 120 && width <= 360) score += 160;
             if (height >= 95 && height <= 175) score += 220;
-            if (width > 135) score -= 420;
+            if (width > 380) score -= 180;
             if (height > 185) score -= 260;
-            if (minX > screenW * 0.12) score -= 420;
             if (minY > screenH * 0.9) score -= 260;
             if (!best || score > best.score) {
                 best = {
@@ -3604,7 +3629,7 @@
         var minX = board.minX - padX, maxX = board.maxX + padX, minY = board.minY - padY, maxY = board.maxY + padY;
         var out = [];
         var seen = Object.create(null);
-        var all = ctx.doc.querySelectorAll('div,span,p,b,strong,button,svg,circle,td');
+        var all = ctx.doc.querySelectorAll('div,span,p,b,strong,button,svg,circle,ellipse,path,g,td');
         for (var n = 0; n < all.length && n < 8000; n++) {
             var el = all[n];
             if (!domVisible(el))
@@ -3614,7 +3639,7 @@
             var gy = Math.round((ctx.offY || 0) + r.top);
             if (gx < minX || gx > maxX || gy < minY || gy > maxY)
                 continue;
-            if (r.width < 10 || r.height < 10 || r.width > 40 || r.height > 40)
+            if (r.width < 6 || r.height < 6 || r.width > 64 || r.height > 64)
                 continue;
             if (Math.abs(r.width - r.height) > 12)
                 continue;
@@ -3626,7 +3651,12 @@
             var minSide = Math.min(r.width, r.height);
             var rx = brParseRadiusPx(borderRadius, minSide);
             var tag = String(el.tagName || '').toLowerCase();
-            var roundHint = tag === 'circle' || /50%|999/.test(borderRadius) || rx >= (minSide * 0.18);
+            var roundHint =
+                tag === 'circle' ||
+                tag === 'ellipse' ||
+                tag === 'path' ||
+                /50%|999/.test(borderRadius) ||
+                rx >= (minSide * 0.18);
             if (!roundHint)
                 continue;
             var key = marker + '|' + Math.round(gx / 4) + '|' + Math.round(gy / 4);
@@ -3720,11 +3750,14 @@
     }
     function brFindBoardWithProfiles(contexts, screenW, screenH, diagOut) {
         var profiles = [
-            { maxXRatio: 0.18, minYRatio: 0.72, maxSize: 34, maxChildren: 2, maxChildKeep: 1, roundRatio: 0.28 },
-            { maxXRatio: 0.24, minYRatio: 0.68, maxSize: 38, maxChildren: 3, maxChildKeep: 2, roundRatio: 0.22 },
-            { maxXRatio: 0.30, minYRatio: 0.62, maxSize: 42, maxChildren: 4, maxChildKeep: 3, roundRatio: 0.18 }
+            { name: 'left-tight', minXRatio: 0.00, maxXRatio: 0.24, minYRatio: 0.68, minSize: 6, maxSize: 40, maxChildren: 3, maxChildKeep: 2, roundRatio: 0.22 },
+            { name: 'right-tight', minXRatio: 0.58, maxXRatio: 0.99, minYRatio: 0.50, minSize: 6, maxSize: 54, maxChildren: 5, maxChildKeep: 3, roundRatio: 0.16 },
+            { name: 'left-mid', minXRatio: 0.00, maxXRatio: 0.36, minYRatio: 0.58, minSize: 6, maxSize: 48, maxChildren: 4, maxChildKeep: 3, roundRatio: 0.18 },
+            { name: 'right-mid', minXRatio: 0.46, maxXRatio: 1.00, minYRatio: 0.44, minSize: 6, maxSize: 60, maxChildren: 6, maxChildKeep: 4, roundRatio: 0.14 },
+            { name: 'full-lower', minXRatio: 0.02, maxXRatio: 0.99, minYRatio: 0.40, minSize: 6, maxSize: 64, maxChildren: 7, maxChildKeep: 5, roundRatio: 0.12 }
         ];
-        var bestPack = { board: null, markers: [], profile: -1 };
+        var bestPack = { board: null, markers: [], profile: -1, profileName: '' };
+        var bestBoardRank = -1e9;
         if (diagOut) {
             diagOut.screen = { w: Number(screenW || 0), h: Number(screenH || 0) };
             diagOut.profiles = [];
@@ -3772,20 +3805,44 @@
                     height: Number(board.height || 0)
                 };
                 pdiag.reason = 'ok';
+                var boardRank = Number(board.score || 0)
+                    + Math.min(400, Number(allMarkers.length || 0) * 2)
+                    + Math.min(220, Number(board.colCount || 0) * 16)
+                    + Math.min(220, Number(board.rowCount || 0) * 20);
+                pdiag.board.rank = Number(boardRank || 0);
+                if (boardRank > bestBoardRank) {
+                    bestBoardRank = boardRank;
+                    bestPack = {
+                        board: board,
+                        markers: allMarkers,
+                        profile: p,
+                        profileName: String(profiles[p] && profiles[p].name || '')
+                    };
+                }
                 if (diagOut)
                     diagOut.profiles.push(pdiag);
-                bestPack = { board: board, markers: allMarkers, profile: p };
-                break;
+                continue;
             }
             pdiag.reason = allMarkers.length ? 'marker-found-but-no-board' : 'no-marker';
             if (diagOut)
                 diagOut.profiles.push(pdiag);
-            if (allMarkers.length > bestPack.markers.length)
-                bestPack = { board: null, markers: allMarkers, profile: p };
+            if (!bestPack.board && allMarkers.length > bestPack.markers.length)
+                bestPack = { board: null, markers: allMarkers, profile: p, profileName: String(profiles[p] && profiles[p].name || '') };
         }
         if (diagOut) {
             diagOut.bestMarkerProfile = Number(bestPack.profile);
+            diagOut.bestMarkerProfileName = String(bestPack.profileName || '');
             diagOut.bestMarkerCount = (bestPack.markers && bestPack.markers.length) ? bestPack.markers.length : 0;
+            if (bestPack.board) {
+                diagOut.bestBoard = {
+                    profile: Number(bestPack.profile || -1),
+                    profileName: String(bestPack.profileName || ''),
+                    score: Number(bestPack.board.score || 0),
+                    rowCount: Number(bestPack.board.rowCount || 0),
+                    colCount: Number(bestPack.board.colCount || 0),
+                    items: Number(bestPack.board.items && bestPack.board.items.length || 0)
+                };
+            }
         }
         return bestPack;
     }
@@ -3805,7 +3862,7 @@
     var _cwSnapshotBuildSource = '';
     var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     var _cwSeqLastPubSyncAt = 0;
-    var _cwSeqScriptRev = 'SEQFIX-20260320-r22';
+    var _cwSeqScriptRev = 'SEQFIX-20260416-r26';
     var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
@@ -4014,6 +4071,34 @@
             .replace(/H/g, 'T')
             .replace(/[^BPT]/g, '');
     }
+    function brSeqStats(seqVal) {
+        var s = String(seqVal || '');
+        var bp = 0, t = 0;
+        for (var i = 0; i < s.length; i++) {
+            var ch = String(s.charAt(i) || '').toUpperCase();
+            if (ch === 'B' || ch === 'P')
+                bp++;
+            else if (ch === 'T')
+                t++;
+        }
+        return {
+            len: s.length,
+            bp: bp,
+            t: t
+        };
+    }
+    function brIsReliableRoadSeq(seqVal) {
+        var st = brSeqStats(seqVal);
+        if (st.len <= 0)
+            return false;
+        // Baccarat road luôn cần có B/P; chuỗi all-T gần như chắc chắn là marker giả.
+        if (st.bp <= 0)
+            return false;
+        // Chuỗi dài mà chỉ có 1 B/P thường là nhiễu vùng legend/count.
+        if (st.len >= 4 && st.bp < 2)
+            return false;
+        return true;
+    }
     function brBuildActiveSeedKey(title, seq) {
         return String(title || '').trim() + '|' + brSanitizeSeq(seq || '');
     }
@@ -4114,7 +4199,7 @@
             var shouldAdopt = (pubVer > localVer) || (pubVer === localVer && pubLen > localLen);
             if (!shouldAdopt)
                 return false;
-            _domBeadSeqManaged = limitSeq50(pubSeq);
+            _domBeadSeqManaged = normalizeSeqNoLimit(pubSeq);
             _domSeqVersion = pubVer;
             _domSeqEvent = String(pub.evt || _domSeqEvent || 'sync-published');
             _domSeqAppend = String(pub.append || '');
@@ -4193,7 +4278,7 @@
             seqVersion: Number(_domSeqVersion || 0),
             seqEvent: String(_domSeqEvent || '')
         };
-        var nextSeq = limitSeq50(beforeSeq + clean);
+        var nextSeq = normalizeSeqNoLimit(beforeSeq + clean);
         // Không tăng seqVersion nếu append không làm đổi chuỗi (tránh spam round/settle).
         if (nextSeq === beforeSeq) {
             _domSeqEvent = 'no-change';
@@ -4474,7 +4559,7 @@
             } else if (!String(_domBeadSeqManaged || '')) {
                 // Khi vừa có board hợp lệ (đặc biệt lúc mới vào bàn), managed phải bám raw hiện tại.
                 var beforeInit = String(_domBeadSeqManaged || '');
-                _domBeadSeqManaged = limitSeq50(raw);
+                _domBeadSeqManaged = normalizeSeqNoLimit(raw);
                 _domSeqVersion = Math.max(Number(_domSeqVersion || 0) + 1, _domBeadSeqManaged.length);
                 _domSeqEvent = 'hydrate-init';
                 _domSeqAppend = _domBeadSeqManaged;
@@ -4839,7 +4924,7 @@
         if (cand.indexOf(base) === 0 && cand.length > base.length) {
             var directDelta = cand.length - base.length;
             if (directDelta === 1)
-                return limitSeq50(cand);
+                return normalizeSeqNoLimit(cand);
             return '';
         }
 
@@ -4850,7 +4935,7 @@
             if (base.slice(base.length - k) === cand.slice(0, k)) {
                 var delta = cand.slice(k);
                 if (delta.length > 0 && delta.length <= 1)
-                    return limitSeq50(base + delta);
+                    return normalizeSeqNoLimit(base + delta);
                 break;
             }
         }
@@ -4910,7 +4995,7 @@
         if (!cleanTitle || !raw)
             return false;
         var before = String(_domBeadSeqManaged || '');
-        _domBeadSeqManaged = limitSeq50(raw);
+        _domBeadSeqManaged = normalizeSeqNoLimit(raw);
         _domBeadSeqPrevRaw = raw;
         _domShoeResetPending = false;
         _domShoeResetAt = 0;
@@ -5027,15 +5112,80 @@
             _domNoBoardFirstAt = 0;
             _domNoBoardLastAt = 0;
             _domNoBoardLastReason = '';
+            var pickedProfileName = String(picked && picked.profileName || '');
+            // Mặc định KHÔNG trim-left để giữ được cột mới (đuôi kết quả) khi bàn cập nhật realtime.
+            // Có thể bật lại thủ công để debug bằng window.__cw_seq_trim_left = 1.
+            var trimLeftForProfile = false;
+            try {
+                trimLeftForProfile = Number(window.__cw_seq_trim_left || 0) === 1;
+            } catch (_) {
+                trimLeftForProfile = false;
+            }
             board = brTrimBoardToTopSixRows(board);
-            board = brTrimBoardToLeftTopSegment(board);
+            if (trimLeftForProfile)
+                board = brTrimBoardToLeftTopSegment(board);
             board = brNormalizeBoardToSixRows(board);
             board.items = brRefineBoardMarkers(contexts, board);
             board = brTrimBoardToTopSixRows(board);
-            board = brTrimBoardToLeftTopSegment(board);
+            if (trimLeftForProfile)
+                board = brTrimBoardToLeftTopSegment(board);
             board = brNormalizeBoardToSixRows(board);
             var gridPack = brBuildGrid6xN(board.items);
             var rawSeq = brSequenceFromGrid(gridPack);
+            var rawStat = brSeqStats(rawSeq);
+            var boardItems = Number(board.items && board.items.length || 0);
+            var boardRows = Number(board.rowCount || 0);
+            var boardCols = Number(board.colCount || 0);
+            var sparseShortRaw = (boardItems < 4 || boardRows < 2 || boardCols < 2) && rawStat.len < 4;
+            if (!brIsReliableRoadSeq(rawSeq) || sparseShortRaw) {
+                var rejectReason = !brIsReliableRoadSeq(rawSeq) ? 'bead-raw-unreliable' : 'bead-board-sparse-short-raw';
+                _cwSeqDiagState.lastNoBoard = {
+                    at: Date.now(),
+                    failReason: rejectReason,
+                    profile: Number(picked && picked.profile != null ? picked.profile : -1),
+                    profileName: pickedProfileName,
+                    rawSeq: String(rawSeq || ''),
+                    rawLen: Number(rawStat.len || 0),
+                    rawBP: Number(rawStat.bp || 0),
+                    boardItems: boardItems,
+                    boardRows: boardRows,
+                    boardCols: boardCols
+                };
+                cwDbg('SEQ', 'dom-bead-reject', {
+                    reason: rejectReason,
+                    rawSeq: rawSeq,
+                    rawLen: Number(rawStat.len || 0),
+                    rawBP: Number(rawStat.bp || 0),
+                    boardMeta: {
+                        profile: Number(picked && picked.profile != null ? picked.profile : -1),
+                        profileName: pickedProfileName,
+                        items: boardItems,
+                        rowCount: boardRows,
+                        colCount: boardCols,
+                        minX: Number(board.minX || 0),
+                        minY: Number(board.minY || 0),
+                        width: Number(board.width || 0),
+                        height: Number(board.height || 0)
+                    },
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || '')
+                }, 900, 'dom-bead-reject|' + rejectReason + '|' + String(rawSeq || ''));
+                brArmShoeResetByNoBoard(rejectReason);
+                try {
+                    window.__cw_bead_raw_seq = '';
+                    window.__cw_bead_managed_seq = String(_domBeadSeqManaged || '');
+                } catch (_) {}
+                return {
+                    seq: _domBeadSeqManaged || '',
+                    rawSeq: '',
+                    which: 'dom-bead',
+                    seqVersion: _domSeqVersion,
+                    seqEvent: _domSeqEvent,
+                    cols: [],
+                    cells: []
+                };
+            }
             var managed = brMergeManagedSeq(rawSeq);
             _cwSeqDiagState.lastParserError = null;
             cwDbg('SEQ', 'dom-bead-read', {
@@ -5045,9 +5195,10 @@
                 managedLen: (managed || '').length,
                 boardMeta: {
                     profile: Number(picked && picked.profile != null ? picked.profile : -1),
-                    items: (board.items && board.items.length) ? board.items.length : 0,
-                    rowCount: Number(board.rowCount || 0),
-                    colCount: Number(board.colCount || 0),
+                    profileName: pickedProfileName,
+                    items: boardItems,
+                    rowCount: boardRows,
+                    colCount: boardCols,
                     minX: Number(board.minX || 0),
                     minY: Number(board.minY || 0),
                     width: Number(board.width || 0),
@@ -5290,7 +5441,7 @@
                 s += String(arr[k].v);
             parts.push(s);
         }
-        var seq = limitSeq52(parts.join(''));
+        var seq = normalizeSeqNoLimit(parts.join(''));
         return {
             seq: seq,
             which: which,
@@ -5302,6 +5453,18 @@
     function readTKSeq() {
         // Đồng bộ state theo global publisher để context cũ không kéo lùi seqVersion/seqLen.
         brSyncFromPublishedState('readTKSeq-entry');
+        function seqStatsLocal(seqVal) {
+            if (typeof brSeqStats === 'function')
+                return brSeqStats(seqVal);
+            var s = String(seqVal || '');
+            return { len: s.length, bp: 0, t: 0 };
+        }
+        function isReliableRoadSeq(seqVal) {
+            if (typeof brIsReliableRoadSeq === 'function')
+                return brIsReliableRoadSeq(seqVal);
+            var st = seqStatsLocal(seqVal);
+            return st.len >= 1 && st.bp >= 1;
+        }
         if (!_cwSeqRevLogged) {
             _cwSeqRevLogged = true;
             cwDbg('SEQFLOW', 'script-rev', {
@@ -5314,7 +5477,7 @@
             var beadRawSeq = (bead && bead.rawSeq) ? String(bead.rawSeq || '') : '';
             var cards = domScanBaccaratCards();
             var active = domPickActiveCard(cards);
-            var activeSeq = active ? limitSeq50(String(active.seq || '').replace(/H/g, 'T')) : '';
+            var activeSeq = active ? normalizeSeqNoLimit(String(active.seq || '').replace(/H/g, 'T')) : '';
             var activeTitle = active && active.title ? String(active.title || '') : '';
             _domLastActiveSeq = activeSeq;
             _domLastActiveSeqTitle = activeTitle;
@@ -5772,8 +5935,94 @@
                 }
             }
 
+            if (beadRawSeq) {
+                var beadRawStat = seqStatsLocal(beadRawSeq);
+                var beadManagedStat = seqStatsLocal(beadSeq);
+                if (!isReliableRoadSeq(beadRawSeq)) {
+                    cwDbg('SEQSRC', 'bead-raw-reject-unreliable', {
+                        beadRawSeq: beadRawSeq,
+                        beadRawLen: beadRawStat.len,
+                        beadRawBP: beadRawStat.bp,
+                        beadManagedLen: beadManagedStat.len,
+                        beadManagedBP: beadManagedStat.bp,
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent
+                    }, 1200, 'seqsrc-bead-raw-reject|' + beadRawStat.len + '|' + beadRawStat.bp + '|' + beadManagedStat.len + '|' + beadManagedStat.bp);
+                    beadRawSeq = '';
+                    if (!isReliableRoadSeq(beadSeq))
+                        beadSeq = '';
+                }
+            }
+
             // Board fail: không seed từ active, chỉ giữ managed hiện tại để tránh append sai.
             if (!beadRawSeq && activeSeq) {
+                if (!String(_domBeadSeqManaged || '').length) {
+                    var activeLen = String(activeSeq || '').length;
+                    var activeBP = 0;
+                    for (var ai = 0; ai < activeLen; ai++) {
+                        var au = String(activeSeq.charAt(ai) || '').toUpperCase();
+                        if (au === 'B' || au === 'P')
+                            activeBP++;
+                    }
+                    var allowActiveLiveFallback = (activeLen >= 4 && activeBP >= 2);
+                    if (!allowActiveLiveFallback) {
+                        _cwSeqDiagState.lastSourcePick = {
+                            source: 'dom-baccarat-managed-hold',
+                            reason: 'active-live-fallback-reject-short-or-no-bp',
+                            activeTitle: activeTitle,
+                            activeSeqLen: activeLen,
+                            activeBP: activeBP,
+                            seqVersion: _domSeqVersion,
+                            seqEvent: _domSeqEvent
+                        };
+                        cwDbg('SEQSRC', 'active-live-fallback-reject', {
+                            reason: 'short-or-no-bp',
+                            activeTitle: activeTitle,
+                            activeSeq: activeSeq,
+                            activeSeqLen: activeLen,
+                            activeBP: activeBP,
+                            managedLen: String(_domBeadSeqManaged || '').length,
+                            seqVersion: _domSeqVersion,
+                            seqEvent: _domSeqEvent
+                        }, 1200, 'seqsrc-active-live-reject|' + activeTitle + '|' + activeLen + '|' + activeBP + '|' + _domSeqVersion);
+                        return {
+                            seq: _domBeadSeqManaged || '',
+                            rawSeq: window.__cw_bead_raw_seq || '',
+                            which: 'dom-baccarat-hold-managed',
+                            seqVersion: _domSeqVersion,
+                            seqEvent: _domSeqEvent,
+                            cols: [],
+                            cells: []
+                        };
+                    }
+                    _domSeqEvent = 'active-live-fallback';
+                    _domSeqAppend = '';
+                    brPublishSeqState();
+                    _cwSeqDiagState.lastSourcePick = {
+                        source: 'dom-baccarat-active-live-fallback',
+                        reason: 'bead-missing-managed-empty',
+                        activeTitle: activeTitle,
+                        activeSeqLen: activeSeq.length,
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent
+                    };
+                    cwDbg('SEQSRC', 'active-live-fallback', {
+                        reason: 'bead-missing-managed-empty',
+                        activeTitle: activeTitle,
+                        activeSeqLen: activeSeq.length,
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent
+                    }, 1200, 'seqsrc-active-live-fallback|' + activeTitle + '|' + activeSeq.length + '|' + _domSeqVersion);
+                    return {
+                        seq: activeSeq,
+                        rawSeq: activeSeq,
+                        which: 'dom-baccarat-active-live-fallback',
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent,
+                        cols: active.cols || [],
+                        cells: active.cells || []
+                    };
+                }
                 var noBoardBurstActive = !!(
                     !_domShoeResetPending &&
                     Number(_domNoBoardStreak || 0) >= 2 &&
@@ -5875,7 +6124,7 @@
                     }, 6000, 'active-tail-extend-disabled|' + beadSeq.length + '|' + activeSeq.length + '|' + String(activeTitle || ''));
                 } else if (stitched) {
                     var beforeExtendLen = String(_domBeadSeqManaged || '').length;
-                    _domBeadSeqManaged = limitSeq50(stitched);
+                    _domBeadSeqManaged = normalizeSeqNoLimit(stitched);
                     var extendDeltaLen = Math.max(0, String(_domBeadSeqManaged || '').length - beforeExtendLen);
                     if (extendDeltaLen > 0)
                         _domSeqVersion += extendDeltaLen;
@@ -7409,6 +7658,7 @@
 
         var tk = readTKSeq();
         S.seq = tk.seq || '';
+        S.rawSeq = tk.rawSeq || S.seq || '';
         S.seqVersion = Number(tk && tk.seqVersion != null ? tk.seqVersion : (window.__cw_seq_version || 0)) || 0;
         S.seqEvent = String(tk && tk.seqEvent ? tk.seqEvent : (window.__cw_seq_event || ''));
         var seqHtml = 'Chuỗi kết quả : <i>--</i>';
@@ -7430,6 +7680,7 @@
                 statusSource: String(S.statusSource || ''),
                 statusTail: String(S.statusTail || ''),
                 seq: String(S.seq || ''),
+                rawSeq: String(S.rawSeq || S.seq || ''),
                 seqVersion: Number(S.seqVersion || 0),
                 seqEvent: String(S.seqEvent || ''),
                 totals: normalizeTotalsSnapshot(t),
@@ -10452,6 +10703,7 @@
         // TK sequence
         var tk = readTKSeq();
         S.seq = tk.seq || '';
+        S.rawSeq = tk.rawSeq || S.seq || '';
         S.seqVersion = Number(tk && tk.seqVersion != null ? tk.seqVersion : (window.__cw_seq_version || 0)) || 0;
         S.seqEvent = String(tk && tk.seqEvent ? tk.seqEvent : (window.__cw_seq_event || ''));
 
@@ -10894,6 +11146,7 @@
                     progTail: String(cached.progTail || ''),
                     totals: cached.totals || null,
                     seq: String(cached.seq || ''),
+                    rawSeq: String(cached.rawSeq || cached.seq || ''),
                     seqVersion: Number(cached.seqVersion || 0),
                     seqEvent: String(cached.seqEvent || ''),
                     username: (cached && cached.totals && cached.totals.N != null) ? String(cached.totals.N || '') : '',
@@ -11098,6 +11351,7 @@
                     var r = readTKSeq();
                     return {
                         seq: (r && r.seq) ? String(r.seq || '') : '',
+                        rawSeq: (r && r.rawSeq) ? String(r.rawSeq || '') : String(window.__cw_bead_raw_seq || ''),
                         seqVersion: Number(r && r.seqVersion != null ? r.seqVersion : (window.__cw_seq_version || 0)) || 0,
                         seqEvent: String(r && r.seqEvent ? r.seqEvent : (window.__cw_seq_event || ''))
                     };
@@ -11105,6 +11359,7 @@
             } catch (_) {}
             return {
                 seq: '',
+                rawSeq: String(window.__cw_bead_raw_seq || ''),
                 seqVersion: Number(window.__cw_seq_version || 0) || 0,
                 seqEvent: String(window.__cw_seq_event || '')
             };
@@ -11144,6 +11399,8 @@
             var t = null;
             var seq = '';
             var seqFresh = '';
+            var rawSeq = '';
+            var rawSeqFresh = '';
             var seqVersion = 0;
             var seqEvent = '';
             var cached = null;
@@ -11270,8 +11527,16 @@
                     seq = String(cached.seq || '');
             } catch (_) {}
             try {
+                if (cached && cached.rawSeq)
+                    rawSeq = String(cached.rawSeq || '');
+            } catch (_) {}
+            try {
                 if (!seq && S && S.seq)
                     seq = String(S.seq || '');
+            } catch (_) {}
+            try {
+                if (!rawSeq && S && S.rawSeq)
+                    rawSeq = String(S.rawSeq || '');
             } catch (_) {}
             try {
                 var seqState = null;
@@ -11285,10 +11550,12 @@
                     _abxSnapCache.seqAt = Date.now();
                 }
                 seqFresh = String((seqState && seqState.seq) || '');
+                rawSeqFresh = String((seqState && seqState.rawSeq) || '');
                 seqVersion = Number((seqState && seqState.seqVersion != null) ? seqState.seqVersion : (window.__cw_seq_version || 0)) || 0;
                 seqEvent = String((seqState && seqState.seqEvent) ? seqState.seqEvent : (window.__cw_seq_event || ''));
             } catch (_) {
                 seqFresh = '';
+                rawSeqFresh = '';
                 seqVersion = Number(window.__cw_seq_version || 0) || 0;
                 seqEvent = String(window.__cw_seq_event || '');
             }
@@ -11298,6 +11565,10 @@
                     (seq && seq.indexOf(seqFresh) !== 0 && seqFresh.length > seq.length)) {
                     seq = seqFresh;
                 }
+                if (rawSeqFresh)
+                    rawSeq = rawSeqFresh;
+                else if (!rawSeq)
+                    rawSeq = seqFresh;
             } else if (!seq) {
                 try {
                     if (window.__cw_seq)
@@ -11310,6 +11581,14 @@
                         seq = '';
                     }
                 }
+            }
+            if (!rawSeq) {
+                try {
+                    if (window.__cw_bead_raw_seq)
+                        rawSeq = String(window.__cw_bead_raw_seq || '');
+                } catch (_) {}
+                if (!rawSeq)
+                    rawSeq = seq;
             }
             if (!seqVersion) {
                 try {
@@ -11398,6 +11677,7 @@
                 progTail: progTail,
                 totals: t,
                 seq: seq,
+                rawSeq: rawSeq,
                 seqVersion: seqVersion,
                 seqEvent: seqEvent,
                 username: uname,
