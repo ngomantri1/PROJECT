@@ -523,6 +523,7 @@ namespace BaccaratSexyCasino
 
         private int _playStartInProgress = 0;// Ngăn PlayXocDia_Click chạy song song
         private long _taskRunSeq = 0;
+        private long _betEvalTraceSeq = 0;
         private DateTime _betWebNavigatingSinceUtc = DateTime.MinValue;
         private DateTime _betWebLastNavDoneUtc = DateTime.MinValue;
         private DateTime _lastAutoStopByNavUtc = DateTime.MinValue;
@@ -561,7 +562,7 @@ namespace BaccaratSexyCasino
 
 
 
-        private const string DEFAULT_URL = "web.zowin.tv"; // URL mặc định bạn muốn
+        private const string DEFAULT_URL = "https://new.wencheng.cc/"; // URL mặc định bạn muốn
         // === License repo/worker settings (CHỈNH LẠI CHO PHÙ HỢP) ===
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn
@@ -710,7 +711,7 @@ Ví dụ không hợp lệ:
             public string TabName { get; set; } = "";
             public string Url { get; set; } = "";
             [Obsolete] public string Username { get; set; } = "";
-            public string StakeCsv { get; set; } = "1000-3000-7000-15000-33000-69000-142000-291000-595000-1215000";
+            public string StakeCsv { get; set; } = "10-30-70-150-330-690-1420-2910-5950-12150";
             public int DecisionSeconds { get; set; } = 10;
 
             // Remember creds (DPAPI)
@@ -4280,17 +4281,93 @@ try{
                     return;
                 }
 
+                if (abxStr == "bet_trace_ready")
+                {
+                    var trace = GetJsonStringLoose(root, "trace") ?? "";
+                    var queueLen = GetJsonLongLoose(root, "queueLen");
+                    Log($"[BETQ][READY] trace={trace} queueLen={(queueLen.HasValue ? queueLen.Value.ToString() : "-")}");
+                    return;
+                }
+
                 if (abxStr == "bet")
                 {
                     // Optimistic mode: pending row đã được tạo ngay tại PlaceBet(...).
                     // JS "bet" chỉ là ack sau confirm, không được insert thêm lần nữa
                     // nếu không sẽ tạo duplicate pending và làm finalize/history lệch.
+                    var jobId = GetJsonLongLoose(root, "jobId");
+                    var sideAck = GetJsonStringLoose(root, "side") ?? "";
+                    var amountAck = GetJsonLongLoose(root, "amount");
+                    var roundAck = GetJsonLongLoose(root, "roundId");
+                    Log($"[BETQ][ACK] jobId={(jobId.HasValue ? jobId.Value.ToString() : "-")} side={sideAck} amount={(amountAck.HasValue ? amountAck.Value.ToString() : "-")} round={(roundAck.HasValue ? roundAck.Value.ToString() : "-")}");
+                    return;
+                }
+
+                if (abxStr == "bet_queued")
+                {
+                    var jobId = GetJsonLongLoose(root, "jobId");
+                    var side2 = GetJsonStringLoose(root, "side") ?? "";
+                    var amount2 = GetJsonLongLoose(root, "amount");
+                    var round2 = GetJsonLongLoose(root, "roundId");
+                    var queueLen = GetJsonLongLoose(root, "queueLen");
+                    var enqueueSource = GetJsonStringLoose(root, "enqueueSource") ?? "";
+                    var enqueueHref = GetJsonStringLoose(root, "enqueueHref") ?? "";
+                    Log($"[BETQ][ENQ] jobId={(jobId.HasValue ? jobId.Value.ToString() : "-")} side={side2} amount={(amount2.HasValue ? amount2.Value.ToString() : "-")} round={(round2.HasValue ? round2.Value.ToString() : "-")} queueLen={(queueLen.HasValue ? queueLen.Value.ToString() : "-")} src={enqueueSource} href={Shrink(enqueueHref, 96)}");
+                    return;
+                }
+
+                if (abxStr == "bet_exec_begin")
+                {
+                    var jobId = GetJsonLongLoose(root, "jobId");
+                    var side2 = GetJsonStringLoose(root, "side") ?? "";
+                    var amount2 = GetJsonLongLoose(root, "amount");
+                    var round2 = GetJsonLongLoose(root, "roundId");
+                    var queueLen = GetJsonLongLoose(root, "queueLen");
+                    var currentRound = GetJsonLongLoose(root, "currentRound");
+                    var enqueueSource = GetJsonStringLoose(root, "enqueueSource") ?? "";
+                    var execSource = GetJsonStringLoose(root, "execSource") ?? "";
+                    var enqueueHref = GetJsonStringLoose(root, "enqueueHref") ?? "";
+                    var execHref = GetJsonStringLoose(root, "execHref") ?? "";
+                    Log($"[BETQ][RUN] jobId={(jobId.HasValue ? jobId.Value.ToString() : "-")} side={side2} amount={(amount2.HasValue ? amount2.Value.ToString() : "-")} round={(round2.HasValue ? round2.Value.ToString() : "-")} curRound={(currentRound.HasValue ? currentRound.Value.ToString() : "-")} queueLen={(queueLen.HasValue ? queueLen.Value.ToString() : "-")} enqueue={enqueueSource} exec={execSource} enqueueHref={Shrink(enqueueHref, 80)} execHref={Shrink(execHref, 80)}");
+                    return;
+                }
+
+                if (abxStr == "bet_exec_done")
+                {
+                    var jobId = GetJsonLongLoose(root, "jobId");
+                    var side2 = GetJsonStringLoose(root, "side") ?? "";
+                    var amount2 = GetJsonLongLoose(root, "amount");
+                    var round2 = GetJsonLongLoose(root, "roundId");
+                    var ok2 = GetJsonLongLoose(root, "ok");
+                    var clicks = GetJsonLongLoose(root, "clicks");
+                    var beforeSide = GetJsonLongLoose(root, "beforeSide");
+                    var afterSide = GetJsonLongLoose(root, "afterSide");
+                    var deltaSide = GetJsonLongLoose(root, "deltaSide");
+                    var rawType = GetJsonStringLoose(root, "rawType") ?? "";
+                    var rawResult = GetJsonStringLoose(root, "rawResult") ?? "";
+                    Log($"[BETQ][DONE] jobId={(jobId.HasValue ? jobId.Value.ToString() : "-")} ok={(ok2.HasValue ? ok2.Value.ToString() : "-")} side={side2} amount={(amount2.HasValue ? amount2.Value.ToString() : "-")} round={(round2.HasValue ? round2.Value.ToString() : "-")} clicks={(clicks.HasValue ? clicks.Value.ToString() : "-")} before={(beforeSide.HasValue ? beforeSide.Value.ToString() : "-")} after={(afterSide.HasValue ? afterSide.Value.ToString() : "-")} delta={(deltaSide.HasValue ? deltaSide.Value.ToString() : "-")} rawType={rawType} raw={Shrink(rawResult, 80)}");
+                    return;
+                }
+
+                if (abxStr == "bet_dropped")
+                {
+                    var jobId = GetJsonLongLoose(root, "jobId");
+                    var reason = GetJsonStringLoose(root, "reason") ?? "";
+                    var side2 = GetJsonStringLoose(root, "side") ?? "";
+                    var amount2 = GetJsonLongLoose(root, "amount");
+                    var round2 = GetJsonLongLoose(root, "roundId");
+                    var queueLen = GetJsonLongLoose(root, "queueLen");
+                    Log($"[BETQ][DROP] jobId={(jobId.HasValue ? jobId.Value.ToString() : "-")} reason={reason} side={side2} amount={(amount2.HasValue ? amount2.Value.ToString() : "-")} round={(round2.HasValue ? round2.Value.ToString() : "-")} queueLen={(queueLen.HasValue ? queueLen.Value.ToString() : "-")}");
                     return;
                 }
 
                 if (abxStr == "bet_error")
                 {
                     // Optimistic mode: đã gửi bet xuống JS thì không quan tâm kết quả click DOM thật.
+                    var sideErr = GetJsonStringLoose(root, "side") ?? "";
+                    var amountErr = GetJsonLongLoose(root, "amount");
+                    var roundErr = GetJsonLongLoose(root, "roundId");
+                    var errorErr = GetJsonStringLoose(root, "error") ?? "";
+                    Log($"[BETQ][ERR] side={sideErr} amount={(amountErr.HasValue ? amountErr.Value.ToString() : "-")} round={(roundErr.HasValue ? roundErr.Value.ToString() : "-")} err={Shrink(errorErr, 120)}");
                     return;
                 }
 
@@ -4302,14 +4379,21 @@ try{
                     var text = GetJsonStringLoose(root, "text") ?? "";
                     var hitText = GetJsonStringLoose(root, "hitText") ?? "";
                     var hitTail = GetJsonStringLoose(root, "hitTail") ?? "";
+                    var side = GetJsonStringLoose(root, "side") ?? "";
+                    var roundKey = GetJsonStringLoose(root, "roundKey") ?? "";
                     var attempt = GetJsonLongLoose(root, "attempt") ?? 0;
                     var shielded = GetJsonLongLoose(root, "shielded") ?? 0;
                     var settled = GetJsonLongLoose(root, "settled");
                     var expectedStake = GetJsonLongLoose(root, "expectedStake");
                     var targetStake = GetJsonLongLoose(root, "targetStake");
+                    var expectedAfter = GetJsonLongLoose(root, "expectedAfter");
+                    var beforeStake = GetJsonLongLoose(root, "beforeStake");
+                    var afterStake = GetJsonLongLoose(root, "afterStake");
+                    var deltaStake = GetJsonLongLoose(root, "deltaStake");
+                    var chipUnits = GetJsonLongLoose(root, "chipUnits");
                     var px = GetJsonLongLoose(root, "px") ?? 0;
                     var py = GetJsonLongLoose(root, "py") ?? 0;
-                    Log($"[DIAG][CONFIRM] stage={stage} attempt={attempt} mode={mode} src={source2} text={text} shielded={shielded} settled={(settled.HasValue ? settled.Value.ToString() : "-")} expectedStake={(expectedStake.HasValue ? expectedStake.Value.ToString() : "-")} targetStake={(targetStake.HasValue ? targetStake.Value.ToString() : "-")} point={px},{py} hitText={hitText} hitTail={hitTail}");
+                    Log($"[DIAG][CONFIRM] stage={stage} attempt={attempt} mode={mode} side={side} roundKey={roundKey} src={source2} text={text} shielded={shielded} settled={(settled.HasValue ? settled.Value.ToString() : "-")} expectedStake={(expectedStake.HasValue ? expectedStake.Value.ToString() : "-")} targetStake={(targetStake.HasValue ? targetStake.Value.ToString() : "-")} expectedAfter={(expectedAfter.HasValue ? expectedAfter.Value.ToString() : "-")} beforeStake={(beforeStake.HasValue ? beforeStake.Value.ToString() : "-")} afterStake={(afterStake.HasValue ? afterStake.Value.ToString() : "-")} deltaStake={(deltaStake.HasValue ? deltaStake.Value.ToString() : "-")} chipUnits={(chipUnits.HasValue ? chipUnits.Value.ToString() : "-")} point={px},{py} hitText={hitText} hitTail={hitTail}");
                     return;
                 }
 
@@ -8727,6 +8811,14 @@ try{
                    js.IndexOf("__cw_", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static bool IsBridgeBetCallScript(string js)
+        {
+            if (string.IsNullOrWhiteSpace(js))
+                return false;
+            return js.IndexOf("__cw_bet_enqueue(", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   js.IndexOf("__cw_bet(", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private static string NormalizeJsEvalResult(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw))
@@ -8778,6 +8870,11 @@ try{
                 if (!IsBridgeCommandScript(js))
                     return await target.ExecuteScriptAsync(js);
 
+                bool isBetCallScript = IsBridgeBetCallScript(js);
+                long betTraceId = 0;
+                if (isBetCallScript)
+                    betTraceId = Interlocked.Increment(ref _betEvalTraceSeq);
+
                 var usePopupFrames = ReferenceEquals(target, _popupWeb);
                 var mainFrames = new List<(ulong id, CoreWebView2Frame frame)>();
                 var popupFrames = new List<(int key, CoreWebView2Frame frame)>();
@@ -8795,6 +8892,74 @@ try{
                         if (reArmed > 0)
                             mainFrames = GetMainArmedFramesSnapshot();
                     }
+                }
+
+                if (isBetCallScript)
+                {
+                    Log($"[BET-EVAL][BEGIN] trace={betTraceId} web={(usePopupFrames ? "popup" : "main")} popupFrames={popupFrames.Count} mainFrames={mainFrames.Count}");
+                }
+
+                // BET command có side-effect (enqueue/click). Chỉ được phép chạy đúng 1 context.
+                // Nếu chạy "thử frame rồi chạy thêm top" sẽ bắn lệnh lặp.
+                if (isBetCallScript)
+                {
+                    const string betPipeProbeJs = "(function(){try{return (typeof window.__cw_bet_enqueue==='function' || typeof window.__cw_bet==='function')?'ok':'no';}catch(_){return 'err';}})()";
+
+                    if (usePopupFrames)
+                    {
+                        foreach (var item in popupFrames)
+                        {
+                            try
+                            {
+                                var probeRaw = await item.frame.ExecuteScriptAsync(betPipeProbeJs);
+                                var probeNorm = NormalizeJsEvalResult(probeRaw);
+                                if (!string.Equals(probeNorm, "ok", StringComparison.OrdinalIgnoreCase))
+                                    continue;
+                                var execRaw = await item.frame.ExecuteScriptAsync(js);
+                                var execNorm = NormalizeJsEvalResult(execRaw);
+                                Log($"[BET-EVAL][EXEC] trace={betTraceId} via=popup-frame:{item.key} probe={probeNorm} result={Shrink(execNorm, 120)}");
+                                return execRaw;
+                            }
+                            catch (Exception ex)
+                            {
+                                if (IsDisposedFrameException(ex))
+                                    _popupFrameRefs.TryRemove(item.key, out _);
+                                Log($"[BET-EVAL][ERR] trace={betTraceId} via=popup-frame:{item.key} err={ex.GetType().Name}:{ex.Message}");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        foreach (var item in mainFrames)
+                        {
+                            try
+                            {
+                                var probeRaw = await item.frame.ExecuteScriptAsync(betPipeProbeJs);
+                                var probeNorm = NormalizeJsEvalResult(probeRaw);
+                                if (!string.Equals(probeNorm, "ok", StringComparison.OrdinalIgnoreCase))
+                                    continue;
+                                var execRaw = await item.frame.ExecuteScriptAsync(js);
+                                var execNorm = NormalizeJsEvalResult(execRaw);
+                                Log($"[BET-EVAL][EXEC] trace={betTraceId} via=main-frame:{item.id} probe={probeNorm} result={Shrink(execNorm, 120)}");
+                                return execRaw;
+                            }
+                            catch (Exception ex)
+                            {
+                                if (IsDisposedFrameException(ex))
+                                {
+                                    _mainFrameRefs.TryRemove(item.id, out _);
+                                    _mainFrameBridgeArmed.TryRemove(item.id, out _);
+                                }
+                                Log($"[BET-EVAL][ERR] trace={betTraceId} via=main-frame:{item.id} err={ex.GetType().Name}:{ex.Message}");
+                            }
+                        }
+                    }
+
+                    // Fallback cuối cùng: chỉ chạy 1 lần ở top, không quét thêm nữa.
+                    var topBetRaw = await target.ExecuteScriptAsync(js);
+                    var topBetNorm = NormalizeJsEvalResult(topBetRaw);
+                    Log($"[BET-EVAL][EXEC] trace={betTraceId} via=top-fallback result={Shrink(topBetNorm, 120)}");
+                    return topBetRaw;
                 }
 
                 string firstFrameRaw = "";
@@ -10435,7 +10600,9 @@ try{
 
                 if (!string.IsNullOrWhiteSpace(text))
                 {
-                    Log($"[Bridge] Loaded JS from embedded: {resName} (len={text.Length})");
+                    var jsHash = HashSha256(text);
+                    var jsHashShort = (jsHash.Length > 16) ? jsHash.Substring(0, 16) : jsHash;
+                    Log($"[Bridge] Loaded JS from embedded: {resName} (len={text.Length}, sha256={jsHashShort}, trace=BETTRACE2)");
                     return text;
                 }
 

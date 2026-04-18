@@ -25,6 +25,12 @@ namespace BaccaratSexyCasino.Tasks
         private static readonly ConcurrentDictionary<string, string> _lastBetSideByTab = new();
         private static readonly ConcurrentDictionary<string, string> _lastAcceptedRawSeqByTab = new();
         private static readonly ConcurrentDictionary<string, byte> _betInFlightByTab = new();
+        private static readonly ConcurrentDictionary<string, int> _lastAttemptRoundByTab = new();
+        private static readonly ConcurrentDictionary<string, string> _lastAttemptSideByTab = new();
+        private static readonly ConcurrentDictionary<string, int> _attemptCountByTab = new();
+        private static readonly ConcurrentDictionary<string, long> _firstAttemptMsByTab = new();
+        private static readonly ConcurrentDictionary<string, long> _lastAttemptMsByTab = new();
+        private static readonly ConcurrentDictionary<string, long> _firstAttemptAmountByTab = new();
         private const long SendOnlyCooldownMs = 3000;
         private const int BetSendTimeoutMs = 2500;
 
@@ -36,6 +42,12 @@ namespace BaccaratSexyCasino.Tasks
             _lastBetSideByTab.Clear();
             _lastAcceptedRawSeqByTab.Clear();
             _betInFlightByTab.Clear();
+            _lastAttemptRoundByTab.Clear();
+            _lastAttemptSideByTab.Clear();
+            _attemptCountByTab.Clear();
+            _firstAttemptMsByTab.Clear();
+            _lastAttemptMsByTab.Clear();
+            _firstAttemptAmountByTab.Clear();
         }
 
         public static string ParityCharToSide(char ch) => (ch == 'B') ? "BANKER" : "PLAYER";
@@ -185,6 +197,51 @@ namespace BaccaratSexyCasino.Tasks
                 }
             }
             catch { roundId = 0; }
+
+            var duplicateAttemptDetected = false;
+            var duplicateAttemptNo = 1;
+            var duplicateFirstAmount = amount;
+            var duplicateFirstAgoMs = 0L;
+            var duplicateSincePrevMs = 0L;
+            lock (_betLock)
+            {
+                var prevRound = _lastAttemptRoundByTab.TryGetValue(tabKey, out var ar) ? ar : -1;
+                var prevSide = _lastAttemptSideByTab.TryGetValue(tabKey, out var aside) ? aside : "";
+                var sameAttemptContext = prevRound == roundId &&
+                                         string.Equals(prevSide, side, StringComparison.OrdinalIgnoreCase);
+
+                if (sameAttemptContext)
+                {
+                    var prevCount = _attemptCountByTab.TryGetValue(tabKey, out var c) ? c : 1;
+                    var prevLastMs = _lastAttemptMsByTab.TryGetValue(tabKey, out var lm) ? lm : now;
+                    var firstMs = _firstAttemptMsByTab.TryGetValue(tabKey, out var fm) ? fm : now;
+                    var firstAmount = _firstAttemptAmountByTab.TryGetValue(tabKey, out var fa) ? fa : amount;
+
+                    duplicateAttemptNo = prevCount + 1;
+                    duplicateFirstAmount = firstAmount;
+                    duplicateSincePrevMs = Math.Max(0, now - prevLastMs);
+                    duplicateFirstAgoMs = Math.Max(0, now - firstMs);
+                    duplicateAttemptDetected = duplicateAttemptNo > 1;
+
+                    _attemptCountByTab[tabKey] = duplicateAttemptNo;
+                }
+                else
+                {
+                    _lastAttemptRoundByTab[tabKey] = roundId;
+                    _lastAttemptSideByTab[tabKey] = side ?? "";
+                    _attemptCountByTab[tabKey] = 1;
+                    _firstAttemptMsByTab[tabKey] = now;
+                    _firstAttemptAmountByTab[tabKey] = amount;
+                }
+
+                _lastAttemptMsByTab[tabKey] = now;
+            }
+            if (duplicateAttemptDetected)
+            {
+                var inFlight = _betInFlightByTab.ContainsKey(tabKey) ? 1 : 0;
+                ctx.Log?.Invoke(
+                    $"[BET-DUPE][WARN] same-round duplicate-detected | tab={tabKey}{runTag} | round={roundId} | side={side} | amount={amount:N0} | attempt={duplicateAttemptNo} | firstAmount={duplicateFirstAmount:N0} | firstAgoMs={duplicateFirstAgoMs} | sincePrevMs={duplicateSincePrevMs} | ignoreCooldown={ignoreCooldown} | inFlight={inFlight}");
+            }
 
             var last = _lastBetOkMsByTab.TryGetValue(tabKey, out var v) ? v : 0;
             var lastRound = _lastBetRoundByTab.TryGetValue(tabKey, out var r) ? r : -1;
