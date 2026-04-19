@@ -1012,22 +1012,27 @@
         var secR = right ? parseSec(right.text) : null;
         var secL = left ? parseSec(left.text) : null;
         if (secR != null && secR > 0) {
-            setProgMeta('cocos-countdown-right', right.tail || '', true);
+            try { window.__cw_countdown_source = 'cocos-countdown-right'; } catch (_) {}
+            try { window.__cw_countdown_tail = right.tail || ''; } catch (_) {}
             return secR;
         }
         if (secL != null && secL > 0) {
-            setProgMeta('cocos-countdown-left', left.tail || '', true);
+            try { window.__cw_countdown_source = 'cocos-countdown-left'; } catch (_) {}
+            try { window.__cw_countdown_tail = left.tail || ''; } catch (_) {}
             return secL;
         }
         if (secR != null) {
-            setProgMeta('cocos-countdown-right', right.tail || '', true);
+            try { window.__cw_countdown_source = 'cocos-countdown-right'; } catch (_) {}
+            try { window.__cw_countdown_tail = right.tail || ''; } catch (_) {}
             return secR;
         }
         if (secL != null) {
-            setProgMeta('cocos-countdown-left', left.tail || '', true);
+            try { window.__cw_countdown_source = 'cocos-countdown-left'; } catch (_) {}
+            try { window.__cw_countdown_tail = left.tail || ''; } catch (_) {}
             return secL;
         }
-        clearProgMeta();
+        try { window.__cw_countdown_source = ''; } catch (_) {}
+        try { window.__cw_countdown_tail = ''; } catch (_) {}
         return null;
     }
     function walkNodes(cb) {
@@ -1650,21 +1655,84 @@
         });
         return out;
     }
+    function progSourceLooksLikeRatio(source) {
+        var s = String(source || '').trim().toLowerCase();
+        if (!s)
+            return false;
+        if (s.indexOf('dom-pseudo-countdown') !== -1)
+            return true;
+        if (s.indexOf('pseudo') !== -1 && s.indexOf('countdown') !== -1)
+            return true;
+        if (s.indexOf('dom') !== -1 && s.indexOf('ratio') !== -1)
+            return true;
+        return false;
+    }
+    function normalizeProgressPayload(rawValue, source, isSec, tail) {
+        var out = {
+            value: 0,
+            valid: 0,
+            mode: 'none',
+            raw: null,
+            source: String(source || ''),
+            tail: String(tail || '')
+        };
+        var rawNum = Number(rawValue);
+        if (!isFinite(rawNum)) {
+            cwDbg('PROG', 'reject', {
+                source: out.source,
+                tail: out.tail,
+                raw: rawValue,
+                reason: 'non-finite'
+            }, 1200, 'prog-reject|' + out.source + '|' + out.tail + '|non-finite');
+            return out;
+        }
+        out.raw = rawNum;
+        if (isSec) {
+            out.mode = 'seconds';
+            out.value = Math.max(0, Math.min(100, (Math.max(0, Math.min(20, rawNum)) / 20) * 100));
+            out.valid = 1;
+        } else if (progSourceLooksLikeRatio(source) || (rawNum >= 0 && rawNum <= 1.0001)) {
+            out.mode = 'ratio';
+            out.value = Math.max(0, Math.min(100, Math.max(0, Math.min(1, rawNum)) * 100));
+            out.valid = 1;
+        } else {
+            out.mode = 'percent';
+            out.value = Math.max(0, Math.min(100, rawNum));
+            out.valid = 1;
+        }
+        out.value = Math.round(out.value * 1000) / 1000;
+        cwDbg('PROG', 'normalize', {
+            source: out.source,
+            tail: out.tail,
+            raw: out.raw,
+            valid: out.valid,
+            mode: out.mode,
+            value: out.value
+        }, 400, 'prog-normalize|' + out.source + '|' + out.mode + '|' + String(out.raw));
+        return out;
+    }
     function collectProgress() {
         if (!__cw_hasCocos()) {
             var domCountdown = domReadBetCountdown();
             if (domCountdown && domCountdown.value != null) {
-                setProgMeta('dom-pseudo-countdown' + (domCountdown.source ? ':' + domCountdown.source : ''), domCountdown.tail || DOM_TAIL_PROGRESS_STRICT, false);
-                return domCountdown.value;
+                var domProgSource = 'dom-pseudo-countdown' + (domCountdown.source ? ':' + domCountdown.source : '');
+                var domProgInfo = normalizeProgressPayload(domCountdown.value, domProgSource, false, domCountdown.tail || DOM_TAIL_PROGRESS_STRICT);
+                setProgMeta(domProgInfo.source, domProgInfo.tail, false, domProgInfo.mode, domProgInfo.raw, !!domProgInfo.valid);
+                return domProgInfo.value;
             }
             clearProgMeta();
-            return null;
+            return 0;
         }
         var cd = readCountdownSec();
-        if (cd != null)
-            return cd;
+        if (cd != null) {
+            var cocosProgSource = String(window.__cw_countdown_source || 'cocos-countdown');
+            var cocosProgTail = String(window.__cw_countdown_tail || '');
+            var cocosProgInfo = normalizeProgressPayload(cd, cocosProgSource, true, cocosProgTail);
+            setProgMeta(cocosProgInfo.source, cocosProgInfo.tail, true, cocosProgInfo.mode, cocosProgInfo.raw, !!cocosProgInfo.valid);
+            return cocosProgInfo.value;
+        }
         clearProgMeta();
-        return null;
+        return 0;
     }
 
     var _domBaccaratCache = {
@@ -8367,7 +8435,10 @@
         tickMs: 360,
         _lastUiTickAt: 0,
         prog: null,
-        status: 'ĐỢI MỞ BÁT',
+        progValid: false,
+        progMode: 'none',
+        progRaw: null,
+        status: '',
         progSource: '',
         progTail: '',
         statusSource: '',
@@ -8388,18 +8459,24 @@
         focusPinned: null
     };
 
-    function setProgMeta(source, tail, isSec) {
+    function setProgMeta(source, tail, isSec, mode, raw, valid) {
         S.progSource = String(source || '');
         S.progTail = String(tail || '');
         S._progTail = S.progTail;
-        S._progIsSec = !!isSec;
+        S._progIsSec = false;
+        S.progMode = String(mode || (valid ? (isSec ? 'seconds' : 'percent') : 'none'));
+        S.progRaw = (raw == null || !isFinite(Number(raw))) ? null : Number(raw);
+        S.progValid = !!valid;
         try { window.__cw_prog_source = S.progSource; } catch (_) {}
         try { window.__cw_prog_tail = S.progTail; } catch (_) {}
-        try { window.__cw_prog_is_sec = S._progIsSec ? 1 : 0; } catch (_) {}
+        try { window.__cw_prog_is_sec = 0; } catch (_) {}
+        try { window.__cw_prog_mode = S.progMode; } catch (_) {}
+        try { window.__cw_prog_raw = S.progRaw; } catch (_) {}
+        try { window.__cw_prog_valid = S.progValid ? 1 : 0; } catch (_) {}
     }
 
     function clearProgMeta() {
-        setProgMeta('', '', false);
+        setProgMeta('', '', false, 'none', null, false);
     }
 
     function setStatusMeta(source, tail) {
@@ -8880,7 +8957,7 @@
             rawTA: null
         };
         var f = S.focus;
-        var progText = (S.prog == null ? '--' : (S._progIsSec ? (S.prog + 's') : (((S.prog * 100) | 0) + '%')));
+        var progText = (!S.progValid ? '--' : ((((Number(S.prog) || 0) + 0.0001) | 0) + '%'));
         var bankerVal = (t.B != null ? t.B : t.C);
         var playerVal = (t.P != null ? t.P : t.L);
         var cards = t.cards || [];
@@ -8962,6 +9039,9 @@
             }
             window.__cw_last_panel_snapshot = {
                 prog: S.prog,
+                progValid: S.progValid ? 1 : 0,
+                progMode: String(S.progMode || ''),
+                progRaw: S.progRaw,
                 progSource: String(S.progSource || ''),
                 progTail: String(S.progTail || ''),
                 status: String(S.status || ''),
@@ -10888,10 +10968,6 @@
                 tail: c.tail
             };
             out[String(c.val)] = item;
-            if (c.val === 1000 && !out['1'])
-                out['1'] = item;
-            if (c.val === 5000 && !out['5'])
-                out['5'] = item;
         }
         return out;
     }
@@ -13484,6 +13560,9 @@
                 var snap = {
                     abx: 'tick',
                     prog: cached.prog,
+                    progValid: Number(cached.progValid || 0),
+                    progMode: String(cached.progMode || ''),
+                    progRaw: (cached.progRaw == null ? null : Number(cached.progRaw)),
                     progSource: String(cached.progSource || ''),
                     progTail: String(cached.progTail || ''),
                     totals: cached.totals || null,
@@ -13633,6 +13712,9 @@
             return {
                 abx: obj.abx,
                 prog: obj.prog,
+                progValid: obj.progValid,
+                progMode: obj.progMode,
+                progRaw: obj.progRaw,
                 progSource: obj.progSource,
                 progTail: obj.progTail,
                 status: obj.status,
@@ -13788,11 +13870,20 @@
             }
             var progSource = String((S && S.progSource) || window.__cw_prog_source || '');
             var progTail = String((S && S.progTail) || window.__cw_prog_tail || '');
+            var progValid = !!((S && S.progValid) || Number(window.__cw_prog_valid || 0));
+            var progMode = String((S && S.progMode) || window.__cw_prog_mode || (progValid ? 'percent' : 'none'));
+            var progRaw = null;
+            try {
+                progRaw = (S && S.progRaw != null) ? Number(S.progRaw) : (window.__cw_prog_raw == null ? null : Number(window.__cw_prog_raw));
+                if (!isFinite(progRaw))
+                    progRaw = null;
+            } catch (_) {
+                progRaw = null;
+            }
             var statusSource = String((S && S.statusSource) || window.__cw_status_source || '');
             var statusTail = String((S && S.statusTail) || window.__cw_status_tail || '');
-            var progNum = (typeof p === 'number' && isFinite(p)) ? p : null;
-            var progIsSec = !!((S && S._progIsSec) || Number(window.__cw_prog_is_sec || 0));
-            var progEval = (progNum == null) ? null : (progIsSec ? progNum : (progNum * 15.0));
+            var progNum = (typeof p === 'number' && isFinite(p)) ? Math.max(0, Math.min(100, p)) : 0;
+            var progEval = progValid ? progNum : null;
             var totalsCacheMs = 1400;
             var seqCacheMs = 700;
             var betQueueLen = 0;
@@ -13803,14 +13894,14 @@
             try { recentBetAge = nowTs - Number(window.__cw_last_bet_touch_at || 0); } catch (_) { recentBetAge = 999999; }
             var betHot = betProcessing || betQueueLen > 0 || recentBetAge < 2600;
             if (perfMode && buildSource === 'push') {
-                if (progNum == null) {
+                if (!progValid) {
                     totalsCacheMs = betHot ? 700 : 1900;
                     seqCacheMs = 900;
-                } else if (progEval <= 1.0 || progEval >= 15.5) {
+                } else if (progEval <= 3 || progEval >= 97) {
                     // Pha mở bài/chờ ván mới: tiền ít đổi -> cache lâu hơn.
                     totalsCacheMs = betHot ? 900 : 3200;
                     seqCacheMs = 1200;
-                } else if (progEval <= 6.5) {
+                } else if (progEval >= 35) {
                     // Pha cược: giữ cập nhật nhanh hơn.
                     totalsCacheMs = betHot ? 500 : 1200;
                     seqCacheMs = 650;
@@ -13844,7 +13935,7 @@
                 var seqAge = _abxSnapCache.seqAt > 0 ? (nowTs - _abxSnapCache.seqAt) : 999999;
                 var hasTotalsFallback = !!(_abxSnapCache.totals || (cached && cached.totals) || (S && S._lastTotals));
                 var hasSeqFallback = !!(_abxSnapCache.seqState || (cached && cached.seq) || (S && S.seq) || window.__cw_seq);
-                var preferTotalsRefresh = betHot || (progEval != null && progEval <= 6.5);
+                var preferTotalsRefresh = betHot || (progEval != null && progEval >= 35);
                 var canDeferTotals = hasTotalsFallback && totalsAge < (totalsCacheMs + 2600);
                 var canDeferSeq = hasSeqFallback && seqAge < (seqCacheMs + 2200);
                 // Tránh dồn 2 phép quét nặng vào cùng tick -> giảm spike jsBuildMs.
@@ -14073,6 +14164,20 @@
                 if (!__cw_hasCocos() && domStatusImpliesClosed(st))
                     p = 0;
             } catch (_) {}
+            if (!progValid)
+                p = 0;
+            try {
+                cwDbg('PROG', 'publish', {
+                    buildId: buildId,
+                    source: buildSource,
+                    prog: Number(p || 0),
+                    valid: progValid ? 1 : 0,
+                    mode: progMode,
+                    raw: progRaw,
+                    progSource: progSource,
+                    progTail: progTail
+                }, 350, 'prog-publish|' + buildSource + '|' + (progValid ? 1 : 0) + '|' + progMode + '|' + Number(p || 0));
+            } catch (_) {}
 
             try {
                 if ((/^shoe-reset/i.test(seqEvent || '') || /append-reset-seed/i.test(seqEvent || '') ||
@@ -14132,6 +14237,9 @@
             return {
                 abx: 'tick',
                 prog: p,
+                progValid: progValid ? 1 : 0,
+                progMode: progMode,
+                progRaw: progRaw,
                 progSource: progSource,
                 progTail: progTail,
                 totals: t,

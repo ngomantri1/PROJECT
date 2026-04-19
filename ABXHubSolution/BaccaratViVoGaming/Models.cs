@@ -22,6 +22,9 @@ namespace BaccaratViVoGaming
     {
         public string abx { get; set; }
         public double? prog { get; set; }
+        public int? progValid { get; set; }
+        public string? progMode { get; set; }
+        public double? progRaw { get; set; }
         public string? progSource { get; set; }
         public string? progTail { get; set; }
         public CwTotals totals { get; set; }

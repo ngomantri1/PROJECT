@@ -1380,13 +1380,13 @@ try{
               snap = win.__cw_readSnapshot();
           }catch(_){}
           try{
-            if ((!snap || (!snap.seq && !(snap.totals && snap.totals.A != null) && !snap.prog)) &&
+            if ((!snap || (!snap.seq && !(snap.totals && snap.totals.A != null) && !(Number(snap.progValid || 0) === 1))) &&
                 win.__cw_last_panel_snapshot){
               snap = win.__cw_last_panel_snapshot;
             }
           }catch(_){}
           try{
-            if (!snap || (!snap.seq && !(snap.totals && snap.totals.A != null) && !snap.prog && !snap.status)){
+            if (!snap || (!snap.seq && !(snap.totals && snap.totals.A != null) && !(Number(snap.progValid || 0) === 1) && !snap.status)){
               var panelSnap = parsePanelFallback();
               if (panelSnap) snap = panelSnap;
             }
@@ -1397,6 +1397,9 @@ try{
             snap = {
               abx:'tick',
               prog:p,
+              progValid:Number(win.__cw_prog_valid || 0),
+              progMode:String(win.__cw_prog_mode || ''),
+              progRaw:(win.__cw_prog_raw == null ? null : Number(win.__cw_prog_raw)),
               progSource:String(win.__cw_prog_source || ''),
               progTail:String(win.__cw_prog_tail || ''),
               totals:(typeof win.readTotalsSafe === 'function') ? win.readTotalsSafe() : null,
@@ -1409,6 +1412,9 @@ try{
             };
           }
           var p = snap ? snap.prog : null;
+          var progValid = snap ? Number(snap.progValid || 0) : Number(win.__cw_prog_valid || 0);
+          var progMode = snap ? String(snap.progMode || win.__cw_prog_mode || '') : String(win.__cw_prog_mode || '');
+          var progRaw = snap ? (snap.progRaw == null ? null : Number(snap.progRaw)) : (win.__cw_prog_raw == null ? null : Number(win.__cw_prog_raw));
           var st = snap ? String(snap.status || '') : '';
           var t = snap ? (snap.totals || null) : null;
           var seq = snap ? String(snap.seq || '') : '';
@@ -1424,7 +1430,7 @@ try{
           try{
             if (t && t.N != null) uname = String(t.N || '');
           }catch(_){}
-          var hasProg = (p != null && isFinite(Number(p)));
+          var hasProg = (progValid === 1 && p != null && isFinite(Number(p)));
           var hasSeq = !!(seq && String(seq).trim());
           var hasHud = !!(uname || (t && t.A != null));
           var hasStatus = !!(st && String(st).trim());
@@ -1456,6 +1462,9 @@ try{
           return {
             abx:'tick',
             prog:p,
+            progValid:progValid,
+            progMode:progMode,
+            progRaw:progRaw,
             progSource:progSource,
             progTail:progTail,
             totals:t,
@@ -4384,17 +4393,15 @@ try{
                             SyncNetworkSeqFromSnapshot(snap, source, boardSeqDisplay, boardSeqVersion, boardSeqEvent, statusRaw);
                         }
 
-                        string statusUi = BuildStatusUiText(statusRaw, snap.prog);
+                        bool progValid = (snap.progValid ?? 0) == 1;
+                        string statusUi = BuildStatusUiText(statusRaw, snap.prog, progValid);
                         string statusUiDisplay = statusUi;
-                        double? progUi = snap.prog;
+                        double? progUi = snap.prog ?? 0;
                         if (prevUiFresh)
                         {
-                            if (!progUi.HasValue && prevUiSnap?.prog.HasValue == true)
-                                progUi = prevUiSnap.prog;
-
                             if (string.IsNullOrWhiteSpace(statusUiDisplay))
                             {
-                                var prevStatusUi = BuildStatusUiText(prevUiSnap?.status, prevUiSnap?.prog);
+                                var prevStatusUi = BuildStatusUiText(prevUiSnap?.status, prevUiSnap?.prog, (prevUiSnap?.progValid ?? 0) == 1);
                                 if (!string.IsNullOrWhiteSpace(prevStatusUi))
                                     statusUiDisplay = prevStatusUi;
                             }
@@ -4409,7 +4416,7 @@ try{
                         bool hasHudData = totalsNow != null &&
                                           (!string.IsNullOrWhiteSpace(totalsNow.N) ||
                                            totalsNow.A.HasValue);
-                        bool hasProgressData = snap.prog.HasValue;
+                        bool hasProgressData = progValid;
                         bool isDomStatus = statusRaw.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase);
                         bool isDomWaitingStatus =
                             isDomStatus &&
@@ -4730,11 +4737,14 @@ try{
                         var seqLen = snap?.seq?.Length ?? 0;
                         var statusDiag = string.IsNullOrWhiteSpace(snap?.status) ? "-" : Shrink(snap?.status, 72);
                         var progDiag = snap?.prog?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-";
+                        var progValidDiag = ((snap?.progValid ?? 0) == 1) ? "1" : "0";
+                        var progModeDiag = string.IsNullOrWhiteSpace(snap?.progMode) ? "-" : Shrink(snap?.progMode, 24);
+                        var progRawDiag = snap?.progRaw?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-";
                         var progSourceDiag = string.IsNullOrWhiteSpace(snap?.progSource) ? "-" : Shrink(snap?.progSource, 48);
                         var progTailDiag = string.IsNullOrWhiteSpace(snap?.progTail) ? "-" : Shrink(snap?.progTail, 96);
                         var statusSourceDiag = string.IsNullOrWhiteSpace(snap?.statusSource) ? "-" : Shrink(snap?.statusSource, 48);
                         var statusTailDiag = string.IsNullOrWhiteSpace(snap?.statusTail) ? "-" : Shrink(snap?.statusTail, 96);
-                        Log($"[TickDiag] src={source} | prog={progDiag} | progSrc={progSourceDiag} | progTail={progTailDiag} | seqLen={seqLen} | statusSrc={statusSourceDiag} | statusTail={statusTailDiag} | status={statusDiag}");
+                        Log($"[TickDiag] src={source} | prog={progDiag} | progValid={progValidDiag} | progMode={progModeDiag} | progRaw={progRawDiag} | progSrc={progSourceDiag} | progTail={progTailDiag} | seqLen={seqLen} | statusSrc={statusSourceDiag} | statusTail={statusTailDiag} | status={statusDiag}");
                     }
                     return;
                 }
@@ -5038,6 +5048,9 @@ try{
                 {
                     abx = GetJsonStringLoose(root, "abx") ?? "",
                     prog = GetJsonDoubleLoose(root, "prog"),
+                    progValid = (int?)GetJsonLongLoose(root, "progValid"),
+                    progMode = GetJsonStringLoose(root, "progMode") ?? "",
+                    progRaw = GetJsonDoubleLoose(root, "progRaw"),
                     progSource = GetJsonStringLoose(root, "progSource") ?? "",
                     progTail = GetJsonStringLoose(root, "progTail") ?? "",
                     seq = FilterResultDisplaySeqWindow(GetJsonStringLoose(root, "seq") ?? ""),
@@ -5060,8 +5073,6 @@ try{
                     jsProgMs = GetJsonLongLoose(root, "jsProgMs"),
                     jsPerfMode = (int?)GetJsonLongLoose(root, "jsPerfMode")
                 };
-
-                snap.prog = NormalizeProgressPercent(snap.prog, snap.progSource);
 
                 if (root.TryGetProperty("amount", out var amountEl))
                     snap.amount = ReadJsonLongLoose(amountEl);
@@ -8294,47 +8305,6 @@ try{
             }
         }
 
-        private static bool IsProgressRatioSource(string? source)
-        {
-            var s = (source ?? "").Trim().ToLowerInvariant();
-            if (string.IsNullOrEmpty(s)) return false;
-            if (s.Contains("dom-pseudo-countdown")) return true;
-            if (s.Contains("pseudo") && s.Contains("countdown")) return true;
-            if (s.Contains("dom") && s.Contains("ratio")) return true;
-            return false;
-        }
-
-        private static bool IsProgressSecondsSource(string? source)
-        {
-            var s = (source ?? "").Trim().ToLowerInvariant();
-            if (string.IsNullOrEmpty(s)) return false;
-            if (s.Contains("cocos-countdown")) return true;
-            return false;
-        }
-
-        private static double? NormalizeProgressPercent(double? prog, string? source)
-        {
-            if (!prog.HasValue) return null;
-            var p = prog.Value;
-            if (!double.IsFinite(p)) return null;
-
-            var src = (source ?? "").Trim().ToLowerInvariant();
-            if (IsProgressSecondsSource(src))
-            {
-                p = (Math.Clamp(p, 0, 20) / 20.0) * 100.0;
-                return Math.Clamp(p, 0, 100.0);
-            }
-
-            var ratioBySource = IsProgressRatioSource(src);
-            var ratioByRange = p >= 0 && p <= 1.0001 &&
-                               (src.Contains("dom") || src.Contains("pseudo") || src.Contains("countdown") || string.IsNullOrEmpty(src));
-
-            if (ratioBySource || ratioByRange)
-                p = Math.Clamp(p, 0, 1) * 100.0;
-
-            return Math.Clamp(p, 0, 100.0);
-        }
-
         private async Task<bool> EnsureGameContextReadyForPlayAsync(string stagePrefix)
         {
             bool gameReady = false;
@@ -9460,7 +9430,7 @@ try{
             var snap = CloneAuthoritativeRawSnap();
             var seqLen = snap?.seq?.Length ?? 0;
             bool hasSnapData =
-                snap?.prog.HasValue == true ||
+                (snap?.progValid ?? 0) == 1 ||
                 !string.IsNullOrWhiteSpace(snap?.status) ||
                 seqLen > 0 ||
                 !string.IsNullOrWhiteSpace(snap?.progSource) ||
@@ -9756,7 +9726,7 @@ try{
 
             var snap = CloneAuthoritativeRawSnap();
             bool hasSnapData =
-                snap?.prog.HasValue == true ||
+                (snap?.progValid ?? 0) == 1 ||
                 !string.IsNullOrWhiteSpace(snap?.status) ||
                 !string.IsNullOrWhiteSpace(snap?.seq);
             if (!hasSnapData)
@@ -12838,13 +12808,13 @@ try{
             catch { /* ignore */ }
         }
 
-        private static string BuildStatusUiText(string? statusRaw, double? prog)
+        private static string BuildStatusUiText(string? statusRaw, double? prog, bool progValid)
         {
             statusRaw = (statusRaw ?? "").Trim();
             if (!statusRaw.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase))
                 return statusRaw;
 
-            if (!prog.HasValue)
+            if (!progValid || !prog.HasValue)
                 return "";
 
             var pv = prog.Value;
@@ -13588,6 +13558,9 @@ try{
             {
                 abx = snap.abx,
                 prog = snap.prog,
+                progValid = snap.progValid,
+                progMode = snap.progMode,
+                progRaw = snap.progRaw,
                 progSource = snap.progSource,
                 progTail = snap.progTail,
                 totals = CloneTotalsForTasks(snap.totals),
@@ -13623,6 +13596,9 @@ try{
             {
                 abx = snap.abx,
                 prog = snap.prog,
+                progValid = snap.progValid,
+                progMode = snap.progMode,
+                progRaw = snap.progRaw,
                 progSource = snap.progSource,
                 progTail = snap.progTail,
                 totals = CloneTotalsForTasks(snap.totals),
