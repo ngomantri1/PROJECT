@@ -4286,9 +4286,10 @@ try{
             bool isJsConsoleRaw = msg.IndexOf("\"abx\":\"js_console\"", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isTickRaw = msg.IndexOf("\"abx\":\"tick\"", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isNativeClickRaw = msg.IndexOf("\"abx\":\"native_click\"", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool isTrustedClickRaw = msg.IndexOf("\"abx\":\"trusted_click\"", StringComparison.OrdinalIgnoreCase) >= 0;
             if (isTickRaw && ShouldDropTickByIngressGate(source, DateTime.UtcNow))
                 return;
-            if (!isJsLogBatchRaw && !isJsSeqDiagRaw && !isJsConsoleRaw && !isTickRaw && !isNativeClickRaw)
+            if (!isJsLogBatchRaw && !isJsSeqDiagRaw && !isJsConsoleRaw && !isTickRaw && !isNativeClickRaw && !isTrustedClickRaw)
                 EnqueueUi($"[JS] {msg}"); // chỉ hiển thị UI, không ghi ra file
 
             try
@@ -4304,6 +4305,11 @@ try{
                 if (string.Equals(abxStr, "native_click", StringComparison.OrdinalIgnoreCase))
                 {
                     await TryHandleNativeClickAsync(root, source);
+                    return;
+                }
+                if (string.Equals(abxStr, "trusted_click", StringComparison.OrdinalIgnoreCase))
+                {
+                    await TryHandleTrustedClickAsync(root, source);
                     return;
                 }
                 if (string.Equals(abxStr, "tick", StringComparison.OrdinalIgnoreCase))
@@ -9159,6 +9165,43 @@ try{
             });
 
             Log($"[BETDOM][NATIVE-CLICK] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ok={(ok ? 1 : 0)} | side={(string.IsNullOrWhiteSpace(side) ? "-" : side)} | x={Math.Round(x.Value)} | y={Math.Round(y.Value)} | rx={(rx.HasValue ? rx.Value.ToString("0.00", CultureInfo.InvariantCulture) : "-")} | ry={(ry.HasValue ? ry.Value.ToString("0.00", CultureInfo.InvariantCulture) : "-")} | w={(w.HasValue ? Math.Round(w.Value).ToString(CultureInfo.InvariantCulture) : "-")} | h={(h.HasValue ? Math.Round(h.Value).ToString(CultureInfo.InvariantCulture) : "-")} | tail={(string.IsNullOrWhiteSpace(tail) ? "-" : Shrink(tail, 64))}");
+            return true;
+        }
+
+        private async Task<bool> TryHandleTrustedClickAsync(JsonElement root, string source)
+        {
+            var x = GetJsonDoubleLoose(root, "x");
+            var y = GetJsonDoubleLoose(root, "y");
+            if (!x.HasValue || !y.HasValue)
+                return false;
+
+            var side = GetJsonStringLoose(root, "side") ?? "";
+            var tail = GetJsonStringLoose(root, "tail") ?? "";
+            var role = GetJsonStringLoose(root, "role") ?? "";
+            var rx = GetJsonDoubleLoose(root, "rx");
+            var ry = GetJsonDoubleLoose(root, "ry");
+            var w = GetJsonDoubleLoose(root, "w");
+            var h = GetJsonDoubleLoose(root, "h");
+
+            bool ok = false;
+            try
+            {
+                var view = ResolveNativeClickWebView(source);
+                var core = view?.CoreWebView2;
+                if (core != null)
+                {
+                    ok = await DispatchTrustedMouseClickAsync(
+                        core,
+                        (int)Math.Round(x.Value),
+                        (int)Math.Round(y.Value));
+                }
+            }
+            catch
+            {
+                ok = false;
+            }
+
+            Log($"[BETDOM][TRUSTED-CLICK] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ok={(ok ? 1 : 0)} | role={(string.IsNullOrWhiteSpace(role) ? "-" : role)} | side={(string.IsNullOrWhiteSpace(side) ? "-" : side)} | x={Math.Round(x.Value)} | y={Math.Round(y.Value)} | rx={(rx.HasValue ? rx.Value.ToString("0.00", CultureInfo.InvariantCulture) : "-")} | ry={(ry.HasValue ? ry.Value.ToString("0.00", CultureInfo.InvariantCulture) : "-")} | w={(w.HasValue ? Math.Round(w.Value).ToString(CultureInfo.InvariantCulture) : "-")} | h={(h.HasValue ? Math.Round(h.Value).ToString(CultureInfo.InvariantCulture) : "-")} | tail={(string.IsNullOrWhiteSpace(tail) ? "-" : Shrink(tail, 64))}");
             return true;
         }
 

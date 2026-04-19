@@ -5672,7 +5672,41 @@
             _domBeadSeqPrevRaw = raw;
             _domTableSwitchWaitBeadPending = false;
             if (_domShoeResetPending) {
-                brAppendManaged(raw, 'append-after-reset');
+                _domResetSeedTargetRaw = raw;
+                _domResetSeedConsumedRaw = raw;
+                _domShoeResetPending = false;
+                _domShoeResetAt = 0;
+                _domSeqEvent = String(_domLastBeadProfileName || '').toLowerCase() === 'full-lower'
+                    ? 'reset-baseline-anchor-full-lower'
+                    : 'reset-baseline-anchor';
+                _domSeqAppend = '';
+                _domLastActiveSeedKey = brBuildActiveSeedKey(_domManagedTableTitle, raw);
+                _domLastActiveSeedBurstId = Number(_domNoBoardBurstId || 0);
+                brClearSeqSnapshotCache('reset-baseline-anchor');
+                cwDbg('SEQFLOW', 'reset-baseline-anchor', {
+                    raw: raw,
+                    rawLen: raw.length,
+                    profile: String(_domLastBeadProfileName || ''),
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || '')
+                }, 0, 'reset-baseline-anchor|' + raw + '|' + Number(_domSeqVersion || 0));
+                brSeqTrace('return-reset-baseline-anchor', raw, prev, beforeState, {
+                    profile: String(_domLastBeadProfileName || ''),
+                    targetRaw: String(_domResetSeedTargetRaw || ''),
+                    consumedRaw: String(_domResetSeedConsumedRaw || '')
+                }, 0, 'return-reset-baseline-anchor|' + raw + '|' + Number(_domSeqVersion || 0));
+                brPublishSeqState();
+                brSeqFuncLog('return', 'brMergeManagedSeq', {
+                    branch: 'return-reset-baseline-anchor',
+                    seq: String(_domBeadSeqManaged || ''),
+                    raw: raw,
+                    seqLen: String(_domBeadSeqManaged || '').length,
+                    rawLen: raw.length,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || '')
+                });
+                return _domBeadSeqManaged;
             } else if (!String(_domBeadSeqManaged || '')) {
                 // Khi vừa có board hợp lệ (đặc biệt lúc mới vào bàn), managed phải bám raw hiện tại.
                 var beforeInit = String(_domBeadSeqManaged || '');
@@ -10311,6 +10345,7 @@
                 h: tgt.rect ? tgt.rect.h : null,
                 tail: String(tgt.tail || '')
             }, 0, 'target-click|' + String(tgt.tail || ''));
+            domOk = domHostTrustedClick(tgt, 'target') || domOk;
             domOk = domHostNativeClick(tgt) || domOk;
             if (!domOk)
                 domOk = domClickTargetRect(tgt) || domOk;
@@ -10652,6 +10687,100 @@
                 tail: String(tgt.tail || '')
             }, 0, 'target-native-click|' + String(tgt.side || '') + '|' + String(tgt.tail || ''));
             return true;
+        } catch (_) {
+            return false;
+        }
+    }
+    function domHostTrustedClickPoint(meta, p, role) {
+        try {
+            if (!p)
+                return false;
+            if (!(window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function'))
+                return false;
+            window.chrome.webview.postMessage(JSON.stringify({
+                abx: 'trusted_click',
+                x: p.x,
+                y: p.y,
+                rx: p.rx,
+                ry: p.ry,
+                w: meta && meta.rect ? meta.rect.w : 0,
+                h: meta && meta.rect ? meta.rect.h : 0,
+                side: String(meta && meta.side || ''),
+                source: String(meta && meta.source || ''),
+                tail: String(meta && meta.tail || ''),
+                role: String(role || '')
+            }));
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+    function domHostTrustedClick(tgt, role) {
+        try {
+            tgt = domRefreshTargetRect(tgt);
+            var p = domPickNativeClickPoint(tgt);
+            if (!p)
+                return false;
+            var ok = domHostTrustedClickPoint(tgt, p, role || 'target');
+            if (ok) {
+                cwBetFlowLog('target-trusted-click', {
+                    side: String(tgt.side || ''),
+                    source: String(tgt.source || ''),
+                    x: p.x,
+                    y: p.y,
+                    rx: p.rx,
+                    ry: p.ry,
+                    w: tgt.rect ? tgt.rect.w : null,
+                    h: tgt.rect ? tgt.rect.h : null,
+                    tail: String(tgt.tail || ''),
+                    role: String(role || 'target')
+                }, 0, 'target-trusted-click|' + String(tgt.side || '') + '|' + String(tgt.tail || ''));
+            }
+            return ok;
+        } catch (_) {
+            return false;
+        }
+    }
+    function domHostTrustedClickChip(info, role) {
+        try {
+            if (!info)
+                return false;
+            var rect = {
+                x: Number(info.x || 0),
+                y: Number(info.y || 0),
+                w: Number(info.w || 0),
+                h: Number(info.h || 0)
+            };
+            if (!(rect.w > 0) || !(rect.h > 0))
+                return false;
+            var p = {
+                x: Math.round(rect.x + rect.w * 0.50),
+                y: Math.round(rect.y + rect.h * 0.50),
+                rx: 0.50,
+                ry: 0.50
+            };
+            var meta = {
+                rect: rect,
+                side: '',
+                source: String(info.source || ''),
+                tail: String(info.tail || info.selector || '')
+            };
+            var ok = domHostTrustedClickPoint(meta, p, role || 'chip');
+            if (ok) {
+                cwBetFlowLog('chip-trusted-click', {
+                    val: Number(info.value || 0),
+                    source: String(info.source || ''),
+                    x: p.x,
+                    y: p.y,
+                    rx: p.rx,
+                    ry: p.ry,
+                    w: rect.w,
+                    h: rect.h,
+                    tail: String(meta.tail || ''),
+                    role: String(role || 'chip')
+                }, 0, 'chip-trusted-click|' + Number(info.value || 0));
+            }
+            return ok;
         } catch (_) {
             return false;
         }
@@ -11283,6 +11412,7 @@
                 return false;
         }
         var clicked = false;
+        clicked = domHostTrustedClickChip(info, 'chip') || clicked;
         clicked = domFireClick(info.el) || clicked;
         if (!clicked)
             clicked = domMinimalClick(info.el) || clicked;
@@ -11900,334 +12030,6 @@
         }
         return null;
     }
-    function domCollectConfirmCandidates(doc, source) {
-        var rows = [];
-        if (!doc || !doc.querySelectorAll)
-            return rows;
-        var all = doc.querySelectorAll('body *');
-        for (var i = 0; i < all.length; i++) {
-            var el = all[i];
-            if (!domVisible(el))
-                continue;
-            var host = domConfirmHostOf(el);
-            if (!host || !domVisible(host))
-                continue;
-            var txt = domTextOf(host) || domTextOf(el);
-            if (domContainsRepeatOrDoubleText(txt))
-                continue;
-            if (!domLooksLikeConfirmText(txt))
-                continue;
-            var rect = host.getBoundingClientRect();
-            if (rect.top < doc.defaultView.innerHeight * 0.70)
-                continue;
-            if (rect.width < 40 || rect.height < 20 || rect.width > 180 || rect.height > 90)
-                continue;
-            var cs = doc.defaultView.getComputedStyle(host);
-            var tail = domTailOf(host);
-            var cls = '';
-            try { cls = String(host.className || ''); } catch (_) { cls = ''; }
-            var disabledLike =
-                /\bdisabled\b/i.test(cls) ||
-                /\bdisabled\b/i.test(tail) ||
-                /none/i.test(String(cs.pointerEvents || '')) ||
-                Number(cs.opacity || '1') <= 0.2 ||
-                host.hasAttribute('disabled') ||
-                /true/i.test(String(host.getAttribute('aria-disabled') || ''));
-            rows.push({
-                text: txt,
-                x: Math.round(rect.left),
-                y: Math.round(rect.top),
-                w: Math.round(rect.width),
-                h: Math.round(rect.height),
-                source: source,
-                opacity: String(cs.opacity || ''),
-                enabled: !disabledLike,
-                tail: tail,
-                el: host
-            });
-        }
-        return rows;
-    }
-    function domCollectRepeatCandidates(doc) {
-        var rows = [];
-        if (!doc || !doc.querySelectorAll)
-            return rows;
-        var all = doc.querySelectorAll('body *');
-        var seen = [];
-        for (var i = 0; i < all.length; i++) {
-            var el = all[i];
-            if (!domVisible(el))
-                continue;
-            var txt = domTextOf(el);
-            if (!domLooksLikeRepeatOrDoubleText(txt))
-                continue;
-            var host = el;
-            try {
-                host = el.closest('button,span,p,[role=\"button\"],.btn,.button,.game_btn,.zone_bet_bottom button,.zone_bet_bottom > div,.zone_bet_bottom > li,.zone_bet_bottom li') || el;
-            } catch (_) {
-                host = el;
-            }
-            if (!host || !domVisible(host))
-                continue;
-            if (seen.indexOf(host) >= 0)
-                continue;
-            var rect = host.getBoundingClientRect();
-            if (rect.top < doc.defaultView.innerHeight * 0.70)
-                continue;
-            if (rect.width < 30 || rect.height < 20 || rect.width > 220 || rect.height > 100)
-                continue;
-            seen.push(host);
-            rows.push({
-                el: host,
-                text: domTextOf(host),
-                tail: domTailOf(host),
-                x: Math.round(rect.left),
-                y: Math.round(rect.top),
-                w: Math.round(rect.width),
-                h: Math.round(rect.height)
-            });
-        }
-        return rows;
-    }
-    function domPickBestConfirm() {
-        var contexts = domGetBetContexts();
-        var best = null;
-        for (var i = 0; i < contexts.length; i++) {
-            var ctx = contexts[i];
-            var candidates = domCollectConfirmCandidates(ctx.doc, ctx.source);
-            for (var j = 0; j < candidates.length; j++) {
-                var c = candidates[j];
-                var score = 0;
-                score += c.source === 'top/frame[1]' ? 300 : 0;
-                score += c.y > ctx.win.innerHeight * 0.78 ? 220 : 0;
-                score += Math.min(c.w * c.h, 40000) / 250;
-                score -= Math.max(0, c.w - 140) * 2;
-                score -= Math.max(0, c.h - 60) * 3;
-                if (/zone_bet_bottom|betbox|confirm|btn/i.test(c.tail))
-                    score += 180;
-                if (domLooksLikeConfirmText(c.text))
-                    score += 260;
-                if (c.enabled)
-                    score += 60;
-                c._score = score;
-                if (!best || score > best._score)
-                    best = {
-                        source: c.source,
-                        href: ctx.href,
-                        doc: ctx.doc,
-                        el: c.el,
-                        x: c.x,
-                        y: c.y,
-                        w: c.w,
-                        h: c.h,
-                        enabled: c.enabled,
-                        text: c.text,
-                        tail: c.tail,
-                        _score: score
-                    };
-            }
-        }
-        return best;
-    }
-    function domShortOuterHtml(el) {
-        try {
-            return String((el && el.outerHTML) || '').replace(/\s+/g, ' ').slice(0, 220);
-        } catch (_) {
-            return '';
-        }
-    }
-    function domEmitConfirmDiag(stage, confirm, extra) {
-        try {
-            extra = extra || {};
-            var doc = confirm && confirm.doc ? confirm.doc : null;
-            var px = confirm ? Math.round(confirm.x + confirm.w * 0.32) : 0;
-            var py = confirm ? Math.round(confirm.y + confirm.h * 0.50) : 0;
-            var hit = null;
-            try {
-                hit = (doc && doc.elementFromPoint) ? doc.elementFromPoint(px, py) : null;
-            } catch (_) {
-                hit = null;
-            }
-            var payload = {
-                stage: stage || '',
-                attempt: extra.attempt || 0,
-                mode: extra.mode || '',
-                shielded: extra.shielded || 0,
-                settled: extra.settled === true ? 1 : (extra.settled === false ? 0 : null),
-                text: confirm ? String(confirm.text || '') : '',
-                tail: confirm ? String(confirm.tail || '') : '',
-                source: confirm ? String(confirm.source || '') : '',
-                x: confirm ? confirm.x : 0,
-                y: confirm ? confirm.y : 0,
-                w: confirm ? confirm.w : 0,
-                h: confirm ? confirm.h : 0,
-                px: px,
-                py: py,
-                expectedStake: extra.expectedStake || null,
-                targetStake: extra.targetStake || null,
-                hitText: hit ? String(domTextOf(hit) || '') : '',
-                hitTail: hit ? String(domTailOf(hit) || '') : '',
-                hitHtml: hit ? domShortOuterHtml(hit) : ''
-            };
-            try { cwBetDbg('[cwBet++] confirm diag', payload); } catch (_) {}
-            try {
-                if (window.__cw_diag_post)
-                    window.__cw_diag_post(payload);
-            } catch (_) {}
-        } catch (_) {}
-    }
-    function domShieldRepeatButtons(doc) {
-        var rows = domCollectRepeatCandidates(doc);
-        var touched = [];
-        for (var i = 0; i < rows.length; i++) {
-            var host = rows[i].el;
-            if (!host || !host.style)
-                continue;
-            touched.push({
-                el: host,
-                pointerEvents: host.style.pointerEvents,
-                ariaDisabled: host.getAttribute('aria-disabled'),
-                disabled: host.hasAttribute('disabled')
-            });
-            try { host.style.pointerEvents = 'none'; } catch (_) {}
-            try { host.setAttribute('aria-disabled', 'true'); } catch (_) {}
-            try {
-                if (host.hasAttribute && !host.hasAttribute('disabled'))
-                    host.setAttribute('data-cw-temp-disabled', '1');
-            } catch (_) {}
-        }
-        return {
-            count: touched.length,
-            restore: function () {
-                for (var j = 0; j < touched.length; j++) {
-                    var it = touched[j];
-                    var el = it.el;
-                    if (!el || !el.style)
-                        continue;
-                    try { el.style.pointerEvents = it.pointerEvents || ''; } catch (_) {}
-                    try {
-                        if (it.ariaDisabled == null) el.removeAttribute('aria-disabled');
-                        else el.setAttribute('aria-disabled', it.ariaDisabled);
-                    } catch (_) {}
-                }
-            }
-        };
-    }
-    async function domWaitConfirmReady(timeout) {
-        timeout = timeout || 1200;
-        var t0 = Date.now();
-        while ((Date.now() - t0) < timeout) {
-            var c = domPickBestConfirm();
-            if (c && c.enabled)
-                return c;
-            await sleep(16);
-        }
-        return null;
-    }
-    async function domWaitConfirmSettled(timeout) {
-        timeout = timeout || 1400;
-        var t0 = Date.now();
-        while ((Date.now() - t0) < timeout) {
-            await sleep(20);
-            var c = domPickBestConfirm();
-            if (!c || !c.enabled)
-                return true;
-        }
-        return false;
-    }
-    async function domClickConfirmAfterBet(tgt, expectedUnits) {
-      var confirm = await domWaitConfirmReady(200);
-        if (!confirm) {
-            console.warn('[cwBet++] không thấy nút xác nhận');
-            cwBetFlowLog('confirm-missing', {
-                expectedUnits: expectedUnits || null
-            }, 0, 'confirm-missing');
-            return false;
-        }
-        var shield = null;
-        try { shield = domShieldRepeatButtons(confirm.doc); } catch (_) { shield = null; }
-        try {
-            var readyStake = domReadTargetStakeUnits(tgt, expectedUnits);
-            cwBetFlowLog('confirm-ready', {
-                text: String(confirm.text || ''),
-                source: String(confirm.source || ''),
-                enabled: confirm.enabled ? 1 : 0,
-                x: confirm.x,
-                y: confirm.y,
-                w: confirm.w,
-                h: confirm.h,
-                expectedStake: expectedUnits || null,
-                targetStake: readyStake ? readyStake.val : null,
-                shielded: shield ? shield.count : 0,
-                tail: String(confirm.tail || '')
-            }, 0, 'confirm-ready');
-            domEmitConfirmDiag('ready', confirm, {
-                shielded: shield ? shield.count : 0,
-                expectedStake: expectedUnits || null,
-                targetStake: readyStake ? readyStake.val : null
-            });
-            var mode = 'element';
-            cwBetDbg('[cwBet++] confirm click', {
-                attempt: 1,
-                mode: mode,
-                x: confirm.x,
-                y: confirm.y,
-                w: confirm.w,
-                h: confirm.h,
-                text: confirm.text,
-                source: confirm.source
-            });
-            domEmitConfirmDiag('before_click', confirm, {
-                attempt: 1,
-                mode: mode,
-                shielded: shield ? shield.count : 0,
-                expectedStake: expectedUnits || null,
-                targetStake: readyStake ? readyStake.val : null
-            });
-            domFireClick(confirm.el);
-            domFireClickAtPoint(confirm.doc, confirm.x + confirm.w * 0.50, confirm.y + confirm.h * 0.50);
-          await sleep(10);
-          var settled = await domWaitConfirmSettled(200);
-            var stakeHit = null;
-            if (expectedUnits != null)
-          stakeHit = await domWaitTargetStakeUnits(tgt, expectedUnits, 140);
-            cwBetFlowLog('confirm-after-click', {
-                settled: settled ? 1 : 0,
-                expectedStake: expectedUnits || null,
-                targetStake: stakeHit ? stakeHit.val : null,
-                text: String(confirm.text || ''),
-                tail: String(confirm.tail || '')
-            }, 0, 'confirm-after-click|' + (settled ? 1 : 0));
-            domEmitConfirmDiag('after_click', confirm, {
-                attempt: 1,
-                mode: mode,
-                shielded: shield ? shield.count : 0,
-                settled: settled,
-                expectedStake: expectedUnits || null,
-                targetStake: stakeHit ? stakeHit.val : null
-            });
-            if (settled && (expectedUnits == null || (stakeHit && stakeHit.val === expectedUnits)))
-                return true;
-        } finally {
-            try { if (shield && shield.restore) shield.restore(); } catch (_) {}
-        }
-        console.warn('[cwBet++] xác nhận không hoàn tất');
-        cwBetFlowLog('confirm-failed', {
-            expectedUnits: expectedUnits || null
-        }, 0, 'confirm-failed');
-        return false;
-    }
-    window.__cw_diag_confirm_once = async function () {
-        return await domClickConfirmAfterBet();
-    };
-    async function domWaitPendingConfirmEnabled(beforeEnabled, timeout) {
-        timeout = timeout || 420;
-        if (beforeEnabled)
-            return false;
-        var confirm = await domWaitConfirmReady(timeout);
-        return !!(confirm && confirm.enabled);
-    }
-
     async function tryOpenChipPanel() {
         if (!__cw_hasCocos())
             return false;
@@ -12947,13 +12749,6 @@
                     console.warn('[cwBet++] không focus được chip exact-hit', X);
                     return failBet('focus exact chip failed', { side: side, amount: raw, chipUnits: X });
                 }
-                var confirmBeforeEnabled = false;
-                if (isDomMode) {
-                    try {
-                        var confirmBefore = domPickBestConfirm();
-                        confirmBeforeEnabled = !!(confirmBefore && confirmBefore.enabled);
-                    } catch (_) {}
-                }
                 var before0 = sampleTotalsNow();
                 var targetClickedOne = clickBetTarget(tgt);
                 cwBetFlowLog('bet-target-clicked', {
@@ -12966,43 +12761,19 @@
                     return false;
                 });
                 if (!appliedOne && isDomMode) {
-        appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 140).catch(function () {
-                        return false;
+                    var stakeHitOne = await domWaitTargetStakeUnits(tgt, X, 140).catch(function () {
+                        return null;
                     });
-                    if (!appliedOne) {
-        var stakeHitOne = await domWaitTargetStakeUnits(tgt, X, 140).catch(function () {
-                            return null;
-                        });
-                        appliedOne = !!(stakeHitOne && stakeHitOne.val === X);
-                    }
+                    appliedOne = !!(stakeHitOne && stakeHitOne.val === X);
                 }
-                if (!appliedOne && !isDomMode) {
+                if (!appliedOne) {
                     console.warn('[cwBet++] click cửa không ghi nhận tiền exact-hit', {
                         side: side,
-                        amount: X
+                        amount: X,
+                        targetClicked: !!targetClickedOne
                     });
-                    resetChipFocusState(false, 'exact-hit-not-reflected');
-                    return failBet('bet click not reflected for exact chip', { side: side, amount: raw, chipUnits: X });
-                }
-                if (isDomMode) {
-                    var confirmOne = await domClickConfirmAfterBet(tgt, X);
-                    if (!confirmOne) {
-                        if (!appliedOne) {
-                            console.warn('[cwBet++] click cửa không ghi nhận tiền exact-hit', {
-                                side: side,
-                                amount: X,
-                                targetClicked: !!targetClickedOne
-                            });
-                            resetChipFocusState(true, 'exact-hit-not-reflected');
-                            return failBet('bet click not reflected for exact chip', { side: side, amount: raw, chipUnits: X, targetClicked: !!targetClickedOne });
-                        }
-                        console.warn('[cwBet++] confirm failed', {
-                            side: side,
-                            amount: X
-                        });
-                        resetChipFocusState(true, 'exact-hit-confirm-failed');
-                        return failBet('confirm failed', { side: side, amount: raw, chipUnits: X });
-                    }
+                    resetChipFocusState(isDomMode, 'exact-hit-not-reflected');
+                    return failBet('bet click not reflected for exact chip', { side: side, amount: raw, chipUnits: X, targetClicked: !!targetClickedOne });
                 }
                 await sleep(15);
                 clearBetError();
@@ -13076,28 +12847,15 @@
                         return false;
                     });
                     if (!appliedStep) {
-                        if (!isDomMode) {
-                            console.warn('[cwBet++] click cửa không ghi nhận tiền', {
-                                side: side,
-                                denom: step.val,
-                                turn: i2 + 1
-                            });
-                            resetChipFocusState(false, 'plan-not-reflected');
-                            return failBet('bet click not reflected', { side: side, amount: raw, chipUnits: step.val, turn: i2 + 1 });
-                        }
+                        console.warn('[cwBet++] click cửa không ghi nhận tiền', {
+                            side: side,
+                            denom: step.val,
+                            turn: i2 + 1
+                        });
+                        resetChipFocusState(isDomMode, 'plan-not-reflected');
+                        return failBet('bet click not reflected', { side: side, amount: raw, chipUnits: step.val, turn: i2 + 1 });
                     }
                     await sleep(15);
-                }
-            }
-            if (isDomMode) {
-                var confirmOk = await domClickConfirmAfterBet(tgt, X);
-                if (!confirmOk) {
-                    console.warn('[cwBet++] confirm failed', {
-                        side: side,
-                        amount: X
-                    });
-                    resetChipFocusState(true, 'plan-confirm-failed');
-                    return failBet('confirm failed', { side: side, amount: raw, chipUnits: X });
                 }
             }
             cwBetDbg('[cwBet++] DONE ►', {
