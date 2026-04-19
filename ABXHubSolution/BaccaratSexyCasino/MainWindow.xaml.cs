@@ -381,6 +381,12 @@ namespace BaccaratSexyCasino
         private CancellationTokenSource _taskCts;
         private IBetTask _activeTask;
         private const int NiSeqMax = 50;
+        private const int SeqWindowMax = 50;
+        private static readonly string[] StatusAuthorityTails =
+        {
+            "body/div#themeZone.game.scenes_default/div.game_main/div.main_center/div#processBar.info_status/p#processStatus",
+            "body/div#themeZone.game.baccarat_normal/div.game_main/div.main_center/div#processBar.info_status/p#processStatus"
+        };
         private readonly System.Text.StringBuilder _niSeq = new(NiSeqMax);
         private readonly object _roundStateLock = new();
 
@@ -405,6 +411,7 @@ namespace BaccaratSexyCasino
         private long _netSeqVersion = 0;
         private string _netSeqEvent = "";
         private string _netSeqSource = "";
+        private bool _netSeqWinnerSeedOnly = false;
         private long _netSeqTableId = 0;
         private long _netSeqGameShoe = 0;
         private long _netSeqLastRound = 0;
@@ -415,6 +422,8 @@ namespace BaccaratSexyCasino
         private readonly ConcurrentDictionary<long, HallRoundSnapshot> _hallRoundCache = new();
         private string _netLastWinnerKey = "";
         private DateTime _netLastWinnerAt = DateTime.MinValue;
+        private string _lastJsAppendFingerprint = "";
+        private DateTime _lastJsAppendAppliedUtc = DateTime.MinValue;
         private DateTime _lastHistAlertUtc = DateTime.MinValue;
         private int _lastSeqRxLen = -1;
         private long _lastSeqRxVer = -1;
@@ -422,6 +431,25 @@ namespace BaccaratSexyCasino
         private char _lastSeqRxTail = '\0';
         private int _lastSeqRxPending = -1;
         private bool _lastSeqRxLock = false;
+        private long _lastAdvanceRejectVersionOnlyVer = -1;
+        private int _shoeChangeStatusStreak = 0;
+        private bool _shoeChangeRebaseArmed = false;
+        private DateTime _shoeChangeLastSeenUtc = DateTime.MinValue;
+        private DateTime _shoeChangeRebaseArmedAtUtc = DateTime.MinValue;
+        private string _shoeChangeArmSource = "";
+        private string _shoeChangeArmEvent = "";
+        private DateTime _lastShoeRebaseAppliedUtc = DateTime.MinValue;
+        private int _lastShoeRebaseAppliedLen = 0;
+        private string _lastBaccaratFrameKey = "";
+        private string _lastBaccaratFrameHref = "";
+        private bool _tableSwitchRebaseArmed = false;
+        private DateTime _tableSwitchRebaseArmedAtUtc = DateTime.MinValue;
+        private string _tableSwitchFromKey = "";
+        private string _tableSwitchToKey = "";
+        private string _tableSwitchFromHref = "";
+        private string _tableSwitchToHref = "";
+        private bool _initialTableEnterArmed = false;
+        private DateTime _initialTableEnterArmedAtUtc = DateTime.MinValue;
 
         private DecisionState _dec = new();
         private long[] _stakeSeq = Array.Empty<long>();
@@ -535,6 +563,9 @@ namespace BaccaratSexyCasino
         private DateTime _lastGameTickUtc = DateTime.MinValue;
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
         private DateTime _lastTickDiagLogUtc = DateTime.MinValue;
+        private DateTime _lastStatusGuardLogUtc = DateTime.MinValue;
+        private DateTime _lastStatusApplyLogUtc = DateTime.MinValue;
+        private DateTime _lastSyntheticStatusSkipLogUtc = DateTime.MinValue;
         private DateTime _lastGameHintDiagLogUtc = DateTime.MinValue;
         private bool _isGameUi = false;              // trạng thái UI hiện hành
         private System.Windows.Threading.DispatcherTimer? _uiModeTimer;
@@ -1263,7 +1294,9 @@ try{
           }catch(_){}
           if (!snap){
             var p = (typeof win.readProgressVal === 'function') ? win.readProgressVal() : null;
-            var st = (typeof win.statusByProg === 'function') ? win.statusByProg(p) : '';
+            var st = (typeof win.readStatusTextByTail === 'function')
+              ? win.readStatusTextByTail()
+              : ((typeof win.statusByProg === 'function') ? win.statusByProg(null) : '');
             snap = {
               abx:'tick',
               prog:p,
@@ -1278,13 +1311,18 @@ try{
             };
           }
           var p = snap ? snap.prog : null;
-          var st = snap ? String(snap.status || '') : '';
+          var st = '';
+          try{
+            st = (typeof win.readStatusTextByTail === 'function')
+              ? String(win.readStatusTextByTail() || '')
+              : '';
+          }catch(_){ st = ''; }
           var t = snap ? (snap.totals || null) : null;
           var seq = snap ? String(snap.seq || '') : '';
           var progSource = snap ? String(snap.progSource || win.__cw_prog_source || '') : String(win.__cw_prog_source || '');
           var progTail = snap ? String(snap.progTail || win.__cw_prog_tail || '') : String(win.__cw_prog_tail || '');
-          var statusSource = snap ? String(snap.statusSource || win.__cw_status_source || '') : String(win.__cw_status_source || '');
-          var statusTail = snap ? String(snap.statusTail || win.__cw_status_tail || '') : String(win.__cw_status_tail || '');
+          var statusSource = String(win.__cw_status_source || '');
+          var statusTail = String(win.__cw_status_tail || '');
           var uname = '';
           try{
             if (t && t.N != null) uname = String(t.N || '');
@@ -1387,7 +1425,11 @@ try{
         }
         private void EnqueueJsFile(string line)
         {
-            return;
+            if (string.IsNullOrWhiteSpace(line))
+                return;
+            if (line.Length > 3000)
+                line = line.Substring(0, 3000) + "...";
+            EnqueueFile(line);
         }
         private string GetJsLogFilePath()
         {
@@ -1575,13 +1617,46 @@ try{
             EnqueueFile(line);
         }
 
-        private void LogSeqRxIfChanged(string seqDisplay, long seqVersion, string seqEvent, double progNow, string statusRaw)
+        private static void CountSeqChars(string? value, out int b, out int p, out int t, out int h, out int other)
+        {
+            b = p = t = h = other = 0;
+            if (string.IsNullOrWhiteSpace(value))
+                return;
+
+            foreach (var ch in value)
+            {
+                char u = char.ToUpperInvariant(ch);
+                switch (u)
+                {
+                    case 'B': b++; break;
+                    case 'P': p++; break;
+                    case 'T': t++; break;
+                    case 'H': h++; break;
+                    default:
+                        if (!char.IsWhiteSpace(u))
+                            other++;
+                        break;
+                }
+            }
+        }
+
+        private static string BuildSeqCountText(string? value, bool includeH)
+        {
+            CountSeqChars(value, out var b, out var p, out var t, out var h, out var other);
+            return includeH
+                ? $"B:{b},P:{p},T:{t},H:{h},O:{other}"
+                : $"B:{b},P:{p},T:{t},O:{other}";
+        }
+
+        private void LogSeqRxIfChanged(string seqDisplay, string? rawSeq, long seqVersion, string seqEvent, string? seqMode, string? seqAppend, double progNow, string statusRaw, string source)
         {
             int len = seqDisplay?.Length ?? 0;
             char tail = len > 0 ? seqDisplay![len - 1] : '-';
             int pending = _pendingRows.Count;
             bool lockState = _lockMajorMinorUpdates;
             string evt = string.IsNullOrWhiteSpace(seqEvent) ? "-" : seqEvent;
+            int prevLen = _lastSeqRxLen;
+            long prevVer = _lastSeqRxVer;
             bool changed =
                 len != _lastSeqRxLen ||
                 seqVersion != _lastSeqRxVer ||
@@ -1599,7 +1674,21 @@ try{
             _lastSeqRxPending = pending;
             _lastSeqRxLock = lockState;
 
-            Log($"[SEQ][RX] prog={progNow:0.###} | seqLen={len} | tail={tail} | seqVer={seqVersion} | seqEvt={evt} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | lockMajorMinor={(lockState ? 1 : 0)} | pending={pending} | status={statusRaw}");
+            var mode = string.IsNullOrWhiteSpace(seqMode) ? "-" : seqMode;
+            var append = FilterResultDisplaySeq(seqAppend);
+            Log($"[SEQ][RX] prog={progNow:0.###} | seqLen={len} | tail={tail} | seqVer={seqVersion} | seqEvt={evt} | seqMode={mode} | seqAppend={(string.IsNullOrWhiteSpace(append) ? "-" : append)} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | lockMajorMinor={(lockState ? 1 : 0)} | pending={pending} | status={statusRaw}");
+
+            bool hasAdvance = (prevVer > 0 && seqVersion > 0)
+                ? (seqVersion > prevVer)
+                : (len > Math.Max(prevLen, 0));
+            if (hasAdvance)
+            {
+                int rawLen = rawSeq?.Length ?? 0;
+                string rawCountText = BuildSeqCountText(rawSeq, includeH: true);
+                string seqCountText = BuildSeqCountText(seqDisplay, includeH: false);
+                string src = string.IsNullOrWhiteSpace(source) ? "-" : source;
+                Log($"[SEQ][COUNT] src={src} | seqLen={len} | seqVer={seqVersion} | seqEvt={evt} | seqMode={mode} | seqAppend={(string.IsNullOrWhiteSpace(append) ? "-" : append)} | rawLen={rawLen} | rawCount={rawCountText} | seqCount={seqCountText}");
+            }
         }
 
         private void SetModeUi(bool isGame)
@@ -2122,6 +2211,7 @@ try{
         {
             try
             {
+                var loginUserJs = JsonSerializer.Serialize((T(TxtUser) ?? "").Trim());
                 var js = $@"
 (function(){{
   try {{
@@ -2133,7 +2223,12 @@ try{
         w.__cw_file_log_enable = {(_enableJsFileLog ? 1 : 0)};
         w.__cw_debug_seq_push = {(_enableJsPushDebug ? 1 : 0)};
         w.__cw_debug_seq = {(_enableJsPushDebug ? 1 : 0)};
-        w.__cw_panel_autostart = {(_enableJsPushDebug ? 1 : 0)};
+        w.__cw_seq_diag = 1;
+        w.__cw_console_to_host = 1;
+        w.__cw_console_passthrough = 0;
+        w.__cw_panel_autostart = 1;
+        w.__abx_login_username = {loginUserJs};
+        w.__abx_username = {loginUserJs};
       }} catch(_e) {{}}
     }}
     applyOne(window);
@@ -3839,8 +3934,10 @@ try{
             int jsPerfMode = -1;
             string perfAbx = "raw";
             bool isJsLogBatchRaw = msg.IndexOf("\"abx\":\"cwLogBatch\"", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool isJsSeqDiagRaw = msg.IndexOf("\"abx\":\"seq_diag\"", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool isJsConsoleRaw = msg.IndexOf("\"abx\":\"js_console\"", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isTickRaw = msg.IndexOf("\"abx\":\"tick\"", StringComparison.OrdinalIgnoreCase) >= 0;
-            if (!isJsLogBatchRaw && !isTickRaw)
+            if (!isJsLogBatchRaw && !isJsSeqDiagRaw && !isJsConsoleRaw && !isTickRaw)
                 EnqueueUi($"[JS] {msg}"); // chỉ hiển thị UI, không ghi ra file
 
             try
@@ -3877,6 +3974,18 @@ try{
                     return;
                 }
 
+                if (abxStr == "seq_diag")
+                {
+                    IngestJsSeqDiag(root, source);
+                    return;
+                }
+
+                if (abxStr == "js_console")
+                {
+                    IngestJsConsole(root, source);
+                    return;
+                }
+
                 if (abxStr == "tick")
                 {
                     var jrootTick = root;
@@ -3893,29 +4002,57 @@ try{
 
                     if (snap != null)
                     {
-                        var boardSeqDisplay = FilterResultDisplaySeq(snap.seq ?? "");
+                        string statusRaw = GetJsonStringLoose(jrootTick, "status") ?? "";
+                        string statusSourceRaw = snap.statusSource ?? GetJsonStringLoose(jrootTick, "statusSource") ?? "";
+                        string statusTailRaw = snap.statusTail ?? GetJsonStringLoose(jrootTick, "statusTail") ?? "";
+                        bool statusAuthorityMissing = IsStatusAuthorityMissing(statusSourceRaw);
+                        bool trustedStatusForUi = IsTrustedStatusForUi(statusRaw, statusSourceRaw, statusTailRaw);
+                        bool nonAuthorityStatus =
+                            !string.IsNullOrWhiteSpace(statusRaw) &&
+                            !trustedStatusForUi;
+                        var boardSeqDisplay = FilterResultDisplaySeqWindow(snap.seq ?? "");
                         var boardSeqVersion = snap.seqVersion ?? 0;
                         var boardSeqEvent = snap.seqEvent ?? "";
-                        lock (_roundStateLock)
-                        {
-                            SyncNetworkSeqFromSnapshot(snap, source, boardSeqDisplay, boardSeqVersion, boardSeqEvent);
-                        }
 
-                        string statusRaw = GetJsonStringLoose(jrootTick, "status") ?? "";
-                        string statusUi = BuildStatusUiText(statusRaw, snap.prog);
+                        string statusUi = trustedStatusForUi ? BuildStatusUiText(statusRaw) : "";
                         string statusUiDisplay = statusUi;
+                        string statusSourceForSnap = trustedStatusForUi ? statusSourceRaw : "";
+                        string statusTailForSnap = trustedStatusForUi ? statusTailRaw : "";
+                        bool syntheticDomStatus =
+                            statusRaw.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase);
+                        if (syntheticDomStatus && (DateTime.UtcNow - _lastSyntheticStatusSkipLogUtc) > TimeSpan.FromSeconds(2))
+                        {
+                            _lastSyntheticStatusSkipLogUtc = DateTime.UtcNow;
+                            Log($"[STATUS][SYNTHETIC-SKIP] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | reason=baccarat-dom-fallback-not-ui | prog={(snap.prog.HasValue ? snap.prog.Value.ToString("0.###", CultureInfo.InvariantCulture) : "-")} | statusSrc={(string.IsNullOrWhiteSpace(statusSourceRaw) ? "-" : Shrink(statusSourceRaw, 64))} | statusTail={(string.IsNullOrWhiteSpace(statusTailRaw) ? "-" : Shrink(statusTailRaw, 128))} | status={Shrink(statusRaw, 72)}");
+                        }
                         double? progUi = snap.prog;
                         if (prevUiFresh)
                         {
                             if (!progUi.HasValue && prevUiSnap?.prog.HasValue == true)
                                 progUi = prevUiSnap.prog;
-
-                            if (string.IsNullOrWhiteSpace(statusUiDisplay))
-                            {
-                                var prevStatusUi = BuildStatusUiText(prevUiSnap?.status, prevUiSnap?.prog);
-                                if (!string.IsNullOrWhiteSpace(prevStatusUi))
-                                    statusUiDisplay = prevStatusUi;
-                            }
+                        }
+                        string statusRawForLogic = statusUiDisplay;
+                        snap.status = statusRawForLogic;
+                        snap.statusSource = statusSourceForSnap;
+                        snap.statusTail = statusTailForSnap;
+                        lock (_roundStateLock)
+                        {
+                            SyncNetworkSeqFromSnapshot(snap, source, boardSeqDisplay, boardSeqVersion, boardSeqEvent, statusRawForLogic);
+                        }
+                        if (statusAuthorityMissing && (DateTime.UtcNow - _lastStatusGuardLogUtc) > TimeSpan.FromSeconds(2))
+                        {
+                            _lastStatusGuardLogUtc = DateTime.UtcNow;
+                            Log($"[STATUS][SKIP] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | reason=authority-processStatus-missing | statusSrc={(string.IsNullOrWhiteSpace(statusSourceRaw) ? "-" : Shrink(statusSourceRaw, 64))} | statusTail={(string.IsNullOrWhiteSpace(statusTailRaw) ? "-" : Shrink(statusTailRaw, 128))} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+                        }
+                        if (nonAuthorityStatus && (DateTime.UtcNow - _lastStatusGuardLogUtc) > TimeSpan.FromSeconds(2))
+                        {
+                            _lastStatusGuardLogUtc = DateTime.UtcNow;
+                            Log($"[STATUS][SKIP] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | reason=non-authority-status-ui-block | statusSrc={(string.IsNullOrWhiteSpace(statusSourceRaw) ? "-" : Shrink(statusSourceRaw, 64))} | statusTail={(string.IsNullOrWhiteSpace(statusTailRaw) ? "-" : Shrink(statusTailRaw, 128))} | status={Shrink(statusRaw, 48)}");
+                        }
+                        if (trustedStatusForUi && (DateTime.UtcNow - _lastStatusApplyLogUtc) > TimeSpan.FromSeconds(2))
+                        {
+                            _lastStatusApplyLogUtc = DateTime.UtcNow;
+                            Log($"[STATUS][APPLY] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | reason=authority-processStatus | statusSrc={(string.IsNullOrWhiteSpace(statusSourceRaw) ? "-" : Shrink(statusSourceRaw, 64))} | statusTail={(string.IsNullOrWhiteSpace(statusTailRaw) ? "-" : Shrink(statusTailRaw, 128))} | status={Shrink(statusRaw, 48)}");
                         }
                         var seqDisplayRaw = snap.seq ?? "";
                         var totalsNow = snap.totals;
@@ -3996,7 +4133,7 @@ try{
                                 long currB = snap.totals?.B ?? 0;
                                 long currP = snap.totals?.P ?? 0;
                                 long currT = snap.totals?.T ?? 0;
-                                LogSeqRxIfChanged(seqDisplay, seqVersionNow, seqEventNow, progNow, statusRaw);
+                                LogSeqRxIfChanged(seqDisplay, snap.rawSeq, seqVersionNow, seqEventNow, snap.seqMode, snap.seqAppend, progNow, statusRaw, source);
 
                                 bool seqVersionRegress =
                                     _lockMajorMinorUpdates &&
@@ -4552,6 +4689,94 @@ try{
             }
         }
 
+        private void IngestJsSeqDiag(JsonElement root, string source)
+        {
+            try
+            {
+                static string OneLine(string? s, int maxLen)
+                {
+                    if (string.IsNullOrWhiteSpace(s))
+                        return "";
+                    var t = s.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ').Trim();
+                    return (t.Length > maxLen) ? (t.Substring(0, maxLen) + "...") : t;
+                }
+
+                static string CompactJson(JsonElement el, int maxLen)
+                {
+                    try
+                    {
+                        string raw = el.ValueKind == JsonValueKind.String
+                            ? (el.GetString() ?? "")
+                            : el.GetRawText();
+                        return OneLine(raw, maxLen);
+                    }
+                    catch
+                    {
+                        return "";
+                    }
+                }
+
+                string reason = GetJsonStringLoose(root, "reason") ?? "-";
+                string rev = GetJsonStringLoose(root, "rev") ?? "";
+                string session = GetJsonStringLoose(root, "session") ?? "";
+                string dataText = "";
+                if (root.TryGetProperty("data", out var dataEl) &&
+                    dataEl.ValueKind != JsonValueKind.Null &&
+                    dataEl.ValueKind != JsonValueKind.Undefined)
+                {
+                    dataText = CompactJson(dataEl, 2200);
+                }
+
+                bool isLayoutDiag = reason.StartsWith("layout-", StringComparison.OrdinalIgnoreCase);
+                var prefix = isLayoutDiag ? "JSLAYOUT" : "JSSEQ";
+                var line = $"[{prefix}][{OneLine(reason, 80)}] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)}";
+                if (!string.IsNullOrWhiteSpace(rev))
+                    line += $" | rev={OneLine(rev, 80)}";
+                if (!string.IsNullOrWhiteSpace(session))
+                    line += $" | session={OneLine(session, 80)}";
+                if (!string.IsNullOrWhiteSpace(dataText))
+                    line += " | data=" + dataText;
+                Log(line);
+            }
+            catch (Exception ex)
+            {
+                Log($"[JSSEQ][INGEST_ERR] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} err={ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private void IngestJsConsole(JsonElement root, string source)
+        {
+            try
+            {
+                static string OneLine(string? s, int maxLen)
+                {
+                    if (string.IsNullOrWhiteSpace(s))
+                        return "";
+                    var t = s.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ').Trim();
+                    return (t.Length > maxLen) ? (t.Substring(0, maxLen) + "...") : t;
+                }
+
+                string level = OneLine(GetJsonStringLoose(root, "level") ?? "log", 16);
+                string message = OneLine(GetJsonStringLoose(root, "message") ?? "", 2200);
+                string rev = OneLine(GetJsonStringLoose(root, "rev") ?? "", 80);
+                string session = OneLine(GetJsonStringLoose(root, "session") ?? "", 80);
+                if (string.IsNullOrWhiteSpace(message))
+                    return;
+
+                var line = $"[JSCONSOLE][{(string.IsNullOrWhiteSpace(level) ? "log" : level)}] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)}";
+                if (!string.IsNullOrWhiteSpace(rev))
+                    line += $" | rev={rev}";
+                if (!string.IsNullOrWhiteSpace(session))
+                    line += $" | session={session}";
+                line += " | " + message;
+                Log(line);
+            }
+            catch (Exception ex)
+            {
+                Log($"[JSCONSOLE][INGEST_ERR] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} err={ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
         private static CwSnapshot? ParseCwSnapshotLoose(JsonElement root)
         {
             try
@@ -4562,7 +4787,8 @@ try{
                     prog = GetJsonDoubleLoose(root, "prog"),
                     progSource = GetJsonStringLoose(root, "progSource") ?? "",
                     progTail = GetJsonStringLoose(root, "progTail") ?? "",
-                    seq = GetJsonStringLoose(root, "seq") ?? "",
+                    seq = FilterResultDisplaySeqWindow(GetJsonStringLoose(root, "seq") ?? ""),
+                    rawSeq = GetJsonStringLoose(root, "rawSeq") ?? "",
                     seqVersion = GetJsonLongLoose(root, "seqVersion"),
                     seqEvent = GetJsonStringLoose(root, "seqEvent") ?? "",
                     username = GetJsonStringLoose(root, "username") ?? "",
@@ -4573,6 +4799,8 @@ try{
                     ts = GetJsonLongLoose(root, "ts") ?? 0,
                     statusSource = GetJsonStringLoose(root, "statusSource") ?? "",
                     statusTail = GetJsonStringLoose(root, "statusTail") ?? "",
+                    seqAppend = GetJsonStringLoose(root, "seqAppend") ?? "",
+                    seqMode = GetJsonStringLoose(root, "seqMode") ?? "",
                     jsBuildMs = GetJsonLongLoose(root, "jsBuildMs"),
                     jsTotalsMs = GetJsonLongLoose(root, "jsTotalsMs"),
                     jsSeqMs = GetJsonLongLoose(root, "jsSeqMs"),
@@ -5489,6 +5717,16 @@ try{
             return sb.ToString();
         }
 
+        private static string KeepLastSeqWindow(string? raw, int maxLen = SeqWindowMax)
+        {
+            if (string.IsNullOrEmpty(raw) || maxLen <= 0)
+                return "";
+            return raw.Length <= maxLen ? raw : raw.Substring(raw.Length - maxLen, maxLen);
+        }
+
+        private static string FilterResultDisplaySeqWindow(string? raw) =>
+            KeepLastSeqWindow(FilterResultDisplaySeq(raw), SeqWindowMax);
+
         private static string DecodePacketText(string payload, bool isBinary)
         {
             if (string.IsNullOrEmpty(payload)) return "";
@@ -5716,12 +5954,12 @@ try{
 
         private string GetCurrentBoardSeqForSyncLocked()
         {
-            var boardDisplay = FilterResultDisplaySeq(_boardSeqDisplay);
+            var boardDisplay = FilterResultDisplaySeqWindow(_boardSeqDisplay);
             if (!string.IsNullOrWhiteSpace(boardDisplay))
                 return boardDisplay;
 
-            var prefix = _syncSeqPrefixDisplay ?? "";
-            var syncDisplay = FilterResultDisplaySeq(_netSeqDisplay);
+            var prefix = FilterResultDisplaySeqWindow(_syncSeqPrefixDisplay);
+            var syncDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
             if (!string.IsNullOrWhiteSpace(prefix) &&
                 syncDisplay.StartsWith(prefix, StringComparison.Ordinal) &&
                 syncDisplay.Length >= prefix.Length)
@@ -5734,12 +5972,103 @@ try{
 
         private string BuildSyncSeqFromBoardLocked(string boardDisplay)
         {
-            boardDisplay = FilterResultDisplaySeq(boardDisplay);
-            if (string.IsNullOrWhiteSpace(_syncSeqPrefixDisplay))
+            boardDisplay = FilterResultDisplaySeqWindow(boardDisplay);
+            var prefix = FilterResultDisplaySeqWindow(_syncSeqPrefixDisplay);
+            if (string.IsNullOrWhiteSpace(prefix))
                 return boardDisplay;
             if (string.IsNullOrWhiteSpace(boardDisplay))
-                return _syncSeqPrefixDisplay;
-            return _syncSeqPrefixDisplay + boardDisplay;
+                return prefix;
+            return KeepLastSeqWindow(prefix + boardDisplay, SeqWindowMax);
+        }
+
+        private static bool TryConfirmSeqAdvanceDelta(string baseDisplay, string currentDisplay, out int delta)
+        {
+            baseDisplay = FilterResultDisplaySeqWindow(baseDisplay);
+            currentDisplay = FilterResultDisplaySeqWindow(currentDisplay);
+            delta = 0;
+
+            if (string.Equals(baseDisplay, currentDisplay, StringComparison.Ordinal))
+                return false;
+            if (string.IsNullOrWhiteSpace(currentDisplay))
+                return false;
+            if (string.IsNullOrWhiteSpace(baseDisplay))
+            {
+                delta = currentDisplay.Length;
+                return delta > 0;
+            }
+
+            if (currentDisplay.Length > baseDisplay.Length &&
+                currentDisplay.StartsWith(baseDisplay, StringComparison.Ordinal))
+            {
+                delta = currentDisplay.Length - baseDisplay.Length;
+                return delta > 0;
+            }
+
+            int maxOverlap = Math.Min(baseDisplay.Length, currentDisplay.Length);
+            int bestOverlap = 0;
+            for (int overlap = maxOverlap; overlap >= 1; overlap--)
+            {
+                if (string.CompareOrdinal(baseDisplay, baseDisplay.Length - overlap, currentDisplay, 0, overlap) == 0)
+                {
+                    bestOverlap = overlap;
+                    break;
+                }
+            }
+
+            if (bestOverlap <= 0)
+                return false;
+
+            delta = currentDisplay.Length - bestOverlap;
+            if (delta <= 0)
+                return false;
+
+            int minOverlap = baseDisplay.Length >= 20 ? 3 : (baseDisplay.Length >= 8 ? 2 : 1);
+            return bestOverlap >= minOverlap;
+        }
+
+        private static bool TryExtractSeqAdvanceDelta(string baseDisplay, string currentDisplay, out string delta)
+        {
+            baseDisplay = FilterResultDisplaySeqWindow(baseDisplay);
+            currentDisplay = FilterResultDisplaySeqWindow(currentDisplay);
+            delta = "";
+
+            if (string.Equals(baseDisplay, currentDisplay, StringComparison.Ordinal))
+                return false;
+            if (string.IsNullOrWhiteSpace(currentDisplay))
+                return false;
+            if (string.IsNullOrWhiteSpace(baseDisplay))
+            {
+                delta = currentDisplay;
+                return delta.Length > 0;
+            }
+
+            if (currentDisplay.Length > baseDisplay.Length &&
+                currentDisplay.StartsWith(baseDisplay, StringComparison.Ordinal))
+            {
+                delta = currentDisplay.Substring(baseDisplay.Length);
+                return delta.Length > 0;
+            }
+
+            int maxOverlap = Math.Min(baseDisplay.Length, currentDisplay.Length);
+            int bestOverlap = 0;
+            for (int overlap = maxOverlap; overlap >= 1; overlap--)
+            {
+                if (string.CompareOrdinal(baseDisplay, baseDisplay.Length - overlap, currentDisplay, 0, overlap) == 0)
+                {
+                    bestOverlap = overlap;
+                    break;
+                }
+            }
+
+            if (bestOverlap <= 0)
+                return false;
+
+            int minOverlap = baseDisplay.Length >= 20 ? 3 : (baseDisplay.Length >= 8 ? 2 : 1);
+            if (bestOverlap < minOverlap)
+                return false;
+
+            delta = currentDisplay.Substring(bestOverlap);
+            return delta.Length > 0;
         }
 
         private static long ComputeNextSyncSeqVersion(long prevVersion, string prevDisplay, string nextDisplay, long suggestedVersion)
@@ -5827,15 +6156,47 @@ try{
 
                 if (tableChanged)
                 {
-                    _boardSeqDisplay = "";
-                    _boardSeqVersion = 0;
-                    _boardSeqEvent = "";
-                    _syncSeqPrefixDisplay = "";
-                    _netSeqDisplay = "";
-                    _netSeqVersion = 0;
-                    _netSeqEvent = "net-observed-reset";
-                    _netSeqSource = "";
-                    _suppressJsBootstrapAfterObservedReset = true;
+                    var prevObservedKey = _netSeqTableId > 0 ? ("obs:" + _netSeqTableId.ToString(CultureInfo.InvariantCulture)) : (_lastBaccaratFrameKey ?? "");
+                    var nextObservedKey = tableId > 0 ? ("obs:" + tableId.ToString(CultureInfo.InvariantCulture)) : "";
+                    var boardDisplayNow = FilterResultDisplaySeqWindow(_boardSeqDisplay);
+                    var netDisplayNow = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                    bool frameAlreadyOnObservedTable = DoesFrameKeyMatchObservedTableId(_lastBaccaratFrameKey, tableId);
+                    bool stableCurrentAuthority =
+                        boardDisplayNow.Length >= 4 &&
+                        netDisplayNow.Length >= 4 &&
+                        string.Equals(boardDisplayNow, netDisplayNow, StringComparison.Ordinal) &&
+                        !IsNoBoardSeqEvent(_boardSeqEvent);
+                    bool canKeepObservedReset = frameAlreadyOnObservedTable && stableCurrentAuthority;
+                    if (canKeepObservedReset)
+                    {
+                        ClearTableSwitchRebaseArmLocked();
+                        _suppressJsBootstrapAfterObservedReset = false;
+                        _netSeqWinnerSeedOnly = false;
+                        Log($"[NETSEQ][OBS-RESET-KEEP] reason=frame-already-new-table-stable-raw | table={tableId} | shoe={gameShoe} | round={gameRound} | frameKey={_lastBaccaratFrameKey} | boardLen={boardDisplayNow.Length} | netLen={netDisplayNow.Length} | boardEvt={(string.IsNullOrWhiteSpace(_boardSeqEvent) ? "-" : _boardSeqEvent)} | prevTable={_netSeqTableId} | prevShoe={_netSeqGameShoe}");
+                    }
+                    else
+                    {
+                        _tableSwitchRebaseArmed = true;
+                        _tableSwitchRebaseArmedAtUtc = DateTime.UtcNow;
+                        _tableSwitchFromKey = prevObservedKey;
+                        _tableSwitchToKey = nextObservedKey;
+                        _tableSwitchFromHref = string.IsNullOrWhiteSpace(_lastBaccaratFrameHref) ? (_tableSwitchFromHref ?? "") : _lastBaccaratFrameHref;
+                        _tableSwitchToHref = _tableSwitchFromHref;
+                        _initialTableEnterArmed = false;
+                        _initialTableEnterArmedAtUtc = DateTime.MinValue;
+                        Log($"[SEQ][TABLE-SWITCH-ARM-OBS] reason=observed-table-change | from={_tableSwitchFromKey} | to={_tableSwitchToKey} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | frameKey={_lastBaccaratFrameKey} | frameHref={TrimHrefForLog(_lastBaccaratFrameHref)}");
+
+                        _boardSeqDisplay = "";
+                        _boardSeqVersion = 0;
+                        _boardSeqEvent = "";
+                        _syncSeqPrefixDisplay = "";
+                        _netSeqDisplay = "";
+                        _netSeqVersion = 0;
+                        _netSeqEvent = "net-observed-reset";
+                        _netSeqSource = "";
+                        _netSeqWinnerSeedOnly = false;
+                        _suppressJsBootstrapAfterObservedReset = true;
+                    }
                 }
                 else
                 {
@@ -5845,6 +6206,7 @@ try{
                     _syncSeqPrefixDisplay = _netSeqDisplay;
                     _netSeqEvent = "net-observed-shoe-reset";
                     _netSeqSource = "network";
+                    _netSeqWinnerSeedOnly = false;
                     _suppressJsBootstrapAfterObservedReset = false;
                 }
 
@@ -5889,9 +6251,67 @@ try{
             if (shoeChanged)
                 currentDisplay = "";
 
+            var snapRawDisplay = FilterResultDisplaySeqWindow(currentSnap?.rawSeq);
+            var snapSeqDisplay = FilterResultDisplaySeqWindow(currentSnap?.seq);
             var snapDisplay = FilterResultDisplaySeq(_boardSeqDisplay);
             if (tableChanged || shoeChanged)
                 snapDisplay = "";
+            var contextResetSeedDisplay = snapRawDisplay;
+            int targetLen = (int)Math.Max(0, packet.GameRound - 1);
+            bool snapNoBoardLike =
+                string.IsNullOrWhiteSpace(currentSnap?.seqEvent) ? false : IsNoBoardSeqEvent(currentSnap?.seqEvent ?? "");
+            bool enteringTableAwaitingAuthority = _tableSwitchRebaseArmed || _initialTableEnterArmed || tableChanged;
+            bool trustedSnapBoardAuthority =
+                !snapNoBoardLike &&
+                !IsChangingShoeStatus(currentSnap?.status ?? "") &&
+                snapRawDisplay.Length > 0 &&
+                string.Equals(snapRawDisplay, snapSeqDisplay, StringComparison.Ordinal) &&
+                (
+                    IsTrustedShortBoardBootstrapSeq(snapSeqDisplay, snapRawDisplay, currentSnap?.status, currentSnap?.seqEvent) ||
+                    IsTrustedBoardRawBootstrapSeq(snapSeqDisplay, snapRawDisplay, currentSnap?.status, currentSnap?.seqEvent)
+                );
+            if (enteringTableAwaitingAuthority && targetLen > 0 && !trustedSnapBoardAuthority)
+            {
+                var holdFullDisplay = string.IsNullOrWhiteSpace(currentPrefix)
+                    ? currentDisplay
+                    : currentPrefix + currentDisplay;
+                var holdVersion = Math.Max(_netSeqVersion, Math.Max(_baseSeqVersion, currentSnap?.seqVersion ?? 0));
+                result.Changed = false;
+                result.Appended = false;
+                result.HadGap = true;
+                result.PrevSeq = holdFullDisplay;
+                result.NextSeq = holdFullDisplay;
+                result.PrevVersion = holdVersion;
+                result.NextVersion = holdVersion;
+                result.SeqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? "net-winner-hold" : _netSeqEvent;
+                result.ResultChar = winnerChar.Value;
+                result.ResultText = MapWinnerCharToResultText(winnerChar.Value);
+                result.Action = "hold-table-switch-await-board-authority";
+
+                _netSeqWinnerSeedOnly = false;
+                _netSeqTableId = packet.TableId;
+                _netSeqGameShoe = packet.GameShoe;
+                _netSeqLastRound = packet.GameRound;
+                _netObservedTableId = packet.TableId > 0 ? packet.TableId : _netObservedTableId;
+                _netObservedGameShoe = packet.GameShoe > 0 ? packet.GameShoe : _netObservedGameShoe;
+                _netObservedGameRound = packet.GameRound > 0 ? packet.GameRound : _netObservedGameRound;
+                _suppressJsBootstrapAfterObservedReset = false;
+                _netLastWinnerKey = $"{packet.TableId}|{packet.GameShoe}|{packet.GameRound}|{packet.WinnerCode}";
+                _netLastWinnerAt = DateTime.UtcNow;
+
+                Log($"[NETSEQ][WINNER-HOLD] reason=table-switch-await-board-authority | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={winnerChar.Value} | targetLen={targetLen} | snapLen={snapSeqDisplay.Length} | rawLen={snapRawDisplay.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | tableSwitchArm={(_tableSwitchRebaseArmed ? 1 : 0)} | initialEnter={(_initialTableEnterArmed ? 1 : 0)} | snapEvt={(string.IsNullOrWhiteSpace(currentSnap?.seqEvent) ? "-" : currentSnap?.seqEvent)} | snapSrc={(string.IsNullOrWhiteSpace(currentSnap?.seqSource) ? "-" : currentSnap?.seqSource)}");
+                return result;
+            }
+            bool canSeedTableChangeFromSnap =
+                tableChanged &&
+                !snapNoBoardLike &&
+                !string.IsNullOrWhiteSpace(contextResetSeedDisplay);
+            if (canSeedTableChangeFromSnap)
+            {
+                currentDisplay = contextResetSeedDisplay;
+                snapDisplay = contextResetSeedDisplay;
+                Log($"[NETSEQ][WINNER-SEED] reason=table-change-snap | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | snapLen={contextResetSeedDisplay.Length} | rawLen={snapRawDisplay.Length} | seqLen={snapSeqDisplay.Length} | snapEvt={(string.IsNullOrWhiteSpace(currentSnap?.seqEvent) ? "-" : currentSnap?.seqEvent)} | snapSrc={(string.IsNullOrWhiteSpace(currentSnap?.seqSource) ? "-" : currentSnap?.seqSource)}");
+            }
             if (string.IsNullOrWhiteSpace(snapDisplay))
                 snapDisplay = currentDisplay;
 
@@ -5902,7 +6322,6 @@ try{
 
             string nextDisplay = currentDisplay;
             string action = "dup";
-            int targetLen = (int)Math.Max(0, packet.GameRound - 1);
             if (currentDisplay.Length == targetLen)
             {
                 nextDisplay = currentDisplay + winnerChar.Value;
@@ -5926,6 +6345,41 @@ try{
                 }
                 else
                 {
+                    bool awaitTrustedBoardBootstrap =
+                        targetLen > 0 &&
+                        string.IsNullOrWhiteSpace(currentFullDisplay) &&
+                        string.IsNullOrWhiteSpace(snapDisplay) &&
+                        string.IsNullOrWhiteSpace(FilterResultDisplaySeq(_baseSeqDisplay)) &&
+                        string.IsNullOrWhiteSpace(FilterResultDisplaySeq(_netSeqDisplay));
+                    if (awaitTrustedBoardBootstrap)
+                    {
+                        result.Changed = false;
+                        result.Appended = false;
+                        result.HadGap = true;
+                        result.PrevSeq = currentFullDisplay;
+                        result.NextSeq = currentFullDisplay;
+                        result.PrevVersion = currentVersion;
+                        result.NextVersion = currentVersion;
+                        result.SeqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? "net-winner-hold" : _netSeqEvent;
+                        result.ResultChar = winnerChar.Value;
+                        result.ResultText = MapWinnerCharToResultText(winnerChar.Value);
+                        result.Action = "hold-await-board-bootstrap";
+
+                        _netSeqWinnerSeedOnly = false;
+                        _netSeqTableId = packet.TableId;
+                        _netSeqGameShoe = packet.GameShoe;
+                        _netSeqLastRound = packet.GameRound;
+                        _netObservedTableId = packet.TableId > 0 ? packet.TableId : _netObservedTableId;
+                        _netObservedGameShoe = packet.GameShoe > 0 ? packet.GameShoe : _netObservedGameShoe;
+                        _netObservedGameRound = packet.GameRound > 0 ? packet.GameRound : _netObservedGameRound;
+                        _suppressJsBootstrapAfterObservedReset = false;
+                        _netLastWinnerKey = $"{packet.TableId}|{packet.GameShoe}|{packet.GameRound}|{packet.WinnerCode}";
+                        _netLastWinnerAt = DateTime.UtcNow;
+
+                        Log($"[NETSEQ][WINNER-HOLD] reason=await-trusted-board-bootstrap | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={winnerChar.Value} | targetLen={targetLen} | snapLen={snapDisplay.Length} | rawLen={snapRawDisplay.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | snapEvt={(string.IsNullOrWhiteSpace(currentSnap?.seqEvent) ? "-" : currentSnap?.seqEvent)} | snapSrc={(string.IsNullOrWhiteSpace(currentSnap?.seqSource) ? "-" : currentSnap?.seqSource)}");
+                        return result;
+                    }
+
                     nextDisplay = currentDisplay + winnerChar.Value;
                     action = "append-gap";
                     result.HadGap = true;
@@ -5979,6 +6433,9 @@ try{
             result.ResultText = MapWinnerCharToResultText(winnerChar.Value);
             result.Action = action;
 
+            _netSeqWinnerSeedOnly =
+                string.Equals(action, "append-gap", StringComparison.Ordinal) ||
+                string.Equals(action, "append-overflow", StringComparison.Ordinal);
             _syncSeqPrefixDisplay = currentPrefix;
             _boardSeqDisplay = nextDisplay;
             _boardSeqVersion = Math.Max(_boardSeqVersion, nextDisplay.Length);
@@ -5996,6 +6453,8 @@ try{
             _suppressJsBootstrapAfterObservedReset = false;
             _netLastWinnerKey = $"{packet.TableId}|{packet.GameShoe}|{packet.GameRound}|{packet.WinnerCode}";
             _netLastWinnerAt = DateTime.UtcNow;
+            _lastJsAppendFingerprint = "";
+            _lastJsAppendAppliedUtc = DateTime.MinValue;
 
             _baseSeqDisplay = nextFullDisplay;
             _baseSeq = FilterPlayableSeq(nextFullDisplay);
@@ -6032,7 +6491,7 @@ try{
 
                         var jsSeqForCompare = FilterResultDisplaySeq(currentSnap?.seq);
                         char jsTail = jsSeqForCompare.Length > 0 ? jsSeqForCompare[^1] : '-';
-                        Log($"[NETSEQ][WINNER] src={packet.OwnerTag} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={applied.ResultChar} | action={applied.Action} | prevLen={applied.PrevSeq.Length} | nextLen={applied.NextSeq.Length} | prevVer={applied.PrevVersion} | nextVer={applied.NextVersion} | jsTail={jsTail} | banker={packet.BankerValue} | player={packet.PlayerValue}");
+                        Log($"[NETSEQ][WINNER] src={packet.OwnerTag} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={applied.ResultChar} | action={applied.Action} | prevLen={applied.PrevSeq.Length} | nextLen={applied.NextSeq.Length} | prevVer={applied.PrevVersion} | nextVer={applied.NextVersion} | seedFromWinnerOnly={(_netSeqWinnerSeedOnly ? 1 : 0)} | jsTail={jsTail} | banker={packet.BankerValue} | player={packet.PlayerValue}");
 
                         double balanceAfter = ResolveHistoryBalance(currentSnap?.totals?.A);
                         if (applied.ResultChar == 'T')
@@ -6110,49 +6569,1190 @@ try{
             }));
         }
 
-        private void SyncNetworkSeqFromSnapshot(CwSnapshot snap, string source, string boardDisplay, long boardSeqVersion, string boardSeqEvent)
+        private static bool IsChangingShoeStatus(string? statusRaw)
+        {
+            if (string.IsNullOrWhiteSpace(statusRaw))
+                return false;
+
+            var status = statusRaw.Trim();
+            return status.IndexOf("CHANGING SHOE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   status.IndexOf("xào", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   status.IndexOf("xao", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   status.IndexOf("Vui lòng đợi", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   status.IndexOf("vui long doi", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsPlaceYourBetsStatus(string? statusRaw) =>
+            !string.IsNullOrWhiteSpace(statusRaw) &&
+            statusRaw.IndexOf("PLACE YOUR BETS", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        private static bool IsNoBoardSeqEvent(string? seqEventRaw)
+        {
+            var evt = seqEventRaw ?? "";
+            return evt.IndexOf("shoe-reset-arm", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   evt.IndexOf("board-empty", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   evt.IndexOf("no-board", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsParserUnstableHoldSeqEvent(string? seqEventRaw)
+        {
+            var evt = (seqEventRaw ?? "").Trim();
+            if (evt.Length == 0)
+                return false;
+
+            return
+                evt.IndexOf("board-jump-hold", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("board-shrink", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("hydrate-hold-managed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("shoe-reset-arm", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("board-empty", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("no-board", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsSeedLikeSeqEvent(string? seqEventRaw)
+        {
+            var evt = (seqEventRaw ?? "").Trim();
+            if (evt.Length == 0)
+                return false;
+
+            return
+                evt.IndexOf("reset-seed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("append-reset-seed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("table-switch-wait-bead", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("table-switch-tiny-board-bootstrap", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("table-switch-bead-authority", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("active-live-fallback", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("hydrate-hold-managed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                IsNoBoardSeqEvent(evt);
+        }
+
+        private static bool IsTrustedShortBoardBootstrapSeq(string? jsDisplayRaw, string? rawDisplayRaw, string? statusRaw, string? seqEventRaw)
+        {
+            var jsDisplay = FilterResultDisplaySeqWindow(jsDisplayRaw);
+            var rawDisplay = FilterResultDisplaySeqWindow(rawDisplayRaw);
+            if (rawDisplay.Length <= 0 || rawDisplay.Length > 3)
+                return false;
+            if (!string.Equals(rawDisplay, jsDisplay, StringComparison.Ordinal))
+                return false;
+            if (IsChangingShoeStatus(statusRaw) || IsNoBoardSeqEvent(seqEventRaw))
+                return false;
+
+            CountSeqChars(rawDisplay, out var b, out var p, out var t, out var h, out var other);
+            int bp = b + p;
+            if (bp <= 0 || h > 0 || other > 0)
+                return false;
+            if (t >= rawDisplay.Length)
+                return false;
+            return true;
+        }
+
+        private static bool IsTrustedBoardRawBootstrapSeq(string? jsDisplayRaw, string? rawDisplayRaw, string? statusRaw, string? seqEventRaw)
+        {
+            var jsDisplay = FilterResultDisplaySeqWindow(jsDisplayRaw);
+            var rawDisplay = FilterResultDisplaySeqWindow(rawDisplayRaw);
+            if (rawDisplay.Length <= 0 || rawDisplay.Length > 12)
+                return false;
+            if (IsChangingShoeStatus(statusRaw) || IsNoBoardSeqEvent(seqEventRaw))
+                return false;
+
+            CountSeqChars(rawDisplay, out var b, out var p, out var t, out var h, out var other);
+            int bp = b + p;
+            if (bp <= 0 || h > 0 || other > 0)
+                return false;
+            if (t >= rawDisplay.Length)
+                return false;
+
+            if (jsDisplay.Length == 0)
+                return true;
+            if (string.Equals(rawDisplay, jsDisplay, StringComparison.Ordinal))
+                return true;
+            return rawDisplay.StartsWith(jsDisplay, StringComparison.Ordinal);
+        }
+
+        private static bool IsTrustedNoChangeRawBootstrapSeq(string? jsDisplayRaw, string? rawDisplayRaw, string? statusRaw, string? seqEventRaw)
+        {
+            var evt = (seqEventRaw ?? "").Trim();
+            if (!string.Equals(evt, "no-change", StringComparison.OrdinalIgnoreCase))
+                return false;
+            if (IsChangingShoeStatus(statusRaw) || IsNoBoardSeqEvent(seqEventRaw))
+                return false;
+
+            var jsDisplay = FilterResultDisplaySeqWindow(jsDisplayRaw);
+            var rawDisplay = FilterResultDisplaySeqWindow(rawDisplayRaw);
+            if (rawDisplay.Length < 4 || jsDisplay.Length != rawDisplay.Length)
+                return false;
+            if (!string.Equals(jsDisplay, rawDisplay, StringComparison.Ordinal))
+                return false;
+
+            CountSeqChars(rawDisplay, out var b, out var p, out var t, out var h, out var other);
+            int bp = b + p;
+            if (bp <= 0 || h > 0 || other > 0)
+                return false;
+            if (t >= rawDisplay.Length)
+                return false;
+            return true;
+        }
+
+        private static bool IsTrustedRawBoardSnapshotSeq(string? jsDisplayRaw, string? rawDisplayRaw, string? statusRaw, string? seqEventRaw)
+        {
+            var evt = (seqEventRaw ?? "").Trim();
+            bool allowedStableEvent =
+                string.Equals(evt, "no-change", StringComparison.OrdinalIgnoreCase) ||
+                evt.IndexOf("append-raw-extend", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("hydrate", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("raw-authority", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!allowedStableEvent)
+                return false;
+            if (IsChangingShoeStatus(statusRaw) || IsNoBoardSeqEvent(seqEventRaw) || IsParserUnstableHoldSeqEvent(seqEventRaw))
+                return false;
+
+            var jsDisplay = FilterResultDisplaySeqWindow(jsDisplayRaw);
+            var rawDisplay = FilterResultDisplaySeqWindow(rawDisplayRaw);
+            if (rawDisplay.Length <= 0 || jsDisplay.Length != rawDisplay.Length)
+                return false;
+            if (!string.Equals(jsDisplay, rawDisplay, StringComparison.Ordinal))
+                return false;
+
+            CountSeqChars(rawDisplay, out var b, out var p, out var t, out var h, out var other);
+            int bp = b + p;
+            if (bp <= 0 || h > 0 || other > 0)
+                return false;
+            if (t >= rawDisplay.Length)
+                return false;
+            return true;
+        }
+
+        private static string NormalizeSeqContractMode(string? seqModeRaw, string? seqEventRaw, string? seqAppendRaw)
+        {
+            var mode = (seqModeRaw ?? "").Trim().ToLowerInvariant();
+            if (mode == "append" || mode == "full-rebase" || mode == "hold")
+                return mode;
+
+            var evt = (seqEventRaw ?? "").Trim();
+            var append = FilterResultDisplaySeq(seqAppendRaw);
+            if (append.Length > 0 &&
+                (evt.StartsWith("append", StringComparison.OrdinalIgnoreCase) ||
+                 evt.IndexOf("dom-baccarat-extend", StringComparison.OrdinalIgnoreCase) >= 0))
+                return "append";
+
+            if (evt.IndexOf("table-switch-reset", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("table-switch-bead-authority", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("table-switch-tiny-board-bootstrap", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("short-board-bootstrap-authority", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                evt.IndexOf("hydrate-init", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "full-rebase";
+
+            if (evt.Length > 0)
+                return "hold";
+
+            return "";
+        }
+
+        private static bool IsAppendSeqMode(string? mode) =>
+            string.Equals((mode ?? "").Trim(), "append", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsFullRebaseSeqMode(string? mode) =>
+            string.Equals((mode ?? "").Trim(), "full-rebase", StringComparison.OrdinalIgnoreCase);
+
+        private void ClearTableSwitchRebaseArmLocked()
+        {
+            _tableSwitchRebaseArmed = false;
+            _tableSwitchRebaseArmedAtUtc = DateTime.MinValue;
+            _tableSwitchFromKey = "";
+            _tableSwitchToKey = "";
+            _tableSwitchFromHref = "";
+            _tableSwitchToHref = "";
+            _initialTableEnterArmed = false;
+            _initialTableEnterArmedAtUtc = DateTime.MinValue;
+        }
+
+        private bool TryApplyTableSwitchRebaseLocked(
+            CwSnapshot snap,
+            string source,
+            string statusRaw,
+            string jsDisplay,
+            long jsSeqVersion,
+            string boardSeqEvent)
+        {
+            if (snap == null || !_tableSwitchRebaseArmed)
+                return false;
+
+            jsDisplay = FilterResultDisplaySeqWindow(jsDisplay);
+            var rawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
+            var rebaseDisplay = "";
+            bool noBoardLikeEvent = IsNoBoardSeqEvent(boardSeqEvent);
+            bool changingShoeStatus = IsChangingShoeStatus(statusRaw);
+            bool seedLikeEvent =
+                !string.IsNullOrWhiteSpace(boardSeqEvent) &&
+                (
+                    boardSeqEvent.IndexOf("append-reset-seed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    boardSeqEvent.IndexOf("reset-seed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    boardSeqEvent.IndexOf("shoe-reset-arm", StringComparison.OrdinalIgnoreCase) >= 0
+                );
+            bool hasRawDisplay = !string.IsNullOrWhiteSpace(rawDisplay);
+            bool hasJsDisplay = !string.IsNullOrWhiteSpace(jsDisplay);
+            CountSeqChars(rawDisplay, out var rawB, out var rawP, out var rawT, out _, out _);
+            CountSeqChars(jsDisplay, out var jsB, out var jsP, out var jsT, out _, out _);
+            bool jsLongerThanRaw = hasRawDisplay && jsDisplay.Length >= (rawDisplay.Length + 2);
+            bool jsCountsMismatchRaw = hasRawDisplay && hasJsDisplay &&
+                                       (rawB != jsB || rawP != jsP || rawT != jsT);
+            bool jsWithoutRawDuringSwitch = !hasRawDisplay && hasJsDisplay;
+            if (hasRawDisplay)
+                rebaseDisplay = rawDisplay;
+
+            var netDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
+
+            bool totalsAllZero = (snap.totals?.B ?? 0) == 0 &&
+                                 (snap.totals?.P ?? 0) == 0 &&
+                                 (snap.totals?.T ?? 0) == 0;
+            bool shortJsDuringNoBoard = noBoardLikeEvent && jsDisplay.Length <= 1;
+            bool staleRawDuringNoBoard = shortJsDuringNoBoard && rawDisplay.Length > jsDisplay.Length;
+            bool tableSwitchChangingShoeEmptyLike =
+                changingShoeStatus &&
+                totalsAllZero &&
+                jsDisplay.Length <= 2;
+            bool seedRawMismatchDuringSwitch =
+                seedLikeEvent &&
+                jsDisplay.Length <= 2 &&
+                rawDisplay.Length >= (jsDisplay.Length + 3);
+            bool parserUnstableHoldEvent = IsParserUnstableHoldSeqEvent(boardSeqEvent);
+            bool suspiciousParserHoldRebase =
+                parserUnstableHoldEvent &&
+                hasRawDisplay &&
+                (
+                    jsLongerThanRaw ||
+                    jsCountsMismatchRaw ||
+                    (!string.IsNullOrWhiteSpace(netDisplay) && rawDisplay.Length >= 4 && rawDisplay.Length <= Math.Max(0, netDisplay.Length - 4))
+                ) &&
+                !changingShoeStatus &&
+                !noBoardLikeEvent;
+            bool staleRawEmptySeqDuringSwitch =
+                !hasJsDisplay &&
+                hasRawDisplay &&
+                rawDisplay.Length >= 4 &&
+                (
+                    string.IsNullOrWhiteSpace(boardSeqEvent) ||
+                    boardSeqEvent.IndexOf("table-switch-wait-bead", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    boardSeqEvent.IndexOf("hold", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    boardSeqEvent.IndexOf("no-change", StringComparison.OrdinalIgnoreCase) >= 0
+                ) &&
+                !changingShoeStatus;
+            bool tinyRawRoundMismatchDuringSwitch =
+                hasRawDisplay &&
+                rawDisplay.Length > 0 &&
+                rawDisplay.Length <= 3 &&
+                _netObservedGameRound > (rawDisplay.Length + 5) &&
+                !string.IsNullOrWhiteSpace(boardSeqEvent) &&
+                (
+                    boardSeqEvent.IndexOf("table-switch-tiny-board-bootstrap", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    boardSeqEvent.IndexOf("table-switch-reset", StringComparison.OrdinalIgnoreCase) >= 0
+                );
+            if (tinyRawRoundMismatchDuringSwitch)
+            {
+                snap.seq = "";
+                snap.rawSeq = "";
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = "table-switch-wait-bead";
+                snap.seqSource = "table-switch-wait-bead";
+                Log($"[SEQ][TABLE-SWITCH-BLOCK] reason=tiny-raw-round-mismatch | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | raw={rawDisplay} | rawLen={rawDisplay.Length} | obsRound={_netObservedGameRound} | obsTable={_netObservedTableId} | obsShoe={_netObservedGameShoe} | netLen={netDisplay.Length} | netVer={_netSeqVersion} | from={_tableSwitchFromKey} | to={_tableSwitchToKey}");
+                return true;
+            }
+            if (staleRawEmptySeqDuringSwitch)
+            {
+                snap.seq = "";
+                snap.rawSeq = "";
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = "table-switch-wait-bead";
+                snap.seqSource = "table-switch-wait-bead";
+                Log($"[SEQ][TABLE-SWITCH-BLOCK] reason=stale-raw-empty-seq | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | jsLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | netLen={netDisplay.Length} | netVer={_netSeqVersion} | rawCount={BuildSeqCountText(rawDisplay, includeH: true)} | from={_tableSwitchFromKey} | to={_tableSwitchToKey}");
+                return true;
+            }
+            if ((staleRawDuringNoBoard && totalsAllZero) || tableSwitchChangingShoeEmptyLike)
+            {
+                int prevLenWait = netDisplay.Length;
+                long prevVerWait = _netSeqVersion;
+                string prevEvtWait = _netSeqEvent;
+                int pendingDropWait = _pendingRows.Count;
+                if (pendingDropWait > 0)
+                    _pendingRows.Clear();
+
+                if (!string.IsNullOrWhiteSpace(netDisplay))
+                {
+                    _syncSeqPrefixDisplay = "";
+                    _boardSeqDisplay = "";
+                    _boardSeqVersion = Math.Max(jsSeqVersion, 0);
+                    _boardSeqEvent = "table-switch-wait-bead";
+                    _netSeqDisplay = "";
+                    _netSeqVersion = ComputeNextSyncSeqVersion(prevVerWait, netDisplay, "", Math.Max(jsSeqVersion, prevVerWait + 1));
+                    _netSeqEvent = "table-switch-wait-bead";
+                    _netSeqSource = "table-switch-wait-bead";
+                    _netSeqWinnerSeedOnly = false;
+                    _netLastWinnerKey = "";
+                    _netLastWinnerAt = DateTime.MinValue;
+                    _baseSeqDisplay = "";
+                    _baseSeq = "";
+                    _baseSeqVersion = _netSeqVersion;
+                    _baseSeqEvent = _netSeqEvent;
+                    _baseSeqSource = _netSeqSource;
+                    _roundTotalsB = 0;
+                    _roundTotalsP = 0;
+                    _roundTotalsT = 0;
+                    _lockMajorMinorUpdates = false;
+
+                    string waitReason =
+                        tableSwitchChangingShoeEmptyLike ? "switch-changing-shoe-empty" :
+                        (staleRawDuringNoBoard ? "stale-raw-no-board" : "unknown");
+                    Log($"[SEQ][TABLE-SWITCH-WAIT-BEAD] reason={waitReason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | jsLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | prevLen={prevLenWait} | prevVer={prevVerWait} | prevEvt={(string.IsNullOrWhiteSpace(prevEvtWait) ? "-" : prevEvtWait)} | pendingDrop={pendingDropWait} | from={_tableSwitchFromKey} | to={_tableSwitchToKey}");
+                }
+
+                snap.seq = "";
+                snap.rawSeq = "";
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? "table-switch-wait-bead" : _netSeqEvent;
+                snap.seqSource = "table-switch-wait-bead";
+                return true;
+            }
+
+            if (suspiciousParserHoldRebase)
+            {
+                snap.seq = "";
+                snap.rawSeq = "";
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = "table-switch-wait-bead";
+                snap.seqSource = "table-switch-wait-bead";
+                Log($"[SEQ][TABLE-SWITCH-BLOCK] reason=unstable-hold-rebase | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | jsLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | netLen={netDisplay.Length} | netVer={_netSeqVersion} | rawCount={BuildSeqCountText(rawDisplay, includeH: true)} | jsCount={BuildSeqCountText(jsDisplay, includeH: false)} | from={_tableSwitchFromKey} | to={_tableSwitchToKey}");
+                return true;
+            }
+
+            if (jsWithoutRawDuringSwitch)
+            {
+                snap.seq = "";
+                snap.rawSeq = "";
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = "table-switch-wait-bead";
+                snap.seqSource = "table-switch-wait-bead";
+                Log($"[SEQ][TABLE-SWITCH-BLOCK] reason=missing-raw-authority | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | jsLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | seqMode={(string.IsNullOrWhiteSpace(snap.seqMode) ? "-" : snap.seqMode)} | seqAppend={(string.IsNullOrWhiteSpace(snap.seqAppend) ? "-" : snap.seqAppend)} | from={_tableSwitchFromKey} | to={_tableSwitchToKey}");
+                return true;
+            }
+
+            if (seedRawMismatchDuringSwitch)
+            {
+                Log($"[SEQ][TABLE-SWITCH-RAW-AUTHORITY] reason=seed-raw-mismatch | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | jsLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | from={_tableSwitchFromKey} | to={_tableSwitchToKey}");
+            }
+
+            if (hasRawDisplay && hasJsDisplay && (jsLongerThanRaw || jsCountsMismatchRaw))
+            {
+                Log($"[SEQ][TABLE-SWITCH-RAW-AUTHORITY] reason={(jsLongerThanRaw ? "js-longer-than-raw" : "js-count-mismatch-raw")} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | jsLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | rawCount={BuildSeqCountText(rawDisplay, includeH: true)} | jsCount={BuildSeqCountText(jsDisplay, includeH: false)} | from={_tableSwitchFromKey} | to={_tableSwitchToKey}");
+            }
+
+            if (string.IsNullOrWhiteSpace(rebaseDisplay))
+                return false;
+            if (string.IsNullOrWhiteSpace(netDisplay))
+                return false;
+
+            bool trustedBoardRawRebase =
+                hasRawDisplay &&
+                seedLikeEvent &&
+                IsTrustedBoardRawBootstrapSeq(jsDisplay, rawDisplay, statusRaw, boardSeqEvent);
+            bool trustedBeadShortRebase =
+                hasRawDisplay &&
+                (!hasJsDisplay || string.Equals(rawDisplay, jsDisplay, StringComparison.Ordinal)) &&
+                !jsCountsMismatchRaw &&
+                !jsLongerThanRaw &&
+                !changingShoeStatus &&
+                !noBoardLikeEvent &&
+                (
+                    string.Equals(boardSeqEvent, "table-switch-bead-authority", StringComparison.OrdinalIgnoreCase) ||
+                    IsTrustedShortBoardBootstrapSeq(jsDisplay, rawDisplay, statusRaw, boardSeqEvent)
+                ) ||
+                trustedBoardRawRebase;
+            bool blockedApplyEvent =
+                (IsSeedLikeSeqEvent(boardSeqEvent) && !trustedBeadShortRebase) ||
+                string.Equals(boardSeqEvent, "post-reset-hold", StringComparison.OrdinalIgnoreCase);
+            if (blockedApplyEvent)
+            {
+                snap.seq = "";
+                snap.rawSeq = "";
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = "table-switch-wait-bead";
+                snap.seqSource = "table-switch-wait-bead";
+                return true;
+            }
+            if (trustedBeadShortRebase && IsSeedLikeSeqEvent(boardSeqEvent))
+            {
+                var beadAllowReason = trustedBoardRawRebase ? "trusted-seed-raw-board" : (rawDisplay.Length <= 3 ? "trusted-tiny-board" : "trusted-short-board");
+                Log($"[SEQ][TABLE-SWITCH-BEAD-ALLOW] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | jsLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | raw={rawDisplay} | rawCount={BuildSeqCountText(rawDisplay, includeH: true)} | reason={beadAllowReason} | from={_tableSwitchFromKey} | to={_tableSwitchToKey}");
+            }
+            else if (hasRawDisplay &&
+                     hasJsDisplay &&
+                     string.Equals(rawDisplay, jsDisplay, StringComparison.Ordinal) &&
+                     boardSeqEvent.IndexOf("delta-queue", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                     !jsCountsMismatchRaw &&
+                     !jsLongerThanRaw &&
+                     !changingShoeStatus &&
+                     !noBoardLikeEvent)
+            {
+                Log($"[SEQ][TABLE-SWITCH-DELTA-ALLOW] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | jsLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | from={_tableSwitchFromKey} | to={_tableSwitchToKey}");
+            }
+
+            if (string.IsNullOrWhiteSpace(netDisplay))
+            {
+                int pendingBeforeBoot = _pendingRows.Count;
+                if (pendingBeforeBoot > 0)
+                    _pendingRows.Clear();
+
+                _syncSeqPrefixDisplay = "";
+                _boardSeqDisplay = rebaseDisplay;
+                _boardSeqVersion = Math.Max(jsSeqVersion, rebaseDisplay.Length);
+                _boardSeqEvent = "table-switch-reset";
+                _netSeqDisplay = rebaseDisplay;
+                _netSeqVersion = ComputeNextSyncSeqVersion(_netSeqVersion, "", rebaseDisplay, Math.Max(jsSeqVersion, rebaseDisplay.Length));
+                _netSeqEvent = "table-switch-reset";
+                _netSeqSource = "table-switch-reset";
+                _netSeqWinnerSeedOnly = false;
+                _netLastWinnerKey = "";
+                _netLastWinnerAt = DateTime.MinValue;
+                _baseSeqDisplay = rebaseDisplay;
+                _baseSeq = FilterPlayableSeq(rebaseDisplay);
+                _baseSeqVersion = _netSeqVersion;
+                _baseSeqEvent = _netSeqEvent;
+                _baseSeqSource = "table-switch-reset";
+                _roundTotalsB = 0;
+                _roundTotalsP = 0;
+                _roundTotalsT = 0;
+                _lockMajorMinorUpdates = false;
+
+                snap.seq = rebaseDisplay;
+                snap.rawSeq = rebaseDisplay;
+                snap.seqVersion = _netSeqVersion;
+                snap.seqEvent = _netSeqEvent;
+                snap.seqSource = "table-switch-reset";
+
+                Log($"[SEQ][TABLE-SWITCH-BOOT-APPLY] rawLen={rawDisplay.Length} | jsLen={jsDisplay.Length} | seqLen={rebaseDisplay.Length} | seqVer={_netSeqVersion} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | picked={(string.Equals(rebaseDisplay, rawDisplay, StringComparison.Ordinal) ? "raw" : "js")} | from={_tableSwitchFromKey} | to={_tableSwitchToKey} | pendingDrop={pendingBeforeBoot}");
+                ClearTableSwitchRebaseArmLocked();
+                return true;
+            }
+
+            if (string.Equals(rebaseDisplay, netDisplay, StringComparison.Ordinal))
+            {
+                _boardSeqDisplay = rebaseDisplay;
+                _boardSeqVersion = Math.Max(jsSeqVersion, rebaseDisplay.Length);
+                _boardSeqEvent = string.IsNullOrWhiteSpace(boardSeqEvent) ? "table-switch-reset-same-board" : boardSeqEvent;
+
+                snap.seq = netDisplay;
+                snap.rawSeq = rawDisplay;
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? "table-switch-reset-same-board" : _netSeqEvent;
+                snap.seqSource = string.IsNullOrWhiteSpace(_netSeqSource) ? "network-hold" : _netSeqSource;
+
+                Log($"[SEQ][TABLE-SWITCH-BOOT-RESOLVE] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | boardLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | syncLen={netDisplay.Length} | ver={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | reason=stable-same-board | from={_tableSwitchFromKey} | to={_tableSwitchToKey}");
+                ClearTableSwitchRebaseArmLocked();
+                return true;
+            }
+
+            int prevLen = netDisplay.Length;
+            long prevVer = _netSeqVersion;
+            string prevEvt = _netSeqEvent;
+            int pendingBefore = _pendingRows.Count;
+            if (pendingBefore > 0)
+                _pendingRows.Clear();
+
+            _syncSeqPrefixDisplay = "";
+            _boardSeqDisplay = rebaseDisplay;
+            _boardSeqVersion = Math.Max(jsSeqVersion, rebaseDisplay.Length);
+            _boardSeqEvent = "table-switch-reset";
+            _netSeqDisplay = rebaseDisplay;
+            _netSeqVersion = ComputeNextSyncSeqVersion(prevVer, netDisplay, rebaseDisplay, Math.Max(jsSeqVersion, rebaseDisplay.Length));
+            _netSeqEvent = "table-switch-reset";
+            _netSeqSource = "table-switch-reset";
+            _netSeqWinnerSeedOnly = false;
+            _netLastWinnerKey = "";
+            _netLastWinnerAt = DateTime.MinValue;
+            _baseSeqDisplay = rebaseDisplay;
+            _baseSeq = FilterPlayableSeq(rebaseDisplay);
+            _baseSeqVersion = _netSeqVersion;
+            _baseSeqEvent = _netSeqEvent;
+            _baseSeqSource = "table-switch-reset";
+            _roundTotalsB = 0;
+            _roundTotalsP = 0;
+            _roundTotalsT = 0;
+            _lockMajorMinorUpdates = false;
+
+            snap.seq = rebaseDisplay;
+            snap.seqVersion = _netSeqVersion;
+            snap.seqEvent = _netSeqEvent;
+            snap.seqSource = "table-switch-reset";
+
+            Log($"[SEQ][TABLE-SWITCH-REBASE-APPLY] rawLen={rawDisplay.Length} | jsLen={jsDisplay.Length} | seqLen={rebaseDisplay.Length} | seqVer={_netSeqVersion} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | picked={(string.Equals(rebaseDisplay, rawDisplay, StringComparison.Ordinal) ? "raw" : "js")} | prevLen={prevLen} | prevVer={prevVer} | prevEvt={(string.IsNullOrWhiteSpace(prevEvt) ? "-" : prevEvt)} | from={_tableSwitchFromKey} | to={_tableSwitchToKey} | pendingDrop={pendingBefore}");
+            ClearTableSwitchRebaseArmLocked();
+            return true;
+        }
+
+        private void ClearShoeChangeRebaseArmLocked()
+        {
+            _shoeChangeRebaseArmed = false;
+            _shoeChangeStatusStreak = 0;
+            _shoeChangeLastSeenUtc = DateTime.MinValue;
+            _shoeChangeRebaseArmedAtUtc = DateTime.MinValue;
+            _shoeChangeArmSource = "";
+            _shoeChangeArmEvent = "";
+        }
+
+        private void UpdateShoeChangeRebaseArmLocked(string statusRaw, string source, string boardSeqEvent)
+        {
+            if (string.IsNullOrWhiteSpace(_netSeqDisplay) || _tableSwitchRebaseArmed || _initialTableEnterArmed)
+                return;
+
+            var now = DateTime.UtcNow;
+            if (IsChangingShoeStatus(statusRaw))
+            {
+                if (_shoeChangeLastSeenUtc != DateTime.MinValue &&
+                    (now - _shoeChangeLastSeenUtc) <= TimeSpan.FromSeconds(12))
+                    _shoeChangeStatusStreak++;
+                else
+                    _shoeChangeStatusStreak = 1;
+
+                _shoeChangeLastSeenUtc = now;
+                if (!_shoeChangeRebaseArmed && _shoeChangeStatusStreak >= 2)
+                {
+                    _shoeChangeRebaseArmed = true;
+                    _shoeChangeRebaseArmedAtUtc = now;
+                    _shoeChangeArmSource = source ?? "";
+                    _shoeChangeArmEvent = boardSeqEvent ?? "";
+                    Log($"[SEQ][SHOE-ARM] rawLen=0 | seqLen={_netSeqDisplay.Length} | seqVer={_netSeqVersion} | status=CHANGING SHOE | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | streak={_shoeChangeStatusStreak}");
+                }
+                return;
+            }
+
+            if (_shoeChangeLastSeenUtc != DateTime.MinValue &&
+                (now - _shoeChangeLastSeenUtc) > TimeSpan.FromSeconds(20))
+            {
+                _shoeChangeStatusStreak = 0;
+            }
+        }
+
+        private bool TryApplyShoeRebaseLocked(CwSnapshot snap, string source, string statusRaw, string boardSeqEvent)
+        {
+            if (snap == null || !_shoeChangeRebaseArmed)
+                return false;
+            if (_tableSwitchRebaseArmed || _initialTableEnterArmed)
+                return false;
+            if (!IsPlaceYourBetsStatus(statusRaw))
+                return false;
+
+            var rawDisplay = FilterResultDisplaySeq(snap.rawSeq);
+            var netDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
+            if (string.IsNullOrWhiteSpace(netDisplay))
+                return false;
+
+            bool candidateShort = rawDisplay.Length <= 12;
+            bool candidateDrop = rawDisplay.Length + 6 < netDisplay.Length;
+            bool eventHint =
+                (boardSeqEvent ?? "").IndexOf("shoe-reset", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                (boardSeqEvent ?? "").IndexOf("no-board", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!(candidateShort && candidateDrop) && !eventHint)
+                return false;
+
+            int prevLen = netDisplay.Length;
+            long prevVer = _netSeqVersion;
+            string prevEvt = _netSeqEvent;
+            string prevSrc = _netSeqSource;
+
+            _syncSeqPrefixDisplay = netDisplay;
+            _boardSeqDisplay = "";
+            _boardSeqVersion = 0;
+            _boardSeqEvent = "shoe-anchor-hold";
+            _lastShoeRebaseAppliedUtc = DateTime.UtcNow;
+            _lastShoeRebaseAppliedLen = netDisplay.Length;
+            _netSeqWinnerSeedOnly = false;
+
+            snap.seq = netDisplay;
+            snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+            snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+            snap.seqSource = "network-hold";
+
+            Log($"[SEQ][SHOE-ANCHOR-HOLD] rawLen={rawDisplay.Length} | seqLen={netDisplay.Length} | prefixLen={_syncSeqPrefixDisplay.Length} | seqVer={_netSeqVersion} | status=PLACE YOUR BETS | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | prevLen={prevLen} | prevVer={prevVer} | prevEvt={(string.IsNullOrWhiteSpace(prevEvt) ? "-" : prevEvt)} | prevSrc={(string.IsNullOrWhiteSpace(prevSrc) ? "-" : prevSrc)} | armSrc={(string.IsNullOrWhiteSpace(_shoeChangeArmSource) ? "-" : _shoeChangeArmSource)} | armEvt={(string.IsNullOrWhiteSpace(_shoeChangeArmEvent) ? "-" : _shoeChangeArmEvent)}");
+            ClearShoeChangeRebaseArmLocked();
+            return true;
+        }
+
+        private bool TryApplyJsAppendContractLocked(
+            CwSnapshot snap,
+            string source,
+            string statusRaw,
+            string boardSeqEvent,
+            string seqMode,
+            string seqAppend,
+            long jsSeqVersion,
+            string reason)
+        {
+            if (snap == null || !IsAppendSeqMode(seqMode))
+                return false;
+
+            var delta = FilterResultDisplaySeq(seqAppend);
+            if (string.IsNullOrWhiteSpace(delta))
+            {
+                Log($"[NETSEQ][APPEND-SKIP] reason=empty-delta | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | mode={(string.IsNullOrWhiteSpace(seqMode) ? "-" : seqMode)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | rawAppend={(string.IsNullOrWhiteSpace(seqAppend) ? "-" : Shrink(seqAppend, 40))}");
+                return false;
+            }
+
+            if (delta.Length > 8)
+            {
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                snap.seqSource = "network-hold";
+                Log($"[NETSEQ][APPEND-REJECT] reason=delta-too-long | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | mode={seqMode} | deltaLen={delta.Length} | delta={Shrink(delta, 40)} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+                return true;
+            }
+
+            var jsSeqDisplay = FilterResultDisplaySeqWindow(snap.seq);
+            var rawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
+            var prevDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
+            var rawCombinedDisplay = BuildSyncSeqFromBoardLocked(rawDisplay);
+            var recentWinnerAgeSec = _netLastWinnerAt == DateTime.MinValue
+                ? double.MaxValue
+                : (DateTime.UtcNow - _netLastWinnerAt).TotalSeconds;
+            bool recentWinnerActive =
+                _netLastWinnerAt != DateTime.MinValue &&
+                recentWinnerAgeSec <= 8 &&
+                !string.IsNullOrWhiteSpace(_netLastWinnerKey);
+            if (recentWinnerActive)
+            {
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                snap.seqSource = "network-hold";
+                Log($"[NETSEQ][APPEND-SKIP] reason=recent-net-winner | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | mode={seqMode} | delta={delta} | jsLen={jsSeqDisplay.Length} | rawLen={rawDisplay.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | winnerKey={(string.IsNullOrWhiteSpace(_netLastWinnerKey) ? "-" : _netLastWinnerKey)} | winnerAgeSec={recentWinnerAgeSec:0.###} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)}");
+                return true;
+            }
+
+            var appendFingerprint = string.Join("|",
+                FilterResultDisplaySeqWindow(jsSeqDisplay),
+                FilterResultDisplaySeqWindow(rawDisplay),
+                delta,
+                string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent);
+            if (!string.IsNullOrWhiteSpace(_lastJsAppendFingerprint) &&
+                string.Equals(_lastJsAppendFingerprint, appendFingerprint, StringComparison.Ordinal) &&
+                _lastJsAppendAppliedUtc != DateTime.MinValue &&
+                (DateTime.UtcNow - _lastJsAppendAppliedUtc).TotalMilliseconds <= 2500)
+            {
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                snap.seqSource = "network-hold";
+                Log($"[NETSEQ][APPEND-SKIP] reason=duplicate-fingerprint | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | mode={seqMode} | delta={delta} | jsLen={jsSeqDisplay.Length} | rawLen={rawDisplay.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | ageMs={(DateTime.UtcNow - _lastJsAppendAppliedUtc).TotalMilliseconds:0}");
+                return true;
+            }
+
+            bool seqRawGapTooLarge =
+                rawDisplay.Length > 0 &&
+                jsSeqDisplay.Length > (rawDisplay.Length + 2) &&
+                !IsNoBoardSeqEvent(boardSeqEvent) &&
+                !IsSeedLikeSeqEvent(boardSeqEvent);
+            if (seqRawGapTooLarge)
+            {
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                snap.seqSource = "network-hold";
+                Log($"[NETSEQ][APPEND-BLOCK] reason=seq-raw-gap-too-large | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | mode={seqMode} | delta={delta} | jsLen={jsSeqDisplay.Length} | rawLen={rawDisplay.Length} | rawCombinedLen={rawCombinedDisplay.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)}");
+                return true;
+            }
+
+            if (rawDisplay.Length <= 0)
+            {
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                snap.seqSource = "network-hold";
+                Log($"[NETSEQ][APPEND-BLOCK] reason=raw-missing | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | mode={seqMode} | delta={delta} | jsLen={jsSeqDisplay.Length} | rawLen=0 | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)}");
+                return true;
+            }
+
+            if (!TryExtractSeqAdvanceDelta(prevDisplay, rawCombinedDisplay, out var rawAdvanceDelta))
+            {
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                snap.seqSource = "network-hold";
+                Log($"[NETSEQ][APPEND-BLOCK] reason=raw-not-advanced | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | mode={seqMode} | delta={delta} | jsLen={jsSeqDisplay.Length} | rawLen={rawDisplay.Length} | rawCombinedLen={rawCombinedDisplay.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)}");
+                return true;
+            }
+
+            if (!string.Equals(rawAdvanceDelta, delta, StringComparison.Ordinal))
+            {
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                snap.seqSource = "network-hold";
+                Log($"[NETSEQ][APPEND-BLOCK] reason=raw-delta-mismatch | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | mode={seqMode} | delta={delta} | rawDelta={rawAdvanceDelta} | jsLen={jsSeqDisplay.Length} | rawLen={rawDisplay.Length} | rawCombinedLen={rawCombinedDisplay.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)}");
+                return true;
+            }
+
+            var nextDisplay = FilterResultDisplaySeqWindow(prevDisplay + delta);
+            var prevVer = _netSeqVersion;
+            _netSeqDisplay = nextDisplay;
+            _netSeqVersion = ComputeNextSyncSeqVersion(prevVer, prevDisplay, nextDisplay, Math.Max(jsSeqVersion, prevVer + delta.Length));
+            _netSeqEvent = string.IsNullOrWhiteSpace(boardSeqEvent) ? "js-append" : "js-append-" + boardSeqEvent;
+            _netSeqSource = "js-append";
+            _netSeqWinnerSeedOnly = false;
+            _lastJsAppendFingerprint = appendFingerprint;
+            _lastJsAppendAppliedUtc = DateTime.UtcNow;
+
+            snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+            snap.seqVersion = _netSeqVersion;
+            snap.seqEvent = _netSeqEvent;
+            snap.seqSource = _netSeqSource;
+
+            Log($"[NETSEQ][APPEND] reason={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | mode={seqMode} | delta={delta} | prevLen={prevDisplay.Length} | netLen={_netSeqDisplay.Length} | prevVer={prevVer} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+            return true;
+        }
+
+        private void SyncNetworkSeqFromSnapshot(CwSnapshot snap, string source, string boardDisplay, long boardSeqVersion, string boardSeqEvent, string statusRaw)
         {
             if (snap == null) return;
-            var jsDisplay = FilterResultDisplaySeq(boardDisplay);
+            var jsDisplay = FilterResultDisplaySeqWindow(boardDisplay);
             var jsSeqVersion = Math.Max(boardSeqVersion, jsDisplay.Length);
             var prevBoardDisplay = _boardSeqDisplay;
             var prevBoardVersion = _boardSeqVersion;
-            _boardSeqDisplay = jsDisplay;
-            _boardSeqVersion = jsSeqVersion;
-            _boardSeqEvent = boardSeqEvent ?? "";
-            if (string.IsNullOrWhiteSpace(jsDisplay)) return;
+            var incomingBoardEvent = boardSeqEvent ?? "";
+            var rawDisplayInput = FilterResultDisplaySeqWindow(snap.rawSeq);
+            var seqMode = NormalizeSeqContractMode(snap.seqMode, incomingBoardEvent, snap.seqAppend);
+            var seqAppend = FilterResultDisplaySeq(snap.seqAppend);
 
-            var combinedDisplay = BuildSyncSeqFromBoardLocked(jsDisplay);
+            Log($"[SEQ][AUTH] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | mode={(string.IsNullOrWhiteSpace(seqMode) ? "-" : seqMode)} | append={(string.IsNullOrWhiteSpace(seqAppend) ? "-" : seqAppend)} | seqLen={jsDisplay.Length} | rawLen={rawDisplayInput.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | tableSwitchArm={(_tableSwitchRebaseArmed ? 1 : 0)} | initialEnter={(_initialTableEnterArmed ? 1 : 0)}");
+
+            UpdateShoeChangeRebaseArmLocked(statusRaw, source, incomingBoardEvent);
+            bool sourceLooksFrameAuthority =
+                !string.IsNullOrWhiteSpace(source) &&
+                source.IndexOf("frame", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool trustedTinyFrameTableSwitchCandidate =
+                sourceLooksFrameAuthority &&
+                IsFullRebaseSeqMode(seqMode) &&
+                !string.IsNullOrWhiteSpace(incomingBoardEvent) &&
+                incomingBoardEvent.IndexOf("table-switch-reset", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                rawDisplayInput.Length > 0 &&
+                rawDisplayInput.Length <= 3 &&
+                IsTrustedShortBoardBootstrapSeq(jsDisplay, rawDisplayInput, statusRaw, incomingBoardEvent);
+            bool implicitTableSwitchCandidate =
+                !_tableSwitchRebaseArmed &&
+                sourceLooksFrameAuthority &&
+                !string.IsNullOrWhiteSpace(_netSeqDisplay) &&
+                IsFullRebaseSeqMode(seqMode) &&
+                !string.IsNullOrWhiteSpace(incomingBoardEvent) &&
+                incomingBoardEvent.IndexOf("table-switch-reset", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                (rawDisplayInput.Length >= 4 || trustedTinyFrameTableSwitchCandidate) &&
+                jsDisplay.Length >= rawDisplayInput.Length &&
+                !IsNoBoardSeqEvent(incomingBoardEvent) &&
+                !IsChangingShoeStatus(statusRaw);
+            if (implicitTableSwitchCandidate)
+            {
+                var fromKey = !string.IsNullOrWhiteSpace(_tableSwitchToKey)
+                    ? _tableSwitchToKey
+                    : (_netSeqTableId > 0 ? ("obs:" + _netSeqTableId.ToString(CultureInfo.InvariantCulture)) : "");
+                var toKey = _netObservedTableId > 0
+                    ? ("obs:" + _netObservedTableId.ToString(CultureInfo.InvariantCulture))
+                    : (fromKey.Length > 0 ? (fromKey + "->js-reset") : "js-reset");
+                _tableSwitchRebaseArmed = true;
+                _tableSwitchRebaseArmedAtUtc = DateTime.UtcNow;
+                _tableSwitchFromKey = fromKey;
+                _tableSwitchToKey = toKey;
+                var implicitReason = trustedTinyFrameTableSwitchCandidate ? "trusted-js-tiny-reset" : "trusted-js-reset";
+                Log($"[SEQ][TABLE-SWITCH-ARM-IMPLICIT] reason={implicitReason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={incomingBoardEvent} | jsLen={jsDisplay.Length} | rawLen={rawDisplayInput.Length} | raw={rawDisplayInput} | rawCount={BuildSeqCountText(rawDisplayInput, includeH: true)} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | from={_tableSwitchFromKey} | to={_tableSwitchToKey} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+            }
+            if (TryApplyTableSwitchRebaseLocked(snap, source, statusRaw, jsDisplay, jsSeqVersion, incomingBoardEvent))
+                return;
+            if (TryApplyShoeRebaseLocked(snap, source, statusRaw, incomingBoardEvent))
+                return;
+            bool noBoardLikeIncoming = IsNoBoardSeqEvent(incomingBoardEvent);
+            bool jsRawLargeGap =
+                !string.IsNullOrWhiteSpace(jsDisplay) &&
+                rawDisplayInput.Length > 0 &&
+                jsDisplay.Length > (rawDisplayInput.Length + 2);
+            if (jsRawLargeGap && !noBoardLikeIncoming)
+            {
+                Log($"[NETSEQ][RAW-AUTHORITY] src={source} | reason=js-ahead-of-raw | jsLen={jsDisplay.Length} | rawLen={rawDisplayInput.Length} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+                jsDisplay = rawDisplayInput;
+                jsSeqVersion = Math.Max(0, jsDisplay.Length);
+                incomingBoardEvent = string.IsNullOrWhiteSpace(incomingBoardEvent) ? "raw-authority" : ("raw-authority-" + incomingBoardEvent);
+            }
+
+            if (string.IsNullOrWhiteSpace(jsDisplay))
+            {
+                bool transientNoBoardEvent = IsNoBoardSeqEvent(incomingBoardEvent);
+
+                if (_tableSwitchRebaseArmed || _initialTableEnterArmed)
+                {
+                    snap.seq = "";
+                    snap.rawSeq = "";
+                    snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                    snap.seqEvent = "table-switch-wait-bead";
+                    snap.seqSource = "table-switch-wait-bead";
+                    Log($"[NETSEQ][TABLE-SWITCH-HOLD-EMPTY] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | mode={(string.IsNullOrWhiteSpace(seqMode) ? "-" : seqMode)} | oldNetLen={_netSeqDisplay.Length} | oldNetVer={_netSeqVersion} | reason=wait-new-table-bead");
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(_netSeqDisplay))
+                {
+                    snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                    snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                    snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                    snap.seqSource = "network-hold";
+                    if (transientNoBoardEvent)
+                    {
+                        Log($"[NETSEQ][JS-EMPTY-HOLD] src={source} | jsEvt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion}");
+                    }
+                    return;
+                }
+
+                _boardSeqDisplay = "";
+                _boardSeqVersion = 0;
+                if (!string.IsNullOrWhiteSpace(incomingBoardEvent))
+                    _boardSeqEvent = incomingBoardEvent;
+                return;
+            }
 
             if (string.IsNullOrWhiteSpace(_netSeqDisplay))
             {
+                bool seedLikeEvent = IsSeedLikeSeqEvent(incomingBoardEvent);
+                bool changingShoeNow = IsChangingShoeStatus(statusRaw);
+                var rawDisplayBoot = FilterResultDisplaySeqWindow(snap.rawSeq);
+                bool enteringNewTable = _tableSwitchRebaseArmed || _initialTableEnterArmed;
+                bool bootSourceLooksFrameAuthority =
+                    !string.IsNullOrWhiteSpace(source) &&
+                    source.IndexOf("frame", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool tinyBootstrapFromNonGameContext =
+                    !enteringNewTable &&
+                    rawDisplayBoot.Length > 0 &&
+                    rawDisplayBoot.Length <= 3 &&
+                    !bootSourceLooksFrameAuthority &&
+                    !string.IsNullOrWhiteSpace(statusRaw) &&
+                    statusRaw.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase) &&
+                    statusRaw.IndexOf("waiting", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool holdEmptyForChangingShoe = changingShoeNow;
+                bool holdEmptyForMissingRaw = rawDisplayBoot.Length == 0 && !noBoardLikeIncoming;
+                bool trustedNoChangeRawBootstrap =
+                    enteringNewTable &&
+                    IsTrustedNoChangeRawBootstrapSeq(jsDisplay, rawDisplayBoot, statusRaw, incomingBoardEvent);
+                bool trustedShortRawBootstrap =
+                    (
+                        rawDisplayBoot.Length > 0 &&
+                        string.Equals(rawDisplayBoot, jsDisplay, StringComparison.Ordinal) &&
+                        !changingShoeNow &&
+                        !noBoardLikeIncoming &&
+                        string.Equals(incomingBoardEvent, "table-switch-bead-authority", StringComparison.OrdinalIgnoreCase)
+                    ) ||
+                    IsTrustedShortBoardBootstrapSeq(jsDisplay, rawDisplayBoot, statusRaw, incomingBoardEvent) ||
+                    (seedLikeEvent && IsTrustedBoardRawBootstrapSeq(jsDisplay, rawDisplayBoot, statusRaw, incomingBoardEvent));
+                bool tinyBootstrapRoundMismatch =
+                    rawDisplayBoot.Length > 0 &&
+                    rawDisplayBoot.Length <= 3 &&
+                    _netObservedGameRound > (rawDisplayBoot.Length + 5) &&
+                    !string.IsNullOrWhiteSpace(incomingBoardEvent) &&
+                    incomingBoardEvent.IndexOf("table-switch-tiny-board-bootstrap", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool holdEmptyForSeedLikeBootstrap =
+                    seedLikeEvent &&
+                    rawDisplayBoot.Length > 2 &&
+                    !trustedShortRawBootstrap;
+                bool blockedBootstrapEvent =
+                    (seedLikeEvent && !trustedShortRawBootstrap) ||
+                    string.Equals(incomingBoardEvent, "post-reset-hold", StringComparison.OrdinalIgnoreCase);
+                bool rawStableEnough = (rawDisplayBoot.Length >= 4 || trustedShortRawBootstrap) && !changingShoeNow;
+                bool suspiciousNoChangeBootstrap =
+                    string.Equals(incomingBoardEvent, "no-change", StringComparison.OrdinalIgnoreCase) &&
+                    enteringNewTable &&
+                    rawDisplayBoot.Length > 0 &&
+                    !trustedShortRawBootstrap &&
+                    !trustedNoChangeRawBootstrap;
+
+                if (holdEmptyForChangingShoe || holdEmptyForSeedLikeBootstrap || holdEmptyForMissingRaw ||
+                    tinyBootstrapFromNonGameContext ||
+                    tinyBootstrapRoundMismatch ||
+                    (enteringNewTable && !rawStableEnough) || blockedBootstrapEvent || suspiciousNoChangeBootstrap)
+                {
+                    string bootSkipReason = holdEmptyForChangingShoe
+                        ? "changing-shoe-hold-empty"
+                        : (tinyBootstrapFromNonGameContext ? "tiny-bootstrap-non-game-context"
+                            : (tinyBootstrapRoundMismatch ? "tiny-bootstrap-round-mismatch"
+                                : (holdEmptyForSeedLikeBootstrap ? "seed-like-bootstrap-block"
+                                    : (holdEmptyForMissingRaw ? "raw-missing-empty-net"
+                                        : (suspiciousNoChangeBootstrap ? "no-change-after-reset"
+                                            : (blockedBootstrapEvent ? "blocked-bootstrap-event" : "new-table-wait-stable-raw"))))));
+                    Log($"[NETSEQ][BOOT][SKIP] src={source} | len={jsDisplay.Length} | rawLen={rawDisplayBoot.Length} | raw={(string.IsNullOrWhiteSpace(rawDisplayBoot) ? "-" : rawDisplayBoot)} | obsRound={_netObservedGameRound} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | reason={bootSkipReason}");
+                    snap.seq = "";
+                    snap.rawSeq = "";
+                    snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                    snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? "table-switch-wait-bead" : _netSeqEvent;
+                    snap.seqSource = "table-switch-wait-bead";
+                    return;
+                }
+                if (trustedNoChangeRawBootstrap)
+                {
+                    Log($"[NETSEQ][BOOT][ALLOW-NOCHANGE-RAW] src={source} | len={jsDisplay.Length} | rawLen={rawDisplayBoot.Length} | raw={rawDisplayBoot} | rawCount={BuildSeqCountText(rawDisplayBoot, includeH: true)} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | reason=trusted-nochange-raw");
+                }
+                if (trustedShortRawBootstrap)
+                {
+                    Log($"[NETSEQ][BOOT][ALLOW-SHORT-RAW] src={source} | len={jsDisplay.Length} | rawLen={rawDisplayBoot.Length} | raw={rawDisplayBoot} | rawCount={BuildSeqCountText(rawDisplayBoot, includeH: true)} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | mode={(string.IsNullOrWhiteSpace(seqMode) ? "-" : seqMode)} | append={(string.IsNullOrWhiteSpace(seqAppend) ? "-" : seqAppend)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | reason={(rawDisplayBoot.Length <= 3 ? "trusted-tiny-board" : "trusted-seed-raw-board")}");
+                }
+
                 bool hasObservedContext = _netObservedTableId > 0 && _netObservedGameShoe > 0 && _netObservedGameRound > 0;
-                bool isTableSwitchResetEvent = !string.IsNullOrWhiteSpace(boardSeqEvent) &&
-                    boardSeqEvent.IndexOf("table-switch-reset", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool isTableSwitchResetEvent = !string.IsNullOrWhiteSpace(incomingBoardEvent) &&
+                    incomingBoardEvent.IndexOf("table-switch-reset", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool jsLooksAheadOfObservedRound = hasObservedContext && jsDisplay.Length > _netObservedGameRound;
                 if (_suppressJsBootstrapAfterObservedReset &&
                     (isTableSwitchResetEvent || !hasObservedContext || jsLooksAheadOfObservedRound))
                 {
-                    Log($"[NETSEQ][BOOT][SKIP] src={source} | len={jsDisplay.Length} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | obsTable={_netObservedTableId} | obsShoe={_netObservedGameShoe} | obsRound={_netObservedGameRound} | reason=observed-reset-guard");
+                    Log($"[NETSEQ][BOOT][SKIP] src={source} | len={jsDisplay.Length} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | obsTable={_netObservedTableId} | obsShoe={_netObservedGameShoe} | obsRound={_netObservedGameRound} | reason=observed-reset-guard");
+                    snap.seq = "";
+                    snap.rawSeq = "";
+                    snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                    snap.seqEvent = "table-switch-wait-bead";
+                    snap.seqSource = "table-switch-wait-bead";
+                    Log($"[NETSEQ][TABLE-SWITCH-HOLD-EMPTY] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | mode={(string.IsNullOrWhiteSpace(seqMode) ? "-" : seqMode)} | oldJsLen={jsDisplay.Length} | oldRawLen={rawDisplayBoot.Length} | oldNetLen={_netSeqDisplay.Length} | oldNetVer={_netSeqVersion} | reason=observed-reset-guard");
                     return;
                 }
 
-                _netSeqDisplay = combinedDisplay;
+                string bootDisplay = rawDisplayBoot;
+                _netSeqDisplay = FilterResultDisplaySeqWindow(bootDisplay);
                 _netSeqVersion = ComputeNextSyncSeqVersion(_netSeqVersion, "", _netSeqDisplay, Math.Max(_baseSeqVersion, Math.Max(jsSeqVersion, _netSeqDisplay.Length)));
-                _netSeqEvent = string.IsNullOrWhiteSpace(boardSeqEvent) ? "js-bootstrap" : "js-" + boardSeqEvent;
+                _netSeqEvent = string.IsNullOrWhiteSpace(incomingBoardEvent) ? "js-bootstrap" : "js-" + incomingBoardEvent;
                 _netSeqSource = "js-bootstrap";
+                _netSeqWinnerSeedOnly = false;
                 _suppressJsBootstrapAfterObservedReset = false;
-                Log($"[NETSEQ][BOOT] src={source} | boardLen={jsDisplay.Length} | syncLen={_netSeqDisplay.Length} | ver={_netSeqVersion} | evt={_netSeqEvent}");
+                bool resolvedTableSwitchBootstrap = enteringNewTable && (trustedShortRawBootstrap || trustedNoChangeRawBootstrap);
+                if (resolvedTableSwitchBootstrap)
+                {
+                    Log($"[SEQ][TABLE-SWITCH-BOOT-RESOLVE] src={source} | boardLen={jsDisplay.Length} | rawLen={rawDisplayBoot.Length} | syncLen={_netSeqDisplay.Length} | ver={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | reason={(trustedNoChangeRawBootstrap ? "trusted-nochange-raw" : "trusted-short-raw")} | from={_tableSwitchFromKey} | to={_tableSwitchToKey}");
+                    ClearTableSwitchRebaseArmLocked();
+                }
+                else
+                {
+                    _initialTableEnterArmed = false;
+                    _initialTableEnterArmedAtUtc = DateTime.MinValue;
+                }
+                if (_shoeChangeRebaseArmed && !seedLikeEvent)
+                {
+                    Log($"[SEQ][SHOE-ARM] rawLen={rawDisplayBoot.Length} | seqLen={_netSeqDisplay.Length} | seqVer={_netSeqVersion} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | action=clear-on-bootstrap");
+                    ClearShoeChangeRebaseArmLocked();
+                }
+                Log($"[NETSEQ][BOOT] src={source} | boardLen={jsDisplay.Length} | rawLen={rawDisplayBoot.Length} | syncLen={_netSeqDisplay.Length} | ver={_netSeqVersion} | evt={_netSeqEvent} | picked=raw");
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.rawSeq = rawDisplayBoot;
+                snap.seqVersion = _netSeqVersion;
+                snap.seqEvent = _netSeqEvent;
+                snap.seqSource = _netSeqSource;
+                return;
             }
 
+            _boardSeqDisplay = jsDisplay;
+            _boardSeqVersion = jsSeqVersion;
+            _boardSeqEvent = incomingBoardEvent;
+
+            bool hasShoeAnchorForContract =
+                !string.IsNullOrWhiteSpace(_syncSeqPrefixDisplay) ||
+                _shoeChangeRebaseArmed;
+            bool hasAuthoritativeSeq = !string.IsNullOrWhiteSpace(_netSeqDisplay);
+
+            if (hasAuthoritativeSeq && hasShoeAnchorForContract)
+            {
+                if (TryApplyJsAppendContractLocked(snap, source, statusRaw, incomingBoardEvent, seqMode, seqAppend, jsSeqVersion, "shoe-anchor"))
+                    return;
+
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                snap.seqSource = "network-hold";
+                Log($"[NETSEQ][SHOE-HOLD-NO-DELTA] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | mode={(string.IsNullOrWhiteSpace(seqMode) ? "-" : seqMode)} | append={(string.IsNullOrWhiteSpace(seqAppend) ? "-" : seqAppend)} | boardLen={jsDisplay.Length} | rawLen={rawDisplayInput.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+                return;
+            }
+
+            if (hasAuthoritativeSeq)
+            {
+                if (TryApplyJsAppendContractLocked(snap, source, statusRaw, incomingBoardEvent, seqMode, seqAppend, jsSeqVersion, "contract"))
+                    return;
+
+                bool seedFromWinnerOnly =
+                    _netSeqWinnerSeedOnly ||
+                    (
+                        string.Equals(_netSeqSource, "network", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(_netSeqEvent, "net-gp-winner", StringComparison.OrdinalIgnoreCase) &&
+                        _netSeqDisplay.Length <= 2
+                    );
+                bool seedFromShortJsBootstrap =
+                    string.Equals(_netSeqSource, "js-bootstrap", StringComparison.OrdinalIgnoreCase) &&
+                    _netSeqDisplay.Length <= 3 &&
+                    (
+                        _netSeqEvent.IndexOf("short-board-bootstrap", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        _netSeqEvent.IndexOf("table-switch-tiny-board-bootstrap", StringComparison.OrdinalIgnoreCase) >= 0
+                    );
+                bool shortAuthorityNeedsRawRepair =
+                    sourceLooksFrameAuthority &&
+                    _netSeqDisplay.Length <= 3 &&
+                    rawDisplayInput.Length > _netSeqDisplay.Length;
+                bool trustedRawSnapshotRepair =
+                    shortAuthorityNeedsRawRepair &&
+                    IsTrustedRawBoardSnapshotSeq(jsDisplay, rawDisplayInput, statusRaw, incomingBoardEvent);
+                if (trustedRawSnapshotRepair)
+                {
+                    string prevNetDisplay = _netSeqDisplay;
+                    long prevNetVer = _netSeqVersion;
+                    string prevNetSrc = _netSeqSource;
+                    string prevNetEvt = _netSeqEvent;
+
+                    _netSeqDisplay = rawDisplayInput;
+                    _netSeqVersion = ComputeNextSyncSeqVersion(prevNetVer, prevNetDisplay, _netSeqDisplay, Math.Max(jsSeqVersion, _netSeqDisplay.Length));
+                    _netSeqEvent = string.IsNullOrWhiteSpace(incomingBoardEvent) ? "js-raw-snapshot-repair" : "js-raw-snapshot-repair-" + incomingBoardEvent;
+                    _netSeqSource = "js-raw-snapshot-repair";
+                    _netSeqWinnerSeedOnly = false;
+                    _suppressJsBootstrapAfterObservedReset = false;
+                    _baseSeqDisplay = _netSeqDisplay;
+                    _baseSeq = FilterPlayableSeq(_netSeqDisplay);
+                    _baseSeqVersion = _netSeqVersion;
+                    _baseSeqEvent = _netSeqEvent;
+                    _baseSeqSource = _netSeqSource;
+
+                    snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                    snap.rawSeq = rawDisplayInput;
+                    snap.seqVersion = _netSeqVersion;
+                    snap.seqEvent = _netSeqEvent;
+                    snap.seqSource = _netSeqSource;
+
+                    Log($"[NETSEQ][RAW-REBASE-APPLY] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | reason=trusted-frame-raw-over-short-net | mode={(string.IsNullOrWhiteSpace(seqMode) ? "-" : seqMode)} | prevNetLen={prevNetDisplay.Length} | prevNetVer={prevNetVer} | prevNetSrc={(string.IsNullOrWhiteSpace(prevNetSrc) ? "-" : prevNetSrc)} | prevNetEvt={(string.IsNullOrWhiteSpace(prevNetEvt) ? "-" : prevNetEvt)} | boardLen={jsDisplay.Length} | rawLen={rawDisplayInput.Length} | raw={rawDisplayInput} | rawCount={BuildSeqCountText(rawDisplayInput, includeH: true)} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+                    return;
+                }
+                if (shortAuthorityNeedsRawRepair)
+                {
+                    Log($"[NETSEQ][RAW-REBASE-BLOCK] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | reason=untrusted-frame-raw-over-short-net | mode={(string.IsNullOrWhiteSpace(seqMode) ? "-" : seqMode)} | boardLen={jsDisplay.Length} | rawLen={rawDisplayInput.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | rawCount={BuildSeqCountText(rawDisplayInput, includeH: true)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+                }
+                bool hydrateEventLike =
+                    incomingBoardEvent.IndexOf("hydrate", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    string.Equals(incomingBoardEvent, "no-change", StringComparison.OrdinalIgnoreCase);
+                bool trustedHydrateRaw =
+                    rawDisplayInput.Length >= 4 &&
+                    jsDisplay.Length == rawDisplayInput.Length &&
+                    string.Equals(jsDisplay, rawDisplayInput, StringComparison.Ordinal) &&
+                    !IsChangingShoeStatus(statusRaw) &&
+                    !IsNoBoardSeqEvent(incomingBoardEvent) &&
+                    !IsParserUnstableHoldSeqEvent(incomingBoardEvent);
+                bool trustedHydrateRebase =
+                    IsFullRebaseSeqMode(seqMode) &&
+                    hydrateEventLike &&
+                    trustedHydrateRaw &&
+                    rawDisplayInput.Length > _netSeqDisplay.Length &&
+                    (
+                        seedFromWinnerOnly ||
+                        seedFromShortJsBootstrap ||
+                        (
+                            string.Equals(_netSeqSource, "network", StringComparison.OrdinalIgnoreCase) &&
+                            _netSeqDisplay.Length <= 2 &&
+                            _netSeqDisplay.Length < rawDisplayInput.Length
+                        )
+                    );
+
+                if (IsFullRebaseSeqMode(seqMode) &&
+                    hydrateEventLike &&
+                    rawDisplayInput.Length > _netSeqDisplay.Length)
+                {
+                    Log($"[NETSEQ][BOOTSTRAP-STATE] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | seedFromWinnerOnly={(seedFromWinnerOnly ? 1 : 0)} | seedFromShortJsBootstrap={(seedFromShortJsBootstrap ? 1 : 0)} | mode={seqMode} | boardLen={jsDisplay.Length} | rawLen={rawDisplayInput.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | source={(string.IsNullOrWhiteSpace(_netSeqSource) ? "-" : _netSeqSource)} | netEvt={(string.IsNullOrWhiteSpace(_netSeqEvent) ? "-" : _netSeqEvent)}");
+                }
+
+                if (trustedHydrateRebase)
+                {
+                    string prevNetDisplay = _netSeqDisplay;
+                    long prevNetVer = _netSeqVersion;
+                    bool seedFlagBeforeApply = seedFromWinnerOnly;
+                    bool shortJsSeedFlagBeforeApply = seedFromShortJsBootstrap;
+
+                    _netSeqDisplay = rawDisplayInput;
+                    _netSeqVersion = ComputeNextSyncSeqVersion(prevNetVer, prevNetDisplay, _netSeqDisplay, Math.Max(jsSeqVersion, _netSeqDisplay.Length));
+                    _netSeqEvent = string.IsNullOrWhiteSpace(incomingBoardEvent) ? "js-full-rebase" : "js-" + incomingBoardEvent;
+                    _netSeqSource = "js-full-rebase";
+                    _netSeqWinnerSeedOnly = false;
+                    _baseSeqDisplay = _netSeqDisplay;
+                    _baseSeq = FilterPlayableSeq(_netSeqDisplay);
+                    _baseSeqVersion = _netSeqVersion;
+                    _baseSeqEvent = _netSeqEvent;
+                    _baseSeqSource = _netSeqSource;
+
+                    snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                    snap.rawSeq = rawDisplayInput;
+                    snap.seqVersion = _netSeqVersion;
+                    snap.seqEvent = _netSeqEvent;
+                    snap.seqSource = _netSeqSource;
+
+                    Log($"[NETSEQ][FULL-REBASE-APPLY] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | reason={(shortJsSeedFlagBeforeApply ? "trusted-hydrate-rebase-after-short-js-bootstrap" : "trusted-hydrate-rebase")} | mode={seqMode} | prevNetLen={prevNetDisplay.Length} | prevNetVer={prevNetVer} | boardLen={jsDisplay.Length} | rawLen={rawDisplayInput.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | seedFromWinnerOnly={(seedFlagBeforeApply ? 1 : 0)} | seedFromShortJsBootstrap={(shortJsSeedFlagBeforeApply ? 1 : 0)}");
+                    return;
+                }
+
+                if (!IsFullRebaseSeqMode(seqMode))
+                {
+                    snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                    snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                    snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                    snap.seqSource = string.IsNullOrWhiteSpace(_netSeqSource) ? "network-hold" : _netSeqSource;
+                    Log($"[NETSEQ][CONTRACT-HOLD] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | mode={(string.IsNullOrWhiteSpace(seqMode) ? "-" : seqMode)} | append={(string.IsNullOrWhiteSpace(seqAppend) ? "-" : seqAppend)} | boardLen={jsDisplay.Length} | rawLen={rawDisplayInput.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | reason=no-explicit-delta");
+                    return;
+                }
+
+                if (hydrateEventLike &&
+                    rawDisplayInput.Length > _netSeqDisplay.Length &&
+                    !trustedHydrateRaw)
+                {
+                    Log($"[NETSEQ][FULL-REBASE-BLOCK] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | reason=unstable-hydrate-raw | mode={seqMode} | boardLen={jsDisplay.Length} | rawLen={rawDisplayInput.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | seedFromWinnerOnly={(seedFromWinnerOnly ? 1 : 0)}");
+                }
+
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                snap.seqSource = string.IsNullOrWhiteSpace(_netSeqSource) ? "network-hold" : _netSeqSource;
+                Log($"[NETSEQ][FULL-REBASE-IGNORED] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | mode={seqMode} | boardLen={jsDisplay.Length} | rawLen={rawDisplayInput.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | reason=not-table-switch");
+                return;
+            }
+
+            var combinedDisplay = BuildSyncSeqFromBoardLocked(jsDisplay);
             bool boardChanged = !string.Equals(jsDisplay, prevBoardDisplay, StringComparison.Ordinal);
             bool combinedChanged = !string.Equals(combinedDisplay, _netSeqDisplay, StringComparison.Ordinal);
             bool combinedLonger = combinedDisplay.Length > _netSeqDisplay.Length;
             bool boardVersionAhead = jsSeqVersion > prevBoardVersion;
-            bool sameLenBoardAdvance =
-                jsDisplay.Length == prevBoardDisplay.Length &&
+            bool combinedSameLen = combinedDisplay.Length == _netSeqDisplay.Length;
+            var rawDisplayNow = FilterResultDisplaySeqWindow(snap.rawSeq);
+            var rawCombinedDisplay = BuildSyncSeqFromBoardLocked(rawDisplayNow);
+            bool shoePrefixAppendMode =
+                !string.IsNullOrWhiteSpace(_syncSeqPrefixDisplay) &&
+                rawDisplayNow.Length > 0 &&
+                FilterResultDisplaySeqWindow(_syncSeqPrefixDisplay).Length >= (rawDisplayNow.Length + 6) &&
+                string.Equals(combinedDisplay, rawCombinedDisplay, StringComparison.Ordinal);
+            bool sameLenBoardAdvanceSignal =
+                combinedSameLen &&
                 boardVersionAhead &&
-                (boardChanged || !string.Equals(boardSeqEvent ?? "", "no-change", StringComparison.OrdinalIgnoreCase));
+                (boardChanged || !string.Equals(incomingBoardEvent ?? "", "no-change", StringComparison.OrdinalIgnoreCase));
+            bool appendConfirmed = TryConfirmSeqAdvanceDelta(_netSeqDisplay, combinedDisplay, out int appendDelta);
+            bool sameLenAppendConfirmed = combinedSameLen && appendConfirmed && appendDelta > 0;
+            if (!string.IsNullOrWhiteSpace(_syncSeqPrefixDisplay) && rawDisplayNow.Length > 0 && !shoePrefixAppendMode)
+            {
+                bool sameCombinedAsNet = string.Equals(combinedDisplay, _netSeqDisplay, StringComparison.Ordinal);
+                bool sameRawCombinedAsNet = string.Equals(rawCombinedDisplay, _netSeqDisplay, StringComparison.Ordinal);
+                if (!sameCombinedAsNet || !sameRawCombinedAsNet || boardVersionAhead)
+                {
+                    Log($"[NETSEQ][SHOE-PREFIX-BLOCK] src={source} | boardLen={jsDisplay.Length} | rawLen={rawDisplayNow.Length} | combinedLen={combinedDisplay.Length} | rawCombinedLen={rawCombinedDisplay.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | boardVer={jsSeqVersion} | boardChanged={(boardChanged ? 1 : 0)} | verAhead={(boardVersionAhead ? 1 : 0)} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)}");
+                }
+            }
+            bool jsRawMismatchHold =
+                rawDisplayNow.Length > 0 &&
+                combinedDisplay.Length > (rawDisplayNow.Length + 2) &&
+                !shoePrefixAppendMode &&
+                !IsNoBoardSeqEvent(incomingBoardEvent) &&
+                !IsSeedLikeSeqEvent(incomingBoardEvent);
+            if (jsRawMismatchHold)
+            {
+                Log($"[NETSEQ][JS-RAW-MISMATCH-HOLD] src={source} | boardLen={jsDisplay.Length} | rawLen={rawDisplayNow.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | keep=network");
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                snap.seqSource = "network";
+                return;
+            }
             bool jsLooksStaleForObservedRound =
                 _netObservedTableId > 0 &&
                 (_netSeqTableId == 0 || _netObservedTableId == _netSeqTableId) &&
@@ -6162,12 +7762,72 @@ try{
                 jsDisplay.Length > _netObservedGameRound;
             bool recentNetWinner = _netLastWinnerAt != DateTime.MinValue &&
                                    (DateTime.UtcNow - _netLastWinnerAt).TotalSeconds <= 15;
-            if (combinedLonger || sameLenBoardAdvance || (combinedChanged && combinedDisplay.Length == _netSeqDisplay.Length))
+            bool hasShoeRebaseAnchor =
+                _lastShoeRebaseAppliedUtc != DateTime.MinValue &&
+                _lastShoeRebaseAppliedLen > 0;
+            bool jsLongJumpAfterShoeRebase =
+                hasShoeRebaseAnchor &&
+                combinedLonger &&
+                !string.IsNullOrWhiteSpace(_netSeqDisplay) &&
+                jsDisplay.Length >= (_netSeqDisplay.Length + 8) &&
+                jsDisplay.Length >= Math.Max(_lastShoeRebaseAppliedLen, _netSeqDisplay.Length) + 8 &&
+                (rawDisplayNow.Length == 0 || rawDisplayNow.Length <= (_netSeqDisplay.Length + 2));
+            bool jsSameLenMismatchAfterShoeRebase =
+                hasShoeRebaseAnchor &&
+                !string.IsNullOrWhiteSpace(_netSeqDisplay) &&
+                combinedDisplay.Length == _netSeqDisplay.Length &&
+                !string.Equals(combinedDisplay, _netSeqDisplay, StringComparison.Ordinal) &&
+                rawDisplayNow.Length > 0 &&
+                rawDisplayNow.Length + 6 < _netSeqDisplay.Length &&
+                jsDisplay.Length >= rawDisplayNow.Length + 6;
+            if (jsSameLenMismatchAfterShoeRebase)
             {
+                Log($"[NETSEQ][JS-STALE-SAME-LEN] src={source} | boardLen={jsDisplay.Length} | boardVer={boardSeqVersion} | rawLen={rawDisplayNow.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | keep=network");
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                snap.seqSource = "network";
+                return;
+            }
+
+            bool sameLenChangedNoAppend =
+                combinedSameLen &&
+                combinedChanged &&
+                !sameLenAppendConfirmed;
+            if (sameLenChangedNoAppend)
+            {
+                string reason = sameLenBoardAdvanceSignal ? "same-len-version-only" : "same-len-rewrite";
+                Log($"[NETSEQ][RESYNC-REJECT-SAME-LEN] src={source} | reason={reason} | boardLen={jsDisplay.Length} | boardVer={boardSeqVersion} | rawLen={rawDisplayNow.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | keep=network");
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                snap.seqSource = "network";
+                return;
+            }
+
+            bool canResyncAsAppend =
+                combinedLonger ||
+                sameLenAppendConfirmed;
+            if (canResyncAsAppend)
+            {
+                if (shoePrefixAppendMode)
+                {
+                    Log($"[NETSEQ][SHOE-PREFIX-COMBINE] src={source} | boardLen={jsDisplay.Length} | rawLen={rawDisplayNow.Length} | prefixLen={FilterResultDisplaySeqWindow(_syncSeqPrefixDisplay).Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | sameLen={(combinedSameLen ? 1 : 0)} | appendDelta={appendDelta} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)}");
+                }
+                if (jsLongJumpAfterShoeRebase)
+                {
+                    Log($"[NETSEQ][JS-STALE-LONGJUMP] src={source} | boardLen={jsDisplay.Length} | boardVer={boardSeqVersion} | rawLen={rawDisplayNow.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | sinceShoeRebaseMs={(long)(DateTime.UtcNow - _lastShoeRebaseAppliedUtc).TotalMilliseconds} | keep=network");
+                    snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                    snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                    snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                    snap.seqSource = "network";
+                    return;
+                }
+
                 if (combinedLonger && jsLooksStaleForObservedRound)
                 {
                     Log($"[NETSEQ][JS-STALE] src={source} | boardLen={jsDisplay.Length} | obsRound={_netObservedGameRound} | obsShoe={_netObservedGameShoe} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | keep=network");
-                    snap.seq = _netSeqDisplay;
+                    snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
                     snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
                     snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
                     snap.seqSource = "network";
@@ -6179,20 +7839,21 @@ try{
                     string prevNetDisplay = _netSeqDisplay;
                     long prevNetLen = _netSeqDisplay.Length;
                     long prevNetVer = _netSeqVersion;
-                    _netSeqDisplay = combinedDisplay;
+                    _netSeqDisplay = FilterResultDisplaySeqWindow(combinedDisplay);
                     _netSeqVersion = ComputeNextSyncSeqVersion(prevNetVer, prevNetDisplay, _netSeqDisplay, Math.Max(jsSeqVersion, _netSeqDisplay.Length));
                     _netSeqEvent = string.IsNullOrWhiteSpace(boardSeqEvent) ? "js-resync" : "js-resync-" + boardSeqEvent;
                     _netSeqSource = "js-resync";
-                    string resyncReason = combinedLonger ? "len-ahead" : "ver-ahead-same-len";
+                    _netSeqWinnerSeedOnly = false;
+                    string resyncReason = combinedLonger ? "append-len-ahead" : $"append-same-len-delta-{appendDelta}";
                     Log($"[NETSEQ][RESYNC] src={source} | boardLen={jsDisplay.Length} | boardVer={boardSeqVersion} | prevNetLen={prevNetLen} | prevNetVer={prevNetVer} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | reason={resyncReason}");
-                    snap.seq = _netSeqDisplay;
+                    snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
                     snap.seqVersion = _netSeqVersion;
                     snap.seqEvent = _netSeqEvent;
                     snap.seqSource = "js-resync";
                     return;
                 }
 
-                string keepReason = combinedLonger ? "recent-net-winner-len-ahead" : "recent-net-winner-ver-ahead-same-len";
+                string keepReason = combinedLonger ? "recent-net-winner-len-ahead" : "recent-net-winner-same-len-append";
                 Log($"[NETSEQ][JS-AHEAD] src={source} | boardLen={jsDisplay.Length} | boardVer={boardSeqVersion} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | keep=network | reason={keepReason}");
             }
 
@@ -6209,7 +7870,7 @@ try{
                 Log($"[NETSEQ][SNAP-OVERRIDE] src={source} | boardLen={jsDisplay.Length} | boardVer={boardSeqVersion} | boardEvt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | netEvt={(string.IsNullOrWhiteSpace(_netSeqEvent) ? "-" : _netSeqEvent)}");
             }
 
-            snap.seq = _netSeqDisplay;
+            snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
             snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
             snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
             snap.seqSource = "network";
@@ -6219,16 +7880,27 @@ try{
         {
             if (snap == null) return;
 
+            if ((_tableSwitchRebaseArmed || _initialTableEnterArmed) &&
+                (string.Equals(snap.seqSource, "table-switch-wait-bead", StringComparison.OrdinalIgnoreCase) ||
+                 (snap.seqEvent ?? "").IndexOf("table-switch-wait-bead", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 string.IsNullOrWhiteSpace(snap.seq)))
+            {
+                snap.seq = FilterResultDisplaySeqWindow(snap.seq);
+                snap.niSeq = _niSeq.ToString();
+                Log($"[NETSEQ][AUTH-SKIP-OLD-TABLE] reason=wait-new-table-bead | snapLen={(snap.seq ?? "").Length} | oldNetLen={_netSeqDisplay.Length} | oldNetVer={_netSeqVersion} | tableSwitchArm={(_tableSwitchRebaseArmed ? 1 : 0)} | initialEnter={(_initialTableEnterArmed ? 1 : 0)}");
+                return;
+            }
+
             if (!string.IsNullOrWhiteSpace(_netSeqDisplay))
             {
-                snap.seq = _netSeqDisplay;
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
                 snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
                 snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
                 snap.seqSource = string.IsNullOrWhiteSpace(_netSeqSource) ? "network" : _netSeqSource;
             }
             else
             {
-                snap.seq = FilterResultDisplaySeq(snap.seq);
+                snap.seq = FilterResultDisplaySeqWindow(snap.seq);
             }
 
             snap.niSeq = _niSeq.ToString();
@@ -8592,6 +10264,7 @@ try{
                 _netSeqVersion = 0;
                 _netSeqEvent = "";
                 _netSeqSource = "";
+                _netSeqWinnerSeedOnly = false;
                 _netSeqTableId = 0;
                 _netSeqGameShoe = 0;
                 _netSeqLastRound = 0;
@@ -11034,6 +12707,109 @@ try{
                 href.IndexOf("table", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static bool TryGetBaccaratFrameKey(string? hrefRaw, out string key)
+        {
+            key = "";
+            var href = (hrefRaw ?? "").Trim();
+            if (href.Length == 0)
+                return false;
+            if (!Uri.TryCreate(href, UriKind.Absolute, out var uri))
+                return false;
+            if (uri.Host.IndexOf("vivogaming", StringComparison.OrdinalIgnoreCase) < 0)
+                return false;
+
+            string id = "";
+            try
+            {
+                var q = System.Web.HttpUtility.ParseQueryString(uri.Query ?? "");
+                id = q["id"] ?? "";
+            }
+            catch
+            {
+                return false;
+            }
+
+            id = (id ?? "").Trim().ToLowerInvariant();
+            if (id.Length == 0)
+                return false;
+
+            key = $"{uri.Host.ToLowerInvariant()}|{id}";
+            return true;
+        }
+
+        private static bool DoesFrameKeyMatchObservedTableId(string? frameKeyRaw, long tableId)
+        {
+            if (tableId <= 0)
+                return false;
+
+            var frameKey = (frameKeyRaw ?? "").Trim();
+            if (frameKey.Length == 0)
+                return false;
+
+            int lastSep = frameKey.LastIndexOf('|');
+            if (lastSep < 0 || lastSep >= frameKey.Length - 1)
+                return false;
+
+            var idPart = frameKey.Substring(lastSep + 1).Trim();
+            return string.Equals(idPart, tableId.ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string TrimHrefForLog(string? hrefRaw)
+        {
+            var href = (hrefRaw ?? "").Trim();
+            if (href.Length <= 140)
+                return href;
+            return href.Substring(0, 140) + "...";
+        }
+
+        private void ObserveTableSwitchFromFrameHref(string? hrefRaw, string stage)
+        {
+            if (!TryGetBaccaratFrameKey(hrefRaw, out var key))
+                return;
+
+            lock (_roundStateLock)
+            {
+                if (string.IsNullOrWhiteSpace(_lastBaccaratFrameKey))
+                {
+                    _lastBaccaratFrameKey = key;
+                    _lastBaccaratFrameHref = hrefRaw ?? "";
+                    _tableSwitchRebaseArmed = true;
+                    _tableSwitchRebaseArmedAtUtc = DateTime.UtcNow;
+                    _tableSwitchFromKey = "";
+                    _tableSwitchToKey = key;
+                    _tableSwitchFromHref = "";
+                    _tableSwitchToHref = hrefRaw ?? "";
+                    _initialTableEnterArmed = true;
+                    _initialTableEnterArmedAtUtc = DateTime.UtcNow;
+                    Log($"[SEQ][TABLE-ENTER-ARM] stage={stage} | to={key} | href={TrimHrefForLog(hrefRaw)}");
+                    return;
+                }
+
+                if (string.Equals(_lastBaccaratFrameKey, key, StringComparison.Ordinal))
+                {
+                    _lastBaccaratFrameHref = hrefRaw ?? _lastBaccaratFrameHref;
+                    return;
+                }
+
+                if (_shoeChangeRebaseArmed || _shoeChangeStatusStreak > 0)
+                {
+                    Log($"[SEQ][SHOE-ARM-CLEAR] reason=table-switch-detected | stage={stage} | from={_lastBaccaratFrameKey} | to={key} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | fromHref={TrimHrefForLog(_lastBaccaratFrameHref)} | toHref={TrimHrefForLog(hrefRaw)}");
+                    ClearShoeChangeRebaseArmLocked();
+                }
+
+                _tableSwitchRebaseArmed = true;
+                _tableSwitchRebaseArmedAtUtc = DateTime.UtcNow;
+                _tableSwitchFromKey = _lastBaccaratFrameKey;
+                _tableSwitchToKey = key;
+                _tableSwitchFromHref = _lastBaccaratFrameHref;
+                _tableSwitchToHref = hrefRaw ?? "";
+                _lastBaccaratFrameKey = key;
+                _lastBaccaratFrameHref = hrefRaw ?? "";
+
+                Log($"[SEQ][TABLE-SWITCH-ARM] stage={stage} | from={_tableSwitchFromKey} | to={_tableSwitchToKey} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | fromHref={TrimHrefForLog(_tableSwitchFromHref)} | toHref={TrimHrefForLog(_tableSwitchToHref)}");
+            }
+        }
+
         private async Task<FrameDocProbe?> ReadFrameDocProbeAsync(CoreWebView2Frame frame)
         {
             try
@@ -11086,6 +12862,7 @@ try{
             bool looksGame = probe.HasCocos || IsLikelyGameFrameHref(probe.Href);
             if (!looksGame)
                 return false;
+            ObserveTableSwitchFromFrameHref(probe.Href, stage);
 
             var frameRefKey = RuntimeHelpers.GetHashCode(frame);
             var docKey = string.IsNullOrWhiteSpace(probe.DocKey)
@@ -11565,21 +13342,49 @@ try{
             catch { /* ignore */ }
         }
 
-        private static string BuildStatusUiText(string? statusRaw, double? prog)
+        private static string NormalizeStatusTail(string? tail)
+        {
+            if (string.IsNullOrWhiteSpace(tail))
+                return "";
+            var s = tail.Trim();
+            if (s.StartsWith("html/", StringComparison.OrdinalIgnoreCase))
+                s = s.Substring("html/".Length);
+            return new string(s.Where(ch => !char.IsWhiteSpace(ch)).ToArray()).ToLowerInvariant();
+        }
+
+        private static bool IsAuthorityStatusTail(string? tail)
+        {
+            var clean = NormalizeStatusTail(tail);
+            return StatusAuthorityTails.Any(authorityTail =>
+                string.Equals(clean, NormalizeStatusTail(authorityTail), StringComparison.Ordinal));
+        }
+
+        private static bool IsAuthorityStatusSource(string? source) =>
+            !string.IsNullOrWhiteSpace(source) &&
+            source.Trim().StartsWith("authority-processStatus|", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsStatusAuthorityMissing(string? source)
+        {
+            source ??= "";
+            return source.IndexOf("authority-processStatus-missing", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   source.IndexOf("authority-processStatus-error", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsTrustedStatusForUi(string? statusRaw, string? statusSource, string? statusTail)
         {
             statusRaw = (statusRaw ?? "").Trim();
-            if (!statusRaw.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase))
-                return statusRaw;
+            if (string.IsNullOrWhiteSpace(statusRaw))
+                return false;
+            if (statusRaw.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase))
+                return false;
+            if (IsStatusAuthorityMissing(statusSource))
+                return false;
+            return IsAuthorityStatusSource(statusSource) || IsAuthorityStatusTail(statusTail);
+        }
 
-            if (!prog.HasValue)
-                return "";
-
-            var pv = prog.Value;
-            if (pv <= 0.5) return "Đang mở bài";
-            if (pv <= 1.5) return "Tạm ngừng đặt cược";
-            if (pv <= 5.5) return "Nắm giữ cơ hội này nhé";
-            if (pv <= 18.5) return "Chúc may mắn";
-            return "Bắt đầu đặt cược";
+        private static string BuildStatusUiText(string? statusRaw)
+        {
+            return statusRaw ?? "";
         }
 
 
@@ -12351,9 +14156,12 @@ try{
                 progTail = snap.progTail,
                 totals = CloneTotalsForTasks(snap.totals),
                 seq = snap.seq,
+                rawSeq = snap.rawSeq,
                 seqVersion = snap.seqVersion,
                 seqEvent = snap.seqEvent,
                 seqSource = snap.seqSource,
+                seqAppend = snap.seqAppend,
+                seqMode = snap.seqMode,
                 niSeq = snap.niSeq,
                 ts = snap.ts,
                 side = snap.side,

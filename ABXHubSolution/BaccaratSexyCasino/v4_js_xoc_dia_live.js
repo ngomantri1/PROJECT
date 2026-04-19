@@ -176,6 +176,7 @@
             top: __cw_isTopDocument() ? 1 : 0,
             hasCocos: __cw_hasCocos() ? 1 : 0
         }, 0, 'boot-start');
+        brInstallLayoutDiagHooks();
     } catch (_) {}
     /* ---------------- utils ---------------- */
     var V2 = (__cw_hasCocos() && cc ? (cc.v2 || cc.Vec2) : null);
@@ -516,6 +517,333 @@
             };
         };
     } catch (_) {}
+    function brSeqDiagEnabled() {
+        try {
+            if (window.__cw_seq_diag === 0 || window.__cw_seq_diag === false)
+                return false;
+        } catch (_) {}
+        return true;
+    }
+    function brSeqDiagPost(reason, data, throttleMs, key) {
+        try {
+            if (!brSeqDiagEnabled())
+                return;
+            var now = Date.now();
+            var k = 'seqdiag|' + String(key || reason || '');
+            var wait = Number(throttleMs || 0);
+            var last = _cwDbgLast[k] || 0;
+            if (wait > 0 && (now - last) < wait)
+                return;
+            _cwDbgLast[k] = now;
+            cwHostPost({
+                abx: 'seq_diag',
+                ts: now,
+                reason: String(reason || ''),
+                rev: (typeof _cwSeqScriptRev !== 'undefined' ? String(_cwSeqScriptRev || '') : ''),
+                session: (typeof _cwTickSessionId !== 'undefined' ? String(_cwTickSessionId || '') : ''),
+                data: cwSafeDataForHost(data)
+            });
+        } catch (_) {}
+    }
+    function brClipClassName(cls) {
+        try {
+            cls = String(cls || '').trim().replace(/\s+/g, '.');
+            if (cls.length > 90)
+                cls = cls.slice(0, 90);
+            return cls;
+        } catch (_) {
+            return '';
+        }
+    }
+    function brRectLite(el) {
+        try {
+            if (!el || !el.getBoundingClientRect)
+                return null;
+            var r = el.getBoundingClientRect();
+            if (!(r.width > 0 && r.height > 0))
+                return null;
+            return {
+                x: Math.round(r.left),
+                y: Math.round(r.top),
+                w: Math.round(r.width),
+                h: Math.round(r.height)
+            };
+        } catch (_) {
+            return null;
+        }
+    }
+    function brEltLite(el, extra) {
+        try {
+            if (!el)
+                return null;
+            var rect = brRectLite(el);
+            if (!rect)
+                return null;
+            var row = {
+                tag: '',
+                id: '',
+                cls: '',
+                x: rect.x,
+                y: rect.y,
+                w: rect.w,
+                h: rect.h
+            };
+            try { row.tag = String(el.tagName || '').toLowerCase(); } catch (_) {}
+            try { row.id = String(el.id || ''); } catch (_) {}
+            try { row.cls = brClipClassName(el.className || ''); } catch (_) {}
+            if (extra) {
+                for (var k in extra) {
+                    if (Object.prototype.hasOwnProperty.call(extra, k))
+                        row[k] = extra[k];
+                }
+            }
+            return row;
+        } catch (_) {
+            return null;
+        }
+    }
+    function brCollectLayoutDiag(reason, extra) {
+        var out = {
+            reason: String(reason || ''),
+            href: '',
+            path: '',
+            top: 0,
+            gamePopup: 0,
+            hasCocos: 0,
+            hasRead: 0,
+            hasStart: 0,
+            dpr: 1,
+            inner: { w: 0, h: 0 },
+            client: { w: 0, h: 0 },
+            scroll: { x: 0, y: 0 },
+            screen: { w: 0, h: 0 },
+            vv: null,
+            body: null,
+            doc: null,
+            fixedBars: [],
+            iframes: [],
+            canvases: []
+        };
+        try { out.href = String((location && location.href) || ''); } catch (_) {}
+        try { out.path = String((location && location.pathname) || ''); } catch (_) {}
+        try { out.top = __cw_isTopDocument() ? 1 : 0; } catch (_) {}
+        try { out.gamePopup = __cw_isGamePopupPage() ? 1 : 0; } catch (_) {}
+        try { out.hasCocos = __cw_hasCocos() ? 1 : 0; } catch (_) {}
+        try { out.hasRead = (typeof window.__cw_readSnapshot === 'function') ? 1 : 0; } catch (_) {}
+        try { out.hasStart = (typeof window.__cw_startPush === 'function') ? 1 : 0; } catch (_) {}
+        try { out.dpr = Number(window.devicePixelRatio || 1) || 1; } catch (_) {}
+        try {
+            out.inner = {
+                w: Math.round(Number(window.innerWidth || 0) || 0),
+                h: Math.round(Number(window.innerHeight || 0) || 0)
+            };
+        } catch (_) {}
+        try {
+            var de = document.documentElement;
+            out.client = {
+                w: Math.round(Number((de && de.clientWidth) || 0) || 0),
+                h: Math.round(Number((de && de.clientHeight) || 0) || 0)
+            };
+            out.doc = brEltLite(de);
+            out.body = brEltLite(document.body);
+        } catch (_) {}
+        try {
+            out.scroll = {
+                x: Math.round(Number(window.scrollX || window.pageXOffset || 0) || 0),
+                y: Math.round(Number(window.scrollY || window.pageYOffset || 0) || 0)
+            };
+        } catch (_) {}
+        try {
+            out.screen = {
+                w: Math.round(Number((window.screen && window.screen.width) || 0) || 0),
+                h: Math.round(Number((window.screen && window.screen.height) || 0) || 0)
+            };
+        } catch (_) {}
+        try {
+            var vv = window.visualViewport;
+            if (vv) {
+                out.vv = {
+                    w: Math.round(Number(vv.width || 0) || 0),
+                    h: Math.round(Number(vv.height || 0) || 0),
+                    x: Math.round(Number(vv.offsetLeft || 0) || 0),
+                    y: Math.round(Number(vv.offsetTop || 0) || 0),
+                    scale: Number(vv.scale || 1) || 1
+                };
+            }
+        } catch (_) {}
+        try {
+            var bars = [];
+            var nodes = Array.from(document.querySelectorAll('body *'));
+            for (var i = 0; i < nodes.length && i < 260; i++) {
+                var el = nodes[i];
+                var rect = brRectLite(el);
+                if (!rect)
+                    continue;
+                var cs = null;
+                try { cs = getComputedStyle(el); } catch (_) {}
+                if (!cs)
+                    continue;
+                var pos = String(cs.position || '').toLowerCase();
+                if (!(pos === 'fixed' || pos === 'sticky'))
+                    continue;
+                if (cs.display === 'none' || cs.visibility === 'hidden')
+                    continue;
+                if (rect.w < Math.max(280, out.inner.w * 0.35))
+                    continue;
+                if (rect.h < 28)
+                    continue;
+                var topBand = rect.y <= Math.max(160, out.inner.h * 0.18);
+                var bottomBand = (rect.y + rect.h) >= Math.max(0, out.inner.h - Math.max(160, out.inner.h * 0.22));
+                if (!topBand && !bottomBand)
+                    continue;
+                var item = brEltLite(el, {
+                    pos: pos,
+                    z: String(cs.zIndex || ''),
+                    zone: topBand ? 'top' : 'bottom'
+                });
+                if (item)
+                    bars.push(item);
+            }
+            bars.sort(function (a, b) {
+                return ((b && b.w || 0) * (b && b.h || 0)) - ((a && a.w || 0) * (a && a.h || 0));
+            });
+            out.fixedBars = bars.slice(0, 6);
+        } catch (_) {}
+        try {
+            var frames = Array.from(document.querySelectorAll('iframe,frame'));
+            var frameRows = [];
+            for (var j = 0; j < frames.length; j++) {
+                var f = frames[j];
+                var info = brEltLite(f, {
+                    src: cwShort(String((f.getAttribute('src') || f.src || '')), 180)
+                });
+                if (info)
+                    frameRows.push(info);
+            }
+            frameRows.sort(function (a, b) {
+                return ((b && b.w || 0) * (b && b.h || 0)) - ((a && a.w || 0) * (a && a.h || 0));
+            });
+            out.iframes = frameRows.slice(0, 6);
+        } catch (_) {}
+        try {
+            var canvases = Array.from(document.querySelectorAll('canvas'));
+            var canvasRows = [];
+            for (var k2 = 0; k2 < canvases.length; k2++) {
+                var c = canvases[k2];
+                var row = brEltLite(c, {
+                    widthAttr: Number(c.width || 0) || 0,
+                    heightAttr: Number(c.height || 0) || 0
+                });
+                if (row)
+                    canvasRows.push(row);
+            }
+            canvasRows.sort(function (a, b) {
+                return ((b && b.w || 0) * (b && b.h || 0)) - ((a && a.w || 0) * (a && a.h || 0));
+            });
+            out.canvases = canvasRows.slice(0, 6);
+        } catch (_) {}
+        if (extra) {
+            try { out.extra = cwSafeDataForHost(extra); } catch (_) {}
+        }
+        return out;
+    }
+    function brPostLayoutDiag(reason, throttleMs, key, extra) {
+        try {
+            var payload = brCollectLayoutDiag(reason, extra);
+            var suffix = key || reason || 'layout';
+            cwDbg('LAYOUT', String(reason || ''), payload, Number(throttleMs || 0), 'layout|' + String(suffix));
+            brSeqDiagPost('layout-' + String(reason || ''), payload, Number(throttleMs || 0), 'layout-seq|' + String(suffix));
+        } catch (_) {}
+    }
+    function brInstallLayoutDiagHooks() {
+        try {
+            if (window.__cw_layout_diag_hooked)
+                return;
+            window.__cw_layout_diag_hooked = 1;
+            brPostLayoutDiag('boot', 0, 'boot|' + String((location && location.href) || ''));
+            setTimeout(function () {
+                brPostLayoutDiag('settle-1500', 0, 'settle-1500|' + String((location && location.href) || ''));
+            }, 1500);
+            setTimeout(function () {
+                brPostLayoutDiag('settle-4000', 0, 'settle-4000|' + String((location && location.href) || ''));
+            }, 4000);
+            try {
+                window.addEventListener('resize', function () {
+                    brPostLayoutDiag('resize', 800, 'resize|' + String((location && location.href) || '') + '|' + Number(window.innerWidth || 0) + 'x' + Number(window.innerHeight || 0));
+                }, true);
+            } catch (_) {}
+            try {
+                window.addEventListener('orientationchange', function () {
+                    brPostLayoutDiag('orientationchange', 800, 'orientation|' + String((location && location.href) || ''));
+                }, true);
+            } catch (_) {}
+            try {
+                document.addEventListener('visibilitychange', function () {
+                    brPostLayoutDiag('visibility-' + String(document.visibilityState || ''), 800, 'visibility|' + String((location && location.href) || '') + '|' + String(document.visibilityState || ''));
+                }, true);
+            } catch (_) {}
+        } catch (_) {}
+    }
+    function cwConsoleArgToHost(arg) {
+        try {
+            if (arg == null)
+                return String(arg);
+            if (typeof arg === 'string')
+                return arg;
+            if (arg instanceof Error)
+                return String(arg.stack || arg.message || arg);
+            return JSON.stringify(cwSafeDataForHost(arg));
+        } catch (_) {
+            try { return String(arg); } catch (__) { return '[unprintable]'; }
+        }
+    }
+    function cwInstallConsoleBridge() {
+        try {
+            if (window.__cw_console_bridge_installed)
+                return;
+            window.__cw_console_bridge_installed = 1;
+            if (typeof window.__cw_console_to_host === 'undefined')
+                window.__cw_console_to_host = 1;
+            if (typeof window.__cw_console_passthrough === 'undefined')
+                window.__cw_console_passthrough = 0;
+            if (!window.console)
+                window.console = {};
+            var levels = ['log', 'warn', 'error', 'info', 'debug'];
+            var originals = {};
+            for (var i = 0; i < levels.length; i++) {
+                (function (level) {
+                    var orig = (typeof window.console[level] === 'function')
+                        ? window.console[level].bind(window.console)
+                        : function () {};
+                    originals[level] = orig;
+                    window.console[level] = function () {
+                        var args = Array.prototype.slice.call(arguments || []);
+                        try {
+                            var toHost = !(window.__cw_console_to_host === 0 || window.__cw_console_to_host === false);
+                            if (toHost) {
+                                var msg = args.map(cwConsoleArgToHost).join(' ');
+                                cwHostPost({
+                                    abx: 'js_console',
+                                    ts: Date.now(),
+                                    level: level,
+                                    message: cwShort(msg, 3000),
+                                    rev: (typeof _cwSeqScriptRev !== 'undefined' ? String(_cwSeqScriptRev || '') : ''),
+                                    session: (typeof _cwTickSessionId !== 'undefined' ? String(_cwTickSessionId || '') : '')
+                                });
+                            }
+                        } catch (_) {}
+                        try {
+                            var pass = (window.__cw_console_passthrough === 1 || window.__cw_console_passthrough === true);
+                            if (pass)
+                                return orig.apply(null, args);
+                        } catch (_) {}
+                    };
+                })(levels[i]);
+            }
+            window.__cw_console_originals = originals;
+        } catch (_) {}
+    }
+    cwInstallConsoleBridge();
     var cssRect = function (r) {
         var x = (r && r.sx != null) ? r.sx : r.x;
         var y = (r && r.sy != null) ? r.sy : r.y;
@@ -3165,20 +3493,27 @@
         rows.sort(function (a, b) { return a.cy - b.cy; });
         return rows;
     }
-    function brPickBoard(markers, screenW, screenH) {
+    function brPickBoard(markers, screenW, screenH, profileName) {
         var comps = brSplitComponents(markers);
         var best = null;
+        var profile = String(profileName || '');
         for (var i = 0; i < comps.length; i++) {
             var comp = comps[i];
             if (!comp.length)
                 continue;
             var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            var sumW = 0, sumH = 0, maxSide = 0, textCount = 0;
             for (var j = 0; j < comp.length; j++) {
                 var it = comp[j];
                 if (it.x < minX) minX = it.x;
                 if (it.x > maxX) maxX = it.x;
                 if (it.y < minY) minY = it.y;
                 if (it.y > maxY) maxY = it.y;
+                sumW += Number(it.w || 0);
+                sumH += Number(it.h || 0);
+                maxSide = Math.max(maxSide, Number(it.w || 0), Number(it.h || 0));
+                if (/^[BPTH]$/.test(String(it.rawText || '').toUpperCase()))
+                    textCount++;
             }
             var width = maxX - minX;
             var height = maxY - minY;
@@ -3190,40 +3525,53 @@
             }
             var rowCount = Object.keys(rowKeys).length;
             var colCount = cols.length;
-            var textCount = 0;
-            for (var t = 0; t < comp.length; t++) {
-                if (/^[BPTH]$/.test(String(comp[t].rawText || '').toUpperCase()))
-                    textCount++;
-            }
-            var allowSmall = (comp.length >= 2
-                    && minX <= screenW * 0.36
+            var avgW = comp.length ? (sumW / comp.length) : 0;
+            var avgH = comp.length ? (sumH / comp.length) : 0;
+            var allowSmall = (comp.length >= 4
+                    && (minX <= screenW * 0.36 || maxX >= screenW * 0.64)
                     && minY >= screenH * 0.54
                     && width <= 190
                     && height <= 230);
-            if (!allowSmall && (comp.length < 8 || colCount < 2))
+            var inRoadZone = (minX <= screenW * 0.34 || maxX >= screenW * 0.56)
+                    && minY >= screenH * 0.48
+                    && minY <= screenH * 0.90;
+            var tinyProfileOk = !profile || profile === 'left-tight' || profile === 'right-tight' || profile === 'left-mid' || profile === 'right-mid';
+            var allowTiny = (comp.length >= 1 && comp.length <= 3
+                    && tinyProfileOk
+                    && inRoadZone
+                    && maxSide <= 32
+                    && avgW >= 7
+                    && avgH >= 7
+                    && width <= 95
+                    && height <= 95);
+            if (!allowSmall && !allowTiny && (comp.length < 8 || colCount < 2))
                 continue;
             var score = comp.length * 30;
-            score += Math.max(0, (screenW * 0.16 - minX)) * 10;
+            var edgeDist = Math.min(minX, Math.max(0, screenW - maxX));
+            score += Math.max(0, (screenW * 0.18 - edgeDist)) * 8;
             score += Math.max(0, (screenH - maxY)) * 0.2;
             score += Math.max(0, (screenH * 0.88 - minY));
             score += textCount * 80;
             if (allowSmall) score += 180;
+            if (allowTiny) score += 420;
             if (comp.length >= 12 && comp.length <= 40) score += 220;
             if (rowCount >= 5) score += 260;
             if (rowCount >= 6) score += 120;
             if (colCount >= 3) score += 160;
             if (colCount >= 4) score += 140;
             if (colCount >= 6) score += 100;
-            if (comp.length < 8) score -= (8 - comp.length) * 45;
-            if (rowCount <= 2) score -= 260;
-            if (colCount <= 2) score -= 120;
-            if (height < 70) score -= 180;
-            if (width < 45) score -= 160;
+            if (!allowTiny && comp.length < 8) score -= (8 - comp.length) * 45;
+            if (!allowTiny && rowCount <= 2) score -= 260;
+            if (!allowTiny && colCount <= 2) score -= 120;
+            if (!allowTiny && height < 70) score -= 180;
+            if (!allowTiny && width < 45) score -= 160;
+            if (allowTiny && rowCount >= 2 && colCount === 1) score += 120;
+            if (allowTiny && textCount > 0) score += 160;
             if (width >= 45 && width <= 120) score += 260;
+            if (width > 120 && width <= 360) score += 160;
             if (height >= 95 && height <= 175) score += 220;
-            if (width > 135) score -= 420;
+            if (width > 380) score -= 180;
             if (height > 185) score -= 260;
-            if (minX > screenW * 0.12) score -= 420;
             if (minY > screenH * 0.9) score -= 260;
             if (!best || score > best.score) {
                 best = {
@@ -3237,7 +3585,13 @@
                     height: height,
                     rowCount: rowCount,
                     colCount: colCount,
-                    textCount: textCount
+                    textCount: textCount,
+                    allowSmall: allowSmall,
+                    allowTiny: allowTiny,
+                    avgW: avgW,
+                    avgH: avgH,
+                    maxSide: maxSide,
+                    profileName: profile
                 };
             }
         }
@@ -3606,12 +3960,14 @@
     var _cwSnapshotBuildSource = '';
     var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     var _cwSeqLastPubSyncAt = 0;
-    var _cwSeqScriptRev = 'SEQFIX-20260320-r22';
+    var _cwSeqScriptRev = 'SEQFIX-20260418-r30';
     var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
     var _domLastActiveSeedKey = '';
     var _domLastActiveSeedBurstId = 0;
+    var _domTableSwitchWaitBeadPending = false;
+    var _domTableSwitchWaitPrevRaw = '';
     var _domNoBoardStreak = 0;
     var _domNoBoardFirstAt = 0;
     var _domNoBoardLastAt = 0;
@@ -3772,6 +4128,26 @@
         brResetSeedTracker();
         _domRawStallLastActiveKey = '';
         _domSeqEvent = 'shoe-reset-arm-no-board';
+        try {
+            var mergeStat = brSeqStats(raw);
+            if (raw && raw.length <= 12 && (_domTableSwitchWaitBeadPending || _domShoeResetPending || mergeStat.t > 0 || mergeStat.bp <= 2)) {
+                brSeqDiagPost('merge-enter-short-raw', {
+                    raw: raw,
+                    rawLen: raw.length,
+                    rawBP: Number(mergeStat.bp || 0),
+                    rawT: Number(mergeStat.t || 0),
+                    prevRaw: String(prev || ''),
+                    managedBefore: beforeState.managed,
+                    managedBeforeLen: beforeState.managedLen,
+                    waitBead: _domTableSwitchWaitBeadPending ? 1 : 0,
+                    resetPending: _domShoeResetPending ? 1 : 0,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    buildSource: String(_cwSnapshotBuildSource || '')
+                }, 700, 'merge-enter-short-raw|' + raw + '|' + Number(_domSeqVersion || 0) + '|' + String(_domSeqEvent || ''));
+            }
+        } catch (_) {}
         _domSeqAppend = '';
         cwDbg('SEQ', 'shoe-reset-arm by no-board', {
             reason: String(reason || ''),
@@ -3814,6 +4190,146 @@
             .toUpperCase()
             .replace(/H/g, 'T')
             .replace(/[^BPT]/g, '');
+    }
+    function normalizeSeqNoLimit(raw) {
+        return brSanitizeSeq(raw);
+    }
+    function brSeqStats(raw) {
+        var s = String(raw || '').toUpperCase();
+        var b = 0, p = 0, t = 0, h = 0, other = 0;
+        for (var i = 0; i < s.length; i++) {
+            var ch = s.charAt(i);
+            if (ch === 'B') b++;
+            else if (ch === 'P') p++;
+            else if (ch === 'T') t++;
+            else if (ch === 'H') h++;
+            else other++;
+        }
+        return { b: b, p: p, t: t, h: h, other: other, bp: b + p };
+    }
+    function brIsReliableRoadSeq(raw) {
+        var clean = brSanitizeSeq(raw);
+        if (!clean)
+            return false;
+        var st = brSeqStats(clean);
+        return st.bp > 0 && st.t < clean.length && st.h === 0 && st.other === 0;
+    }
+    function brIsTrustedTinyBoardSeq(raw) {
+        var clean = brSanitizeSeq(raw);
+        return clean.length >= 1 && clean.length <= 3 && brIsReliableRoadSeq(clean);
+    }
+    function brRecentNoBoardAgeMs() {
+        var now = Date.now();
+        var lastDiagAt = 0;
+        try {
+            lastDiagAt = Number(_cwSeqDiagState && _cwSeqDiagState.lastNoBoard && _cwSeqDiagState.lastNoBoard.at || 0);
+        } catch (_) {
+            lastDiagAt = 0;
+        }
+        var lastAt = Math.max(Number(_domNoBoardLastAt || 0), lastDiagAt);
+        return lastAt > 0 ? (now - lastAt) : -1;
+    }
+    function brShouldBlockActiveTinyByNoBoard(sourceTag, activeTitle, activeSeq, beadRawSeq) {
+        var clean = brSanitizeSeq(activeSeq);
+        if (!brIsTrustedTinyBoardSeq(clean))
+            return false;
+        var beadRaw = brSanitizeSeq(beadRawSeq || '');
+        var evt = String(_domSeqEvent || '');
+        var ageMs = brRecentNoBoardAgeMs();
+        var block = !!(
+            _domShoeResetPending ||
+            evt.indexOf('shoe-reset-arm') === 0 ||
+            evt.indexOf('board-empty') >= 0 ||
+            evt.indexOf('no-board') >= 0 ||
+            (ageMs >= 0 && ageMs <= 12000 && !beadRaw) ||
+            (!beadRaw && Number(_domNoBoardStreak || 0) > 0)
+        );
+        if (!block)
+            return false;
+        cwDbg('SEQSRC', 'active-tiny-no-board-block', {
+            source: String(sourceTag || ''),
+            title: String(activeTitle || ''),
+            activeSeq: clean,
+            activeSeqLen: clean.length,
+            beadRawLen: beadRaw.length,
+            resetPending: _domShoeResetPending ? 1 : 0,
+            seqEvent: evt,
+            noBoardStreak: Number(_domNoBoardStreak || 0),
+            noBoardAgeMs: ageMs,
+            buildSource: String(_cwSnapshotBuildSource || ''),
+            buildId: Number(_cwSnapshotBuildId || 0)
+        }, 0, 'active-tiny-no-board-block|' + String(sourceTag || '') + '|' + clean + '|' + Number(_domSeqVersion || 0));
+        brSeqDiagPost('active-tiny-no-board-block', {
+            source: String(sourceTag || ''),
+            title: String(activeTitle || ''),
+            activeSeq: clean,
+            activeSeqLen: clean.length,
+            beadRawLen: beadRaw.length,
+            resetPending: _domShoeResetPending ? 1 : 0,
+            seqEvent: evt,
+            noBoardStreak: Number(_domNoBoardStreak || 0),
+            noBoardAgeMs: ageMs,
+            buildSource: String(_cwSnapshotBuildSource || ''),
+            buildId: Number(_cwSnapshotBuildId || 0)
+        }, 0, 'active-tiny-no-board-block|' + String(sourceTag || '') + '|' + clean + '|' + Number(_domSeqVersion || 0));
+        return true;
+    }
+    function brApplyTableSwitchTinyBoard(raw, activeTitle, sourceTag, beforeState) {
+        var clean = brSanitizeSeq(raw);
+        if (!brIsTrustedTinyBoardSeq(clean))
+            return '';
+        var title = String(activeTitle || _domManagedTableTitle || '').trim();
+        var before = beforeState || {
+            managed: String(_domBeadSeqManaged || ''),
+            managedLen: String(_domBeadSeqManaged || '').length,
+            resetPending: _domShoeResetPending ? 1 : 0,
+            seqVersion: Number(_domSeqVersion || 0),
+            seqEvent: String(_domSeqEvent || '')
+        };
+        _domBeadSeqManaged = clean;
+        _domBeadSeqPrevRaw = clean;
+        _domTableSwitchWaitBeadPending = false;
+        _domTableSwitchWaitPrevRaw = '';
+        _domShoeResetPending = false;
+        _domShoeResetAt = 0;
+        brResetSeedTracker();
+        if (title)
+            _domManagedTableTitle = title;
+        _domLastActiveSeedKey = brBuildActiveSeedKey(title || _domManagedTableTitle, clean);
+        _domLastActiveSeedBurstId = Number(_domNoBoardBurstId || 0);
+        _domRawStallLastActiveKey = '';
+        _domSeqVersion = Math.max(Number(_domSeqVersion || 0) + 1, clean.length);
+        _domSeqEvent = 'table-switch-tiny-board-bootstrap';
+        _domSeqAppend = clean;
+        brMarkSeqAdvance(_domSeqEvent);
+        try {
+            window.__cw_bead_raw_seq = clean;
+            window.__cw_bead_managed_seq = clean;
+        } catch (_) {}
+        brPublishSeqState();
+        cwDbg('SEQSRC', 'table-switch-tiny-board-bootstrap', {
+            source: String(sourceTag || ''),
+            title: title,
+            raw: clean,
+            rawLen: clean.length,
+            beforeManagedLen: Number(before.managedLen || 0),
+            beforeEvent: String(before.seqEvent || ''),
+            seqVersion: Number(_domSeqVersion || 0),
+            seqEvent: String(_domSeqEvent || '')
+        }, 0, 'table-switch-tiny-board-bootstrap|' + clean + '|' + Number(_domSeqVersion || 0));
+        brSeqDiagPost('table-switch-tiny-board-bootstrap', {
+            source: String(sourceTag || ''),
+            title: title,
+            raw: clean,
+            rawLen: clean.length,
+            seq: String(_domBeadSeqManaged || ''),
+            seqLen: String(_domBeadSeqManaged || '').length,
+            seqVersion: Number(_domSeqVersion || 0),
+            seqEvent: String(_domSeqEvent || ''),
+            beforeManaged: before.managed,
+            beforeManagedLen: Number(before.managedLen || 0)
+        }, 0, 'table-switch-tiny-board-bootstrap|' + clean + '|' + Number(_domSeqVersion || 0));
+        return _domBeadSeqManaged;
     }
     function brBuildActiveSeedKey(title, seq) {
         return String(title || '').trim() + '|' + brSanitizeSeq(seq || '');
@@ -3915,7 +4431,7 @@
             var shouldAdopt = (pubVer > localVer) || (pubVer === localVer && pubLen > localLen);
             if (!shouldAdopt)
                 return false;
-            _domBeadSeqManaged = limitSeq50(pubSeq);
+            _domBeadSeqManaged = pubSeq;
             _domSeqVersion = pubVer;
             _domSeqEvent = String(pub.evt || _domSeqEvent || 'sync-published');
             _domSeqAppend = String(pub.append || '');
@@ -3994,7 +4510,7 @@
             seqVersion: Number(_domSeqVersion || 0),
             seqEvent: String(_domSeqEvent || '')
         };
-        var nextSeq = limitSeq50(beforeSeq + clean);
+        var nextSeq = beforeSeq + clean;
         // Không tăng seqVersion nếu append không làm đổi chuỗi (tránh spam round/settle).
         if (nextSeq === beforeSeq) {
             _domSeqEvent = 'no-change';
@@ -4031,6 +4547,24 @@
         }, 0, 'append-managed|' + clean + '|' + _domSeqVersion);
         brPublishSeqState();
         return true;
+    }
+    function brBuildSeqSnapshotContract(seqEvent) {
+        var evt = String(seqEvent || '');
+        var append = brSanitizeSeq(_domSeqAppend || '');
+        var mode = 'hold';
+        if (/^append|dom-baccarat-extend|append-delta-queue|append-reconcile-bead/i.test(evt)) {
+            mode = append ? 'append' : 'hold';
+        } else if (/table-switch-reset|table-switch-bead-authority|table-switch-tiny-board-bootstrap|short-board-bootstrap-authority|hydrate-init/i.test(evt)) {
+            mode = 'full-rebase';
+        } else if (/table-switch-wait-bead|shoe-reset-arm|board-empty|no-board|post-reset-hold|reset-seed-wait|no-change|hold/i.test(evt)) {
+            mode = 'hold';
+        }
+        if (mode !== 'append')
+            append = '';
+        return {
+            mode: mode,
+            append: append
+        };
     }
     function brMergeManagedSeq(rawSeq) {
         var rawInput = String(rawSeq || '');
@@ -4088,8 +4622,82 @@
             return _domBeadSeqManaged;
         }
 
+        if (_domTableSwitchWaitBeadPending && !brSanitizeSeq(_domBeadSeqManaged || '')) {
+            if (brIsTrustedTinyBoardSeq(raw)) {
+                brSeqTrace('return-table-switch-tiny-board-bootstrap', raw, prev, beforeState, {
+                    rawLen: raw.length,
+                    waitPrevRawLen: String(_domTableSwitchWaitPrevRaw || '').length
+                }, 0, 'return-table-switch-tiny-board-bootstrap|' + raw + '|' + Number(_domSeqVersion || 0));
+                return brApplyTableSwitchTinyBoard(raw, _domManagedTableTitle, 'bead-raw', beforeState);
+            }
+            if (_domTableSwitchWaitPrevRaw && raw === _domTableSwitchWaitPrevRaw) {
+                _domSeqEvent = 'table-switch-wait-bead';
+                _domSeqAppend = '';
+                brSeqDiagPost('table-switch-stale-raw-block', {
+                    raw: raw,
+                    rawLen: raw.length,
+                    waitPrevRaw: String(_domTableSwitchWaitPrevRaw || ''),
+                    waitPrevRawLen: String(_domTableSwitchWaitPrevRaw || '').length,
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    buildSource: String(_cwSnapshotBuildSource || '')
+                }, 500, 'table-switch-stale-raw-block|' + raw.length + '|' + Number(_domSeqVersion || 0));
+                brPublishSeqState();
+                return '';
+            }
+        }
+
         // Seed sau shoe-reset theo từng ký tự để không nuốt ván đầu khi board trả về chuỗi ngắn (thường 2..5 ký tự).
         if (_domShoeResetPending && raw.length <= 8) {
+            var emptyManagedShortBootstrap = !brSanitizeSeq(_domBeadSeqManaged || '') &&
+                !brSanitizeSeq(prev || '') &&
+                raw.length <= 12 &&
+                brIsReliableRoadSeq(raw);
+            if (emptyManagedShortBootstrap) {
+                _domBeadSeqManaged = normalizeSeqNoLimit(raw);
+                _domBeadSeqPrevRaw = raw;
+                _domShoeResetPending = false;
+                _domTableSwitchWaitBeadPending = false;
+                _domShoeResetAt = 0;
+                brResetSeedTracker();
+                _domLastActiveSeedKey = brBuildActiveSeedKey(_domManagedTableTitle, raw);
+                _domLastActiveSeedBurstId = Number(_domNoBoardBurstId || 0);
+                _domSeqVersion = Math.max(Number(_domSeqVersion || 0) + 1, String(_domBeadSeqManaged || '').length);
+                _domSeqEvent = 'short-board-bootstrap-authority';
+                _domSeqAppend = String(_domBeadSeqManaged || '');
+                brMarkSeqAdvance(_domSeqEvent);
+                brSeqTrace('return-short-board-bootstrap-authority', raw, prev, beforeState, {
+                    rawLen: raw.length,
+                    bootstrap: 1
+                }, 0, 'return-short-board-bootstrap-authority|' + raw + '|' + Number(_domSeqVersion || 0));
+                cwDbg('SEQSRC', 'short-board-bootstrap-authority', {
+                    raw: raw,
+                    rawLen: raw.length,
+                    seqLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    buildSource: String(_cwSnapshotBuildSource || '')
+                }, 0, 'short-board-bootstrap-authority|' + Number(_domSeqVersion || 0) + '|' + raw);
+                brSeqDiagPost('merge-accept-short-board-bootstrap', {
+                    raw: raw,
+                    rawLen: raw.length,
+                    seq: String(_domBeadSeqManaged || ''),
+                    seqLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    seqAppend: String(_domSeqAppend || ''),
+                    beforeManaged: beforeState.managed,
+                    beforeManagedLen: beforeState.managedLen,
+                    prevRaw: String(prev || ''),
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    buildSource: String(_cwSnapshotBuildSource || '')
+                }, 0, 'merge-accept-short-board-bootstrap|' + raw + '|' + Number(_domSeqVersion || 0));
+                brPublishSeqState();
+                return _domBeadSeqManaged;
+            }
             // Tránh race push/pull: chỉ cho phép seed-step mutate ở luồng push khi push đang chạy.
             var seedBuildSource = String(_cwSnapshotBuildSource || '');
             if (seedBuildSource !== 'push') {
@@ -4275,7 +4883,7 @@
             } else if (!String(_domBeadSeqManaged || '')) {
                 // Khi vừa có board hợp lệ (đặc biệt lúc mới vào bàn), managed phải bám raw hiện tại.
                 var beforeInit = String(_domBeadSeqManaged || '');
-                _domBeadSeqManaged = limitSeq50(raw);
+                _domBeadSeqManaged = raw;
                 _domSeqVersion = Math.max(Number(_domSeqVersion || 0) + 1, _domBeadSeqManaged.length);
                 _domSeqEvent = 'hydrate-init';
                 _domSeqAppend = _domBeadSeqManaged;
@@ -4316,18 +4924,34 @@
                 _domRawEqPrevStreak = Number(_domRawEqPrevStreak || 0) + 1;
             }
             _domRawEqPrevLastAt = nowEqPrevMs;
-            if (_domBoardDeltaQueue.length > 0 && !_domShoeResetPending) {
-                if (brDrainBoardDeltaQueue('raw-stable')) {
-                    _domBeadSeqPrevRaw = raw;
-                    brSeqTrace('return-raw-eq-prev-drain', raw, prev, beforeState, {
-                        queueRemain: _domBoardDeltaQueue.length
-                    }, 0, 'return-raw-eq-prev-drain|' + raw.length + '|' + Number(_domSeqVersion || 0));
-                    brPublishSeqState();
-                    return _domBeadSeqManaged;
-                }
+            if (_domBoardDeltaQueue.length > 0) {
+                cwDbg('SEQFLOW', 'delta-queue-authority-blocked', {
+                    reason: 'raw-eq-prev',
+                    queueLen: Number(_domBoardDeltaQueue.length || 0),
+                    rawLen: raw.length,
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || '')
+                }, 0, 'delta-queue-authority-blocked|raw-eq-prev|' + Number(_domSeqVersion || 0));
+                brResetBoardDeltaQueue('authority-raw-eq-prev');
             }
-            if (brTryReconcileBeadOneStep(raw, prev, beforeState, 'raw-eq-prev'))
-                return _domBeadSeqManaged;
+            if (String(_domBeadSeqManaged || '').length >= (raw.length + 3)) {
+                brSeqDiagPost('raw-stable-managed-ahead', {
+                    raw: raw,
+                    rawLen: raw.length,
+                    prevRaw: String(prev || ''),
+                    managed: String(_domBeadSeqManaged || ''),
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    queueLen: Number(_domBoardDeltaQueue.length || 0),
+                    lastAdvanceVer: Number(_domLastAdvanceVersion || 0),
+                    lastAdvanceEvt: String(_domLastAdvanceEvent || ''),
+                    lastAdvanceLen: Number(_domLastAdvanceSeqLen || 0),
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    buildSource: String(_cwSnapshotBuildSource || '')
+                }, 1200, 'raw-stable-managed-ahead|' + raw + '|' + Number(_domSeqVersion || 0));
+            }
             var activeHint = brSanitizeSeq(_domLastActiveSeq || '');
             var activeHintTitle = String(_domLastActiveSeqTitle || '');
             var managedTitle = String(_domManagedTableTitle || '');
@@ -4468,20 +5092,19 @@
 
         if (raw.indexOf(prev) === 0) {
             var extDelta = raw.slice(prev.length);
-            var extAdded = brQueueBoardDelta(extDelta, 'raw-extend', raw, prev);
             _domBeadSeqPrevRaw = raw;
-            if (extAdded > 0)
-                brDrainBoardDeltaQueue('raw-extend');
-            else {
+            var extApplied = brAppendManaged(extDelta, 'append-raw-extend');
+            if (!extApplied) {
                 _domSeqEvent = 'no-change';
                 _domSeqAppend = '';
             }
             brSeqTrace('return-extend', raw, prev, beforeState, {
                 delta: extDelta,
-                queued: extAdded,
+                applied: extApplied ? 1 : 0,
                 queueRemain: _domBoardDeltaQueue.length
             }, 0, 'return-extend|' + raw.length + '|' + prev.length);
-            brPublishSeqState();
+            if (!extApplied)
+                brPublishSeqState();
             return _domBeadSeqManaged;
         }
 
@@ -4522,21 +5145,20 @@
         if (ov > 0) {
             var delta = raw.slice(ov);
             if (delta.length > 0 && delta.length <= 3) {
-                var ovAdded = brQueueBoardDelta(delta, 'raw-overlap', raw, prev);
                 _domBeadSeqPrevRaw = raw;
-                if (ovAdded > 0)
-                    brDrainBoardDeltaQueue('raw-overlap');
-                else {
+                var ovApplied = brAppendManaged(delta, 'append-raw-overlap');
+                if (!ovApplied) {
                     _domSeqEvent = 'no-change';
                     _domSeqAppend = '';
                 }
                 brSeqTrace('return-overlap', raw, prev, beforeState, {
                     overlap: ov,
                     delta: delta,
-                    queued: ovAdded,
+                    applied: ovApplied ? 1 : 0,
                     queueRemain: _domBoardDeltaQueue.length
                 }, 0, 'return-overlap|' + raw.length + '|' + ov);
-                brPublishSeqState();
+                if (!ovApplied)
+                    brPublishSeqState();
                 return _domBeadSeqManaged;
             }
         }
@@ -4568,6 +5190,20 @@
                     shrinkRatio: shrinkRatio
                 }, 0, 'board-shrink|' + prev.length + '|' + raw.length);
             }
+            brSeqDiagPost('raw-shrink-prefix-hold', {
+                raw: raw,
+                rawLen: raw.length,
+                prevRaw: String(prev || ''),
+                prevLen: String(prev || '').length,
+                managed: String(_domBeadSeqManaged || ''),
+                managedLen: String(_domBeadSeqManaged || '').length,
+                shrinkRatio: shrinkRatio,
+                resetPending: _domShoeResetPending ? 1 : 0,
+                seqVersion: Number(_domSeqVersion || 0),
+                seqEvent: String(_domSeqEvent || ''),
+                buildId: Number(_cwSnapshotBuildId || 0),
+                buildSource: String(_cwSnapshotBuildSource || '')
+            }, 0, 'raw-shrink-prefix-hold|' + String(prev || '') + '|' + raw + '|' + Number(_domSeqVersion || 0));
             _domBeadSeqPrevRaw = raw;
             brSeqTrace('return-prev-prefix-of-raw', raw, prev, beforeState, {
                 shrinkRatio: shrinkRatio
@@ -4592,26 +5228,17 @@
         if (ovJump >= 5) {
             var jumpDelta = raw.slice(ovJump);
             if (jumpDelta.length > 0 && jumpDelta.length <= 2) {
-                var jumpAdded = brQueueBoardDelta(jumpDelta, 'raw-jump-overlap', raw, managedNow);
-                _domBeadSeqPrevRaw = raw;
-                if (jumpAdded > 0)
-                    brDrainBoardDeltaQueue('raw-jump-overlap');
-                else {
-                    _domSeqEvent = 'no-change';
-                    _domSeqAppend = '';
-                }
-                brSeqTrace('return-jump-overlap', raw, prev, beforeState, {
+                cwDbg('SEQFLOW', 'raw-jump-overlap-authority-blocked', {
+                    raw: raw,
+                    prev: String(prev || ''),
+                    managed: managedNow,
                     overlap: ovJump,
                     delta: jumpDelta,
-                    queued: jumpAdded,
-                    queueRemain: _domBoardDeltaQueue.length
-                }, 0, 'return-jump-overlap|' + raw.length + '|' + ovJump);
-                brPublishSeqState();
-                return _domBeadSeqManaged;
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || '')
+                }, 0, 'raw-jump-overlap-authority-blocked|' + raw.length + '|' + ovJump + '|' + Number(_domSeqVersion || 0));
             }
         }
-        if (brTryReconcileBeadOneStep(raw, prev, beforeState, 'pre-jump-hold'))
-            return _domBeadSeqManaged;
         brResetBoardDeltaQueue('board-jump-hold');
         _domBeadSeqPrevRaw = raw;
         _domSeqEvent = 'board-jump-hold';
@@ -4626,6 +5253,21 @@
             overlapManagedRaw: brOverlapSuffixPrefix(managedNow, raw),
             queueRemain: _domBoardDeltaQueue.length
         }, 1200, 'board-jump-hold|' + managedNow.length + '|' + raw.length + '|' + _domSeqVersion);
+        brSeqDiagPost('raw-jump-hold', {
+            raw: raw,
+            rawLen: raw.length,
+            prevRaw: String(prev || ''),
+            prevLen: String(prev || '').length,
+            managed: managedNow,
+            managedLen: managedNow.length,
+            overlapPrevRaw: brOverlapSuffixPrefix(String(prev || ''), raw),
+            overlapManagedRaw: brOverlapSuffixPrefix(managedNow, raw),
+            queueRemain: Number(_domBoardDeltaQueue.length || 0),
+            seqVersion: Number(_domSeqVersion || 0),
+            seqEvent: String(_domSeqEvent || ''),
+            buildId: Number(_cwSnapshotBuildId || 0),
+            buildSource: String(_cwSnapshotBuildSource || '')
+        }, 0, 'raw-jump-hold|' + String(prev || '') + '|' + raw + '|' + Number(_domSeqVersion || 0));
         brSeqTrace('return-board-jump-hold', raw, prev, beforeState, null, 0, 'return-board-jump-hold|' + raw.length);
         brPublishSeqState();
         return _domBeadSeqManaged;
@@ -4640,7 +5282,7 @@
         if (cand.indexOf(base) === 0 && cand.length > base.length) {
             var directDelta = cand.length - base.length;
             if (directDelta === 1)
-                return limitSeq50(cand);
+                return cand;
             return '';
         }
 
@@ -4651,59 +5293,22 @@
             if (base.slice(base.length - k) === cand.slice(0, k)) {
                 var delta = cand.slice(k);
                 if (delta.length > 0 && delta.length <= 1)
-                    return limitSeq50(base + delta);
+                    return base + delta;
                 break;
             }
         }
         return '';
     }
     function brTryReconcileBeadOneStep(raw, prev, beforeState, reasonTag) {
-        try {
-            if (_domShoeResetPending)
-                return false;
-            var managedNow = String(_domBeadSeqManaged || '');
-            if (!managedNow || !raw)
-                return false;
-            var stitched = brAppendNewTail(managedNow, raw);
-            if (!stitched)
-                return false;
-            if (stitched.length !== (managedNow.length + 1))
-                return false;
-            var delta = stitched.charAt(stitched.length - 1);
-            if (delta !== 'B' && delta !== 'P' && delta !== 'T')
-                return false;
-            var overlapManagedRaw = brOverlapSuffixPrefix(managedNow, raw);
-            var overlapPrevRaw = brOverlapSuffixPrefix(String(prev || ''), raw);
-            brResetBoardDeltaQueue('reconcile-bead-one-step');
-            _domBeadSeqPrevRaw = raw;
-            if (!brAppendManaged(delta, 'append-reconcile-bead'))
-                return false;
-            cwDbg('SEQFLOW', 'reconcile-bead-one-step', {
-                reason: String(reasonTag || ''),
-                raw: raw,
-                prev: String(prev || ''),
-                managedBefore: managedNow,
-                stitched: stitched,
-                delta: delta,
-                overlapManagedRaw: overlapManagedRaw,
-                overlapPrevRaw: overlapPrevRaw,
-                seqLen: String(_domBeadSeqManaged || '').length,
-                seqVersion: Number(_domSeqVersion || 0),
-                seqEvent: String(_domSeqEvent || ''),
-                buildId: Number(_cwSnapshotBuildId || 0),
-                buildSource: String(_cwSnapshotBuildSource || '')
-            }, 0, 'reconcile-bead-one-step|' + String(reasonTag || '') + '|' + Number(_domSeqVersion || 0));
-            brSeqTrace('return-reconcile-bead-one-step', raw, prev, beforeState, {
-                reason: String(reasonTag || ''),
-                stitched: stitched,
-                delta: delta,
-                overlapManagedRaw: overlapManagedRaw,
-                overlapPrevRaw: overlapPrevRaw
-            }, 0, 'return-reconcile-one-step|' + String(reasonTag || '') + '|' + raw.length + '|' + String(_domSeqVersion || 0));
-            return true;
-        } catch (_) {
-            return false;
-        }
+        cwDbg('SEQFLOW', 'reconcile-bead-one-step-disabled', {
+            reason: String(reasonTag || ''),
+            raw: String(raw || ''),
+            prev: String(prev || ''),
+            managedLen: String(_domBeadSeqManaged || '').length,
+            seqVersion: Number(_domSeqVersion || 0),
+            seqEvent: String(_domSeqEvent || '')
+        }, 0, 'reconcile-bead-disabled|' + String(reasonTag || '') + '|' + Number(_domSeqVersion || 0));
+        return false;
     }
     function brResetManagedForTable(activeTitle, activeSeq, reason) {
         var cleanTitle = String(activeTitle || '').trim();
@@ -4711,8 +5316,10 @@
         if (!cleanTitle || !raw)
             return false;
         var before = String(_domBeadSeqManaged || '');
-        _domBeadSeqManaged = limitSeq50(raw);
+        _domBeadSeqManaged = raw;
         _domBeadSeqPrevRaw = raw;
+        _domTableSwitchWaitBeadPending = false;
+        _domTableSwitchWaitPrevRaw = '';
         _domShoeResetPending = false;
         _domShoeResetAt = 0;
         brResetSeedTracker();
@@ -4741,8 +5348,10 @@
         if (!cleanTitle)
             return false;
         var before = String(_domBeadSeqManaged || '');
+        _domTableSwitchWaitPrevRaw = brSanitizeSeq(_domBeadSeqPrevRaw || before || '');
         _domBeadSeqManaged = '';
         _domBeadSeqPrevRaw = '';
+        _domTableSwitchWaitBeadPending = true;
         _domShoeResetPending = false;
         _domShoeResetAt = 0;
         brResetSeedTracker();
@@ -4757,6 +5366,7 @@
         cwDbg('SEQSRC', 'table-switch-clear-wait-bead', {
             title: cleanTitle,
             beforeLen: before.length,
+            waitPrevRawLen: String(_domTableSwitchWaitPrevRaw || '').length,
             afterLen: 0,
             seqVersion: _domSeqVersion,
             seqEvent: _domSeqEvent
@@ -4837,7 +5447,49 @@
             board = brNormalizeBoardToSixRows(board);
             var gridPack = brBuildGrid6xN(board.items);
             var rawSeq = brSequenceFromGrid(gridPack);
+            if (board && board.allowTiny) {
+                brSeqDiagPost('dom-bead-tiny-board-allow', {
+                    rawSeq: rawSeq,
+                    rawLen: String(rawSeq || '').length,
+                    managedSeq: String(_domBeadSeqManaged || ''),
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    prevRaw: String(_domBeadSeqPrevRaw || ''),
+                    prevRawLen: String(_domBeadSeqPrevRaw || '').length,
+                    waitBead: _domTableSwitchWaitBeadPending ? 1 : 0,
+                    resetPending: _domShoeResetPending ? 1 : 0,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    boardMeta: {
+                        score: Number(board.score || 0),
+                        avgW: Math.round(Number(board.avgW || 0)),
+                        avgH: Math.round(Number(board.avgH || 0)),
+                        maxSide: Number(board.maxSide || 0),
+                        rowCount: Number(board.rowCount || 0),
+                        colCount: Number(board.colCount || 0),
+                        profileName: String(board.profileName || '')
+                    }
+                }, 500, 'dom-bead-tiny-board-allow|' + rawSeq + '|' + Number(_domSeqVersion || 0));
+            }
             var managed = brMergeManagedSeq(rawSeq);
+            if (_domTableSwitchWaitBeadPending &&
+                !String(managed || '') &&
+                rawSeq &&
+                _domTableSwitchWaitPrevRaw &&
+                rawSeq === _domTableSwitchWaitPrevRaw) {
+                brSeqDiagPost('table-switch-stale-raw-cleared', {
+                    raw: rawSeq,
+                    rawLen: rawSeq.length,
+                    waitPrevRawLen: String(_domTableSwitchWaitPrevRaw || '').length,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    buildSource: String(_cwSnapshotBuildSource || '')
+                }, 500, 'table-switch-stale-raw-cleared|' + rawSeq.length + '|' + Number(_domSeqVersion || 0));
+                rawSeq = '';
+                try {
+                    window.__cw_bead_raw_seq = '';
+                } catch (_) {}
+            }
             _cwSeqDiagState.lastParserError = null;
             cwDbg('SEQ', 'dom-bead-read', {
                 rawSeq: rawSeq,
@@ -5115,7 +5767,7 @@
             var beadRawSeq = (bead && bead.rawSeq) ? String(bead.rawSeq || '') : '';
             var cards = domScanBaccaratCards();
             var active = domPickActiveCard(cards);
-            var activeSeq = active ? limitSeq50(String(active.seq || '').replace(/H/g, 'T')) : '';
+            var activeSeq = active ? String(active.seq || '').replace(/H/g, 'T') : '';
             var activeTitle = active && active.title ? String(active.title || '') : '';
             _domLastActiveSeq = activeSeq;
             _domLastActiveSeqTitle = activeTitle;
@@ -5511,6 +6163,42 @@
                     cells: active.cells || []
                 };
             }
+
+            var activeTinyBoardForSwitch = brIsTrustedTinyBoardSeq(activeSeq);
+            var beadRawCleanForSwitch = brSanitizeSeq(beadRawSeq || '');
+            var beadRawLooksStaleForSwitch = !!(
+                _domTableSwitchWaitBeadPending &&
+                _domTableSwitchWaitPrevRaw &&
+                beadRawCleanForSwitch &&
+                beadRawCleanForSwitch === _domTableSwitchWaitPrevRaw
+            );
+            var activeTinyWaitBeadNoBoardBlocked = brShouldBlockActiveTinyByNoBoard('active-card-wait-bead', activeTitle, activeSeq, beadRawCleanForSwitch);
+            if (_domTableSwitchWaitBeadPending &&
+                activeTinyBoardForSwitch &&
+                !activeTinyWaitBeadNoBoardBlocked &&
+                (!beadSeq || beadRawLooksStaleForSwitch || beadRawCleanForSwitch.length > (activeSeq.length + 3))) {
+                var tinySeq = brApplyTableSwitchTinyBoard(activeSeq, activeTitle, 'active-card-wait-bead');
+                if (tinySeq) {
+                    _cwSeqDiagState.lastSourcePick = {
+                        source: 'dom-baccarat-table-switch-tiny-active',
+                        reason: beadRawLooksStaleForSwitch ? 'active-tiny-over-stale-bead-raw' : 'active-tiny-wait-bead',
+                        activeTitle: activeTitle,
+                        activeSeqLen: activeSeq.length,
+                        beadRawLen: beadRawCleanForSwitch.length,
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent
+                    };
+                    return {
+                        seq: tinySeq,
+                        rawSeq: tinySeq,
+                        which: 'dom-baccarat-table-switch-tiny-active',
+                        seqVersion: _domSeqVersion,
+                        seqEvent: _domSeqEvent,
+                        cols: active.cols || [],
+                        cells: active.cells || []
+                    };
+                }
+            }
             if (activeTitle !== _domLastActiveTitle) {
                 cwDbg('TABLE', 'active-card-changed', {
                     prev: _domLastActiveTitle,
@@ -5533,8 +6221,20 @@
                 var prevTitle = String(_domManagedTableTitle || '');
                 var switched = false;
                 // Ưu tiên bead raw (board thật, có T); chỉ fallback activeSeq khi bead chưa sẵn.
-                var hasBeadRawForReset = !!String(beadRawSeq || '');
-                if (hasBeadRawForReset) {
+                var activeTinyForTableChange = brIsTrustedTinyBoardSeq(activeSeq);
+                var beadRawForTableChange = brSanitizeSeq(beadRawSeq || '');
+                var activeTinyTableChangeNoBoardBlocked = brShouldBlockActiveTinyByNoBoard('active-card-table-switch', activeTitle, activeSeq, beadRawForTableChange);
+                if (activeTinyTableChangeNoBoardBlocked)
+                    activeTinyForTableChange = false;
+                var beadRawTooFarFromTinyActive = !!(
+                    activeTinyForTableChange &&
+                    beadRawForTableChange.length > (activeSeq.length + 3)
+                );
+                var hasBeadRawForReset = !!beadRawForTableChange && !beadRawTooFarFromTinyActive;
+                if (activeTinyForTableChange && !hasBeadRawForReset) {
+                    switched = !!brApplyTableSwitchTinyBoard(activeSeq, activeTitle, 'active-card-table-switch');
+                    beadRawSeq = switched ? String(_domBeadSeqManaged || '') : '';
+                } else if (hasBeadRawForReset) {
                     switched = brResetManagedForTable(activeTitle, String(beadRawSeq || ''), 'table-switch-reset');
                 } else {
                     switched = brResetManagedForTableWaitBead(activeTitle, 'table-switch-wait-bead');
@@ -5546,17 +6246,19 @@
                     managedLen: String(_domBeadSeqManaged || '').length,
                     activeSeqLen: String(activeSeq || '').length,
                     beadRawLen: String(beadRawSeq || '').length,
-                    resetSource: String(hasBeadRawForReset ? 'bead-raw' : 'wait-bead')
+                    resetSource: String(switched && activeTinyForTableChange && !hasBeadRawForReset ? 'active-tiny' : (hasBeadRawForReset ? 'bead-raw' : 'wait-bead')),
+                    beadRawTooFarFromTinyActive: beadRawTooFarFromTinyActive ? 1 : 0
                 }, 0, 'table-switch|' + prevTitle + '|' + activeTitle + '|' + (switched ? '1' : '0'));
                 if (switched) {
                     // Chốt luôn snapshot sau switch để tránh 1 tick trả nhầm beadSeq cũ.
                     beadSeq = String(_domBeadSeqManaged || '');
                     beadRawSeq = brSanitizeSeq(beadRawSeq || '') || '';
+                    var switchSourceType = String(activeTinyForTableChange && !hasBeadRawForReset ? 'active-tiny' : (hasBeadRawForReset ? 'bead-raw' : 'wait-bead'));
                     _cwSeqDiagState.lastSourcePick = {
                         source: 'dom-baccarat-table-switch-reset',
-                        reason: hasBeadRawForReset ? 'table-changed-reset-from-bead-raw' : 'table-changed-wait-bead-raw',
+                        reason: switchSourceType === 'active-tiny' ? 'table-changed-reset-from-active-tiny' : (hasBeadRawForReset ? 'table-changed-reset-from-bead-raw' : 'table-changed-wait-bead-raw'),
                         activeTitle: activeTitle,
-                        sourceType: String(hasBeadRawForReset ? 'bead-raw' : 'wait-bead'),
+                        sourceType: switchSourceType,
                         seqLen: beadSeq.length,
                         seqVersion: _domSeqVersion,
                         seqEvent: _domSeqEvent
@@ -5660,12 +6362,10 @@
                 brPublishSeqState();
             }
 
-            // Ưu tiên bead; nếu bead đứng nhưng active seq cho thấy đuôi mới hợp lệ thì append.
+            // Authority chỉ bám bead/raw board; active seq chỉ để chẩn đoán, không được kéo dài authority.
             if (beadSeq && beadRawSeq && activeSeq && !_domShoeResetPending) {
-                var allowActiveTailExtend = !!(window && window.__cw_allow_active_tail_extend === 1);
-                var stitched = allowActiveTailExtend ? brAppendNewTail(beadSeq, activeSeq) : '';
-                if (!allowActiveTailExtend && activeSeq.indexOf(beadSeq) === 0 && activeSeq.length > beadSeq.length) {
-                    cwDbg('SEQFLOW', 'active-tail-extend-disabled', {
+                if (activeSeq.indexOf(beadSeq) === 0 && activeSeq.length > beadSeq.length) {
+                    cwDbg('SEQFLOW', 'active-tail-extend-authority-blocked', {
                         beadSeqLen: beadSeq.length,
                         activeSeqLen: activeSeq.length,
                         beadTail: beadSeq ? beadSeq.charAt(beadSeq.length - 1) : '',
@@ -5673,44 +6373,7 @@
                         seqVersion: Number(_domSeqVersion || 0),
                         seqEvent: String(_domSeqEvent || ''),
                         activeTitle: activeTitle
-                    }, 6000, 'active-tail-extend-disabled|' + beadSeq.length + '|' + activeSeq.length + '|' + String(activeTitle || ''));
-                } else if (stitched) {
-                    var beforeExtendLen = String(_domBeadSeqManaged || '').length;
-                    _domBeadSeqManaged = limitSeq50(stitched);
-                    var extendDeltaLen = Math.max(0, String(_domBeadSeqManaged || '').length - beforeExtendLen);
-                    if (extendDeltaLen > 0)
-                        _domSeqVersion += extendDeltaLen;
-                    _domSeqEvent = 'dom-baccarat-extend';
-                    _domSeqAppend = extendDeltaLen > 0 ? String(_domBeadSeqManaged || '').slice(-extendDeltaLen) : '';
-                    if (extendDeltaLen > 0)
-                        brMarkSeqAdvance(_domSeqEvent);
-                    brPublishSeqState();
-                    _cwSeqDiagState.lastSourcePick = {
-                        source: 'dom-baccarat-extend',
-                        reason: 'active-tail-valid',
-                        beadSeqLen: beadSeq.length,
-                        activeSeqLen: activeSeq.length,
-                        stitchedLen: stitched.length,
-                        extendDeltaLen: extendDeltaLen,
-                        seqVersion: _domSeqVersion,
-                        seqEvent: _domSeqEvent
-                    };
-                    cwDbg('SEQ', 'readTKSeq-dom-baccarat-extend', {
-                        beadSeq: beadSeq,
-                        activeSeq: activeSeq,
-                        stitched: stitched,
-                        seqVersion: _domSeqVersion,
-                        seqEvent: _domSeqEvent
-                    }, 0, 'readseq-extend|' + stitched + '|' + _domSeqVersion);
-                    return {
-                        seq: _domBeadSeqManaged,
-                        rawSeq: activeSeq,
-                        which: 'dom-baccarat-extend',
-                        seqVersion: _domSeqVersion,
-                        seqEvent: _domSeqEvent,
-                        cols: active.cols || [],
-                        cells: active.cells || []
-                    };
+                    }, 6000, 'active-tail-extend-authority-blocked|' + beadSeq.length + '|' + activeSeq.length + '|' + String(activeTitle || ''));
                 }
                 if (activeSeq.indexOf(beadSeq) === 0 && activeSeq.length > beadSeq.length) {
                     var directGap = activeSeq.length - beadSeq.length;
@@ -5729,15 +6392,15 @@
                 }
                 _cwSeqDiagState.lastSourcePick = {
                     source: 'dom-bead',
-                    reason: 'active-tail-not-match',
+                    reason: 'bead-raw-authority',
                     beadSeqLen: beadSeq.length,
                     activeSeqLen: activeSeq.length,
                     resetPending: _domShoeResetPending ? 1 : 0,
                     seqVersion: _domSeqVersion,
                     seqEvent: _domSeqEvent
                 };
-                cwDbg('SEQSRC', 'prefer-dom-bead-over-active', {
-                    reason: 'active-tail-not-match',
+                cwDbg('SEQSRC', 'prefer-dom-bead-authority', {
+                    reason: 'bead-raw-authority',
                     beadSeqLen: beadSeq.length,
                     activeSeqLen: activeSeq.length,
                     activeTitle: activeTitle,
@@ -5746,7 +6409,7 @@
                 }, 5000, 'seqsrc-bead-over-active|' + beadSeq.length + '|' + activeSeq.length + '|' + _domSeqVersion);
                 return {
                     seq: beadSeq,
-                    rawSeq: bead.rawSeq || beadSeq || '',
+                    rawSeq: beadRawSeq || '',
                     which: bead.which || 'dom-bead',
                     seqVersion: _domSeqVersion,
                     seqEvent: _domSeqEvent,
@@ -5786,7 +6449,7 @@
                 );
                 return {
                     seq: beadSeq,
-                    rawSeq: bead.rawSeq || beadSeq || '',
+                    rawSeq: beadRawSeq || '',
                     which: bead.which || 'dom-bead',
                     seqVersion: _domSeqVersion,
                     seqEvent: _domSeqEvent,
@@ -5871,7 +6534,7 @@
             }, 1200, 'readseq-empty|' + _domSeqVersion + '|' + _domSeqEvent);
             return {
                 seq: _domBeadSeqManaged || '',
-                rawSeq: window.__cw_bead_raw_seq || _domBeadSeqManaged || '',
+                rawSeq: window.__cw_bead_raw_seq || '',
                 which: 'dom-bead',
                 seqVersion: _domSeqVersion,
                 seqEvent: _domSeqEvent,
@@ -6629,7 +7292,7 @@
         timer: null,
         tickMs: 360,
         prog: null,
-        status: 'ĐỢI MỞ BÁT',
+        status: '',
         money: [],
         text: [],
         selC: null,
@@ -6690,7 +7353,7 @@
         '</div>' +
         '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    root.style.display='none';
+    //root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -7171,9 +7834,17 @@
             seqHtml = 'Chuỗi kết quả : <span>' + head + '</span><span style="color:#f66">' + last + '</span>';
         }
         try {
+            var panelStatus = '';
+            try {
+                panelStatus = (typeof readStatusTextByTail === 'function') ? String(readStatusTextByTail() || '') : String(S.status || '');
+            } catch (_) {
+                panelStatus = String(S.status || '');
+            }
             window.__cw_last_panel_snapshot = {
                 prog: S.prog,
-                status: String(S.status || ''),
+                status: panelStatus,
+                statusSource: String(window.__cw_status_source || ''),
+                statusTail: String(window.__cw_status_tail || ''),
                 seq: String(S.seq || ''),
                 seqVersion: Number(S.seqVersion || 0),
                 seqEvent: String(S.seqEvent || ''),
@@ -9992,11 +10663,47 @@
             return '';
         }
     }
+    var CW_STATUS_AUTHORITY_TAILS = [
+        'body/div#themeZone.game.scenes_default/div.game_main/div.main_center/div#processBar.info_status/p#processStatus',
+        'body/div#themeZone.game.baccarat_normal/div.game_main/div.main_center/div#processBar.info_status/p#processStatus'
+    ];
+    var CW_STATUS_AUTHORITY_TAIL = CW_STATUS_AUTHORITY_TAILS[0];
+    function brNormalizeStatusTail(tail) {
+        try {
+            return String(tail || '')
+                .replace(/^html\//i, '')
+                .replace(/\s+/g, '')
+                .toLowerCase();
+        } catch (_) {
+            return '';
+        }
+    }
+    function brIsAuthorityStatusTail(tail) {
+        var clean = brNormalizeStatusTail(tail);
+        for (var i = 0; i < CW_STATUS_AUTHORITY_TAILS.length; i++) {
+            if (clean === brNormalizeStatusTail(CW_STATUS_AUTHORITY_TAILS[i]))
+                return true;
+        }
+        return false;
+    }
+    function brStatusAuthorityTailText() {
+        try {
+            return CW_STATUS_AUTHORITY_TAILS.join(' || ');
+        } catch (_) {
+            return CW_STATUS_AUTHORITY_TAIL;
+        }
+    }
+    function brSetStatusDiag(source, tail, text) {
+        try { window.__cw_status_source = String(source || ''); } catch (_) {}
+        try { window.__cw_status_tail = String(tail || ''); } catch (_) {}
+        try { window.__cw_status_text = String(text || ''); } catch (_) {}
+    }
     function domPickStatusFromSelector(selectors, preferredTailPart) {
         try {
             var contexts = [];
             domWalkContexts(window, 'top', 0, 0, contexts, []);
             var best = null;
+            var candidates = [];
             for (var i = 0; i < contexts.length; i++) {
                 var ctx = contexts[i];
                 var doc = ctx && ctx.doc ? ctx.doc : null;
@@ -10043,20 +10750,111 @@
     }
     function domReadProcessStatus() {
         try {
-            var msgGray = domPickStatusFromSelector([
-                '#themeZone.game.scenes_default #gameMessage.message_gray p',
-                '#gameMessage.message_gray p',
-                'div#gameMessage.message_gray p'
-            ], 'div#gameMessage.message_gray/p');
-            if (msgGray)
-                return msgGray;
-            return domPickStatusFromSelector([
-                '#processBar.info_status p#processStatus',
-                '#processBar p#processStatus',
-                'p#processStatus',
-                '#processStatus'
-            ], 'div#processBar.info_status/p#processStatus');
+            var contexts = [];
+            domWalkContexts(window, 'top', 0, 0, contexts, []);
+            var best = null;
+            var candidates = [];
+            for (var i = 0; i < contexts.length; i++) {
+                var ctx = contexts[i];
+                var doc = ctx && ctx.doc ? ctx.doc : null;
+                if (!doc)
+                    continue;
+                var list = [];
+                try {
+                    list = doc.querySelectorAll('#themeZone.game .game_main .main_center #processBar.info_status p#processStatus, #themeZone .game_main .main_center #processBar.info_status p#processStatus, #processBar.info_status p#processStatus');
+                } catch (_) {
+                    list = [];
+                }
+                for (var k = 0; k < list.length; k++) {
+                    var el = list[k];
+                    if (!el)
+                        continue;
+                    var tail = fullPath(el, 80) || domTailOfEl(el) || '';
+                    var visible = domVisible(el);
+                    var txt = domCleanStatusText(el.innerText || el.textContent || '');
+                    if (candidates.length < 8) {
+                        candidates.push({
+                            source: ctx.source || 'top',
+                            visible: visible ? 1 : 0,
+                            text: txt,
+                            tail: tail,
+                            authority: brIsAuthorityStatusTail(tail) ? 1 : 0
+                        });
+                    }
+                    if (!visible)
+                        continue;
+                    if (!brIsAuthorityStatusTail(tail))
+                        continue;
+                    if (!txt)
+                        continue;
+                    var rect = null;
+                    try { rect = el.getBoundingClientRect(); } catch (_) { rect = null; }
+                    var score = 0;
+                    if (ctx.source === 'top/frame[1]')
+                        score += 50;
+                    if (ctx.source === 'top/frame[0]')
+                        score += 30;
+                    score += Math.max(0, 200 - Math.round((rect && rect.top) || 0));
+                    if (!best || score > best.score) {
+                        best = {
+                            text: txt,
+                            tail: tail,
+                            source: ctx.source || 'top',
+                            score: score
+                        };
+                    }
+                }
+            }
+            if (best) {
+                brSetStatusDiag('authority-processStatus|' + String(best.source || 'top'), best.tail, best.text);
+                cwDbg('STATUS', 'authority-processStatus', {
+                    status: best.text,
+                    source: best.source || 'top',
+                    tail: best.tail
+                }, 1500, 'status-authority|' + best.text + '|' + best.tail);
+                return best.text;
+            }
+            try {
+                var texts = (typeof buildTextRects === 'function') ? buildTextRects() : [];
+                var textBest = null;
+                var textBestArea = -1;
+                for (var ti = 0; ti < texts.length; ti++) {
+                    var item = texts[ti];
+                    if (!item)
+                        continue;
+                    var itemTail = String(item.tail || '');
+                    if (!brIsAuthorityStatusTail(itemTail))
+                        continue;
+                    var itemText = domCleanStatusText(item.text || '');
+                    if (!itemText)
+                        continue;
+                    var itemArea = Math.max(0, Number(item.w || 0)) * Math.max(0, Number(item.h || 0));
+                    if (!textBest || itemArea > textBestArea) {
+                        textBest = {
+                            text: itemText,
+                            tail: itemTail,
+                            area: itemArea
+                        };
+                        textBestArea = itemArea;
+                    }
+                }
+                if (textBest) {
+                    brSetStatusDiag('authority-processStatus|textmap', textBest.tail, textBest.text);
+                    cwDbg('STATUS', 'authority-processStatus-textmap', {
+                        status: textBest.text,
+                        tail: textBest.tail
+                    }, 1500, 'status-authority-textmap|' + textBest.text + '|' + textBest.tail);
+                    return textBest.text;
+                }
+            } catch (_) {}
+            brSetStatusDiag('authority-processStatus-missing', CW_STATUS_AUTHORITY_TAIL, '');
+            cwDbg('STATUS', 'authority-processStatus-missing', {
+                expectedTail: brStatusAuthorityTailText(),
+                candidates: candidates
+            }, 2500, 'status-authority-missing|' + String((location && location.href) || ''));
+            return '';
         } catch (_) {
+            brSetStatusDiag('authority-processStatus-error', CW_STATUS_AUTHORITY_TAIL, '');
             return '';
         }
     }
@@ -10088,73 +10886,22 @@
             return true;
         return false;
     }
+    function readStatusTextByTail() {
+        try {
+            return domReadProcessStatus() || "";
+        } catch (_) {
+            brSetStatusDiag('authority-processStatus-error', CW_STATUS_AUTHORITY_TAIL, '');
+            return "";
+        }
+    }
+    try { window.readStatusTextByTail = readStatusTextByTail; } catch (_) {}
     function statusByProg(p) {
-        if (!__cw_hasCocos()) {
-            try {
-                var processStatus = domReadProcessStatus();
-                if (processStatus)
-                    return processStatus;
-                var cards = domScanBaccaratCards();
-                var active = domPickActiveCard(cards);
-                if (active && active.countdown != null)
-                    return 'Baccarat DOM | ' + (active.title || 'ACTIVE') + ' | ' + active.countdown + 's';
-                if (active && active.title)
-                    return 'Baccarat DOM | ' + active.title;
-                if (cards && cards.length)
-                    return 'Baccarat DOM | ' + cards.length + ' card(s)';
-                return 'Baccarat DOM | waiting';
-            } catch (_) {
-                return 'Baccarat DOM';
-            }
-        }
-        // Ngưỡng chống rung cho số thực gần 0
-        var EPS = 0.001;
-
-        // Quy tắc ông chủ yêu cầu:
-        // - p > 0      → lấy text tail 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage'
-        // - p = 0      → lấy text tail 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting'
-        var TAIL_MSG = 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage';
-        var TAIL_WAIT = 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting';
-
-        // Chọn text theo tail, so khớp theo kiểu "đuôi" để chống thay đổi prefix
-        function pickTextByTailEnd(tailEnd) {
-            try {
-                var texts = buildTextRects(); // [{text,x,y,w,h,tail}, ...]
-                var best = null,
-                bestArea = -1;
-                var tailEndL = String(tailEnd || '').toLowerCase();
-
-                for (var i = 0; i < texts.length; i++) {
-                    var t = texts[i];
-                    var tl = String(t.tail || '').toLowerCase();
-                    if (!tl.endsWith(tailEndL))
-                        continue;
-
-                    var ar = (t.w || 0) * (t.h || 0);
-                    if (ar > bestArea) {
-                        best = t;
-                        bestArea = ar;
-                    }
-                }
-                return best ? String(best.text || '').trim() : '';
-            } catch (e) {
-                return '';
-            }
-        }
-
-        p = +p || 0;
-        var tail = (p > EPS) ? TAIL_MSG : TAIL_WAIT;
-        var txt = pickTextByTailEnd(tail);
-
-        // Fallback nhẹ khi không tìm thấy text
-        if (txt)
-            return txt;
-        return "";
+        return readStatusTextByTail();
     }
 
     function tick() {
         var p = collectProgress();
-        var st = statusByProg(p == null ? null : p);
+        var st = readStatusTextByTail();
         if (!__cw_hasCocos() && domStatusImpliesClosed(st))
             p = 0;
         if (p != null)
@@ -10578,15 +11325,28 @@
                 var cached = window.__cw_last_panel_snapshot;
                 if (!cached)
                     return 'no-panel-snapshot';
+                var rawSeq = String(cached.rawSeq || cached.seq || '');
+                var seqContract = brBuildSeqSnapshotContract(String(cached.seqEvent || ''));
+                var statusNow = '';
+                try {
+                    statusNow = (typeof readStatusTextByTail === 'function') ? String(readStatusTextByTail() || '') : '';
+                } catch (_) {
+                    statusNow = '';
+                }
                 var snap = {
                     abx: 'tick',
                     prog: cached.prog,
                     totals: cached.totals || null,
                     seq: String(cached.seq || ''),
+                    rawSeq: rawSeq,
                     seqVersion: Number(cached.seqVersion || 0),
                     seqEvent: String(cached.seqEvent || ''),
+                    seqMode: String(cached.seqMode || seqContract.mode || ''),
+                    seqAppend: String(cached.seqAppend || seqContract.append || ''),
                     username: (cached && cached.totals && cached.totals.N != null) ? String(cached.totals.N || '') : '',
-                    status: String(cached.status || ''),
+                    status: statusNow,
+                    statusSource: String(window.__cw_status_source || ''),
+                    statusTail: String(window.__cw_status_tail || ''),
                     ts: Date.now(),
                     origin: 'canvas-panel'
                 };
@@ -10773,17 +11533,41 @@
             try {
                 if (typeof readTKSeq === 'function') {
                     var r = readTKSeq();
+                    try {
+                        var seqNow = (r && r.seq) ? String(r.seq || '') : '';
+                        var rawNow = (r && r.rawSeq) ? String(r.rawSeq || '') : '';
+                        if (seqNow && !rawNow) {
+                            cwDbg('SEQFLOW', 'readSeqStateSafe-seq-without-raw', {
+                                href: String(location.href || ''),
+                                path: String(location.pathname || ''),
+                                seqLen: seqNow.length,
+                                seqTail: seqNow ? seqNow.slice(-1) : '',
+                                seqVersion: Number(r && r.seqVersion != null ? r.seqVersion : (window.__cw_seq_version || 0)) || 0,
+                                seqEvent: String(r && r.seqEvent ? r.seqEvent : (window.__cw_seq_event || '')),
+                                seqMode: String(r && r.seqMode ? r.seqMode : ''),
+                                seqAppend: String(r && r.seqAppend ? r.seqAppend : ''),
+                                beadRawLen: String(window.__cw_bead_raw_seq || '').length,
+                                managedLen: String(window.__cw_seq || '').length
+                            }, 700, 'readSeqStateSafe-seq-without-raw|' + seqNow.length + '|' + Number(r && r.seqVersion != null ? r.seqVersion : (window.__cw_seq_version || 0)));
+                        }
+                    } catch (_) {}
                     return {
                         seq: (r && r.seq) ? String(r.seq || '') : '',
+                        rawSeq: (r && r.rawSeq) ? String(r.rawSeq || '') : '',
                         seqVersion: Number(r && r.seqVersion != null ? r.seqVersion : (window.__cw_seq_version || 0)) || 0,
-                        seqEvent: String(r && r.seqEvent ? r.seqEvent : (window.__cw_seq_event || ''))
+                        seqEvent: String(r && r.seqEvent ? r.seqEvent : (window.__cw_seq_event || '')),
+                        seqMode: String(r && r.seqMode ? r.seqMode : ''),
+                        seqAppend: String(r && r.seqAppend ? r.seqAppend : '')
                     };
                 }
             } catch (_) {}
             return {
                 seq: '',
+                rawSeq: '',
                 seqVersion: Number(window.__cw_seq_version || 0) || 0,
-                seqEvent: String(window.__cw_seq_event || '')
+                seqEvent: String(window.__cw_seq_event || ''),
+                seqMode: '',
+                seqAppend: ''
             };
         }
 
@@ -10820,9 +11604,13 @@
             var st = '';
             var t = null;
             var seq = '';
+            var rawSeq = '';
             var seqFresh = '';
             var seqVersion = 0;
             var seqEvent = '';
+            var seqMode = '';
+            var seqAppend = '';
+            var seqWhich = '';
             var cached = null;
             var buildSource = String(sourceTag || 'auto');
             var perfMode = isPerfMode();
@@ -10865,19 +11653,9 @@
             }
 
             try {
-                if (cached && cached.status != null)
-                    st = String(cached.status || '');
-            } catch (_) {}
-            try {
-                if (!st && S && S.status != null)
-                    st = String(S.status || '');
-            } catch (_) {}
-            if (!st) {
-                try {
-                    st = (typeof statusByProg === 'function') ? String(statusByProg(p) || '') : '';
-                } catch (_) {
-                    st = '';
-                }
+                st = (typeof readStatusTextByTail === 'function') ? String(readStatusTextByTail() || '') : '';
+            } catch (_) {
+                st = '';
             }
             var progNum = (typeof p === 'number' && isFinite(p)) ? p : null;
             var totalsCacheMs = 1400;
@@ -10982,12 +11760,18 @@
                     _abxSnapCache.seqAt = Date.now();
                 }
                 seqFresh = String((seqState && seqState.seq) || '');
+                rawSeq = String((seqState && seqState.rawSeq) || '');
                 seqVersion = Number((seqState && seqState.seqVersion != null) ? seqState.seqVersion : (window.__cw_seq_version || 0)) || 0;
                 seqEvent = String((seqState && seqState.seqEvent) ? seqState.seqEvent : (window.__cw_seq_event || ''));
+                seqMode = String((seqState && seqState.seqMode) || '');
+                seqAppend = String((seqState && seqState.seqAppend) || '');
             } catch (_) {
                 seqFresh = '';
+                rawSeq = '';
                 seqVersion = Number(window.__cw_seq_version || 0) || 0;
                 seqEvent = String(window.__cw_seq_event || '');
+                seqMode = '';
+                seqAppend = '';
             }
             if (seqFresh) {
                 if (!seq ||
@@ -11007,6 +11791,61 @@
                         seq = '';
                     }
                 }
+            }
+            if (!rawSeq) {
+                try {
+                    if (seqState && seqState.rawSeq)
+                        rawSeq = String(seqState.rawSeq || '');
+                } catch (_) {}
+                if (!rawSeq) {
+                    try {
+                        rawSeq = String(window.__cw_bead_raw_seq || '');
+                    } catch (_) {
+                        rawSeq = '';
+                    }
+                }
+            }
+            try {
+                if (seq && !rawSeq) {
+                    cwDbg('SEQFLOW', 'snapshot-seq-without-raw', {
+                        buildId: buildId,
+                        source: buildSource,
+                        href: String(location.href || ''),
+                        path: String(location.pathname || ''),
+                        seqLen: String(seq || '').length,
+                        seqTail: seq ? String(seq).slice(-1) : '',
+                        seqVersion: Number(seqVersion || 0) || 0,
+                        seqEvent: String(seqEvent || ''),
+                        seqMode: String(seqMode || ''),
+                        seqAppend: String(seqAppend || ''),
+                        seqFreshLen: String(seqFresh || '').length,
+                        cachedSeqLen: cached && cached.seq ? String(cached.seq || '').length : 0,
+                        stateRawLen: seqState && seqState.rawSeq ? String(seqState.rawSeq || '').length : 0,
+                        beadRawLen: String(window.__cw_bead_raw_seq || '').length,
+                        managedLen: String(window.__cw_seq || '').length
+                    }, 500, 'snapshot-seq-without-raw|' + buildSource + '|' + String(seqEvent || '') + '|' + Number(seqVersion || 0) + '|' + String(seq || '').length);
+                } else if (buildSource === 'pull' && seq && rawSeq && String(seq) === String(rawSeq)) {
+                    cwDbg('SEQFLOW', 'snapshot-pull-raw-fallback-from-seq', {
+                        buildId: buildId,
+                        href: String(location.href || ''),
+                        path: String(location.pathname || ''),
+                        seqLen: String(seq || '').length,
+                        seqVersion: Number(seqVersion || 0) || 0,
+                        seqEvent: String(seqEvent || ''),
+                        seqMode: String(seqMode || ''),
+                        seqAppend: String(seqAppend || ''),
+                        seqFreshLen: String(seqFresh || '').length,
+                        stateRawLen: seqState && seqState.rawSeq ? String(seqState.rawSeq || '').length : 0,
+                        beadRawLen: String(window.__cw_bead_raw_seq || '').length
+                    }, 500, 'snapshot-pull-raw-fallback-from-seq|' + Number(seqVersion || 0) + '|' + String(seq || '').length);
+                }
+            } catch (_) {}
+            if (!seqMode || !seqAppend) {
+                var seqContract = brBuildSeqSnapshotContract(seqEvent);
+                if (!seqMode)
+                    seqMode = String(seqContract.mode || '');
+                if (!seqAppend)
+                    seqAppend = String(seqContract.append || '');
             }
             if (!seqVersion) {
                 try {
@@ -11081,6 +11920,21 @@
                     }, 0, 'seqflow-build|' + buildSource + '|' + buildId + '|' + Number(seqVersion || 0) + '|' + String(seqEvent || ''));
                 }
             } catch (_) {}
+            try {
+                brPostLayoutDiag('snapshot-context', 4000, 'snapshot|' + buildSource + '|' + String((location && location.href) || ''), {
+                    buildSource: buildSource,
+                    buildId: buildId,
+                    status: String(st || ''),
+                    statusSource: String(window.__cw_status_source || ''),
+                    statusTail: String(window.__cw_status_tail || ''),
+                    seqLen: String(seq || '').length,
+                    rawLen: String(rawSeq || '').length,
+                    seqVersion: Number(seqVersion || 0) || 0,
+                    seqEvent: String(seqEvent || ''),
+                    seqMode: String(seqMode || ''),
+                    seqAppend: String(seqAppend || '')
+                });
+            } catch (_) {}
 
             var uname = '';
             try {
@@ -11093,10 +11947,16 @@
                 prog: p,
                 totals: t,
                 seq: seq,
+                rawSeq: rawSeq,
                 seqVersion: seqVersion,
                 seqEvent: seqEvent,
+                seqMode: seqMode,
+                seqAppend: seqAppend,
+                seqWhich: seqWhich,
                 username: uname,
                 status: String(st || ''),
+                statusSource: String(window.__cw_status_source || ''),
+                statusTail: String(window.__cw_status_tail || ''),
                 ts: Date.now(),
                 jsProgMs: jsProgMs,
                 jsTotalsMs: jsTotalsMs,
@@ -11151,6 +12011,9 @@
                             }
                         })()
                     }, 1800, 'startPush-skip-non-game');
+                    brPostLayoutDiag('startpush-skip-non-game', 1800, 'startpush-skip|' + String((location && location.href) || ''), {
+                        tickMs: tickMs
+                    });
                     return 'skip-non-game';
                 }
                 if (_pushTimer) {
@@ -11161,7 +12024,10 @@
                 _lastStableJson = '';
                 try { window.__cw_last_push_seq_version = Number(_lastPushSeqVersion || 0) || 0; } catch (_) {}
                 cwDbg('PUSH', 'startPush', { tickMs: tickMs }, 0, 'startPush|' + tickMs);
-                _pushTimer = setInterval(function () {
+                brPostLayoutDiag('startpush', 2000, 'startpush|' + String((location && location.href) || ''), {
+                    tickMs: tickMs
+                });
+                function __cwPushTickOnce() {
                     var buildT0 = Date.now();
                     var snap = buildSnapshotNow('push');
                     var jsBuildMs = Date.now() - buildT0;
@@ -11231,7 +12097,9 @@
                             seqEvent: ev
                         }, 0, 'event-not-sent|' + (snap && snap.seqVersion != null ? snap.seqVersion : '') + '|' + ev);
                     }
-                }, tickMs);
+                }
+                _pushTimer = setInterval(__cwPushTickOnce, tickMs);
+                try { __cwPushTickOnce(); } catch (_) {}
                 return 'started';
             } catch (err) {
                 cwDbg('PUSH', 'startPush fail', {
