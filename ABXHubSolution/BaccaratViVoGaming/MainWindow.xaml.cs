@@ -23,6 +23,7 @@ using System.Reflection;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Microsoft.Web.WebView2.Wpf;  // <-- cái này để có CoreWebView2Creation
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -325,6 +326,51 @@ namespace BaccaratViVoGaming
         private const double TabAddButtonGap = 4;
         private const double TabBaseOverlap = 8;
         private const double TabStripRightInset = 16;
+
+        private const int NativeInputMouse = 0;
+        private const uint NativeMouseLeftDown = 0x0002;
+        private const uint NativeMouseLeftUp = 0x0004;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct NativePoint
+        {
+            public int X;
+            public int Y;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct NativeMouseInput
+        {
+            public int dx;
+            public int dy;
+            public uint mouseData;
+            public uint dwFlags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Explicit)]
+        private struct NativeInputUnion
+        {
+            [FieldOffset(0)]
+            public NativeMouseInput mi;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct NativeInput
+        {
+            public int type;
+            public NativeInputUnion U;
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetCursorPos(int X, int Y);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool GetCursorPos(out NativePoint lpPoint);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern uint SendInput(uint nInputs, NativeInput[] pInputs, int cbSize);
 
 
         private const string AppLocalDirName = "BaccaratViVoGaming"; // đổi thành tên bạn muốn
@@ -2374,6 +2420,9 @@ try{
         w.__cw_debug_seq_push = {(_enableJsPushDebug ? 1 : 0)};
         w.__cw_debug_seq = {(_enableJsPushDebug ? 1 : 0)};
         w.__cw_seq_diag = 1;
+        if (typeof w.__cw_bet_flow_log_enable === 'undefined') w.__cw_bet_flow_log_enable = 1;
+        if (typeof w.__cw_bet_flow_log_file === 'undefined') w.__cw_bet_flow_log_file = 1;
+        if (typeof w.__cw_bet_flow_log_console === 'undefined') w.__cw_bet_flow_log_console = 0;
         w.__cw_console_to_host = 1;
         w.__cw_console_passthrough = 0;
         w.__cw_panel_autostart = 1;
@@ -4227,9 +4276,10 @@ try{
             bool isJsSeqDiagRaw = msg.IndexOf("\"abx\":\"seq_diag\"", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isJsConsoleRaw = msg.IndexOf("\"abx\":\"js_console\"", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isTickRaw = msg.IndexOf("\"abx\":\"tick\"", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool isNativeClickRaw = msg.IndexOf("\"abx\":\"native_click\"", StringComparison.OrdinalIgnoreCase) >= 0;
             if (isTickRaw && ShouldDropTickByIngressGate(source, DateTime.UtcNow))
                 return;
-            if (!isJsLogBatchRaw && !isJsSeqDiagRaw && !isJsConsoleRaw && !isTickRaw)
+            if (!isJsLogBatchRaw && !isJsSeqDiagRaw && !isJsConsoleRaw && !isTickRaw && !isNativeClickRaw)
                 EnqueueUi($"[JS] {msg}"); // chỉ hiển thị UI, không ghi ra file
 
             try
@@ -4242,6 +4292,11 @@ try{
                 if (!root.TryGetProperty("abx", out var abxEl)) return;
                 var abxStr = abxEl.GetString() ?? "";
                 perfAbx = abxStr;
+                if (string.Equals(abxStr, "native_click", StringComparison.OrdinalIgnoreCase))
+                {
+                    await TryHandleNativeClickAsync(root, source);
+                    return;
+                }
                 if (string.Equals(abxStr, "tick", StringComparison.OrdinalIgnoreCase))
                 {
                     jsBuildMs = GetJsonLongLoose(root, "jsBuildMs") ?? -1;
@@ -4629,7 +4684,9 @@ try{
                         lock (_snapLock) _lastSnap = snap;
 
                         var seqForUi = snap.seq ?? "";
-                        var seqUiSig = $"{seqForUi.Length}:{(seqForUi.Length > 0 ? seqForUi[^1] : '-')}";
+                        var seqForUiFiltered = FilterResultDisplaySeqWindow(seqForUi);
+                        var seqUiTail = Tail(seqForUiFiltered, 20);
+                        var seqUiSig = $"{seqForUiFiltered.Length}:{(snap?.seqVersion ?? 0)}:{seqUiTail}";
                         int progRounded = progUi.HasValue
                             ? (int)Math.Round(Math.Clamp(progUi.Value, 0, 100), MidpointRounding.AwayFromZero)
                             : -1;
@@ -6844,6 +6901,72 @@ try{
             return true;
         }
 
+        private bool TryApplyJsDisplayAppendLocked(
+            CwSnapshot snap,
+            string source,
+            string statusRaw,
+            string boardSeqEvent,
+            string jsDisplay,
+            long jsSeqVersion,
+            string reason)
+        {
+            if (snap == null)
+                return false;
+
+            var prevDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
+            var boardDisplay = FilterResultDisplaySeqWindow(jsDisplay);
+            if (string.IsNullOrWhiteSpace(prevDisplay) || string.IsNullOrWhiteSpace(boardDisplay))
+                return false;
+            if (IsChangingShoeStatus(statusRaw) || IsNoBoardSeqEvent(boardSeqEvent) || IsSeedLikeSeqEvent(boardSeqEvent))
+                return false;
+
+            var combinedDisplay = BuildSyncSeqFromBoardLocked(boardDisplay);
+            if (!TryConfirmSeqAdvanceDelta(prevDisplay, combinedDisplay, out int appendDelta) || appendDelta <= 0)
+                return false;
+
+            if (appendDelta > 8)
+            {
+                Log($"[NETSEQ][DISPLAY-APPEND-REJECT] reason=delta-too-long | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | delta={appendDelta} | boardLen={boardDisplay.Length} | netLen={prevDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)}");
+                return false;
+            }
+
+            var rawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
+            if (!string.IsNullOrWhiteSpace(rawDisplay))
+            {
+                var rawCombined = BuildSyncSeqFromBoardLocked(rawDisplay);
+                bool rawSameAsBoard = string.Equals(rawDisplay, boardDisplay, StringComparison.Ordinal);
+                bool rawStillAtPrev = string.Equals(rawCombined, prevDisplay, StringComparison.Ordinal);
+                bool rawAlsoAdvanced = TryConfirmSeqAdvanceDelta(prevDisplay, rawCombined, out int rawDelta) &&
+                                       rawDelta > 0 &&
+                                       rawDelta <= Math.Max(appendDelta, 2);
+                bool rawLooksUnrelated =
+                    rawDisplay.Length + 2 < boardDisplay.Length &&
+                    !rawSameAsBoard &&
+                    !rawStillAtPrev &&
+                    !rawAlsoAdvanced;
+
+                if (rawLooksUnrelated)
+                {
+                    Log($"[NETSEQ][DISPLAY-APPEND-REJECT] reason=raw-mismatch | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | delta={appendDelta} | boardLen={boardDisplay.Length} | rawLen={rawDisplay.Length} | netLen={prevDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)}");
+                    return false;
+                }
+            }
+
+            long prevVer = _netSeqVersion;
+            _netSeqDisplay = FilterResultDisplaySeqWindow(combinedDisplay);
+            _netSeqVersion = ComputeNextSyncSeqVersion(prevVer, prevDisplay, _netSeqDisplay, Math.Max(jsSeqVersion, Math.Max(prevVer + appendDelta, _netSeqDisplay.Length)));
+            _netSeqEvent = string.IsNullOrWhiteSpace(boardSeqEvent) ? "js-display-append" : "js-display-append-" + boardSeqEvent;
+            _netSeqSource = "js-display-append";
+
+            snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+            snap.seqVersion = _netSeqVersion;
+            snap.seqEvent = _netSeqEvent;
+            snap.seqSource = _netSeqSource;
+
+            Log($"[NETSEQ][DISPLAY-APPEND] reason={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | delta={appendDelta} | boardLen={boardDisplay.Length} | prevLen={prevDisplay.Length} | netLen={_netSeqDisplay.Length} | prevVer={prevVer} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+            return true;
+        }
+
         private void SyncNetworkSeqFromSnapshot(CwSnapshot snap, string source, string boardDisplay, long boardSeqVersion, string boardSeqEvent, string statusRaw)
         {
             if (snap == null) return;
@@ -6857,6 +6980,10 @@ try{
             var seqAppend = FilterResultDisplaySeq(snap.seqAppend);
 
             Log($"[SEQ][AUTH] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | mode={(string.IsNullOrWhiteSpace(seqMode) ? "-" : seqMode)} | append={(string.IsNullOrWhiteSpace(seqAppend) ? "-" : seqAppend)} | seqLen={jsDisplay.Length} | rawLen={rawDisplayInput.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | tableSwitchArm={(_tableSwitchRebaseArmed ? 1 : 0)} | initialEnter={(_initialTableEnterArmed ? 1 : 0)}");
+            if (rawDisplayInput.Length > jsDisplay.Length)
+            {
+                Log($"[NETSEQ][JS-SNAPSHOT-MISMATCH] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | seqLen={jsDisplay.Length} | rawLen={rawDisplayInput.Length} | gap={rawDisplayInput.Length - jsDisplay.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | mode={(string.IsNullOrWhiteSpace(seqMode) ? "-" : seqMode)} | append={(string.IsNullOrWhiteSpace(seqAppend) ? "-" : seqAppend)}");
+            }
 
             UpdateShoeChangeRebaseArmLocked(statusRaw, source, incomingBoardEvent);
             if (TryApplyTableSwitchRebaseLocked(snap, source, statusRaw, jsDisplay, jsSeqVersion, incomingBoardEvent))
@@ -7014,6 +7141,8 @@ try{
             {
                 if (TryApplyJsAppendContractLocked(snap, source, statusRaw, incomingBoardEvent, seqMode, seqAppend, jsSeqVersion, "shoe-anchor"))
                     return;
+                if (TryApplyJsDisplayAppendLocked(snap, source, statusRaw, incomingBoardEvent, jsDisplay, jsSeqVersion, "shoe-anchor-display"))
+                    return;
 
                 snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
                 snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
@@ -7026,6 +7155,8 @@ try{
             if (hasAuthoritativeSeq)
             {
                 if (TryApplyJsAppendContractLocked(snap, source, statusRaw, incomingBoardEvent, seqMode, seqAppend, jsSeqVersion, "contract"))
+                    return;
+                if (TryApplyJsDisplayAppendLocked(snap, source, statusRaw, incomingBoardEvent, jsDisplay, jsSeqVersion, "contract-display"))
                     return;
 
                 if (!IsFullRebaseSeqMode(seqMode))
@@ -8868,6 +8999,94 @@ try{
             {
                 return "";
             }
+        }
+
+        private WebView2? ResolveNativeClickWebView(string source)
+        {
+            if (!string.IsNullOrWhiteSpace(source) &&
+                source.IndexOf("popup", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                if (_popupWeb?.CoreWebView2 != null)
+                    return _popupWeb;
+            }
+
+            return GetBetWebView();
+        }
+
+        private static bool NativeLeftClickScreenPoint(int x, int y)
+        {
+            try
+            {
+                NativePoint oldPt;
+                GetCursorPos(out oldPt);
+
+                if (!SetCursorPos(x, y))
+                    return false;
+
+                var inputs = new[]
+                {
+                    new NativeInput
+                    {
+                        type = NativeInputMouse,
+                        U = new NativeInputUnion
+                        {
+                            mi = new NativeMouseInput { dwFlags = NativeMouseLeftDown }
+                        }
+                    },
+                    new NativeInput
+                    {
+                        type = NativeInputMouse,
+                        U = new NativeInputUnion
+                        {
+                            mi = new NativeMouseInput { dwFlags = NativeMouseLeftUp }
+                        }
+                    }
+                };
+
+                var sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<NativeInput>());
+                Thread.Sleep(12);
+                SetCursorPos(oldPt.X, oldPt.Y);
+                return sent == inputs.Length;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private async Task<bool> TryHandleNativeClickAsync(JsonElement root, string source)
+        {
+            var x = GetJsonDoubleLoose(root, "x");
+            var y = GetJsonDoubleLoose(root, "y");
+            if (!x.HasValue || !y.HasValue)
+                return false;
+
+            var side = GetJsonStringLoose(root, "side") ?? "";
+            var tail = GetJsonStringLoose(root, "tail") ?? "";
+            var rx = GetJsonDoubleLoose(root, "rx");
+            var ry = GetJsonDoubleLoose(root, "ry");
+            var w = GetJsonDoubleLoose(root, "w");
+            var h = GetJsonDoubleLoose(root, "h");
+
+            bool ok = await Dispatcher.InvokeAsync(() =>
+            {
+                try
+                {
+                    var view = ResolveNativeClickWebView(source);
+                    if (view == null || !view.IsVisible || view.ActualWidth <= 0 || view.ActualHeight <= 0)
+                        return false;
+
+                    var screen = view.PointToScreen(new Point(x.Value, y.Value));
+                    return NativeLeftClickScreenPoint((int)Math.Round(screen.X), (int)Math.Round(screen.Y));
+                }
+                catch
+                {
+                    return false;
+                }
+            });
+
+            Log($"[BETDOM][NATIVE-CLICK] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ok={(ok ? 1 : 0)} | side={(string.IsNullOrWhiteSpace(side) ? "-" : side)} | x={Math.Round(x.Value)} | y={Math.Round(y.Value)} | rx={(rx.HasValue ? rx.Value.ToString("0.00", CultureInfo.InvariantCulture) : "-")} | ry={(ry.HasValue ? ry.Value.ToString("0.00", CultureInfo.InvariantCulture) : "-")} | w={(w.HasValue ? Math.Round(w.Value).ToString(CultureInfo.InvariantCulture) : "-")} | h={(h.HasValue ? Math.Round(h.Value).ToString(CultureInfo.InvariantCulture) : "-")} | tail={(string.IsNullOrWhiteSpace(tail) ? "-" : Shrink(tail, 64))}");
+            return true;
         }
 
         private static bool IsLikelyBetGameUrl(string? rawUrl)

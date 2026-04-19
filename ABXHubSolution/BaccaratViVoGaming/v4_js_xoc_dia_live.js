@@ -556,7 +556,7 @@
                 window.__cw_console_passthrough = 0;
             if (!window.console)
                 window.console = {};
-            var levels = ['log', 'warn', 'error', 'info', 'debug'];
+            var levels = ['log', 'warn', 'error', 'info', 'debug', 'table'];
             var originals = {};
             for (var i = 0; i < levels.length; i++) {
                 (function (level) {
@@ -589,16 +589,32 @@
                 })(levels[i]);
             }
             window.__cw_console_originals = originals;
+            window.cwSetConsoleFileLog = function (enabled, passthrough) {
+                window.__cw_console_to_host = (enabled === false || enabled === 0) ? 0 : 1;
+                if (passthrough != null)
+                    window.__cw_console_passthrough = (passthrough === true || passthrough === 1) ? 1 : 0;
+                return window.cwGetConsoleFileLogState();
+            };
+            window.cwGetConsoleFileLogState = function () {
+                return {
+                    toHost: (window.__cw_console_to_host === 0 || window.__cw_console_to_host === false) ? 0 : 1,
+                    passthrough: (window.__cw_console_passthrough === 1 || window.__cw_console_passthrough === true) ? 1 : 0,
+                    levels: levels.slice()
+                };
+            };
         } catch (_) {}
     }
     cwInstallConsoleBridge();
     function cwQueueHostLog(rec, isPushTag) {
         try {
-            var fileOn = (window.__cw_file_log_enable === 1 || window.__cw_file_log_enable === true);
+            var tagUpper = String(rec && rec.tag || '').toUpperCase();
+            var isBetDomTag = (tagUpper === 'BETDOM');
+            var fileOn = (window.__cw_file_log_enable === 1 || window.__cw_file_log_enable === true) ||
+                (isBetDomTag && !(window.__cw_bet_flow_log_file === 0 || window.__cw_bet_flow_log_file === false));
             if (!fileOn)
                 return;
             var pushOnly = (window.__cw_file_log_push_only === 1 || window.__cw_file_log_push_only === true);
-            if (pushOnly && !isPushTag)
+            if (pushOnly && !isPushTag && !isBetDomTag)
                 return;
 
             var maxQ = Number(window.__cw_file_log_max_queue || 1600);
@@ -701,6 +717,62 @@
             console.log.apply(console, arguments);
         } catch (_) {}
     }
+    function cwBetFlowLog(stage, data, throttleMs, key) {
+        try {
+            if (typeof window.__cw_bet_flow_log_enable === 'undefined')
+                window.__cw_bet_flow_log_enable = 1;
+            if (typeof window.__cw_bet_flow_log_file === 'undefined')
+                window.__cw_bet_flow_log_file = 1;
+            if (typeof window.__cw_bet_flow_log_console === 'undefined')
+                window.__cw_bet_flow_log_console = 0;
+            if (window.__cw_bet_flow_log_enable === 0 || window.__cw_bet_flow_log_enable === false)
+                return;
+            var now = Date.now();
+            var msg = String(stage || '');
+            var wait = Number(throttleMs || 0);
+            var k = 'BETDOM|' + String(key || msg);
+            var last = _cwDbgLast[k] || 0;
+            if (wait > 0 && (now - last) < wait)
+                return;
+            _cwDbgLast[k] = now;
+            var rec = {
+                ts: now,
+                tag: 'BETDOM',
+                msg: msg,
+                data: data || null
+            };
+            _cwDbgBuf.push(rec);
+            if (_cwDbgBuf.length > 600)
+                _cwDbgBuf.shift();
+            cwQueueHostLog(rec, false);
+            if (window.__cw_bet_flow_log_console === 1 || window.__cw_bet_flow_log_console === true) {
+                try {
+                    if (data != null)
+                        console.log('[BETDOM] ' + msg, data);
+                    else
+                        console.log('[BETDOM] ' + msg);
+                } catch (_) {}
+            }
+        } catch (_) {}
+    }
+    try {
+        window.cwSetBetFlowLog = function (enabled, consoleOn, fileOn) {
+            window.__cw_bet_flow_log_enable = (enabled === false || enabled === 0) ? 0 : 1;
+            if (consoleOn != null)
+                window.__cw_bet_flow_log_console = (consoleOn === true || consoleOn === 1) ? 1 : 0;
+            if (fileOn != null)
+                window.__cw_bet_flow_log_file = (fileOn === false || fileOn === 0) ? 0 : 1;
+            return window.cwGetBetFlowLogState();
+        };
+        window.cwGetBetFlowLogState = function () {
+            return {
+                enabled: (window.__cw_bet_flow_log_enable === 0 || window.__cw_bet_flow_log_enable === false) ? 0 : 1,
+                file: (window.__cw_bet_flow_log_file === 0 || window.__cw_bet_flow_log_file === false) ? 0 : 1,
+                console: (window.__cw_bet_flow_log_console === 1 || window.__cw_bet_flow_log_console === true) ? 1 : 0,
+                queued: _cwFileLogQueue ? _cwFileLogQueue.length : 0
+            };
+        };
+    } catch (_) {}
     try {
         window.__cw_get_debug_seq_logs = function () {
             return _cwDbgBuf.slice();
@@ -1010,6 +1082,74 @@
             return parts.join('/');
         } catch (_) {
             return 'dom';
+        }
+    }
+    function domCssEscapeIdent(s) {
+        try {
+            if (window.CSS && typeof window.CSS.escape === 'function')
+                return window.CSS.escape(String(s || ''));
+        } catch (_) {}
+        return String(s || '').replace(/[^a-zA-Z0-9_-]/g, function (ch) {
+            return '\\' + ch;
+        });
+    }
+    function domCssSelectorOf(el) {
+        try {
+            if (!el || el.nodeType !== 1)
+                return '';
+            var doc = el.ownerDocument || document;
+            var parts = [];
+            var cur = el;
+            var depth = 0;
+            while (cur && cur.nodeType === 1 && depth < 8) {
+                var tag = String(cur.tagName || '').toLowerCase();
+                if (!tag)
+                    break;
+                var part = tag;
+                if (cur.id) {
+                    part += '#' + domCssEscapeIdent(cur.id);
+                    parts.unshift(part);
+                    break;
+                }
+                var cls = [];
+                try {
+                    for (var ci = 0; cur.classList && ci < cur.classList.length && cls.length < 3; ci++) {
+                        var cn = String(cur.classList[ci] || '');
+                        if (!cn || cn.length > 42)
+                            continue;
+                        if (/^(ng-|v-|css-|sc-|chakra-|Mui|ant-|swiper-|slick-)/i.test(cn))
+                            continue;
+                        cls.push(cn);
+                    }
+                } catch (_) {}
+                for (var cj = 0; cj < cls.length; cj++)
+                    part += '.' + domCssEscapeIdent(cls[cj]);
+                var parent = cur.parentElement;
+                if (parent) {
+                    var sameTag = 0;
+                    var nth = 0;
+                    for (var ch = parent.firstElementChild; ch; ch = ch.nextElementSibling) {
+                        if (String(ch.tagName || '').toLowerCase() === tag) {
+                            sameTag++;
+                            if (ch === cur)
+                                nth = sameTag;
+                        }
+                    }
+                    if (sameTag > 1 && nth > 0)
+                        part += ':nth-of-type(' + nth + ')';
+                }
+                parts.unshift(part);
+                var selector = parts.join(' > ');
+                try {
+                    if (doc.querySelectorAll(selector).length === 1)
+                        return selector;
+                } catch (_) {}
+                cur = parent;
+                depth++;
+            }
+            return parts.join(' > ');
+        } catch (_) {
+            return '';
         }
     }
     var _domCtxCache = {
@@ -1846,6 +1986,18 @@
         at: 0,
         contexts: []
     };
+    var _domChipMapCache = window.__cw_dom_chip_map_cache = window.__cw_dom_chip_map_cache || {
+        at: 0,
+        map: null,
+        rows: null,
+        source: '',
+        reason: ''
+    };
+    var _domBetTargetCache = window.__cw_dom_bet_target_cache = window.__cw_dom_bet_target_cache || {
+        at: 0,
+        best: null,
+        reason: ''
+    };
     var _domHudCache = {
         at: 0,
         data: null
@@ -1978,6 +2130,21 @@
                 } catch (_) {
                     nodes = [];
                 }
+                try {
+                    if (!nodes || nodes.length < 3 || force) {
+                        var genericTargets = domCollectBetTargetCandidates(doc, String(ctx.source || 'top'));
+                        if (genericTargets && genericTargets.length) {
+                            var mergedNodes = [];
+                            for (var mn = 0; mn < nodes.length; mn++)
+                                mergedNodes.push(nodes[mn]);
+                            for (var gt = 0; gt < genericTargets.length; gt++) {
+                                if (genericTargets[gt] && genericTargets[gt].el)
+                                    mergedNodes.push(genericTargets[gt].el);
+                            }
+                            nodes = mergedNodes;
+                        }
+                    }
+                } catch (_) {}
                 var ctxBetScore = Number(ctx && ctx._betScore || 0);
                 var maxNodes = force ? 220 : 130;
                 if (ctxBetScore >= 1600) maxNodes += 70;
@@ -2045,7 +2212,7 @@
                         score += 1000 + Math.min(300, Math.round(row.amount / 1000));
                     if (row.rect.top >= win.innerHeight * 0.62)
                         score += 100;
-                    if (/betbox|zone_bet_bottom/i.test(String((row.host.id || '') + ' ' + (row.host.className || ''))))
+                    if (/betbox|zone_bet_bottom|bet|player|banker|tie/i.test(String((row.host.id || '') + ' ' + (row.host.className || '') + ' ' + domAttrTextOf(row.host))))
                         score += 180;
                     if (/singlebactable\.jsp/i.test(String(ctx.href || '')))
                         score += 120;
@@ -4834,6 +5001,36 @@
             seqVersion: Number(_domSeqVersion || 0),
             seqEvent: String(_domSeqEvent || '')
         };
+        function brLogMergeBranch(branch, extra, throttleMs, dedupeKey) {
+            try {
+                var managedNowLog = String(_domBeadSeqManaged || '');
+                var payload = {
+                    branch: String(branch || ''),
+                    raw: raw,
+                    prev: String(prev || ''),
+                    managed: managedNowLog,
+                    rawLen: raw.length,
+                    prevLen: String(prev || '').length,
+                    managedLen: managedNowLog.length,
+                    overlapPrevRaw: brOverlapSuffixPrefix(String(prev || ''), raw),
+                    overlapManagedRaw: brOverlapSuffixPrefix(managedNowLog, raw),
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    queueRemain: _domBoardDeltaQueue.length,
+                    resetPending: _domShoeResetPending ? 1 : 0,
+                    waitBead: _domTableSwitchWaitBeadPending ? 1 : 0,
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    buildSource: String(_cwSnapshotBuildSource || '')
+                };
+                if (extra) {
+                    for (var k in extra) {
+                        if (Object.prototype.hasOwnProperty.call(extra, k))
+                            payload[k] = extra[k];
+                    }
+                }
+                cwDbg('SEQFLOW', 'merge-branch', payload, throttleMs || 0, dedupeKey || ('merge-branch|' + String(branch || '') + '|' + raw.length + '|' + String(prev || '').length + '|' + managedNowLog.length + '|' + Number(_domSeqVersion || 0)));
+            } catch (_) {}
+        }
         brSeqTrace('merge-enter', raw, prev, beforeState, {
             rawInputLen: rawInput.length,
             rawInput: cwShort(rawInput, 120)
@@ -5492,6 +5689,30 @@
             var beforeNoChangeEvt = String(_domSeqEvent || '');
             var beforeNoChangeVer = Number(_domSeqVersion || 0);
             var seedAgeMs = _domLastSeedStepAt ? (Date.now() - _domLastSeedStepAt) : 999999;
+            var rawManagedGap = raw.length - managedNowEqPrev.length;
+            if (rawManagedGap !== 0 || managedNowEqPrev !== raw) {
+                brLogMergeBranch('raw-eq-prev-hold', {
+                    reason: 'raw-eq-prev-no-reconcile',
+                    rawManagedGap: rawManagedGap,
+                    activeHint: activeHint,
+                    activeLen: activeHint.length,
+                    activeSameTable: activeSameTable ? 1 : 0,
+                    activeHintAhead: activeHintAhead ? 1 : 0,
+                    activeHintGap: activeHintGap,
+                    activeHintOneStepAhead: activeHintOneStepAhead ? 1 : 0,
+                    rawStallForceEligible: rawStallForceEligible ? 1 : 0,
+                    canSeedByActiveHint: canSeedByActiveHint ? 1 : 0,
+                    activeHintAlreadyForced: activeHintAlreadyForced ? 1 : 0,
+                    managedEndsWithActiveHint: managedEndsWithActiveHint ? 1 : 0,
+                    rawEqPrevStreak: Number(_domRawEqPrevStreak || 0),
+                    beforeEvent: beforeNoChangeEvt,
+                    beforeVersion: beforeNoChangeVer,
+                    lastPushedVer: brGetLastPushedSeqVersion(),
+                    lastSeedStepVer: Number(_domLastSeedStepVersion || 0),
+                    lastSeedStepBuildId: Number(_domLastSeedStepBuildId || 0),
+                    seedAgeMs: seedAgeMs
+                }, 1200, 'merge-branch-raw-eq-prev-hold|' + raw.length + '|' + managedNowEqPrev.length + '|' + Number(_domSeqVersion || 0));
+            }
             if (beforeNoChangeEvt === 'append-reset-seed-step' &&
                 beforeNoChangeVer === Number(_domLastSeedStepVersion || 0) &&
                 seedAgeMs <= 2500) {
@@ -5525,6 +5746,11 @@
         if (raw.indexOf(prev) === 0) {
             var extDelta = raw.slice(prev.length);
             var extAdded = brQueueBoardDelta(extDelta, 'raw-extend', raw, prev);
+            brLogMergeBranch('raw-extend', {
+                delta: extDelta,
+                deltaLen: extDelta.length,
+                queued: extAdded
+            }, 0, 'merge-branch-raw-extend|' + raw.length + '|' + prev.length + '|' + Number(_domSeqVersion || 0));
             _domBeadSeqPrevRaw = raw;
             if (extAdded > 0)
                 brDrainBoardDeltaQueue('raw-extend');
@@ -5579,6 +5805,12 @@
             var delta = raw.slice(ov);
             if (delta.length > 0 && delta.length <= 3) {
                 var ovAdded = brQueueBoardDelta(delta, 'raw-overlap', raw, prev);
+                brLogMergeBranch('raw-overlap', {
+                    overlap: ov,
+                    delta: delta,
+                    deltaLen: delta.length,
+                    queued: ovAdded
+                }, 0, 'merge-branch-raw-overlap|' + raw.length + '|' + ov + '|' + Number(_domSeqVersion || 0));
                 _domBeadSeqPrevRaw = raw;
                 if (ovAdded > 0)
                     brDrainBoardDeltaQueue('raw-overlap');
@@ -5625,6 +5857,10 @@
                 }, 0, 'board-shrink|' + prev.length + '|' + raw.length);
             }
             _domBeadSeqPrevRaw = raw;
+            brLogMergeBranch('raw-shrink-prefix', {
+                shrinkRatio: shrinkRatio,
+                resetArmed: _domShoeResetPending ? 1 : 0
+            }, 0, 'merge-branch-raw-shrink|' + prev.length + '|' + raw.length + '|' + Number(_domSeqVersion || 0));
             brSeqTrace('return-prev-prefix-of-raw', raw, prev, beforeState, {
                 shrinkRatio: shrinkRatio
             }, 0, 'return-prev-prefix|' + prev.length + '|' + raw.length);
@@ -5645,10 +5881,26 @@
         // Raw đổi kiểu "jump": append-only, không overwrite managed hiện có.
         var managedNow = String(_domBeadSeqManaged || '');
         var ovJump = brOverlapSuffixPrefix(managedNow, raw);
+        var overlapRejectReason = '';
+        var overlapRejectDeltaLen = 0;
+        if (ov > 0) {
+            overlapRejectDeltaLen = raw.length - ov;
+            if (!(overlapRejectDeltaLen > 0 && overlapRejectDeltaLen <= 3))
+                overlapRejectReason = 'raw-overlap-delta-too-large';
+        }
+        var jumpRejectReason = '';
+        var jumpRejectDeltaLen = 0;
         if (ovJump >= 5) {
             var jumpDelta = raw.slice(ovJump);
+            jumpRejectDeltaLen = jumpDelta.length;
             if (jumpDelta.length > 0 && jumpDelta.length <= 2) {
                 var jumpAdded = brQueueBoardDelta(jumpDelta, 'raw-jump-overlap', raw, managedNow);
+                brLogMergeBranch('raw-jump-overlap', {
+                    overlap: ovJump,
+                    delta: jumpDelta,
+                    deltaLen: jumpDelta.length,
+                    queued: jumpAdded
+                }, 0, 'merge-branch-raw-jump-overlap|' + raw.length + '|' + ovJump + '|' + Number(_domSeqVersion || 0));
                 _domBeadSeqPrevRaw = raw;
                 if (jumpAdded > 0)
                     brDrainBoardDeltaQueue('raw-jump-overlap');
@@ -5665,6 +5917,7 @@
                 brPublishSeqState();
                 return _domBeadSeqManaged;
             }
+            jumpRejectReason = 'jump-overlap-delta-too-large';
         }
         if (brTryReconcileBeadOneStep(raw, prev, beforeState, 'pre-jump-hold'))
             return _domBeadSeqManaged;
@@ -5672,6 +5925,13 @@
         _domBeadSeqPrevRaw = raw;
         _domSeqEvent = 'board-jump-hold';
         _domSeqAppend = '';
+        brLogMergeBranch('board-jump-hold', {
+            reason: 'hold-managed',
+            overlapRejectReason: overlapRejectReason || '-',
+            overlapRejectDeltaLen: overlapRejectDeltaLen,
+            jumpRejectReason: jumpRejectReason || '-',
+            jumpRejectDeltaLen: jumpRejectDeltaLen
+        }, 0, 'merge-branch-board-jump-hold|' + managedNow.length + '|' + raw.length + '|' + Number(_domSeqVersion || 0));
         cwDbg('SEQ', 'board-jump-hold-managed', {
             prev: prev,
             raw: raw,
@@ -8197,7 +8457,7 @@
         '</div>' +
         '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
+    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -8853,7 +9113,7 @@
     CHIP BETTING CORE (compat)
     ===================================================== */
     var CHIP_TAIL_ROW4 = 'xdlive/canvas/bg/tipdealer/tabtipdealer/tipcontent/views/contentchat/row4/itemtip/lbmoney';
-    var DENOMS_DESC = [10000000, 5000000, 1000000, 500000, 100000, 50000, 20000, 10000, 5000, 2000, 1000];
+    var DENOMS_DESC = [25000000, 10000000, 5000000, 1000000, 500000, 250000, 100000, 50000, 25000, 20000, 10000, 5000, 2000, 1000];
     var cfgBet = {
     delayPick: 70,
     delayTap: 55,
@@ -9217,20 +9477,26 @@
         '100000000': 1,
         '500000000': 1
     };
-    var DOM_ALLOWED_SET = {};
+    var DOM_ALLOWED_SET = {
+        '10': 1,
+        '25': 1,
+        '100': 1,
+        '250': 1
+    };
     for (var _di = 0; _di < DENOMS_DESC.length; _di++) {
-        var _domUnit = Math.floor(DENOMS_DESC[_di] / 1000);
+        var _domUnit = Math.floor(+DENOMS_DESC[_di] || 0);
         if (_domUnit > 0)
             DOM_ALLOWED_SET[String(_domUnit)] = 1;
     }
+    var DOM_ALLOWED_EXTRA = [500, 25000];
+    for (var _dx = 0; _dx < DOM_ALLOWED_EXTRA.length; _dx++)
+        DOM_ALLOWED_SET[String(DOM_ALLOWED_EXTRA[_dx])] = 1;
     var DENOMS = [500000000, 100000000, 50000000, 20000000, 10000000, 5000000, 1000000, 500000, 100000, 50000, 10000, 5000, 1000];
 
     function normalizeDomChipValue(val) {
         var num = Math.max(0, Math.floor(+val || 0));
         if (!num)
             return null;
-        if (num >= 1000 && num % 1000 === 0)
-            return Math.floor(num / 1000);
         return num;
     }
 
@@ -9670,14 +9936,36 @@
     }
     function findBetTarget(side) {
         if (!__cw_hasCocos()) {
-            var domBest = domPickBestBetTargets();
+            var domBest = domPickBestBetTargets(false);
             var wantDom = normalizeSide(side);
             var domTgt = domBest && domBest.targets ? domBest.targets[wantDom] : null;
+            if (!domTgt && domBest) {
+                domInvalidateBetTargetCache('requested-target-missing');
+                domBest = domPickBestBetTargets(true);
+                domTgt = domBest && domBest.targets ? domBest.targets[wantDom] : null;
+            }
+            if (domTgt && (!domTgt.el || !domTgt.el.isConnected || !domVisible(domTgt.el))) {
+                domInvalidateBetTargetCache('requested-target-stale');
+                domBest = domPickBestBetTargets(true);
+                domTgt = domBest && domBest.targets ? domBest.targets[wantDom] : null;
+            }
             if (domTgt) {
+                cwBetFlowLog('target-pick', {
+                    side: wantDom,
+                    source: String(domTgt.source || ''),
+                    x: domTgt.x,
+                    y: domTgt.y,
+                    w: domTgt.w,
+                    h: domTgt.h,
+                    text: String(domTgt.text || ''),
+                    selector: String(domTgt.selector || ''),
+                    tail: String(domTgt.tail || '')
+                }, 0, 'target-pick|' + wantDom);
                 return {
                     node: domTgt.el,
                     el: domTgt.el,
                     dom: true,
+                    side: wantDom,
                     source: domTgt.source,
                     text: domTgt.text,
                     tail: domTgt.tail,
@@ -9694,6 +9982,11 @@
                     area: (domTgt.w || 0) * (domTgt.h || 0)
                 };
             }
+            cwBetFlowLog('target-missing', {
+                side: wantDom,
+                cached: domBest ? 1 : 0,
+                source: domBest ? String(domBest.source || '') : ''
+            }, 0, 'target-missing|' + wantDom);
             return null;
         }
         var WANT = normalizeSide(side);
@@ -9740,8 +10033,31 @@
     function clickBetTarget(tgt) {
         if (!tgt || !tgt.node)
             return false;
-        if (tgt.dom && tgt.el && tgt.el.ownerDocument)
-            return domMinimalClick(tgt.el);
+        if (tgt.dom && tgt.el && tgt.el.ownerDocument) {
+            tgt = domRefreshTargetRect(tgt);
+            var domOk = false;
+            cwBetFlowLog('target-click', {
+                side: String(tgt.side || tgt.text || ''),
+                source: String(tgt.source || ''),
+                x: tgt.rect ? tgt.rect.x : null,
+                y: tgt.rect ? tgt.rect.y : null,
+                w: tgt.rect ? tgt.rect.w : null,
+                h: tgt.rect ? tgt.rect.h : null,
+                tail: String(tgt.tail || '')
+            }, 0, 'target-click|' + String(tgt.tail || ''));
+            domOk = domHostNativeClick(tgt) || domOk;
+            if (!domOk)
+                domOk = domClickTargetRect(tgt) || domOk;
+            if (!domOk)
+                domOk = domFireClick(tgt.el) || domOk;
+            if (!domOk)
+                domOk = domMinimalClick(tgt.el) || domOk;
+            cwBetFlowLog('target-click-result', {
+                ok: domOk ? 1 : 0,
+                tail: String(tgt.tail || '')
+            }, 0, 'target-click-result|' + (domOk ? 1 : 0));
+            return domOk;
+        }
         var node = tgt.node;
         var rect = tgt.rect || rectFromNodeCompat(node);
         var ok = false;
@@ -9892,6 +10208,58 @@
             return '';
         }
     }
+    function domAttrTextOf(el) {
+        try {
+            if (!el)
+                return '';
+            var vals = [];
+            var attrs = ['id', 'class', 'name', 'title', 'aria-label', 'data-name', 'data-title', 'data-type', 'data-side', 'data-bet', 'data-value', 'value', 'alt', 'src'];
+            for (var i = 0; i < attrs.length; i++) {
+                var v = '';
+                try {
+                    v = attrs[i] === 'class' ? String(el.className || '') : String(el.getAttribute && el.getAttribute(attrs[i]) || '');
+                } catch (_) {
+                    v = '';
+                }
+                if (v)
+                    vals.push(v);
+            }
+            return domCollapse(vals.join(' '));
+        } catch (_) {
+            return '';
+        }
+    }
+    function domCombinedTextOf(el) {
+        return domCollapse((domTextOf(el) + ' ' + domAttrTextOf(el)).trim());
+    }
+    function domElementRectInfo(el, source) {
+        try {
+            var r = el.getBoundingClientRect();
+            return {
+                x: Math.round(r.left),
+                y: Math.round(r.top),
+                w: Math.round(r.width),
+                h: Math.round(r.height),
+                source: source || '',
+                selector: domCssSelectorOf(el),
+                tail: domTailOf(el),
+                text: domTextOf(el),
+                attrs: domAttrTextOf(el)
+            };
+        } catch (_) {
+            return {
+                x: 0,
+                y: 0,
+                w: 0,
+                h: 0,
+                source: source || '',
+                selector: '',
+                tail: '',
+                text: '',
+                attrs: ''
+            };
+        }
+    }
     function domMinimalClick(el) {
         try {
             if (!el)
@@ -9919,6 +10287,107 @@
             return fullPath(el, 80) || domTailOfEl(el) || '';
         } catch (_) {
             return '';
+        }
+    }
+    function domWindowOffsetToTop(win) {
+        var out = { x: 0, y: 0 };
+        try {
+            var cur = win;
+            var depth = 0;
+            while (cur && cur !== cur.top && depth < 8) {
+                var fe = cur.frameElement;
+                if (!fe || !fe.getBoundingClientRect)
+                    break;
+                var fr = fe.getBoundingClientRect();
+                out.x += Number(fr.left || 0);
+                out.y += Number(fr.top || 0);
+                cur = cur.parent;
+                depth++;
+            }
+        } catch (_) {}
+        return out;
+    }
+    function domRefreshTargetRect(tgt) {
+        try {
+            if (!tgt || !tgt.el || !tgt.el.ownerDocument || !tgt.el.getBoundingClientRect)
+                return tgt;
+            var doc = tgt.el.ownerDocument;
+            var win = doc.defaultView || window;
+            var r = tgt.el.getBoundingClientRect();
+            var off = domWindowOffsetToTop(win);
+            tgt.rect = {
+                x: Math.round(off.x + r.left),
+                y: Math.round(off.y + r.top),
+                w: Math.round(r.width),
+                h: Math.round(r.height),
+                sx: Math.round(off.x + r.left),
+                sy: Math.round(off.y + r.top),
+                sw: Math.round(r.width),
+                sh: Math.round(r.height),
+                clientX: Math.round(r.left),
+                clientY: Math.round(r.top)
+            };
+            return tgt;
+        } catch (_) {
+            return tgt;
+        }
+    }
+    function domPickNativeClickPoint(tgt) {
+        try {
+            var rect = tgt && tgt.rect ? tgt.rect : null;
+            if (!rect)
+                return null;
+            var side = String(tgt && tgt.side || '').toUpperCase();
+            var rx = 0.50;
+            var ry = 0.58;
+            if (side === 'PLAYER' || side === 'BANKER')
+                ry = rect.h >= 110 ? 0.72 : 0.60;
+            else if (side === 'TIE')
+                ry = rect.h >= 120 ? 0.60 : 0.52;
+            return {
+                x: Math.round(rect.x + rect.w * rx),
+                y: Math.round(rect.y + rect.h * ry),
+                rx: rx,
+                ry: ry
+            };
+        } catch (_) {
+            return null;
+        }
+    }
+    function domHostNativeClick(tgt) {
+        try {
+            tgt = domRefreshTargetRect(tgt);
+            var p = domPickNativeClickPoint(tgt);
+            if (!p)
+                return false;
+            if (!(window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function'))
+                return false;
+            window.chrome.webview.postMessage(JSON.stringify({
+                abx: 'native_click',
+                x: p.x,
+                y: p.y,
+                rx: p.rx,
+                ry: p.ry,
+                w: tgt.rect ? tgt.rect.w : 0,
+                h: tgt.rect ? tgt.rect.h : 0,
+                side: String(tgt.side || ''),
+                source: String(tgt.source || ''),
+                tail: String(tgt.tail || '')
+            }));
+            cwBetFlowLog('target-native-click', {
+                side: String(tgt.side || ''),
+                source: String(tgt.source || ''),
+                x: p.x,
+                y: p.y,
+                rx: p.rx,
+                ry: p.ry,
+                w: tgt.rect ? tgt.rect.w : null,
+                h: tgt.rect ? tgt.rect.h : null,
+                tail: String(tgt.tail || '')
+            }, 0, 'target-native-click|' + String(tgt.side || '') + '|' + String(tgt.tail || ''));
+            return true;
+        } catch (_) {
+            return false;
         }
     }
     function domFireClick(el) {
@@ -9985,9 +10454,21 @@
             var rect = tgt && tgt.rect ? tgt.rect : null;
             if (!doc || !rect)
                 return false;
-            var px = rect.x + rect.w * 0.50;
-            var py = rect.y + rect.h * 0.50;
-            return domFireClickAtPoint(doc, px, py);
+            var points = [
+                [0.50, 0.50],
+                [0.50, 0.72],
+                [0.35, 0.58],
+                [0.65, 0.58]
+            ];
+            var ok = false;
+            for (var i = 0; i < points.length; i++) {
+                var px = rect.x + rect.w * points[i][0];
+                var py = rect.y + rect.h * points[i][1];
+                ok = domFireClickAtPoint(doc, px, py) || ok;
+                if (ok)
+                    break;
+            }
+            return ok;
         } catch (_) {
             return false;
         }
@@ -9995,12 +10476,70 @@
     function domChipValueFromIdOrClass(el) {
         var raw = '';
         try {
-            raw = String((el && el.id) || '') + ' ' + String((el && el.className) || '');
+            raw = String((el && el.id) || '') + ' ' + String((el && el.className) || '') + ' ' + domAttrTextOf(el);
         } catch (_) {
             raw = '';
         }
-        var m = NORM(raw).match(/(?:^|[_\-\s])(50K|20K|10K|5K|2K|1K|500|200|100|50|20|10)(?:$|[_\-\s])/i);
+        var m = NORM(raw).match(/(?:^|[_\-\s])(25K|50K|20K|10K|5K|2K|1K|500|250|200|100|50|25|20|10)(?:$|[_\-\s])/i);
         return m ? parseDomChipValue(m[1]) : null;
+    }
+    function domChipTokenValuesFromText(text) {
+        var out = [];
+        try {
+            var s = NORM(text || '');
+            var re = /(\d+)\s*(K|M)\b|\b(\d{1,9})\b/g;
+            var m;
+            while ((m = re.exec(s)) !== null) {
+                var token = m[0];
+                var val = parseDomChipValue(token);
+                if (val && (DOM_ALLOWED_SET[String(val)] || ALLOWED_SET[String(val)]))
+                    out.push(val);
+            }
+        } catch (_) {}
+        return out;
+    }
+    function domChipIndexOf(el) {
+        try {
+            var raw = String((el && el.className) || '') + ' ' + domAttrTextOf(el);
+            var m = raw.match(/(?:^|[\s_-])index[-_]?(\d+)(?:$|[\s_-])/i);
+            if (m)
+                return parseInt(m[1], 10);
+        } catch (_) {}
+        return null;
+    }
+    function domChipValueFromIndexedBar(el) {
+        try {
+            if (!el || !el.closest)
+                return null;
+            var idx = domChipIndexOf(el);
+            if (idx == null)
+                return null;
+            var bar = null;
+            try {
+                bar = el.closest('.horizontal-chip-selector,[class*="chip-selector" i],[class*="chip_selector" i],[class*="chip-list" i],[class*="chips" i]');
+            } catch (_) {
+                bar = null;
+            }
+            if (!bar)
+                return null;
+            var vals = domChipTokenValuesFromText(domTextOf(bar) || domCombinedTextOf(bar));
+            if (vals.length && idx >= 0 && idx < vals.length)
+                return vals[idx];
+        } catch (_) {}
+        return null;
+    }
+    function domLooksLikeChipContainer(el) {
+        try {
+            if (!el || !el.querySelectorAll)
+                return false;
+            var raw = NORM(domAttrTextOf(el) + ' ' + String(el.className || ''));
+            if (!/(CHIP_SELECTOR|CHIP-SELECTOR|HORIZONTAL-CHIP-SELECTOR|CHIP LIST|CHIP-LIST|CHIPS)/.test(raw))
+                return false;
+            var kids = el.querySelectorAll('[class*="chip" i], [data-chip], [data-value]');
+            return kids && kids.length >= 3;
+        } catch (_) {
+            return false;
+        }
     }
     function domChipHostOf(el) {
         if (!el || !el.closest)
@@ -10010,7 +10549,14 @@
             "[id^='iChips_']",
             ".list_select_chips3d > div",
             ".list_select_chips3d > li",
-            ".chips3d"
+            ".chips3d",
+            "[class*='chip' i]",
+            "[id*='chip' i]",
+            "[aria-label*='chip' i]",
+            "[data-value]",
+            "[data-chip]",
+            "button",
+            "[role='button']"
         ];
         for (var i = 0; i < selectors.length; i++) {
             try {
@@ -10020,6 +10566,129 @@
             } catch (_) {}
         }
         return null;
+    }
+    function domClickableDomHostOf(el, maxDepth) {
+        try {
+            var cur = el;
+            var depth = 0;
+            while (cur && cur.nodeType === 1 && depth <= (maxDepth || 5)) {
+                var tag = String(cur.tagName || '').toLowerCase();
+                var attr = NORM(domAttrTextOf(cur));
+                if (tag === 'button' || tag === 'a' || cur.onclick || cur.getAttribute('role') === 'button' ||
+                    /(^|[\s_-])(BTN|BUTTON|CLICK|CHIP|CHIPS|COIN|TOKEN|BET|SELECT|ACTIVE|ITEM)([\s_-]|$)/.test(attr))
+                    return cur;
+                cur = cur.parentElement;
+                depth++;
+            }
+        } catch (_) {}
+        return el;
+    }
+    function domChipCandidateValue(el) {
+        try {
+            return domChipValueFromIndexedBar(el) || parseDomChipValue(domCombinedTextOf(el)) || domChipValueFromIdOrClass(el);
+        } catch (_) {
+            return null;
+        }
+    }
+    function domChipVisualScore(host, rect, view) {
+        var score = 0;
+        try {
+            var attr = NORM(domAttrTextOf(host));
+            var txt = NORM(domTextOf(host));
+            if (/CHIP|CHIPS|COIN|TOKEN|PHINH|MENH|CUOC|BET/.test(attr))
+                score += 260;
+            if (/CHIP|CHIPS|COIN|TOKEN|PHINH|MENH/.test(txt))
+                score += 80;
+            if (rect.top >= (view.innerHeight || 900) * 0.58)
+                score += 190;
+            if (rect.top >= (view.innerHeight || 900) * 0.72)
+                score += 120;
+            if (rect.width >= 28 && rect.height >= 28)
+                score += 80;
+            var ratio = rect.width > rect.height ? rect.width / Math.max(1, rect.height) : rect.height / Math.max(1, rect.width);
+            if (ratio <= 1.55)
+                score += 90;
+            var cs = view.getComputedStyle(host);
+            var br = String(cs.borderRadius || '');
+            if (/50%|999/.test(br))
+                score += 65;
+            if (/\b(active|selected|select|current|on|enable|enabled|focus)\b/i.test(String(host.className || '')))
+                score += 70;
+            if (Number(cs.opacity || '1') <= 0.35 || cs.pointerEvents === 'none')
+                score -= 500;
+        } catch (_) {}
+        return score;
+    }
+    function domCollectGenericActiveChips(doc, source) {
+        var rows = [];
+        if (!doc || !doc.querySelectorAll)
+            return rows;
+        var view = doc.defaultView || window;
+        var nodes = [];
+        try {
+            nodes = doc.querySelectorAll("button,[role='button'],li,div,span,img,canvas,[class*='chip' i],[id*='chip' i],[class*='coin' i],[id*='coin' i],[data-value],[data-chip],[aria-label]");
+        } catch (_) {
+            nodes = [];
+        }
+        var byKey = {};
+        for (var i = 0; i < nodes.length && i < 7000; i++) {
+            var el = nodes[i];
+            if (!el || !domVisible(el))
+                continue;
+            if (domLooksLikeChipContainer(el))
+                continue;
+            var val = domChipCandidateValue(el);
+            if (!val || (!DOM_ALLOWED_SET[String(val)] && !ALLOWED_SET[String(val)]))
+                continue;
+            var host = domChipHostOf(el) || domClickableDomHostOf(el, 4) || el;
+            if (!host || !domVisible(host))
+                continue;
+            if (domLooksLikeChipContainer(host))
+                continue;
+            var rect = host.getBoundingClientRect();
+            if (!rect || rect.width < 24 || rect.height < 20 || rect.width > 220 || rect.height > 160)
+                continue;
+            if (rect.bottom < 0 || rect.top > (view.innerHeight || 900) || rect.right < 0 || rect.left > (view.innerWidth || 1600))
+                continue;
+            if (rect.top < (view.innerHeight || 900) * 0.46)
+                continue;
+            var combo = NORM(domCombinedTextOf(host));
+            if (/(BALANCE|SO DU|TAI KHOAN|ACCOUNT|PLAYER|BANKER|TIE|HOA|HISTORY|ROAD|COUNTDOWN)/.test(combo) && !/(CHIP|COIN|PHINH|MENH|CUOC|BET|TOKEN)/.test(combo))
+                continue;
+            var score = domChipVisualScore(host, rect, view);
+            if (score < 110)
+                continue;
+            var cs = view.getComputedStyle(host);
+            var key = String(val) + '|' + Math.round(rect.left / 8) + '|' + Math.round(rect.top / 8);
+            var item = {
+                val: val,
+                x: Math.round(rect.left),
+                y: Math.round(rect.top),
+                w: Math.round(rect.width),
+                h: Math.round(rect.height),
+                source: source,
+                selector: domCssSelectorOf(host),
+                tail: domTailOf(host),
+                text: domTextOf(host),
+                attrs: domAttrTextOf(host),
+                enabled: Number(cs.opacity || '1') > 0.35 && cs.pointerEvents !== 'none',
+                selected: /\b(active|selected|select|current|on|focus)\b/i.test(String(host.className || '') + ' ' + domAttrTextOf(host)),
+                el: host,
+                rect: {
+                    x: Math.round(rect.left),
+                    y: Math.round(rect.top),
+                    w: Math.round(rect.width),
+                    h: Math.round(rect.height)
+                },
+                _score: score
+            };
+            if (!byKey[key] || item._score > byKey[key]._score)
+                byKey[key] = item;
+        }
+        for (var k in byKey)
+            rows.push(byKey[k]);
+        rows.sort(function (a, b) { return b._score - a._score || a.y - b.y || a.x - b.x || a.val - b.val; });
+        return rows;
     }
     function parseDomChipValue(txt) {
         if (!txt)
@@ -10084,20 +10753,26 @@
         var rows = [];
         if (!doc || !doc.querySelectorAll)
             return rows;
-        var nodes = doc.querySelectorAll(".list_select_chips3d > div, .list_select_chips3d > li, .chips3d");
+        var nodes = doc.querySelectorAll(".list_select_chips3d > div, .list_select_chips3d > li, .chips3d, [class*='chip' i], [id*='chip' i], [class*='coin' i], [id*='coin' i], [data-value], [data-chip], [aria-label*='chip' i]");
         var byKey = {};
         for (var i = 0; i < nodes.length; i++) {
             var el = nodes[i];
             if (!domVisible(el))
                 continue;
+            if (domLooksLikeChipContainer(el))
+                continue;
             var host = domChipHostOf(el) || el;
             if (!domVisible(host))
                 continue;
-            var rect = host.getBoundingClientRect();
-            if (rect.top < doc.defaultView.innerHeight * 0.72)
+            if (domLooksLikeChipContainer(host))
                 continue;
-            var val = parseDomChipValue(domTextOf(host)) || domChipValueFromIdOrClass(host);
+            var rect = host.getBoundingClientRect();
+            if (rect.top < doc.defaultView.innerHeight * 0.52)
+                continue;
+            var val = domChipCandidateValue(host) || domChipCandidateValue(el);
             if (!val)
+                continue;
+            if (!DOM_ALLOWED_SET[String(val)] && !ALLOWED_SET[String(val)])
                 continue;
             var key = String(val) + '|' + Math.round(rect.left / 10) + '|' + Math.round(rect.top / 10);
             var cs = doc.defaultView.getComputedStyle(host);
@@ -10109,9 +10784,12 @@
                     w: Math.round(rect.width),
                     h: Math.round(rect.height),
                     source: source,
+                    selector: domCssSelectorOf(host),
                     tail: domTailOf(host),
+                    text: domTextOf(host),
+                    attrs: domAttrTextOf(host),
                     enabled: Number(cs.opacity || '1') > 0.5,
-                    selected: true,
+                    selected: /\b(active|selected|select|current|on|focus)\b/i.test(String(host.className || '') + ' ' + domAttrTextOf(host)),
                     el: host,
                     rect: {
                         x: Math.round(rect.left),
@@ -10122,9 +10800,16 @@
                 };
             }
         }
+        var generic = domCollectGenericActiveChips(doc, source);
+        for (var gi = 0; gi < generic.length; gi++) {
+            var g = generic[gi];
+            var gk = String(g.val) + '|' + Math.round(g.x / 10) + '|' + Math.round(g.y / 10);
+            if (!byKey[gk])
+                byKey[gk] = g;
+        }
         for (var k in byKey)
             rows.push(byKey[k]);
-        rows.sort(function (a, b) { return a.x - b.x || a.y - b.y || a.val - b.val; });
+        rows.sort(function (a, b) { return a.y - b.y || a.x - b.x || a.val - b.val; });
         return rows;
     }
     function domPickBestChipPanel() {
@@ -10148,14 +10833,50 @@
         }
         return bestPopup || bestBar;
     }
-    function domScanChipMap() {
-        var panel = domPickBestChipPanel();
+    function domInvalidateChipCache(reason) {
+        try {
+            var prevCount = _domChipMapCache && _domChipMapCache.map ? Object.keys(_domChipMapCache.map).length : 0;
+            _domChipMapCache.at = 0;
+            _domChipMapCache.map = null;
+            _domChipMapCache.rows = null;
+            _domChipMapCache.source = '';
+            _domChipMapCache.reason = String(reason || '');
+            cwBetFlowLog('chip-cache-reset', {
+                reason: String(reason || ''),
+                prevCount: prevCount
+            }, 0, 'chip-cache-reset|' + String(reason || ''));
+        } catch (_) {}
+    }
+    function domChipMapUsable(map, requiredVal) {
+        try {
+            if (!map)
+                return false;
+            var keys = Object.keys(map);
+            if (!keys.length)
+                return false;
+            if (requiredVal != null) {
+                keys = [String(requiredVal)];
+                if (!map[String(requiredVal)])
+                    return false;
+            }
+            for (var i = 0; i < keys.length; i++) {
+                var it = map[keys[i]];
+                var el = it && it.el;
+                if (!el || !el.ownerDocument || !el.isConnected || !domVisible(el))
+                    return false;
+            }
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+    function domBuildChipMapFromPanel(panel) {
         var out = {};
         if (!panel || !panel.chips || !panel.chips.length)
             return out;
         for (var i = 0; i < panel.chips.length; i++) {
             var c = panel.chips[i];
-            out[String(c.val)] = {
+            var item = {
                 entry: c.el,
                 node: c.el,
                 el: c.el,
@@ -10163,11 +10884,133 @@
                 value: c.val,
                 selected: !!c.selected,
                 source: c.source,
+                selector: c.selector || domCssSelectorOf(c.el),
                 tail: c.tail
             };
+            out[String(c.val)] = item;
+            if (c.val === 1000 && !out['1'])
+                out['1'] = item;
+            if (c.val === 5000 && !out['5'])
+                out['5'] = item;
         }
         return out;
     }
+    function domScanChipMap(force) {
+        if (!force && domChipMapUsable(_domChipMapCache.map)) {
+            cwBetFlowLog('chip-cache-hit', {
+                count: _domChipMapCache.map ? Object.keys(_domChipMapCache.map).length : 0,
+                ageMs: _domChipMapCache.at ? Date.now() - Number(_domChipMapCache.at || 0) : null,
+                source: String(_domChipMapCache.source || '')
+            }, 1200, 'chip-cache-hit');
+            return _domChipMapCache.map;
+        }
+        if (force)
+            domInvalidateChipCache('force-scan');
+        var scanStart = Date.now();
+        var panel = domPickBestChipPanel();
+        var out = domBuildChipMapFromPanel(panel);
+        if (Object.keys(out).length) {
+            _domChipMapCache.at = Date.now();
+            _domChipMapCache.map = out;
+            _domChipMapCache.rows = panel && panel.chips ? panel.chips : null;
+            _domChipMapCache.source = panel && panel.source ? panel.source : '';
+            _domChipMapCache.reason = 'scan-ok';
+        }
+        cwBetFlowLog('chip-scan', {
+            force: force ? 1 : 0,
+            count: Object.keys(out).length,
+            source: panel && panel.source ? String(panel.source || '') : '',
+            mode: panel && panel.mode ? String(panel.mode || '') : '',
+            ms: Date.now() - scanStart
+        }, 0, 'chip-scan|' + (force ? 1 : 0));
+        return out;
+    }
+    function domScanActiveChipRows(force) {
+        if (force) {
+            try { _domBetCtxCache.at = 0; } catch (_) {}
+            domInvalidateChipCache('devtool-force');
+        } else if (_domChipMapCache.rows && domChipMapUsable(_domChipMapCache.map)) {
+            cwBetFlowLog('chip-rows-cache-hit', {
+                count: _domChipMapCache.rows ? _domChipMapCache.rows.length : 0
+            }, 1200, 'chip-rows-cache-hit');
+            return _domChipMapCache.rows;
+        }
+        var rowsStart = Date.now();
+        var contexts = domGetBetContexts(!!force);
+        var rows = [];
+        var byKey = {};
+        for (var i = 0; i < contexts.length; i++) {
+            var ctx = contexts[i];
+            var pack = [];
+            var popup = domCollectSettingPopupChips(ctx.doc, ctx.source);
+            for (var pi = 0; pi < popup.length; pi++) {
+                popup[pi].mode = 'settings-popup';
+                pack.push(popup[pi]);
+            }
+            var active = domCollectActiveBarChips(ctx.doc, ctx.source);
+            for (var ai = 0; ai < active.length; ai++) {
+                active[ai].mode = active[ai].mode || 'active-bar';
+                pack.push(active[ai]);
+            }
+            for (var j = 0; j < pack.length; j++) {
+                var c = pack[j];
+                if (!c || !c.val)
+                    continue;
+                var key = String(c.val) + '|' + String(c.source || '') + '|' + Math.round((c.x || 0) / 8) + '|' + Math.round((c.y || 0) / 8);
+                if (!byKey[key] || Number(c._score || 0) > Number(byKey[key]._score || 0))
+                    byKey[key] = c;
+            }
+        }
+        for (var k in byKey)
+            rows.push(byKey[k]);
+        rows.sort(function (a, b) {
+            return String(a.source || '').localeCompare(String(b.source || '')) || (a.y - b.y) || (a.x - b.x) || (a.val - b.val);
+        });
+        if (rows.length) {
+            _domChipMapCache.at = Date.now();
+            _domChipMapCache.rows = rows;
+            _domChipMapCache.map = domBuildChipMapFromPanel({
+                chips: rows
+            });
+            _domChipMapCache.source = rows[0] && rows[0].source ? rows[0].source : '';
+            _domChipMapCache.reason = 'rows-scan-ok';
+        }
+        cwBetFlowLog('chip-rows-scan', {
+            force: force ? 1 : 0,
+            count: rows.length,
+            contexts: contexts.length,
+            ms: Date.now() - rowsStart
+        }, 0, 'chip-rows-scan|' + (force ? 1 : 0));
+        return rows;
+    }
+    function domPublicChipRows(force) {
+        var rows = domScanActiveChipRows(!!force);
+        var table = [];
+        for (var i = 0; i < rows.length; i++) {
+            var c = rows[i];
+            table.push({
+                val: c.val,
+                mode: c.mode || '',
+                source: c.source || '',
+                x: c.x,
+                y: c.y,
+                w: c.w,
+                h: c.h,
+                enabled: c.enabled ? 1 : 0,
+                selected: c.selected ? 1 : 0,
+                selector: c.selector || domCssSelectorOf(c.el),
+                tail: c.tail || '',
+                text: c.text || '',
+                attrs: c.attrs || ''
+            });
+        }
+        try { console.table(table); } catch (_) { console.log(table); }
+        return table;
+    }
+    window.cwScanDomChips = function (force) {
+        return domPublicChipRows(force);
+    };
+    window.__cw_scan_active_chips = window.cwScanDomChips;
     async function domFocusChipInfo(info, amount) {
         if (!info || !info.el)
             return false;
@@ -10177,7 +11020,11 @@
             if (normalizedAmount != null && normalizedInfo != null && normalizedAmount !== normalizedInfo)
                 return false;
         }
-        if (!domMinimalClick(info.el))
+        var clicked = false;
+        clicked = domFireClick(info.el) || clicked;
+        if (!clicked)
+            clicked = domMinimalClick(info.el) || clicked;
+        if (!clicked)
             return false;
         await sleep(140);
         return true;
@@ -10186,31 +11033,141 @@
         var val = Math.max(0, Math.floor(+amount || 0));
         if (!DOM_ALLOWED_SET[String(val)] && !ALLOWED_SET[String(val)])
             throw new Error('Menh gia khong hop le: ' + amount);
-        var map = domScanChipMap();
+        var map = domScanChipMap(false);
         var info = map[String(val)];
+        if (info && !domChipMapUsable(map, val)) {
+            domInvalidateChipCache('chip-element-stale');
+            map = domScanChipMap(true);
+            info = map[String(val)];
+        }
         if (!info || !info.el)
             return false;
-        return await domFocusChipInfo(info, val);
+        cwBetFlowLog('chip-focus-click', {
+            val: val,
+            source: String(info.source || ''),
+            selector: String(info.selector || ''),
+            tail: String(info.tail || '')
+        }, 0, 'chip-focus-click|' + val);
+        var ok = await domFocusChipInfo(info, val);
+        if (!ok)
+            domInvalidateChipCache('focus-click-failed');
+        cwBetFlowLog('chip-focus-result', {
+            val: val,
+            ok: ok ? 1 : 0
+        }, 0, 'chip-focus-result|' + val + '|' + (ok ? 1 : 0));
+        return ok;
     }
     function domBetSideOfText(text) {
         var s = NORM(text || '');
         if (!s)
             return null;
-        if (/PLAYER|TAY CON|\u95F2/.test(s))
+        if (/PLAYER|PLYR|PLAYR|TAY CON|PUNTO|\u95F2/.test(s))
             return 'PLAYER';
-        if (/BANKER|NHA CAI|\u5E84/.test(s))
+        if (/BANKER|BNKR|BANK|NHA CAI|CAI|BANCO|\u5E84/.test(s))
             return 'BANKER';
-        if (/TIE|HOA|\u548C/.test(s))
+        if (/TIE|DRAW|HOA|\u548C/.test(s))
             return 'TIE';
         return null;
+    }
+    function domBetSideCountOfText(text) {
+        var s = NORM(text || '');
+        var count = 0;
+        if (/PLAYER|PLYR|PLAYR|TAY CON|PUNTO|\u95F2/.test(s))
+            count++;
+        if (/BANKER|BNKR|BANK|NHA CAI|BANCO|\u5E84/.test(s))
+            count++;
+        if (/TIE|DRAW|HOA|\u548C/.test(s))
+            count++;
+        return count;
+    }
+    function domBetTargetVisualScore(host, labelEl, side, view) {
+        var score = 0;
+        try {
+            var rect = host.getBoundingClientRect();
+            var attr = NORM(domAttrTextOf(host));
+            var text = NORM(domTextOf(host));
+            var combo = NORM(domCombinedTextOf(host));
+            var sideCount = domBetSideCountOfText(combo);
+            if (rect.top >= (view.innerHeight || 900) * 0.48)
+                score += 180;
+            if (rect.top >= (view.innerHeight || 900) * 0.62)
+                score += 160;
+            if (rect.width >= 70 && rect.height >= 34)
+                score += 140;
+            if (rect.width >= 120 && rect.height >= 48)
+                score += 70;
+            if (rect.width > (view.innerWidth || 1600) * 0.72 || rect.height > (view.innerHeight || 900) * 0.36)
+                score -= 320;
+            if (/BET|WAGER|STAKE|BOX|AREA|ZONE|CELL|ITEM|PLAYER|BANKER|TIE|DRAGON|BACCARAT|CUOC/.test(attr))
+                score += 260;
+            if (/BETBOX|ZONE_BET_BOTTOM|BET_AREA|BETTING|PLAYER|BANKER|TIE/.test(attr))
+                score += 280;
+            if (domBetSideOfText(text) === side)
+                score += 160;
+            if (sideCount === 1)
+                score += 180;
+            if (sideCount > 1)
+                score -= 520 + sideCount * 80;
+            if (/\b1\s*:\s*8\b/.test(combo) && side === 'TIE')
+                score += 120;
+            if (/\b1\s*:\s*1\b/.test(combo) && (side === 'PLAYER' || side === 'BANKER'))
+                score += 90;
+            if (/\b0?\s*\.?\s*95\s*:\s*1\b/.test(combo) && side === 'BANKER')
+                score += 180;
+            if (/\b1\s*:\s*1\b/.test(combo) && side === 'PLAYER')
+                score += 180;
+            if (/\b8\s*:\s*1\b/.test(combo) && side === 'TIE')
+                score += 220;
+            if (/\b11\s*:\s*1\b/.test(combo))
+                score -= 520;
+            if (/\bPAIR\b/.test(combo))
+                score -= 1200;
+            if (/\bBONUS\b/.test(combo))
+                score -= 900;
+            if (/\b(EITHER|PERFECT)\b/.test(combo))
+                score -= 800;
+            if ((side === 'PLAYER' || side === 'BANKER') && rect.width >= 130 && rect.height >= 110)
+                score += 160;
+            if (side === 'TIE' && rect.width >= 100 && rect.height >= 120)
+                score += 120;
+            if (labelEl && host !== labelEl) {
+                var lr = labelEl.getBoundingClientRect();
+                var hcX = rect.left + rect.width / 2;
+                var hcY = rect.top + rect.height / 2;
+                var lcX = lr.left + lr.width / 2;
+                var lcY = lr.top + lr.height / 2;
+                score -= Math.round(dist2(hcX, hcY, lcX, lcY) / 900);
+            }
+            var cs = view.getComputedStyle(host);
+            if (Number(cs.opacity || '1') <= 0.25 || cs.pointerEvents === 'none')
+                score -= 700;
+        } catch (_) {}
+        return score;
     }
     function domBetTargetHostOf(el) {
         if (!el || !el.closest)
             return null;
-        var ownText = domTextOf(el);
+        var ownText = domCombinedTextOf(el);
         var ownSide = domBetSideOfText(ownText);
+        var view = (el.ownerDocument && el.ownerDocument.defaultView) || window;
+        var selectorBest = null;
+        var selectorBestScore = -1e9;
         var selectors = [
             "li[id^='betBox']",
+            "[id*='betBox']",
+            "[class*='betBox' i]",
+            "[class*='bet' i]",
+            "[id*='bet' i]",
+            "[class*='player' i]",
+            "[id*='player' i]",
+            "[class*='banker' i]",
+            "[id*='banker' i]",
+            "[class*='tie' i]",
+            "[id*='tie' i]",
+            "[data-side]",
+            "[data-bet]",
+            "button",
+            "[role='button']",
             ".zone_bet_bottom > li",
             ".zone_bet_bottom li",
             ".zone_bet_bottom > div",
@@ -10225,39 +11182,91 @@
             }
             if (!host)
                 continue;
-            var hostText = domTextOf(host);
+            var hostText = domCombinedTextOf(host);
             var flatTail = NORM(domTailOf(host));
-            if (flatTail.indexOf('ZONE_BET_BOTTOM') === -1 && flatTail.indexOf('BETBOX') === -1)
+            var selectorSide = ownSide || domBetSideOfText(hostText);
+            if (!selectorSide && !/BET|PLAYER|BANKER|TIE/.test(flatTail + ' ' + NORM(domAttrTextOf(host))))
                 continue;
-            if (domBetSideOfText(hostText) || ownSide)
-                return host;
+            if (!selectorSide)
+                selectorSide = domBetSideOfText(flatTail + ' ' + domAttrTextOf(host));
+            if (!selectorSide)
+                continue;
+            var sr = host.getBoundingClientRect();
+            if (!sr || sr.width < 44 || sr.height < 24)
+                continue;
+            if (sr.bottom < 0 || sr.top > (view.innerHeight || 900) || sr.right < 0 || sr.left > (view.innerWidth || 1600))
+                continue;
+            if (sr.top < (view.innerHeight || 900) * 0.42)
+                continue;
+            var selectorScore = domBetTargetVisualScore(host, el, selectorSide, view);
+            if (/BETBOX|ZONE_BET_BOTTOM|BET_AREA|BETTING/.test(flatTail + ' ' + NORM(domAttrTextOf(host))))
+                selectorScore += 260;
+            if (selectorScore > selectorBestScore) {
+                selectorBestScore = selectorScore;
+                selectorBest = host;
+            }
         }
+        if (selectorBest && selectorBestScore > -100)
+            return selectorBest;
+        var cur = el;
+        var best = null;
+        var bestScore = -1e9;
+        for (var depth = 0; cur && cur.nodeType === 1 && depth < 8; depth++, cur = cur.parentElement) {
+            if (!domVisible(cur))
+                continue;
+            var rect = cur.getBoundingClientRect();
+            if (!rect || rect.width < 44 || rect.height < 24)
+                continue;
+            if (rect.bottom < 0 || rect.top > (view.innerHeight || 900) || rect.right < 0 || rect.left > (view.innerWidth || 1600))
+                continue;
+            if (rect.top < (view.innerHeight || 900) * 0.42)
+                continue;
+            var combo = domCombinedTextOf(cur);
+            var side = ownSide || domBetSideOfText(combo);
+            if (!side)
+                continue;
+            var score = domBetTargetVisualScore(cur, el, side, view);
+            if (score > bestScore) {
+                bestScore = score;
+                best = cur;
+            }
+        }
+        if (best && bestScore > -100)
+            return best;
         return null;
     }
     function domCollectBetTargetCandidates(doc, source) {
         var rows = [];
         if (!doc || !doc.querySelectorAll)
             return rows;
-        var all = doc.querySelectorAll('body *');
-        for (var i = 0; i < all.length; i++) {
+        var all = doc.querySelectorAll("body *");
+        for (var i = 0; i < all.length && i < 8000; i++) {
             var el = all[i];
             if (!domVisible(el))
+                continue;
+            var elSide = domBetSideOfText(domCombinedTextOf(el));
+            var attrSide = domBetSideOfText(domAttrTextOf(el));
+            if (!elSide && !attrSide)
                 continue;
             var host = domBetTargetHostOf(el);
             if (!host || !domVisible(host))
                 continue;
+            var hostCombo = domCombinedTextOf(host);
             var txt = domTextOf(host) || domTextOf(el);
-            var side = domBetSideOfText(txt) || domBetSideOfText(domTextOf(el));
+            var side = domBetSideCountOfText(hostCombo) > 1 ? (elSide || attrSide) : (domBetSideOfText(hostCombo) || elSide || attrSide);
             if (!side)
                 continue;
             var rect = host.getBoundingClientRect();
-            if (rect.top < doc.defaultView.innerHeight * 0.60)
+            if (rect.top < doc.defaultView.innerHeight * 0.42)
                 continue;
             if (rect.width < 50 || rect.height < 30)
                 continue;
             var tail = domTailOf(host);
             var flatTail = NORM(tail);
-            if (flatTail.indexOf('ZONE_BET_BOTTOM') === -1 && flatTail.indexOf('BETBOX') === -1)
+            var attrText = domAttrTextOf(host);
+            var sideCount = domBetSideCountOfText(hostCombo);
+            var scoreHint = domBetTargetVisualScore(host, el, side, doc.defaultView || window);
+            if (sideCount > 1 && scoreHint < 120)
                 continue;
             var key = side + '|' + Math.round(rect.left / 8) + '|' + Math.round(rect.top / 8);
             rows.push({
@@ -10268,11 +11277,14 @@
                 w: Math.round(rect.width),
                 h: Math.round(rect.height),
                 source: source,
+                selector: domCssSelectorOf(host),
                 tail: tail,
+                attrs: attrText,
                 opacity: String(doc.defaultView.getComputedStyle(host).opacity || ''),
                 enabled: Number(doc.defaultView.getComputedStyle(host).opacity || '1') > 0.2,
                 el: host,
-                _key: key
+                _key: key,
+                _hintScore: scoreHint
             });
         }
         var bestByKey = {};
@@ -10294,8 +11306,58 @@
         out.sort(function (a, b) { return a.y - b.y || a.x - b.x; });
         return out;
     }
-    function domPickBestBetTargets() {
-        var contexts = domGetBetContexts();
+    function domBetTargetsUsable(best) {
+        try {
+            if (!best || !best.targets)
+                return false;
+            var keys = ['PLAYER', 'BANKER', 'TIE'];
+            var found = 0;
+            for (var i = 0; i < keys.length; i++) {
+                var t = best.targets[keys[i]];
+                if (!t)
+                    continue;
+                found++;
+                if (!t.el || !t.el.ownerDocument || !t.el.isConnected || !domVisible(t.el))
+                    return false;
+            }
+            return found > 0;
+        } catch (_) {
+            return false;
+        }
+    }
+    function domInvalidateBetTargetCache(reason) {
+        try {
+            var prevTargets = 0;
+            try {
+                var prev = _domBetTargetCache && _domBetTargetCache.best && _domBetTargetCache.best.targets ? _domBetTargetCache.best.targets : null;
+                if (prev) {
+                    if (prev.PLAYER) prevTargets++;
+                    if (prev.BANKER) prevTargets++;
+                    if (prev.TIE) prevTargets++;
+                }
+            } catch (_) {}
+            _domBetTargetCache.at = 0;
+            _domBetTargetCache.best = null;
+            _domBetTargetCache.reason = String(reason || '');
+            cwBetFlowLog('target-cache-reset', {
+                reason: String(reason || ''),
+                prevTargets: prevTargets
+            }, 0, 'target-cache-reset|' + String(reason || ''));
+        } catch (_) {}
+    }
+    function domPickBestBetTargets(force) {
+        if (!force && domBetTargetsUsable(_domBetTargetCache.best)) {
+            cwBetFlowLog('target-cache-hit', {
+                ageMs: _domBetTargetCache.at ? Date.now() - Number(_domBetTargetCache.at || 0) : null,
+                source: _domBetTargetCache.best ? String(_domBetTargetCache.best.source || '') : '',
+                score: _domBetTargetCache.best ? Math.round(Number(_domBetTargetCache.best.score || 0)) : 0
+            }, 1200, 'target-cache-hit');
+            return _domBetTargetCache.best;
+        }
+        if (force)
+            domInvalidateBetTargetCache('force-scan');
+        var scanStart = Date.now();
+        var contexts = domGetBetContexts(!!force);
         var best = null;
         for (var i = 0; i < contexts.length; i++) {
             var ctx = contexts[i];
@@ -10306,15 +11368,35 @@
             for (var j = 0; j < candidates.length; j++) {
                 var c = candidates[j];
                 var score = 0;
+                var combo = NORM(String(c.text || '') + ' ' + String(c.attrs || '') + ' ' + String(c.tail || ''));
+                score += Number(c._hintScore || 0);
                 score += c.source === 'top/frame[1]' ? 250 : 0;
                 score += c.y > ctx.win.innerHeight * 0.68 ? 200 : 0;
                 score += Math.min(c.w * c.h, 60000) / 400;
-                if (/zone_bet_bottom|betbox/i.test(c.tail))
+                if (/zone_bet_bottom|betbox|bet|player|banker|tie/i.test(String(c.tail || '') + ' ' + String(c.attrs || '')))
                     score += 300;
                 if (/\b1:8\b/.test(c.text) && c.side === 'TIE')
                     score += 120;
                 if (/\b1:1\b/.test(c.text) && (c.side === 'PLAYER' || c.side === 'BANKER'))
                     score += 80;
+                if (/\b0?\.?95\s*:\s*1\b/.test(combo) && c.side === 'BANKER')
+                    score += 260;
+                if (/\b1\s*:\s*1\b/.test(combo) && c.side === 'PLAYER')
+                    score += 260;
+                if (/\b8\s*:\s*1\b/.test(combo) && c.side === 'TIE')
+                    score += 300;
+                if (/\b11\s*:\s*1\b/.test(combo))
+                    score -= 520;
+                if (/\bPAIR\b/.test(combo))
+                    score -= 1600;
+                if (/\bBONUS\b/.test(combo))
+                    score -= 1200;
+                if (/\b(EITHER|PERFECT)\b/.test(combo))
+                    score -= 1000;
+                if ((c.side === 'PLAYER' || c.side === 'BANKER') && c.w >= 130 && c.h >= 110)
+                    score += 180;
+                if (c.side === 'TIE' && c.w >= 100 && c.h >= 120)
+                    score += 120;
                 c._score = score;
                 if (!bySide[c.side] || score > bySide[c.side]._score)
                     bySide[c.side] = c;
@@ -10340,8 +11422,110 @@
             if (!best || result.score > best.score)
                 best = result;
         }
+        if (best) {
+            _domBetTargetCache.at = Date.now();
+            _domBetTargetCache.best = best;
+            _domBetTargetCache.reason = 'scan-ok';
+        }
+        cwBetFlowLog('target-scan', {
+            force: force ? 1 : 0,
+            found: best && best.targets ? 1 : 0,
+            source: best ? String(best.source || '') : '',
+            score: best ? Math.round(Number(best.score || 0)) : 0,
+            hasP: best && best.targets && best.targets.PLAYER ? 1 : 0,
+            hasB: best && best.targets && best.targets.BANKER ? 1 : 0,
+            hasT: best && best.targets && best.targets.TIE ? 1 : 0,
+            contexts: contexts.length,
+            ms: Date.now() - scanStart
+        }, 0, 'target-scan|' + (force ? 1 : 0));
         return best;
     }
+    function domScanBetTargetRows(force) {
+        if (force) {
+            try { _domBetCtxCache.at = 0; } catch (_) {}
+            domInvalidateBetTargetCache('devtool-force');
+        }
+        var contexts = domGetBetContexts(!!force);
+        var rows = [];
+        for (var i = 0; i < contexts.length; i++) {
+            var ctx = contexts[i];
+            var candidates = domCollectBetTargetCandidates(ctx.doc, ctx.source);
+            for (var j = 0; j < candidates.length; j++) {
+                var c = candidates[j];
+                rows.push({
+                    side: c.side,
+                    source: c.source || ctx.source || '',
+                    x: c.x,
+                    y: c.y,
+                    w: c.w,
+                    h: c.h,
+                    enabled: c.enabled ? 1 : 0,
+                    score: Math.round(Number(c._hintScore || 0)),
+                    pickScore: Math.round(Number(c._score || c._hintScore || 0)),
+                    selector: c.selector || domCssSelectorOf(c.el),
+                    tail: c.tail || '',
+                    text: c.text || '',
+                    attrs: c.attrs || '',
+                    el: c.el
+                });
+            }
+        }
+        var best = domPickBestBetTargets(!!force);
+        if (best && best.targets) {
+            for (var ri = 0; ri < rows.length; ri++) {
+                var br = best.targets[rows[ri].side];
+                rows[ri].best = br && br.el === rows[ri].el ? 1 : 0;
+                delete rows[ri].el;
+            }
+        } else {
+            for (var di = 0; di < rows.length; di++)
+                delete rows[di].el;
+        }
+        rows.sort(function (a, b) {
+            return (b.best || 0) - (a.best || 0) ||
+                String(a.source || '').localeCompare(String(b.source || '')) ||
+                String(a.side || '').localeCompare(String(b.side || '')) ||
+                a.y - b.y || a.x - b.x;
+        });
+        return {
+            bestSource: best ? best.source : '',
+            bestScore: best ? Math.round(best.score || 0) : 0,
+            rows: rows
+        };
+    }
+    function domPublicBetTargetRows(force) {
+        var pack = domScanBetTargetRows(!!force);
+        try { console.table(pack.rows); } catch (_) { console.log(pack.rows); }
+        return pack;
+    }
+    window.cwScanDomBetTargets = function (force) {
+        return domPublicBetTargetRows(force);
+    };
+    window.__cw_scan_bet_targets = window.cwScanDomBetTargets;
+    window.cwScanBetDom = function (force) {
+        return {
+            chips: domPublicChipRows(force),
+            targets: domPublicBetTargetRows(force)
+        };
+    };
+    window.cwResetDomBetCache = function () {
+        domInvalidateChipCache('manual-reset');
+        domInvalidateBetTargetCache('manual-reset');
+        try { _domBetCtxCache.at = 0; } catch (_) {}
+        return true;
+    };
+    window.cwDomBetCacheState = function () {
+        return {
+            chipsCached: domChipMapUsable(_domChipMapCache.map) ? 1 : 0,
+            chipCount: _domChipMapCache.map ? Object.keys(_domChipMapCache.map).length : 0,
+            chipAgeMs: _domChipMapCache.at ? Date.now() - Number(_domChipMapCache.at || 0) : null,
+            chipSource: String(_domChipMapCache.source || ''),
+            chipReason: String(_domChipMapCache.reason || ''),
+            targetsCached: domBetTargetsUsable(_domBetTargetCache.best) ? 1 : 0,
+            targetAgeMs: _domBetTargetCache.at ? Date.now() - Number(_domBetTargetCache.at || 0) : null,
+            targetReason: String(_domBetTargetCache.reason || '')
+        };
+    };
     function domLooksLikeConfirmText(text) {
         var s = NORM(text || '');
         return s === 'XAC NHAN' || s === 'CONFIRM' || s === 'OK';
@@ -10693,12 +11877,28 @@
       var confirm = await domWaitConfirmReady(200);
         if (!confirm) {
             console.warn('[cwBet++] không thấy nút xác nhận');
+            cwBetFlowLog('confirm-missing', {
+                expectedUnits: expectedUnits || null
+            }, 0, 'confirm-missing');
             return false;
         }
         var shield = null;
         try { shield = domShieldRepeatButtons(confirm.doc); } catch (_) { shield = null; }
         try {
             var readyStake = domReadTargetStakeUnits(tgt, expectedUnits);
+            cwBetFlowLog('confirm-ready', {
+                text: String(confirm.text || ''),
+                source: String(confirm.source || ''),
+                enabled: confirm.enabled ? 1 : 0,
+                x: confirm.x,
+                y: confirm.y,
+                w: confirm.w,
+                h: confirm.h,
+                expectedStake: expectedUnits || null,
+                targetStake: readyStake ? readyStake.val : null,
+                shielded: shield ? shield.count : 0,
+                tail: String(confirm.tail || '')
+            }, 0, 'confirm-ready');
             domEmitConfirmDiag('ready', confirm, {
                 shielded: shield ? shield.count : 0,
                 expectedStake: expectedUnits || null,
@@ -10722,12 +11922,20 @@
                 expectedStake: expectedUnits || null,
                 targetStake: readyStake ? readyStake.val : null
             });
-            domMinimalClick(confirm.el);
+            domFireClick(confirm.el);
+            domFireClickAtPoint(confirm.doc, confirm.x + confirm.w * 0.50, confirm.y + confirm.h * 0.50);
           await sleep(10);
           var settled = await domWaitConfirmSettled(200);
             var stakeHit = null;
             if (expectedUnits != null)
           stakeHit = await domWaitTargetStakeUnits(tgt, expectedUnits, 140);
+            cwBetFlowLog('confirm-after-click', {
+                settled: settled ? 1 : 0,
+                expectedStake: expectedUnits || null,
+                targetStake: stakeHit ? stakeHit.val : null,
+                text: String(confirm.text || ''),
+                tail: String(confirm.tail || '')
+            }, 0, 'confirm-after-click|' + (settled ? 1 : 0));
             domEmitConfirmDiag('after_click', confirm, {
                 attempt: 1,
                 mode: mode,
@@ -10742,6 +11950,9 @@
             try { if (shield && shield.restore) shield.restore(); } catch (_) {}
         }
         console.warn('[cwBet++] xác nhận không hoàn tất');
+        cwBetFlowLog('confirm-failed', {
+            expectedUnits: expectedUnits || null
+        }, 0, 'confirm-failed');
         return false;
     }
     window.__cw_diag_confirm_once = async function () {
@@ -11007,9 +12218,9 @@
     }
 
     var prevScan = window.cwScanChips;
-    window.cwScanChips = function () {
+    window.cwScanChips = function (force) {
         if (!__cw_hasCocos()) {
-            var dm = domScanChipMap();
+            var dm = domScanChipMap(!!force);
             if (!Object.keys(dm).length)
                 console.warn('[cwScanChips++] chưa thấy chip DOM.');
             return dm;
@@ -11053,8 +12264,7 @@
             var okDom = await domFocusChip(val).catch(function () { return false; });
             if (okDom)
                 return true;
-            await tryOpenChipPanel();
-            await sleep(180);
+            domInvalidateChipCache('cwFocusChip-dom-retry');
             return !!(await domFocusChip(val).catch(function () { return false; }));
         }
         if (!ALLOWED_SET[String(val)])
@@ -11193,6 +12403,10 @@
                     chipUnits: val
                 });
             } catch (_) {}
+            cwBetFlowLog('chip-focus-skip', {
+                mode: isDomMode ? 'dom' : 'cocos',
+                chipUnits: val
+            }, 0, 'chip-focus-skip|' + (isDomMode ? 'dom' : 'cocos') + '|' + val);
             return true;
         }
         var ok = false;
@@ -11212,12 +12426,18 @@
         }
         if (!ok) {
             resetChipFocusState(isDomMode, 'focus-failed');
+            if (isDomMode)
+                domInvalidateChipCache('ensure-focus-failed');
             try {
                 cwBetDbg('[cwBet++] chip_focus failed', {
                     mode: isDomMode ? 'dom' : 'cocos',
                     chipUnits: val
                 });
             } catch (_) {}
+            cwBetFlowLog('chip-focus-failed', {
+                mode: isDomMode ? 'dom' : 'cocos',
+                chipUnits: val
+            }, 0, 'chip-focus-failed|' + (isDomMode ? 'dom' : 'cocos') + '|' + val);
             return false;
         }
         bucket.verified = true;
@@ -11228,6 +12448,10 @@
                 chipUnits: val
             });
         } catch (_) {}
+        cwBetFlowLog('chip-focus-set', {
+            mode: isDomMode ? 'dom' : 'cocos',
+            chipUnits: val
+        }, 0, 'chip-focus-set|' + (isDomMode ? 'dom' : 'cocos') + '|' + val);
         return true;
     }
     async function withLock(fn) {
@@ -11278,6 +12502,14 @@
         function failBet(reason, detail) {
             var message = String(reason || 'cwBet failed');
             window.__cw_lastBetError = message;
+            try {
+                cwBetFlowLog('bet-fail', {
+                    reason: message,
+                    side: String(side || ''),
+                    amount: amount == null ? null : Number(amount || 0),
+                    detail: detail || null
+                }, 0, 'bet-fail|' + message);
+            } catch (_) {}
             return {
                 ok: false,
                 error: message,
@@ -11289,6 +12521,12 @@
         }
         clearBetError();
         side = normalizeSide(side);
+        cwBetFlowLog('bet-request', {
+            side: side,
+            amount: amount == null ? null : Number(amount || 0),
+            hasAmount: amount == null || isNaN(amount) ? 0 : 1,
+            dom: __cw_hasCocos() ? 0 : 1
+        }, 0, 'bet-request|' + side);
         if (amount == null || isNaN(amount)) {
             if (old_cwBet)
                 return await old_cwBet(side);
@@ -11311,6 +12549,7 @@
 
         return withLock(async function () {
             clearBetError();
+            var betStartMs = Date.now();
             var tgt = findBetTarget(side);
             if (!tgt || !tgt.node) {
                 console.warn('[cwBet++] không thấy nút cửa:', side);
@@ -11325,12 +12564,23 @@
                 return failBet('invalid dom chip amount', { side: side, amount: raw, chipUnits: X });
             }
 
-            var map = window.cwScanChips() || {};
+            var map = window.cwScanChips(false) || {};
             if (!Object.keys(map).length) {
-                await tryOpenChipPanel();
-                await sleep(120);
-                map = isDomMode ? (window.cwScanChips() || {}) : wideScan();
+                if (isDomMode) {
+                    map = window.cwScanChips(true) || {};
+                } else {
+                    await tryOpenChipPanel();
+                    await sleep(120);
+                    map = wideScan();
+                }
             }
+            cwBetFlowLog('bet-chip-map', {
+                side: side,
+                amount: raw,
+                chipUnits: X,
+                count: map ? Object.keys(map).length : 0,
+                cache: isDomMode && domChipMapUsable(_domChipMapCache.map) ? 1 : 0
+            }, 0, 'bet-chip-map|' + side + '|' + X);
             var availSet = {};
             var ks = Object.keys(map);
             for (var i = 0; i < ks.length; i++)
@@ -11341,6 +12591,11 @@
             }
 
             if (availSet[String(X)]) {
+                cwBetFlowLog('bet-exact-chip', {
+                    side: side,
+                    amount: raw,
+                    chipUnits: X
+                }, 0, 'bet-exact-chip|' + side + '|' + X);
                 var focusOne = await ensureChipFocusedForBet(isDomMode, map, X);
                 if (!focusOne) {
                     console.warn('[cwBet++] không focus được chip exact-hit', X);
@@ -11355,6 +12610,12 @@
                 }
                 var before0 = sampleTotalsNow();
                 var targetClickedOne = clickBetTarget(tgt);
+                cwBetFlowLog('bet-target-clicked', {
+                    side: side,
+                    amount: raw,
+                    chipUnits: X,
+                    clicked: targetClickedOne ? 1 : 0
+                }, 0, 'bet-target-clicked|' + side + '|' + X);
                 var appliedOne = await waitForTotalsChange(before0, side, 150).catch(function () {
                     return false;
                 });
@@ -11399,6 +12660,13 @@
                 }
                 await sleep(15);
                 clearBetError();
+                cwBetFlowLog('bet-done', {
+                    side: side,
+                    amount: raw,
+                    chipUnits: X,
+                    mode: 'exact',
+                    ms: Date.now() - betStartMs
+                }, 0, 'bet-done|' + side + '|' + X);
                 return true;
             }
 
@@ -11422,9 +12690,21 @@
                 planStr.push(plan[p].count + '×' + plan[p].val.toLocaleString());
             }
             cwBetDbg('[cwBet++] plan:', planStr.join(' + '), { amount: raw, chipUnits: X, dom: isDomMode });
+            cwBetFlowLog('bet-plan', {
+                side: side,
+                amount: raw,
+                chipUnits: X,
+                plan: planStr.join(' + '),
+                dom: isDomMode ? 1 : 0
+            }, 0, 'bet-plan|' + side + '|' + X);
 
             for (var s = 0; s < plan.length; s++) {
                 var step = plan[s];
+                cwBetFlowLog('bet-plan-step', {
+                    side: side,
+                    denom: step.val,
+                    count: step.count
+                }, 0, 'bet-plan-step|' + side + '|' + step.val);
                 var ok = await ensureChipFocusedForBet(isDomMode, map, step.val);
                 if (!ok) {
                     console.warn('[cwBet++] không focus được chip', step.val);
@@ -11433,6 +12713,12 @@
                 for (var i2 = 0; i2 < step.count; i2++) {
                     var beforeStep = sampleTotalsNow();
                     var targetClickedStep = clickBetTarget(tgt);
+                    cwBetFlowLog('bet-plan-click', {
+                        side: side,
+                        denom: step.val,
+                        turn: i2 + 1,
+                        clicked: targetClickedStep ? 1 : 0
+                    }, 0, 'bet-plan-click|' + side + '|' + step.val + '|' + (i2 + 1));
                     if (!targetClickedStep)
                         console.warn('[cwBet++] click cửa thất bại', {
                             side: side,
@@ -11472,6 +12758,13 @@
                 amount: X
             });
             clearBetError();
+            cwBetFlowLog('bet-done', {
+                side: side,
+                amount: raw,
+                chipUnits: X,
+                mode: 'plan',
+                ms: Date.now() - betStartMs
+            }, 0, 'bet-done|' + side + '|' + X);
             return true;
         });
     };
