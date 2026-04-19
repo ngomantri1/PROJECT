@@ -2714,8 +2714,8 @@ try{
                         {
                             if (payload.Amount.HasValue)
                                 LblAmount.Text = payload.Amount.Value.ToString("#,0.##", CultureInfo.InvariantCulture);
-                            else if (string.IsNullOrWhiteSpace(LblAmount.Text))
-                                LblAmount.Text = "-";
+                            else
+                                LblAmount.Text = "0";
                         }
                         if (LblUserName != null)
                         {
@@ -4744,7 +4744,11 @@ try{
                         var progTailDiag = string.IsNullOrWhiteSpace(snap?.progTail) ? "-" : Shrink(snap?.progTail, 96);
                         var statusSourceDiag = string.IsNullOrWhiteSpace(snap?.statusSource) ? "-" : Shrink(snap?.statusSource, 48);
                         var statusTailDiag = string.IsNullOrWhiteSpace(snap?.statusTail) ? "-" : Shrink(snap?.statusTail, 96);
+                        var hudBalDiag = snap?.totals?.A?.ToString("0.##", CultureInfo.InvariantCulture) ?? "-";
+                        var hudBalSourceDiag = string.IsNullOrWhiteSpace(snap?.totals?.AS) ? "-" : Shrink(snap?.totals?.AS, 24);
+                        var hudUserDiag = string.IsNullOrWhiteSpace(snap?.totals?.N) ? "-" : Shrink(snap?.totals?.N, 48);
                         Log($"[TickDiag] src={source} | prog={progDiag} | progValid={progValidDiag} | progMode={progModeDiag} | progRaw={progRawDiag} | progSrc={progSourceDiag} | progTail={progTailDiag} | seqLen={seqLen} | statusSrc={statusSourceDiag} | statusTail={statusTailDiag} | status={statusDiag}");
+                        Log($"[HUDBAL] src={source} | A={hudBalDiag} | balSrc={hudBalSourceDiag} | user={hudUserDiag}");
                     }
                     return;
                 }
@@ -5085,6 +5089,7 @@ try{
                         P = GetJsonLongLoose(totalsEl, "P"),
                         T = GetJsonLongLoose(totalsEl, "T"),
                         A = GetJsonDoubleLoose(totalsEl, "A"),
+                        AS = GetJsonStringLoose(totalsEl, "AS") ?? "",
                         N = GetJsonStringLoose(totalsEl, "N") ?? "",
                         SD = GetJsonLongLoose(totalsEl, "SD"),
                         TT = GetJsonLongLoose(totalsEl, "TT"),
@@ -6543,10 +6548,24 @@ try{
         private static bool IsFullRebaseSeqMode(string? mode) =>
             string.Equals((mode ?? "").Trim(), "full-rebase", StringComparison.OrdinalIgnoreCase);
 
+        private static bool IsTrustedSettleAdvanceSeqEvent(string? seqEventRaw)
+        {
+            var evt = (seqEventRaw ?? "").Trim();
+            if (evt.Length == 0)
+                return false;
+
+            return
+                evt.StartsWith("js-display-append", StringComparison.OrdinalIgnoreCase) ||
+                evt.StartsWith("js-raw-append", StringComparison.OrdinalIgnoreCase) ||
+                evt.StartsWith("js-append", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static bool IsBlockedSettleSeqEvent(string? seqEventRaw)
         {
             var evt = (seqEventRaw ?? "").Trim();
             if (evt.Length == 0)
+                return false;
+            if (IsTrustedSettleAdvanceSeqEvent(evt))
                 return false;
 
             return
@@ -6870,6 +6889,7 @@ try{
             string source,
             string statusRaw,
             string boardSeqEvent,
+            string boardDisplay,
             string seqMode,
             string seqAppend,
             long jsSeqVersion,
@@ -6897,6 +6917,22 @@ try{
 
             var prevDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
             var nextDisplay = FilterResultDisplaySeqWindow(prevDisplay + delta);
+            var jsDisplay = FilterResultDisplaySeqWindow(boardDisplay);
+            var rawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
+            bool seedLikeEvent = IsSeedLikeSeqEvent(boardSeqEvent);
+            int overrunLimit = Math.Max(
+                string.IsNullOrWhiteSpace(jsDisplay) ? 0 : jsDisplay.Length,
+                string.IsNullOrWhiteSpace(rawDisplay) ? 0 : rawDisplay.Length);
+            bool hasAuthorityLimit = overrunLimit > 0;
+            if (!seedLikeEvent && hasAuthorityLimit && nextDisplay.Length > overrunLimit)
+            {
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.seqVersion = Math.Max(snap.seqVersion ?? 0, _netSeqVersion);
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? (snap.seqEvent ?? "") : _netSeqEvent;
+                snap.seqSource = "network-hold";
+                Log($"[NETSEQ][APPEND-REJECT] reason=snapshot-overrun | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | mode={seqMode} | delta={delta} | nextLen={nextDisplay.Length} | boardLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+                return true;
+            }
             var prevVer = _netSeqVersion;
             _netSeqDisplay = nextDisplay;
             _netSeqVersion = ComputeNextSyncSeqVersion(prevVer, prevDisplay, nextDisplay, Math.Max(jsSeqVersion, prevVer + delta.Length));
@@ -6975,6 +7011,69 @@ try{
             snap.seqSource = _netSeqSource;
 
             Log($"[NETSEQ][DISPLAY-APPEND] reason={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | delta={appendDelta} | boardLen={boardDisplay.Length} | prevLen={prevDisplay.Length} | netLen={_netSeqDisplay.Length} | prevVer={prevVer} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+            return true;
+        }
+
+        private bool TryApplyJsRawAppendLocked(
+            CwSnapshot snap,
+            string source,
+            string statusRaw,
+            string boardSeqEvent,
+            string jsDisplay,
+            string rawDisplay,
+            long jsSeqVersion,
+            string reason)
+        {
+            if (snap == null)
+                return false;
+
+            var prevDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
+            var rawBoardDisplay = FilterResultDisplaySeqWindow(rawDisplay);
+            var jsBoardDisplay = FilterResultDisplaySeqWindow(jsDisplay);
+            if (string.IsNullOrWhiteSpace(prevDisplay) || string.IsNullOrWhiteSpace(rawBoardDisplay))
+                return false;
+            if (IsChangingShoeStatus(statusRaw) || IsNoBoardSeqEvent(boardSeqEvent) || IsSeedLikeSeqEvent(boardSeqEvent))
+                return false;
+
+            var rawCombined = BuildSyncSeqFromBoardLocked(rawBoardDisplay);
+            if (!TryConfirmSeqAdvanceDelta(prevDisplay, rawCombined, out int rawDelta) || rawDelta <= 0)
+                return false;
+
+            if (rawDelta > 4)
+            {
+                Log($"[NETSEQ][RAW-APPEND-REJECT] reason=delta-too-long | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | delta={rawDelta} | rawLen={rawBoardDisplay.Length} | jsLen={jsBoardDisplay.Length} | netLen={prevDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)}");
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(jsBoardDisplay))
+            {
+                var jsCombined = BuildSyncSeqFromBoardLocked(jsBoardDisplay);
+                bool jsSameAsPrev = string.Equals(jsCombined, prevDisplay, StringComparison.Ordinal);
+                bool jsSameAsRaw = string.Equals(jsCombined, rawCombined, StringComparison.Ordinal);
+                bool jsAlsoAdvanced = TryConfirmSeqAdvanceDelta(prevDisplay, jsCombined, out int jsDelta) &&
+                                      jsDelta > 0 &&
+                                      jsDelta <= Math.Max(rawDelta, 2);
+                bool jsLaggingHard = jsBoardDisplay.Length + 4 < rawBoardDisplay.Length;
+                if (!jsSameAsPrev && !jsSameAsRaw && !jsAlsoAdvanced && !jsLaggingHard)
+                {
+                    Log($"[NETSEQ][RAW-APPEND-REJECT] reason=js-not-consistent | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | delta={rawDelta} | rawLen={rawBoardDisplay.Length} | jsLen={jsBoardDisplay.Length} | netLen={prevDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)}");
+                    return false;
+                }
+            }
+
+            long prevVer = _netSeqVersion;
+            _netSeqDisplay = FilterResultDisplaySeqWindow(rawCombined);
+            _netSeqVersion = ComputeNextSyncSeqVersion(prevVer, prevDisplay, _netSeqDisplay, Math.Max(jsSeqVersion, Math.Max(prevVer + rawDelta, _netSeqDisplay.Length)));
+            _netSeqEvent = string.IsNullOrWhiteSpace(boardSeqEvent) ? "js-raw-append" : "js-raw-append-" + boardSeqEvent;
+            _netSeqSource = "js-raw-append";
+
+            snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+            snap.rawSeq = rawBoardDisplay;
+            snap.seqVersion = _netSeqVersion;
+            snap.seqEvent = _netSeqEvent;
+            snap.seqSource = _netSeqSource;
+
+            Log($"[NETSEQ][RAW-APPEND] reason={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | delta={rawDelta} | rawLen={rawBoardDisplay.Length} | jsLen={jsBoardDisplay.Length} | prevLen={prevDisplay.Length} | netLen={_netSeqDisplay.Length} | prevVer={prevVer} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
             return true;
         }
 
@@ -7150,7 +7249,9 @@ try{
 
             if (hasAuthoritativeSeq && hasShoeAnchorForContract)
             {
-                if (TryApplyJsAppendContractLocked(snap, source, statusRaw, incomingBoardEvent, seqMode, seqAppend, jsSeqVersion, "shoe-anchor"))
+                if (TryApplyJsAppendContractLocked(snap, source, statusRaw, incomingBoardEvent, jsDisplay, seqMode, seqAppend, jsSeqVersion, "shoe-anchor"))
+                    return;
+                if (TryApplyJsRawAppendLocked(snap, source, statusRaw, incomingBoardEvent, jsDisplay, rawDisplayInput, jsSeqVersion, "shoe-anchor-raw"))
                     return;
                 if (TryApplyJsDisplayAppendLocked(snap, source, statusRaw, incomingBoardEvent, jsDisplay, jsSeqVersion, "shoe-anchor-display"))
                     return;
@@ -7165,7 +7266,9 @@ try{
 
             if (hasAuthoritativeSeq)
             {
-                if (TryApplyJsAppendContractLocked(snap, source, statusRaw, incomingBoardEvent, seqMode, seqAppend, jsSeqVersion, "contract"))
+                if (TryApplyJsAppendContractLocked(snap, source, statusRaw, incomingBoardEvent, jsDisplay, seqMode, seqAppend, jsSeqVersion, "contract"))
+                    return;
+                if (TryApplyJsRawAppendLocked(snap, source, statusRaw, incomingBoardEvent, jsDisplay, rawDisplayInput, jsSeqVersion, "contract-raw"))
                     return;
                 if (TryApplyJsDisplayAppendLocked(snap, source, statusRaw, incomingBoardEvent, jsDisplay, jsSeqVersion, "contract-display"))
                     return;
@@ -10475,10 +10578,6 @@ try{
             }
 
             double accNow = issuedSnap?.totals?.A ?? 0;
-            if (accNow <= 0)
-            {
-                try { accNow = ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
-            }
             if (LblAmount != null)
             {
                 if (accNow > 0)
@@ -13005,13 +13104,6 @@ try{
         {
             if (preferred.HasValue)
                 return preferred.Value;
-            try
-            {
-                var uiBalance = ParseMoneyOrZero(LblAmount?.Text ?? "0");
-                if (uiBalance > 0)
-                    return uiBalance;
-            }
-            catch { }
             lock (_snapLock)
             {
                 if (_lastSnap?.totals?.A is double snapBalance)
@@ -13542,6 +13634,7 @@ try{
                 P = t.P,
                 T = t.T,
                 A = t.A,
+                AS = t.AS,
                 N = t.N,
                 SD = t.SD,
                 TT = t.TT,

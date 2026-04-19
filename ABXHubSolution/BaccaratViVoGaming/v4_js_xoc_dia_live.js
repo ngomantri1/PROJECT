@@ -2972,11 +2972,13 @@
             if (strictBal && strictBal.balance != null) {
                 hud.balance = strictBal.balance;
                 hud.rawBalance = strictBal.rawBalance || null;
+                hud.balanceSource = 'strict';
                 if (strictBal.source)
                     hud.source = strictBal.source;
             } else {
                 hud.balance = null;
                 hud.rawBalance = null;
+                hud.balanceSource = '';
             }
             try {
                 var topHud = domFindTopHudSnapshot();
@@ -2996,6 +2998,7 @@
                 account: hud.account || null,
                 balance: hud.balance,
                 rawBalance: hud.rawBalance || null,
+                balanceSource: hud.balanceSource || '',
                 source: hud.source || null
             };
         } catch (_) {
@@ -3003,6 +3006,7 @@
                 account: null,
                 balance: null,
                 rawBalance: null,
+                balanceSource: '',
                 source: null
             };
         }
@@ -4290,7 +4294,7 @@
     var _cwSnapshotBuildSource = '';
     var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     var _cwSeqLastPubSyncAt = 0;
-    var _cwSeqScriptRev = 'SEQFIX-20260418-r29';
+    var _cwSeqScriptRev = 'SEQFIX-20260419-r30';
     var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
@@ -4321,6 +4325,27 @@
     var _domLastAdvanceSeqLen = 0;
     var _domLastRejectedLowerRaw = '';
     var _domLastRejectedLowerAt = 0;
+    var _domLastBeadProfileName = '';
+    function brBuildRawFingerprint(rawSeq) {
+        return brSanitizeSeq(rawSeq || '');
+    }
+    function brReadPublishedAppendGuard() {
+        try {
+            var pub = window.__cw_seq_pub || null;
+            if (!pub)
+                return null;
+            return {
+                ver: Number(pub.ver || 0) || 0,
+                len: Number(pub.len || 0) || 0,
+                evt: String(pub.evt || ''),
+                rawLen: Number(pub.rawLen || 0) || 0,
+                rawFp: String(pub.rawFp || ''),
+                rawSeq: String(pub.rawSeq || '')
+            };
+        } catch (_) {
+            return null;
+        }
+    }
     function brResetBoardDeltaQueue(reasonTag) {
         if (_domBoardDeltaQueue.length) {
             cwDbg('SEQFLOW', 'delta-queue-reset', {
@@ -4690,22 +4715,72 @@
             return '';
         return String(window.__cw_bead_raw_seq || '');
     }
-    function brBuildSeqSnapshotContract(seqEvent) {
+    function brBuildSeqSnapshotContract(seqEvent, seqValue, rawSeq, rawSeqFromFallback, seqVersion, buildSource, buildId) {
         var evt = String(seqEvent || '');
         var append = brSanitizeSeq(_domSeqAppend || '');
+        var seqClean = brSanitizeSeq(seqValue || '');
+        var rawClean = brSanitizeSeq(rawSeq || '');
+        var rawFp = brBuildRawFingerprint(rawClean);
         var mode = 'hold';
+        var reason = 'event-default-hold';
         if (/^append|dom-baccarat-extend|append-delta-queue|append-reconcile-bead/i.test(evt)) {
             mode = append ? 'append' : 'hold';
+            reason = append ? 'event-append' : 'append-empty';
         } else if (/table-switch-reset|table-switch-bead-authority|short-board-bootstrap-authority|hydrate-init/i.test(evt)) {
             mode = 'full-rebase';
+            reason = 'event-full-rebase';
         } else if (/table-switch-wait-bead|shoe-reset-arm|board-empty|no-board|post-reset-hold|reset-seed-wait|no-change|hold/i.test(evt)) {
             mode = 'hold';
+            reason = 'event-hold';
+        }
+        if (mode === 'append') {
+            var blockReason = '';
+            var pubGuard = brReadPublishedAppendGuard();
+            if (!append) {
+                blockReason = 'append-empty';
+            } else if (rawSeqFromFallback) {
+                blockReason = 'append-raw-fallback';
+            } else if (!rawClean) {
+                blockReason = 'append-no-raw';
+            } else if (seqClean.length > rawClean.length) {
+                blockReason = 'append-seq-ahead-of-raw';
+            } else if (pubGuard && rawFp && pubGuard.rawFp === rawFp && pubGuard.len >= seqClean.length) {
+                blockReason = 'append-duplicate-raw-revision';
+            }
+            if (blockReason) {
+                cwDbg('SEQPUB', 'append-blocked', {
+                    reason: blockReason,
+                    evt: evt,
+                    append: append,
+                    seqLen: seqClean.length,
+                    rawLen: rawClean.length,
+                    seqVersion: Number(seqVersion || 0) || 0,
+                    buildId: Number(buildId || 0) || 0,
+                    buildSource: String(buildSource || ''),
+                    rawSeqFromFallback: rawSeqFromFallback ? 1 : 0,
+                    rawFp: rawFp,
+                    pubVer: pubGuard ? Number(pubGuard.ver || 0) || 0 : 0,
+                    pubLen: pubGuard ? Number(pubGuard.len || 0) || 0 : 0,
+                    pubRawLen: pubGuard ? Number(pubGuard.rawLen || 0) || 0 : 0,
+                    pubRawFp: pubGuard ? String(pubGuard.rawFp || '') : ''
+                }, 0, 'seqpub-append-blocked|' + blockReason + '|' + String(seqClean.length) + '|' + String(rawClean.length) + '|' + String(Number(seqVersion || 0) || 0));
+                mode = 'hold';
+                append = '';
+                reason = blockReason;
+            } else {
+                reason = 'append-allowed';
+            }
         }
         if (mode !== 'append')
             append = '';
         return {
             mode: mode,
-            append: append
+            append: append,
+            reason: reason,
+            rawFingerprint: rawFp,
+            rawLen: rawClean.length,
+            seqLen: seqClean.length,
+            rawSeqFromFallback: rawSeqFromFallback ? 1 : 0
         };
     }
     function brClearPublishedSeqState(reason) {
@@ -4716,6 +4791,9 @@
             window.__cw_seq_append = '';
             window.__cw_seq_board_prev = '';
             window.__cw_seq_reset_pending = 0;
+            window.__cw_seq_raw = '';
+            window.__cw_seq_raw_len = 0;
+            window.__cw_seq_raw_fp = '';
             window.__cw_seq_pub = null;
         } catch (_) {}
     }
@@ -4729,6 +4807,8 @@
                 len: Number(pub.len || 0) || 0,
                 ver: Number(pub.ver || 0) || 0,
                 evt: String(pub.evt || ''),
+                rawLen: Number(pub.rawLen || 0) || 0,
+                rawFp: String(pub.rawFp || ''),
                 ageMs: Math.max(0, Date.now() - Number(pub.ts || 0)),
                 instanceId: String(pub.instanceId || ''),
                 buildId: Number(pub.buildId || 0) || 0,
@@ -4751,6 +4831,9 @@
         var ver = Number(_domSeqVersion || 0) || 0;
         var evt = String(_domSeqEvent || '');
         var incomingLen = managed.length;
+        var rawSeq = brSanitizeSeq(brGetSnapshotRawSeq() || '');
+        var rawLen = rawSeq.length;
+        var rawFp = brBuildRawFingerprint(rawSeq);
         var buildSource = String(_cwSnapshotBuildSource || '');
         var buildId = Number(_cwSnapshotBuildId || 0);
         var allowPublish = true;
@@ -4795,12 +4878,18 @@
             window.__cw_seq_append = _domSeqAppend;
             window.__cw_seq_board_prev = _domBeadSeqPrevRaw;
             window.__cw_seq_reset_pending = _domShoeResetPending ? 1 : 0;
+            window.__cw_seq_raw = rawSeq;
+            window.__cw_seq_raw_len = rawLen;
+            window.__cw_seq_raw_fp = rawFp;
             window.__cw_seq_pub = {
                 seq: managed,
                 ver: ver,
                 len: incomingLen,
                 evt: evt,
                 append: String(_domSeqAppend || ''),
+                rawSeq: rawSeq,
+                rawLen: rawLen,
+                rawFp: rawFp,
                 boardPrev: String(_domBeadSeqPrevRaw || ''),
                 resetPending: _domShoeResetPending ? 1 : 0,
                 activeSeedKey: String(_domLastActiveSeedKey || ''),
@@ -5989,6 +6078,8 @@
         }
         if (brTryReconcileBeadOneStep(raw, prev, beforeState, 'pre-jump-hold'))
             return _domBeadSeqManaged;
+        if (brTryPromoteReliableRawAuthority(raw, prev, beforeState, 'pre-jump-hold'))
+            return _domBeadSeqManaged;
         brResetBoardDeltaQueue('board-jump-hold');
         _domBeadSeqPrevRaw = raw;
         _domSeqEvent = 'board-jump-hold';
@@ -6040,6 +6131,95 @@
             }
         }
         return '';
+    }
+    function brFindAppendDelta(baseSeq, candSeq, maxDelta) {
+        var base = String(baseSeq || '').replace(/H/g, 'T');
+        var cand = String(candSeq || '').replace(/H/g, 'T');
+        var deltaMax = Math.max(1, Number(maxDelta || 0) || 0);
+        if (!base || !cand || cand === base)
+            return '';
+        if (cand.indexOf(base) === 0) {
+            var directDelta = cand.slice(base.length);
+            if (directDelta.length > 0 && directDelta.length <= deltaMax)
+                return normalizeSeqNoLimit(directDelta);
+            return '';
+        }
+        var maxK = Math.min(base.length, cand.length);
+        for (var k = maxK; k >= 5; k--) {
+            if (base.slice(base.length - k) === cand.slice(0, k)) {
+                var delta = cand.slice(k);
+                if (delta.length > 0 && delta.length <= deltaMax)
+                    return normalizeSeqNoLimit(delta);
+                break;
+            }
+        }
+        return '';
+    }
+    function brTryPromoteReliableRawAuthority(raw, prev, beforeState, reasonTag) {
+        try {
+            if (_domShoeResetPending)
+                return false;
+            raw = brSanitizeSeq(raw);
+            var managedNow = brSanitizeSeq(_domBeadSeqManaged || '');
+            if (!raw || !managedNow || raw === managedNow)
+                return false;
+            var prof = String(_domLastBeadProfileName || '').toLowerCase();
+            if (!/^(left|right)-(mid|tight)$/.test(prof))
+                return false;
+            if (!brIsReliableRoadSeq(raw))
+                return false;
+            var rawStat = brSeqStats(raw);
+            var managedStat = brSeqStats(managedNow);
+            var gap = Number(rawStat.len || 0) - Number(managedStat.len || 0);
+            var tieGap = Number(rawStat.t || 0) - Number(managedStat.t || 0);
+            var bpGap = Number(rawStat.bp || 0) - Number(managedStat.bp || 0);
+            if (gap < 4 || gap > 8)
+                return false;
+            if (tieGap < 1 && bpGap < 3)
+                return false;
+            var delta = brFindAppendDelta(managedNow, raw, 8);
+            if (!delta)
+                return false;
+            var overlapManagedRaw = brOverlapSuffixPrefix(managedNow, raw);
+            var overlapPrevRaw = brOverlapSuffixPrefix(String(prev || ''), raw);
+            brResetBoardDeltaQueue('promote-reliable-raw-authority');
+            _domBeadSeqManaged = normalizeSeqNoLimit(raw);
+            _domBeadSeqPrevRaw = raw;
+            _domSeqVersion = Number(_domSeqVersion || 0) + delta.length;
+            _domSeqEvent = 'append-raw-authority';
+            _domSeqAppend = delta;
+            brMarkSeqAdvance(_domSeqEvent);
+            brClearSeqSnapshotCache('promote-reliable-raw-authority');
+            cwDbg('SEQFLOW', 'promote-reliable-raw-authority', {
+                reason: String(reasonTag || ''),
+                profileName: prof,
+                raw: raw,
+                managedBefore: managedNow,
+                delta: delta,
+                gap: gap,
+                tieGap: tieGap,
+                bpGap: bpGap,
+                overlapManagedRaw: overlapManagedRaw,
+                overlapPrevRaw: overlapPrevRaw,
+                seqLen: String(_domBeadSeqManaged || '').length,
+                seqVersion: Number(_domSeqVersion || 0),
+                seqEvent: String(_domSeqEvent || '')
+            }, 0, 'promote-reliable-raw|' + prof + '|' + gap + '|' + delta + '|' + Number(_domSeqVersion || 0));
+            brSeqTrace('return-promote-reliable-raw-authority', raw, prev, beforeState, {
+                reason: String(reasonTag || ''),
+                profileName: prof,
+                delta: delta,
+                gap: gap,
+                tieGap: tieGap,
+                bpGap: bpGap,
+                overlapManagedRaw: overlapManagedRaw,
+                overlapPrevRaw: overlapPrevRaw
+            }, 0, 'return-promote-reliable-raw|' + prof + '|' + raw.length + '|' + Number(_domSeqVersion || 0));
+            brPublishSeqState();
+            return true;
+        } catch (_) {
+            return false;
+        }
     }
     function brTryReconcileBeadOneStep(raw, prev, beforeState, reasonTag) {
         try {
@@ -6718,6 +6898,7 @@
                     seqEvent: String(_domSeqEvent || '')
                 }, 1200, 'dom-bead-short-allow|' + rawSeq);
             }
+            _domLastBeadProfileName = pickedProfileName;
             var managed = brMergeManagedSeq(rawSeq);
             try {
                 var managedStat = brSeqStats(managed);
@@ -8254,6 +8435,7 @@
                     C: null,
                     L: null,
                     A: hud.balance,
+                    AS: hud.balanceSource || '',
                     N: hud.account,
                     TB: null,
                     TA: null,
@@ -8276,6 +8458,7 @@
                 C: stake ? stake.B : null,
                 L: stake ? stake.P : null,
                 A: hud.balance,
+                AS: hud.balanceSource || '',
                 N: hud.account,
                 TB: active.title,
                 TA: active.amount,
@@ -8372,6 +8555,8 @@
             var hudCacheMs = betHot ? 1400 : 4600;
             if (_domHudCache.data && (now - Number(_domHudCache.at || 0)) < hudCacheMs) {
                 hud = _domHudCache.data;
+                if (hud && hud.balance != null)
+                    hud.balanceSource = 'hud-cache';
             } else {
                 hud = domFindHudSnapshot();
                 _domHudCache.at = now;
@@ -8390,6 +8575,7 @@
                 C: stake ? stake.B : null,
                 L: stake ? stake.P : null,
                 A: hud ? hud.balance : null,
+                AS: hud ? (hud.balanceSource || '') : '',
                 N: hud ? hud.account : null,
                 TB: prev && prev.TB != null ? prev.TB : null,
                 TA: prev && prev.TA != null ? prev.TA : null,
@@ -12549,28 +12735,112 @@
     }
 
     function makePlan(X, availableSet) {
-        var rest = Math.max(0, Math.floor(+X || 0));
-        var plan = [];
+        function gcd2(a, b) {
+            a = Math.abs(Math.floor(+a || 0));
+            b = Math.abs(Math.floor(+b || 0));
+            while (b) {
+                var t = a % b;
+                a = b;
+                b = t;
+            }
+            return a || 0;
+        }
+        var target = Math.max(0, Math.floor(+X || 0));
         var denoms = Object.keys(availableSet || {}).map(function (x) { return +x; }).filter(function (x) { return x > 0; });
         if (!denoms.length)
             denoms = DENOMS.slice();
+        denoms = denoms.filter(function (v, idx, arr) {
+            return arr.indexOf(v) === idx;
+        });
         denoms.sort(function (a, b) { return b - a; });
-        for (var i = 0; i < denoms.length; i++) {
-            var d = denoms[i];
-            if (d <= rest && availableSet[d]) {
-                var c = Math.floor(rest / d);
-                if (c > 0) {
-                    plan.push({
-                        val: d,
-                        count: c
-                    });
-                    rest -= c * d;
+        if (!target || !denoms.length) {
+            return {
+                plan: [],
+                rest: target,
+                solver: 'exact-bfs'
+            };
+        }
+        var scale = denoms[0];
+        for (var g = 1; g < denoms.length; g++)
+            scale = gcd2(scale, denoms[g]);
+        if (!scale)
+            scale = 1;
+        if ((target % scale) !== 0) {
+            return {
+                plan: [],
+                rest: target,
+                solver: 'exact-bfs',
+                gcd: scale
+            };
+        }
+        var scaledTarget = Math.floor(target / scale);
+        var scaledDenoms = denoms.map(function (v) {
+            return Math.floor(v / scale);
+        });
+        var visited = new Array(scaledTarget + 1);
+        var prev = new Array(scaledTarget + 1);
+        var prevCoinIdx = new Array(scaledTarget + 1);
+        for (var i = 0; i <= scaledTarget; i++) {
+            visited[i] = false;
+            prev[i] = -1;
+            prevCoinIdx[i] = -1;
+        }
+        var q = [0];
+        var qHead = 0;
+        visited[0] = true;
+        var reached = false;
+        while (qHead < q.length && !reached) {
+            var cur = q[qHead++];
+            for (var di = 0; di < scaledDenoms.length; di++) {
+                var next = cur + scaledDenoms[di];
+                if (next > scaledTarget)
+                    continue;
+                if (visited[next])
+                    continue;
+                visited[next] = true;
+                prev[next] = cur;
+                prevCoinIdx[next] = di;
+                if (next === scaledTarget) {
+                    reached = true;
+                    break;
                 }
+                q.push(next);
+            }
+        }
+        if (!visited[scaledTarget]) {
+            return {
+                plan: [],
+                rest: target,
+                solver: 'exact-bfs',
+                gcd: scale
+            };
+        }
+        var counts = {};
+        var walk = scaledTarget;
+        while (walk > 0) {
+            var coinIdx = prevCoinIdx[walk];
+            if (coinIdx < 0)
+                break;
+            var denom = denoms[coinIdx];
+            counts[denom] = Number(counts[denom] || 0) + 1;
+            walk = prev[walk];
+        }
+        var plan = [];
+        for (var pi = 0; pi < denoms.length; pi++) {
+            var pd = denoms[pi];
+            var cnt = Number(counts[pd] || 0);
+            if (cnt > 0) {
+                plan.push({
+                    val: pd,
+                    count: cnt
+                });
             }
         }
         return {
             plan: plan,
-            rest: rest
+            rest: 0,
+            solver: 'exact-bfs',
+            gcd: scale
         };
     }
 
@@ -12771,7 +13041,8 @@
                 amount: raw,
                 chipUnits: X,
                 plan: planStr.join(' + '),
-                dom: isDomMode ? 1 : 0
+                dom: isDomMode ? 1 : 0,
+                solver: String(res && res.solver || 'unknown')
             }, 0, 'bet-plan|' + side + '|' + X);
 
             for (var s = 0; s < plan.length; s++) {
@@ -13805,6 +14076,7 @@
                     P: (src.P != null ? Number(src.P) : (src.L != null ? Number(src.L) : null)),
                     T: (src.T != null ? Number(src.T) : null),
                     A: (src.A != null ? Number(src.A) : null),
+                    AS: (src.AS != null ? String(src.AS) : ''),
                     N: (src.N != null ? String(src.N) : null),
                     C: (src.C != null ? Number(src.C) : (src.B != null ? Number(src.B) : null)),
                     L: (src.L != null ? Number(src.L) : (src.P != null ? Number(src.P) : null)),
@@ -13836,6 +14108,7 @@
             var seqFresh = '';
             var rawSeq = '';
             var rawSeqFresh = '';
+            var rawSeqFromFallback = false;
             var seqVersion = 0;
             var seqEvent = '';
             var cached = null;
@@ -13945,13 +14218,25 @@
                     useTotalsCache = true;
                 }
             }
+            if (!__cw_hasCocos())
+                useTotalsCache = false;
             try {
                 if (cached && cached.totals)
                     t = normalizeTotalsSnapshot(cached.totals);
+                if (t && !__cw_hasCocos()) {
+                    t.A = null;
+                    t.rawA = null;
+                    t.AS = 'panel-cache';
+                }
             } catch (_) {}
             try {
                 if (!t && S && S._lastTotals)
                     t = normalizeTotalsSnapshot(S._lastTotals);
+                if (t && !__cw_hasCocos()) {
+                    t.A = null;
+                    t.rawA = null;
+                    t.AS = 'lastTotals';
+                }
             } catch (_) {}
             if (useTotalsCache) {
                 t = normalizeTotalsSnapshot(_abxSnapCache.totals) || t;
@@ -14025,8 +14310,10 @@
                 }
                 if (rawSeqFresh)
                     rawSeq = rawSeqFresh;
-                else if (!rawSeq)
+                else if (!rawSeq) {
                     rawSeq = seqFresh;
+                    rawSeqFromFallback = true;
+                }
             } else if (!seq) {
                 try {
                     if (window.__cw_seq)
@@ -14057,13 +14344,16 @@
                     } catch (_) {
                         allowRawFromManaged = false;
                     }
-                    if (allowRawFromManaged)
+                    if (allowRawFromManaged) {
                         rawSeq = seq;
+                        rawSeqFromFallback = true;
+                    }
                 }
             }
             if (brShouldMaskSeqForDisplay(st, seqEvent)) {
                 seq = '';
                 rawSeq = '';
+                rawSeqFromFallback = false;
             }
             if (!seqVersion) {
                 try {
@@ -14117,7 +14407,7 @@
                 }
             } catch (_) {}
 
-            var seqContract = brBuildSeqSnapshotContract(seqEvent);
+            var seqContract = brBuildSeqSnapshotContract(seqEvent, seq, rawSeq, rawSeqFromFallback, seqVersion, buildSource, buildId);
             try {
                 var snapSeqStat = brSeqStats(seq);
                 var snapRawStat = brSeqStats(rawSeq);
@@ -14147,6 +14437,8 @@
                         seqEvent: String(seqEvent || ''),
                         seqMode: String(seqContract.mode || ''),
                         seqAppend: String(seqContract.append || ''),
+                        seqContractReason: String(seqContract.reason || ''),
+                        rawSeqFromFallback: rawSeqFromFallback ? 1 : 0,
                         seqWhich: String(seqWhich || ''),
                         domSeqVerBefore: Number(domSeqVerBefore || 0),
                         domSeqEvtBefore: String(domSeqEvtBefore || ''),
@@ -14204,6 +14496,8 @@
                     rawLen: String(rawSeq || '').length,
                     seqVersion: Number(seqVersion || 0),
                     seqEvent: String(seqEvent || ''),
+                    seqContractReason: String(seqContract.reason || ''),
+                    rawSeqFromFallback: rawSeqFromFallback ? 1 : 0,
                     seqWhich: String(seqWhich || ''),
                     waitBead: _domTableSwitchWaitBeadPending ? 1 : 0,
                     resetPending: _domShoeResetPending ? 1 : 0,
@@ -14230,6 +14524,8 @@
                     seqEvent: String(seqEvent || ''),
                     seqMode: String(seqContract.mode || ''),
                     seqAppend: String(seqContract.append || ''),
+                    seqContractReason: String(seqContract.reason || ''),
+                    rawSeqFromFallback: rawSeqFromFallback ? 1 : 0,
                     seqWhich: String(seqWhich || ''),
                     waitBead: _domTableSwitchWaitBeadPending ? 1 : 0,
                     resetPending: _domShoeResetPending ? 1 : 0
@@ -14249,6 +14545,7 @@
                 seqEvent: seqEvent,
                 seqMode: seqContract.mode,
                 seqAppend: seqContract.append,
+                seqContractReason: seqContract.reason,
                 seqWhich: seqWhich,
                 username: uname,
                 status: String(st || ''),

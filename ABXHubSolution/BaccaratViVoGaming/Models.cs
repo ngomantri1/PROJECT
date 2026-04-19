@@ -10,6 +10,7 @@ namespace BaccaratViVoGaming
         public long? P { get; set; }
         public long? T { get; set; }
         public double? A { get; set; }
+        public string AS { get; set; }
         public string N { get; set; }
         public long? SD { get; set; }
         public long? TT { get; set; }
