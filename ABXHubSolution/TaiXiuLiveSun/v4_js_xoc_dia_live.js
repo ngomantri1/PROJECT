@@ -3507,6 +3507,218 @@
         });
         return hits;
     }
+    function betRectSane(r) {
+        return !!(r && isFinite(r.sx) && isFinite(r.sy) && isFinite(r.sw) && isFinite(r.sh) && r.sw > 24 && r.sh > 24);
+    }
+    function betRectUnion(a, b) {
+        if (!betRectSane(a))
+            return b || null;
+        if (!betRectSane(b))
+            return a || null;
+        var x1 = Math.min(a.sx, b.sx);
+        var y1 = Math.min(a.sy, b.sy);
+        var x2 = Math.max(a.sx + a.sw, b.sx + b.sw);
+        var y2 = Math.max(a.sy + a.sh, b.sy + b.sh);
+        return {
+            sx: x1,
+            sy: y1,
+            sw: Math.max(1, x2 - x1),
+            sh: Math.max(1, y2 - y1)
+        };
+    }
+    function betRectInset(r, dx, dy) {
+        if (!betRectSane(r))
+            return null;
+        var ix = Math.max(0, Math.min((r.sw / 2) - 1, dx || 0));
+        var iy = Math.max(0, Math.min((r.sh / 2) - 1, dy || 0));
+        return {
+            sx: r.sx + ix,
+            sy: r.sy + iy,
+            sw: Math.max(1, r.sw - ix * 2),
+            sh: Math.max(1, r.sh - iy * 2)
+        };
+    }
+    function betRectContainsPoint(r, x, y) {
+        if (!betRectSane(r))
+            return false;
+        return x >= r.sx && x <= (r.sx + r.sw) && y >= r.sy && y <= (r.sy + r.sh);
+    }
+    function betRectCenter(r) {
+        if (!betRectSane(r))
+            return {
+                x: 0,
+                y: 0
+            };
+        return {
+            x: r.sx + r.sw / 2,
+            y: r.sy + r.sh / 2
+        };
+    }
+    var BET_SIDE_TOKEN = {
+        TAI: 'lbl_money_total_bet_tai',
+        XIU: 'lbl_money_total_bet_xiu',
+        CHAN: 'lbl_money_total_bet_chan',
+        LE: 'lbl_money_total_bet_le'
+    };
+    function findBetLabelNode(side) {
+        var WANT = normalizeSide(side);
+        var tail = BET_TAILS[WANT];
+        if (tail) {
+            var byTail = findNodeByTail(tail);
+            if (byTail)
+                return byTail;
+        }
+        var token = BET_SIDE_TOKEN[WANT];
+        if (!token)
+            return null;
+        var hit = null;
+        walkNodes(function (n) {
+            if (hit || !n || !active(n) || !nodeInGame(n))
+                return;
+            var p = String(fullPath(n, 200) || '').toLowerCase();
+            if (p.indexOf(token) !== -1)
+                hit = n;
+        });
+        return hit;
+    }
+    function findBetBoardNodeFromLabel(labelNode) {
+        var cur = labelNode || null;
+        var best = null;
+        var bestArea = -1;
+        var depth = 0;
+        while (cur && depth <= 10) {
+            var nm = String(cur.name || '').toLowerCase();
+            var path = String(fullPath(cur, 120) || '').toLowerCase();
+            var rect = rectFromNodeCompat(cur);
+            var area = rect ? (rect.sw * rect.sh) : 0;
+            if ((nm === 'board_back' || /\/board_back(?:\/|$)/.test(path)) && area > bestArea) {
+                best = cur;
+                bestArea = area;
+            }
+            cur = cur.parent || cur._parent || null;
+            depth++;
+        }
+        return best;
+    }
+    function findBetLabelsMap() {
+        var sides = ['TAI', 'XIU', 'CHAN', 'LE'];
+        var out = {};
+        for (var i = 0; i < sides.length; i++) {
+            var side = sides[i];
+            var node = findBetLabelNode(side);
+            if (node) {
+                out[side] = {
+                    side: side,
+                    node: node,
+                    rect: rectFromNodeCompat(node),
+                    pos: nodeWorldPos(node)
+                };
+            }
+        }
+        return out;
+    }
+    function findBetBoardRect(labelMap) {
+        var boardNode = null;
+        var boardRect = null;
+        var union = null;
+        var sides = ['TAI', 'XIU', 'CHAN', 'LE'];
+        for (var i = 0; i < sides.length; i++) {
+            var it = labelMap[sides[i]];
+            if (!it || !it.node)
+                continue;
+            var bn = findBetBoardNodeFromLabel(it.node);
+            var br = bn ? rectFromNodeCompat(bn) : null;
+            if (betRectSane(br) && (!boardRect || (br.sw * br.sh) > (boardRect.sw * boardRect.sh))) {
+                boardNode = bn;
+                boardRect = br;
+            }
+            if (betRectSane(it.rect))
+                union = betRectUnion(union, it.rect);
+        }
+        if (!betRectSane(boardRect) && betRectSane(union)) {
+            boardRect = {
+                sx: union.sx - union.sw * 0.75,
+                sy: union.sy - union.sh * 1.25,
+                sw: union.sw * 2.50,
+                sh: union.sh * 2.70
+            };
+        }
+        if (betRectSane(boardRect) && betRectSane(union)) {
+            var c1 = betRectCenter(union);
+            if (!betRectContainsPoint(boardRect, c1.x, c1.y)) {
+                boardRect = {
+                    sx: Math.min(boardRect.sx, union.sx - union.sw * 0.35),
+                    sy: Math.min(boardRect.sy, union.sy - union.sh * 0.55),
+                    sw: Math.max(boardRect.sx + boardRect.sw, union.sx + union.sw * 1.35) - Math.min(boardRect.sx, union.sx - union.sw * 0.35),
+                    sh: Math.max(boardRect.sy + boardRect.sh, union.sy + union.sh * 1.55) - Math.min(boardRect.sy, union.sy - union.sh * 0.55)
+                };
+            }
+        }
+        return {
+            node: boardNode,
+            rect: boardRect,
+            union: union
+        };
+    }
+    function buildBetGeometryTarget(side) {
+        var WANT = normalizeSide(side);
+        var labelMap = findBetLabelsMap();
+        var anchor = labelMap[WANT] || null;
+        if (!anchor || !anchor.node)
+            return null;
+        var sides = ['TAI', 'XIU', 'CHAN', 'LE'];
+        var xs = [],
+        ys = [];
+        for (var i = 0; i < sides.length; i++) {
+            var it = labelMap[sides[i]];
+            if (!it || !betRectSane(it.rect))
+                continue;
+            xs.push(it.rect.sx + it.rect.sw / 2);
+            ys.push(it.rect.sy + it.rect.sh / 2);
+        }
+        if (xs.length < 2 || ys.length < 2)
+            return null;
+        xs.sort(function (a, b) {
+            return a - b;
+        });
+        ys.sort(function (a, b) {
+            return a - b;
+        });
+        var midX = (xs[0] + xs[xs.length - 1]) / 2;
+        var midY = (ys[0] + ys[ys.length - 1]) / 2;
+        var geo = findBetBoardRect(labelMap);
+        var boardRect = geo.rect;
+        if (!betRectSane(boardRect))
+            return null;
+        var ac = betRectCenter(anchor.rect);
+        var isLeft = ac.x < midX;
+        var isTop = ac.y < midY;
+        var x1 = isLeft ? boardRect.sx : midX;
+        var x2 = isLeft ? midX : (boardRect.sx + boardRect.sw);
+        var y1 = isTop ? boardRect.sy : midY;
+        var y2 = isTop ? midY : (boardRect.sy + boardRect.sh);
+        var cell = {
+            sx: Math.min(x1, x2),
+            sy: Math.min(y1, y2),
+            sw: Math.abs(x2 - x1),
+            sh: Math.abs(y2 - y1)
+        };
+        if (!betRectSane(cell))
+            return null;
+        var insetX = Math.max(10, Math.min(cell.sw * 0.18, 42));
+        var insetY = Math.max(10, Math.min(cell.sh * 0.22, 42));
+        var inner = betRectInset(cell, insetX, insetY) || cell;
+        var touchNode = geo.node || anchor.node || null;
+        return {
+            side: WANT,
+            node: touchNode || anchor.node,
+            rect: inner,
+            rawRect: cell,
+            boardRect: boardRect,
+            labelRect: anchor.rect,
+            source: 'geometry'
+        };
+    }
     function findSide(side) {
         var WANT = normalizeSide(side);
         var tail = BET_TAILS[WANT];
@@ -3579,6 +3791,9 @@
         return list;
     }
     function findBetTarget(side) {
+        var geo = buildBetGeometryTarget(side);
+        if (geo && geo.node && betRectSane(geo.rect))
+            return geo;
         var WANT = normalizeSide(side);
         var tail = BET_TAILS[WANT];
         if (tail) {
@@ -3631,13 +3846,29 @@
         if (rect) {
             if (emitTouchAtRect(node, rect))
                 ok = true;
-            if (clickCanvasXY(rect.sx + rect.sw / 2, rect.sy + rect.sh / 2, true))
+            var rc = betRectCenter(rect);
+            if (clickCanvasXY(rc.x, rc.y, true))
                 ok = true;
         }
         if (!ok && clickable(node))
             ok = emitClick(node) || ok;
         return ok;
     }
+    window.__cw_getBetTargetDebug = function (side) {
+        var tgt = findBetTarget(side);
+        if (!tgt)
+            return null;
+        return {
+            side: normalizeSide(side),
+            source: String(tgt.source || ''),
+            nodeName: String((tgt.node && tgt.node.name) || ''),
+            nodePath: String((tgt.node && fullPath(tgt.node, 200)) || ''),
+            rect: tgt.rect || null,
+            rawRect: tgt.rawRect || null,
+            boardRect: tgt.boardRect || null,
+            labelRect: tgt.labelRect || null
+        };
+    };
 
     function parseAmountLoose(txt) {
         if (!txt)
@@ -3656,6 +3887,169 @@
                 return v2;
         }
         return null;
+    }
+    function nodeAmountLoose(n) {
+        if (!n)
+            return null;
+        var texts = [];
+        var lb = getComp(n, cc.Label);
+        if (lb && typeof lb.string !== 'undefined')
+            texts.push(lb.string);
+        var rt = getComp(n, cc.RichText);
+        if (rt && typeof rt.string !== 'undefined')
+            texts.push(rt.string);
+        var sp = getComp(n, cc.Sprite);
+        var sfn = sp && sp.spriteFrame ? sp.spriteFrame.name : '';
+        if (sfn)
+            texts.push(sfn);
+        texts.push(n.name || '');
+        for (var i = 0; i < texts.length; i++) {
+            var v = parseAmountLoose(texts[i]);
+            if (v)
+                return v;
+        }
+        return null;
+    }
+    function scoreChipScope(root) {
+        if (!root)
+            return -1;
+        var labelCount = 0;
+        var chipCount = 0;
+        var amountCount = 0;
+        (function walk(n) {
+            if (!n || !active(n))
+                return;
+            var name = String(n.name || '');
+            if (/^lbl_chip_value\d+$/i.test(name))
+                labelCount++;
+            if (/^chip\d+$/i.test(name) || hasCompName(n, 'ChipItem'))
+                chipCount++;
+            if (nodeAmountLoose(n))
+                amountCount++;
+            var kids = n.children || [];
+            for (var i = 0; i < kids.length; i++)
+                walk(kids[i]);
+        })(root);
+        var path = String(fullPath(root, 120) || '').toLowerCase();
+        var score = labelCount * 20 + chipCount * 15 + amountCount * 4;
+        if (/chip_panel|bet_panel|chips|coin|phinh|menh/.test(path))
+            score += 30;
+        return score;
+    }
+    function findChipScopeForLabel(labelNode) {
+        var cur = labelNode || null;
+        var best = null;
+        var bestScore = -1;
+        var depth = 0;
+        while (cur && depth <= 8) {
+            var sc = scoreChipScope(cur);
+            if (sc > bestScore) {
+                best = cur;
+                bestScore = sc;
+            }
+            cur = cur.parent || cur._parent || null;
+            depth++;
+        }
+        return best;
+    }
+    function buildChipInventory(root) {
+        var out = {
+            panel: root,
+            labels: [],
+            chips: [],
+            chipsByIndex: {}
+        };
+        if (!root)
+            return out;
+        (function walk(n) {
+            if (!n || !active(n))
+                return;
+            var name = String(n.name || '');
+            var mLabel = name.match(/^lbl_chip_value(\d+)$/i);
+            if (mLabel)
+                out.labels.push(n);
+            var mChip = name.match(/^chip(\d+)$/i);
+            if (mChip) {
+                var idx = parseInt(mChip[1], 10);
+                out.chips.push(n);
+                if (!out.chipsByIndex[String(idx)])
+                    out.chipsByIndex[String(idx)] = n;
+            } else if (hasCompName(n, 'ChipItem')) {
+                out.chips.push(n);
+            }
+            var kids = n.children || [];
+            for (var i = 0; i < kids.length; i++)
+                walk(kids[i]);
+        })(root);
+        return out;
+    }
+    function sortNodesByPos(nodes) {
+        var arr = (nodes || []).slice();
+        arr.sort(function (a, b) {
+            var pa = nodeWorldPos(a);
+            var pb = nodeWorldPos(b);
+            var dy = Math.abs((pa.y || 0) - (pb.y || 0));
+            if (dy > 8)
+                return (pb.y || 0) - (pa.y || 0);
+            return (pa.x || 0) - (pb.x || 0);
+        });
+        return arr;
+    }
+    function findNodeOrdinal(target, nodes) {
+        if (!target || !nodes || !nodes.length)
+            return -1;
+        var sorted = sortNodesByPos(nodes);
+        for (var i = 0; i < sorted.length; i++) {
+            if (sorted[i] === target)
+                return i;
+        }
+        return -1;
+    }
+    function findNearestChipNode(labelNode, chips) {
+        if (!labelNode || !chips || !chips.length)
+            return null;
+        var lp = nodeWorldPos(labelNode);
+        var best = null;
+        var bestD = null;
+        for (var i = 0; i < chips.length; i++) {
+            var chip = chips[i];
+            if (!chip)
+                continue;
+            var cp = nodeWorldPos(chip);
+            var d = dist2(lp.x || 0, lp.y || 0, cp.x || 0, cp.y || 0);
+            if (bestD == null || d < bestD) {
+                best = chip;
+                bestD = d;
+            }
+        }
+        return best;
+    }
+    function findVisibleChipLabelByAmount(amount) {
+        var want = Math.max(0, Math.floor(+amount || 0));
+        if (!want)
+            return null;
+        var best = null;
+        var bestScore = -1;
+        walkNodes(function (n) {
+            if (!n || !active(n) || !nodeInGame(n))
+                return;
+            var val = nodeAmountLoose(n);
+            if (val !== want)
+                return;
+            var path = String(fullPath(n, 160) || '').toLowerCase();
+            var score = 0;
+            if (/chip|coin|phinh|menh|bet_panel|chip_panel/.test(path))
+                score += 10;
+            if (/^lbl_chip_value\d+$/i.test(String(n.name || '')))
+                score += 20;
+            if (clickableOf(n, 6) !== n)
+                score += 2;
+            if (score > bestScore) {
+                best = n;
+                bestScore = score;
+            }
+        });
+        return best;
     }
 
     async function tryOpenChipPanel() {
@@ -3796,13 +4190,11 @@
         } catch (e) {}
         return false;
     }
-    function findChipNodeFromLabel(labelNode) {
+    function findChipNodeFromLabel(labelNode, amountHint) {
         if (!labelNode)
             return null;
         var p = labelNode.parent || labelNode._parent || null;
-        if (!p || !(p.children || p._children))
-            return null;
-        var kids = p.children || p._children;
+        var kids = (p && (p.children || p._children)) ? (p.children || p._children) : [];
         var nm = String(labelNode.name || '');
         var m = nm.match(/lbl_chip_value(\d+)/i);
         if (m) {
@@ -3814,8 +4206,8 @@
             }
         }
         var lp = nodeWorldPos(labelNode);
-        var best = null;
-        var bestD = null;
+        var bestSibling = null;
+        var bestSiblingD = null;
         for (var j = 0; j < kids.length; j++) {
             var k = kids[j];
             if (!k)
@@ -3824,13 +4216,19 @@
             if (kn.indexOf('chip') === 0 || hasCompName(k, 'ChipItem')) {
                 var kp = nodeWorldPos(k);
                 var d = dist2(lp.x || 0, lp.y || 0, kp.x || 0, kp.y || 0);
-                if (bestD == null || d < bestD) {
-                    best = k;
-                    bestD = d;
+                if (bestSiblingD == null || d < bestSiblingD) {
+                    bestSibling = k;
+                    bestSiblingD = d;
                 }
             }
         }
-        return best;
+        var scope = findChipScopeForLabel(labelNode);
+        var inv = buildChipInventory(scope);
+        var nearest = findNearestChipNode(labelNode, inv.chips);
+        var ordinal = findNodeOrdinal(labelNode, inv.labels);
+        var sortedChips = sortNodesByPos(inv.chips);
+        var ordinalChip = (ordinal >= 0 && ordinal < sortedChips.length) ? sortedChips[ordinal] : null;
+        return ordinalChip || nearest || bestSibling || null;
     }
     function resolveChipNode(n) {
         if (!n)
@@ -3890,17 +4288,20 @@
         var keys = Object.keys(CHIP_TAILS || {});
         for (var i = 0; i < keys.length; i++) {
             var val = keys[i];
+            var want = Math.max(0, Math.floor(+val || 0));
             var tail = CHIP_TAILS[val];
             var labelNode = findNodeByTail(tail);
+            if (!labelNode || nodeAmountLoose(labelNode) !== want)
+                labelNode = findVisibleChipLabelByAmount(want);
             if (!labelNode)
                 continue;
             var hit = clickableOf(labelNode, 10);
-            var chip = findChipNodeFromLabel(labelNode);
+            var chip = findChipNodeFromLabel(labelNode, want);
             var target = chip || hit || labelNode;
             out[val] = {
                 entry: target,
                 node: target,
-                rect: rectFromNodeScreen(labelNode)
+                rect: rectFromNodeScreen(chip || labelNode)
             };
         }
         return out;
