@@ -36,6 +36,10 @@ namespace BaccaratViVoGaming
         public string? seqSource { get; set; }
         public string? seqAppend { get; set; }
         public string? seqMode { get; set; }
+        public long? boardCountB { get; set; }
+        public long? boardCountP { get; set; }
+        public long? boardCountT { get; set; }
+        public string? boardCountSource { get; set; }
         public string? niSeq { get; set; }
         public long ts { get; set; }
         public string side { get; set; }

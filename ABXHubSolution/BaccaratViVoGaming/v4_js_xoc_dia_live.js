@@ -4294,7 +4294,7 @@
     var _cwSnapshotBuildSource = '';
     var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     var _cwSeqLastPubSyncAt = 0;
-    var _cwSeqScriptRev = 'SEQFIX-20260419-r30';
+    var _cwSeqScriptRev = 'SEQFIX-20260420-r39';
     var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
@@ -4541,6 +4541,20 @@
             bp: bp,
             t: t
         };
+    }
+    function brSeqCountsBPT(seqVal) {
+        var s = String(seqVal || '');
+        var out = { B: 0, P: 0, T: 0, len: s.length };
+        for (var i = 0; i < s.length; i++) {
+            var ch = String(s.charAt(i) || '').toUpperCase();
+            if (ch === 'B')
+                out.B++;
+            else if (ch === 'P')
+                out.P++;
+            else if (ch === 'T')
+                out.T++;
+        }
+        return out;
     }
     function brIsReliableRoadSeq(seqVal) {
         var st = brSeqStats(seqVal);
@@ -13294,11 +13308,15 @@
                             var beforeLen = String(_domBeadSeqManaged || '').length;
                             var beforeVer = Number(_domSeqVersion || 0) || 0;
                             var beforeEvt = String(_domSeqEvent || '');
+                            var beforeRaw = String(window.__cw_bead_raw_seq || '');
                             tick();
                             var afterLen = String(_domBeadSeqManaged || '').length;
                             var afterVer = Number(_domSeqVersion || 0) || 0;
                             var afterEvt = String(_domSeqEvent || '');
-                            if (afterVer > beforeVer || afterLen > beforeLen) {
+                            var afterRaw = String(window.__cw_bead_raw_seq || '');
+                            var rawAdvanced = afterRaw.length > beforeRaw.length ||
+                                (afterRaw && beforeRaw !== afterRaw);
+                            if (afterVer > beforeVer || afterLen > beforeLen || rawAdvanced) {
                                 try {
                                     if (window.__cw_pushPanelSnapshot)
                                         window.__cw_pushPanelSnapshot();
@@ -13310,8 +13328,11 @@
                                     afterLen: afterLen,
                                     afterVer: afterVer,
                                     afterEvt: afterEvt,
+                                    beforeRawLen: beforeRaw.length,
+                                    afterRawLen: afterRaw.length,
+                                    rawAdvanced: rawAdvanced ? 1 : 0,
                                     ageMs: Date.now() - Number(_seqDomObserverLastAt || 0)
-                                }, 0, 'observer-seq-advance|' + beforeVer + '|' + afterVer + '|' + afterLen);
+                                }, 0, 'observer-seq-advance|' + beforeVer + '|' + afterVer + '|' + afterLen + '|' + afterRaw.length);
                             } else if (afterEvt === 'board-jump-hold') {
                                 cwDbg('SEQFLOW', 'observer-seq-hold', {
                                     seqLen: afterLen,
@@ -13752,6 +13773,9 @@
                 seq: obj.seq,
                 seqVersion: obj.seqVersion,
                 seqEvent: obj.seqEvent,
+                boardCountB: obj.boardCountB,
+                boardCountP: obj.boardCountP,
+                boardCountT: obj.boardCountT,
                 username: obj.username,
                 totals: stableTotals
             };
@@ -13824,6 +13848,233 @@
             var r = readSeqStateSafe();
             return r && r.seq ? r.seq : '';
         }
+
+        function parseBoardCountValue(text) {
+            var s = String(text == null ? '' : text).trim().toUpperCase();
+            if (!s)
+                return null;
+            var m = s.match(/^([BPT])\s*[:=]?\s*(\d{1,3})$/);
+            if (m)
+                return { key: m[1], value: parseInt(m[2], 10) };
+            m = s.match(/^([BPT])\s*(\d{1,3})$/);
+            if (m)
+                return { key: m[1], value: parseInt(m[2], 10) };
+            if (/^\d{1,3}$/.test(s))
+                return { key: '', value: parseInt(s, 10) };
+            return null;
+        }
+
+        function parseBoardCountClusterText(text) {
+            try {
+                var s = String(text == null ? '' : text).trim().toUpperCase();
+                if (!s)
+                    return null;
+                s = s.replace(/[|,;]+/g, ' ');
+                s = s.replace(/\s+/g, ' ');
+                var out = { B: null, P: null, T: null };
+                var mB = s.match(/(?:^|\s)B\s*[:=]?\s*(\d{1,3})(?:\s|$)/);
+                var mP = s.match(/(?:^|\s)P\s*[:=]?\s*(\d{1,3})(?:\s|$)/);
+                var mT = s.match(/(?:^|\s)T\s*[:=]?\s*(\d{1,3})(?:\s|$)/);
+                if (mB)
+                    out.B = parseInt(mB[1], 10);
+                if (mP)
+                    out.P = parseInt(mP[1], 10);
+                if (mT)
+                    out.T = parseInt(mT[1], 10);
+                if (out.B != null && out.P != null && out.T != null)
+                    return out;
+            } catch (_) {}
+            return null;
+        }
+
+        function boardCountTailMatches(label) {
+            try {
+                var tl = String(label && (label.fullTl || label.tl || '') || '').toLowerCase();
+                if (!tl)
+                    return false;
+                if (tl.indexOf('stats-and-predictions') >= 0)
+                    return true;
+                if (tl.indexOf('div.footer/div.right.cell') >= 0 && tl.indexOf('stats') >= 0 && tl.indexOf('prediction') >= 0)
+                    return true;
+            } catch (_) {}
+            return false;
+        }
+
+        function pickBoardCountRow(targetLabs) {
+            try {
+                if (!targetLabs || !targetLabs.length)
+                    return null;
+                var items = [];
+                for (var i = 0; i < targetLabs.length; i++) {
+                    var L = targetLabs[i];
+                    var text = String(L && L.text != null ? L.text : '').trim();
+                    if (!text)
+                        continue;
+                    if (text.indexOf('?') >= 0)
+                        continue;
+                    items.push({
+                        text: text,
+                        upper: String(text || '').trim().toUpperCase(),
+                        x: Number(L.x || 0),
+                        y: Number(L.y || 0),
+                        w: Number(L.w || 0),
+                        h: Number(L.h || 0),
+                        cx: Number(L.x || 0) + Number(L.w || 0) / 2,
+                        cy: Number(L.y || 0) + Number(L.h || 0) / 2
+                    });
+                }
+                if (!items.length)
+                    return null;
+                items.sort(function (a, b) {
+                    return a.cy - b.cy || a.cx - b.cx;
+                });
+                var rows = [];
+                for (var ii = 0; ii < items.length; ii++) {
+                    var cur = items[ii];
+                    var placed = false;
+                    for (var ri = 0; ri < rows.length; ri++) {
+                        var row = rows[ri];
+                        if (Math.abs(cur.cy - row.cy) <= Math.max(16, row.avgH * 0.9, cur.h * 0.9)) {
+                            row.items.push(cur);
+                            row.cy = (row.cy * row.items.length + cur.cy) / (row.items.length + 1);
+                            row.avgH = (row.avgH * row.items.length + cur.h) / (row.items.length + 1);
+                            placed = true;
+                            break;
+                        }
+                    }
+                    if (!placed) {
+                        rows.push({
+                            cy: cur.cy,
+                            avgH: cur.h,
+                            items: [cur]
+                        });
+                    }
+                }
+                var best = null;
+                var bestScore = -1e9;
+                for (var rj = 0; rj < rows.length; rj++) {
+                    var rowItems = rows[rj].items.slice().sort(function (a, b) {
+                        return a.cx - b.cx;
+                    });
+                    var counts = { B: null, P: null, T: null };
+                    var directHits = 0;
+                    var markers = [];
+                    var numbers = [];
+                    for (var k = 0; k < rowItems.length; k++) {
+                        var item = rowItems[k];
+                        var cluster = parseBoardCountClusterText(item.text);
+                        if (cluster) {
+                            counts.B = cluster.B;
+                            counts.P = cluster.P;
+                            counts.T = cluster.T;
+                            directHits += 3;
+                            continue;
+                        }
+                        var parsed = parseBoardCountValue(item.text);
+                        if (parsed && parsed.key) {
+                            counts[parsed.key] = parsed.value;
+                            directHits++;
+                            continue;
+                        }
+                        if (/^[BPT]$/.test(item.upper)) {
+                            markers.push(item);
+                            continue;
+                        }
+                        if (/^\d{1,3}$/.test(item.upper)) {
+                            numbers.push(item);
+                        }
+                    }
+                    for (var mi = 0; mi < markers.length; mi++) {
+                        var marker = markers[mi];
+                        if (counts[marker.upper] != null)
+                            continue;
+                        var bestNum = null;
+                        var bestDx = 1e9;
+                        for (var ni = 0; ni < numbers.length; ni++) {
+                            var num = numbers[ni];
+                            var dx = num.x - (marker.x + marker.w);
+                            var dy = Math.abs(num.cy - marker.cy);
+                            if (dx < -8 || dx > 90)
+                                continue;
+                            if (dy > Math.max(14, marker.h * 0.8, num.h * 0.8))
+                                continue;
+                            if (dx < bestDx) {
+                                bestDx = dx;
+                                bestNum = num;
+                            }
+                        }
+                        if (bestNum)
+                            counts[marker.upper] = parseInt(bestNum.upper, 10);
+                    }
+                    var full = counts.B != null && counts.P != null && counts.T != null;
+                    var minX = rowItems.length ? rowItems[0].x : 999999;
+                    var score = 0;
+                    if (full)
+                        score += 10000;
+                    score += (directHits * 100);
+                    score += (markers.length * 10);
+                    score -= Math.round(minX / 20);
+                    score += Math.round(rows[rj].cy / 10);
+                    if (full && score > bestScore) {
+                        bestScore = score;
+                        best = {
+                            B: counts.B,
+                            P: counts.P,
+                            T: counts.T,
+                            cy: rows[rj].cy,
+                            minX: minX,
+                            items: rowItems
+                        };
+                    }
+                }
+                return best;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function readBoardResultCountersSafe(force) {
+            try {
+                var labs = collectLabels();
+                if (!labs || !labs.length)
+                    labs = [];
+                var targetLabs = [];
+                for (var i = 0; i < labs.length; i++) {
+                    if (boardCountTailMatches(labs[i]))
+                        targetLabs.push(labs[i]);
+                }
+                if (targetLabs.length) {
+                    var pickedRow = pickBoardCountRow(targetLabs);
+                    if (pickedRow && pickedRow.B != null && pickedRow.P != null && pickedRow.T != null) {
+                        return {
+                            B: pickedRow.B,
+                            P: pickedRow.P,
+                            T: pickedRow.T,
+                            source: 'tail-stats-and-predictions-row'
+                        };
+                    }
+                }
+            } catch (_) {}
+            try {
+                var rawSeq = String(window.__cw_bead_raw_seq || '');
+                if (rawSeq) {
+                    var rawCounts = brSeqCountsBPT(rawSeq);
+                    if ((rawCounts.B + rawCounts.P + rawCounts.T) === rawCounts.len) {
+                        return {
+                            B: rawCounts.B,
+                            P: rawCounts.P,
+                            T: rawCounts.T,
+                            source: 'raw-seq-stats'
+                        };
+                    }
+                }
+            } catch (_) {}
+            return null;
+        }
+
+        window.cwReadBoardResultCounters = function (force) {
+            return readBoardResultCountersSafe(!!force);
+        };
 
         function normalizeTotalsSnapshot(src) {
             try {
@@ -13978,6 +14229,7 @@
             }
             if (!__cw_hasCocos())
                 useTotalsCache = false;
+            useSeqCache = false;
             try {
                 if (cached && cached.totals)
                     t = normalizeTotalsSnapshot(cached.totals);
@@ -14010,27 +14262,11 @@
             }
 
             try {
-                if (cached && cached.seq)
-                    seq = String(cached.seq || '');
-            } catch (_) {}
-            try {
-                if (cached && cached.rawSeq)
-                    rawSeq = String(cached.rawSeq || '');
-            } catch (_) {}
-            try {
-                if (!seq && S && S.seq)
-                    seq = String(S.seq || '');
-            } catch (_) {}
-            try {
-                if (!rawSeq && S && S.rawSeq)
-                    rawSeq = String(S.rawSeq || '');
-            } catch (_) {}
-            try {
                 var seqState = null;
                 var seqWhich = '';
-            if (useSeqCache) {
-                seqState = _abxSnapCache.seqState;
-            } else {
+                if (useSeqCache) {
+                    seqState = _abxSnapCache.seqState;
+                } else {
                     var ts0 = Date.now();
                     seqState = readSeqStateSafe();
                     jsSeqMs += (Date.now() - ts0);
@@ -14060,53 +14296,13 @@
                 _abxSnapCache.seqAt = 0;
                 useSeqCache = false;
             }
-            if (seqFresh) {
-                if (!seq ||
-                    (seqFresh.length > seq.length && seqFresh.indexOf(seq) === 0) ||
-                    (seq && seq.indexOf(seqFresh) !== 0 && seqFresh.length > seq.length)) {
-                    seq = seqFresh;
-                }
-                if (rawSeqFresh)
-                    rawSeq = rawSeqFresh;
-                else if (!rawSeq) {
-                    rawSeq = seqFresh;
-                    rawSeqFromFallback = true;
-                }
-            } else if (!seq) {
-                try {
-                    if (window.__cw_seq)
-                        seq = String(window.__cw_seq || '');
-                } catch (_) {}
-                if (!seq) {
-                    try {
-                        seq = String(_domBeadSeqManaged || '');
-                    } catch (_) {
-                        seq = '';
-                    }
-                }
-            }
-            if (noBoardLikeEvent && !rawSeqFresh)
+            seq = seqFresh ? String(seqFresh || '') : '';
+            rawSeq = rawSeqFresh ? String(rawSeqFresh || '') : '';
+            if (!rawSeq && seq)
+                rawSeq = seq;
+            if (noBoardLikeEvent) {
+                seq = '';
                 rawSeq = '';
-            var rawSnapshotBlocked = _domTableSwitchWaitBeadPending || brIsSeqResetLikeEvent(seqEvent || _domSeqEvent);
-            if (!rawSeq && !rawSnapshotBlocked) {
-                try {
-                    if (window.__cw_bead_raw_seq)
-                        rawSeq = String(window.__cw_bead_raw_seq || '');
-                } catch (_) {}
-                // Baccarat: không fallback raw từ managed seq.
-                // rawSeq phải phản ánh bead board thật; nếu không có thì để rỗng để C# tự guard.
-                if (!rawSeq && !noBoardLikeEvent) {
-                    var allowRawFromManaged = false;
-                    try {
-                        allowRawFromManaged = Number(window.__cw_raw_from_managed_fallback || 0) === 1;
-                    } catch (_) {
-                        allowRawFromManaged = false;
-                    }
-                    if (allowRawFromManaged) {
-                        rawSeq = seq;
-                        rawSeqFromFallback = true;
-                    }
-                }
             }
             if (brShouldMaskSeqForDisplay(st, seqEvent)) {
                 seq = '';
@@ -14114,28 +14310,10 @@
                 rawSeqFromFallback = false;
             }
             if (!seqVersion) {
-                try {
-                    if (cached && cached.seqVersion != null)
-                        seqVersion = Number(cached.seqVersion) || 0;
-                } catch (_) {}
-                if (!seqVersion) {
-                    try {
-                        if (S && S.seqVersion != null)
-                            seqVersion = Number(S.seqVersion) || 0;
-                    } catch (_) {}
-                }
+                seqVersion = seq.length;
             }
             if (!seqEvent) {
-                try {
-                    if (cached && cached.seqEvent != null)
-                        seqEvent = String(cached.seqEvent || '');
-                } catch (_) {}
-                if (!seqEvent) {
-                    try {
-                        if (S && S.seqEvent != null)
-                            seqEvent = String(S.seqEvent || '');
-                    } catch (_) {}
-                }
+                seqEvent = '';
             }
             try {
                 var snapSeqLenNow = String(seq || '').length;
@@ -14165,7 +14343,8 @@
                 }
             } catch (_) {}
 
-            var seqContract = brBuildSeqSnapshotContract(seqEvent, seq, rawSeq, rawSeqFromFallback, seqVersion, buildSource, buildId);
+            var boardCounts = readBoardResultCountersSafe(false);
+            var seqContract = { mode: '', append: '', reason: '' };
             try {
                 var snapSeqStat = brSeqStats(seq);
                 var snapRawStat = brSeqStats(rawSeq);
@@ -14193,11 +14372,15 @@
                         rawCount: { bp: Number(snapRawStat.bp || 0), t: Number(snapRawStat.t || 0) },
                         seqVersion: Number(seqVersion || 0),
                         seqEvent: String(seqEvent || ''),
-                        seqMode: String(seqContract.mode || ''),
-                        seqAppend: String(seqContract.append || ''),
-                        seqContractReason: String(seqContract.reason || ''),
+                        seqMode: '',
+                        seqAppend: '',
+                        seqContractReason: '',
                         rawSeqFromFallback: rawSeqFromFallback ? 1 : 0,
                         seqWhich: String(seqWhich || ''),
+                        boardCountB: boardCounts && boardCounts.B != null ? Number(boardCounts.B) : null,
+                        boardCountP: boardCounts && boardCounts.P != null ? Number(boardCounts.P) : null,
+                        boardCountT: boardCounts && boardCounts.T != null ? Number(boardCounts.T) : null,
+                        boardCountSource: boardCounts && boardCounts.source ? String(boardCounts.source) : '',
                         domSeqVerBefore: Number(domSeqVerBefore || 0),
                         domSeqEvtBefore: String(domSeqEvtBefore || ''),
                         waitBead: _domTableSwitchWaitBeadPending ? 1 : 0,
@@ -14254,9 +14437,13 @@
                     rawLen: String(rawSeq || '').length,
                     seqVersion: Number(seqVersion || 0),
                     seqEvent: String(seqEvent || ''),
-                    seqContractReason: String(seqContract.reason || ''),
+                    seqContractReason: '',
                     rawSeqFromFallback: rawSeqFromFallback ? 1 : 0,
                     seqWhich: String(seqWhich || ''),
+                    boardCountB: boardCounts && boardCounts.B != null ? Number(boardCounts.B) : null,
+                    boardCountP: boardCounts && boardCounts.P != null ? Number(boardCounts.P) : null,
+                    boardCountT: boardCounts && boardCounts.T != null ? Number(boardCounts.T) : null,
+                    boardCountSource: boardCounts && boardCounts.source ? String(boardCounts.source) : '',
                     waitBead: _domTableSwitchWaitBeadPending ? 1 : 0,
                     resetPending: _domShoeResetPending ? 1 : 0,
                     managedTitle: String(_domManagedTableTitle || ''),
@@ -14277,16 +14464,20 @@
                 seq: String(seq || ''),
                 rawSeq: String(rawSeq || ''),
                 seqLen: String(seq || '').length,
-                    rawLen: String(rawSeq || '').length,
-                    seqVersion: Number(seqVersion || 0),
-                    seqEvent: String(seqEvent || ''),
-                    seqMode: String(seqContract.mode || ''),
-                    seqAppend: String(seqContract.append || ''),
-                    seqContractReason: String(seqContract.reason || ''),
-                    rawSeqFromFallback: rawSeqFromFallback ? 1 : 0,
-                    seqWhich: String(seqWhich || ''),
-                    waitBead: _domTableSwitchWaitBeadPending ? 1 : 0,
-                    resetPending: _domShoeResetPending ? 1 : 0
+                rawLen: String(rawSeq || '').length,
+                seqVersion: Number(seqVersion || 0),
+                seqEvent: String(seqEvent || ''),
+                seqMode: '',
+                seqAppend: '',
+                seqContractReason: '',
+                rawSeqFromFallback: rawSeqFromFallback ? 1 : 0,
+                seqWhich: String(seqWhich || ''),
+                boardCountB: boardCounts && boardCounts.B != null ? Number(boardCounts.B) : null,
+                boardCountP: boardCounts && boardCounts.P != null ? Number(boardCounts.P) : null,
+                boardCountT: boardCounts && boardCounts.T != null ? Number(boardCounts.T) : null,
+                boardCountSource: boardCounts && boardCounts.source ? String(boardCounts.source) : '',
+                waitBead: _domTableSwitchWaitBeadPending ? 1 : 0,
+                resetPending: _domShoeResetPending ? 1 : 0
             });
             return {
                 abx: 'tick',
@@ -14301,10 +14492,14 @@
                 rawSeq: rawSeq,
                 seqVersion: seqVersion,
                 seqEvent: seqEvent,
-                seqMode: seqContract.mode,
-                seqAppend: seqContract.append,
-                seqContractReason: seqContract.reason,
+                seqMode: '',
+                seqAppend: '',
+                seqContractReason: '',
                 seqWhich: seqWhich,
+                boardCountB: boardCounts && boardCounts.B != null ? Number(boardCounts.B) : null,
+                boardCountP: boardCounts && boardCounts.P != null ? Number(boardCounts.P) : null,
+                boardCountT: boardCounts && boardCounts.T != null ? Number(boardCounts.T) : null,
+                boardCountSource: boardCounts && boardCounts.source ? String(boardCounts.source) : '',
                 username: uname,
                 status: String(st || ''),
                 statusSource: statusSource,
