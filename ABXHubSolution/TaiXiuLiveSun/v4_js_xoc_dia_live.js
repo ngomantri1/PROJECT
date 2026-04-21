@@ -3464,6 +3464,7 @@
         '5000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value1',
         '1000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value0'
     };
+    var CHIP_PANEL_TAIL = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel';
     function tailMatch(full, tail) {
         if (!full || !tail)
             return false;
@@ -3957,6 +3958,7 @@
             panel: root,
             labels: [],
             chips: [],
+            labelsByIndex: {},
             chipsByIndex: {}
         };
         if (!root)
@@ -3966,8 +3968,11 @@
                 return;
             var name = String(n.name || '');
             var mLabel = name.match(/^lbl_chip_value(\d+)$/i);
-            if (mLabel)
+            if (mLabel) {
+                var idxLabel = parseInt(mLabel[1], 10);
                 out.labels.push(n);
+                out.labelsByIndex[String(idxLabel)] = n;
+            }
             var mChip = name.match(/^chip(\d+)$/i);
             if (mChip) {
                 var idx = parseInt(mChip[1], 10);
@@ -4050,6 +4055,33 @@
             }
         });
         return best;
+    }
+    function findBestVisibleChipLabelByAmount(amount) {
+        return findVisibleChipLabelByAmount(amount);
+    }
+    function findChipPanelNode(labelNode) {
+        var panel = findNodeByTail(CHIP_PANEL_TAIL);
+        if (panel)
+            return panel;
+        if (labelNode)
+            panel = findChipScopeForLabel(labelNode);
+        if (panel)
+            return panel;
+        var keys = Object.keys(CHIP_TAILS || {});
+        for (var i = 0; i < keys.length; i++) {
+            var val = Math.max(0, Math.floor(+keys[i] || 0));
+            var tail = CHIP_TAILS[keys[i]];
+            var node = findNodeByTail(tail) || findBestVisibleChipLabelByAmount(val);
+            if (node) {
+                panel = findChipScopeForLabel(node);
+                if (panel)
+                    return panel;
+            }
+        }
+        return null;
+    }
+    function getChipPanelInventory(labelNode) {
+        return buildChipInventory(findChipPanelNode(labelNode));
     }
 
     async function tryOpenChipPanel() {
@@ -4190,7 +4222,7 @@
         } catch (e) {}
         return false;
     }
-    function findChipNodeFromLabel(labelNode, amountHint) {
+    function findChipNodeFromLabelCurrent(labelNode) {
         if (!labelNode)
             return null;
         var p = labelNode.parent || labelNode._parent || null;
@@ -4222,20 +4254,69 @@
                 }
             }
         }
-        var scope = findChipScopeForLabel(labelNode);
-        var inv = buildChipInventory(scope);
-        var nearest = findNearestChipNode(labelNode, inv.chips);
-        var ordinal = findNodeOrdinal(labelNode, inv.labels);
+        return bestSibling || null;
+    }
+    function explainChipAmount(amount) {
+        var key = String(Math.max(0, Math.floor(+amount || 0)));
+        var tail = CHIP_TAILS[key] || '';
+        var labelNode = tail ? findNodeByTail(tail) : null;
+        if (!labelNode || nodeAmountLoose(labelNode) !== Number(key))
+            labelNode = findBestVisibleChipLabelByAmount(Number(key));
+        var inv = getChipPanelInventory(labelNode);
+        var idx = null;
+        if (labelNode) {
+            var m0 = String(labelNode.name || '').match(/lbl_chip_value(\d+)/i);
+            if (m0)
+                idx = parseInt(m0[1], 10);
+        }
+        var currentChip = findChipNodeFromLabelCurrent(labelNode);
+        var strictChip = idx == null ? null : (inv.chipsByIndex[String(idx)] || null);
+        var nearestChip = labelNode ? findNearestChipNode(labelNode, inv.chips) : null;
+        var labelOrdinal = labelNode ? findNodeOrdinal(labelNode, inv.labels) : -1;
         var sortedChips = sortNodesByPos(inv.chips);
-        var ordinalChip = (ordinal >= 0 && ordinal < sortedChips.length) ? sortedChips[ordinal] : null;
-        return ordinalChip || nearest || bestSibling || null;
+        var ordinalChip = (labelOrdinal >= 0 && labelOrdinal < sortedChips.length) ? sortedChips[labelOrdinal] : null;
+        var labelClickable = labelNode ? clickableOf(labelNode, 10) : null;
+        var strictClickable = strictChip ? clickableOf(strictChip, 10) : null;
+        var currentTarget = currentChip || labelClickable || labelNode || null;
+        return {
+            amount: Number(key),
+            tail: tail,
+            idx: idx,
+            labelNode: labelNode,
+            currentChip: currentChip,
+            currentTarget: currentTarget,
+            strictChip: strictChip,
+            nearestChip: nearestChip,
+            ordinalChip: ordinalChip,
+            labelClickable: labelClickable,
+            strictClickable: strictClickable,
+            panel: inv.panel || null,
+            panelLabelCount: inv.labels.length,
+            panelChipCount: inv.chips.length,
+            labelOrdinal: labelOrdinal
+        };
+    }
+    function pickChipFocusTarget(info) {
+        if (!info)
+            return null;
+        return info.nearestChip || info.ordinalChip || info.strictChip || info.strictClickable || info.currentTarget || info.labelNode || null;
+    }
+    function findChipNodeFromLabel(labelNode, amountHint) {
+        if (!labelNode)
+            return null;
+        var want = amountHint != null ? Math.max(0, Math.floor(+amountHint || 0)) : nodeAmountLoose(labelNode);
+        if (want) {
+            var info = explainChipAmount(want);
+            return pickChipFocusTarget(info) || info.currentTarget || findChipNodeFromLabelCurrent(labelNode) || null;
+        }
+        return findChipNodeFromLabelCurrent(labelNode);
     }
     function resolveChipNode(n) {
         if (!n)
             return null;
         var nm = String(n.name || '');
         if (nm.indexOf('lbl_chip_value') !== -1) {
-            var c = findChipNodeFromLabel(n);
+            var c = findChipNodeFromLabel(n, nodeAmountLoose(n));
             if (c)
                 return c;
         }
@@ -4289,19 +4370,15 @@
         for (var i = 0; i < keys.length; i++) {
             var val = keys[i];
             var want = Math.max(0, Math.floor(+val || 0));
-            var tail = CHIP_TAILS[val];
-            var labelNode = findNodeByTail(tail);
-            if (!labelNode || nodeAmountLoose(labelNode) !== want)
-                labelNode = findVisibleChipLabelByAmount(want);
-            if (!labelNode)
+            var info = explainChipAmount(want);
+            var target = pickChipFocusTarget(info);
+            if (!info.labelNode && !target)
                 continue;
-            var hit = clickableOf(labelNode, 10);
-            var chip = findChipNodeFromLabel(labelNode, want);
-            var target = chip || hit || labelNode;
             out[val] = {
                 entry: target,
                 node: target,
-                rect: rectFromNodeScreen(chip || labelNode)
+                rect: rectFromNodeScreen(target || info.labelNode),
+                mode: target === info.nearestChip ? 'nearest' : (target === info.ordinalChip ? 'ordinal' : (target === info.strictChip ? 'strict' : 'fallback'))
             };
         }
         return out;
@@ -4344,15 +4421,15 @@
         var val = Math.max(0, Math.floor(+amount || 0));
         if (!ALLOWED_SET[String(val)])
             throw new Error('M?nh gi  kh?ng h?p l?: ' + amount);
-        var map = window.cwScanChips() || {};
-        if (!map[String(val)]) {
+        var info = explainChipAmount(val);
+        var target = pickChipFocusTarget(info);
+        if (!target) {
             await tryOpenChipPanel();
             await sleep(180);
-            map = scanChipsByTail();
-            if (!Object.keys(map).length)
-                map = wideScan();
+            info = explainChipAmount(val);
+            target = pickChipFocusTarget(info);
         }
-        if (!map[String(val)]) {
+        if (!target) {
             var hit = null;
             (function walk(n) {
                 if (hit || !active(n))
@@ -4399,18 +4476,24 @@
                 }
                 return true;
             }
+            var map = window.cwScanChips() || {};
+            if (!map[String(val)] && prevFocus)
+                return prevFocus(amount);
+            if (map[String(val)]) {
+                info = explainChipAmount(val);
+                target = resolveChipNode(map[String(val)].node) || map[String(val)].node;
+            }
+        }
+        if (!target) {
             return false;
         }
-        var info = map[String(val)];
-        if (!info || !info.node)
-            return false;
-        var target2 = resolveChipNode(info.node) || info.node;
+        var target2 = resolveChipNode(target) || target;
         var touched2 = emitTouchOnNode(target2);
         if (!touched2) {
             if (clickable(target2))
                 emitClick(target2);
-            else if (info.rect)
-                clickRectCenter(info.rect);
+            else if (info && info.labelNode)
+                clickRectCenter(rectFromNodeScreen(target2 || info.labelNode));
             else
                 clickRectCenter(rectFromNodeScreen(target2));
         }
@@ -4421,6 +4504,14 @@
             if (tg._emitToggleEvents)
                 tg._emitToggleEvents();
         }
+        console.log('[cwFocusChip++]', {
+            amount: val,
+            mode: target === info.nearestChip ? 'nearest' : (target === info.ordinalChip ? 'ordinal' : (target === info.strictChip ? 'strict' : 'fallback')),
+            target: String((target2 && target2.name) || ''),
+            label: String((info && info.labelNode && info.labelNode.name) || ''),
+            panelLabels: info ? info.panelLabelCount : 0,
+            panelChips: info ? info.panelChipCount : 0
+        });
         return true;
     };
 
