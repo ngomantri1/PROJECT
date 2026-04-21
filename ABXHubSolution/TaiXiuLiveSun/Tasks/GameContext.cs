@@ -16,6 +16,9 @@ namespace TaiXiuLiveSun.Tasks
         // Thực thi JS: trả về chuỗi (Web.ExecuteScriptAsync)
         public Func<string, Task<string>> EvalJsAsync { get; init; }
 
+        // Đặt cược qua host-side CDP input; JS chỉ trả plan/telemetry.
+        public Func<string, long, int, string, Task<bool>>? PlaceBetCdpAsync { get; init; }
+
         // Ghi log ra UI/File tuỳ bạn
         public Action<string> Log { get; init; }
 

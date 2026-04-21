@@ -193,6 +193,27 @@ namespace TaiXiuLiveSun.Tasks
                 }
             }
 
+            if (ctx.PlaceBetCdpAsync != null)
+            {
+                try
+                {
+                    var cdpOk = await ctx.PlaceBetCdpAsync(side, amount, roundId, tabKey);
+                    ctx.Log?.Invoke($"[BET-CDP] tab={tabKey} round={roundId} result={(cdpOk ? "ok" : "fail")}");
+                    if (cdpOk)
+                    {
+                        _lastBetOkMsByTab[tabKey] = now;
+                        _lastBetRoundByTab[tabKey] = roundId;
+                        _lastBetSideByTab[tabKey] = side ?? "";
+                    }
+                    return cdpOk;
+                }
+                catch (Exception ex)
+                {
+                    ctx.Log?.Invoke("[BET-CDP][ERR] " + ex.Message);
+                    return false;
+                }
+            }
+
             // G?I intent xu?ng JS queue
             var js =
                 "(async function(){try{" +

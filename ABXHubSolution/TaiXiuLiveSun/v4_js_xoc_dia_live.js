@@ -3449,6 +3449,13 @@
         CHAN: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_chan',
         LE: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_le'
     };
+    var BET_BOARD_TAIL = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back';
+    var BET_ZONE_TAILS = {
+        TAI: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/tai_bet',
+        XIU: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/xiu_bet',
+        CHAN: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/chan_bet',
+        LE: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/le_bet'
+    };
     var CHIP_TAILS = {
         '500000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value7',
         '100000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value6',
@@ -3555,6 +3562,636 @@
         })(cc.director.getScene());
         return hit;
     }
+    function __cwCollectBetNearHits(anchor, focusRect, opts) {
+        opts = opts || {};
+        var hits = [];
+        var focus = __cwRectNorm(focusRect);
+        var maxNodes = Math.max(80, __cwNumber(opts.maxNearNodes, 260));
+        var preferClickable = opts.preferClickable !== false;
+        var seen = 0;
+        if (!anchor || !focus)
+            return hits;
+        (function walk(n, depth) {
+            if (!n || !active(n) || seen >= maxNodes)
+                return;
+            seen++;
+            var rect = rectFromNodeScreen(n) || rectFromNodeCompat(n) || null;
+            if (rect) {
+                var nr = __cwRectNorm(rect);
+                var area = nr.w * nr.h;
+                var pad = Math.max(14, Math.max(focus.w, focus.h) * 0.38);
+                var contains = __cwRectContainsPt(nr, focus.cx, focus.cy, pad);
+                var near = __cwRectDistToPt(nr, focus.cx, focus.cy) <= Math.max(36, Math.max(focus.w, focus.h) * 0.95);
+                var sameBand = !(nr.bottom < focus.top - pad || nr.top > focus.bottom + pad);
+                var huge = area > Math.max(320000, focus.w * focus.h * 140);
+                var path = String(fullPath(n, 180) || '').toLowerCase();
+                var name = String(n.name || '').toLowerCase();
+                var click = clickable(n);
+                var score = 0;
+                if (contains)
+                    score += 80;
+                if (near)
+                    score += 48;
+                if (sameBand)
+                    score += 18;
+                if (click)
+                    score += 26;
+                if (depth <= 1)
+                    score += 8;
+                if (/chan|le|tai|xiu|odd|even|bet|board|panel|back|bg|box|zone|slot|frame|cua/.test(name + '|' + path))
+                    score += 10;
+                if (huge)
+                    score -= 72;
+                if (preferClickable && !click && score < 72)
+                    score -= 22;
+                if (score >= 48) {
+                    hits.push({
+                        node: n,
+                        rect: nr,
+                        score: score,
+                        area: area
+                    });
+                }
+            }
+            var kids = n.children || [];
+            for (var i = 0; i < kids.length; i++)
+                walk(kids[i], depth + 1);
+        })(anchor, 0);
+        hits.sort(function (a, b) {
+            if ((b.score || 0) !== (a.score || 0))
+                return (b.score || 0) - (a.score || 0);
+            return (a.area || 0) - (b.area || 0);
+        });
+        return hits;
+    }
+    function __cwBetNodeName(node) {
+        return String(node && node.name || '');
+    }
+    function __cwBetNodePath(node) {
+        return String(fullPath(node, 220) || '');
+    }
+    function __cwBetRectSane(rect) {
+        var nr = __cwRectNorm(rect);
+        if (!nr)
+            return false;
+        if (nr.w < 24 || nr.h < 18)
+            return false;
+        if (nr.cx < 40 || nr.cy < 40)
+            return false;
+        var area = nr.w * nr.h;
+        if (area < 600 || area > 240000)
+            return false;
+        return true;
+    }
+    function __cwBetRectLite(rect) {
+        var nr = __cwRectNorm(rect);
+        if (!nr)
+            return null;
+        return {
+            x: Math.round(nr.x * 10) / 10,
+            y: Math.round(nr.y * 10) / 10,
+            w: Math.round(nr.w * 10) / 10,
+            h: Math.round(nr.h * 10) / 10,
+            cx: Math.round(nr.cx * 10) / 10,
+            cy: Math.round(nr.cy * 10) / 10
+        };
+    }
+    function __cwPickBetRect() {
+        var best = null;
+        var bestScore = -1e9;
+        for (var i = 0; i < arguments.length; i++) {
+            var nr = __cwRectNorm(arguments[i]);
+            if (!nr)
+                continue;
+            var score = __cwBetRectSane(nr) ? 1000000 : 0;
+            score += Math.max(1, __cwNumber(nr.w, 0) * __cwNumber(nr.h, 0));
+            if (!best || score > bestScore) {
+                best = nr;
+                bestScore = score;
+            }
+        }
+        return best;
+    }
+    function __cwIsBoardBackNode(node) {
+        if (!node)
+            return false;
+        var name = String(node.name || '').toLowerCase();
+        if (name === 'board_back')
+            return true;
+        var path = __cwBetNodePath(node).toLowerCase();
+        return /(^|\/)board_back$/.test(path);
+    }
+    function __cwFindBoardBackRect(node) {
+        var cur = node;
+        var best = null;
+        while (cur) {
+            if (__cwIsBoardBackNode(cur)) {
+                var rect = __cwPickBetRect(rectFromNodeCompat(cur), rectFromNodeScreen(cur));
+                if (__cwBetRectSane(rect))
+                    return rect;
+                if (!best && rect)
+                    best = rect;
+            }
+            cur = cur.parent || cur._parent || null;
+        }
+        return best;
+    }
+    function __cwFindBoardBackNode(node) {
+        var cur = node;
+        while (cur) {
+            if (__cwIsBoardBackNode(cur))
+                return cur;
+            cur = cur.parent || cur._parent || null;
+        }
+        return findNodeByTail(BET_BOARD_TAIL);
+    }
+    function __cwClampRectInto(rect, container) {
+        rect = __cwRectNorm(rect);
+        container = __cwRectNorm(container);
+        if (!rect)
+            return null;
+        if (!container)
+            return rect;
+        var w = Math.max(20, Math.min(rect.w, container.w));
+        var h = Math.max(16, Math.min(rect.h, container.h));
+        var x = Math.max(container.left, Math.min(rect.x, container.right - w));
+        var y = Math.max(container.top, Math.min(rect.y, container.bottom - h));
+        return __cwRectNorm({
+            x: x,
+            y: y,
+            w: w,
+            h: h
+        });
+    }
+    function __cwBuildBetCellRect(side, boardRect, labelRect) {
+        boardRect = __cwRectNorm(boardRect);
+        if (!boardRect)
+            return null;
+        labelRect = __cwRectNorm(labelRect);
+        var halfW = boardRect.w / 2;
+        var halfH = boardRect.h / 2;
+        var left = false;
+        var top = false;
+        if (labelRect && __cwRectContainsPt(boardRect, labelRect.cx, labelRect.cy, 2)) {
+            left = labelRect.cx <= boardRect.cx;
+            top = labelRect.cy <= boardRect.cy;
+        } else {
+            left = (side === 'TAI' || side === 'CHAN');
+            top = (side === 'CHAN' || side === 'LE');
+        }
+        return __cwRectNorm({
+            x: boardRect.x + (left ? 0 : halfW),
+            y: boardRect.y + (top ? 0 : halfH),
+            w: halfW,
+            h: halfH
+        });
+    }
+    function __cwBuildBetInnerProbeRect(side, labelRect, boardRect) {
+        side = normalizeSide(side);
+        labelRect = __cwRectNorm(labelRect);
+        boardRect = __cwRectNorm(boardRect);
+        var saneLabelRect = __cwBetRectSane(labelRect) ? labelRect : null;
+        var cell = __cwBuildBetCellRect(side, boardRect, labelRect);
+        if (cell) {
+            var insetX = Math.max(42, cell.w * 0.28);
+            var insetY = Math.max(20, cell.h * 0.24);
+            var base = __cwRectNorm({
+                x: cell.x + insetX,
+                y: cell.y + insetY,
+                w: Math.max(92, cell.w - insetX * 2),
+                h: Math.max(58, cell.h - insetY * 2)
+            });
+            if (!saneLabelRect)
+                return __cwClampRectInto(base, cell);
+            var centerX = Math.max(base.left + base.w * 0.2, Math.min(saneLabelRect.cx, base.right - base.w * 0.2));
+            var centerY = Math.max(base.top + base.h * 0.25, Math.min(saneLabelRect.cy + base.h * 0.22, base.bottom - base.h * 0.2));
+            return __cwClampRectInto({
+                x: centerX - base.w / 2,
+                y: centerY - base.h / 2,
+                w: base.w,
+                h: base.h
+            }, cell);
+        }
+        if (saneLabelRect) {
+            var w = Math.max(132, Math.min(192, saneLabelRect.w * 1.22));
+            var h = Math.max(70, Math.min(96, saneLabelRect.h * 4.1));
+            var down = Math.max(22, Math.min(36, h * 0.38));
+            return __cwRectNorm({
+                x: saneLabelRect.cx - w / 2,
+                y: saneLabelRect.cy + down - h / 2,
+                w: w,
+                h: h
+            });
+        }
+        return null;
+    }
+    function __cwBuildBetCellProbeRect(side, boardRect) {
+        var cell = __cwBuildBetCellRect(side, boardRect, null);
+        if (!cell)
+            return null;
+        var insetX = Math.max(34, cell.w * 0.23);
+        var insetY = Math.max(18, cell.h * 0.21);
+        return __cwClampRectInto({
+            x: cell.x + insetX,
+            y: cell.y + insetY,
+            w: Math.max(88, cell.w - insetX * 2),
+            h: Math.max(56, cell.h - insetY * 2)
+        }, cell);
+    }
+    function __cwFindBetZoneNode(side) {
+        side = normalizeSide(side);
+        var zoneTail = BET_ZONE_TAILS[side];
+        if (!zoneTail)
+            return null;
+        var zoneNode = findNodeByTail(zoneTail);
+        if (zoneNode)
+            return zoneNode;
+        var btnNode = findNodeByTail(zoneTail + '/New Button');
+        if (btnNode)
+            return btnNode.parent || btnNode._parent || btnNode;
+        return null;
+    }
+    function __cwFindExactBetTarget(side, trace) {
+        side = normalizeSide(side);
+        var labelTail = BET_TAILS[side];
+        if (!labelTail) {
+            __cwPushBetTrace(trace, 'exact-miss', {
+                reason: 'tail_missing',
+                side: side
+            });
+            return null;
+        }
+        var labelNode = findNodeByTail(labelTail);
+        var zoneNode = __cwFindBetZoneNode(side);
+        var labelRect = labelNode ? __cwPickBetRect(rectFromNodeScreen(labelNode), rectFromNodeCompat(labelNode)) : null;
+        var zoneRect = zoneNode ? __cwPickBetRect(rectFromNodeScreen(zoneNode), rectFromNodeCompat(zoneNode)) : null;
+        var boardNode = labelNode ? __cwFindBoardBackNode(labelNode) : (zoneNode ? __cwFindBoardBackNode(zoneNode) : findNodeByTail(BET_BOARD_TAIL));
+        var boardRect = boardNode ? __cwPickBetRect(rectFromNodeCompat(boardNode), rectFromNodeScreen(boardNode)) : null;
+        var cellRect = __cwBuildBetCellRect(side, boardRect, labelRect);
+        var probeRect = __cwBuildBetInnerProbeRect(side, labelRect, boardRect);
+        if (!__cwBetRectSane(probeRect))
+            probeRect = __cwBuildBetCellProbeRect(side, boardRect);
+        probeRect = __cwClampRectInto(probeRect || cellRect || boardRect, cellRect || boardRect);
+        var anchorNode = labelNode || zoneNode || null;
+        var ok = !!(anchorNode && boardNode && __cwBetRectSane(boardRect) && __cwBetRectSane(probeRect));
+        __cwPushBetTrace(trace, ok ? 'exact-hit' : 'exact-miss', {
+            selectorPath: labelNode ? __cwBetNodePath(labelNode) : '',
+            zonePath: zoneNode ? __cwBetNodePath(zoneNode) : '',
+            boardPath: boardNode ? __cwBetNodePath(boardNode) : '',
+            labelRect: __cwBetRectLite(labelRect),
+            zoneRect: __cwBetRectLite(zoneRect),
+            boardRect: __cwBetRectLite(boardRect),
+            cellRect: __cwBetRectLite(cellRect),
+            probeRect: __cwBetRectLite(probeRect),
+            ok: ok
+        });
+        if (!ok)
+            return null;
+        return {
+            node: anchorNode,
+            rect: probeRect,
+            labelRect: labelRect,
+            zoneRect: zoneRect,
+            boardRect: boardRect,
+            cellRect: cellRect,
+            sourceTag: (labelNode ? 'exact-cell-' : 'exact-zone-') + side.toLowerCase(),
+            selectorPath: __cwBetNodePath(anchorNode),
+            labelPath: labelNode ? __cwBetNodePath(labelNode) : '',
+            zonePath: zoneNode ? __cwBetNodePath(zoneNode) : '',
+            boardPath: __cwBetNodePath(boardNode),
+            pointFamily: 'top'
+        };
+    }
+    var __cwBetTargetHistory = [];
+    var __cwBetTargetTraceSeq = 0;
+    function __cwMakeBetTrace(side, tail) {
+        var ts = '';
+        try {
+            ts = new Date().toISOString();
+        } catch (_) {
+            ts = '';
+        }
+        return {
+            id: ++__cwBetTargetTraceSeq,
+            ts: ts,
+            side: String(side || ''),
+            tail: String(tail || ''),
+            roots: [],
+            events: [],
+            chosen: null
+        };
+    }
+    function __cwPushBetTrace(trace, kind, data) {
+        if (!trace)
+            return;
+        if (!trace.events)
+            trace.events = [];
+        var row = {
+            kind: String(kind || '')
+        };
+        data = data || {};
+        var keys = Object.keys(data);
+        for (var i = 0; i < keys.length; i++)
+            row[keys[i]] = data[keys[i]];
+        trace.events.push(row);
+        if (trace.events.length > 120)
+            trace.events.splice(0, trace.events.length - 120);
+    }
+    function __cwStoreBetTrace(trace) {
+        if (!trace)
+            return;
+        window.__cw_lastBetTargetTrace = trace;
+        __cwBetTargetHistory.push(trace);
+        if (__cwBetTargetHistory.length > 24)
+            __cwBetTargetHistory.splice(0, __cwBetTargetHistory.length - 24);
+    }
+    function __cwGetLastBetTrace(side) {
+        side = String(side || '');
+        for (var i = __cwBetTargetHistory.length - 1; i >= 0; i--) {
+            var row = __cwBetTargetHistory[i];
+            if (!row)
+                continue;
+            if (!side || String(row.side || '') === side)
+                return row;
+        }
+        return null;
+    }
+    function __cwGetBetTraceHistory(side, limit) {
+        side = String(side || '');
+        limit = Math.max(1, __cwNumber(limit, 6));
+        var out = [];
+        for (var i = __cwBetTargetHistory.length - 1; i >= 0 && out.length < limit; i--) {
+            var row = __cwBetTargetHistory[i];
+            if (!row)
+                continue;
+            if (!side || String(row.side || '') === side)
+                out.push(row);
+        }
+        return out;
+    }
+    function __cwBetNodeSnapshot(node, rect) {
+        if (!node)
+            return null;
+        rect = rect || rectFromNodeCompat(node) || rectFromNodeScreen(node) || null;
+        var path = __cwBetNodePath(node);
+        var out = {
+            name: __cwBetNodeName(node),
+            path: path,
+            rect: __cwBetRectLite(rect),
+            clickable: !!clickable(node),
+            hasButton: !!hasBtn(node),
+            hasToggle: !!hasTgl(node),
+            touchListener: !!(node && node._touchListener)
+        };
+        var idx = path.toLowerCase().indexOf('/node_game(need_to_put_games_in_here)/');
+        if (idx >= 0)
+            out.shortPath = path.substring(idx + 1);
+        return out;
+    }
+    function __cwIsBetNodeBlocked(node) {
+        var name = __cwBetNodeName(node).toLowerCase();
+        var path = __cwBetNodePath(node).toLowerCase();
+        if (!name && !path)
+            return true;
+        if (name === 'screen_view' || path.indexOf('/screen_view') >= 0)
+            return true;
+        if (/^(btn_jp|btn_prev|btn_next|btn_soicau)$/i.test(name))
+            return true;
+        if (/\/btn_(jp|prev|next|soicau)(?:\/|$)/i.test(path))
+            return true;
+        if (/\/node_noti(?:\/|$)/i.test(path))
+            return true;
+        return false;
+    }
+    function __cwHasBetTouchSignal(node) {
+        if (!node)
+            return false;
+        if (clickable(node))
+            return true;
+        try {
+            if (getComp(node, cc.Button))
+                return true;
+        } catch (e) {}
+        try {
+            if (getComp(node, cc.Toggle))
+                return true;
+        } catch (e2) {}
+        try {
+            if (node._touchListener)
+                return true;
+        } catch (e3) {}
+        return false;
+    }
+    function __cwScoreBetAnchorNode(node, rect, side) {
+        if (!node || !__cwBetRectSane(rect))
+            return -1e9;
+        var name = __cwBetNodeName(node).toLowerCase();
+        var path = __cwBetNodePath(node).toLowerCase();
+        var want = String(side || '').toLowerCase();
+        var score = 0;
+        if (__cwIsBetNodeBlocked(node))
+            score -= 260;
+        if (want && (path.indexOf('/' + want + '_bet') >= 0 || path.indexOf('_bet_' + want) >= 0 || path.indexOf('bet_' + want) >= 0 || path.indexOf('_' + want + '_bet') >= 0))
+            score += 240;
+        if (want && path.indexOf('lbl_money_total_bet_' + want) >= 0)
+            score += 40;
+        if (want && (name + '|' + path).indexOf(want) >= 0)
+            score += 36;
+        if (/new button/.test(name))
+            score += 78;
+        if (__cwHasBetTouchSignal(node))
+            score += 92;
+        if (/board|bet|zone|slot|frame|mask|panel|cua|back|bg/.test(name + '|' + path))
+            score += 24;
+        var nr = __cwRectNorm(rect);
+        var area = nr ? (nr.w * nr.h) : 0;
+        if (area > 180000)
+            score -= 90;
+        else if (area > 90000)
+            score -= 45;
+        else if (area >= 900 && area <= 70000)
+            score += 18;
+        return score;
+    }
+    function __cwCollectBetAnchorCandidates(scope, side, opts) {
+        opts = opts || {};
+        var hits = [];
+        var seen = 0;
+        var maxNodes = Math.max(60, __cwNumber(opts.maxNodes, 240));
+        var maxDepth = Math.max(1, __cwNumber(opts.maxDepth, 5));
+        var minScore = __cwNumber(opts.minScore, 48);
+        (function walk(n, depth) {
+            if (!n || !active(n) || seen >= maxNodes || depth > maxDepth)
+                return;
+            seen++;
+            var rect = rectFromNodeCompat(n) || rectFromNodeScreen(n) || null;
+            var score = __cwScoreBetAnchorNode(n, rect, side);
+            if (score >= minScore) {
+                hits.push({
+                    node: n,
+                    rect: __cwRectNorm(rect),
+                    score: score,
+                    depth: depth
+                });
+            }
+            var kids = n.children || [];
+            for (var i = 0; i < kids.length; i++)
+                walk(kids[i], depth + 1);
+        })(scope, 0);
+        hits.sort(function (a, b) {
+            if ((b.score || 0) !== (a.score || 0))
+                return (b.score || 0) - (a.score || 0);
+            return __cwNumber((a.rect && a.rect.w || 0) * (a.rect && a.rect.h || 0), 0) - __cwNumber((b.rect && b.rect.w || 0) * (b.rect && b.rect.h || 0), 0);
+        });
+        return hits;
+    }
+    function __cwResolveBetAnchor(seedNode, side, trace, seedTag) {
+        var scopes = [];
+        var cur = seedNode;
+        var depth = 0;
+        while (cur && depth <= 4) {
+            scopes.push({
+                node: cur,
+                depth: depth
+            });
+            cur = cur.parent || cur._parent || null;
+            depth++;
+        }
+        var best = null;
+        for (var i = 0; i < scopes.length; i++) {
+            var scope = scopes[i];
+            var candidates = __cwCollectBetAnchorCandidates(scope.node, side, {
+                maxNodes: scope.depth <= 1 ? 180 : 260,
+                maxDepth: scope.depth === 0 ? 3 : 5,
+                minScore: scope.depth === 0 ? 60 : 48
+            });
+            __cwPushBetTrace(trace, 'anchor-scan', {
+                seedTag: String(seedTag || ''),
+                scopeDepth: scope.depth,
+                scope: __cwBetNodeSnapshot(scope.node),
+                top: candidates.slice(0, 3).map(function (it) {
+                    return {
+                        score: Math.round(__cwNumber(it.score, 0) * 10) / 10,
+                        depth: it.depth,
+                        node: __cwBetNodeSnapshot(it.node, it.rect)
+                    };
+                })
+            });
+            for (var j = 0; j < candidates.length && j < 6; j++) {
+                var item = candidates[j];
+                if (!item || !item.node)
+                    continue;
+                var total = __cwNumber(item.score, 0) - scope.depth * 8 - j;
+                if (!best || total > __cwNumber(best.score, 0)) {
+                    best = {
+                        node: item.node,
+                        rect: item.rect,
+                        score: total,
+                        scopeNode: scope.node,
+                        scopeDepth: scope.depth,
+                        tag: String(seedTag || 'anchor') + '-d' + scope.depth + '-h' + j
+                    };
+                }
+            }
+        }
+        __cwPushBetTrace(trace, best ? 'anchor-picked' : 'anchor-miss', {
+            seedTag: String(seedTag || ''),
+            result: best ? {
+                score: Math.round(__cwNumber(best.score, 0) * 10) / 10,
+                scopeDepth: best.scopeDepth,
+                tag: best.tag,
+                node: __cwBetNodeSnapshot(best.node, best.rect)
+            } : null
+        });
+        return best;
+    }
+    function __cwExplainBetCandidate(node, rect, sourceTag) {
+        if (!node)
+            return {
+                ok: false,
+                reason: 'node_null'
+            };
+        if (__cwIsBetNodeBlocked(node))
+            return {
+                ok: false,
+                reason: 'blocked'
+            };
+        if (!__cwBetRectSane(rect))
+            return {
+                ok: false,
+                reason: 'rect_not_sane'
+            };
+        var src = String(sourceTag || '');
+        if (!src)
+            return {
+                ok: false,
+                reason: 'source_empty'
+            };
+        var name = __cwBetNodeName(node).toLowerCase();
+        var path = __cwBetNodePath(node).toLowerCase();
+        var hasTouch = __cwHasBetTouchSignal(node);
+        var semantic = /new button|board|bet|odd|even|tai|xiu|chan|le|zone|slot|frame|mask|cua/.test(name + '|' + path);
+        if (src.indexOf('near-') === 0) {
+            if (hasTouch)
+                return {
+                    ok: true,
+                    reason: 'near_touch'
+                };
+            if (semantic)
+                return {
+                    ok: true,
+                    reason: 'near_semantic'
+                };
+            return {
+                ok: true,
+                reason: 'near_rect'
+            };
+        }
+        if (src.indexOf('tail-click-') === 0) {
+            if (!hasTouch)
+                return {
+                    ok: false,
+                    reason: 'tail_no_touch'
+                };
+            if (/new button/.test(name) || /board|bet|odd|even|tai|xiu|chan|le|zone|slot|frame|mask|cua/.test(path))
+                return {
+                    ok: true,
+                    reason: 'tail_click'
+                };
+            return {
+                ok: false,
+                reason: 'tail_semantic_miss'
+            };
+        }
+        if (src.indexOf('anchor-') === 0 || src.indexOf('find-side-fallback') === 0) {
+            if (hasTouch && semantic)
+                return {
+                    ok: true,
+                    reason: 'anchor_touch'
+                };
+            if (hasTouch)
+                return {
+                    ok: true,
+                    reason: 'anchor_has_touch'
+                };
+            if (semantic)
+                return {
+                    ok: true,
+                    reason: 'anchor_semantic'
+                };
+            return {
+                ok: false,
+                reason: 'anchor_semantic_miss'
+            };
+        }
+        return {
+            ok: false,
+            reason: 'source_rejected'
+        };
+    }
+    function __cwAcceptBetCandidate(node, rect, sourceTag) {
+        return !!__cwExplainBetCandidate(node, rect, sourceTag).ok;
+    }
     function listClickableTargets(root) {
         var list = [];
         (function walk(n) {
@@ -3581,25 +4218,171 @@
     function findBetTarget(side) {
         var WANT = normalizeSide(side);
         var tail = BET_TAILS[WANT];
+        var trace = __cwMakeBetTrace(WANT, tail);
+        __cwPushBetTrace(trace, 'start', {
+            tail: String(tail || '')
+        });
+        var exact = __cwFindExactBetTarget(WANT, trace);
+        if (exact && exact.node) {
+            trace.chosen = {
+                nodeName: String(exact.node.name || ''),
+                path: __cwBetNodePath(exact.node),
+                sourceTag: String(exact.sourceTag || ''),
+                selectorPath: String(exact.selectorPath || ''),
+                zonePath: String(exact.zonePath || ''),
+                boardPath: String(exact.boardPath || ''),
+                pointFamily: String(exact.pointFamily || ''),
+                rect: __cwBetRectLite(exact.rect),
+                boardRect: __cwBetRectLite(exact.boardRect),
+                cellRect: __cwBetRectLite(exact.cellRect)
+            };
+            __cwStoreBetTrace(trace);
+            return exact;
+        }
+        if (window.__cw_strictBetSelector !== false) {
+            __cwStoreBetTrace(trace);
+            return null;
+        }
         if (tail) {
             var roots = findNodesByTail(tail);
+            __cwPushBetTrace(trace, 'tail-roots', {
+                count: roots.length
+            });
             var best = null;
-            for (var i = 0; i < roots.length; i++) {
-                var list = listClickableTargets(roots[i]);
-                if (list.length && (!best || (list[0].area || 0) > (best.area || 0)))
-                    best = list[0];
+            function consider(node, rect, score, sourceTag) {
+                var saneRect = rect || rectFromNodeCompat(node) || rectFromNodeScreen(node);
+                var explain = __cwExplainBetCandidate(node, saneRect, sourceTag);
+                __cwPushBetTrace(trace, 'consider', {
+                    sourceTag: String(sourceTag || ''),
+                    score: Math.round(__cwNumber(score, 0) * 10) / 10,
+                    accept: !!explain.ok,
+                    reason: String(explain.reason || ''),
+                    node: __cwBetNodeSnapshot(node, saneRect)
+                });
+                if (!explain.ok)
+                    return;
+                var totalScore = __cwNumber(score, 0);
+                if (!best || totalScore > __cwNumber(best.score, 0) || (Math.abs(totalScore - __cwNumber(best.score, 0)) < 0.5 && __cwNumber((saneRect && saneRect.w || 0) * (saneRect && saneRect.h || 0), 0) < __cwNumber(best.area, 0))) {
+                    best = {
+                        node: node,
+                        rect: saneRect,
+                        area: __cwNumber((saneRect && saneRect.w || 0) * (saneRect && saneRect.h || 0), 0),
+                        score: totalScore,
+                        sourceTag: String(sourceTag || '')
+                    };
+                }
             }
+            for (var i = 0; i < roots.length; i++) {
+                var root = roots[i];
+                var rawRootRect = __cwPickBetRect(rectFromNodeScreen(root), rectFromNodeCompat(root));
+                var rootRect = __cwBetRectSane(rawRootRect) ? rawRootRect : null;
+                var boardRect = __cwFindBoardBackRect(root);
+                var compactRect = __cwBuildBetInnerProbeRect(WANT, rawRootRect, boardRect);
+                var rootInfo = __cwBetNodeSnapshot(root, rawRootRect) || {};
+                rootInfo.rectSane = !!rootRect;
+                rootInfo.compactRect = __cwBetRectLite(compactRect);
+                rootInfo.boardRect = __cwBetRectLite(boardRect);
+                trace.roots.push(rootInfo);
+                var anchor = null;
+                if (!rootRect)
+                    anchor = __cwResolveBetAnchor(root, WANT, trace, 'tail-' + i);
+                if (anchor && anchor.node)
+                    consider(anchor.node, compactRect || anchor.rect, 120 + __cwNumber(anchor.score, 0), 'anchor-' + i + '-0');
+                var focusRect = compactRect || rootRect || (anchor && anchor.rect) || null;
+                if (!focusRect) {
+                    __cwPushBetTrace(trace, 'focus-missing', {
+                        rootIndex: i,
+                        root: rootInfo
+                    });
+                    continue;
+                }
+                var cur = (anchor && anchor.scopeNode) || (root && (root.parent || root._parent || null));
+                for (var d = 1; cur && d <= 4; d++) {
+                    var nearHits = __cwCollectBetNearHits(cur, focusRect, {
+                        maxNearNodes: d <= 2 ? 260 : 160,
+                        preferClickable: true
+                    });
+                    __cwPushBetTrace(trace, 'near-scan', {
+                        rootIndex: i,
+                        depth: d,
+                        focusRect: __cwBetRectLite(focusRect),
+                        scope: __cwBetNodeSnapshot(cur),
+                        top: nearHits.slice(0, 3).map(function (hit) {
+                            return {
+                                score: Math.round(__cwNumber(hit.score, 0) * 10) / 10,
+                                area: Math.round(__cwNumber(hit.area, 0)),
+                                node: __cwBetNodeSnapshot(hit.node, hit.rect)
+                            };
+                        })
+                    });
+                    for (var h = 0; h < nearHits.length && h < (d <= 2 ? 8 : 4); h++) {
+                        var hit = nearHits[h];
+                        if (!hit || !hit.node)
+                            continue;
+                        var boost = (d === 1 ? 160 : (d === 2 ? 60 : 12));
+                        consider(hit.node, hit.rect || rectFromNodeCompat(hit.node) || rectFromNodeScreen(hit.node), __cwNumber(hit.score, 0) + boost, 'near-' + i + '-' + d + '-' + h);
+                    }
+                    cur = cur.parent || cur._parent || null;
+                }
+                var listBase = (anchor && anchor.scopeNode) || root;
+                var list = listClickableTargets(listBase);
+                __cwPushBetTrace(trace, 'tail-clickables', {
+                    rootIndex: i,
+                    scope: __cwBetNodeSnapshot(listBase),
+                    top: list.slice(0, 4).map(function (item) {
+                        return {
+                            area: Math.round(__cwNumber(item.area, 0)),
+                            node: __cwBetNodeSnapshot(item.node, item.rect)
+                        };
+                    })
+                });
+                for (var j = 0; j < list.length && j < 6; j++) {
+                    var item = list[j];
+                    if (!item || !item.node)
+                        continue;
+                    consider(item.node, item.rect || rectFromNodeCompat(item.node) || rectFromNodeScreen(item.node), 10 - j, 'tail-click-' + i + '-' + j);
+                }
+            }
+            if (!best) {
+                var sideNode = findSide(side);
+                var sideBoardRect = sideNode ? __cwFindBoardBackRect(sideNode) : null;
+                var sideCompactRect = __cwBuildBetInnerProbeRect(WANT, null, sideBoardRect);
+                __cwPushBetTrace(trace, 'find-side', {
+                    node: sideNode ? __cwBetNodeSnapshot(sideNode) : null,
+                    boardRect: __cwBetRectLite(sideBoardRect),
+                    compactRect: __cwBetRectLite(sideCompactRect)
+                });
+                if (sideNode) {
+                    var sideRect = __cwPickBetRect(rectFromNodeScreen(sideNode), rectFromNodeCompat(sideNode));
+                    var sideAnchor = __cwBetRectSane(sideRect) ? {
+                        node: sideNode,
+                        rect: sideCompactRect || sideRect,
+                        score: 48,
+                        scopeNode: sideNode.parent || sideNode._parent || null,
+                        tag: 'find-side-direct'
+                    } : __cwResolveBetAnchor(sideNode, WANT, trace, 'find-side');
+                    if (sideAnchor && sideAnchor.node)
+                        consider(sideAnchor.node, sideCompactRect || sideAnchor.rect, 44 + __cwNumber(sideAnchor.score, 0), 'find-side-fallback');
+                }
+            }
+            trace.chosen = best && best.node ? {
+                nodeName: String(best.node.name || ''),
+                path: __cwBetNodePath(best.node),
+                sourceTag: String(best.sourceTag || ''),
+                selectorPath: String(best.selectorPath || ''),
+                boardPath: String(best.boardPath || ''),
+                pointFamily: String(best.pointFamily || ''),
+                score: Math.round(__cwNumber(best.score, 0) * 10) / 10,
+                rect: __cwBetRectLite(best.rect),
+                boardRect: __cwBetRectLite(best.boardRect),
+                cellRect: __cwBetRectLite(best.cellRect)
+            } : null;
+            __cwStoreBetTrace(trace);
             if (best && best.node)
                 return best;
         }
-        var btn = findSide(side);
-        if (!btn)
-            return null;
-        return {
-            node: btn,
-            rect: rectFromNodeCompat(btn),
-            area: 0
-        };
+        __cwStoreBetTrace(trace);
+        return null;
     }
     function emitBtnToggle(node) {
         var b = getComp(node, cc.Button);
@@ -3796,50 +4579,116 @@
         } catch (e) {}
         return false;
     }
-    function findChipNodeFromLabel(labelNode) {
+    function findDescendantByName(root, wanted, limit) {
+        if (!root || !wanted)
+            return null;
+        var q = [root],
+        seen = [],
+        n = 0,
+        max = Math.max(32, limit || 220);
+        while (q.length && n < max) {
+            var cur = q.shift();
+            if (!cur || seen.indexOf(cur) !== -1)
+                continue;
+            seen.push(cur);
+            n++;
+            if (String(cur.name || '') === wanted)
+                return cur;
+            var kids = cur.children || cur._children || [];
+            for (var i = 0; i < kids.length; i++)
+                q.push(kids[i]);
+        }
+        return null;
+    }
+    function chipNameByAmount(amount) {
+        var tail = CHIP_TAILS && CHIP_TAILS[String(amount)] ? String(CHIP_TAILS[String(amount)]) : '';
+        var m = tail.match(/lbl_chip_value(\d+)/i);
+        if (!m)
+            return '';
+        return 'chip' + parseInt(m[1], 10);
+    }
+    function findChipNodeFromLabel(labelNode, amountHint) {
         if (!labelNode)
             return null;
-        var p = labelNode.parent || labelNode._parent || null;
-        if (!p || !(p.children || p._children))
-            return null;
-        var kids = p.children || p._children;
+        var wants = [];
+        function pushWant(name) {
+            name = String(name || '');
+            if (!name)
+                return;
+            for (var i = 0; i < wants.length; i++) {
+                if (wants[i] === name)
+                    return;
+            }
+            wants.push(name);
+        }
+        pushWant(chipNameByAmount(amountHint));
         var nm = String(labelNode.name || '');
         var m = nm.match(/lbl_chip_value(\d+)/i);
-        if (m) {
-            var idx = parseInt(m[1], 10);
-            var direct = 'chip' + idx;
-            for (var i = 0; i < kids.length; i++) {
-                if (kids[i] && kids[i].name === direct)
-                    return kids[i];
+        if (m)
+            pushWant('chip' + parseInt(m[1], 10));
+        var path = String(fullPath(labelNode, 220) || '');
+        var all = path.match(/\/chip(\d+)(?:\/|$)/ig) || [];
+        for (var ai = 0; ai < all.length; ai++) {
+            var mm = String(all[ai] || '').match(/chip(\d+)/i);
+            if (mm)
+                pushWant('chip' + parseInt(mm[1], 10));
+        }
+        if (!wants.length)
+            return null;
+        for (var wi = 0; wi < wants.length; wi++) {
+            var exact = wants[wi];
+            var cur0 = labelNode;
+            var d0 = 0;
+            while (cur0 && d0 <= 8) {
+                if (String(cur0.name || '') === exact)
+                    return cur0;
+                cur0 = cur0.parent || cur0._parent || null;
+                d0++;
             }
         }
-        var lp = nodeWorldPos(labelNode);
-        var best = null;
-        var bestD = null;
-        for (var j = 0; j < kids.length; j++) {
-            var k = kids[j];
-            if (!k)
-                continue;
-            var kn = String(k.name || '');
-            if (kn.indexOf('chip') === 0 || hasCompName(k, 'ChipItem')) {
-                var kp = nodeWorldPos(k);
-                var d = dist2(lp.x || 0, lp.y || 0, kp.x || 0, kp.y || 0);
-                if (bestD == null || d < bestD) {
-                    best = k;
-                    bestD = d;
+        var scopes = [];
+        var p = labelNode.parent || labelNode._parent || null;
+        if (p)
+            scopes.push(p);
+        if (p && (p.parent || p._parent))
+            scopes.push(p.parent || p._parent);
+        if (p && (p.parent || p._parent) && ((p.parent || p._parent).parent || (p.parent || p._parent)._parent))
+            scopes.push((p.parent || p._parent).parent || (p.parent || p._parent)._parent);
+        for (var wi2 = 0; wi2 < wants.length; wi2++) {
+            var exact2 = wants[wi2];
+            for (var s = 0; s < scopes.length; s++) {
+                var scope = scopes[s];
+                if (!scope)
+                    continue;
+                var kids = scope.children || scope._children || [];
+                for (var i = 0; i < kids.length; i++) {
+                    if (kids[i] && String(kids[i].name || '') === exact2)
+                        return kids[i];
                 }
+                var deep = findDescendantByName(scope, exact2, 260);
+                if (deep)
+                    return deep;
             }
         }
-        return best;
+        return null;
     }
-    function resolveChipNode(n) {
+    function resolveChipNode(n, amountHint) {
         if (!n)
             return null;
         var nm = String(n.name || '');
+        if (/^chip\d+$/i.test(nm))
+            return n;
         if (nm.indexOf('lbl_chip_value') !== -1) {
-            var c = findChipNodeFromLabel(n);
+            var c = findChipNodeFromLabel(n, amountHint);
             if (c)
                 return c;
+        }
+        var path = String(fullPath(n, 220) || '');
+        var m = path.match(/\/chip(\d+)(?:\/|$)/i);
+        if (m) {
+            var c2 = findDescendantByName(cc.director.getScene(), 'chip' + parseInt(m[1], 10), 2000);
+            if (c2)
+                return c2;
         }
         return n;
     }
@@ -3895,15 +4744,180 @@
             if (!labelNode)
                 continue;
             var hit = clickableOf(labelNode, 10);
-            var chip = findChipNodeFromLabel(labelNode);
-            var target = chip || hit || labelNode;
+            var chip = findChipNodeFromLabel(labelNode, +val);
+            var target = chip || labelNode;
             out[val] = {
                 entry: target,
                 node: target,
-                rect: rectFromNodeScreen(labelNode)
+                rect: rectFromNodeScreen(target) || rectFromNodeScreen(labelNode),
+                labelNode: labelNode,
+                chipNode: chip,
+                hitNode: hit,
+                clickableNode: chip ? clickableOf(chip, 6) : hit
             };
         }
         return out;
+    }
+    function scanChipCatalogRaw() {
+        var best = {};
+        walkNodes(function (n) {
+            if (!n || !active(n) || !nodeInGame(n))
+                return;
+            var lb = getComp(n, cc.Label);
+            var rt = getComp(n, cc.RichText);
+            var txt = '';
+            if (lb && typeof lb.string !== 'undefined')
+                txt = String(lb.string == null ? '' : lb.string);
+            else if (rt && typeof rt.string !== 'undefined')
+                txt = String(rt.string == null ? '' : rt.string);
+            if (!txt)
+                return;
+            var amount = parseAmountLoose(txt);
+            if (!amount)
+                return;
+            var path = String(fullPath(n, 160) || '');
+            var pathL = path.toLowerCase();
+            var name = String(n.name || '');
+            var nameL = name.toLowerCase();
+            var chipNode = findChipNodeFromLabel(n, amount);
+            var expectedChip = chipNameByAmount(amount);
+            var score = 0;
+            if (/lbl_chip_value\d+/i.test(name))
+                score += 100;
+            if (/chip_panel|chip_mask|bet_panel\/chips|\/chips\//i.test(pathL))
+                score += 30;
+            if (/chip|coin|phinh|menh|choose|chon/i.test(pathL))
+                score += 12;
+            if (txt && NORM(txt).indexOf(String(amount)) !== -1)
+                score += 8;
+            if (/^lbl_/i.test(name))
+                score += 4;
+            if (chipNode)
+                score += 80;
+            if (chipNode && expectedChip && String(chipNode.name || '') === expectedChip)
+                score += 40;
+            var rect = rectFromNodeScreen(n);
+            var clickableNode = chipNode ? clickableOf(chipNode, 6) : clickableOf(n, 6);
+            var cur = best[String(amount)];
+            if (!cur || score > cur.score) {
+                best[String(amount)] = {
+                    amount: amount,
+                    score: score,
+                    node: chipNode || n,
+                    labelNode: n,
+                    chipNode: chipNode,
+                    clickableNode: clickableNode,
+                    text: txt,
+                    path: path,
+                    rect: rect
+                };
+            }
+        });
+        var out = {};
+        for (var k in best) {
+            var it = best[k];
+            out[k] = {
+                entry: it.node,
+                node: it.node,
+                labelNode: it.labelNode,
+                chipNode: it.chipNode,
+                clickableNode: it.clickableNode,
+                text: it.text,
+                path: it.path,
+                rect: it.rect,
+                score: it.score
+            };
+        }
+        return out;
+    }
+    function scanChipLabelsVerbose() {
+        var rows = [];
+        walkNodes(function (n) {
+            if (!n || !active(n) || !nodeInGame(n))
+                return;
+            var lb = getComp(n, cc.Label);
+            var rt = getComp(n, cc.RichText);
+            var txt = '';
+            if (lb && typeof lb.string !== 'undefined')
+                txt = String(lb.string == null ? '' : lb.string);
+            else if (rt && typeof rt.string !== 'undefined')
+                txt = String(rt.string == null ? '' : rt.string);
+            var nm = String(n.name || '');
+            var path = String(fullPath(n, 180) || '');
+            var pathL = path.toLowerCase();
+            var amount = parseAmountLoose(txt);
+            var isChipByName = /lbl_chip_value\d+/i.test(nm);
+            var isChipByPath = /chip_panel|chip_mask|bet_panel\/chips|\/chips\//i.test(pathL);
+            var isChipByText = amount != null;
+            if (!(isChipByName || (isChipByPath && isChipByText)))
+                return;
+            var rect = rectFromNodeScreen(n);
+            var chipNode = findChipNodeFromLabel(n);
+            var clickNode = clickableOf(n, 6);
+            var parent = n.parent || n._parent || null;
+            var siblingNames = [];
+            if (parent) {
+                var kids = parent.children || parent._children || [];
+                for (var i = 0; i < kids.length; i++) {
+                    if (!kids[i])
+                        continue;
+                    siblingNames.push(String(kids[i].name || ''));
+                    if (siblingNames.length >= 12)
+                        break;
+                }
+            }
+            rows.push({
+                name: nm,
+                text: txt,
+                amount: amount,
+                path: path,
+                rect: [Math.round(rect.x || 0), Math.round(rect.y || 0), Math.round(rect.w || 0), Math.round(rect.h || 0)].join(','),
+                parent: parent ? String(parent.name || '') : '',
+                chipNode: chipNode ? String(chipNode.name || '') : '',
+                clickableNode: clickNode ? String(clickNode.name || '') : '',
+                siblings: siblingNames.join('|')
+            });
+        });
+        rows.sort(function (a, b) {
+            if ((a.amount || 0) !== (b.amount || 0))
+                return (a.amount || 0) - (b.amount || 0);
+            return String(a.name || '').localeCompare(String(b.name || ''));
+        });
+        return rows;
+    }
+    function buildChipMapFromVerbose(rows) {
+        var best = {};
+        rows = rows || [];
+        for (var i = 0; i < rows.length; i++) {
+            var r = rows[i];
+            var amount = Math.max(0, Math.floor(+r.amount || 0));
+            if (!amount)
+                continue;
+            var score = 0;
+            if (/lbl_chip_value\d+/i.test(r.name || ''))
+                score += 100;
+            if (r.chipNode)
+                score += 20;
+            if (r.clickableNode && r.clickableNode !== r.name)
+                score += 8;
+            if (r.rect && r.rect !== '0,0,1,1')
+                score += 5;
+            var cur = best[String(amount)];
+            if (!cur || score > cur.score)
+                best[String(amount)] = {
+                    amount: amount,
+                    score: score,
+                    labelName: r.name || '',
+                    text: r.text || '',
+                    path: r.path || '',
+                    chipNodeName: r.chipNode || '',
+                    clickableNodeName: r.clickableNode || '',
+                    parent: r.parent || '',
+                    siblings: r.siblings || '',
+                    rect: r.rect || ''
+                };
+        }
+        return best;
     }
 
     var prevScan = window.cwScanChips;
@@ -4185,6 +5199,1699 @@
             });
             return true;
         });
+    };
+
+    function __cwTestFindToggleHost(node, depth) {
+        var cur = node,
+        d = 0;
+        depth = depth == null ? 6 : depth;
+        while (cur && d <= depth) {
+            var tg = getComp(cur, cc.Toggle);
+            if (tg)
+                return {
+                    node: cur,
+                    toggle: tg
+                };
+            cur = cur.parent || cur._parent || null;
+            d++;
+        }
+        return null;
+    }
+    function __cwTestChipSelected(map) {
+        var keys = Object.keys(map || {}).sort(function (a, b) {
+            return (+a) - (+b);
+        });
+        var anyToggle = false;
+        for (var i = 0; i < keys.length; i++) {
+            var info = map[keys[i]];
+            if (!info || !info.node)
+                continue;
+            var target = info.chipNode || resolveChipNode(info.node) || info.node;
+            var host = __cwTestFindToggleHost(target, 6);
+            if (!host || !host.toggle)
+                continue;
+            anyToggle = true;
+            if (host.toggle.isChecked)
+                return {
+                    value: +keys[i],
+                    anyToggle: true,
+                    node: host.node
+                };
+        }
+        return {
+            value: null,
+            anyToggle: anyToggle,
+            node: null
+        };
+    }
+    function __cwNodeProbeLine(node, tag) {
+        if (!node)
+            return null;
+        var rect = rectFromNodeScreen(node) || rectFromNodeCompat(node) || null;
+        var btn = null,
+        tgl = null,
+        tl = false;
+        try {
+            btn = getComp(node, cc.Button);
+        } catch (e) {}
+        try {
+            tgl = getComp(node, cc.Toggle);
+        } catch (e2) {}
+        try {
+            tl = !!node._touchListener;
+        } catch (e3) {}
+        return {
+            tag: String(tag || ''),
+            name: String(node.name || ''),
+            path: String(fullPath(node, 160) || ''),
+            active: node.active === false ? 0 : 1,
+            clickable: clickable(node) ? 1 : 0,
+            hasButton: btn ? 1 : 0,
+            hasToggle: tgl ? 1 : 0,
+            interactable: btn ? (btn.interactable !== false ? 1 : 0) : (tgl ? (tgl.interactable !== false ? 1 : 0) : ''),
+            checked: tgl ? (!!tgl.isChecked ? 1 : 0) : '',
+            touchListener: tl ? 1 : 0,
+            children: (node.children || node._children || []).length || 0,
+            rect: rect ? [Math.round(__cwNumber(rect.sx, rect.x)), Math.round(__cwNumber(rect.sy, rect.y)), Math.round(Math.max(__cwNumber(rect.sw, rect.w), 0)), Math.round(Math.max(__cwNumber(rect.sh, rect.h), 0))].join(',') : '',
+            scale: [Math.round(__cwNumber(node.scaleX, __cwNumber(node.scale && node.scale.x, 1)) * 100) / 100, Math.round(__cwNumber(node.scaleY, __cwNumber(node.scale && node.scale.y, 1)) * 100) / 100].join(','),
+            opacity: Math.round(__cwNumber(node.opacity, __cwNumber(node._opacity, 0))),
+            color: (function () {
+                try {
+                    var c = node.color || node._color || null;
+                    return c ? [c.r || 0, c.g || 0, c.b || 0].join(',') : '';
+                } catch (e4) {
+                    return '';
+                }
+            })()
+        };
+    }
+    function __cwCollectChipProbeCandidates(info, opts) {
+        opts = opts || {};
+        var scope = String(opts.candidateScope || 'core').toLowerCase();
+        var includeSiblings = scope === 'deep' || opts.deepCandidates === true;
+        var includeChildren = scope !== 'core' || opts.includeChildren === true;
+        var out = [];
+        var seen = [];
+        function push(node, tag) {
+            if (!node || seen.indexOf(node) !== -1)
+                return;
+            seen.push(node);
+            out.push({
+                node: node,
+                row: __cwNodeProbeLine(node, tag)
+            });
+        }
+        if (!info || !info.node)
+            return out;
+        var labelNode = info.labelNode || null;
+        var chipNode = info.chipNode || resolveChipNode(info.node) || info.node;
+        var clickNode = info.clickableNode || clickableOf(chipNode, 6) || chipNode;
+        push(labelNode, 'label');
+        push(chipNode, 'chip');
+        push(clickNode, 'clickable');
+        var cur = chipNode,
+        depth = 0;
+        while (cur && depth <= 6) {
+            push(cur, depth === 0 ? 'chip-self' : ('ancestor-' + depth));
+            if (includeChildren) {
+                var kids = cur.children || cur._children || [];
+                for (var i = 0; i < kids.length && i < 16; i++) {
+                    var kid = kids[i];
+                    var nm = String(kid && kid.name || '');
+                    if (!kid)
+                        continue;
+                    if (clickable(kid) || /hit|mask|panel|btn|button|touch|select|effect|fx|glow|light|active/i.test(nm))
+                        push(kid, 'child-' + depth + '-' + i);
+                }
+            }
+            var parent = cur.parent || cur._parent || null;
+            if (includeSiblings && parent) {
+                var sibs = parent.children || parent._children || [];
+                for (var j = 0; j < sibs.length && j < 24; j++) {
+                    var sib = sibs[j];
+                    var snm = String(sib && sib.name || '');
+                    if (!sib || sib === cur)
+                        continue;
+                    if (clickable(sib) || /hit|mask|panel|btn|button|touch|select|effect|fx|glow|light|active/i.test(snm))
+                        push(sib, 'sibling-' + depth + '-' + j);
+                }
+            }
+            cur = parent;
+            depth++;
+        }
+        return out;
+    }
+    async function __cwProbeCandidateAction(amount, map, item, opts) {
+        opts = opts || {};
+        if (!item || !item.node)
+            return null;
+        var node = item.node;
+        var rect = rectFromNodeScreen(node) || rectFromNodeCompat(node) || null;
+        var beforeSel = __cwTestChipSelected(map);
+        var beforeDigest = (__cwGetChipStateDigest() || {})[String(amount)] || '';
+        var touched = false,
+        emitted = false,
+        rectClicked = false;
+        try {
+            touched = emitTouchOnNode(node);
+        } catch (e) {}
+        if (!touched) {
+            try {
+                emitted = emitClick(node);
+            } catch (e2) {}
+        }
+        if (!touched && !emitted && rect) {
+            try {
+                rectClicked = clickRectCenter(rect);
+            } catch (e3) {}
+        }
+        if (opts.mark !== false && rect)
+            showFocus(rect);
+        await sleep(opts.delayMs || 130);
+        var afterSel = __cwTestChipSelected(map);
+        var afterDigest = (__cwGetChipStateDigest() || {})[String(amount)] || '';
+        return {
+            tag: item.row && item.row.tag || '',
+            name: item.row && item.row.name || '',
+            touchOk: !!touched,
+            emitOk: !!emitted,
+            rectOk: !!rectClicked,
+            selectionBefore: beforeSel,
+            selectionAfter: afterSel,
+            digestChanged: beforeDigest !== afterDigest
+        };
+    }
+    function __cwCandidateLiteRows(candidates) {
+        candidates = candidates || [];
+        var rows = [];
+        for (var i = 0; i < candidates.length; i++) {
+            var r = candidates[i] && candidates[i].row ? candidates[i].row : null;
+            if (!r)
+                continue;
+            rows.push({
+                idx: i,
+                tag: r.tag,
+                name: r.name,
+                clickable: r.clickable,
+                hasButton: r.hasButton,
+                hasToggle: r.hasToggle,
+                touchListener: r.touchListener,
+                interactable: r.interactable,
+                rect: r.rect
+            });
+        }
+        return rows;
+    }
+    function __cwFindCandidateForManualTest(candidates, key) {
+        if (!candidates || !candidates.length)
+            return null;
+        if (typeof key === 'number' && isFinite(key)) {
+            var idx = Math.max(0, Math.floor(key));
+            return candidates[idx] || null;
+        }
+        var s = String(key == null ? '' : key).trim().toLowerCase();
+        if (!s)
+            return candidates[0] || null;
+        for (var i = 0; i < candidates.length; i++) {
+            var row = candidates[i] && candidates[i].row ? candidates[i].row : null;
+            if (!row)
+                continue;
+            if (String(row.tag || '').toLowerCase() === s)
+                return candidates[i];
+        }
+        for (var j = 0; j < candidates.length; j++) {
+            var row2 = candidates[j] && candidates[j].row ? candidates[j].row : null;
+            if (!row2)
+                continue;
+            var hay = (String(row2.tag || '') + '|' + String(row2.name || '')).toLowerCase();
+            if (hay.indexOf(s) !== -1)
+                return candidates[j];
+        }
+        return null;
+    }
+    function __cwSideTotalKey(side) {
+        side = normalizeSide(side);
+        if (side === 'CHAN')
+            return 'C';
+        if (side === 'LE')
+            return 'L';
+        if (side === 'TAI')
+            return 'T';
+        if (side === 'XIU')
+            return 'X';
+        return '';
+    }
+    function __cwRectNorm(rect) {
+        if (!rect)
+            return null;
+        var x = __cwNumber(rect.sx, rect.x);
+        var y = __cwNumber(rect.sy, rect.y);
+        var w = Math.max(1, __cwNumber(rect.sw, rect.w));
+        var h = Math.max(1, __cwNumber(rect.sh, rect.h));
+        return {
+            x: x,
+            y: y,
+            w: w,
+            h: h,
+            cx: x + w / 2,
+            cy: y + h / 2,
+            left: x,
+            top: y,
+            right: x + w,
+            bottom: y + h
+        };
+    }
+    function __cwRectContainsPt(rect, x, y, pad) {
+        rect = __cwRectNorm(rect);
+        if (!rect)
+            return false;
+        pad = Math.max(0, __cwNumber(pad, 0));
+        return x >= rect.left - pad && x <= rect.right + pad && y >= rect.top - pad && y <= rect.bottom + pad;
+    }
+    function __cwRectDistToPt(rect, x, y) {
+        rect = __cwRectNorm(rect);
+        if (!rect)
+            return 1e9;
+        var dx = 0;
+        if (x < rect.left)
+            dx = rect.left - x;
+        else if (x > rect.right)
+            dx = x - rect.right;
+        var dy = 0;
+        if (y < rect.top)
+            dy = rect.top - y;
+        else if (y > rect.bottom)
+            dy = y - rect.bottom;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+    function __cwBuildBetProbePoints(rect, opts) {
+        opts = opts || {};
+        var pts = [];
+        if (!rect)
+            return pts;
+        var nr = __cwRectNorm(rect);
+        var cx = nr.cx;
+        var cy = nr.cy;
+        var w = Math.max(nr.w, __cwNumber(opts.minProbeW, 140));
+        var h = Math.max(nr.h, __cwNumber(opts.minProbeH, 88));
+        var dx1 = Math.max(8, w * 0.16);
+        var dx2 = Math.max(16, w * 0.30);
+        var dx3 = Math.max(24, w * 0.42);
+        var dy1 = Math.max(6, h * 0.16);
+        var dy2 = Math.max(12, h * 0.30);
+        var dy3 = Math.max(18, h * 0.42);
+        __cwPushPoint(pts, cx, cy, 'center');
+        __cwPushPoint(pts, cx - dx1, cy, 'left-1');
+        __cwPushPoint(pts, cx + dx1, cy, 'right-1');
+        __cwPushPoint(pts, cx, cy - dy1, 'upper-1');
+        __cwPushPoint(pts, cx, cy + dy1, 'lower-1');
+        __cwPushPoint(pts, cx - dx2, cy, 'left-2');
+        __cwPushPoint(pts, cx + dx2, cy, 'right-2');
+        __cwPushPoint(pts, cx, cy - dy2, 'upper-2');
+        __cwPushPoint(pts, cx, cy + dy2, 'lower-2');
+        __cwPushPoint(pts, cx - dx1, cy - dy1, 'ul-1');
+        __cwPushPoint(pts, cx + dx1, cy - dy1, 'ur-1');
+        __cwPushPoint(pts, cx - dx1, cy + dy1, 'll-1');
+        __cwPushPoint(pts, cx + dx1, cy + dy1, 'lr-1');
+        __cwPushPoint(pts, cx - dx3, cy, 'left-3');
+        __cwPushPoint(pts, cx + dx3, cy, 'right-3');
+        __cwPushPoint(pts, cx, cy - dy3, 'upper-3');
+        __cwPushPoint(pts, cx, cy + dy3, 'lower-3');
+        __cwPushPoint(pts, cx - dx2, cy - dy2, 'ul-2');
+        __cwPushPoint(pts, cx + dx2, cy - dy2, 'ur-2');
+        __cwPushPoint(pts, cx - dx2, cy + dy2, 'll-2');
+        __cwPushPoint(pts, cx + dx2, cy + dy2, 'lr-2');
+        return pts;
+    }
+    function __cwCollectBetProbeCandidates(side, opts) {
+        opts = opts || {};
+        side = normalizeSide(side);
+        var out = [];
+        var seen = [];
+        function push(node, tag) {
+            if (!node || seen.indexOf(node) !== -1)
+                return;
+            seen.push(node);
+            out.push({
+                node: node,
+                row: __cwNodeProbeLine(node, tag)
+            });
+        }
+        function scanNear(anchor, focusRect, tag, maxHits) {
+            var hits = __cwCollectBetNearHits(anchor, focusRect, {
+                maxNearNodes: opts.maxNearNodes,
+                preferClickable: true
+            });
+            for (var i = 0; i < hits.length && i < Math.max(1, maxHits || 6); i++)
+                push(hits[i].node, tag + '-' + i);
+        }
+        var roots = [];
+        var tail = BET_TAILS[side];
+        if (tail)
+            roots = findNodesByTail(tail) || [];
+        for (var i = 0; i < roots.length; i++) {
+            var root = roots[i];
+            var rootRect = rectFromNodeScreen(root) || rectFromNodeCompat(root) || null;
+            push(root, 'tail-root-' + i);
+            var list = listClickableTargets(root) || [];
+            for (var j = 0; j < list.length && j < (opts.maxClickablePerRoot || 8); j++) {
+                if (list[j] && list[j].node)
+                    push(list[j].node, 'tail-click-' + i + '-' + j);
+            }
+            var cur = root.parent || root._parent || null;
+            for (var d = 1; cur && d <= (opts.maxAncestors || 4); d++) {
+                push(cur, 'ancestor-' + d);
+                if (rootRect)
+                    scanNear(cur, rootRect, 'near-' + i + '-' + d, d <= 2 ? 8 : 4);
+                if (opts.candidateScope === 'deep') {
+                    var list2 = listClickableTargets(cur) || [];
+                    for (var k = 0; k < list2.length && k < 4; k++) {
+                        if (list2[k] && list2[k].node)
+                            push(list2[k].node, 'ancestor-click-' + d + '-' + k);
+                    }
+                }
+                cur = cur.parent || cur._parent || null;
+            }
+        }
+        var tgt = findBetTarget(side);
+        if (tgt && tgt.node)
+            push(tgt.node, 'findBetTarget');
+        var sideNode = findSide(side);
+        if (sideNode)
+            push(sideNode, 'findSide');
+        return out;
+    }
+    async function __cwProbeBetCandidateAction(side, item, opts) {
+        opts = opts || {};
+        if (!item || !item.node)
+            return null;
+        side = normalizeSide(side);
+        var totalKey = __cwSideTotalKey(side);
+        if (opts.amount) {
+            try {
+                window.__cw_focusChipForHost && window.__cw_focusChipForHost(opts.amount);
+            } catch (e) {}
+            await sleep(opts.focusDelayMs || 140);
+        }
+        var rect = rectFromNodeCompat(item.node) || rectFromNodeScreen(item.node) || null;
+        var pts = __cwBuildBetProbePoints(rect, opts);
+        var before = sampleTotalsNow(true);
+        var baseVal = totalKey ? __cwNumber(before[totalKey], 0) : 0;
+        var rows = [];
+        for (var i = 0; i < pts.length && i < (opts.maxPoints || 9); i++) {
+            var pt = pts[i];
+            var tiny = {
+                sx: pt.x - 1,
+                sy: pt.y - 1,
+                sw: 2,
+                sh: 2,
+                x: pt.x - 1,
+                y: pt.y - 1,
+                w: 2,
+                h: 2
+            };
+            if (opts.mark !== false)
+                showFocus(tiny);
+            var touchOk = false,
+            canvasOk = false;
+            try {
+                touchOk = emitTouchAtRect(item.node, tiny);
+            } catch (e2) {}
+            try {
+                canvasOk = clickCanvasXY(pt.x, pt.y, true);
+            } catch (e3) {}
+            await sleep(opts.delayMs || 120);
+            var after = sampleTotalsNow(true);
+            var curVal = totalKey ? __cwNumber(after[totalKey], 0) : 0;
+            var delta = curVal - baseVal;
+            rows.push({
+                idx: i,
+                tag: pt.tag,
+                x: Math.round(pt.x * 10) / 10,
+                y: Math.round(pt.y * 10) / 10,
+                touchOk: !!touchOk,
+                canvasOk: !!canvasOk,
+                delta: delta,
+                changed: delta > 0.5
+            });
+            if (delta > 0.5)
+                break;
+        }
+        return {
+            side: side,
+            candidate: item.row,
+            points: rows,
+            totalsBefore: before,
+            totalsAfter: sampleTotalsNow(true)
+        };
+    }
+    function __cwTestChipRows(map) {
+        var keys = Object.keys(map || {}).sort(function (a, b) {
+            return (+a) - (+b);
+        });
+        var rows = [];
+        for (var i = 0; i < keys.length; i++) {
+            var val = +keys[i];
+            var info = map[keys[i]];
+            if (!info || !info.node)
+                continue;
+            var target = info.chipNode || resolveChipNode(info.node) || info.node;
+            var host = __cwTestFindToggleHost(target, 6);
+            rows.push({
+                amount: val,
+                node: target && target.name || '?',
+                label: info.labelNode && info.labelNode.name || '',
+                chipNode: info.chipNode && info.chipNode.name || '',
+                hitNode: info.hitNode && info.hitNode.name || '',
+                clickableNode: info.clickableNode && info.clickableNode.name || '',
+                text: info.text || '',
+                score: info.score || 0,
+                checked: !!(host && host.toggle && host.toggle.isChecked),
+                hasToggle: !!(host && host.toggle),
+                rect: (info.rect ? [Math.round(info.rect.x), Math.round(info.rect.y), Math.round(info.rect.w), Math.round(info.rect.h)].join(',') : '')
+            });
+        }
+        return rows;
+    }
+    async function __cwTestEnsureChipMap() {
+        var map = scanChipCatalogRaw();
+        if (!Object.keys(map).length)
+            map = window.cwScanChips ? (window.cwScanChips() || {}) : {};
+        if (!Object.keys(map).length) {
+            await tryOpenChipPanel();
+            await sleep(180);
+            map = scanChipCatalogRaw();
+            if (!Object.keys(map).length)
+                map = window.cwScanChips ? (window.cwScanChips() || {}) : {};
+        }
+        return map;
+    }
+    async function __cwTestFocusChipOnce(amount, opts) {
+        opts = opts || {};
+        var val = Math.max(0, Math.floor(+amount || 0));
+        var map = opts.map || await __cwTestEnsureChipMap();
+        var info = map[String(val)];
+        if (!info || !info.node) {
+            console.warn('[cwTestFocus] chip not found', val);
+            return {
+                ok: false,
+                reason: 'chip_not_found',
+                amount: val,
+                rows: __cwTestChipRows(map)
+            };
+        }
+        var target = resolveChipNode(info.node) || info.node;
+        var clickTarget = info.clickableNode || clickableOf(target, 6) || target;
+        var labelRect = info.rect || rectFromNodeScreen(info.labelNode || info.node) || null;
+        var targetRect = rectFromNodeScreen(target) || labelRect || null;
+        var before = __cwTestChipSelected(map);
+        var steps = [];
+        async function runStep(name, fn) {
+            var actionOk = false;
+            try {
+                actionOk = !!fn();
+            } catch (e) {
+                actionOk = false;
+            }
+            if (opts.mark !== false)
+                showFocus(targetRect || labelRect || null);
+            await sleep(opts.delayMs || 150);
+            var after = __cwTestChipSelected(map);
+            var row = {
+                step: name,
+                actionOk: actionOk,
+                selected: after.value,
+                verified: !!(after.anyToggle && after.value === val)
+            };
+            steps.push(row);
+            return row;
+        }
+
+        if (labelRect) {
+            var s0 = await runStep('clickLabelRect', function () {
+                    return clickRectCenter(labelRect);
+                });
+            if (s0.verified)
+                return {
+                    ok: true,
+                    amount: val,
+                    selectedBefore: before.value,
+                    selectedAfter: __cwTestChipSelected(map).value,
+                    steps: steps,
+                    rows: __cwTestChipRows(map)
+                };
+        }
+
+        var s1 = await runStep('emitTouchOnLabel', function () {
+                return emitTouchOnNode(info.labelNode || target);
+            });
+        if (s1.verified)
+            return {
+                ok: true,
+                amount: val,
+                selectedBefore: before.value,
+                selectedAfter: __cwTestChipSelected(map).value,
+                steps: steps,
+                rows: __cwTestChipRows(map)
+            };
+
+        var s2 = await runStep('emitClickClickable', function () {
+                return clickable(clickTarget) ? emitClick(clickTarget) : false;
+            });
+        if (s2.verified)
+            return {
+                ok: true,
+                amount: val,
+                selectedBefore: before.value,
+                selectedAfter: __cwTestChipSelected(map).value,
+                steps: steps,
+                rows: __cwTestChipRows(map)
+            };
+
+        if (targetRect) {
+            var s3 = await runStep('clickTargetRect', function () {
+                    return clickRectCenter(targetRect);
+                });
+            if (s3.verified)
+                return {
+                    ok: true,
+                    amount: val,
+                    selectedBefore: before.value,
+                    selectedAfter: __cwTestChipSelected(map).value,
+                    steps: steps,
+                    rows: __cwTestChipRows(map)
+                };
+        }
+
+        if (opts.forceToggle === true) {
+            var host = __cwTestFindToggleHost(target, 6);
+            if (host && host.toggle) {
+                await runStep('forceToggle', function () {
+                    host.toggle.isChecked = true;
+                    if (host.toggle._emitToggleEvents)
+                        host.toggle._emitToggleEvents();
+                    return true;
+                });
+            }
+        }
+        return {
+            ok: false,
+            amount: val,
+            selectedBefore: before.value,
+            selectedAfter: __cwTestChipSelected(map).value,
+            steps: steps,
+            rows: __cwTestChipRows(map)
+        };
+    }
+    async function __cwTestBetFlow(side, amount, opts) {
+        opts = opts || {};
+        side = normalizeSide(side);
+        var X = Math.max(0, Math.floor(+amount || 0));
+        X = X - (X % 1000);
+        if (!X)
+            throw new Error('amount=0');
+        var tgt = findBetTarget(side);
+        if (!tgt || !tgt.node)
+            throw new Error('bet target not found: ' + side);
+
+        var map = await __cwTestEnsureChipMap();
+        var availSet = {};
+        var mk = Object.keys(map);
+        for (var i = 0; i < mk.length; i++)
+            availSet[mk[i]] = 1;
+
+        var res = makePlan(X, availSet);
+        if (!res.plan.length || res.rest > 0) {
+            return {
+                ok: false,
+                side: side,
+                amount: X,
+                rest: res.rest,
+                plan: res.plan,
+                rows: __cwTestChipRows(map)
+            };
+        }
+
+        var out = [];
+        var betRect = tgt.rect || rectFromNodeScreen(tgt.node);
+        for (var p = 0; p < res.plan.length; p++) {
+            var step = res.plan[p];
+            for (var c = 0; c < step.count; c++) {
+                var focusRes = await __cwTestFocusChipOnce(step.val, {
+                        map: map,
+                        mark: opts.mark,
+                        delayMs: opts.focusDelayMs || 150,
+                        forceToggle: opts.forceToggle === true
+                    });
+                if (opts.mark !== false)
+                    showFocus(betRect || null);
+                var before = sampleTotalsNow(true);
+                var clickOk = clickBetTarget(tgt);
+                await sleep(opts.clickDelayMs || 120);
+                var changed = await waitForTotalsChange(before, side, opts.waitMs || 1600);
+                var after = sampleTotalsNow(true);
+                out.push({
+                    denom: step.val,
+                    turn: c + 1,
+                    focusOk: !!focusRes.ok,
+                    selectedAfterFocus: focusRes.selectedAfter,
+                    clickOk: !!clickOk,
+                    changed: !!changed,
+                    before: JSON.stringify(before),
+                    after: JSON.stringify(after)
+                });
+                if (opts.stopOnMiss !== false && (!focusRes.ok || !clickOk || !changed))
+                    break;
+            }
+            if (opts.stopOnMiss !== false) {
+                var last = out[out.length - 1];
+                if (last && (!last.focusOk || !last.clickOk || !last.changed))
+                    break;
+            }
+        }
+        var okAll = out.length > 0 && out.every(function (x) {
+            return x.focusOk && x.clickOk && x.changed;
+        });
+        try {
+            console.table(out);
+        } catch (e) {
+            console.log(out);
+        }
+        return {
+            ok: okAll,
+            side: side,
+            amount: X,
+            plan: res.plan,
+            rows: out,
+            chips: __cwTestChipRows(map)
+        };
+    }
+
+    window.cwDumpChipFocus = async function () {
+        var map = await __cwTestEnsureChipMap();
+        var rows = __cwTestChipRows(map);
+        try {
+            console.table(rows);
+        } catch (e) {
+            console.log(rows);
+        }
+        return rows;
+    };
+    window.cwScanChipCatalogRaw = function () {
+        var map = scanChipCatalogRaw();
+        var rows = __cwTestChipRows(map);
+        try {
+            console.table(rows);
+        } catch (e) {
+            console.log(rows);
+        }
+        return map;
+    };
+    window.cwDumpChipLabelsRaw = function () {
+        var rows = scanChipLabelsVerbose();
+        try {
+            console.table(rows);
+        } catch (e) {
+            console.log(rows);
+        }
+        return rows;
+    };
+    window.cwBuildChipMapRaw = function () {
+        var rows = scanChipLabelsVerbose();
+        var map = buildChipMapFromVerbose(rows);
+        try {
+            console.table(Object.keys(map).sort(function (a, b) {
+                    return (+a) - (+b);
+                }).map(function (k) {
+                    var it = map[k];
+                    return {
+                        amount: +k,
+                        labelName: it.labelName,
+                        text: it.text,
+                        chipNodeName: it.chipNodeName,
+                        clickableNodeName: it.clickableNodeName,
+                        parent: it.parent,
+                        rect: it.rect,
+                        score: it.score
+                    };
+                }));
+        } catch (e) {
+            console.log(map);
+        }
+        return map;
+    };
+    window.cwTestFocusChip = async function (amount, opts) {
+        var res = await __cwTestFocusChipOnce(amount, opts || {});
+        try {
+            console.table(res.steps || []);
+            console.table(res.rows || []);
+        } catch (e) {
+            console.log(res);
+        }
+        return res;
+    };
+    window.cwProbeChipFocus = async function (amount, opts) {
+        opts = opts || {};
+        var val = Math.max(0, Math.floor(+amount || 0));
+        var map = await __cwTestEnsureChipMap();
+        var info = map[String(val)] || null;
+        var target = info ? (info.chipNode || resolveChipNode(info.node) || info.node) : null;
+        var host = target ? __cwTestFindToggleHost(target, 6) : null;
+        var beforeSel = __cwTestChipSelected(map);
+        var beforeDigestAll = __cwGetChipStateDigest();
+        var beforeDigest = beforeDigestAll[String(val)] || '';
+        var tf = __cwEstimateUiTransform();
+        var pitch = __cwEstimateChipPitch(map, tf);
+        var focusPlan = info ? __cwBuildChipFocusPoints(info, tf, pitch) : {
+            nodeName: '',
+            raw: null,
+            size: null,
+            points: []
+        };
+        var candidates = info ? __cwCollectChipProbeCandidates(info, opts) : [];
+        var rows = __cwTestChipRows(map);
+        var jsTest = null;
+        if (opts.runJsTest !== false && info) {
+            jsTest = await __cwTestFocusChipOnce(val, {
+                map: map,
+                mark: opts.mark,
+                delayMs: opts.delayMs || 150,
+                forceToggle: opts.forceToggle === true
+            });
+        }
+        var afterSel = __cwTestChipSelected(map);
+        var afterDigestAll = __cwGetChipStateDigest();
+        var afterDigest = afterDigestAll[String(val)] || '';
+        var candidateTests = [];
+        if (opts.runCandidates === true && candidates.length) {
+            for (var ci = 0; ci < candidates.length && ci < (opts.maxCandidates || 18); ci++) {
+                var t = await __cwProbeCandidateAction(val, map, candidates[ci], opts);
+                if (t)
+                    candidateTests.push(t);
+            }
+        }
+        var out = {
+            ok: !!info,
+            amount: val,
+            info: info ? {
+                node: String(info.node && info.node.name || ''),
+                chipNode: String(info.chipNode && info.chipNode.name || ''),
+                labelNode: String(info.labelNode && info.labelNode.name || ''),
+                clickableNode: String(info.clickableNode && info.clickableNode.name || ''),
+                text: String(info.text || ''),
+                score: __cwNumber(info.score, 0),
+                rect: info.rect || null
+            } : null,
+            toggleHost: host ? {
+                node: String(host.node && host.node.name || ''),
+                isChecked: !!(host.toggle && host.toggle.isChecked)
+            } : null,
+            selectionBefore: beforeSel,
+            selectionAfter: afterSel,
+            digestChanged: beforeDigest !== afterDigest,
+            digestBefore: beforeDigest,
+            digestAfter: afterDigest,
+            transform: {
+                ok: !!tf.ok,
+                chipPitch: pitch,
+                anchors: tf.anchors || []
+            },
+            focusPlan: focusPlan,
+            candidates: candidates.map(function (x) {
+                    return x.row;
+                }),
+            candidateLite: __cwCandidateLiteRows(candidates),
+            candidateTests: candidateTests,
+            jsTest: jsTest,
+            rows: rows
+        };
+        try {
+            console.log('[cwProbeChipFocus]', out);
+            if (jsTest && jsTest.steps)
+                console.table(jsTest.steps);
+            if (out.candidateLite && out.candidateLite.length)
+                console.table(out.candidateLite);
+            if (candidateTests && candidateTests.length)
+                console.table(candidateTests);
+            if (rows && rows.length)
+                console.table(rows);
+        } catch (e) {}
+        return out;
+    };
+    window.cwListChipCandidates = async function (amount, opts) {
+        opts = opts || {};
+        var val = Math.max(0, Math.floor(+amount || 0));
+        var map = await __cwTestEnsureChipMap();
+        var info = map[String(val)] || null;
+        var candidates = info ? __cwCollectChipProbeCandidates(info, opts) : [];
+        var rows = __cwCandidateLiteRows(candidates);
+        try {
+            console.table(rows);
+        } catch (e) {
+            console.log(rows);
+        }
+        return rows;
+    };
+    window.cwTestChipCandidate = async function (amount, key, opts) {
+        opts = opts || {};
+        var val = Math.max(0, Math.floor(+amount || 0));
+        var map = await __cwTestEnsureChipMap();
+        var info = map[String(val)] || null;
+        if (!info)
+            return {
+                ok: false,
+                reason: 'chip_not_found',
+                amount: val
+            };
+        var candidates = __cwCollectChipProbeCandidates(info, opts);
+        var item = __cwFindCandidateForManualTest(candidates, key);
+        if (!item)
+            return {
+                ok: false,
+                reason: 'candidate_not_found',
+                amount: val,
+                key: key,
+                candidates: __cwCandidateLiteRows(candidates)
+            };
+        var res = await __cwProbeCandidateAction(val, map, item, opts);
+        var out = {
+            ok: !!res,
+            amount: val,
+            key: key,
+            candidate: item.row,
+            result: res,
+            selectionAfter: __cwTestChipSelected(map),
+            digestAfter: (__cwGetChipStateDigest() || {})[String(val)] || ''
+        };
+        try {
+            console.log('[cwTestChipCandidate]', out);
+        } catch (e) {}
+        return out;
+    };
+    window.cwListBetCandidates = function (side, opts) {
+        opts = opts || {};
+        var items = __cwCollectBetProbeCandidates(side, opts);
+        var rows = __cwCandidateLiteRows(items);
+        try {
+            console.table(rows);
+        } catch (e) {
+            console.log(rows);
+        }
+        return rows;
+    };
+    window.cwTestBetCandidate = async function (side, key, opts) {
+        opts = opts || {};
+        var items = __cwCollectBetProbeCandidates(side, opts);
+        var item = __cwFindCandidateForManualTest(items, key);
+        if (!item) {
+            return {
+                ok: false,
+                reason: 'candidate_not_found',
+                side: normalizeSide(side),
+                key: key,
+                candidates: __cwCandidateLiteRows(items)
+            };
+        }
+        var res = await __cwProbeBetCandidateAction(side, item, opts);
+        var out = {
+            ok: !!res,
+            side: normalizeSide(side),
+            key: key,
+            result: res,
+            candidates: __cwCandidateLiteRows(items)
+        };
+        try {
+            if (res && res.points)
+                console.table(res.points);
+            console.log('[cwTestBetCandidate]', out);
+        } catch (e) {}
+        return out;
+    };
+    window.cwTestBetFlow = async function (side, amount, opts) {
+        return await __cwTestBetFlow(side, amount, opts || {});
+    };
+
+    function __cwNumber(v, dft) {
+        v = Number(v);
+        return isFinite(v) ? v : (dft || 0);
+    }
+    function __cwRectCenterTop(r) {
+        if (!r)
+            return null;
+        var x = __cwNumber(r.sx, r.x) + __cwNumber(r.sw, r.w) / 2;
+        var y = __cwNumber(r.sy, r.y) + __cwNumber(r.sh, r.h) / 2;
+        return __cwToTopClientPoint(x, y);
+    }
+    function __cwFrameOffset() {
+        var ox = 0,
+        oy = 0;
+        try {
+            var w = window,
+            guard = 0;
+            while (w && w !== w.top && guard < 8) {
+                var fe = w.frameElement;
+                if (!fe || !fe.getBoundingClientRect)
+                    break;
+                var br = fe.getBoundingClientRect();
+                ox += __cwNumber(br.left, 0);
+                oy += __cwNumber(br.top, 0);
+                w = w.parent;
+                guard++;
+            }
+        } catch (e) {}
+        return {
+            x: ox,
+            y: oy
+        };
+    }
+    function __cwToTopClientPoint(x, y) {
+        var off = __cwFrameOffset();
+        return {
+            x: __cwNumber(x, 0) + off.x,
+            y: __cwNumber(y, 0) + off.y
+        };
+    }
+    function __cwCanvasToTopClientPoint(x, y, flipY) {
+        x = __cwNumber(x, NaN);
+        y = __cwNumber(y, NaN);
+        if (!isFinite(x) || !isFinite(y))
+            return null;
+        var c = null;
+        try {
+            c = document.querySelector('canvas');
+        } catch (e) {}
+        if (!c || !c.getBoundingClientRect)
+            return __cwToTopClientPoint(x, y);
+        var br = null;
+        try {
+            br = c.getBoundingClientRect();
+        } catch (e2) {}
+        if (!br)
+            return __cwToTopClientPoint(x, y);
+        var scaleX = (c.width ? (br.width / c.width) : 1);
+        var scaleY = (c.height ? (br.height / c.height) : 1);
+        if (!isFinite(scaleX) || scaleX <= 0)
+            scaleX = 1;
+        if (!isFinite(scaleY) || scaleY <= 0)
+            scaleY = 1;
+        var yy = y;
+        if (flipY && c.height)
+            yy = c.height - y;
+        var off = __cwFrameOffset();
+        return {
+            x: off.x + __cwNumber(br.left, 0) + x * scaleX,
+            y: off.y + __cwNumber(br.top, 0) + yy * scaleY
+        };
+    }
+    function __cwPushPoint(list, x, y, tag) {
+        x = __cwNumber(x, NaN);
+        y = __cwNumber(y, NaN);
+        if (!isFinite(x) || !isFinite(y))
+            return;
+        var k = Math.round(x) + ',' + Math.round(y);
+        for (var i = 0; i < list.length; i++) {
+            var old = list[i];
+            var ok = Math.round(__cwNumber(old.x, 0)) + ',' + Math.round(__cwNumber(old.y, 0));
+            if (ok === k)
+                return;
+        }
+        list.push({
+            x: Math.round(x * 10) / 10,
+            y: Math.round(y * 10) / 10,
+            tag: String(tag || '')
+        });
+    }
+    function __cwNodeRawPos(n) {
+        var x = 0,
+        y = 0,
+        cur = n,
+        depth = 0;
+        while (cur && depth < 40) {
+            try {
+                var p = cur._lpos || cur._pos || cur.position || null;
+                if (p) {
+                    x += __cwNumber(p.x, 0);
+                    y += __cwNumber(p.y, 0);
+                }
+            } catch (e) {}
+            cur = cur.parent || cur._parent || null;
+            depth++;
+        }
+        return {
+            x: x,
+            y: y
+        };
+    }
+    function __cwNodeSize(n) {
+        var cs = null;
+        try {
+            if (n && n.getContentSize)
+                cs = n.getContentSize();
+        } catch (e) {}
+        if ((!cs || (!cs.width && !cs.height)) && cc.UITransform && n && n.getComponent) {
+            try {
+                var ut = n.getComponent(cc.UITransform);
+                if (ut && ut.contentSize)
+                    cs = ut.contentSize;
+            } catch (e2) {}
+        }
+        if ((!cs || (!cs.width && !cs.height)) && n && n._contentSize)
+            cs = n._contentSize;
+        return {
+            w: Math.max(1, __cwNumber(cs && cs.width, 1)),
+            h: Math.max(1, __cwNumber(cs && cs.height, 1))
+        };
+    }
+    function __cwFitLinear(pairs, rawKey, screenKey) {
+        var n = 0,
+        sx = 0,
+        sy = 0,
+        sxx = 0,
+        sxy = 0;
+        for (var i = 0; i < pairs.length; i++) {
+            var p = pairs[i];
+            var rx = __cwNumber(p.raw && p.raw[rawKey], NaN);
+            var syi = __cwNumber(p.screen && p.screen[screenKey], NaN);
+            if (!isFinite(rx) || !isFinite(syi))
+                continue;
+            n++;
+            sx += rx;
+            sy += syi;
+            sxx += rx * rx;
+            sxy += rx * syi;
+        }
+        if (n < 2)
+            return {
+                ok: false,
+                a: 1,
+                b: 0,
+                count: n
+            };
+        var den = n * sxx - sx * sx;
+        if (Math.abs(den) < 1e-6)
+            return {
+                ok: false,
+                a: 1,
+                b: 0,
+                count: n
+            };
+        var a = (n * sxy - sx * sy) / den;
+        var b = (sy - a * sx) / n;
+        return {
+            ok: isFinite(a) && isFinite(b),
+            a: a,
+            b: b,
+            count: n
+        };
+    }
+    function __cwEstimateUiTransform() {
+        var sides = ['TAI', 'XIU', 'CHAN', 'LE'];
+        var pairs = [];
+        for (var i = 0; i < sides.length; i++) {
+            var tgt = findBetTarget(sides[i]);
+            if (!tgt || !tgt.node)
+                continue;
+            var rect = tgt.rect || rectFromNodeCompat(tgt.node);
+            var screen = __cwRectCenterTop(rect);
+            if (!screen)
+                continue;
+            var raw = __cwNodeRawPos(tgt.node);
+            pairs.push({
+                side: sides[i],
+                raw: raw,
+                screen: screen
+            });
+        }
+        var fx = __cwFitLinear(pairs, 'x', 'x');
+        var fy = __cwFitLinear(pairs, 'y', 'y');
+        return {
+            ok: !!(fx.ok && fy.ok),
+            fx: fx,
+            fy: fy,
+            anchors: pairs
+        };
+    }
+    function __cwApplyUiTransform(raw, tf) {
+        if (!raw || !tf || !tf.ok)
+            return null;
+        return {
+            x: tf.fx.a * __cwNumber(raw.x, 0) + tf.fx.b,
+            y: tf.fy.a * __cwNumber(raw.y, 0) + tf.fy.b
+        };
+    }
+    function __cwEstimateChipPitch(map, tf) {
+        var xs = [];
+        var keys = Object.keys(map || {});
+        for (var i = 0; i < keys.length; i++) {
+            var info = map[keys[i]];
+            if (!info || !info.node)
+                continue;
+            var target = info.chipNode || resolveChipNode(info.node, +keys[i]) || info.node;
+            var raw = __cwNodeRawPos(target);
+            var est = __cwApplyUiTransform(raw, tf);
+            if (!est)
+                continue;
+            xs.push(est.x);
+        }
+        xs.sort(function (a, b) {
+            return a - b;
+        });
+        var diffs = [];
+        for (var j = 1; j < xs.length; j++) {
+            var d = Math.abs(xs[j] - xs[j - 1]);
+            if (d >= 18 && d <= 220)
+                diffs.push(d);
+        }
+        diffs.sort(function (a, b) {
+            return a - b;
+        });
+        if (!diffs.length)
+            return 96;
+        return Math.max(56, Math.min(140, diffs[Math.floor(diffs.length / 2)]));
+    }
+    function __cwCompatBetFamily(side) {
+        side = normalizeSide(side);
+        if (side === 'CHAN' || side === 'LE')
+            return 'canvas-flip';
+        if (side === 'TAI' || side === 'XIU')
+            return 'canvas';
+        return 'canvas-flip';
+    }
+    function __cwIsPassiveBetTarget(node) {
+        if (!node)
+            return false;
+        var name = String(node.name || '').toLowerCase();
+        var path = __cwBetNodePath(node).toLowerCase();
+        if (/^lbl_money_total_bet_/.test(name))
+            return true;
+        if (/\/lbl_money_total_bet_(tai|xiu|chan|le)(?:\/|$)/.test(path))
+            return true;
+        return !__cwHasBetTouchSignal(node);
+    }
+    function __cwBuildBetTargetPoints(tgt, side) {
+        var pts = [];
+        if (!tgt || !tgt.node)
+            return pts;
+        var rect = tgt.rect || rectFromNodeCompat(tgt.node) || rectFromNodeScreen(tgt.node);
+        if (!rect)
+            return pts;
+        var src = String(tgt && tgt.sourceTag || '');
+        var preferProbeCompat = src.indexOf('find-side-fallback') === 0 || src.indexOf('anchor-') === 0 || src.indexOf('tail-click-') === 0;
+        var probePts = __cwBuildBetProbePoints(rect, {
+            minProbeW: tgt && tgt.sourceTag && tgt.sourceTag.indexOf('near-') === 0 ? 160 : 140,
+            minProbeH: tgt && tgt.sourceTag && tgt.sourceTag.indexOf('near-') === 0 ? 96 : 88
+        });
+        var maxPts = preferProbeCompat ? 8 : 17;
+        var compatFamily = __cwCompatBetFamily(side);
+        var preferDirectTop = preferProbeCompat && __cwIsPassiveBetTarget(tgt.node);
+        for (var i = 0; i < probePts.length && i < maxPts; i++) {
+            var p = probePts[i];
+            if (preferProbeCompat) {
+                if (preferDirectTop) {
+                    var td = __cwToTopClientPoint(p.x, p.y);
+                    __cwPushPoint(pts, td.x, td.y, 'label-top-' + p.tag);
+                } else if (compatFamily === 'canvas-flip') {
+                    var cf = __cwCanvasToTopClientPoint(p.x, p.y, true);
+                    if (cf)
+                        __cwPushPoint(pts, cf.x, cf.y, 'canvas-flip-' + p.tag);
+                } else {
+                    var cn = __cwCanvasToTopClientPoint(p.x, p.y, false);
+                    if (cn)
+                        __cwPushPoint(pts, cn.x, cn.y, 'canvas-' + p.tag);
+                }
+                continue;
+            }
+            var c = __cwToTopClientPoint(p.x, p.y);
+            __cwPushPoint(pts, c.x, c.y, 'top-' + p.tag);
+        }
+        return pts;
+    }
+    function __cwNodeMiniSig(n) {
+        if (!n)
+            return '';
+        var sf = '',
+        op = '',
+        col = '',
+        pos = '',
+        btn = '',
+        tg = '';
+        try {
+            var sp = getComp(n, cc.Sprite);
+            if (sp && sp.spriteFrame)
+                sf = String(sp.spriteFrame.name || '');
+        } catch (e) {}
+        try {
+            op = String(__cwNumber(n.opacity, __cwNumber(n._opacity, 0)));
+        } catch (e2) {}
+        try {
+            var c = n.color || n._color || null;
+            if (c)
+                col = [c.r || 0, c.g || 0, c.b || 0].join(',');
+        } catch (e3) {}
+        try {
+            var p = n._lpos || n._pos || n.position || null;
+            if (p)
+                pos = [Math.round(__cwNumber(p.x, 0) * 10) / 10, Math.round(__cwNumber(p.y, 0) * 10) / 10].join(',');
+        } catch (e4) {}
+        try {
+            var b = getComp(n, cc.Button);
+            if (b)
+                btn = String(b.interactable !== false ? 1 : 0);
+        } catch (e5) {}
+        try {
+            var t = getComp(n, cc.Toggle);
+            if (t)
+                tg = String(t.isChecked ? 1 : 0);
+        } catch (e6) {}
+        return [
+            String(n.name || ''),
+            n.active === false ? 0 : 1,
+            Math.round(__cwNumber(n.scaleX, __cwNumber(n.scale && n.scale.x, 1)) * 100) / 100,
+            Math.round(__cwNumber(n.scaleY, __cwNumber(n.scale && n.scale.y, 1)) * 100) / 100,
+            op,
+            col,
+            pos,
+            btn,
+            tg,
+            sf
+        ].join(':');
+    }
+    function __cwWalkDigest(parts, root, depth, maxDepth, maxNodes) {
+        var seen = [];
+        (function walk(n, d) {
+            if (!n || d > maxDepth || parts.length >= maxNodes || seen.indexOf(n) !== -1)
+                return;
+            seen.push(n);
+            parts.push(__cwNodeMiniSig(n));
+            var kids = n.children || n._children || [];
+            for (var i = 0; i < kids.length && i < 10; i++)
+                walk(kids[i], d + 1);
+        })(root, depth || 0);
+    }
+    function __cwCollectEffectDigest(parts, root, label, maxRoots, maxDepth, maxNodes) {
+        if (!root)
+            return;
+        var seen = [];
+        var effectRx = /effect|fx|glow|light|select|selected|active|check|mark|ring|highlight|shadow|frame|border|shine/i;
+        var roots = root.children || root._children || [];
+        for (var i = 0; i < roots.length && i < maxRoots && parts.length < maxNodes; i++) {
+            (function walk(n, d) {
+                if (!n || d > maxDepth || parts.length >= maxNodes || seen.indexOf(n) !== -1)
+                    return;
+                seen.push(n);
+                var nm = String(n.name || '');
+                var hit = effectRx.test(nm);
+                if (!hit) {
+                    try {
+                        var sp = getComp(n, cc.Sprite);
+                        var sf = sp && sp.spriteFrame ? String(sp.spriteFrame.name || '') : '';
+                        hit = effectRx.test(sf);
+                    } catch (e) {}
+                }
+                if (hit)
+                    parts.push(label + '>' + __cwNodeMiniSig(n));
+                var kids = n.children || n._children || [];
+                for (var j = 0; j < kids.length && j < 12; j++)
+                    walk(kids[j], d + 1);
+            })(roots[i], 0);
+        }
+    }
+    function __cwChipDigestNode(root) {
+        if (!root)
+            return '';
+        var parts = [];
+        __cwWalkDigest(parts, root, 0, 2, 24);
+        var p1 = root.parent || root._parent || null;
+        if (p1) {
+            parts.push('P1>' + __cwNodeMiniSig(p1));
+            var kids1 = p1.children || p1._children || [];
+            for (var i = 0; i < kids1.length && i < 18; i++) {
+                var k1 = kids1[i];
+                if (!k1)
+                    continue;
+                parts.push('S1>' + __cwNodeMiniSig(k1));
+                var nm1 = String(k1.name || '');
+                if (k1 === root || /^chip\d+$/i.test(nm1))
+                    __cwWalkDigest(parts, k1, 1, 1, 64);
+            }
+            __cwCollectEffectDigest(parts, p1, 'FX1', 18, 2, 96);
+        }
+        var p2 = p1 ? (p1.parent || p1._parent || null) : null;
+        if (p2) {
+            parts.push('P2>' + __cwNodeMiniSig(p2));
+            var kids2 = p2.children || p2._children || [];
+            for (var j = 0; j < kids2.length && j < 14; j++) {
+                var k2 = kids2[j];
+                if (!k2)
+                    continue;
+                var nm2 = String(k2.name || '');
+                if (k2 === p1 || /chip|mask|panel|respawn/i.test(nm2))
+                    parts.push('S2>' + __cwNodeMiniSig(k2));
+            }
+            __cwCollectEffectDigest(parts, p2, 'FX2', 14, 2, 128);
+        }
+        return parts.join('|');
+    }
+    function __cwGetChipStateDigest() {
+        var map = scanChipCatalogRaw();
+        if (!Object.keys(map).length)
+            map = window.cwScanChips ? (window.cwScanChips() || {}) : {};
+        var out = {};
+        var keys = Object.keys(map);
+        for (var i = 0; i < keys.length; i++) {
+            var k = keys[i];
+            var info = map[k];
+            if (!info || !info.node)
+                continue;
+            var target = info.chipNode || resolveChipNode(info.node) || info.node;
+            out[k] = __cwChipDigestNode(target);
+        }
+        return out;
+    }
+    function __cwBuildChipFocusPoints(info, tf, pitch) {
+        var pts = [];
+        if (!info || !info.node)
+            return {
+                nodeName: '',
+                raw: null,
+                size: null,
+                points: pts
+            };
+        var target = info.chipNode || resolveChipNode(info.node) || info.node;
+        var raw = __cwNodeRawPos(target);
+        var size = __cwNodeSize(target);
+        var byRect = info.rect || rectFromNodeScreen(target);
+        if (byRect) {
+            var rc = __cwRectCenterTop(byRect);
+            var rw = Math.max(0, __cwNumber(byRect.w, 0));
+            var rh = Math.max(0, __cwNumber(byRect.h, 0));
+            if (rc && rw > 6 && rh > 6)
+                __cwPushPoint(pts, rc.x, rc.y, 'rect-center');
+        }
+        var est = __cwApplyUiTransform(raw, tf);
+        if (est) {
+            var base = Math.max(56, __cwNumber(pitch, 96));
+            var dx1 = Math.max(10, base * 0.18);
+            var dx2 = Math.max(18, base * 0.34);
+            var dx3 = Math.max(26, base * 0.50);
+            var dx4 = Math.max(34, base * 0.66);
+            var dx5 = Math.max(42, base * 0.82);
+            var dy1 = Math.max(8, base * 0.14);
+            var dy2 = Math.max(14, base * 0.24);
+            var dy3 = Math.max(20, base * 0.34);
+            var dy4 = Math.max(26, base * 0.44);
+            __cwPushPoint(pts, est.x, est.y, 'fit-center');
+            __cwPushPoint(pts, est.x - dx1, est.y, 'fit-left-1');
+            __cwPushPoint(pts, est.x + dx1, est.y, 'fit-right-1');
+            __cwPushPoint(pts, est.x - dx2, est.y, 'fit-left-2');
+            __cwPushPoint(pts, est.x + dx2, est.y, 'fit-right-2');
+            __cwPushPoint(pts, est.x - dx3, est.y, 'fit-left-3');
+            __cwPushPoint(pts, est.x + dx3, est.y, 'fit-right-3');
+            __cwPushPoint(pts, est.x - dx4, est.y, 'fit-left-4');
+            __cwPushPoint(pts, est.x + dx4, est.y, 'fit-right-4');
+            __cwPushPoint(pts, est.x - dx5, est.y, 'fit-left-5');
+            __cwPushPoint(pts, est.x + dx5, est.y, 'fit-right-5');
+            __cwPushPoint(pts, est.x, est.y - dy1, 'fit-upper-1');
+            __cwPushPoint(pts, est.x, est.y + dy1, 'fit-lower-1');
+            __cwPushPoint(pts, est.x, est.y - dy2, 'fit-upper-2');
+            __cwPushPoint(pts, est.x, est.y + dy2, 'fit-lower-2');
+            __cwPushPoint(pts, est.x, est.y - dy3, 'fit-upper-3');
+            __cwPushPoint(pts, est.x, est.y + dy3, 'fit-lower-3');
+            __cwPushPoint(pts, est.x, est.y - dy4, 'fit-upper-4');
+            __cwPushPoint(pts, est.x, est.y + dy4, 'fit-lower-4');
+            __cwPushPoint(pts, est.x - dx1, est.y - dy1, 'fit-ul-1');
+            __cwPushPoint(pts, est.x + dx1, est.y - dy1, 'fit-ur-1');
+            __cwPushPoint(pts, est.x - dx1, est.y + dy1, 'fit-ll-1');
+            __cwPushPoint(pts, est.x + dx1, est.y + dy1, 'fit-lr-1');
+            __cwPushPoint(pts, est.x - dx2, est.y - dy1, 'fit-ul-2');
+            __cwPushPoint(pts, est.x + dx2, est.y - dy1, 'fit-ur-2');
+            __cwPushPoint(pts, est.x - dx2, est.y + dy1, 'fit-ll-2');
+            __cwPushPoint(pts, est.x + dx2, est.y + dy1, 'fit-lr-2');
+            __cwPushPoint(pts, est.x - dx3, est.y - dy2, 'fit-ul-3');
+            __cwPushPoint(pts, est.x + dx3, est.y - dy2, 'fit-ur-3');
+            __cwPushPoint(pts, est.x - dx3, est.y + dy2, 'fit-ll-3');
+            __cwPushPoint(pts, est.x + dx3, est.y + dy2, 'fit-lr-3');
+            __cwPushPoint(pts, est.x - dx4, est.y - dy2, 'fit-ul-4');
+            __cwPushPoint(pts, est.x + dx4, est.y - dy2, 'fit-ur-4');
+            __cwPushPoint(pts, est.x - dx4, est.y + dy2, 'fit-ll-4');
+            __cwPushPoint(pts, est.x + dx4, est.y + dy2, 'fit-lr-4');
+            __cwPushPoint(pts, est.x + dx4, est.y - dy1, 'fit-right-bias-u1');
+            __cwPushPoint(pts, est.x + dx4, est.y + dy1, 'fit-right-bias-l1');
+            __cwPushPoint(pts, est.x + dx5, est.y - dy2, 'fit-right-bias-u2');
+            __cwPushPoint(pts, est.x + dx5, est.y + dy2, 'fit-right-bias-l2');
+            __cwPushPoint(pts, est.x - dx4, est.y - dy1, 'fit-left-bias-u1');
+            __cwPushPoint(pts, est.x - dx4, est.y + dy1, 'fit-left-bias-l1');
+            __cwPushPoint(pts, est.x - dx5, est.y - dy2, 'fit-left-bias-u2');
+            __cwPushPoint(pts, est.x - dx5, est.y + dy2, 'fit-left-bias-l2');
+        }
+        return {
+            nodeName: String(target && target.name || ''),
+            raw: {
+                x: Math.round(__cwNumber(raw.x, 0) * 10) / 10,
+                y: Math.round(__cwNumber(raw.y, 0) * 10) / 10
+            },
+            size: {
+                w: Math.round(__cwNumber(size.w, 0) * 10) / 10,
+                h: Math.round(__cwNumber(size.h, 0) * 10) / 10
+            },
+            points: pts
+        };
+    }
+    function __cwBuildCdpBetPlan(side, amount) {
+        side = normalizeSide(side);
+        var rawAmt = Math.max(0, Math.floor(+amount || 0));
+        var X = rawAmt - (rawAmt % 1000);
+        if (!side || !X)
+            return {
+                ok: false,
+                error: 'invalid_input',
+                side: side,
+                amount: rawAmt
+            };
+        var tgt = findBetTarget(side);
+        if (!tgt || !tgt.node)
+            return {
+                ok: false,
+                error: 'bet_target_not_found',
+                side: side,
+                amount: X
+            };
+        var map = scanChipCatalogRaw();
+        if (!Object.keys(map).length)
+            map = window.cwScanChips ? (window.cwScanChips() || {}) : {};
+        var availSet = {};
+        var ks = Object.keys(map);
+        for (var i = 0; i < ks.length; i++)
+            availSet[ks[i]] = 1;
+        var mk = makePlan(X, availSet);
+        if (!mk.plan.length || mk.rest > 0)
+            return {
+                ok: false,
+                error: 'plan_unavailable',
+                side: side,
+                amount: X,
+                rest: mk.rest
+            };
+        var tf = __cwEstimateUiTransform();
+        var chipPitch = __cwEstimateChipPitch(map, tf);
+        var steps = [];
+        for (var p = 0; p < mk.plan.length; p++) {
+            var step = mk.plan[p];
+            var info = map[String(step.val)];
+            if (!info || !info.node)
+                return {
+                    ok: false,
+                    error: 'chip_not_found:' + step.val,
+                    side: side,
+                    amount: X
+                };
+            var chipPlan = __cwBuildChipFocusPoints(info, tf, chipPitch);
+            steps.push({
+                denom: step.val,
+                count: step.count,
+                nodeName: chipPlan.nodeName,
+                raw: chipPlan.raw,
+                size: chipPlan.size,
+                points: chipPlan.points
+            });
+        }
+        return {
+            ok: true,
+            side: side,
+            amount: X,
+            transformOk: !!tf.ok,
+            chipPitch: chipPitch,
+            anchors: tf.anchors || [],
+            betTarget: {
+                nodeName: String(tgt.node && tgt.node.name || ''),
+                sourceTag: String(tgt.sourceTag || ''),
+                selectorPath: String(tgt.selectorPath || ''),
+                labelPath: String(tgt.labelPath || ''),
+                zonePath: String(tgt.zonePath || ''),
+                boardPath: String(tgt.boardPath || ''),
+                pointFamily: String(tgt.pointFamily || 'top'),
+                points: __cwBuildBetTargetPoints(tgt, side)
+            },
+            steps: steps
+        };
+    }
+    window.__cw_getChipStateDigest = function () {
+        return __cwGetChipStateDigest();
+    };
+    window.__cw_focusChipForHost = function (amount) {
+        var val = Math.max(0, Math.floor(+amount || 0));
+        var map = scanChipCatalogRaw();
+        if (!Object.keys(map).length)
+            map = window.cwScanChips ? (window.cwScanChips() || {}) : {};
+        var info = map[String(val)] || null;
+        if (!info || !info.node) {
+            return {
+                ok: false,
+                amount: val,
+                error: 'chip_not_found'
+            };
+        }
+        var target = info.chipNode || resolveChipNode(info.node) || info.node;
+        var rect = rectFromNodeScreen(target) || rectFromNodeCompat(target) || info.rect || null;
+        var touchOk = false,
+        emitOk = false,
+        rectOk = false;
+        try {
+            touchOk = emitTouchOnNode(target);
+        } catch (e) {}
+        if (!touchOk) {
+            try {
+                emitOk = emitClick(target);
+            } catch (e2) {}
+        }
+        if (!touchOk && !emitOk && rect) {
+            try {
+                rectOk = clickRectCenter(rect);
+            } catch (e3) {}
+        }
+        return {
+            ok: !!(touchOk || emitOk || rectOk),
+            amount: val,
+            nodeName: String(target && target.name || ''),
+            labelName: String(info.labelNode && info.labelNode.name || ''),
+            touchOk: !!touchOk,
+            emitOk: !!emitOk,
+            rectOk: !!rectOk,
+            rect: rect ? {
+                x: Math.round(__cwNumber(rect.sx, rect.x)),
+                y: Math.round(__cwNumber(rect.sy, rect.y)),
+                w: Math.round(Math.max(__cwNumber(rect.sw, rect.w), 0)),
+                h: Math.round(Math.max(__cwNumber(rect.sh, rect.h), 0))
+            } : null
+        };
+    };
+    window.__cw_getChipSelectionForHost = function () {
+        var map = scanChipCatalogRaw();
+        if (!Object.keys(map).length)
+            map = window.cwScanChips ? (window.cwScanChips() || {}) : {};
+        var sel = __cwTestChipSelected(map);
+        return {
+            value: sel && sel.value != null ? +sel.value : null,
+            anyToggle: !!(sel && sel.anyToggle),
+            nodeName: sel && sel.node ? String(sel.node.name || '') : ''
+        };
+    };
+    window.__cw_getTotalsForHost = function () {
+        return readTotalsSafe() || {};
+    };
+    window.__cw_getBetTargetDebug = function (side) {
+        side = normalizeSide(side);
+        var tgt = findBetTarget(side);
+        var trace = __cwGetLastBetTrace(side);
+        var items = __cwCollectBetProbeCandidates(side, {
+            maxClickablePerRoot: 8,
+            maxAncestors: 4,
+            maxNearNodes: 260
+        }) || [];
+        var rows = [];
+        for (var i = 0; i < items.length && i < 24; i++) {
+            var item = items[i];
+            if (!item || !item.node || !item.row)
+                continue;
+            var rect = rectFromNodeCompat(item.node) || rectFromNodeScreen(item.node) || null;
+            var explain = __cwExplainBetCandidate(item.node, rect, item.row.tag || '');
+            rows.push({
+                tag: String(item.row.tag || ''),
+                name: String(item.row.name || ''),
+                path: String(item.row.path || ''),
+                rect: item.row.rect || '',
+                clickable: !!item.row.clickable,
+                hasButton: !!item.row.hasButton,
+                hasToggle: !!item.row.hasToggle,
+                touchListener: !!item.row.touchListener,
+                accept: !!explain.ok,
+                reason: String(explain.reason || '')
+            });
+        }
+        return {
+            side: side,
+            target: tgt && tgt.node ? {
+                nodeName: String(tgt.node.name || ''),
+                path: __cwBetNodePath(tgt.node),
+                sourceTag: String(tgt.sourceTag || ''),
+                selectorPath: String(tgt.selectorPath || ''),
+                labelPath: String(tgt.labelPath || ''),
+                zonePath: String(tgt.zonePath || ''),
+                boardPath: String(tgt.boardPath || ''),
+                pointFamily: String(tgt.pointFamily || 'top'),
+                labelRect: __cwBetRectLite(tgt.labelRect),
+                zoneRect: __cwBetRectLite(tgt.zoneRect),
+                boardRect: __cwBetRectLite(tgt.boardRect),
+                cellRect: __cwBetRectLite(tgt.cellRect),
+                rect: (function () {
+                    var rect = tgt.rect || rectFromNodeCompat(tgt.node) || rectFromNodeScreen(tgt.node) || null;
+                    return rect ? {
+                        x: Math.round(__cwNumber(rect.sx, rect.x)),
+                        y: Math.round(__cwNumber(rect.sy, rect.y)),
+                        w: Math.round(Math.max(__cwNumber(rect.sw, rect.w), 0)),
+                        h: Math.round(Math.max(__cwNumber(rect.sh, rect.h), 0))
+                    } : null;
+                })(),
+                points: __cwBuildBetTargetPoints(tgt, side)
+            } : null,
+            trace: trace,
+            history: __cwGetBetTraceHistory(side, 6),
+            candidates: rows
+        };
+    };
+    window.__cw_getExactBetSelectors = function (side) {
+        var sides = side ? [normalizeSide(side)] : ['TAI', 'XIU', 'CHAN', 'LE'];
+        var out = {};
+        for (var i = 0; i < sides.length; i++) {
+            var curSide = sides[i];
+            var tgt = __cwFindExactBetTarget(curSide, null);
+            out[curSide] = tgt && tgt.node ? {
+                ok: true,
+                side: curSide,
+                nodeName: String(tgt.node.name || ''),
+                selectorPath: String(tgt.selectorPath || ''),
+                labelPath: String(tgt.labelPath || ''),
+                zonePath: String(tgt.zonePath || ''),
+                boardPath: String(tgt.boardPath || ''),
+                pointFamily: String(tgt.pointFamily || 'top'),
+                labelRect: __cwBetRectLite(tgt.labelRect),
+                zoneRect: __cwBetRectLite(tgt.zoneRect),
+                boardRect: __cwBetRectLite(tgt.boardRect),
+                cellRect: __cwBetRectLite(tgt.cellRect),
+                probeRect: __cwBetRectLite(tgt.rect),
+                points: __cwBuildBetTargetPoints(tgt, curSide)
+            } : {
+                ok: false,
+                side: curSide,
+                selectorPath: String(BET_TAILS[curSide] || '')
+            };
+        }
+        if (side)
+            return out[sides[0]];
+        return out;
+    };
+    window.__cw_buildCdpBetPlan = function (side, amount) {
+        return __cwBuildCdpBetPlan(side, amount);
     };
 
     console.log('[READY] CW merged (compat + TextMap + Scan500Text + TK sequence + Totals by (x,tail) + standardized exports).');
