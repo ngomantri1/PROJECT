@@ -41,6 +41,8 @@ namespace TaiXiuLiveSun.Tasks
 
         // Ngưỡng % còn lại để ra quyết định
         public double DecisionPercent { get; init; }
+        public bool AutoResetStakeOnNonNegativeWin { get; init; } = false;
+        public Func<bool>? ConsumeAutoResetStakeRequest { get; init; }
 
         // Trạng thái chiến lược (lưu Step/PreferLarger/.)
         public DecisionState State { get; init; }
@@ -66,6 +68,7 @@ namespace TaiXiuLiveSun.Tasks
         // --- UI updaters (được gán từ MainWindow) ---
         public Action<string>? UiSetSide;     // "CHAN"/"LE"
         public Action<double>? UiSetStake;    // tiền đang đánh
+        public Action<double>? UiSetStakeDisplay; // cập nhật mức tiền không ghi thêm tổng cược
         public Action<double>? UiAddWin;      // cộng/trừ tiền thắng lũy kế
         public Action<bool>? UiWinLoss;       // true = win, false = loss
         public Action<int, int>? UiSetChainLevel; // (chainIndex, levelIndex) cho MultiChain

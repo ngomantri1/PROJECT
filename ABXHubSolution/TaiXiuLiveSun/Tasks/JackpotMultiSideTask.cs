@@ -128,34 +128,12 @@ namespace TaiXiuLiveSun.Tasks
                     }
                 }
 
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(delta));
                 // cáº­p nháº­t lá»‹ch sá»­ cho tá»«ng cá»­a
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiFinalizeMultiBet?.Invoke(winners, resultDisplay));
                 // Chá»‰ hiá»ƒn thá»‹ WIN/LOSS tá»•ng há»£p má»™t láº§n cho cáº£ vÃ²ng
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiWinLoss?.Invoke(winAny));
 
-                if (ctx.MoneyStrategyId == "MultiChain")
-                {
-                    int chainIndex = ctx.MoneyChainIndex;
-                    int chainStep = ctx.MoneyChainStep;
-                    double chainProfit = ctx.MoneyChainProfit;
-
-                    MoneyHelper.UpdateAfterRoundMultiChain(
-                        ctx.StakeChains,
-                        ctx.StakeChainTotals,
-                        ref chainIndex,
-                        ref chainStep,
-                        ref chainProfit,
-                        winAny);
-
-                    ctx.MoneyChainIndex = chainIndex;
-                    ctx.MoneyChainStep = chainStep;
-                    ctx.MoneyChainProfit = chainProfit;
-                }
-                else
-                {
-                    money.OnRoundResult(winAny);
-                }
+                await TaskUtil.ApplyMoneyAfterRoundAsync(ctx, money, winAny, delta);
             }
         }
     }

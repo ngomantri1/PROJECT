@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,7 +8,7 @@ namespace TaiXiuLiveSun.Tasks
 {
     public sealed class SeqParityHotBackTask : IBetTask
     {
-        public string DisplayName => "18) Chuỗi cầu C/L hay về";
+        public string DisplayName => "18) Chuá»—i cáº§u C/L hay vá»";
         public string Id => "seq-cl-hotback";
 
         private const int PatternLen = 5;
@@ -21,7 +21,7 @@ namespace TaiXiuLiveSun.Tasks
 
         private static string FilterSeqCL(string seq)
         {
-            // Chuẩn hoá toàn bộ nguồn seq (0/1/2/3 hoặc C/L) -> C/L
+            // Chuáº©n hoÃ¡ toÃ n bá»™ nguá»“n seq (0/1/2/3 hoáº·c C/L) -> C/L
             return SeqToParityString(seq ?? string.Empty);
         }
 
@@ -226,29 +226,7 @@ namespace TaiXiuLiveSun.Tasks
                 await PlaceBet(ctx, side, stake, ct);
 
                 bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
-                if (ctx.MoneyStrategyId == "MultiChain")
-                {
-                    int chainIndex = ctx.MoneyChainIndex;
-                    int chainStep = ctx.MoneyChainStep;
-                    double chainProfit = ctx.MoneyChainProfit;
-
-                    MoneyHelper.UpdateAfterRoundMultiChain(
-                        ctx.StakeChains,
-                        ctx.StakeChainTotals,
-                        ref chainIndex,
-                        ref chainStep,
-                        ref chainProfit,
-                        win);
-
-                    ctx.MoneyChainIndex = chainIndex;
-                    ctx.MoneyChainStep = chainStep;
-                    ctx.MoneyChainProfit = chainProfit;
-                }
-                else
-                {
-                    money.OnRoundResult(win);
-                }
+                await TaskUtil.ApplyMoneyAfterRoundAsync(ctx, money, win, win ? stake : -stake);
 
                 var snapAfter = ctx.GetSnap();
                 string latestSeq = snapAfter?.seq ?? baseSeq;

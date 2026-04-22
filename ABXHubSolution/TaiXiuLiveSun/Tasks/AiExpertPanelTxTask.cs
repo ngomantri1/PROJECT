@@ -210,32 +210,7 @@ namespace TaiXiuLiveSun.Tasks
                 bool ok = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
 
                 // P&L theo kết quả thực
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(ok ? stake : -stake));
-                if (ctx.MoneyStrategyId == "MultiChain")
-                {
-                    // cần biến local để truyền ref
-                    int chainIndex = ctx.MoneyChainIndex;
-                    int chainStep = ctx.MoneyChainStep;
-                    double chainProfit = ctx.MoneyChainProfit;
-
-                    MoneyHelper.UpdateAfterRoundMultiChain(
-                        ctx.StakeChains,
-                        ctx.StakeChainTotals,
-                        ref chainIndex,
-                        ref chainStep,
-                        ref chainProfit,
-                        ok);
-
-                    // gán ngược lại vào context
-                    ctx.MoneyChainIndex = chainIndex;
-                    ctx.MoneyChainStep = chainStep;
-                    ctx.MoneyChainProfit = chainProfit;
-                }
-                else
-                {
-                    // 4 kiểu cũ vẫn đi qua MoneyManager
-                    money.OnRoundResult(ok);
-                }
+                await TaskUtil.ApplyMoneyAfterRoundAsync(ctx, money, ok, ok ? stake : -stake);
 
                 // TÍNH panelWin (giả lập) và trainingWin (cho học)
                 // trueWinSide: 0/1 là CHAN/LE thực tế thắng

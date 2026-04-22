@@ -143,8 +143,7 @@ namespace TaiXiuLiveSun.Tasks
                         await PlaceBet(ctx, fallbackSide, stake0, ct);
 
                         bool win0 = await WaitRoundFinishAndJudge(ctx, fallbackSide, baseSeq, ct);
-                        await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win0 ? stake0 : -stake0));
-                        money.OnRoundResult(win0);
+                        await TaskUtil.ApplyMoneyAfterRoundAsync(ctx, money, win0, win0 ? stake0 : -stake0);
 
                         // Cập nhật lại list 10 mới về
                         var s2 = ctx.GetSnap?.Invoke();
@@ -180,32 +179,7 @@ namespace TaiXiuLiveSun.Tasks
 
                 // Chờ KẾT QUẢ: WaitRoundFinishAndJudge so sánh chuỗi → phù hợp cửa sổ 50 trượt
                 bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
-                if (ctx.MoneyStrategyId == "MultiChain")
-                {
-                    // cần biến local để truyền ref
-                    int chainIndex = ctx.MoneyChainIndex;
-                    int chainStep = ctx.MoneyChainStep;
-                    double chainProfit = ctx.MoneyChainProfit;
-
-                    MoneyHelper.UpdateAfterRoundMultiChain(
-                        ctx.StakeChains,
-                        ctx.StakeChainTotals,
-                        ref chainIndex,
-                        ref chainStep,
-                        ref chainProfit,
-                        win);
-
-                    // gán ngược lại vào context
-                    ctx.MoneyChainIndex = chainIndex;
-                    ctx.MoneyChainStep = chainStep;
-                    ctx.MoneyChainProfit = chainProfit;
-                }
-                else
-                {
-                    // 4 kiểu cũ vẫn đi qua MoneyManager
-                    money.OnRoundResult(win);
-                }
+                await TaskUtil.ApplyMoneyAfterRoundAsync(ctx, money, win, win ? stake : -stake);
 
                 // Sau khi có kết quả: cập nhật CL50 & +1 cho "10 mới về" (41..50)
                 var sAfter = ctx.GetSnap?.Invoke();

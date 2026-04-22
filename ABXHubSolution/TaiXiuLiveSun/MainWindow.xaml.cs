@@ -564,6 +564,12 @@ Ví dụ không hợp lệ:
 • Để trống hoặc 0 = không dùng cắt lỗ.
 • Ví dụ: 150000 (khi lỗ ≥ 150.000đ thì dừng).";
 
+        const string TIP_AUTO_RESET_STAKE_NONNEG =
+        @"TIỀN THẮNG >= 0 TỰ QUAY VỀ MỨC ĐẦU
+• Mặc định tắt, không thay đổi nghiệp vụ hiện tại.
+• Khi bật: sau mỗi ván, nếu Tiền thắng đang hiển thị >= 0 thì reset Tiền thắng về 0 và mức cược về mức 1.
+• Áp dụng cho cả chuỗi tiền thường và quản lý vốn đa tầng.";
+
         const string TIP_DECISION_PERCENT_GENERAL =
         @"ĐẶT KHI CÒN % THỜI GIAN
 • Nhập phần trăm (0–100). Hệ thống quy về 0.00–1.00 nội bộ.
@@ -625,6 +631,7 @@ Ví dụ không hợp lệ:
             public string BetPatterns { get; set; } = "";  // giá trị ô "CÁC THẾ CẦU"
             public string MoneyStrategy { get; set; } = "IncreaseWhenLose";//IncreaseWhenLose
             public bool S7ResetOnProfit { get; set; } = true;
+            public bool AutoResetStakeOnNonNegativeWin { get; set; } = false;
             public double CutProfit { get; set; } = 0; // 0 = tắt cắt lãi
             public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
             public string BetSeqCL { get; set; } = "";        // cho Chiến lược 1
@@ -731,6 +738,8 @@ Ví dụ không hợp lệ:
             public List<long[]> RunStakeChains { get; set; } = new();
             public long[] RunStakeChainTotals { get; set; } = Array.Empty<long>();
             public double RunDecisionPercent { get; set; } = 0;
+            public bool RunAutoResetStakeOnNonNegativeWin { get; set; } = false;
+            public bool AutoResetStakeRequested { get; set; } = false;
             public bool CutStopTriggered { get; set; } = false;
 
             public CancellationTokenSource? TaskCts { get; set; }
@@ -1196,6 +1205,7 @@ Ví dụ không hợp lệ:
 
             // Nhóm Quản lý vốn
             if (CmbMoneyStrategy != null) CmbMoneyStrategy.IsEnabled = enabled; // KHÓA khi đang chạy (chỉ khóa chọn chiến lược vốn)
+            if (ChkAutoResetStakeOnNonNegativeWin != null) ChkAutoResetStakeOnNonNegativeWin.IsEnabled = enabled;
 
             // Các ô dưới đây LUÔN cho phép nhập (kể cả khi đang chạy)
             if (TxtStakeCsv != null) TxtStakeCsv.IsReadOnly = false; // Chuỗi tiền
@@ -1553,6 +1563,8 @@ Ví dụ không hợp lệ:
                 if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
                 LoadStakeCsvForCurrentMoneyStrategy();
                 if (ChkS7ResetOnProfit != null) ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
+                if (ChkAutoResetStakeOnNonNegativeWin != null)
+                    ChkAutoResetStakeOnNonNegativeWin.IsChecked = _cfg.AutoResetStakeOnNonNegativeWin;
                 if (!IsAnyTabRunning() || IsActiveTabRunning())
                     MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
                 UpdateS7ResetOptionUI();
@@ -1624,6 +1636,8 @@ Ví dụ không hợp lệ:
             cfg.MoneyStrategy = GetMoneyStrategyFromUI();
             if (ChkS7ResetOnProfit != null)
                 cfg.S7ResetOnProfit = (ChkS7ResetOnProfit.IsChecked == true);
+            if (ChkAutoResetStakeOnNonNegativeWin != null)
+                cfg.AutoResetStakeOnNonNegativeWin = (ChkAutoResetStakeOnNonNegativeWin.IsChecked == true);
         }
 
         private void UpdateAddTabUi()
@@ -3176,6 +3190,8 @@ Ví dụ không hợp lệ:
 
                 if (ChkLockMouse != null)
                     ChkLockMouse.IsChecked = _cfg.LockMouse;
+                if (ChkAutoResetStakeOnNonNegativeWin != null)
+                    ChkAutoResetStakeOnNonNegativeWin.IsChecked = _cfg.AutoResetStakeOnNonNegativeWin;
 
                 // giữ nguyên 2 hàm cũ
                 await InitWebView2WithFixedRuntimeAsync();
@@ -3380,6 +3396,15 @@ Ví dụ không hợp lệ:
                 await SaveConfigAsync();
         }
 
+        private async void ChkAutoResetStakeOnNonNegativeWin_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!_uiReady || _tabSwitching) return;
+
+            _cfg.AutoResetStakeOnNonNegativeWin = (ChkAutoResetStakeOnNonNegativeWin?.IsChecked == true);
+            Log($"[CFG][AUTO-RESET-NONNEG] enabled={(_cfg.AutoResetStakeOnNonNegativeWin ? 1 : 0)}");
+            await SaveConfigAsync();
+        }
+
         async void CmbMoneyStrategy_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!_uiReady || _tabSwitching) return;
@@ -3401,6 +3426,7 @@ Ví dụ không hợp lệ:
             AttachTip(TxtStakeCsv, TIP_STAKE_CSV);
             AttachTip(TxtCutProfit, TIP_CUT_PROFIT);
             AttachTip(TxtCutLoss, TIP_CUT_LOSS);
+            AttachTip(ChkAutoResetStakeOnNonNegativeWin, TIP_AUTO_RESET_STAKE_NONNEG);
             AttachTip(TxtSideRatio, TIP_SIDE_RATIO);
 
             // % thời gian
@@ -4956,6 +4982,12 @@ Ví dụ không hợp lệ:
                 StakeChainTotals = stakeChainTotalsArr,
 
                 DecisionPercent = decisionPercent,
+                AutoResetStakeOnNonNegativeWin = tab.RunAutoResetStakeOnNonNegativeWin,
+                ConsumeAutoResetStakeRequest = () =>
+                {
+                    if (Dispatcher.CheckAccess()) return ConsumeAutoResetStakeRequest(tab);
+                    return Dispatcher.Invoke(() => ConsumeAutoResetStakeRequest(tab));
+                },
                 State = tab.DecisionState,
                 UiDispatcher = Dispatcher,
                 GetCooldown = () => tab.Cooldown,
@@ -4984,6 +5016,10 @@ Ví dụ không hợp lệ:
                 UiSetStake = v => Dispatcher.Invoke(() =>
                 {
                     UpdateTabStake(tab, v, stakeSeqArr, moneyStrategyId);
+                }),
+                UiSetStakeDisplay = v => Dispatcher.Invoke(() =>
+                {
+                    UpdateTabStakeDisplay(tab, v, stakeSeqArr, moneyStrategyId);
                 }),
 
                 UiAddWin = delta =>
@@ -5161,6 +5197,8 @@ Ví dụ không hợp lệ:
                 activeTab.RunStakeChains = _stakeChains.Select(a => a.ToArray()).ToList();
                 activeTab.RunStakeChainTotals = _stakeChainTotals.ToArray();
                 activeTab.RunDecisionPercent = _decisionPercent;
+                activeTab.RunAutoResetStakeOnNonNegativeWin = _cfg.AutoResetStakeOnNonNegativeWin;
+                activeTab.AutoResetStakeRequested = false;
                 activeTab.IsRunning = true;
                 MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
                 _winTotal = activeTab.WinTotal;
@@ -5780,20 +5818,64 @@ Ví dụ không hợp lệ:
             _ = SaveStatsAsync();
         }
 
+        private void UpdateTabStakeDisplay(StrategyTabState tab, double amount, long[] stakeSeq, string moneyStrategyId)
+        {
+            if (tab == null) return;
+
+            long rounded = (long)Math.Round(amount);
+            tab.LastStakeAmount = rounded;
+            int levelIndex = Array.FindIndex(stakeSeq, s => s == rounded);
+            string levelText = (levelIndex >= 0) ? $"{levelIndex + 1}/{stakeSeq.Length}" : "";
+            tab.LastLevelText = levelText;
+
+            if (ReferenceEquals(_activeTab, tab))
+            {
+                if (LblStake != null) LblStake.Text = rounded.ToString("N0");
+                if (!string.Equals(moneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (LblLevel != null) LblLevel.Text = levelText;
+                }
+                UpdateStatsUi(tab);
+            }
+            _ = SaveStatsAsync();
+        }
+
+        private bool ConsumeAutoResetStakeRequest(StrategyTabState tab)
+        {
+            if (tab == null || !tab.AutoResetStakeRequested)
+                return false;
+
+            tab.AutoResetStakeRequested = false;
+            return true;
+        }
+
         private void UpdateTabWin(StrategyTabState tab, double net, string moneyStrategyId)
         {
             if (tab == null) return;
 
             tab.WinTotal += net;
             tab.Stats.TotalProfit += net;
-            if (ReferenceEquals(_activeTab, tab))
-                _winTotal = tab.WinTotal;
 
             try
             {
                 TaiXiuLiveSun.Tasks.MoneyHelper.NotifyTempProfit(moneyStrategyId, net);
             }
             catch { /* ignore */ }
+
+            if (tab.RunAutoResetStakeOnNonNegativeWin && tab.WinTotal >= 0)
+            {
+                double beforeReset = tab.WinTotal;
+                tab.WinTotal = 0;
+                tab.AutoResetStakeRequested = true;
+                Log($"[MONEY][AUTO-RESET-NONNEG] winTotalBefore={beforeReset:N0} | netDelta={net:N0} | action=reset-win-and-level1 | strategy={(string.IsNullOrWhiteSpace(moneyStrategyId) ? "-" : moneyStrategyId)} | tab={tab.Id}");
+            }
+            else if (tab.RunAutoResetStakeOnNonNegativeWin)
+            {
+                Log($"[MONEY][AUTO-RESET-NONNEG][SKIP] reason=win-total-negative | winTotal={tab.WinTotal:N0} | netDelta={net:N0} | strategy={(string.IsNullOrWhiteSpace(moneyStrategyId) ? "-" : moneyStrategyId)} | tab={tab.Id}");
+            }
+
+            if (ReferenceEquals(_activeTab, tab))
+                _winTotal = tab.WinTotal;
 
             if (ReferenceEquals(_activeTab, tab) && LblWin != null)
                 LblWin.Text = tab.WinTotal.ToString("N0");

@@ -20,6 +20,13 @@ namespace TaiXiuLiveSun.Tasks
 
         public long CurrentUnit => _seq[Math.Clamp(_i, 0, _seq.Length - 1)];
 
+        public void ResetToLevel1()
+        {
+            _i = 0;
+            _needDoubleNext = false;
+            _usedDoubleThisRound = false;
+        }
+
         /// <summary>Tiền sẽ đặt ở VÁN SẮP CƯỢC (có xét gấp đôi với Victor2).</summary>
         public long GetStakeForThisBet()
         {
