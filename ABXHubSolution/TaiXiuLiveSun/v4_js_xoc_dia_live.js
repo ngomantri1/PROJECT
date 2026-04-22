@@ -2289,6 +2289,58 @@
             };
         }
     }
+    function totalsChangedForSide(before, cur, side) {
+        before = before || {};
+        cur = cur || {};
+        side = normalizeSide(side);
+        if (side === 'CHAN' && cur.C !== before.C)
+            return {
+                changed: true,
+                reason: 'side_total',
+                key: 'C',
+                before: before.C,
+                after: cur.C
+            };
+        if (side === 'LE' && cur.L !== before.L)
+            return {
+                changed: true,
+                reason: 'side_total',
+                key: 'L',
+                before: before.L,
+                after: cur.L
+            };
+        if (side === 'TAI' && cur.T !== before.T)
+            return {
+                changed: true,
+                reason: 'side_total',
+                key: 'T',
+                before: before.T,
+                after: cur.T
+            };
+        if (side === 'XIU' && cur.X !== before.X)
+            return {
+                changed: true,
+                reason: 'side_total',
+                key: 'X',
+                before: before.X,
+                after: cur.X
+            };
+        if (cur.A !== before.A)
+            return {
+                changed: true,
+                reason: 'account_total',
+                key: 'A',
+                before: before.A,
+                after: cur.A
+            };
+        return {
+            changed: false,
+            reason: '',
+            key: '',
+            before: null,
+            after: null
+        };
+    }
     async function waitForTotalsChange(before, side, timeout) {
         timeout = timeout || 1400;
         var t0 = (performance && performance.now ? performance.now() : Date.now());
@@ -2296,7 +2348,7 @@
         while (((performance && performance.now ? performance.now() : Date.now()) - t0) < timeout) {
             await sleep(90);
             var cur = sampleTotalsNow(true);
-            if ((side === 'CHAN' && cur.C !== last.C) || (side === 'LE' && cur.L !== last.L) || (cur.A !== last.A))
+            if (totalsChangedForSide(last, cur, side).changed)
                 return true;
             last = cur;
         }
@@ -3449,6 +3501,12 @@
         CHAN: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_chan',
         LE: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_le'
     };
+    var BET_ZONE_PATH_TOKENS = {
+        TAI: '/board_back/tai_bet',
+        XIU: '/board_back/xiu_bet',
+        CHAN: '/board_back/chan_bet',
+        LE: '/board_back/le_bet'
+    };
     var CHIP_TAILS = {
         '500000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value7',
         '100000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value6',
@@ -3581,6 +3639,39 @@
                 hit = n;
         });
         return hit;
+    }
+    function isBetTotalLabelNode(node, side) {
+        if (!node)
+            return false;
+        var p = String(fullPath(node, 200) || '').toLowerCase();
+        if (!p)
+            return false;
+        var want = normalizeSide(side || '');
+        if (want && BET_TAILS[want] && tailMatch(p, BET_TAILS[want]))
+            return true;
+        return p.indexOf('/lbl_money_total_bet_') !== -1;
+    }
+    function findBetZoneNode(side) {
+        var WANT = normalizeSide(side);
+        var token = String(BET_ZONE_PATH_TOKENS[WANT] || '').toLowerCase();
+        if (!token)
+            return null;
+        var best = null;
+        var bestArea = -1;
+        walkNodes(function (n) {
+            if (!n || !active(n) || !nodeInGame(n))
+                return;
+            var p = String(fullPath(n, 200) || '').toLowerCase();
+            if (p.indexOf(token) === -1)
+                return;
+            var rect = rectFromNodeCompat(n);
+            var area = rect ? (rect.sw * rect.sh) : 0;
+            if (area > bestArea) {
+                best = n;
+                bestArea = area;
+            }
+        });
+        return best;
     }
     function findBetBoardNodeFromLabel(labelNode) {
         var cur = labelNode || null;
@@ -3722,14 +3813,20 @@
     }
     function findSide(side) {
         var WANT = normalizeSide(side);
+        var zoneRoot = findBetZoneNode(WANT);
+        if (zoneRoot) {
+            var zoneList = listClickableTargets(zoneRoot);
+            if (zoneList.length && zoneList[0].node)
+                return zoneList[0].node;
+        }
         var tail = BET_TAILS[WANT];
         if (tail) {
             var byTail = findNodeByTail(tail);
             if (byTail) {
                 var cTail = clickableOf(byTail, 8);
-                if (clickable(cTail))
+                if (clickable(cTail) && !isBetTotalLabelNode(cTail, WANT))
                     return cTail;
-                return byTail;
+                return null;
             }
         }
         var rx = SIDE_REGEX[WANT];
@@ -3793,14 +3890,37 @@
     }
     function findBetTarget(side) {
         var geo = buildBetGeometryTarget(side);
-        if (geo && geo.node && betRectSane(geo.rect))
+        if (geo && geo.node && betRectSane(geo.rect) && !isBetTotalLabelNode(geo.node, side))
             return geo;
         var WANT = normalizeSide(side);
+        var zoneRoot = findBetZoneNode(WANT);
+        if (zoneRoot) {
+            var zoneList = listClickableTargets(zoneRoot);
+            if (zoneList.length && zoneList[0].node) {
+                return {
+                    node: zoneList[0].node,
+                    rect: zoneList[0].rect || rectFromNodeCompat(zoneList[0].node),
+                    area: zoneList[0].area || 0,
+                    source: 'zone_clickable'
+                };
+            }
+            var zoneRect = rectFromNodeCompat(zoneRoot);
+            if (betRectSane(zoneRect) && !isBetTotalLabelNode(zoneRoot, WANT)) {
+                return {
+                    node: zoneRoot,
+                    rect: zoneRect,
+                    area: zoneRect.sw * zoneRect.sh,
+                    source: 'zone_rect'
+                };
+            }
+        }
         var tail = BET_TAILS[WANT];
         if (tail) {
             var roots = findNodesByTail(tail);
             var best = null;
             for (var i = 0; i < roots.length; i++) {
+                if (isBetTotalLabelNode(roots[i], WANT))
+                    continue;
                 var list = listClickableTargets(roots[i]);
                 if (list.length && (!best || (list[0].area || 0) > (best.area || 0)))
                     best = list[0];
@@ -3834,6 +3954,249 @@
                 return true;
             } catch (e2) {}
         }
+        return false;
+    }
+    var BET_CLICK_CFG = {
+        postFocusDelay: 220,
+        confirmTimeout: 1600,
+        retryPause: 110,
+        betweenStepDelay: 180
+    };
+    function postBetTrace(stage, data) {
+        var obj = {
+            abx: 'bet_trace',
+            stage: String(stage || ''),
+            ts: Date.now()
+        };
+        data = data || {};
+        for (var k in data) {
+            if (Object.prototype.hasOwnProperty.call(data, k))
+                obj[k] = data[k];
+        }
+        try {
+            __cw_tryPost(obj);
+        } catch (_) {}
+        try {
+            console.log('[cwBetTrace]', obj);
+        } catch (_) {}
+    }
+    function totalsSnapshotMini(t) {
+        t = t || {};
+        return {
+            C: t.C == null ? null : t.C,
+            L: t.L == null ? null : t.L,
+            T: t.T == null ? null : t.T,
+            X: t.X == null ? null : t.X,
+            A: t.A == null ? null : t.A
+        };
+    }
+    function betTargetDebug(tgt) {
+        if (!tgt)
+            return {
+                source: '',
+                nodeName: '',
+                nodePath: '',
+                rect: null
+            };
+        return {
+            source: String(tgt.source || ''),
+            nodeName: String((tgt.node && tgt.node.name) || ''),
+            nodePath: String((tgt.node && fullPath(tgt.node, 200)) || ''),
+            rect: tgt.rect ? {
+                sx: Math.round(tgt.rect.sx || 0),
+                sy: Math.round(tgt.rect.sy || 0),
+                sw: Math.round(tgt.rect.sw || 0),
+                sh: Math.round(tgt.rect.sh || 0)
+            } : null
+        };
+    }
+    function betRectPoint(rect, fx, fy) {
+        if (!betRectSane(rect))
+            return null;
+        var px = rect.sx + rect.sw * fx;
+        var py = rect.sy + rect.sh * fy;
+        return {
+            x: px,
+            y: py
+        };
+    }
+    function dispatchBetTargetAttempt(tgt, attempt) {
+        if (!tgt || !tgt.node)
+            return false;
+        var node = tgt.node;
+        var rect = tgt.rect || rectFromNodeCompat(node);
+        var mode = String((attempt && attempt.mode) || '');
+        if (mode === 'toggle')
+            return emitBtnToggle(node);
+        if (mode === 'touch_rect_center')
+            return !!(rect && emitTouchAtRect(node, rect));
+        if (mode === 'canvas_point') {
+            var pt = betRectPoint(rect, attempt.fx, attempt.fy);
+            return !!(pt && clickCanvasXY(pt.x, pt.y, true));
+        }
+        if (mode === 'emit_click')
+            return !!(clickable(node) && emitClick(node));
+        if (mode === 'canvas_center') {
+            var rc = betRectCenter(rect);
+            return !!(rect && clickCanvasXY(rc.x, rc.y, true));
+        }
+        return false;
+    }
+    function isSingleThousandBet(meta) {
+        meta = meta || {};
+        var amount = Number(meta.amount || 0);
+        var denom = Number(meta.denom || 0);
+        var turn = Number(meta.turn || 0);
+        return amount === 1000 && denom === 1000 && turn === 1;
+    }
+    function shouldAcceptBetChange(reason, meta) {
+        if (!reason || !reason.changed)
+            return false;
+        if (reason.reason === 'side_total' && isSingleThousandBet(meta))
+            return false;
+        return true;
+    }
+    async function clickBetTargetConfirmed(tgt, side, meta) {
+        meta = meta || {};
+        if (!tgt || !tgt.node) {
+            postBetTrace('bet_target_missing', {
+                side: normalizeSide(side),
+                amount: Number(meta.amount || 0),
+                phase: String(meta.phase || '')
+            });
+            return false;
+        }
+        var attempts = [
+            {
+                mode: 'toggle'
+            },
+            {
+                mode: 'touch_rect_center'
+            },
+            {
+                mode: 'canvas_center',
+                fx: 0.5,
+                fy: 0.5
+            },
+            {
+                mode: 'canvas_point',
+                fx: 0.35,
+                fy: 0.50
+            },
+            {
+                mode: 'canvas_point',
+                fx: 0.65,
+                fy: 0.50
+            },
+            {
+                mode: 'canvas_point',
+                fx: 0.50,
+                fy: 0.35
+            },
+            {
+                mode: 'canvas_point',
+                fx: 0.50,
+                fy: 0.65
+            },
+            {
+                mode: 'emit_click'
+            }
+        ];
+        var targetInfo = betTargetDebug(tgt);
+        var before = sampleTotalsNow(true) || {};
+        postBetTrace('bet_click_start', {
+            side: normalizeSide(side),
+            amount: Number(meta.amount || 0),
+            denom: Number(meta.denom || 0),
+            turn: Number(meta.turn || 0),
+            phase: String(meta.phase || ''),
+            target: targetInfo,
+            before: totalsSnapshotMini(before)
+        });
+        for (var i = 0; i < attempts.length; i++) {
+            var attempt = attempts[i];
+            var sent = dispatchBetTargetAttempt(tgt, attempt);
+            postBetTrace('bet_click_dispatch', {
+                side: normalizeSide(side),
+                amount: Number(meta.amount || 0),
+                denom: Number(meta.denom || 0),
+                turn: Number(meta.turn || 0),
+                phase: String(meta.phase || ''),
+                target: targetInfo,
+                attempt: i + 1,
+                mode: attempt.mode,
+                sent: !!sent
+            });
+            if (!sent) {
+                await sleep(BET_CLICK_CFG.retryPause);
+                continue;
+            }
+            var applied = false;
+            var reason = {
+                changed: false,
+                reason: '',
+                key: '',
+                before: null,
+                after: null
+            };
+            var t0 = (performance && performance.now ? performance.now() : Date.now());
+            var last = before;
+            while (((performance && performance.now ? performance.now() : Date.now()) - t0) < BET_CLICK_CFG.confirmTimeout) {
+                await sleep(90);
+                var cur = sampleTotalsNow(true) || {};
+                reason = totalsChangedForSide(last, cur, side);
+                if (reason.changed) {
+                    if (shouldAcceptBetChange(reason, meta)) {
+                        applied = true;
+                        before = cur;
+                        break;
+                    }
+                    postBetTrace('bet_click_ignore_change', {
+                        side: normalizeSide(side),
+                        amount: Number(meta.amount || 0),
+                        denom: Number(meta.denom || 0),
+                        turn: Number(meta.turn || 0),
+                        phase: String(meta.phase || ''),
+                        target: targetInfo,
+                        attempt: i + 1,
+                        mode: attempt.mode,
+                        ignoreReason: String(reason.reason || ''),
+                        ignoreKey: String(reason.key || ''),
+                        ignoreBefore: reason.before == null ? null : reason.before,
+                        ignoreAfter: reason.after == null ? null : reason.after
+                    });
+                }
+                last = cur;
+            }
+            postBetTrace('bet_click_result', {
+                side: normalizeSide(side),
+                amount: Number(meta.amount || 0),
+                denom: Number(meta.denom || 0),
+                turn: Number(meta.turn || 0),
+                phase: String(meta.phase || ''),
+                target: targetInfo,
+                attempt: i + 1,
+                mode: attempt.mode,
+                applied: !!applied,
+                changeReason: String(reason.reason || ''),
+                changeKey: String(reason.key || ''),
+                changeBefore: reason.before == null ? null : reason.before,
+                changeAfter: reason.after == null ? null : reason.after,
+                after: totalsSnapshotMini(before)
+            });
+            if (applied)
+                return true;
+            await sleep(BET_CLICK_CFG.retryPause);
+        }
+        postBetTrace('bet_click_fail', {
+            side: normalizeSide(side),
+            amount: Number(meta.amount || 0),
+            denom: Number(meta.denom || 0),
+            turn: Number(meta.turn || 0),
+            phase: String(meta.phase || ''),
+            target: targetInfo,
+            after: totalsSnapshotMini(before)
+        });
         return false;
     }
     function clickBetTarget(tgt) {
@@ -4588,11 +4951,17 @@
             var tgt0 = findBetTarget(side);
             if (!tgt0 || !tgt0.node) {
                 console.warn('[cwBet++] không thấy nút cửa:', side);
+                postBetTrace('bet_target_not_found', {
+                    side: side,
+                    amount: 0,
+                    phase: 'tap_only'
+                });
                 return false;
             }
-            clickBetTarget(tgt0);
-            await sleep(80);
-            return true;
+            return await clickBetTargetConfirmed(tgt0, side, {
+                amount: 0,
+                phase: 'tap_only'
+            });
         }
 
         var raw = Math.max(0, Math.floor(+amount || 0));
@@ -4606,8 +4975,18 @@
             var tgt = findBetTarget(side);
             if (!tgt || !tgt.node) {
                 console.warn('[cwBet++] không thấy nút cửa:', side);
+                postBetTrace('bet_target_not_found', {
+                    side: side,
+                    amount: X,
+                    phase: 'plan_start'
+                });
                 return false;
             }
+            postBetTrace('bet_plan_start', {
+                side: side,
+                amount: X,
+                target: betTargetDebug(tgt)
+            });
 
             var map = window.cwScanChips() || {};
             if (!Object.keys(map).length) {
@@ -4626,9 +5005,13 @@
 
             if (availSet[String(X)]) {
                 await window.cwFocusChip(X);
-                clickBetTarget(tgt);
-                await sleep(120);
-                return true;
+                await sleep(BET_CLICK_CFG.postFocusDelay);
+                return await clickBetTargetConfirmed(tgt, side, {
+                    amount: X,
+                    denom: X,
+                    turn: 1,
+                    phase: 'single_chip'
+                });
             }
 
             var res = makePlan(X, availSet);
@@ -4651,6 +5034,12 @@
                 planStr.push(plan[p].count + '×' + plan[p].val.toLocaleString());
             }
             console.log('[cwBet++] plan:', planStr.join(' + '));
+            postBetTrace('bet_plan_resolved', {
+                side: side,
+                amount: X,
+                plan: planStr.join(' + '),
+                target: betTargetDebug(tgt)
+            });
 
             for (var s = 0; s < plan.length; s++) {
                 var step = plan[s];
@@ -4659,19 +5048,51 @@
                 });
                 if (!ok) {
                     console.warn('[cwBet++] không focus được chip', step.val);
+                    postBetTrace('bet_focus_fail', {
+                        side: side,
+                        amount: X,
+                        denom: step.val,
+                        phase: 'plan_step'
+                    });
                     return false;
                 }
+                await sleep(BET_CLICK_CFG.postFocusDelay);
                 for (var i2 = 0; i2 < step.count; i2++) {
-                    if (!clickBetTarget(tgt))
+                    if (!await clickBetTargetConfirmed(tgt, side, {
+                            amount: X,
+                            denom: step.val,
+                            turn: i2 + 1,
+                            phase: 'plan_step'
+                        })) {
                         console.warn('[cwBet++] click cửa thất bại', {
                             side: side,
                             denom: step.val,
                             turn: i2 + 1
                         });
-                    await sleep(100);
+                        postBetTrace('bet_click_abort', {
+                            side: side,
+                            amount: X,
+                            denom: step.val,
+                            turn: i2 + 1,
+                            phase: 'plan_step'
+                        });
+                        return false;
+                    } else
+                        postBetTrace('bet_click_applied', {
+                            side: side,
+                            amount: X,
+                            denom: step.val,
+                            turn: i2 + 1,
+                            phase: 'plan_step'
+                        });
+                    await sleep(BET_CLICK_CFG.betweenStepDelay);
                 }
             }
             console.log('[cwBet++] DONE ►', {
+                side: side,
+                amount: X
+            });
+            postBetTrace('bet_done', {
                 side: side,
                 amount: X
             });

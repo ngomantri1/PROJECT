@@ -2504,6 +2504,31 @@ Ví dụ không hợp lệ:
                                     return;
                                 }
 
+                                // 4.b) bet_trace: trace chi tiết từ JS để điều tra nguyên nhân click/bet fail
+                                if (abxStr == "bet_trace")
+                                {
+                                    string stage = root.TryGetProperty("stage", out var stgEl) ? (stgEl.GetString() ?? "") : "";
+                                    string side = root.TryGetProperty("side", out var sideEl) ? (sideEl.GetString() ?? "") : "";
+                                    long amount = root.TryGetProperty("amount", out var amtEl) && amtEl.ValueKind == JsonValueKind.Number ? amtEl.GetInt64() : 0;
+                                    long denom = root.TryGetProperty("denom", out var denEl) && denEl.ValueKind == JsonValueKind.Number ? denEl.GetInt64() : 0;
+                                    int turn = root.TryGetProperty("turn", out var turnEl) && turnEl.ValueKind == JsonValueKind.Number ? turnEl.GetInt32() : 0;
+                                    string phase = root.TryGetProperty("phase", out var phEl) ? (phEl.GetString() ?? "") : "";
+                                    string mode = root.TryGetProperty("mode", out var modeEl) ? (modeEl.GetString() ?? "") : "";
+                                    string source = "";
+                                    string nodeName = "";
+                                    string nodePath = "";
+                                    if (root.TryGetProperty("target", out var targetEl) && targetEl.ValueKind == JsonValueKind.Object)
+                                    {
+                                        source = targetEl.TryGetProperty("source", out var srcEl) ? (srcEl.GetString() ?? "") : "";
+                                        nodeName = targetEl.TryGetProperty("nodeName", out var nameEl) ? (nameEl.GetString() ?? "") : "";
+                                        nodePath = targetEl.TryGetProperty("nodePath", out var pathEl) ? (pathEl.GetString() ?? "") : "";
+                                    }
+                                    string raw = root.GetRawText();
+                                    Log($"[BET][TRACE] stage={stage} side={side} amount={amount} denom={denom} turn={turn} phase={phase} mode={mode} source={source} node={nodeName} path={nodePath}");
+                                    Log($"[BET][TRACE][RAW] {raw}");
+                                    return;
+                                }
+
                                 // 5) home_tick: username/balance/url từ Home
                                 if (abxStr == "home_tick")
                                 {
