@@ -4301,7 +4301,7 @@
     var _cwSnapshotBuildSource = '';
     var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     var _cwSeqLastPubSyncAt = 0;
-    var _cwSeqScriptRev = 'SEQFIX-20260420-r40';
+    var _cwSeqScriptRev = 'SEQFIX-20260422-r42-inline-bpt';
     var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
@@ -13894,6 +13894,54 @@
             return null;
         }
 
+        function pickBoardCountInlineTextFromAllLabels(labs) {
+            try {
+                if (!labs || !labs.length)
+                    return null;
+                var best = null;
+                var bestScore = -1e9;
+                for (var i = 0; i < labs.length; i++) {
+                    var L = labs[i];
+                    var text = String(L && L.text != null ? L.text : '').trim();
+                    if (!text)
+                        continue;
+                    var parsed = parseBoardCountClusterText(text);
+                    if (!parsed || parsed.B == null || parsed.P == null || parsed.T == null)
+                        continue;
+
+                    var x = Number(L.x || 0);
+                    var y = Number(L.y || 0);
+                    var tl = String(L && (L.fullTl || L.tl || L.tail || '') || '').toLowerCase();
+                    var score = 0;
+                    score += Math.round(y * 1.1);
+                    score += Math.round(x * 0.8);
+                    if (tl.indexOf('stats-and-predictions') >= 0)
+                        score += 800;
+                    if (tl.indexOf('prediction') >= 0 || tl.indexOf('stats') >= 0)
+                        score += 250;
+                    if (/B\s*\d{1,3}\s+P\s*\d{1,3}\s+T\s*\d{1,3}\s+B\?\s*P\?/i.test(text))
+                        score += 300;
+
+                    if (score > bestScore) {
+                        bestScore = score;
+                        best = {
+                            B: parsed.B,
+                            P: parsed.P,
+                            T: parsed.T,
+                            x: x,
+                            y: y,
+                            text: text,
+                            tail: tl,
+                            score: score
+                        };
+                    }
+                }
+                return best;
+            } catch (_) {
+                return null;
+            }
+        }
+
         function boardCountTailMatches(label) {
             try {
                 var tl = String(label && (label.fullTl || label.tl || '') || '').toLowerCase();
@@ -13917,7 +13965,7 @@
                     var text = String(L && L.text != null ? L.text : '').trim();
                     if (!text)
                         continue;
-                    if (text.indexOf('?') >= 0)
+                    if (text.indexOf('?') >= 0 && !parseBoardCountClusterText(text))
                         continue;
                     items.push({
                         text: text,
@@ -14078,11 +14126,149 @@
             }
         }
 
+        function pickBoardCountTripletFromLowerRightNumbers(labs) {
+            try {
+                if (!labs || !labs.length)
+                    return null;
+                var w = Math.max(1, Number(window.innerWidth || 0) || 1600);
+                var h = Math.max(1, Number(window.innerHeight || 0) || 900);
+                var nums = [];
+                for (var i = 0; i < labs.length; i++) {
+                    var L = labs[i];
+                    var text = String(L && L.text != null ? L.text : '').trim();
+                    if (!/^\d{1,3}$/.test(text))
+                        continue;
+                    var x = Number(L.x || 0);
+                    var y = Number(L.y || 0);
+                    var ww = Number(L.w || 0);
+                    var hh = Number(L.h || 0);
+
+                    // Vivo draws B/P/T as sprites on some tables; only the three numbers are text.
+                    // They sit on the bottom-right statistic strip, left-to-right: B, P, T.
+                    if (x < w * 0.62 || y < h * 0.70)
+                        continue;
+                    if (ww > 72 || hh > 42)
+                        continue;
+                    nums.push({
+                        text: text,
+                        value: parseInt(text, 10),
+                        x: x,
+                        y: y,
+                        w: ww,
+                        h: hh,
+                        cx: x + ww / 2,
+                        cy: y + hh / 2
+                    });
+                }
+                if (nums.length < 3)
+                    return null;
+                nums.sort(function (a, b) {
+                    return a.cy - b.cy || a.cx - b.cx;
+                });
+
+                var rows = [];
+                for (var ni = 0; ni < nums.length; ni++) {
+                    var cur = nums[ni];
+                    var placed = false;
+                    for (var ri = 0; ri < rows.length; ri++) {
+                        var row = rows[ri];
+                        if (Math.abs(cur.cy - row.cy) <= Math.max(12, row.avgH * 0.9, cur.h * 0.9)) {
+                            var oldLen = row.items.length;
+                            row.items.push(cur);
+                            row.cy = (row.cy * oldLen + cur.cy) / (oldLen + 1);
+                            row.avgH = (row.avgH * oldLen + cur.h) / (oldLen + 1);
+                            placed = true;
+                            break;
+                        }
+                    }
+                    if (!placed) {
+                        rows.push({
+                            cy: cur.cy,
+                            avgH: cur.h,
+                            items: [cur]
+                        });
+                    }
+                }
+
+                var best = null;
+                var bestScore = -1e9;
+                for (var rj = 0; rj < rows.length; rj++) {
+                    var rowItems = rows[rj].items.slice().sort(function (a, b) {
+                        return a.cx - b.cx;
+                    });
+                    if (rowItems.length < 3)
+                        continue;
+                    for (var k = 0; k <= rowItems.length - 3; k++) {
+                        var a = rowItems[k], b = rowItems[k + 1], c = rowItems[k + 2];
+                        var gap1 = b.cx - a.cx;
+                        var gap2 = c.cx - b.cx;
+                        if (gap1 < 22 || gap1 > 95 || gap2 < 22 || gap2 > 95)
+                            continue;
+                        if (Math.abs(gap1 - gap2) > 42)
+                            continue;
+                        var total = Number(a.value || 0) + Number(b.value || 0) + Number(c.value || 0);
+                        if (total <= 0)
+                            continue;
+
+                        var minX = Math.min(a.x, b.x, c.x);
+                        var maxX = Math.max(a.x + a.w, b.x + b.w, c.x + c.w);
+                        var width = maxX - minX;
+                        var score = 0;
+                        score += Math.round(rows[rj].cy);
+                        score += Math.round(minX / 4);
+                        score -= Math.abs(width - 130);
+                        score -= Math.abs(gap1 - gap2) * 2;
+                        if (score > bestScore) {
+                            bestScore = score;
+                            best = {
+                                B: a.value,
+                                P: b.value,
+                                T: c.value,
+                                cy: rows[rj].cy,
+                                minX: minX,
+                                width: width,
+                                nums: [a.text, b.text, c.text]
+                            };
+                        }
+                    }
+                }
+                if (!best) {
+                    cwDbg('SEQFLOW', 'board-count-triplet-miss', {
+                        labels: labs.length,
+                        numericCandidates: nums.length,
+                        rows: rows.length
+                    }, 2500, 'board-count-triplet-miss');
+                    return null;
+                }
+                return best;
+            } catch (_) {
+                return null;
+            }
+        }
+
         function readBoardResultCountersSafe(force) {
             try {
                 var labs = collectLabels();
                 if (!labs || !labs.length)
                     labs = [];
+                var inlineText = pickBoardCountInlineTextFromAllLabels(labs);
+                if (inlineText && inlineText.B != null && inlineText.P != null && inlineText.T != null) {
+                    cwDbg('SEQFLOW', 'board-count-inline-text-bpt', {
+                        B: Number(inlineText.B),
+                        P: Number(inlineText.P),
+                        T: Number(inlineText.T),
+                        x: Number(inlineText.x || 0),
+                        y: Number(inlineText.y || 0),
+                        text: String(inlineText.text || ''),
+                        source: 'inline-text-bpt'
+                    }, 1200, 'board-count-inline-text-bpt|' + inlineText.B + '|' + inlineText.P + '|' + inlineText.T);
+                    return {
+                        B: inlineText.B,
+                        P: inlineText.P,
+                        T: inlineText.T,
+                        source: 'inline-text-bpt'
+                    };
+                }
                 var targetLabs = [];
                 for (var i = 0; i < labs.length; i++) {
                     if (boardCountTailMatches(labs[i]))
@@ -14117,27 +14303,25 @@
                         source: 'label-row-bpt'
                     };
                 }
-            } catch (_) {}
-            try {
-                var rawSeq = String(window.__cw_bead_raw_seq || '');
-                if (rawSeq) {
-                    var rawCounts = brSeqCountsBPT(rawSeq);
-                    if ((rawCounts.B + rawCounts.P + rawCounts.T) === rawCounts.len) {
-                        if (Number(rawCounts.T || 0) === 0 && Number(rawCounts.len || 0) >= 12) {
-                            cwDbg('SEQFLOW', 'board-count-raw-fallback-zero-tie', {
-                                rawLen: Number(rawCounts.len || 0),
-                                B: Number(rawCounts.B || 0),
-                                P: Number(rawCounts.P || 0),
-                                T: Number(rawCounts.T || 0)
-                            }, 1600, 'board-count-raw-zero-tie|' + rawCounts.len + '|' + rawCounts.B + '|' + rawCounts.P);
-                        }
-                        return {
-                            B: rawCounts.B,
-                            P: rawCounts.P,
-                            T: rawCounts.T,
-                            source: 'raw-seq-stats'
-                        };
-                    }
+                var tripletRow = pickBoardCountTripletFromLowerRightNumbers(labs);
+                if (tripletRow && tripletRow.B != null && tripletRow.P != null && tripletRow.T != null) {
+                    cwDbg('SEQFLOW', 'board-count-lower-right-triplet', {
+                        B: Number(tripletRow.B),
+                        P: Number(tripletRow.P),
+                        T: Number(tripletRow.T),
+                        cy: Number(tripletRow.cy || 0),
+                        minX: Number(tripletRow.minX || 0),
+                        width: Number(tripletRow.width || 0),
+                        nums: tripletRow.nums || [],
+                        targetLabels: targetLabs.length,
+                        source: 'lower-right-number-triplet'
+                    }, 1200, 'board-count-lower-right-triplet|' + tripletRow.B + '|' + tripletRow.P + '|' + tripletRow.T);
+                    return {
+                        B: tripletRow.B,
+                        P: tripletRow.P,
+                        T: tripletRow.T,
+                        source: 'lower-right-number-triplet'
+                    };
                 }
             } catch (_) {}
             return null;

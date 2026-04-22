@@ -306,6 +306,73 @@ namespace BaccaratViVoGaming.Tasks
             }
             return ok;
         }
+
+        public static async Task ApplyPostRoundMoneyAsync(
+            GameContext ctx,
+            MoneyManager money,
+            bool? win,
+            double netDelta,
+            CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
+
+            bool isMultiChain = string.Equals(ctx.MoneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase);
+            if (isMultiChain)
+            {
+                int chainIndex = ctx.MoneyChainIndex;
+                int chainStep = ctx.MoneyChainStep;
+                double chainProfit = ctx.MoneyChainProfit;
+
+                MoneyHelper.UpdateAfterRoundMultiChain(
+                    ctx.StakeChains,
+                    ctx.StakeChainTotals,
+                    ref chainIndex,
+                    ref chainStep,
+                    ref chainProfit,
+                    win,
+                    netDelta);
+
+                ctx.MoneyChainIndex = chainIndex;
+                ctx.MoneyChainStep = chainStep;
+                ctx.MoneyChainProfit = chainProfit;
+            }
+            else
+            {
+                money.OnRoundResult(win);
+            }
+
+            bool shouldReset =
+                ctx.AutoResetStakeOnNonNegativeWin &&
+                (ctx.ConsumeAutoResetStakeRequest?.Invoke() == true);
+            if (!shouldReset)
+                return;
+
+            long nextStake;
+            if (isMultiChain)
+            {
+                ctx.MoneyChainIndex = 0;
+                ctx.MoneyChainStep = 0;
+                ctx.MoneyChainProfit = 0;
+                nextStake = MoneyHelper.CalcAmountMultiChain(ctx.StakeChains, 0, 0);
+            }
+            else
+            {
+                money.ResetToLevel1();
+                nextStake = money.CurrentUnit;
+            }
+
+            await ctx.UiDispatcher.InvokeAsync(() =>
+            {
+                ctx.UiSetStake?.Invoke(nextStake);
+                if (isMultiChain)
+                    ctx.UiSetChainLevel?.Invoke(0, 0);
+            });
+
+            ctx.Log?.Invoke($"[MONEY][AUTO-RESET-NONNEG][APPLY] strategy={(string.IsNullOrWhiteSpace(ctx.MoneyStrategyId) ? "-" : ctx.MoneyStrategyId)} | stake={nextStake:N0} | multi={(isMultiChain ? 1 : 0)}");
+        }
+
         public static async Task<bool?> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSeq, CancellationToken ct)
         {
             var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;

@@ -211,33 +211,7 @@ namespace BaccaratViVoGaming.Tasks
 
                 // P&L theo kết quả thực
                 var netDelta = CalcNetDelta(side, stake, ok);
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
-                if (ctx.MoneyStrategyId == "MultiChain")
-                {
-                    // cần biến local để truyền ref
-                    int chainIndex = ctx.MoneyChainIndex;
-                    int chainStep = ctx.MoneyChainStep;
-                    double chainProfit = ctx.MoneyChainProfit;
-
-                    MoneyHelper.UpdateAfterRoundMultiChain(
-                        ctx.StakeChains,
-                        ctx.StakeChainTotals,
-                        ref chainIndex,
-                        ref chainStep,
-                        ref chainProfit,
-                        ok,
-                        netDelta);
-
-                    // gán ngược lại vào context
-                    ctx.MoneyChainIndex = chainIndex;
-                    ctx.MoneyChainStep = chainStep;
-                    ctx.MoneyChainProfit = chainProfit;
-                }
-                else
-                {
-                    // 4 kiểu cũ vẫn đi qua MoneyManager
-                    money.OnRoundResult(ok);
-                }
+                await TaskUtil.ApplyPostRoundMoneyAsync(ctx, money, ok, netDelta, ct);
 
                 // TÍNH panelWin (giả lập) và trainingWin (cho học)
                 // trueWinSide: 0/1 là BANKER/PLAYER thực tế thắng

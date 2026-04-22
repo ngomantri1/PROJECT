@@ -1166,6 +1166,15 @@
                                         LostFocus="TxtCut_LostFocus" />
 
                                 </Grid>
+                                <CheckBox
+                                    x:Name="ChkAutoResetStakeOnNonNegativeWin"
+                                    Margin="0,8,0,0"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Checked="ChkAutoResetStakeOnNonNegativeWin_Changed"
+                                    Content="Tiền thắng &gt;= 0 tự động quay về mức cược đầu"
+                                    Foreground="#222"
+                                    Unchecked="ChkAutoResetStakeOnNonNegativeWin_Changed" />
                                 <Grid
                                     Grid.Row="0"
                                     Margin="0,10,0,0"

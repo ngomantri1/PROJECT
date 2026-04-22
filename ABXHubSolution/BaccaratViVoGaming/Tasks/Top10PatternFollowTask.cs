@@ -144,8 +144,7 @@ namespace BaccaratViVoGaming.Tasks
 
                         bool? win0 = await WaitRoundFinishAndJudge(ctx, fallbackSide, baseSeq, ct);
                         var netDelta0 = CalcNetDelta(fallbackSide, stake0, win0);
-                        await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta0));
-                        money.OnRoundResult(win0);
+                        await TaskUtil.ApplyPostRoundMoneyAsync(ctx, money, win0, netDelta0, ct);
 
                         // Cập nhật lại list 10 mới về
                         var s2 = ctx.GetSnap?.Invoke();
@@ -182,33 +181,7 @@ namespace BaccaratViVoGaming.Tasks
                 // Chờ KẾT QUẢ: WaitRoundFinishAndJudge so sánh chuỗi → phù hợp cửa sổ 50 trượt
                 bool? win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
                 var netDelta = CalcNetDelta(side, stake, win);
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
-                if (ctx.MoneyStrategyId == "MultiChain")
-                {
-                    // cần biến local để truyền ref
-                    int chainIndex = ctx.MoneyChainIndex;
-                    int chainStep = ctx.MoneyChainStep;
-                    double chainProfit = ctx.MoneyChainProfit;
-
-                    MoneyHelper.UpdateAfterRoundMultiChain(
-                        ctx.StakeChains,
-                        ctx.StakeChainTotals,
-                        ref chainIndex,
-                        ref chainStep,
-                        ref chainProfit,
-                        win,
-                        netDelta);
-
-                    // gán ngược lại vào context
-                    ctx.MoneyChainIndex = chainIndex;
-                    ctx.MoneyChainStep = chainStep;
-                    ctx.MoneyChainProfit = chainProfit;
-                }
-                else
-                {
-                    // 4 kiểu cũ vẫn đi qua MoneyManager
-                    money.OnRoundResult(win);
-                }
+                await TaskUtil.ApplyPostRoundMoneyAsync(ctx, money, win, netDelta, ct);
 
                 // Sau khi có kết quả: cập nhật CL50 & +1 cho "10 mới về" (41..50)
                 var sAfter = ctx.GetSnap?.Invoke();

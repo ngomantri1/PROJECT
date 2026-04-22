@@ -234,30 +234,7 @@ namespace BaccaratViVoGaming.Tasks
 
                 bool? win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
                 var netDelta = CalcNetDelta(side, stake, win);
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
-                if (ctx.MoneyStrategyId == "MultiChain")
-                {
-                    int chainIndex = ctx.MoneyChainIndex;
-                    int chainStep = ctx.MoneyChainStep;
-                    double chainProfit = ctx.MoneyChainProfit;
-
-                    MoneyHelper.UpdateAfterRoundMultiChain(
-                        ctx.StakeChains,
-                        ctx.StakeChainTotals,
-                        ref chainIndex,
-                        ref chainStep,
-                        ref chainProfit,
-                        win,
-                        netDelta);
-
-                    ctx.MoneyChainIndex = chainIndex;
-                    ctx.MoneyChainStep = chainStep;
-                    ctx.MoneyChainProfit = chainProfit;
-                }
-                else
-                {
-                    money.OnRoundResult(win);
-                }
+                await TaskUtil.ApplyPostRoundMoneyAsync(ctx, money, win, netDelta, ct);
 
                 var snapAfter = ctx.GetSnap();
                 string latestSeq = snapAfter?.seq ?? baseSeq;
