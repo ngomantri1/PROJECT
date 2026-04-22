@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Windows.Threading;
@@ -10,6 +11,8 @@ namespace BaccaratViVoGaming.Tasks
         // Lấy snapshot mới nhất từ MainWindow (thread-safe)
         public Func<CwSnapshot> GetSnap { get; init; }
         public Func<CwSnapshot>? GetRawSnap { get; init; }
+        public Func<long>? GetAuthoritySettleSerial { get; init; }
+        public Func<long, CancellationToken, Task<AuthorityBetSettleInfo?>>? WaitAuthoritySettleAsync { get; init; }
 
         // Tab id (chiến lược) dùng cho queue bet
         public string TabId { get; init; } = "";
@@ -46,6 +49,7 @@ namespace BaccaratViVoGaming.Tasks
 
         // Ngưỡng % còn lại để ra quyết định
         public double DecisionPercent { get; init; }
+        public double BetWhenRemainingPercent { get; init; }
 
         // Trạng thái chiến lược (lưu Step/PreferLarger/.)
         public DecisionState State { get; init; }

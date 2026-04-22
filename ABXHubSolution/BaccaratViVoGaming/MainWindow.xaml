@@ -1060,7 +1060,7 @@
                                         Unchecked="ChkS7ResetOnProfit_Changed"
                                         Visibility="Collapsed" />
 
-                                    <!--  ĐẶT KHI CÒN (GIÂY)  -->
+                                    <!--  ĐẶT KHI CÒN (%)  -->
                                     <TextBlock
                                         Grid.Row="5"
                                         Grid.Column="0"
@@ -1074,7 +1074,9 @@
                                         MaxHeight="120"
                                         Margin="{StaticResource ValueFieldMargin}"
                                         HorizontalAlignment="Stretch"
-                                        Text="0" />
+                                        PreviewTextInput="TxtDecisionSecond_PreviewTextInput"
+                                        LostFocus="TxtDecisionSecond_LostFocus"
+                                        Text="10" />
                                     <!--  CỬA ĐẶT &amp; TỈ LỆ  -->
                                     <Grid
                                         x:Name="RowSideRatio"

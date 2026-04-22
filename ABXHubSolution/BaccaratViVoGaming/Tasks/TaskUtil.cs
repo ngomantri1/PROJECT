@@ -19,12 +19,19 @@ namespace BaccaratViVoGaming.Tasks
             Push
         }
 
+        private sealed class AcceptedBetIssue
+        {
+            public long SettleSerial { get; init; }
+            public long IssueSeqVersion { get; init; }
+            public long RoundId { get; init; }
+            public string IssueSeqDisplay { get; init; } = "";
+        }
+
         // Khóa chống gửi lặp: sau khi đã gửi 1 lệnh, chặn gửi tiếp trong một cửa sổ an toàn
         private static readonly ConcurrentDictionary<string, long> _lastBetOkMsByTab = new();
         private static readonly ConcurrentDictionary<string, int> _lastBetRoundByTab = new();
         private static readonly ConcurrentDictionary<string, string> _lastBetSideByTab = new();
-        private static readonly ConcurrentDictionary<string, string> _lastAcceptedRawSeqByTab = new();
-        private static readonly ConcurrentDictionary<string, (long B, long P, long T)> _lastAcceptedBoardCountsByTab = new();
+        private static readonly ConcurrentDictionary<string, AcceptedBetIssue> _lastAcceptedIssueByTab = new();
         private static readonly ConcurrentDictionary<string, byte> _betInFlightByTab = new();
         private const long SendOnlyCooldownMs = 3000;
         private const int BetSendTimeoutMs = 2500;
@@ -35,8 +42,7 @@ namespace BaccaratViVoGaming.Tasks
             _lastBetOkMsByTab.Clear();
             _lastBetRoundByTab.Clear();
             _lastBetSideByTab.Clear();
-            _lastAcceptedRawSeqByTab.Clear();
-            _lastAcceptedBoardCountsByTab.Clear();
+            _lastAcceptedIssueByTab.Clear();
             _betInFlightByTab.Clear();
         }
 
@@ -63,48 +69,6 @@ namespace BaccaratViVoGaming.Tasks
             if (u == 'P') return "PLAYER";
             if (u == 'T') return "TIE";
             return "";
-        }
-
-        private static string NormalizeResultSeq(string? raw)
-        {
-            if (string.IsNullOrWhiteSpace(raw)) return "";
-            var arr = raw.Where(ch =>
-            {
-                char u = char.ToUpperInvariant(ch);
-                return u == 'B' || u == 'P' || u == 'T';
-            }).Select(char.ToUpperInvariant).ToArray();
-            return arr.Length == 0 ? "" : new string(arr);
-        }
-
-        private static string PickBestSettleSeq(CwSnapshot? snap)
-        {
-            if (snap == null) return "";
-            var rawSeq = NormalizeResultSeq(snap.rawSeq);
-            var seq = NormalizeResultSeq(snap.seq);
-            return rawSeq.Length >= seq.Length ? rawSeq : seq;
-        }
-
-        private static (long B, long P, long T) CountBptFromSeq(string? raw)
-        {
-            long b = 0, p = 0, t = 0;
-            foreach (var ch in NormalizeResultSeq(raw))
-            {
-                switch (ch)
-                {
-                    case 'B': b++; break;
-                    case 'P': p++; break;
-                    case 'T': t++; break;
-                }
-            }
-            return (b, p, t);
-        }
-
-        private static bool TryGetSnapshotBoardCounts(CwSnapshot? snap, out long b, out long p, out long t)
-        {
-            b = snap?.boardCountB ?? -1;
-            p = snap?.boardCountP ?? -1;
-            t = snap?.boardCountT ?? -1;
-            return b >= 0 && p >= 0 && t >= 0;
         }
 
         public static bool? IsWin(string betSide, char lastDigit)
@@ -178,12 +142,17 @@ namespace BaccaratViVoGaming.Tasks
         // Chờ sang phiên mới rồi đặt NGAY khi mở cửa (đặt sớm, KHÔNG phụ thuộc DecisionPercent)
         public static async Task WaitUntilNewRoundStart(GameContext ctx, CancellationToken ct)
         {
+            double lowerBound = Math.Max(0, ctx.DecisionPercent);
+            double upperBound = Math.Clamp(ctx.BetWhenRemainingPercent, 5, 100);
+            if (lowerBound >= upperBound)
+                lowerBound = 0;
+
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
                 double p = s?.prog ?? 100.0;
-                if (p >= ctx.DecisionPercent && p <= 100) break;
+                if (p > lowerBound && p <= upperBound) break;
                 await Task.Delay(80, ct);
             }
         }
@@ -213,8 +182,9 @@ namespace BaccaratViVoGaming.Tasks
 
             var playableSnap = ctx.GetSnap?.Invoke();
             var snap = ctx.GetRawSnap?.Invoke() ?? playableSnap;
-            var rawSeq = PickBestSettleSeq(snap);
             var roundId = 0;
+            var issueSeqDisplay = snap?.seq ?? "";
+            var issueSeqVersion = 0L;
             try
             {
                 var seqVer = snap?.seqVersion;
@@ -222,13 +192,19 @@ namespace BaccaratViVoGaming.Tasks
                 {
                     if (seqVer.Value > int.MaxValue) roundId = int.MaxValue;
                     else roundId = (int)seqVer.Value;
+                    issueSeqVersion = seqVer.Value;
                 }
                 else
                 {
                     roundId = (snap?.seq ?? "").Length;
+                    issueSeqVersion = roundId;
                 }
             }
-            catch { roundId = 0; }
+            catch
+            {
+                roundId = 0;
+                issueSeqVersion = 0;
+            }
 
             var last = _lastBetOkMsByTab.TryGetValue(tabKey, out var v) ? v : 0;
             var lastRound = _lastBetRoundByTab.TryGetValue(tabKey, out var r) ? r : -1;
@@ -319,11 +295,13 @@ namespace BaccaratViVoGaming.Tasks
                 _lastBetOkMsByTab[tabKey] = now;
                 _lastBetRoundByTab[tabKey] = roundId;
                 _lastBetSideByTab[tabKey] = side ?? "";
-                _lastAcceptedRawSeqByTab[tabKey] = rawSeq;
-                if (TryGetSnapshotBoardCounts(snap, out var acceptedB, out var acceptedP, out var acceptedT))
-                    _lastAcceptedBoardCountsByTab[tabKey] = (acceptedB, acceptedP, acceptedT);
-                else
-                    _lastAcceptedBoardCountsByTab[tabKey] = CountBptFromSeq(rawSeq);
+                _lastAcceptedIssueByTab[tabKey] = new AcceptedBetIssue
+                {
+                    SettleSerial = ctx.GetAuthoritySettleSerial?.Invoke() ?? 0,
+                    IssueSeqVersion = issueSeqVersion > 0 ? issueSeqVersion : roundId,
+                    RoundId = roundId,
+                    IssueSeqDisplay = issueSeqDisplay ?? ""
+                };
                 _betInFlightByTab[tabKey] = 1;
             }
             return ok;
@@ -331,56 +309,44 @@ namespace BaccaratViVoGaming.Tasks
         public static async Task<bool?> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSeq, CancellationToken ct)
         {
             var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
-            if (!_lastAcceptedBoardCountsByTab.TryGetValue(tabKey, out var acceptedCounts))
+            if (ctx?.WaitAuthoritySettleAsync == null)
             {
-                acceptedCounts = CountBptFromSeq(baseSeq);
-                if ((acceptedCounts.B + acceptedCounts.P + acceptedCounts.T) <= 0)
-                {
-                    ctx.Log?.Invoke($"[BET][SKIP] no accepted board count for settle | tab={tabKey}");
-                    _betInFlightByTab.TryRemove(tabKey, out _);
-                    return null;
-                }
-                ctx.Log?.Invoke($"[BET][FALLBACK] missing accepted settle counts -> use baseSeq counts | tab={tabKey} | B={acceptedCounts.B} | P={acceptedCounts.P} | T={acceptedCounts.T}");
+                ctx?.Log?.Invoke($"[BET][SKIP] authority-settle-wait-not-available | tab={tabKey}");
+                _betInFlightByTab.TryRemove(tabKey, out _);
+                _lastAcceptedIssueByTab.TryRemove(tabKey, out _);
+                return null;
             }
 
-            // Baccarat settle theo boardCount B/P/T để đồng nhất với authority/UI.
+            if (!_lastAcceptedIssueByTab.TryGetValue(tabKey, out var acceptedIssue))
+            {
+                ctx.Log?.Invoke($"[BET][SKIP] missing accepted authority issue | tab={tabKey} | baseLen={(baseSeq ?? "").Length}");
+                _betInFlightByTab.TryRemove(tabKey, out _);
+                return null;
+            }
+
+            long waitAfterSerial = acceptedIssue.SettleSerial;
+            long issueVersion = acceptedIssue.IssueSeqVersion > 0 ? acceptedIssue.IssueSeqVersion : (baseSeq ?? "").Length;
+            ctx.Log?.Invoke($"[BET][WAIT][AUTH] tab={tabKey} | afterSerial={waitAfterSerial} | issueSeqVer={issueVersion} | issueRound={acceptedIssue.RoundId} | issueLen={acceptedIssue.IssueSeqDisplay.Length}");
+
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                var s = ctx.GetRawSnap?.Invoke() ?? ctx.GetSnap?.Invoke();
-                if (!TryGetSnapshotBoardCounts(s, out var curB, out var curP, out var curT))
+                var settle = await ctx.WaitAuthoritySettleAsync(waitAfterSerial, ct);
+                if (settle == null)
+                    continue;
+
+                waitAfterSerial = Math.Max(waitAfterSerial, settle.Serial);
+                if (settle.SeqVersion > 0 && settle.SeqVersion <= issueVersion)
                 {
-                    await Task.Delay(80, ct);
+                    ctx.Log?.Invoke($"[BET][WAIT][AUTH-SKIP] reason=stale-settle | tab={tabKey} | serial={settle.Serial} | settleSeqVer={settle.SeqVersion} | issueSeqVer={issueVersion} | result={settle.ResultText}");
                     continue;
                 }
 
-                long deltaB = curB - acceptedCounts.B;
-                long deltaP = curP - acceptedCounts.P;
-                long deltaT = curT - acceptedCounts.T;
-                if (deltaB <= 0 && deltaP <= 0 && deltaT <= 0)
-                {
-                    await Task.Delay(80, ct);
-                    continue;
-                }
-
-                char seqResultChar = '\0';
-                if (deltaB > 0 && deltaP == 0 && deltaT == 0)
-                    seqResultChar = 'B';
-                else if (deltaB == 0 && deltaP > 0 && deltaT == 0)
-                    seqResultChar = 'P';
-                else if (deltaB == 0 && deltaP == 0 && deltaT > 0)
-                    seqResultChar = 'T';
-
-                if (seqResultChar == '\0')
-                {
-                    ctx.Log?.Invoke($"[BET][WAIT] count-delta-not-single-source | tab={tabKey} | dB={deltaB} | dP={deltaP} | dT={deltaT} | curB={curB} | curP={curP} | curT={curT} | baseB={acceptedCounts.B} | baseP={acceptedCounts.P} | baseT={acceptedCounts.T}");
-                    await Task.Delay(80, ct);
-                    continue;
-                }
-
-                bool? win = IsWin(betSide, seqResultChar);
-                string settleResult = SeqCharToResult(seqResultChar);
-                ctx.Log?.Invoke($"[BET][SETTLE] tab={tabKey} | result={settleResult} | dB={deltaB} | dP={deltaP} | dT={deltaT} | curB={curB} | curP={curP} | curT={curT} | baseB={acceptedCounts.B} | baseP={acceptedCounts.P} | baseT={acceptedCounts.T}");
+                bool? win = IsWin(betSide, settle.ResultChar);
+                string settleResult = !string.IsNullOrWhiteSpace(settle.ResultText)
+                    ? settle.ResultText
+                    : SeqCharToResult(settle.ResultChar);
+                ctx.Log?.Invoke($"[BET][SETTLE] tab={tabKey} | result={settleResult} | serial={settle.Serial} | settleSeqVer={settle.SeqVersion} | settleEvt={(string.IsNullOrWhiteSpace(settle.SeqEvent) ? "-" : settle.SeqEvent)} | settleTable={(settle.TableId > 0 ? settle.TableId.ToString() : "-")} | settleShoe={(settle.GameShoe > 0 ? settle.GameShoe.ToString() : "-")} | settleRound={(settle.GameRound > 0 ? settle.GameRound.ToString() : "-")} | issueSeqVer={issueVersion} | reason={(string.IsNullOrWhiteSpace(settle.Reason) ? "-" : settle.Reason)}");
 
                 await ctx.UiDispatcher.InvokeAsync(() =>
                 {
@@ -393,15 +359,10 @@ namespace BaccaratViVoGaming.Tasks
                     {
                         ctx.UiSetWinLossText?.Invoke("Hòa");
                     }
-                    if (!string.IsNullOrWhiteSpace(settleResult))
-                        ctx.UiFinalizeBetResult?.Invoke(settleResult, s, "task-count-settle");
                 });
-                _lastAcceptedRawSeqByTab.TryRemove(tabKey, out _);
-                _lastAcceptedBoardCountsByTab.TryRemove(tabKey, out _);
+                _lastAcceptedIssueByTab.TryRemove(tabKey, out _);
                 _betInFlightByTab.TryRemove(tabKey, out _);
                 return win;
-
-                await Task.Delay(80, ct);
             }
         }
     }

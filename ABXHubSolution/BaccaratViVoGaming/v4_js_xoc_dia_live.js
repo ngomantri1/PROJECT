@@ -3629,7 +3629,16 @@
                 brDiagBump(diag, 'out-target-zone');
                 continue;
             }
-            if (r.width < minSize || r.height < minSize || r.width > maxSize || r.height > maxSize) {
+            var cs = view.getComputedStyle(el);
+            var marker = brClassifyMarker(el, cs);
+            var markerIsTie = marker === 'T';
+            var looseTieSize =
+                markerIsTie &&
+                r.width >= Math.max(3, Math.min(5, minSize)) &&
+                r.height >= Math.max(3, Math.min(5, minSize)) &&
+                r.width <= Math.max(maxSize, 72) &&
+                r.height <= Math.max(maxSize, 72);
+            if (!looseTieSize && (r.width < minSize || r.height < minSize || r.width > maxSize || r.height > maxSize)) {
                 brDiagBump(diag, 'size-filter');
                 brDiagSample(diag, 'size-filter', {
                     w: Math.round(r.width),
@@ -3639,12 +3648,10 @@
                 }, 3);
                 continue;
             }
-            if (Math.abs(r.width - r.height) > 10) {
+            if (!markerIsTie && Math.abs(r.width - r.height) > 10) {
                 brDiagBump(diag, 'not-square');
                 continue;
             }
-            var cs = view.getComputedStyle(el);
-            var marker = brClassifyMarker(el, cs);
             if (!marker) {
                 brDiagBump(diag, 'marker-empty');
                 continue;
@@ -3659,7 +3666,7 @@
                 tag === 'path' ||
                 /50%|999/.test(borderRadius) ||
                 rx >= (minSide * roundRatio);
-            if (!roundHint) {
+            if (!roundHint && !markerIsTie) {
                 brDiagBump(diag, 'not-round');
                 brDiagSample(diag, 'not-round', {
                     tag: tag,
@@ -3668,7 +3675,7 @@
                 }, 3);
                 continue;
             }
-            if (el.childElementCount > maxChildKeep && tag !== 'svg') {
+            if (!markerIsTie && el.childElementCount > maxChildKeep && tag !== 'svg') {
                 brDiagBump(diag, 'child-keep-filter');
                 continue;
             }
@@ -4294,7 +4301,7 @@
     var _cwSnapshotBuildSource = '';
     var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     var _cwSeqLastPubSyncAt = 0;
-    var _cwSeqScriptRev = 'SEQFIX-20260420-r39';
+    var _cwSeqScriptRev = 'SEQFIX-20260420-r40';
     var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
@@ -14033,6 +14040,44 @@
             }
         }
 
+        function pickBoardCountRowFromAllLabels(labs) {
+            try {
+                if (!labs || !labs.length)
+                    return null;
+                var w = Math.max(1, Number(window.innerWidth || 0) || 1600);
+                var h = Math.max(1, Number(window.innerHeight || 0) || 900);
+                var filtered = [];
+                for (var i = 0; i < labs.length; i++) {
+                    var L = labs[i];
+                    var text = String(L && L.text != null ? L.text : '').trim().toUpperCase();
+                    if (!text)
+                        continue;
+                    var x = Number(L.x || 0);
+                    var y = Number(L.y || 0);
+                    var ww = Number(L.w || 0);
+                    var hh = Number(L.h || 0);
+                    var exactMarkerOrNumber = /^[BPT]$/.test(text) || /^\d{1,3}$/.test(text) || /(?:^|\s)[BPT]\s*[:=]?\s*\d{1,3}(?:\s|$)/.test(text);
+                    if (!exactMarkerOrNumber)
+                        continue;
+                    // Board result counters are in the lower road/stat area; this avoids bet boxes and captions.
+                    if (x < w * 0.36 || y < h * 0.48)
+                        continue;
+                    if (ww > 110 || hh > 46)
+                        continue;
+                    filtered.push(L);
+                }
+                var picked = pickBoardCountRow(filtered);
+                if (!picked)
+                    return null;
+                var total = Number(picked.B || 0) + Number(picked.P || 0) + Number(picked.T || 0);
+                if (total <= 0)
+                    return null;
+                return picked;
+            } catch (_) {
+                return null;
+            }
+        }
+
         function readBoardResultCountersSafe(force) {
             try {
                 var labs = collectLabels();
@@ -14054,12 +14099,38 @@
                         };
                     }
                 }
+                var fallbackRow = pickBoardCountRowFromAllLabels(labs);
+                if (fallbackRow && fallbackRow.B != null && fallbackRow.P != null && fallbackRow.T != null) {
+                    cwDbg('SEQFLOW', 'board-count-label-row', {
+                        B: Number(fallbackRow.B),
+                        P: Number(fallbackRow.P),
+                        T: Number(fallbackRow.T),
+                        cy: Number(fallbackRow.cy || 0),
+                        minX: Number(fallbackRow.minX || 0),
+                        targetLabels: targetLabs.length,
+                        source: 'label-row-bpt'
+                    }, 1200, 'board-count-label-row|' + fallbackRow.B + '|' + fallbackRow.P + '|' + fallbackRow.T);
+                    return {
+                        B: fallbackRow.B,
+                        P: fallbackRow.P,
+                        T: fallbackRow.T,
+                        source: 'label-row-bpt'
+                    };
+                }
             } catch (_) {}
             try {
                 var rawSeq = String(window.__cw_bead_raw_seq || '');
                 if (rawSeq) {
                     var rawCounts = brSeqCountsBPT(rawSeq);
                     if ((rawCounts.B + rawCounts.P + rawCounts.T) === rawCounts.len) {
+                        if (Number(rawCounts.T || 0) === 0 && Number(rawCounts.len || 0) >= 12) {
+                            cwDbg('SEQFLOW', 'board-count-raw-fallback-zero-tie', {
+                                rawLen: Number(rawCounts.len || 0),
+                                B: Number(rawCounts.B || 0),
+                                P: Number(rawCounts.P || 0),
+                                T: Number(rawCounts.T || 0)
+                            }, 1600, 'board-count-raw-zero-tie|' + rawCounts.len + '|' + rawCounts.B + '|' + rawCounts.P);
+                        }
                         return {
                             B: rawCounts.B,
                             P: rawCounts.P,

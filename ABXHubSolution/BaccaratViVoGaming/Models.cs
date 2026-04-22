@@ -57,6 +57,21 @@ namespace BaccaratViVoGaming
         public int? jsPerfMode { get; set; }
     }
 
+    public sealed class AuthorityBetSettleInfo
+    {
+        public long Serial { get; set; }
+        public string ResultText { get; set; } = "";
+        public char ResultChar { get; set; }
+        public string SeqDisplay { get; set; } = "";
+        public long SeqVersion { get; set; }
+        public string SeqEvent { get; set; } = "";
+        public string Reason { get; set; } = "";
+        public long TableId { get; set; }
+        public long GameShoe { get; set; }
+        public long GameRound { get; set; }
+        public DateTime CreatedUtc { get; set; }
+    }
+
     public sealed class DecisionState
     {
         public int Step = 0;              // index chuỗi tiền (0-based)
