@@ -446,6 +446,7 @@ namespace TaiXiuLiveSun
 
         // 3) Giữ pending bet để chờ kết quả
         private readonly List<BetRow> _pendingRows = new();
+        private readonly Dictionary<string, DateTime> _betIssueHistoryKeys = new(StringComparer.OrdinalIgnoreCase);
         private const int MaxHistory = 1000;   // tổng số bản ghi giữ trong bộ nhớ & khi load
 
 
@@ -885,7 +886,7 @@ Ví dụ không hợp lệ:
     (function tick(){
       try{
         if (window.__cw_startPush && window.cc && cc.director && cc.director.getScene){
-          try{ window.__cw_startPush(320); }catch(_){}
+          try{ window.__cw_startPush(160); }catch(_){}
           return;
         }
       }catch(_){}
@@ -2466,44 +2467,14 @@ Ví dụ không hợp lệ:
                                     return;
                                 }
 
-                                // 3) bet ok → tạo dòng placeholder (Result/WinLose = "-") và SHOW TRANG 1
+                                // 3) JS bet ack: chỉ ghi log phụ. Lịch sử cược chỉ được tạo từ C# sau khi enqueue xong.
                                 if (abxStr == "bet")
                                 {
                                     string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
                                     long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
-                                    string side = sideRaw.Equals("CHAN", StringComparison.OrdinalIgnoreCase) ? "CHAN"
-                                                : sideRaw.Equals("LE", StringComparison.OrdinalIgnoreCase) ? "LE"
-                                                : sideRaw.ToUpperInvariant();
-
-                                    Log($"[BET] {side} {amount:N0}");
-
-                                    long accNow = 0;
-                                    try { accNow = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
-
-                                    var row = new BetRow
-                                    {
-                                        At = DateTime.Now,
-                                        Game = "Xóc đĩa live",
-                                        Stake = amount,
-                                        Side = side,
-                                        Result = "-",
-                                        WinLose = "-",
-                                        Account = accNow
-                                    };
-
-                                    // MỚI NHẤT Ở ĐẦU DANH SÁCH (trang 1)
-                                    _betAll.Insert(0, row);
-                                    if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
-                                    _pendingRows.Add(row);
-                                    // Chỉ về trang 1 nếu đang bám trang mới nhất; còn đang xem trang cũ thì giữ nguyên
-                                    if (_autoFollowNewest)
-                                    {
-                                        ShowFirstPage();
-                                    }
-                                    else
-                                    {
-                                        RefreshCurrentPage();   // (mục 3 bên dưới)
-                                    }
+                                    string tabId = root.TryGetProperty("tabId", out var te) ? (te.GetString() ?? "") : "";
+                                    int roundId = root.TryGetProperty("roundId", out var re) && re.ValueKind == JsonValueKind.Number ? re.GetInt32() : 0;
+                                    Log($"[BET][ACK] source=js tab={tabId} round={roundId} side={NormalizeBetSideForHistory(sideRaw)} amount={amount:N0}");
                                     return;
                                 }
 
@@ -5003,6 +4974,16 @@ Ví dụ không hợp lệ:
                 {
                     try { FinalizePendingBetsWithWinners(winners, resultDisplay); } catch { }
                 }),
+                UiRecordBetIssued = (side, amount, tabId, roundId) =>
+                {
+                    void Apply()
+                    {
+                        try { RecordBetIssuedUi(side, amount, tabId, roundId, "csharp-enqueue"); } catch { }
+                    }
+
+                    if (Dispatcher.CheckAccess()) Apply();
+                    else Dispatcher.Invoke(Apply);
+                },
                 UiSetChainLevel = (chain, level) => Dispatcher.Invoke(() =>
                 {
                     try { SetLevelForMultiChain(tab, chain, level); } catch { }
@@ -5174,15 +5155,15 @@ Ví dụ không hợp lệ:
                 }
 
                 // Bật kênh push (idempotent)
-                await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(320);");
-                Log("[CW] ensure push 320ms");
+                await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(160);");
+                Log("[CW] ensure push 160ms");
 
                 // 🔒 MỚI: Chờ đủ bridge + Cocos + tick để tránh nổ IndexOutOfRange trong task
                 var ready = await WaitForBridgeAndGameDataAsync(15000);
                 if (!ready)
                 {
                     Log("[DEC] Dữ liệu chưa sẵn sàng (bridge/cocos/tick). Thử gia hạn push & chờ thêm.");
-                    await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(320);");
+                    await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(160);");
                     ready = await WaitForBridgeAndGameDataAsync(15000);
                     if (!ready)
                     {
@@ -5350,7 +5331,7 @@ Ví dụ không hợp lệ:
                 if (activeTab == null) return;
 
                 StopTask(activeTab);
-                _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(320);");
+                _ = Web?.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(160);");
 
                 if (!IsAnyTabRunning())
                 {
@@ -7011,6 +6992,74 @@ Ví dụ không hợp lệ:
                 Log("[CUT] " + reason);
             }
             catch { /* ignore */ }
+        }
+
+        private static string NormalizeBetSideForHistory(string? sideRaw)
+        {
+            var side = (sideRaw ?? "").Trim();
+            if (side.Equals("CHAN", StringComparison.OrdinalIgnoreCase)) return "CHAN";
+            if (side.Equals("LE", StringComparison.OrdinalIgnoreCase)) return "LE";
+            if (side.Equals("TAI", StringComparison.OrdinalIgnoreCase)) return "TAI";
+            if (side.Equals("XIU", StringComparison.OrdinalIgnoreCase)) return "XIU";
+            return side.ToUpperInvariant();
+        }
+
+        private static string BuildBetIssueHistoryKey(string? tabId, int roundId, string side, long amount)
+            => $"{(tabId ?? "").Trim()}|{roundId}|{side}|{amount}";
+
+        private void PruneBetIssueHistoryKeys()
+        {
+            if (_betIssueHistoryKeys.Count < 2000) return;
+            var cutoff = DateTime.UtcNow.AddMinutes(-10);
+            foreach (var key in _betIssueHistoryKeys.Where(kv => kv.Value < cutoff).Select(kv => kv.Key).ToList())
+                _betIssueHistoryKeys.Remove(key);
+        }
+
+        private void RecordBetIssuedUi(string? sideRaw, long amount, string? tabId, int roundId, string source)
+        {
+            string side = NormalizeBetSideForHistory(sideRaw);
+            if (string.IsNullOrWhiteSpace(side) || amount <= 0) return;
+
+            PruneBetIssueHistoryKeys();
+            string key = BuildBetIssueHistoryKey(tabId, roundId, side, amount);
+            bool isCsharpEnqueue = string.Equals(source, "csharp-enqueue", StringComparison.OrdinalIgnoreCase);
+            if (!isCsharpEnqueue && _betIssueHistoryKeys.ContainsKey(key))
+            {
+                Log($"[BET][HIST][DUP] source={source} tab={tabId} round={roundId} side={side} amount={amount:N0}");
+                return;
+            }
+            _betIssueHistoryKeys[key] = DateTime.UtcNow;
+
+            Log($"[BET] {side} {amount:N0}");
+
+            long accNow = 0;
+            try { accNow = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { }
+
+            var row = new BetRow
+            {
+                At = DateTime.Now,
+                Game = "Xóc đĩa live",
+                Stake = amount,
+                Side = side,
+                Result = "-",
+                WinLose = "-",
+                Account = accNow
+            };
+
+            _betAll.Insert(0, row);
+            if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
+            _pendingRows.Add(row);
+
+            Log($"[BET][HIST][PENDING] source={source} tab={tabId} round={roundId} side={side} amount={amount:N0} pending={_pendingRows.Count}");
+
+            if (_autoFollowNewest)
+            {
+                ShowFirstPage();
+            }
+            else
+            {
+                RefreshCurrentPage();
+            }
         }
 
         private void FinalizeLastBet(string? result, long balanceAfter, HashSet<string>? winners = null, string? displayResult = null)

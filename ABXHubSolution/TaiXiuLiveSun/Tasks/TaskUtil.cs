@@ -145,7 +145,7 @@ namespace TaiXiuLiveSun.Tasks
                 double p = s?.prog ?? 1.0;
                 //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
                 if (p <= ctx.DecisionPercent && p > 0) break;
-                await Task.Delay(120, ct);
+                await Task.Delay(60, ct);
             }
         }
 
@@ -159,7 +159,7 @@ namespace TaiXiuLiveSun.Tasks
                 double p = s?.prog ?? 1.0;
                 //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
                 if (p >= ctx.DecisionPercent) break;
-                await Task.Delay(120, ct);
+                await Task.Delay(60, ct);
             }
         }
 
@@ -168,10 +168,6 @@ namespace TaiXiuLiveSun.Tasks
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
-
-            // C?p nh?t UI ch? khi th?c s? du?c ph?p b?n
-            await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke(side));
-            await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
 
             var snap = ctx.GetSnap?.Invoke();
             var roundId = 0;
@@ -186,9 +182,10 @@ namespace TaiXiuLiveSun.Tasks
             // Allow multi-side in same round; keep cooldown for same side only
             if (!ignoreCooldown)
             {
-                if (sameRound && sameSide && now - last < 3000)
+                const long SameRoundSameSideCooldownMs = 200;
+                if (sameRound && sameSide && now - last < SameRoundSameSideCooldownMs)
                 {
-                    ctx.Log?.Invoke($"[BET] cooldown 3s active, skip ({3000 - (now - last)}ms left)");
+                    ctx.Log?.Invoke($"[BET] cooldown {SameRoundSameSideCooldownMs}ms active, skip ({SameRoundSameSideCooldownMs - (now - last)}ms left)");
                     return false;
                 }
             }
@@ -206,6 +203,14 @@ namespace TaiXiuLiveSun.Tasks
 
             var rRaw = await ctx.EvalJsAsync(js);
             ctx.Log?.Invoke($"[BET-JS] tab={tabKey} round={roundId} result={rRaw}");
+
+            // C# enqueue xong là ghi pending history ngay; gom một lượt UI để không làm chậm nhịp bet.
+            await ctx.UiDispatcher.InvokeAsync(() =>
+            {
+                ctx.UiRecordBetIssued?.Invoke(side, amount, tabKey, roundId);
+                ctx.UiSetSide?.Invoke(side);
+                ctx.UiSetStake?.Invoke(amount);
+            });
 
             // Kh?ng ki?m tra th?nh c?ng/th?t b?i d? tr?nh b?n l?p; ch? d?y l?nh m?t l?n
             bool ok = true;

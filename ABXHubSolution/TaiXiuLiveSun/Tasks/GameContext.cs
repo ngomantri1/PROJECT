@@ -57,6 +57,7 @@ namespace TaiXiuLiveSun.Tasks
         public string BetSeq { get; init; }       // ô "CHUỖI CẦU" hoặc "Chuỗi N/I"
         public string BetPatterns { get; init; }  // ô "CÁC THẾ CẦU"
         public Action<HashSet<string>, string>? UiFinalizeMultiBet { get; init; }
+        public Action<string, long, string, int>? UiRecordBetIssued { get; init; }
 
         // Tiện ích UI nếu cần
         public Dispatcher UiDispatcher { get; init; }

@@ -2359,7 +2359,7 @@
     var S = {
         running: false,
         timer: null,
-        tickMs: 320,
+        tickMs: 160,
         prog: null,
         status: 'ĐỢI MỞ BÁT',
         money: [],
@@ -3957,10 +3957,14 @@
         return false;
     }
     var BET_CLICK_CFG = {
-        postFocusDelay: 220,
-        confirmTimeout: 1600,
-        retryPause: 110,
-        betweenStepDelay: 180
+        postFocusDelay: 100,
+        confirmTimeout: 280,
+        confirmPoll: 45,
+        retryPause: 35,
+        betweenStepDelay: 45,
+        maxAttempts: 3,
+        queueAckWait: 60,
+        queueSpacingMs: 200
     };
     function postBetTrace(stage, data) {
         var obj = {
@@ -4052,8 +4056,7 @@
     function shouldAcceptBetChange(reason, meta) {
         if (!reason || !reason.changed)
             return false;
-        if (reason.reason === 'side_total' && isSingleThousandBet(meta))
-            return false;
+        // C# coi enqueue là thành công; mọi biến động liên quan chỉ dùng để nhả queue sớm.
         return true;
     }
     async function clickBetTargetConfirmed(tgt, side, meta) {
@@ -4113,7 +4116,8 @@
             target: targetInfo,
             before: totalsSnapshotMini(before)
         });
-        for (var i = 0; i < attempts.length; i++) {
+        var maxAttempts = Math.max(1, Math.min(attempts.length, Number(BET_CLICK_CFG.maxAttempts) || attempts.length));
+        for (var i = 0; i < maxAttempts; i++) {
             var attempt = attempts[i];
             var sent = dispatchBetTargetAttempt(tgt, attempt);
             postBetTrace('bet_click_dispatch', {
@@ -4142,7 +4146,7 @@
             var t0 = (performance && performance.now ? performance.now() : Date.now());
             var last = before;
             while (((performance && performance.now ? performance.now() : Date.now()) - t0) < BET_CLICK_CFG.confirmTimeout) {
-                await sleep(90);
+                await sleep(BET_CLICK_CFG.confirmPoll || 45);
                 var cur = sampleTotalsNow(true) || {};
                 reason = totalsChangedForSide(last, cur, side);
                 if (reason.changed) {
@@ -4196,6 +4200,75 @@
             phase: String(meta.phase || ''),
             target: targetInfo,
             after: totalsSnapshotMini(before)
+        });
+        return false;
+    }
+    async function clickBetTargetFast(tgt, side, meta) {
+        meta = meta || {};
+        if (!tgt || !tgt.node) {
+            postBetTrace('bet_target_missing', {
+                side: normalizeSide(side),
+                amount: Number(meta.amount || 0),
+                phase: String(meta.phase || '')
+            });
+            return false;
+        }
+
+        var attempts = [
+            { mode: 'touch_rect_center' },
+            { mode: 'canvas_center', fx: 0.5, fy: 0.5 },
+            { mode: 'canvas_point', fx: 0.5, fy: 0.5 },
+            { mode: 'emit_click' }
+        ];
+        var targetInfo = betTargetDebug(tgt);
+        postBetTrace('bet_click_start', {
+            side: normalizeSide(side),
+            amount: Number(meta.amount || 0),
+            denom: Number(meta.denom || 0),
+            turn: Number(meta.turn || 0),
+            phase: String(meta.phase || ''),
+            fast: true,
+            target: targetInfo
+        });
+
+        for (var i = 0; i < attempts.length; i++) {
+            var attempt = attempts[i];
+            var sent = dispatchBetTargetAttempt(tgt, attempt);
+            postBetTrace('bet_click_dispatch', {
+                side: normalizeSide(side),
+                amount: Number(meta.amount || 0),
+                denom: Number(meta.denom || 0),
+                turn: Number(meta.turn || 0),
+                phase: String(meta.phase || ''),
+                fast: true,
+                target: targetInfo,
+                attempt: i + 1,
+                mode: attempt.mode,
+                sent: !!sent
+            });
+            if (sent) {
+                postBetTrace('bet_click_fire', {
+                    side: normalizeSide(side),
+                    amount: Number(meta.amount || 0),
+                    denom: Number(meta.denom || 0),
+                    turn: Number(meta.turn || 0),
+                    phase: String(meta.phase || ''),
+                    mode: attempt.mode,
+                    fast: true
+                });
+                return true;
+            }
+            await sleep(BET_CLICK_CFG.retryPause || 35);
+        }
+
+        postBetTrace('bet_click_fail', {
+            side: normalizeSide(side),
+            amount: Number(meta.amount || 0),
+            denom: Number(meta.denom || 0),
+            turn: Number(meta.turn || 0),
+            phase: String(meta.phase || ''),
+            fast: true,
+            target: targetInfo
         });
         return false;
     }
@@ -4788,7 +4861,7 @@
         var target = pickChipFocusTarget(info);
         if (!target) {
             await tryOpenChipPanel();
-            await sleep(180);
+            await sleep(100);
             info = explainChipAmount(val);
             target = pickChipFocusTarget(info);
         }
@@ -4830,7 +4903,7 @@
                     else
                         clickRectCenter(rectFromNodeScreen(target));
                 }
-                await sleep(140);
+                await sleep(80);
                 var t = getComp(target, cc.Toggle);
                 if (t && !t.isChecked) {
                     t.isChecked = true;
@@ -4860,7 +4933,7 @@
             else
                 clickRectCenter(rectFromNodeScreen(target2));
         }
-        await sleep(140);
+        await sleep(80);
         var tg = getComp(target2, cc.Toggle);
         if (tg && !tg.isChecked) {
             tg.isChecked = true;
@@ -5006,12 +5079,19 @@
             if (availSet[String(X)]) {
                 await window.cwFocusChip(X);
                 await sleep(BET_CLICK_CFG.postFocusDelay);
-                return await clickBetTargetConfirmed(tgt, side, {
+                var fired = await clickBetTargetFast(tgt, side, {
                     amount: X,
                     denom: X,
                     turn: 1,
                     phase: 'single_chip'
                 });
+                if (fired)
+                    postBetTrace('bet_done', {
+                        side: side,
+                        amount: X,
+                        fast: true
+                    });
+                return fired;
             }
 
             var res = makePlan(X, availSet);
@@ -5058,7 +5138,7 @@
                 }
                 await sleep(BET_CLICK_CFG.postFocusDelay);
                 for (var i2 = 0; i2 < step.count; i2++) {
-                    if (!await clickBetTargetConfirmed(tgt, side, {
+                    if (!await clickBetTargetFast(tgt, side, {
                             amount: X,
                             denom: step.val,
                             turn: i2 + 1,
@@ -5555,7 +5635,6 @@
             while (BET_QUEUE.length) {
                 var job = BET_QUEUE.shift();
                 if (!job) continue;
-                var result = "fail";
                 try {
                     var currentRound = getRoundIdSafe();
                     if (job.roundId && currentRound && job.roundId < currentRound) {
@@ -5572,37 +5651,52 @@
                     }
                     if (typeof cwBet !== "function") throw new Error("cwBet not found");
 
-                    var before = readTotalsSafe() || {};
-                    var rawResult = await cwBet(job.side, job.amt);
-                    var ok = rawResult === true || rawResult === "ok" || (rawResult && rawResult.ok === true);
                     try {
-                        if (ok && typeof waitForTotalsChange === "function") {
-                            await waitForTotalsChange(before, job.side, 1600);
-                        }
-                    } catch (_) {}
-                    if (ok) {
-                        safePost({
-                            abx: "bet",
+                        Promise.resolve(cwBet(job.side, job.amt))
+                            .then(function (rawResult) {
+                                if (rawResult === false) {
+                                    postBetTrace('bet_fire_result_false', {
+                                        side: job.side,
+                                        amount: job.amt,
+                                        tabId: job.tabId,
+                                        roundId: job.roundId,
+                                        fast: true
+                                    });
+                                }
+                            })
+                            .catch(function (err) {
+                                postBetTrace('bet_fire_error', {
+                                    side: job.side,
+                                    amount: job.amt,
+                                    tabId: job.tabId,
+                                    roundId: job.roundId,
+                                    error: String(err && err.message || err),
+                                    fast: true
+                                });
+                            });
+                    } catch (fireErr) {
+                        postBetTrace('bet_fire_error', {
                             side: job.side,
                             amount: job.amt,
                             tabId: job.tabId,
                             roundId: job.roundId,
-                            ts: Date.now()
+                            error: String(fireErr && fireErr.message || fireErr),
+                            fast: true
                         });
-                        result = "ok";
-                    } else {
-                        var reason = (rawResult && rawResult.error) ? String(rawResult.error) : (rawResult === false ? "cwBet returned false" : ("cwBet returned " + String(rawResult)));
-                        safePost({
-                            abx: "bet_error",
-                            side: job.side,
-                            amount: job.amt,
-                            tabId: job.tabId,
-                            roundId: job.roundId,
-                            error: reason,
-                            ts: Date.now()
-                        });
-                        result = "fail:" + reason;
                     }
+                    safePost({
+                        abx: "bet",
+                        side: job.side,
+                        amount: job.amt,
+                        tabId: job.tabId,
+                        roundId: job.roundId,
+                        fireAndContinue: true,
+                        ts: Date.now()
+                    });
+                    if (typeof job.resolve === "function") {
+                        try { job.resolve("sent"); } catch (_) {}
+                    }
+                    await sleep(BET_CLICK_CFG.queueSpacingMs || 200);
                 } catch (err) {
                     safePost({
                         abx: "bet_error",
@@ -5613,10 +5707,10 @@
                         error: String(err && err.message || err),
                         ts: Date.now()
                     });
-                    result = "fail:" + String(err && err.message || err);
-                }
-                if (typeof job.resolve === "function") {
-                    try { job.resolve(result); } catch (_) {}
+                    if (typeof job.resolve === "function") {
+                        try { job.resolve("fail:" + String(err && err.message || err)); } catch (_) {}
+                    }
+                    await sleep(BET_CLICK_CFG.queueSpacingMs || 200);
                 }
             }
             _processingBetQueue = false;
