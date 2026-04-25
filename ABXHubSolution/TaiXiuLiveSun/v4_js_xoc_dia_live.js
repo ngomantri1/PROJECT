@@ -3964,7 +3964,7 @@
         betweenStepDelay: 45,
         maxAttempts: 3,
         queueAckWait: 60,
-        queueSpacingMs: 200
+        queueSpacingMs: 100
     };
     function postBetTrace(stage, data) {
         var obj = {
@@ -5651,29 +5651,26 @@
                     }
                     if (typeof cwBet !== "function") throw new Error("cwBet not found");
 
+                    postBetTrace('bet_queue_job_start', {
+                        side: job.side,
+                        amount: job.amt,
+                        tabId: job.tabId,
+                        roundId: job.roundId,
+                        queueLen: BET_QUEUE.length
+                    });
+
+                    var rawResult = null;
                     try {
-                        Promise.resolve(cwBet(job.side, job.amt))
-                            .then(function (rawResult) {
-                                if (rawResult === false) {
-                                    postBetTrace('bet_fire_result_false', {
-                                        side: job.side,
-                                        amount: job.amt,
-                                        tabId: job.tabId,
-                                        roundId: job.roundId,
-                                        fast: true
-                                    });
-                                }
-                            })
-                            .catch(function (err) {
-                                postBetTrace('bet_fire_error', {
-                                    side: job.side,
-                                    amount: job.amt,
-                                    tabId: job.tabId,
-                                    roundId: job.roundId,
-                                    error: String(err && err.message || err),
-                                    fast: true
-                                });
+                        rawResult = await cwBet(job.side, job.amt);
+                        if (rawResult === false) {
+                            postBetTrace('bet_fire_result_false', {
+                                side: job.side,
+                                amount: job.amt,
+                                tabId: job.tabId,
+                                roundId: job.roundId,
+                                fast: true
                             });
+                        }
                     } catch (fireErr) {
                         postBetTrace('bet_fire_error', {
                             side: job.side,
@@ -5684,19 +5681,38 @@
                             fast: true
                         });
                     }
+
+                    postBetTrace('bet_queue_job_done', {
+                        side: job.side,
+                        amount: job.amt,
+                        tabId: job.tabId,
+                        roundId: job.roundId,
+                        result: rawResult === false ? 'false' : String(rawResult),
+                        queueLen: BET_QUEUE.length
+                    });
+
                     safePost({
                         abx: "bet",
                         side: job.side,
                         amount: job.amt,
                         tabId: job.tabId,
                         roundId: job.roundId,
-                        fireAndContinue: true,
+                        fireAndContinue: false,
+                        queueAwaited: true,
                         ts: Date.now()
                     });
                     if (typeof job.resolve === "function") {
                         try { job.resolve("sent"); } catch (_) {}
                     }
-                    await sleep(BET_CLICK_CFG.queueSpacingMs || 200);
+                    postBetTrace('bet_queue_job_next_delay', {
+                        side: job.side,
+                        amount: job.amt,
+                        tabId: job.tabId,
+                        roundId: job.roundId,
+                        delayMs: BET_CLICK_CFG.queueSpacingMs || 100,
+                        queueLen: BET_QUEUE.length
+                    });
+                    await sleep(BET_CLICK_CFG.queueSpacingMs || 100);
                 } catch (err) {
                     safePost({
                         abx: "bet_error",
@@ -5710,7 +5726,7 @@
                     if (typeof job.resolve === "function") {
                         try { job.resolve("fail:" + String(err && err.message || err)); } catch (_) {}
                     }
-                    await sleep(BET_CLICK_CFG.queueSpacingMs || 200);
+                    await sleep(BET_CLICK_CFG.queueSpacingMs || 100);
                 }
             }
             _processingBetQueue = false;
