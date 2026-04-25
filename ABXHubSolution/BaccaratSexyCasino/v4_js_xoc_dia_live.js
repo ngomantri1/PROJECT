@@ -169,23 +169,6 @@
         }
     }
 
-    function __cw_shouldRenderPanel() {
-        try {
-            var href = String(location.href || '').toLowerCase();
-            var path = String(location.pathname || '').toLowerCase();
-            var isWebMain =
-                path.indexOf('/player/webmain.jsp') >= 0 ||
-                href.indexOf('/player/webmain.jsp') >= 0;
-            if (isWebMain)
-                return true;
-            if (__cw_isTopDocument())
-                return true;
-            return false;
-        } catch (_) {
-            return __cw_isTopDocument();
-        }
-    }
-
     function __cw_boot() {
     try {
         cwDbg('BOOT', 'cw boot start', {
@@ -1321,41 +1304,9 @@
                 || (Number(b.score || 0) - Number(a.score || 0))
                 || (((b.rows && b.rows.length) || 0) - ((a.rows && a.rows.length) || 0));
         });
-        function isPreviewContext(c) {
-            try {
-                var href = String(c && c.href || '').toLowerCase();
-                var src = String(c && c.source || '').toLowerCase();
-                if (href.indexOf('/player/webmain.jsp') >= 0)
-                    return true;
-                if (src === 'top/frame[0]')
-                    return true;
-            } catch (_) {}
-            return false;
-        }
-        function appendUnique(list, item) {
-            if (!item)
-                return;
-            for (var ii = 0; ii < list.length; ii++) {
-                var ex = list[ii];
-                if (String(ex && ex.source || '') === String(item && item.source || '') &&
-                    String(ex && ex.href || '') === String(item && item.href || ''))
-                    return;
-            }
-            list.push(item);
-        }
         var strict = ranked.filter(function (c) { return Number(c.tableScore || 0) >= 450; });
-        if (strict.length) {
-            var merged = strict.slice(0);
-            for (var si = 0; si < ranked.length; si++) {
-                var rc = ranked[si];
-                if (!isPreviewContext(rc))
-                    continue;
-                if (Number(rc.tableScore || 0) < 120 && Number(rc.score || 0) < 40)
-                    continue;
-                appendUnique(merged, rc);
-            }
-            return merged;
-        }
+        if (strict.length)
+            return strict;
         var relaxed = ranked.filter(function (c) {
             return Number(c.tableScore || 0) >= 220 && Number(c.score || 0) >= 40;
         });
@@ -1781,7 +1732,6 @@
             if (!rgb) continue;
             if (rgb.r >= 150 && rgb.r > rgb.b * 1.15 && rgb.r > rgb.g * 1.05) return 'B';
             if (rgb.b >= 140 && rgb.b > rgb.r * 1.08 && rgb.b > rgb.g * 0.9) return 'P';
-            if (rgb.g >= 110 && rgb.g > rgb.r * 1.02 && rgb.g > rgb.b * 1.02) return 'T';
         }
         return '';
     }
@@ -1856,72 +1806,30 @@
         }
         return null;
     }
-    function domFindCountsTotalInText(text) {
-        var s = domCollapse(text || '');
-        if (!s)
-            return null;
-        var m = s.match(/\bB\s*[:=]?\s*(\d{1,3})\s*P\s*[:=]?\s*(\d{1,3})\s*T\s*[:=]?\s*(\d{1,3})(?:\s*Total\s*(\d{1,3}))?/i);
-        if (!m)
-            return null;
-        var B = parseInt(m[1], 10);
-        var P = parseInt(m[2], 10);
-        var T = parseInt(m[3], 10);
-        if (!(isFinite(B) && isFinite(P) && isFinite(T)))
-            return null;
-        var Total = (m[4] != null ? parseInt(m[4], 10) : (B + P + T));
-        if (!isFinite(Total))
-            Total = B + P + T;
-        return {
-            B: B,
-            P: P,
-            T: T,
-            Total: Total
-        };
-    }
-    function domCollectRoadMarks(cardRoot, cardRect, region, dedupeStep) {
+    function domBuildRoad(cardRoot, cardRect) {
         var nodes = cardRoot.querySelectorAll('*');
         var cells = [];
         var seen = {};
-        var xMin = cardRect.left + cardRect.width * Number(region && region.xMin != null ? region.xMin : 0);
-        var xMax = cardRect.left + cardRect.width * Number(region && region.xMax != null ? region.xMax : 1);
-        var yMin = cardRect.top + cardRect.height * Number(region && region.yMin != null ? region.yMin : 0);
-        var yMax = cardRect.top + cardRect.height * Number(region && region.yMax != null ? region.yMax : 1);
-        var step = Math.max(1, Number(dedupeStep || 5));
-        for (var i = 0; i < nodes.length && i < 2600; i++) {
+        for (var i = 0; i < nodes.length && i < 800; i++) {
             var el = nodes[i];
-            if (!domVisible(el))
-                continue;
+            if (!domVisible(el)) continue;
             var r = el.getBoundingClientRect();
-            if (!r)
-                continue;
-            if (r.left < xMin || r.right > xMax || r.top < yMin || r.bottom > yMax)
-                continue;
-            if (r.width < 9 || r.height < 9 || r.width > 30 || r.height > 30)
-                continue;
-            var ratio = Math.max(r.width, r.height) / Math.max(1, Math.min(r.width, r.height));
-            if (ratio > 1.45)
-                continue;
+            if (r.width < 7 || r.height < 7 || r.width > 24 || r.height > 24) continue;
+            if (r.left < cardRect.left + cardRect.width * 0.15 || r.left > cardRect.right - 10) continue;
+            if (r.top < cardRect.top + cardRect.height * 0.08 || r.top > cardRect.bottom - 10) continue;
             var view = (el.ownerDocument && el.ownerDocument.defaultView) || window;
             var cs = view.getComputedStyle(el);
-            var txt = domCollapse(el.innerText || el.textContent || '');
-            var side = '';
-            if (/^[BPT]$/i.test(txt))
-                side = String(txt || '').toUpperCase();
-            else {
-                side = domSideFromColorList([
-                    cs.color,
-                    cs.backgroundColor,
-                    cs.borderColor,
-                    cs.outlineColor,
-                    el.getAttribute ? el.getAttribute('fill') : '',
-                    el.getAttribute ? el.getAttribute('stroke') : ''
-                ]);
-            }
-            if (side !== 'B' && side !== 'P' && side !== 'T')
-                continue;
-            var key = Math.round(r.left / step) + '|' + Math.round(r.top / step) + '|' + side;
-            if (seen[key])
-                continue;
+            var side = domSideFromColorList([
+                cs.color,
+                cs.backgroundColor,
+                cs.borderColor,
+                cs.outlineColor,
+                el.getAttribute ? el.getAttribute('fill') : '',
+                el.getAttribute ? el.getAttribute('stroke') : ''
+            ]);
+            if (side !== 'B' && side !== 'P') continue;
+            var key = Math.round(r.left / 6) + '|' + Math.round(r.top / 6) + '|' + side;
+            if (seen[key]) continue;
             seen[key] = 1;
             cells.push({
                 v: side,
@@ -1934,21 +1842,12 @@
             });
         }
         cells.sort(function (a, b) { return a.x - b.x || a.y - b.y; });
-        return cells;
-    }
-    function domBuildRoadCandidate(cells, xTol) {
-        if (!cells || !cells.length)
-            return null;
         var cols = [];
-        var tol = Math.max(1, Number(xTol || 8));
         for (var j = 0; j < cells.length; j++) {
             var cell = cells[j];
             var col = null;
             for (var k = 0; k < cols.length; k++) {
-                if (Math.abs(cols[k].cx - cell.x) <= tol) {
-                    col = cols[k];
-                    break;
-                }
+                if (Math.abs(cols[k].cx - cell.x) <= 10) { col = cols[k]; break; }
             }
             if (!col) {
                 col = { cx: cell.x, items: [] };
@@ -1960,178 +1859,28 @@
         var parts = [];
         for (var c = 0; c < cols.length; c++) {
             cols[c].items.sort(function (a, b) { return a.y - b.y; });
-            if (cols[c].items.length > 6)
-                return null;
             parts.push(cols[c].items.map(function (it) { return it.v; }).join(''));
         }
-        var seq = parts.join('');
         return {
-            seq: limitSeq52(seq),
+            seq: limitSeq52(parts.join('')),
             which: 'dom-baccarat',
             cols: cols,
             cells: cells
         };
     }
-    function domRoadRangeCandidate(cols, startIdx, endIdx) {
-        if (!cols || !cols.length)
-            return null;
-        var safeStart = Math.max(0, Number(startIdx || 0));
-        var safeEnd = Math.min(cols.length - 1, Number(endIdx || 0));
-        if (safeEnd < safeStart)
-            return null;
-        var pickCols = [];
-        var pickCells = [];
-        var parts = [];
-        for (var i = safeStart; i <= safeEnd; i++) {
-            var src = cols[i];
-            if (!src || !src.items || !src.items.length)
-                continue;
-            var items = src.items.slice().sort(function (a, b) { return a.y - b.y; });
-            if (items.length > 6)
-                return null;
-            pickCols.push({
-                cx: src.cx,
-                items: items
-            });
-            for (var j = 0; j < items.length; j++)
-                pickCells.push(items[j]);
-            parts.push(items.map(function (it) { return it.v; }).join(''));
-        }
-        if (!parts.length)
-            return null;
-        return {
-            seq: limitSeq52(parts.join('')),
-            which: 'dom-baccarat',
-            cols: pickCols,
-            cells: pickCells
-        };
-    }
-    function domScoreRoadCandidate(road, counts) {
-        if (!road)
-            return -2147483647;
-        var seq = String(road.seq || '');
-        var b = 0, p = 0, t = 0;
-        for (var i = 0; i < seq.length; i++) {
-            var ch = seq.charAt(i);
-            if (ch === 'B')
-                b++;
-            else if (ch === 'P')
-                p++;
-            else if (ch === 'T')
-                t++;
-        }
-        var total = (counts && isFinite(counts.Total)) ? Number(counts.Total || 0) : (b + p + t);
-        var score = 0;
-        if (counts) {
-            if (b === Number(counts.B || 0))
-                score += 1000;
-            if (p === Number(counts.P || 0))
-                score += 1000;
-            if (t === Number(counts.T || 0))
-                score += 1000;
-            if (seq.length === total)
-                score += 1500;
-            score -= Math.abs(b - Number(counts.B || 0)) * 500;
-            score -= Math.abs(p - Number(counts.P || 0)) * 500;
-            score -= Math.abs(t - Number(counts.T || 0)) * 500;
-            score -= Math.abs(seq.length - total) * 800;
-        }
-        score += Math.min(100, (road.cells && road.cells.length ? road.cells.length : 0) * 2);
-        return score;
-    }
-    function domSeqMatchesBoardCounts(raw, B, P, T) {
-        var clean = brSanitizeSeq(raw || '');
-        if (!clean)
-            return false;
-        var st = brSeqStats(clean);
-        var b = Number(B != null ? B : -1);
-        var p = Number(P != null ? P : -1);
-        var t = Number(T != null ? T : -1);
-        if (!(isFinite(b) && isFinite(p) && isFinite(t)))
-            return false;
-        return st.b === b && st.p === p && st.t === t && clean.length === (b + p + t);
-    }
-    function domBuildRoad(cardRoot, cardRect, counts) {
-        var regionVariants = [
-            { xMin: 0.00, xMax: 0.40, yMin: 0.05, yMax: 0.86 },
-            { xMin: 0.00, xMax: 0.43, yMin: 0.05, yMax: 0.88 },
-            { xMin: 0.01, xMax: 0.45, yMin: 0.04, yMax: 0.90 },
-            { xMin: 0.00, xMax: 0.55, yMin: 0.04, yMax: 0.90 },
-            { xMin: 0.00, xMax: 0.62, yMin: 0.04, yMax: 0.92 }
-        ];
-        var best = null;
-        var bestScore = -2147483647;
-        for (var ri = 0; ri < regionVariants.length; ri++) {
-            var region = regionVariants[ri];
-            for (var di = 0; di < 3; di++) {
-                var dedupe = (di === 0 ? 4 : (di === 1 ? 5 : 6));
-                var cells = domCollectRoadMarks(cardRoot, cardRect, region, dedupe);
-                if (!cells || !cells.length)
-                    continue;
-                for (var xi = 0; xi < 4; xi++) {
-                    var xTol = 6 + xi;
-                    var road = domBuildRoadCandidate(cells, xTol);
-                    if (!road || !road.seq || !road.cols || !road.cols.length)
-                        continue;
-                    for (var startIdx = 0; startIdx < road.cols.length; startIdx++) {
-                        for (var endIdx = startIdx; endIdx < road.cols.length; endIdx++) {
-                            var rangeRoad = domRoadRangeCandidate(road.cols, startIdx, endIdx);
-                            if (!rangeRoad || !rangeRoad.seq)
-                                continue;
-                            var score = domScoreRoadCandidate(rangeRoad, counts);
-                            if (score > bestScore) {
-                                best = rangeRoad;
-                                bestScore = score;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (!best) {
-            return {
-                seq: '',
-                which: 'dom-baccarat',
-                cols: [],
-                cells: []
-            };
-        }
-        return best;
-    }
     function domParseCard(cardRoot, titleText) {
         if (!cardRoot) return null;
         var rect = cardRoot.getBoundingClientRect();
         var texts = domExtractTexts(cardRoot);
-        var fullText = domCollapse(cardRoot.innerText || cardRoot.textContent || '');
-        var textCounts = domFindCountsTotalInText(fullText);
-        var titleMatch = fullText.match(/\bBaccarat\s*[A-Z0-9]+\b/i);
-        var boardB = domFindTaggedNumber(texts, 'B');
-        var boardP = domFindTaggedNumber(texts, 'P');
-        var boardT = domFindTaggedNumber(texts, 'T');
-        if (boardB == null && textCounts)
-            boardB = textCounts.B;
-        if (boardP == null && textCounts)
-            boardP = textCounts.P;
-        if (boardT == null && textCounts)
-            boardT = textCounts.T;
-        var roadCounts = null;
-        if (boardB != null && boardP != null && boardT != null) {
-            roadCounts = {
-                B: Number(boardB || 0),
-                P: Number(boardP || 0),
-                T: Number(boardT || 0),
-                Total: (textCounts && isFinite(textCounts.Total) ? Number(textCounts.Total || 0) : (Number(boardB || 0) + Number(boardP || 0) + Number(boardT || 0)))
-            };
-        }
-        var road = domBuildRoad(cardRoot, rect, roadCounts);
+        var road = domBuildRoad(cardRoot, rect);
         return {
             root: cardRoot,
-            title: domCollapse(titleText || (titleMatch ? titleMatch[0] : '')),
+            title: domCollapse(titleText || ''),
             rect: rect,
             texts: texts,
-            B: boardB,
-            P: boardP,
-            T: boardT,
+            B: domFindTaggedNumber(texts, 'B'),
+            P: domFindTaggedNumber(texts, 'P'),
+            T: domFindTaggedNumber(texts, 'T'),
             amount: domFindMoney(texts),
             countdown: domFindCountdown(texts, rect),
             seq: road.seq,
@@ -2167,8 +1916,7 @@
                     continue;
                 var txt = domCollapse(el.innerText || el.textContent || '');
                 var m = txt.match(/\bBaccarat\s*[A-Z0-9]+\b/i);
-                var countInfo = domFindCountsTotalInText(txt);
-                if (!m && !countInfo)
+                if (!m)
                     continue;
                 var root = domFindCardRoot(el, {
                     doc: ctx.doc,
@@ -2188,7 +1936,7 @@
                 if (rr.width > ctxW * 0.95 || rr.height > ctxH * 0.95)
                     continue;
                 seenRoot.push(root);
-                var parsed = domParseCard(root, (m ? m[0] : ''));
+                var parsed = domParseCard(root, m[0]);
                 if (!parsed)
                     continue;
                 parsed._ctxSource = String(ctx.source || 'top');
@@ -2196,7 +1944,6 @@
                 parsed._ctxScore = Number(ctx.score || 0);
                 parsed._ctxTableScore = Number(ctx.tableScore || 0);
                 parsed._ctxKey = parsed._ctxSource + '|' + parsed._ctxHref;
-                parsed._seqSource = 'dom-card-road';
                 ctxCardCount[parsed._ctxKey] = Number(ctxCardCount[parsed._ctxKey] || 0) + 1;
                 roots.push(parsed);
             }
@@ -2207,10 +1954,8 @@
             card._ctxCardCount = Number(ctxCardCount[card._ctxKey] || 0);
             card._pickScore = 0;
             card._pickScore += Number(card._ctxTableScore || 0);
-            if (String(card._ctxHref || '').toLowerCase().indexOf('/player/webmain.jsp') !== -1)
-                card._pickScore += 180;
-            if (String(card._ctxSource || '').toLowerCase() === 'top/frame[0]')
-                card._pickScore += 140;
+            if (String(card._ctxHref || '').toLowerCase().indexOf('singlebactable.jsp') !== -1)
+                card._pickScore += 900;
             if (card.countdown != null)
                 card._pickScore += 280;
             card._pickScore += Math.min(200, String(card.seq || '').length * 8);
@@ -6020,20 +5765,8 @@
             var bead = readDomBeadSeq();
             var beadSeq = (bead && bead.seq) ? String(bead.seq || '') : '';
             var beadRawSeq = (bead && bead.rawSeq) ? String(bead.rawSeq || '') : '';
-            var cards = [];
-            var active = null;
-            try {
-                cards = domScanBaccaratCards();
-                active = domPickActiveCard(cards);
-            } catch (domCardErr) {
-                try {
-                    cwDbg('DOMCARD', 'readTKSeq-dom-card-fail', {
-                        msg: String(domCardErr && domCardErr.message || domCardErr || '')
-                    }, 1200, 'readTKSeq-dom-card-fail|' + String(domCardErr && domCardErr.message || domCardErr || ''));
-                } catch (_) {}
-                cards = [];
-                active = null;
-            }
+            var cards = domScanBaccaratCards();
+            var active = domPickActiveCard(cards);
             var activeSeq = active ? String(active.seq || '').replace(/H/g, 'T') : '';
             var activeTitle = active && active.title ? String(active.title || '') : '';
             _domLastActiveSeq = activeSeq;
@@ -7371,21 +7104,8 @@
     /* ---------------- totals (using y & tail) ---------------- */
     function totals(S, forceFast) {
         if (!__cw_hasCocos()) {
-            var cards = [];
-            var active = null;
-            try {
-                cards = domScanBaccaratCards(!!forceFast);
-                active = domPickActiveCard(cards);
-            } catch (domCardErr) {
-                try {
-                    cwDbg('DOMCARD', 'totals-dom-card-fail', {
-                        msg: String(domCardErr && domCardErr.message || domCardErr || ''),
-                        forceFast: !!forceFast
-                    }, 1200, 'totals-dom-card-fail|' + String(domCardErr && domCardErr.message || domCardErr || '') + '|' + (!!forceFast ? '1' : '0'));
-                } catch (_) {}
-                cards = [];
-                active = null;
-            }
+            var cards = domScanBaccaratCards(!!forceFast);
+            var active = domPickActiveCard(cards);
             var hud = domFindHudSnapshot();
             var stake = domScanBetStakeTotals(!!forceFast);
             if (!active) {
@@ -7595,14 +7315,13 @@
         try {
             _old.remove();
         } catch (e) {}
-    var renderPanel = __cw_shouldRenderPanel();
     var root = document.createElement('div');
     root.id = ROOT;
-    root.setAttribute('data-cw-mode', (renderPanel ? 'full' : 'headless'));
+    root.setAttribute('data-cw-mode', 'full');
     root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
     document.body.appendChild(root);
     var panel = document.createElement('div');
-    panel.style.cssText = 'position:fixed;top:10px;right:10px;width:820px;background:#08130f;color:#bff;border:1px solid #0a0;border-radius:10px;padding:8px;font:12px/1.35 Consolas,monospace;pointer-events:auto;z-index:2147483647' + (renderPanel ? '' : ';display:none');
+    panel.style.cssText = 'position:fixed;top:10px;right:10px;width:820px;background:#08130f;color:#bff;border:1px solid #0a0;border-radius:10px;padding:8px;font:12px/1.35 Consolas,monospace;pointer-events:auto;z-index:2147483647';
     panel.innerHTML = '' +
         '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;cursor:move">' +
         '<b style="color:#9f9">Canvas Watch</b>' +
@@ -7634,7 +7353,7 @@
         '</div>' +
         '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
+    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -8104,21 +7823,7 @@
             base += '\n• Baccarat DOM cards:\n' + lines.join('\n');
         }
 
-        var tk = null;
-        try {
-            tk = readTKSeq();
-        } catch (panelTkErr) {
-            try {
-                cwDbg('DOMCARD', 'updatePanel-readTKSeq-fail', {
-                    msg: String(panelTkErr && panelTkErr.message || panelTkErr || '')
-                }, 1200, 'updatePanel-readTKSeq-fail|' + String(panelTkErr && panelTkErr.message || panelTkErr || ''));
-            } catch (_) {}
-            tk = {
-                seq: String(S.seq || ''),
-                seqVersion: Number(S.seqVersion || 0),
-                seqEvent: String(S.seqEvent || '')
-            };
-        }
+        var tk = readTKSeq();
         S.seq = tk.seq || '';
         S.seqVersion = Number(tk && tk.seqVersion != null ? tk.seqVersion : (window.__cw_seq_version || 0)) || 0;
         S.seqEvent = String(tk && tk.seqEvent ? tk.seqEvent : (window.__cw_seq_event || ''));
@@ -11671,9 +11376,7 @@
             totals: null,
             totalsAt: 0,
             seqState: null,
-            seqAt: 0,
-            boardCounts: null,
-            boardCountsAt: 0
+            seqAt: 0
         };
 
         function readCfgNumber(key, fallback) {
@@ -11780,10 +11483,6 @@
                 seq: obj.seq,
                 seqVersion: obj.seqVersion,
                 seqEvent: obj.seqEvent,
-                boardCountB: obj.boardCountB,
-                boardCountP: obj.boardCountP,
-                boardCountT: obj.boardCountT,
-                boardCountSource: obj.boardCountSource,
                 username: obj.username,
                 totals: stableTotals
             };
@@ -11877,52 +11576,6 @@
             return r && r.seq ? r.seq : '';
         }
 
-        function readBoardResultCountersSafe() {
-            try {
-                var now = Date.now();
-                if (_abxSnapCache.boardCountsAt > 0 &&
-                    (now - _abxSnapCache.boardCountsAt) <= 350 &&
-                    _abxSnapCache.boardCounts) {
-                    return _abxSnapCache.boardCounts;
-                }
-
-                var activeCard = null;
-                try {
-                    activeCard = domPickActiveCard(domScanBaccaratCards(false));
-                } catch (_) {
-                    activeCard = null;
-                }
-                if (!activeCard)
-                    return null;
-
-                var b = (activeCard.B != null ? Number(activeCard.B) : null);
-                var p = (activeCard.P != null ? Number(activeCard.P) : null);
-                var t = (activeCard.T != null ? Number(activeCard.T) : null);
-                if (!(isFinite(b) && isFinite(p) && isFinite(t)))
-                    return null;
-
-                var best = {
-                    B: b,
-                    P: p,
-                    T: t,
-                    source: 'dom-active-card-bpt',
-                    text: String(activeCard.title || '--') +
-                        ' | B:' + b +
-                        ' P:' + p +
-                        ' T:' + t +
-                        ' | SEQ:' + String(activeCard.seq || '--'),
-                    tail: String(activeCard._ctxSource || 'top') + '|' + String(activeCard._ctxHref || ''),
-                    score: Number(activeCard._pickScore || 0)
-                };
-
-                _abxSnapCache.boardCounts = best;
-                _abxSnapCache.boardCountsAt = now;
-                return best;
-            } catch (_) {
-                return null;
-            }
-        }
-
         function normalizeTotalsSnapshot(src) {
             try {
                 if (!src)
@@ -11958,7 +11611,6 @@
             var seqMode = '';
             var seqAppend = '';
             var seqWhich = '';
-            var boardCounts = null;
             var cached = null;
             var buildSource = String(sourceTag || 'auto');
             var perfMode = isPerfMode();
@@ -12253,23 +11905,6 @@
             } catch (_) {}
 
             try {
-                var useBoardCountCache =
-                    perfMode &&
-                    buildSource === 'push' &&
-                    _abxSnapCache.boardCountsAt > 0 &&
-                    (nowTs - _abxSnapCache.boardCountsAt) < 350;
-                if (useBoardCountCache) {
-                    boardCounts = _abxSnapCache.boardCounts || null;
-                } else {
-                    boardCounts = readBoardResultCountersSafe();
-                    _abxSnapCache.boardCounts = boardCounts || null;
-                    _abxSnapCache.boardCountsAt = Date.now();
-                }
-            } catch (_) {
-                boardCounts = null;
-            }
-
-            try {
                 if ((/^shoe-reset/i.test(seqEvent || '') || /append-reset-seed/i.test(seqEvent || '') ||
                     (/append-reset-seed-step/i.test(domSeqEvtBefore || '') && String(seqEvent || '') === 'no-change' && Number(seqVersion || 0) === Number(domSeqVerBefore || 0))) &&
                     (__cw_debug_seq || __cw_debug_seq_detail)) {
@@ -12317,10 +11952,6 @@
                 seqEvent: seqEvent,
                 seqMode: seqMode,
                 seqAppend: seqAppend,
-                boardCountB: boardCounts && boardCounts.B != null ? Number(boardCounts.B) : null,
-                boardCountP: boardCounts && boardCounts.P != null ? Number(boardCounts.P) : null,
-                boardCountT: boardCounts && boardCounts.T != null ? Number(boardCounts.T) : null,
-                boardCountSource: boardCounts && boardCounts.source ? String(boardCounts.source) : '',
                 seqWhich: seqWhich,
                 username: uname,
                 status: String(st || ''),
