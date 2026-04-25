@@ -1,0 +1,16 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <BitmapImage x:Key="ImgCHAN" UriSource="/XocDiaB52;component/Assets/side/CHAN.png" />
+    <BitmapImage x:Key="ImgLE" UriSource="/XocDiaB52;component/Assets/side/LE.png" />
+    <BitmapImage x:Key="ImgTHANG" UriSource="/XocDiaB52;component/Assets/kq/THANG.png" />
+    <BitmapImage x:Key="ImgTHUA" UriSource="/XocDiaB52;component/Assets/kq/THUA.png" />
+    <BitmapImage x:Key="ImgBALL0" UriSource="/XocDiaB52;component/Assets/side/TU_TRANG.png" />
+    <BitmapImage x:Key="ImgBALL1" UriSource="/XocDiaB52;component/Assets/side/1TRANG_3DO.png" />
+    <BitmapImage x:Key="ImgBALL2" UriSource="/XocDiaB52;component/Assets/side/SAP_DOI.png" />
+    <BitmapImage x:Key="ImgBALL3" UriSource="/XocDiaB52;component/Assets/side/1DO_3TRANG.png" />
+    <BitmapImage x:Key="ImgBALL4" UriSource="/XocDiaB52;component/Assets/side/TU_DO.png" />
+    <BitmapImage x:Key="ImgTU_TRANG" UriSource="/XocDiaB52;component/Assets/side/TU_TRANG.png" />
+    <BitmapImage x:Key="ImgTU_DO" UriSource="/XocDiaB52;component/Assets/side/TU_DO.png" />
+    <BitmapImage x:Key="ImgSAP_DOI" UriSource="/XocDiaB52;component/Assets/side/SAP_DOI.png" />
+    <BitmapImage x:Key="ImgTRANG3_DO1" UriSource="/XocDiaB52;component/Assets/side/1DO_3TRANG.png" />
+    <BitmapImage x:Key="ImgDO3_TRANG1" UriSource="/XocDiaB52;component/Assets/side/1TRANG_3DO.png" />
+</ResourceDictionary>
