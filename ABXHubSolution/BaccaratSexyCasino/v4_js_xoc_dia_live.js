@@ -4021,7 +4021,7 @@
     var _cwSnapshotBuildSource = '';
     var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     var _cwSeqLastPubSyncAt = 0;
-    var _cwSeqScriptRev = 'SEQFIX-20260418-r30';
+    var _cwSeqScriptRev = 'SEQFIX-20260426-r31';
     var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
@@ -4277,7 +4277,10 @@
     }
     function brIsTrustedTinyBoardSeq(raw) {
         var clean = brSanitizeSeq(raw);
-        return clean.length >= 1 && clean.length <= 3 && brIsReliableRoadSeq(clean);
+        // A one-bead board is not stable right after joining/switching tables: the DOM often
+        // paints the first bead before the rest of the tiny road, which previously seeded "B"
+        // for tables whose real initial road was "BP".
+        return clean.length >= 2 && clean.length <= 3 && brIsReliableRoadSeq(clean);
     }
     function brRecentNoBoardAgeMs() {
         var now = Date.now();
@@ -4714,6 +4717,7 @@
         if (_domShoeResetPending && raw.length <= 8) {
             var emptyManagedShortBootstrap = !brSanitizeSeq(_domBeadSeqManaged || '') &&
                 !brSanitizeSeq(prev || '') &&
+                raw.length >= 2 &&
                 raw.length <= 12 &&
                 brIsReliableRoadSeq(raw);
             if (emptyManagedShortBootstrap) {
@@ -4756,6 +4760,25 @@
                     buildId: Number(_cwSnapshotBuildId || 0),
                     buildSource: String(_cwSnapshotBuildSource || '')
                 }, 0, 'merge-accept-short-board-bootstrap|' + raw + '|' + Number(_domSeqVersion || 0));
+                brPublishSeqState();
+                return _domBeadSeqManaged;
+            }
+            if (raw.length < 2) {
+                _domSeqEvent = 'short-board-bootstrap-wait-len1';
+                _domSeqAppend = '';
+                _domBeadSeqPrevRaw = '';
+                brSeqDiagPost('short-board-bootstrap-wait-len1', {
+                    raw: raw,
+                    rawLen: raw.length,
+                    managedSeq: String(_domBeadSeqManaged || ''),
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    prevRaw: String(prev || ''),
+                    prevRawLen: String(prev || '').length,
+                    resetPending: _domShoeResetPending ? 1 : 0,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    buildId: Number(_cwSnapshotBuildId || 0),
+                    buildSource: String(_cwSnapshotBuildSource || '')
+                }, 500, 'short-board-bootstrap-wait-len1|' + raw + '|' + Number(_domSeqVersion || 0));
                 brPublishSeqState();
                 return _domBeadSeqManaged;
             }
