@@ -9,7 +9,7 @@ namespace XocDiaB52.Tasks
 {
     public sealed class PatternParityTask : IBetTask
     {
-        public string DisplayName => "2) Thế cầu C/L tự nhập";
+        public string DisplayName => "2) Thế cầu B/P tự nhập";
         public string Id => "pattern-cl";           // 2) Thế cầu C/L tự nhập
 
         private static List<(string lhs, string rhs)> Parse(string s)
@@ -28,8 +28,8 @@ namespace XocDiaB52.Tasks
                 var kv = p.Split('-', StringSplitOptions.RemoveEmptyEntries);
                 if (kv.Length == 2)
                 {
-                    string a = new string(kv[0].Where(c => c == 'C' || c == 'L').ToArray());
-                    string b = new string(kv[1].Where(c => c == 'C' || c == 'L').ToArray());
+                    string a = new string(kv[0].Select(NormalizeParityChar).Where(c => c == 'C' || c == 'L').ToArray());
+                    string b = new string(kv[1].Select(NormalizeParityChar).Where(c => c == 'C' || c == 'L').ToArray());
                     if (a.Length > 0 && b.Length > 0) items.Add((a, b));
                 }
             }
@@ -41,7 +41,7 @@ namespace XocDiaB52.Tasks
         {
             var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
             var patterns = Parse(ctx.BetPatterns);
-            if (patterns.Count == 0) throw new InvalidOperationException("Chưa nhập CÁC THẾ CẦU (dạng CLL-LLC;LL-L;...)");
+            if (patterns.Count == 0) throw new InvalidOperationException("Chưa nhập CÁC THẾ CẦU (dạng BPP-PPB;PP-P;...).");
 
             var planned = new Queue<char>(); // hàng đợi các lệnh 'C'/'L' cần đánh
             int lastSeqLen = ctx.GetSnap()?.seq?.Length ?? 0;

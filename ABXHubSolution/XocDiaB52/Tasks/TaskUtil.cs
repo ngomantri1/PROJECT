@@ -25,8 +25,40 @@ namespace XocDiaB52.Tasks
             _lastBetSideByTab.Clear();
         }
 
-        public static string ParityCharToSide(char ch) => (ch == 'C') ? "CHAN" : "LE";
-        public static char DigitToParity(char d) => (d == 'C') ? 'C' : 'L';
+        public static char NormalizeParityChar(char ch)
+        {
+            ch = char.ToUpperInvariant(ch);
+            if (ch == 'C' || ch == 'B') return 'C';
+            if (ch == 'L' || ch == 'P') return 'L';
+            return '\0';
+        }
+
+        public static string ParityCharToSide(char ch)
+        {
+            var p = NormalizeParityChar(ch);
+            if (p == 'C') return "CHAN";
+            if (p == 'L') return "LE";
+            return string.Empty;
+        }
+        public static char DigitToParity(char d)
+        {
+            d = char.ToUpperInvariant(d);
+            if (d == '0' || d == '2' || d == '4') return 'C';
+            if (d == '1' || d == '3') return 'L';
+            return NormalizeParityChar(d) == 'C' ? 'C' : 'L';
+        }
+
+        public static string DisplayResultChar(char ch)
+        {
+            var parity = NormalizeParityChar(ch);
+            return parity == 'C' ? "B" : (parity == 'L' ? "P" : "");
+        }
+
+        public static string DisplayResultName(char ch)
+        {
+            var parity = NormalizeParityChar(ch);
+            return parity == 'C' ? "BANKER" : (parity == 'L' ? "PLAYER" : "");
+        }
         // TaskUtil.cs (trong class TaskUtil)
         private static readonly object _betLock = new object();
         private static string _lastBetSeq = "";
@@ -37,14 +69,49 @@ namespace XocDiaB52.Tasks
         {
             if (string.IsNullOrEmpty(digitSeq)) return "";
             char[] a = new char[digitSeq.Length];
-            for (int i = 0; i < digitSeq.Length; i++) a[i] = DigitToParity(digitSeq[i]);
-            return new string(a);
+            int k = 0;
+            for (int i = 0; i < digitSeq.Length; i++)
+            {
+                var p = NormalizeParityChar(digitSeq[i]);
+                if (p == 'C' || p == 'L') a[k++] = p;
+            }
+            return new string(a, 0, k);
         }
 
         public static bool IsWin(string betSide, char lastDigit)
         {
-            var lastSide = (lastDigit == 'C') ? "CHAN" : "LE";
+            var lastSide = ParityCharToSide(lastDigit);
             return string.Equals(betSide, lastSide, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static bool TryGetSeqAdvance(string? baseSeq, string? currentSeq, out char lastDigit)
+        {
+            baseSeq ??= string.Empty;
+            currentSeq ??= string.Empty;
+            lastDigit = '\0';
+
+            if (currentSeq.Length <= baseSeq.Length)
+                return false;
+            if (!currentSeq.StartsWith(baseSeq, StringComparison.Ordinal))
+                return false;
+
+            lastDigit = currentSeq[^1];
+            return lastDigit != '\0';
+        }
+
+        public static bool IsSeqResetOrRebuilt(string? baseSeq, string? currentSeq)
+        {
+            baseSeq ??= string.Empty;
+            currentSeq ??= string.Empty;
+
+            if (string.IsNullOrEmpty(baseSeq))
+                return false;
+            if (string.Equals(baseSeq, currentSeq, StringComparison.Ordinal))
+                return false;
+            if (currentSeq.Length < baseSeq.Length)
+                return true;
+
+            return !currentSeq.StartsWith(baseSeq, StringComparison.Ordinal);
         }
 
         private static void UiResetRoundControls()
@@ -200,20 +267,25 @@ namespace XocDiaB52.Tasks
         }
         public static async Task<bool> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSeq, CancellationToken ct)
         {
-            // chờ seq tăng độ dài → có kết quả mới
+            // Chỉ chốt khi chuỗi thực sự được append thêm kết quả mới.
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
                 var curSeq = s?.seq ?? "";
-                if (!string.Equals(curSeq, baseSeq, StringComparison.Ordinal))
+                if (TryGetSeqAdvance(baseSeq, curSeq, out var lastDigit))
                 {
-                    bool win = IsWin(betSide, curSeq[^1]);
+                    bool win = IsWin(betSide, lastDigit);
                     await ctx.UiDispatcher.InvokeAsync(() => ctx.UiWinLoss?.Invoke(win));
-                    // cộng tiền lũy kế: +amount khi thắng, -amount khi thua (đơn giản)
-                    //TaskUtil.UiRoundAllowNextReset();
                     return win;
                 }
+
+                if (IsSeqResetOrRebuilt(baseSeq, curSeq))
+                {
+                    ctx.Log?.Invoke($"[SEQ] reset/rebuild detected while waiting result: baseLen={baseSeq.Length}, curLen={curSeq.Length}");
+                    baseSeq = curSeq;
+                }
+
                 await Task.Delay(120, ct);
             }
         }

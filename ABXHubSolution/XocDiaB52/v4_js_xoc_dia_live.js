@@ -2153,25 +2153,30 @@
         return cols;
     }
 
-    var TK_SEQ_MAX = 55;
+    var TK_SEQ_MAX = 0;
     function limitSeq55(seq) {
+        seq = String(seq || '');
         if (!seq)
             return '';
-        if (seq.length <= TK_SEQ_MAX)
-            return seq;
-        return seq.slice(-TK_SEQ_MAX);
+        if (TK_SEQ_MAX > 0 && seq.length > TK_SEQ_MAX)
+            return seq.slice(-TK_SEQ_MAX);
+        return seq;
     }
     function normalizeSeqCL(seq) {
         seq = String(seq || '').toUpperCase();
         var out = '';
         for (var i = 0; i < seq.length; i++) {
             var ch = seq.charAt(i);
-            if (ch === 'C' || ch === 'L')
+            if (ch === 'B' || ch === 'P')
                 out += ch;
+            else if (ch === 'C')
+                out += 'B';
+            else if (ch === 'L')
+                out += 'P';
             else if (ch === '0')
-                out += 'C';
+                out += 'B';
             else if (ch === '1')
-                out += 'L';
+                out += 'P';
         }
         return limitSeq55(out);
     }
@@ -2216,21 +2221,29 @@
     function beadVal(name, nodeName) {
         var sprite = String(name || '').toLowerCase();
         var node = String(nodeName || '').toLowerCase();
-        // Bảng kết quả B52 mới:
-        // - conDo => C (Chẵn)
-        // - cOnTrang => L (Lẻ)
+        // Chuỗi kết quả baccarat:
+        // - map nhánh "trái" cũ -> B
+        // - map nhánh "phải" cũ -> P
         if (/condo|con_do|\bdo\b|red/.test(sprite))
-            return 'C';
+            return 'B';
         if (/contrang|con_trang|\btrang\b|white/.test(sprite))
-            return 'L';
+            return 'P';
+        if (/\bbanker\b/.test(sprite))
+            return 'B';
+        if (/\bplayer\b/.test(sprite))
+            return 'P';
         if (/\bchan\b|even/.test(sprite))
-            return 'C';
+            return 'B';
         if (/\ble\b|odd/.test(sprite))
-            return 'L';
+            return 'P';
+        if (/\bbanker\b/.test(node))
+            return 'B';
+        if (/\bplayer\b/.test(node))
+            return 'P';
         if (/\bchan\b|even/.test(node))
-            return 'C';
+            return 'B';
         if (/\ble\b|odd/.test(node))
-            return 'L';
+            return 'P';
         return '?';
     }
 
@@ -2466,9 +2479,12 @@
         var r = readTKSeq();
         var curr = normalizeSeqCL(r && r.seq ? r.seq : '');
         if (!curr) {
-            if (forceScan)
-                S.seq = '';
-            return S.seq || '';
+            S.seq = '';
+            S._seqRaw = '';
+            S._seqWhich = (r && r.which) ? r.which : '';
+            S._seqInit = true;
+            S._seqLastScanTs = Date.now();
+            return '';
         }
         S.seq = curr;
         S._seqRaw = curr;
@@ -4144,7 +4160,7 @@
         return r;
     }
     try {
-        window.__cw_scan55CL = function (force) {
+        window.__cw_scanSeqCL = function (force) {
             var seq = '';
             try {
                 seq = refreshSeq55ByProg(S.prog, !!force) || '';
@@ -4157,15 +4173,19 @@
             var out = {
                 which: S._seqWhich || '',
                 len: seq.length,
+                seqBP: seq,
+                arrBP: arr,
                 seqCL: seq,
                 arrCL: arr
             };
+            window.__cw_scanSeqCL_last = out;
             window.__cw_scan55cl_last = out;
             try {
-                console.log('[CW_SEQ55CL]', out);
+                console.log('[CW_SEQCL]', out);
             } catch (_) {}
             return out;
         };
+        window.__cw_scan55CL = window.__cw_scanSeqCL;
     } catch (_) {}
 
     /* =====================================================
@@ -6903,7 +6923,7 @@
         var T = totals(S);
         S._lastTotals = T;
 
-        // TK sequence (rolling 55; only rescan at round close)
+        // TK sequence: đồng bộ đúng theo nguồn hiện tại, không giữ lại chuỗi cũ khi nguồn đã reset.
         S.seq = refreshSeq55ByProg(S.prog, false) || S.seq || '';
 
         // keep focus

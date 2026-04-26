@@ -7,17 +7,24 @@ namespace XocDiaB52.Tasks
 {
     public sealed class SeqParityFollowTask : IBetTask
     {
-        public string DisplayName => "1) Chuỗi C/L tự nhập";
+        public string DisplayName => "1) Chuỗi B/P tự nhập";
         public string Id => "seq-parity";               // 1) Chuỗi C/L tự nhập
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
             var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
             var raw = (ctx.BetSeq ?? "").Trim().ToUpperInvariant().Replace(" ", "");
-            if (string.IsNullOrEmpty(raw)) throw new InvalidOperationException("Chưa nhập CHUỖI CẦU (C/L).");
+            if (string.IsNullOrEmpty(raw)) throw new InvalidOperationException("Chưa nhập CHUỖI CẦU (B/P).");
 
-            // chỉ giữ C hoặc L
-            char[] seq = Array.FindAll(raw.ToCharArray(), ch => ch == 'C' || ch == 'L');
+            var buf = new char[raw.Length];
+            int n = 0;
+            foreach (var ch in raw)
+            {
+                var p = NormalizeParityChar(ch);
+                if (p == 'C' || p == 'L') buf[n++] = p;
+            }
+            var seq = new char[n];
+            Array.Copy(buf, seq, n);
             if (seq.Length == 0) throw new InvalidOperationException("CHUỖI CẦU không hợp lệ.");
 
             int k = 0;

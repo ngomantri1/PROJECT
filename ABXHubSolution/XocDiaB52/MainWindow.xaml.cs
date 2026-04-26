@@ -154,8 +154,8 @@ namespace XocDiaB52
         {
             var u = TextNorm.U(value?.ToString() ?? "");
             var compact = u.Replace(" ", "").Replace("_", "").Replace("-", "");
-            if (u == "CHAN" || u == "C") return FallbackIcons.GetSideChan();
-            if (u == "LE" || u == "L") return FallbackIcons.GetSideLe();
+            if (u == "CHAN" || u == "C" || u == "BANKER" || u == "B") return FallbackIcons.GetSideChan();
+            if (u == "LE" || u == "L" || u == "PLAYER" || u == "P") return FallbackIcons.GetSideLe();
             if (u == "TU_TRANG") return FallbackIcons.GetTuTrang();
             if (u == "TU_DO") return FallbackIcons.GetTuDo();
             if (u == "SAP_DOI" || u == "SAPDOI" || compact == "SAPDOI" || u == "2D2T") return FallbackIcons.GetSapDoi();
@@ -204,8 +204,8 @@ namespace XocDiaB52
         {
             var u = TextNorm.U(value?.ToString() ?? "");
             var compact = u.Replace(" ", "").Replace("_", "").Replace("-", "");
-            if (u == "CHAN" || u == "C") return FallbackIcons.GetResultChan();
-            if (u == "LE" || u == "L") return FallbackIcons.GetResultLe();
+            if (u == "CHAN" || u == "C" || u == "BANKER" || u == "B") return FallbackIcons.GetResultChan();
+            if (u == "LE" || u == "L" || u == "PLAYER" || u == "P") return FallbackIcons.GetResultLe();
             if (u == "TU_TRANG") return FallbackIcons.GetTuTrang();
             if (u == "TU_DO") return FallbackIcons.GetTuDo();
             if (u == "SAP_DOI" || u == "SAPDOI" || compact == "SAPDOI" || u == "2D2T") return FallbackIcons.GetSapDoi();
@@ -217,8 +217,8 @@ namespace XocDiaB52
             else if (u.StartsWith("BALL", StringComparison.OrdinalIgnoreCase) && u.Length >= 5)
             {
                 var cBall = u[4];
-                if (cBall == 'C') return FallbackIcons.GetSideChan();
-                if (cBall == 'L') return FallbackIcons.GetSideLe();
+                if (cBall == 'C' || cBall == 'B') return FallbackIcons.GetSideChan();
+                if (cBall == 'L' || cBall == 'P') return FallbackIcons.GetSideLe();
                 if (char.IsDigit(cBall)) digit = cBall;
             }
 
@@ -2395,12 +2395,11 @@ Ví dụ không hợp lệ:
                                             double progNow = snap.prog ?? 0;
                                             var seqStr = snap.seq ?? "";
 
-                                            // Nếu đang khóa theo dõi và chuỗi đã thay đổi so với _baseSeq => ván cũ khép
+                                            // Chỉ chốt khi chuỗi thực sự được append thêm kết quả mới.
                                             if (_lockMajorMinorUpdates == true &&
-                                                !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
+                                                XocDiaB52.Tasks.TaskUtil.TryGetSeqAdvance(_baseSeq, seqStr, out var tail))
                                             {
-                                                char tail = (seqStr.Length > 0) ? seqStr[^1] : '\0';
-                                                bool winIsChan = (tail == 'C');
+                                                bool winIsChan = XocDiaB52.Tasks.TaskUtil.NormalizeParityChar(tail) == 'C';
 
                                                 long prevC = _roundTotalsC, prevL = _roundTotalsL;
                                                 // Ni: nếu cửa THẮNG là cửa có tổng tiền lớn hơn trong ván đó => 'N', ngược lại 'I'
@@ -2427,6 +2426,13 @@ Ví dụ không hợp lệ:
 
                                                 _lockMajorMinorUpdates = false; // xong chu kỳ này
                                             }
+                                            else if (_lockMajorMinorUpdates == true &&
+                                                     XocDiaB52.Tasks.TaskUtil.IsSeqResetOrRebuilt(_baseSeq, seqStr))
+                                            {
+                                                Log($"[SEQ] reset/rebuild detected while tracking result: baseLen={_baseSeq.Length}, curLen={seqStr.Length}");
+                                                _baseSeq = seqStr;
+                                                _lockMajorMinorUpdates = false;
+                                            }
 
                                             // Khi vào ván mới (prog == 0) → lấy mốc base & totals để so sánh cho ván sắp khép
                                             if (_lockMajorMinorUpdates == false)
@@ -2436,8 +2442,7 @@ Ví dụ không hợp lệ:
                                                     _baseSeq = seqStr;
                                                     _roundTotalsC = snap.totals?.C ?? 0;
                                                     _roundTotalsL = snap.totals?.L ?? 0;
-                                                    if (_roundTotalsC != 0 && _roundTotalsL != 0)
-                                                        _lockMajorMinorUpdates = true;
+                                                    _lockMajorMinorUpdates = true;
                                                 }
                                             }
                                         }
@@ -2481,8 +2486,7 @@ Ví dụ không hợp lệ:
                                                 // Kết quả gần nhất từ chuỗi seq
                                                 var seqStrLocal = snap.seq ?? "";
                                                 char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
-                                                var kq = (last == 'C') ? "CHAN"
-                                                         : (last == 'L') ? "LE" : "";
+                                                var kq = XocDiaB52.Tasks.TaskUtil.DisplayResultName(last);
                                                 SetLastResultUI(kq);
 
                                                 // Tổng tiền
@@ -5547,6 +5551,8 @@ Ví dụ không hợp lệ:
                 "pack://application:,,,/Assets/Seq/C.png",
                 "pack://application:,/Assets/Seq/C.png"
             );
+            _seqIconMap['B'] = _seqIconMap['C'];
+            _seqIconMap['P'] = _seqIconMap['L'];
         }
 
 
@@ -5576,19 +5582,18 @@ Ví dụ không hợp lệ:
             string sRaw = result ?? string.Empty;
             string s = sRaw.Trim().ToUpperInvariant();
 
-            bool isChan = false, isLe = false;
+            bool isBanker = false, isPlayer = false;
 
             if (s.Length == 1 && char.IsDigit(s[0]))
             {
-                // tail số từ chuỗi kết quả: 0/2/4 => CHẴN, 1/3 => LẺ
                 char d = s[0];
-                isChan = (d == 'C');
-                isLe = (d == 'L');
+                isBanker = (d == 'B' || d == 'C');
+                isPlayer = (d == 'P' || d == 'L');
             }
             else
             {
-                isChan = (s == "CHAN" || s == "CHẴN" || s == "C");
-                isLe = (s == "LE" || s == "LẺ" || s == "L");
+                isBanker = (s == "BANKER" || s == "B" || s == "CHAN" || s == "CHẴN" || s == "C");
+                isPlayer = (s == "PLAYER" || s == "P" || s == "LE" || s == "LẺ" || s == "L");
             }
 
             // Helper: fallback hiển thị chữ
@@ -5602,19 +5607,19 @@ Ví dụ không hợp lệ:
                 }
             }
 
-            if (!isChan && !isLe)
+            if (!isBanker && !isPlayer)
             {
                 ShowText("");
                 return;
             }
 
             // Ưu tiên lấy ảnh trong Resource (ImgCHAN/ImgLE) -> nếu không có thì dùng SharedIcons
-            string resKey = isLe ? "ImgLE" : "ImgCHAN";
+            string resKey = isPlayer ? "ImgLE" : "ImgCHAN";
             var resImg = TryFindResource(resKey) as ImageSource;
 
             ImageSource? icon =
                 resImg
-                ?? (isChan ? (SharedIcons.ResultChan ?? SharedIcons.SideChan)
+                ?? (isBanker ? (SharedIcons.ResultChan ?? SharedIcons.SideChan)
                            : (SharedIcons.ResultLe ?? SharedIcons.SideLe));
 
             if (icon != null && ImgKetQua != null)
@@ -5625,13 +5630,13 @@ Ví dụ không hợp lệ:
                 if (LblKetQua != null) LblKetQua.Visibility = Visibility.Collapsed;
 
                 // Cache lại để DataGrid (converters) có thể "kế thừa" từ trạng thái
-                if (isChan) SharedIcons.ResultChan = icon;
+                if (isBanker) SharedIcons.ResultChan = icon;
                 else SharedIcons.ResultLe = icon;
             }
             else
             {
                 // Không có ảnh -> fallback chữ có dấu
-                ShowText(isChan ? "CHẴN" : "LẺ");
+                ShowText(isBanker ? "BANKER" : "PLAYER");
             }
         }
 
@@ -5640,8 +5645,8 @@ Ví dụ không hợp lệ:
         {
             // Chuẩn hoá
             var s = (result ?? "").Trim().ToUpperInvariant();
-            bool isLe = s == "LE" || s == "LẺ" || s == "L";
-            bool isChan = s == "CHAN" || s == "CHẴN" || s == "C";
+            bool isLe = s == "LE" || s == "LẺ" || s == "L" || s == "PLAYER" || s == "P";
+            bool isChan = s == "CHAN" || s == "CHẴN" || s == "C" || s == "BANKER" || s == "B";
 
             void ShowText(string text)
             {
@@ -7053,8 +7058,8 @@ Ví dụ không hợp lệ:
         private static string NormalizeSide(string s)
         {
             var u = TextNorm.U(s);
-            if (u == "C" || u == "CHAN") return "CHAN";
-            if (u == "L" || u == "LE") return "LE";
+            if (u == "C" || u == "CHAN" || u == "B" || u == "BANKER") return "CHAN";
+            if (u == "L" || u == "LE" || u == "P" || u == "PLAYER") return "LE";
             return (s ?? "").Trim();
         }
         private static string NormalizeWL(string s)
@@ -7240,13 +7245,13 @@ Ví dụ không hợp lệ:
         private static string NormalizeSeq(string raw) =>
     TextNorm.U(Regex.Replace(raw ?? "", @"[,\s\-]+", "")); // bỏ , khoảng trắng, -
 
-        // --- Chuỗi C/L: C,L; 2..50 ký tự sau khi bỏ phân tách ---
+        // --- Chuỗi B/P (tương thích cả C/L): 2..100 ký tự sau khi bỏ khoảng trắng ---
         private static bool ValidateSeqCL(string s, out string err)
         {
             err = "";
             if (string.IsNullOrWhiteSpace(s))
             {
-                err = "Vui lòng nhập chuỗi C/L.";
+                err = "Vui lòng nhập chuỗi B/P.";
                 return false;
             }
 
@@ -7255,14 +7260,14 @@ Ví dụ không hợp lệ:
             {
                 if (char.IsWhiteSpace(ch)) continue;          // chỉ cho phép khoảng trắng
                 char u = char.ToUpperInvariant(ch);
-                if (u == 'C' || u == 'L') { count++; continue; }  // và C/L
-                err = "Chỉ cho phép khoảng trắng và ký tự C hoặc L (không dùng dấu phẩy/gạch/chấm phẩy/gạch dưới, số, ký tự khác).";
+                if (u == 'C' || u == 'L' || u == 'B' || u == 'P') { count++; continue; }
+                err = "Chỉ cho phép khoảng trắng và ký tự B/P (vẫn chấp nhận C/L cũ).";
                 return false;
             }
 
             if (count < 2 || count > 100)
             {
-                err = "Độ dài 2–50 ký tự (tính theo C/L, bỏ qua khoảng trắng).";
+                err = "Độ dài 2–100 ký tự (tính theo B/P, bỏ qua khoảng trắng; vẫn chấp nhận C/L cũ).";
                 return false;
             }
 
@@ -7298,13 +7303,13 @@ Ví dụ không hợp lệ:
             return true;
         }
 
-        // --- Thế cầu C/L: từng dòng "<mẫu> - <đặt>", mẫu gồm C/L/?, đặt là C hoặc L ---
+        // --- Thế cầu B/P (tương thích cả C/L): từng dòng "<mẫu> - <đặt>" ---
         private static bool ValidatePatternsCL(string s, out string err)
         {
             err = "";
             if (string.IsNullOrWhiteSpace(s))
             {
-                err = "Vui lòng nhập các thế cầu C/L.";
+                err = "Vui lòng nhập các thế cầu B/P.";
                 return false;
             }
 
@@ -7318,48 +7323,48 @@ Ví dụ không hợp lệ:
                 if (line.Length == 0) continue;
                 idx++;
 
-                // <mẫu> (C/L, cho phép khoảng trắng)  -> hoặc -  <chuỗi cầu> (C/L, CHO PHÉP khoảng trắng)
+                // <mẫu> (B/P/C/L, cho phép khoảng trắng)  -> hoặc -  <chuỗi cầu> (B/P/C/L)
                 var m = System.Text.RegularExpressions.Regex.Match(
                     line,
-                    @"^\s*([CLcl\s]+)\s*(?:->|-)\s*([CLcl\s]+)\s*$",
+                    @"^\s*([BPC Lbpc l\s]+)\s*(?:->|-)\s*([BPC Lbpc l\s]+)\s*$".Replace(" ",""),
                     System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
                 if (!m.Success)
                 {
-                    err = $"Quy tắc {idx} không hợp lệ: “{line}”. Dạng đúng: <mẫu> -> <chuỗi cầu> hoặc <mẫu>-<chuỗi cầu>; chỉ dùng C/L; <chuỗi cầu> có thể có khoảng trắng.";
+                    err = $"Quy tắc {idx} không hợp lệ: “{line}”. Dạng đúng: <mẫu> -> <chuỗi cầu> hoặc <mẫu>-<chuỗi cầu>; dùng B/P (vẫn chấp nhận C/L cũ).";
                     return false;
                 }
 
-                // LHS: chỉ C/L + khoảng trắng; độ dài 1–10 sau khi bỏ khoảng trắng
+                // LHS: chỉ B/P/C/L + khoảng trắng; độ dài 1–10 sau khi bỏ khoảng trắng
                 var lhsRaw = m.Groups[1].Value;
                 var lhsBuf = new System.Text.StringBuilder(lhsRaw.Length);
                 foreach (char ch in lhsRaw)
                 {
                     if (char.IsWhiteSpace(ch)) continue;
                     char u = char.ToUpperInvariant(ch);
-                    if (u == 'C' || u == 'L') lhsBuf.Append(u);
-                    else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm C/L (cho phép khoảng trắng giữa các ký tự)."; return false; }
+                    if (u == 'C' || u == 'L' || u == 'B' || u == 'P') lhsBuf.Append(u);
+                    else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm B/P (vẫn chấp nhận C/L cũ)."; return false; }
                 }
                 var lhs = lhsBuf.ToString();
                 if (lhs.Length < 1 || lhs.Length > 10)
                 {
-                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự (C/L).";
+                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự B/P.";
                     return false;
                 }
 
-                // RHS: chuỗi cầu C/L (>=1), CHO PHÉP khoảng trắng (bị bỏ qua khi kiểm tra)
+                // RHS: chuỗi cầu B/P (>=1), CHO PHÉP khoảng trắng
                 var rhsRaw = m.Groups[2].Value;
                 var rhsBuf = new System.Text.StringBuilder(rhsRaw.Length);
                 foreach (char ch in rhsRaw)
                 {
                     if (char.IsWhiteSpace(ch)) continue;
                     char u = char.ToUpperInvariant(ch);
-                    if (u == 'C' || u == 'L') rhsBuf.Append(u);
-                    else { err = $"Quy tắc {idx}: <chuỗi cầu> chỉ gồm C/L (có thể nhiều ký tự), cho phép khoảng trắng."; return false; }
+                    if (u == 'C' || u == 'L' || u == 'B' || u == 'P') rhsBuf.Append(u);
+                    else { err = $"Quy tắc {idx}: <chuỗi cầu> chỉ gồm B/P (vẫn chấp nhận C/L cũ)."; return false; }
                 }
                 if (rhsBuf.Length < 1)
                 {
-                    err = $"Quy tắc {idx}: <chuỗi cầu> tối thiểu 1 ký tự C/L.";
+                    err = $"Quy tắc {idx}: <chuỗi cầu> tối thiểu 1 ký tự B/P.";
                     return false;
                 }
             }
