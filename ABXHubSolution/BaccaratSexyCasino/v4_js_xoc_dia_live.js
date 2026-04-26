@@ -13,6 +13,66 @@
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
     var CW_ROOT_ID = '__cw_root_allin';
     var CW_FALLBACK_PANEL_ID = '__cw_wait_panel';
+    function __cw_hrefLowerOf(w) {
+        try {
+            return String((w.location && w.location.href) || '').toLowerCase();
+        } catch (_) {
+            return '';
+        }
+    }
+    function __cw_isWebMainHref(href) {
+        return String(href || '').toLowerCase().indexOf('/player/webmain.jsp') >= 0;
+    }
+    function __cw_isPanelDisplayOwner() {
+        try {
+            var href = __cw_hrefLowerOf(window);
+            var isTop = false;
+            try {
+                isTop = window.top === window;
+            } catch (_) {
+                isTop = false;
+            }
+
+            if (__cw_isWebMainHref(href)) {
+                if (isTop)
+                    return true;
+
+                var topHref = '';
+                try {
+                    topHref = __cw_hrefLowerOf(window.top);
+                } catch (_) {
+                    topHref = '';
+                }
+                return !__cw_isWebMainHref(topHref);
+            }
+
+            return false;
+        } catch (_) {
+            return false;
+        }
+    }
+    function __cw_applyPanelDisplayOwner(rootEl) {
+        try {
+            if (!rootEl)
+                return false;
+            var show = __cw_isPanelDisplayOwner();
+            rootEl.setAttribute('data-abx-panel-owner', show ? '1' : '0');
+            rootEl.setAttribute('data-abx-panel-owner-href', String(location.href || '').replace(/[?#].*$/, ''));
+            if (rootEl.getAttribute('data-abx-controlled-by-top') === '1')
+                return show;
+
+            // Do not self-hide frame panels. The top controller scores every frame
+            // and keeps exactly one root visible; self-hiding here can hide the
+            // only panel that has live baccarat details.
+            rootEl.removeAttribute('data-abx-hidden-by-owner');
+            rootEl.style.setProperty('display', 'block', 'important');
+            rootEl.style.setProperty('visibility', 'visible', 'important');
+            rootEl.style.setProperty('pointer-events', 'none', 'important');
+            return show;
+        } catch (_) {
+            return false;
+        }
+    }
     try {
         if (window[NS] && window[NS].teardown) {
             window[NS].teardown();
@@ -72,6 +132,7 @@
                 root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
                 host.appendChild(root);
             }
+            __cw_applyPanelDisplayOwner(root);
 
             var panel = document.getElementById(CW_FALLBACK_PANEL_ID);
             if (!panel) {
@@ -7320,6 +7381,13 @@
     root.setAttribute('data-cw-mode', 'full');
     root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
     document.body.appendChild(root);
+    var _panelOwnerTimer = null;
+    try {
+        __cw_applyPanelDisplayOwner(root);
+        _panelOwnerTimer = setInterval(function () {
+            __cw_applyPanelDisplayOwner(root);
+        }, 800);
+    } catch (_) {}
     var panel = document.createElement('div');
     panel.style.cssText = 'position:fixed;top:10px;right:10px;width:820px;background:#08130f;color:#bff;border:1px solid #0a0;border-radius:10px;padding:8px;font:12px/1.35 Consolas,monospace;pointer-events:auto;z-index:2147483647';
     panel.innerHTML = '' +
@@ -11243,6 +11311,15 @@
     }
     document.addEventListener('keydown', onKey);
     // Panel/overlay mặc định ẩn trong app -> không tự start loop render nặng.
+    try {
+        tick();
+        setStateUI();
+    } catch (_) {
+        try {
+            updatePanel();
+            setStateUI();
+        } catch (_) {}
+    }
     if (window.__cw_panel_autostart === 1 || window.__cw_panel_autostart === true)
         start();
 
@@ -11262,6 +11339,10 @@
         } catch (e) {}
         try {
             window.__cw_last_panel_snapshot = null;
+        } catch (e) {}
+        try {
+            if (_panelOwnerTimer)
+                clearInterval(_panelOwnerTimer);
         } catch (e) {}
         try {
             root.remove();
@@ -11761,6 +11842,7 @@
                 }
                 seqFresh = String((seqState && seqState.seq) || '');
                 rawSeq = String((seqState && seqState.rawSeq) || '');
+                seqWhich = String((seqState && seqState.which) || '');
                 seqVersion = Number((seqState && seqState.seqVersion != null) ? seqState.seqVersion : (window.__cw_seq_version || 0)) || 0;
                 seqEvent = String((seqState && seqState.seqEvent) ? seqState.seqEvent : (window.__cw_seq_event || ''));
                 seqMode = String((seqState && seqState.seqMode) || '');

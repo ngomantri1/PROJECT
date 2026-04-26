@@ -32,6 +32,7 @@ namespace BaccaratSexyCasino
         public string? seqSource { get; set; }
         public string? seqAppend { get; set; }
         public string? seqMode { get; set; }
+        public string? seqWhich { get; set; }
         public string? niSeq { get; set; }
         public long ts { get; set; }
         public string side { get; set; }

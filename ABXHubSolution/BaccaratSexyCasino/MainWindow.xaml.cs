@@ -354,6 +354,7 @@ namespace BaccaratSexyCasino
         private readonly ConcurrentDictionary<string, int> _cdpTapOwnerCoreHash = new();
         private readonly ConcurrentDictionary<string, long> _cdpTapOwnerGeneration = new();
         private readonly ConcurrentDictionary<string, string> _wsUrlByRequestId = new();
+        private readonly ConcurrentDictionary<string, CdpHttpResponseCandidate> _httpResponseByRequestKey = new();
         private readonly ConcurrentDictionary<string, string> _pktLastPreviewByKey = new();
         private readonly ConcurrentDictionary<string, byte> _recordedValidBetKeys = new();
         private readonly ConcurrentDictionary<string, byte> _bridgeProbeSeen = new();
@@ -361,6 +362,9 @@ namespace BaccaratSexyCasino
         private long _cdpDiagWsCreated = 0;
         private long _cdpDiagWsRecv = 0;
         private long _cdpDiagWsSent = 0;
+        private long _cdpDiagHttpResp = 0;
+        private long _cdpDiagHttpBody = 0;
+        private long _cdpDiagHttpBodyFail = 0;
         private long _cdpDiagObservedPackets = 0;
         private long _cdpDiagWinnerPackets = 0;
         private long _cdpDiagMissingContextRows = 0;
@@ -381,7 +385,11 @@ namespace BaccaratSexyCasino
         private CancellationTokenSource _taskCts;
         private IBetTask _activeTask;
         private const int NiSeqMax = 50;
-        private const int SeqWindowMax = 50;
+        private const int SeqWindowMax = 0; // 0 = no display cap; CDP history can contain the full shoe.
+        // Chuỗi nghiệp vụ: JS rawSeq chỉ seed ban đầu; sau đó CDP GP_WINNER append.
+        // markerRoads là dữ liệu vẽ road map, không dùng làm nguồn authoritative.
+        private static readonly bool UseNetworkSeqOnly = true;
+        private static readonly bool UseMarkerRoadHistoryBootstrap = false;
         private static readonly string[] StatusAuthorityTails =
         {
             "body/div#themeZone.game.scenes_default/div.game_main/div.main_center/div#processBar.info_status/p#processStatus",
@@ -432,6 +440,16 @@ namespace BaccaratSexyCasino
         private int _lastSeqRxPending = -1;
         private bool _lastSeqRxLock = false;
         private long _lastAdvanceRejectVersionOnlyVer = -1;
+        private DateTime _lastJsSeqIgnoredLogUtc = DateTime.MinValue;
+        private int _lastJsSeqIgnoredLen = -1;
+        private int _lastJsRawIgnoredLen = -1;
+        private string _lastNetworkHistoryCandidateKey = "";
+        private DateTime _lastNetworkHistoryCandidateLogUtc = DateTime.MinValue;
+        private readonly List<NetworkHistorySeqCandidate> _pendingNetworkHistoryCandidates = new();
+        private static readonly TimeSpan NetworkHistoryCandidateCacheTtl = TimeSpan.FromSeconds(30);
+        private string _jsRawBootstrapStableKey = "";
+        private int _jsRawBootstrapStableCount = 0;
+        private DateTime _lastJsRawBootstrapLogUtc = DateTime.MinValue;
         private int _shoeChangeStatusStreak = 0;
         private bool _shoeChangeRebaseArmed = false;
         private DateTime _shoeChangeLastSeenUtc = DateTime.MinValue;
@@ -519,6 +537,34 @@ namespace BaccaratSexyCasino
             public string EventType { get; set; } = "";
             public string OwnerTag { get; set; } = "";
             public string Url { get; set; } = "";
+        }
+
+        private sealed class NetworkHistorySeqCandidate
+        {
+            public string Seq { get; set; } = "";
+            public long TableId { get; set; }
+            public long GameShoe { get; set; }
+            public long LastRound { get; set; }
+            public string Source { get; set; } = "";
+            public string OwnerTag { get; set; } = "";
+            public string Url { get; set; } = "";
+            public string Path { get; set; } = "";
+            public int Score { get; set; }
+            public int CountError { get; set; }
+            public string MapSummary { get; set; } = "";
+            public DateTime SeenAtUtc { get; set; } = DateTime.UtcNow;
+        }
+
+        private sealed class CdpHttpResponseCandidate
+        {
+            public string RequestId { get; set; } = "";
+            public string OwnerTag { get; set; } = "";
+            public long Generation { get; set; }
+            public string Url { get; set; } = "";
+            public string ResourceType { get; set; } = "";
+            public string MimeType { get; set; } = "";
+            public int StatusCode { get; set; }
+            public DateTime SeenAtUtc { get; set; }
         }
 
         private sealed class NetworkSeqApplyResult
@@ -990,16 +1036,195 @@ Ví dụ không hợp lệ:
         private const string TOP_FORWARD = @"
 (function(){
   try{
-    if (window.__abxTopForward) return; window.__abxTopForward = 1;
-    window.addEventListener('message', function(ev){
+    var __abxTopForwardAlready = !!window.__abxTopForward;
+    if (!window.__abxTopForward) window.__abxTopForward = 1;
+    function __abxCwHref(w){ try{ return String((w.location && w.location.href) || ''); }catch(_){ return ''; } }
+    function __abxCwIsWebMain(h){ return /\/player\/webMain\.jsp/i.test(String(h || '')); }
+    function __abxCwVisibleScore(item){
       try{
-        var d = ev && ev.data; if(!d) return;
-        var s = (typeof d==='string') ? d : JSON.stringify(d);
-        if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage){
-          window.chrome.webview.postMessage(s);
+        var s = 0;
+        var w = item && item.win;
+        var root = item && item.root;
+        var hiddenByTop = root && root.getAttribute && root.getAttribute('data-abx-hidden-by-top') === '1';
+        if (root && root.getBoundingClientRect && !hiddenByTop){
+          var rr = root.getBoundingClientRect();
+          s += (rr && rr.width > 20 && rr.height > 20) ? 2000 : -5000;
+        }
+        var fe = null;
+        try{ fe = w && w.frameElement; }catch(_){ fe = null; }
+        if (!fe) return s + 80000;
+        var fr = fe.getBoundingClientRect ? fe.getBoundingClientRect() : null;
+        var topw = null;
+        try{ topw = w.top || window.top || window; }catch(_){ topw = window; }
+        var vw = Number((topw && topw.innerWidth) || 1920) || 1920;
+        var vh = Number((topw && topw.innerHeight) || 1080) || 1080;
+        var cs = null;
+        try{ cs = topw.getComputedStyle ? topw.getComputedStyle(fe) : null; }catch(_){ cs = null; }
+        var cssVisible = !cs || (cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity || 1) > 0.02);
+        var rectVisible = !!(fr && fr.width > 20 && fr.height > 20 && fr.right > 0 && fr.bottom > 0 && fr.left < vw && fr.top < vh);
+        return s + ((cssVisible && rectVisible) ? 80000 : -250000);
+      }catch(_){ return 0; }
+    }
+    function __abxCwDataScore(item){
+      try{
+        var h = String((item && item.href) || '');
+        var p = String((item && item.path) || '');
+        var t = String((item && item.text) || '');
+        var hasDomCards = /Baccarat DOM cards/i.test(t);
+        var hasRealSeq = /SEQ\s*:\s*[BPT]{2,}|Chuỗi kết quả\s*:\s*[BPT]{2,}|Chuoi ket qua\s*:\s*[BPT]{2,}/i.test(t);
+        var hasRealTotals = /B\s*[:=]\s*\d|P\s*[:=]\s*\d|T\s*[:=]\s*\d|BANKER\s*:\s*(?!\s*--)[\d.]/i.test(t);
+        if (!(hasDomCards || hasRealSeq || hasRealTotals)) return -999999;
+        var s = 0;
+        if (hasDomCards) s += 100000;
+        if (hasRealSeq) s += 70000;
+        if (hasRealTotals) s += 50000;
+        if (/singleBacTable\.jsp/i.test(h)) s += 25000;
+        if (/gamehall\.jsp/i.test(h)) s += 12000;
+        if (__abxCwIsWebMain(h)) s += 12000;
+        if (p === 'top') s += 700;
+        if (/about:blank/i.test(h)) s -= 6000;
+        return s;
+      }catch(_){ return -999999; }
+    }
+    function __abxCwHostScore(item){
+      try{
+        var s = __abxCwVisibleScore(item);
+        var h = String((item && item.href) || '');
+        var p = String((item && item.path) || '');
+        var root = item && item.root;
+        if (root && root.querySelector && root.querySelector('#cwInfo')) s += 8000;
+        if (/singleBacTable\.jsp/i.test(h)) s += 5000;
+        if (__abxCwIsWebMain(h)) s += 3000;
+        if (p === 'top') s += 2000;
+        if (/about:blank/i.test(h)) s -= 6000;
+        return s;
+      }catch(_){ return -999999; }
+    }
+    function __abxCwMirrorPanel(host, source){
+      try{
+        if (!host || !source || !host.root || !source.root || host === source){
+          try{ if (host && host.root) host.root.removeAttribute('data-abx-mirrored-from'); }catch(_){}
+          return;
+        }
+        var srcInfo = source.root.querySelector && source.root.querySelector('#cwInfo');
+        var dstInfo = host.root.querySelector && host.root.querySelector('#cwInfo');
+        if (srcInfo && dstInfo){
+          var txt = String(srcInfo.innerText || srcInfo.textContent || '').trim();
+          if (txt) dstInfo.innerHTML = srcInfo.innerHTML;
+        }
+        var srcState = source.root.querySelector && source.root.querySelector('#cwState');
+        var dstState = host.root.querySelector && host.root.querySelector('#cwState');
+        if (srcState && dstState) dstState.textContent = srcState.textContent || '';
+        var srcLog = source.root.querySelector && source.root.querySelector('#cwLog');
+        var dstLog = host.root.querySelector && host.root.querySelector('#cwLog');
+        if (srcLog && dstLog && String(srcLog.textContent || '').trim()) dstLog.textContent = srcLog.textContent || '';
+        host.root.setAttribute('data-abx-mirrored-from', String(source.path || '') + ' | ' + String(source.href || ''));
+      }catch(_){}
+    }
+    function __abxCwCollect(w,path,out,depth){
+      try{
+        if (!w || depth > 8) return;
+        var doc = w.document;
+        var root = doc && doc.getElementById('__cw_root_allin');
+        if (root) out.push({ win:w, root:root, path:path, href:__abxCwHref(w), text:String(root.innerText || root.textContent || '') });
+        var frames = w.frames || [];
+        for (var i=0;i<frames.length;i++) __abxCwCollect(frames[i], path + '/frame[' + i + ']', out, depth + 1);
+      }catch(_){}
+    }
+    function __abxCwScore(item){
+      try{
+        var h = String(item.href || '');
+        var p = String(item.path || '');
+        var t = String(item.text || '');
+        var s = 0;
+        var isSingleTable = /singleBacTable\.jsp/i.test(h);
+        var isGameHall = /gamehall\.jsp/i.test(h);
+        var hasDetail = /Trạng thái|Trang thai|CTX\s*:|HUD\s*:|Baccarat DOM cards|Chuỗi kết quả|Chuoi ket qua|SEQ\s*:/i.test(t);
+        var hasDomCards = /Baccarat DOM cards/i.test(t);
+        var hasRealSeq = /SEQ\s*:\s*[BPT]{2,}|Chuỗi kết quả\s*:\s*[BPT]{2,}|Chuoi ket qua\s*:\s*[BPT]{2,}/i.test(t);
+        var hasRealTotals = /B\s*[:=]\s*\d|P\s*[:=]\s*\d|T\s*[:=]\s*\d|BANKER\s*:\s*(?!\s*--)[\d.]/i.test(t);
+        var hasUsefulDetail = hasDomCards || hasRealSeq || hasRealTotals;
+        s += __abxCwVisibleScore(item);
+        if (hasDetail) s += 500;
+        if (hasDomCards) s += 100000;
+        if (hasRealSeq) s += 70000;
+        if (hasRealTotals) s += 50000;
+        if (/BANKER|PLAYER|TIE/i.test(t)) s += 1000;
+        if (/OPEN/i.test(t)) s += 800;
+        if (/IDLE/i.test(t) && !hasUsefulDetail) s -= 12000;
+        if (isSingleTable) s += hasUsefulDetail ? 25000 : -90000;
+        if (isSingleTable && p === 'top' && !hasUsefulDetail) s -= 40000;
+        if (isGameHall) s += hasUsefulDetail ? 12000 : -30000;
+        if (__abxCwIsWebMain(h)) s += hasUsefulDetail ? 12000 : (hasDetail ? 1000 : 100);
+        if (p === 'top') s += hasUsefulDetail ? 700 : -5000;
+        if (/CTX\s*:\s*top\s*\|\s*webMain\.jsp/i.test(t)) s += hasUsefulDetail ? 1200 : 0;
+        if (/about:blank/i.test(h)) s -= 6000;
+        if (isSingleTable || isGameHall) s += hasUsefulDetail ? 1000 : -1000;
+        return s;
+      }catch(_){ return -999999; }
+    }
+    function __abxCwSetVisible(item, show){
+      try{
+        var root = item && item.root;
+        if (!root) return;
+        root.setAttribute('data-abx-controlled-by-top', '1');
+        root.setAttribute('data-abx-single-panel-path', String(item.path || ''));
+        root.setAttribute('data-abx-single-panel-score', String(__abxCwScore(item)));
+        root.setAttribute('data-abx-single-panel-visible-score', String(__abxCwVisibleScore(item)));
+        if (show){
+          root.removeAttribute('data-abx-hidden-by-top');
+          root.style.setProperty('display','block','important');
+          root.style.setProperty('visibility','visible','important');
+          root.style.setProperty('pointer-events','none','important');
+        } else {
+          root.setAttribute('data-abx-hidden-by-top','1');
+          root.style.setProperty('display','none','important');
+          root.style.setProperty('visibility','hidden','important');
+          root.style.setProperty('pointer-events','none','important');
         }
       }catch(_){}
-    }, true);
+    }
+    function __abxCwEnforceSinglePanel(){
+      try{
+        var start = window;
+        try{ if (window.top) start = window.top; }catch(_){}
+        var items = [];
+        __abxCwCollect(start, 'top', items, 0);
+        if (!items.length) return;
+        var best = null, bestScore = -999999;
+        var bestData = null, bestDataScore = -999999;
+        var bestHost = null, bestHostScore = -999999;
+        for (var i=0;i<items.length;i++){
+          var score = __abxCwScore(items[i]);
+          if (!best || score > bestScore){ best = items[i]; bestScore = score; }
+          var dataScore = __abxCwDataScore(items[i]);
+          if (!bestData || dataScore > bestDataScore){ bestData = items[i]; bestDataScore = dataScore; }
+          var hostScore = __abxCwHostScore(items[i]);
+          if (!bestHost || hostScore > bestHostScore){ bestHost = items[i]; bestHostScore = hostScore; }
+        }
+        if (bestData && bestDataScore > -999000){
+          var dataVisible = __abxCwVisibleScore(bestData) > 0;
+          best = dataVisible ? bestData : (bestHost || best);
+        }
+        for (var j=0;j<items.length;j++) __abxCwSetVisible(items[j], items[j] === best);
+        if (best && bestData && bestDataScore > -999000 && best !== bestData) __abxCwMirrorPanel(best, bestData);
+        else __abxCwMirrorPanel(best, best);
+      }catch(_){}
+    }
+    window.__abxCwEnforceSinglePanel = __abxCwEnforceSinglePanel;
+    try{ __abxCwEnforceSinglePanel(); }catch(_){}
+    try{ if (!window.__abxCwSinglePanelTimer) window.__abxCwSinglePanelTimer = setInterval(__abxCwEnforceSinglePanel, 500); }catch(_){}
+    if (!__abxTopForwardAlready){
+      window.addEventListener('message', function(ev){
+        try{
+          var d = ev && ev.data; if(!d) return;
+          var s = (typeof d==='string') ? d : JSON.stringify(d);
+          if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage){
+            window.chrome.webview.postMessage(s);
+          }
+        }catch(_){}
+      }, true);
+    }
   }catch(_){}
 })();";
 
@@ -1691,6 +1916,29 @@ try{
             }
         }
 
+        private void LogJsSeqIgnoredIfNeeded(string source, string? jsSeq, string? rawSeq, long? seqVersion, string? seqEvent)
+        {
+            var jsDisplay = FilterResultDisplaySeqWindow(jsSeq);
+            var rawDisplay = FilterResultDisplaySeqWindow(rawSeq);
+            int jsLen = jsDisplay.Length;
+            int rawLen = rawDisplay.Length;
+            if (jsLen == 0 && rawLen == 0)
+                return;
+
+            var now = DateTime.UtcNow;
+            bool changed = jsLen != _lastJsSeqIgnoredLen || rawLen != _lastJsRawIgnoredLen;
+            if (!changed && (now - _lastJsSeqIgnoredLogUtc) < TimeSpan.FromSeconds(5))
+                return;
+
+            _lastJsSeqIgnoredLogUtc = now;
+            _lastJsSeqIgnoredLen = jsLen;
+            _lastJsRawIgnoredLen = rawLen;
+
+            char jsTail = jsLen > 0 ? jsDisplay[^1] : '-';
+            char rawTail = rawLen > 0 ? rawDisplay[^1] : '-';
+            Log($"[SEQ][JS-IGNORED] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | jsLen={jsLen} | jsTail={jsTail} | rawLen={rawLen} | rawTail={rawTail} | jsVer={(seqVersion?.ToString(CultureInfo.InvariantCulture) ?? "-")} | jsEvt={(string.IsNullOrWhiteSpace(seqEvent) ? "-" : seqEvent)} | authority=network");
+        }
+
         private void SetModeUi(bool isGame)
         {
             try
@@ -2085,7 +2333,7 @@ try{
 
         private bool ShouldAttachCdpNetworkTap()
         {
-            return _enableCdpObservedContextTap || _enableCdpNetworkTap;
+            return UseNetworkSeqOnly || _enableCdpObservedContextTap || _enableCdpNetworkTap;
         }
 
         private static string FormatDiagAgeSeconds(long ticksUtc, DateTime nowUtc)
@@ -2132,7 +2380,7 @@ try{
                 ? "-"
                 : string.Join(",", _cdpTapOwnerCoreHash.Select(kv => $"{kv.Key}:{kv.Value}"));
 
-            Log($"[NETSEQ][CDP-DIAG] reason={reason} | profile={_cfg?.RuntimeProfile ?? "-"} | tap={(ShouldAttachCdpNetworkTap() ? 1 : 0)} | tapDbg={(_enableCdpNetworkTap ? 1 : 0)} | tapCtx={(_enableCdpObservedContextTap ? 1 : 0)} | owners={Shrink(ownerCoreMap, 160)} | wsC={Interlocked.Read(ref _cdpDiagWsCreated)} | wsR={Interlocked.Read(ref _cdpDiagWsRecv)} | wsS={Interlocked.Read(ref _cdpDiagWsSent)} | obsPkt={Interlocked.Read(ref _cdpDiagObservedPackets)} | winnerPkt={Interlocked.Read(ref _cdpDiagWinnerPackets)} | obsAgeSec={FormatDiagAgeSeconds(Interlocked.Read(ref _cdpDiagLastObservedTicksUtc), nowUtc)} | winnerAgeSec={FormatDiagAgeSeconds(Interlocked.Read(ref _cdpDiagLastWinnerTicksUtc), nowUtc)} | obsCtx={observedTableId}/{observedGameShoe}/{observedRound} | netCtx={seqTableId}/{seqGameShoe}/{seqRound}");
+            Log($"[NETSEQ][CDP-DIAG] reason={reason} | profile={_cfg?.RuntimeProfile ?? "-"} | tap={(ShouldAttachCdpNetworkTap() ? 1 : 0)} | tapDbg={(_enableCdpNetworkTap ? 1 : 0)} | tapCtx={(_enableCdpObservedContextTap ? 1 : 0)} | owners={Shrink(ownerCoreMap, 160)} | wsC={Interlocked.Read(ref _cdpDiagWsCreated)} | wsR={Interlocked.Read(ref _cdpDiagWsRecv)} | wsS={Interlocked.Read(ref _cdpDiagWsSent)} | httpR={Interlocked.Read(ref _cdpDiagHttpResp)} | httpB={Interlocked.Read(ref _cdpDiagHttpBody)} | httpF={Interlocked.Read(ref _cdpDiagHttpBodyFail)} | obsPkt={Interlocked.Read(ref _cdpDiagObservedPackets)} | winnerPkt={Interlocked.Read(ref _cdpDiagWinnerPackets)} | obsAgeSec={FormatDiagAgeSeconds(Interlocked.Read(ref _cdpDiagLastObservedTicksUtc), nowUtc)} | winnerAgeSec={FormatDiagAgeSeconds(Interlocked.Read(ref _cdpDiagLastWinnerTicksUtc), nowUtc)} | obsCtx={observedTableId}/{observedGameShoe}/{observedRound} | netCtx={seqTableId}/{seqGameShoe}/{seqRound}");
         }
 
         private void LogMissingContextDiagnostics(string reason, string side, long amount, long roundId, long issuedTableId, long issuedGameShoe, long issuedObservedRound)
@@ -2182,7 +2430,7 @@ try{
 
             _enableCdpNetworkTap = isDebug;
             _enableCdpObservedContextTap = true;
-            _enableHttpResponseBodyTap = isDebug;
+            _enableHttpResponseBodyTap = UseNetworkSeqOnly || isDebug;
             _enableJsFileLog = isDebug;
             _enableJsPushDebug = isDebug;
             _enablePerfTimingLog = isDebug || _cfg.EnablePerfTimingLog;
@@ -4035,9 +4283,22 @@ try{
                         snap.status = statusRawForLogic;
                         snap.statusSource = statusSourceForSnap;
                         snap.statusTail = statusTailForSnap;
-                        lock (_roundStateLock)
+                        if (UseNetworkSeqOnly)
                         {
-                            SyncNetworkSeqFromSnapshot(snap, source, boardSeqDisplay, boardSeqVersion, boardSeqEvent, statusRawForLogic);
+                            lock (_roundStateLock)
+                            {
+                                var bootstrapped = TryApplyInitialJsRawBootstrapLocked(snap, source, statusRawForLogic, boardSeqVersion, boardSeqEvent);
+                                if (!bootstrapped)
+                                    LogJsSeqIgnoredIfNeeded(source, boardSeqDisplay, snap.rawSeq, boardSeqVersion, boardSeqEvent);
+                                ApplyNetworkSeqAuthorityLocked(snap);
+                            }
+                        }
+                        else
+                        {
+                            lock (_roundStateLock)
+                            {
+                                SyncNetworkSeqFromSnapshot(snap, source, boardSeqDisplay, boardSeqVersion, boardSeqEvent, statusRawForLogic);
+                            }
                         }
                         if (statusAuthorityMissing && (DateTime.UtcNow - _lastStatusGuardLogUtc) > TimeSpan.FromSeconds(2))
                         {
@@ -4801,6 +5062,7 @@ try{
                     statusTail = GetJsonStringLoose(root, "statusTail") ?? "",
                     seqAppend = GetJsonStringLoose(root, "seqAppend") ?? "",
                     seqMode = GetJsonStringLoose(root, "seqMode") ?? "",
+                    seqWhich = GetJsonStringLoose(root, "seqWhich") ?? "",
                     jsBuildMs = GetJsonLongLoose(root, "jsBuildMs"),
                     jsTotalsMs = GetJsonLongLoose(root, "jsTotalsMs"),
                     jsSeqMs = GetJsonLongLoose(root, "jsSeqMs"),
@@ -5462,6 +5724,146 @@ try{
             await EnableCdpNetworkTapAsync(Web.CoreWebView2, "main");
         }
 
+        private static string CdpRequestKey(string ownerTag, string requestId) =>
+            (ownerTag ?? "") + "|" + (requestId ?? "");
+
+        private bool ShouldFetchCdpHttpBody(string? url, string? resourceType, string? mimeType, int statusCode)
+        {
+            if (statusCode > 0 && statusCode >= 400)
+                return false;
+
+            var u = url ?? "";
+            var type = (resourceType ?? "").Trim();
+            var mime = (mimeType ?? "").Trim().ToLowerInvariant();
+
+            if (mime.StartsWith("image/", StringComparison.OrdinalIgnoreCase) ||
+                mime.StartsWith("font/", StringComparison.OrdinalIgnoreCase) ||
+                mime.Contains("octet-stream") ||
+                mime.Contains("video/") ||
+                mime.Contains("audio/"))
+            {
+                return false;
+            }
+
+            if (IsInterestingHttpUrl(u))
+                return true;
+
+            bool fetchLike =
+                string.Equals(type, "XHR", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(type, "Fetch", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(type, "Document", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(type, "Other", StringComparison.OrdinalIgnoreCase);
+            if (!fetchLike)
+                return false;
+
+            bool textLike =
+                mime.Contains("json") ||
+                mime.Contains("javascript") ||
+                mime.Contains("text/") ||
+                mime.Contains("html") ||
+                string.IsNullOrWhiteSpace(mime);
+            if (!textLike)
+                return false;
+
+            return u.IndexOf("/player/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   u.IndexOf("/api/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   u.IndexOf("query", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   u.IndexOf("game", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private bool ShouldLogCdpHttpBodyProbe(CdpHttpResponseCandidate candidate, string body, out string reason, out string preview)
+        {
+            reason = "";
+            preview = "";
+            if (candidate == null || string.IsNullOrWhiteSpace(body))
+                return false;
+
+            var shrunk = Shrink(body.Trim(), 600);
+            var lower = shrunk.ToLowerInvariant();
+            bool payloadHit = _pktPayloadInterestingHints.Any(h => lower.Contains(h));
+            bool interestingUrl = IsInterestingHttpUrl(candidate.Url);
+            if (!payloadHit && !interestingUrl)
+                return false;
+
+            reason = payloadHit ? "payload-hit" : "interesting-url";
+            preview = shrunk;
+            var key = "CDP.HTTP.BODY|" + candidate.OwnerTag + "|" + candidate.Url + "|" + reason;
+            var val = Shrink(preview, 180);
+            if (_pktLastPreviewByKey.TryGetValue(key, out var prev) &&
+                string.Equals(prev, val, StringComparison.Ordinal))
+                return false;
+
+            _pktLastPreviewByKey[key] = val;
+            return true;
+        }
+
+        private async Task FetchCdpResponseBodyAsync(CoreWebView2 core, CdpHttpResponseCandidate candidate)
+        {
+            if (core == null || candidate == null || string.IsNullOrWhiteSpace(candidate.RequestId))
+                return;
+
+            try
+            {
+                if (!_cdpTapOwnerGeneration.TryGetValue(candidate.OwnerTag, out var activeGeneration) ||
+                    activeGeneration != candidate.Generation)
+                {
+                    return;
+                }
+
+                var args = JsonSerializer.Serialize(new { requestId = candidate.RequestId });
+                var raw = await core.CallDevToolsProtocolMethodAsync("Network.getResponseBody", args);
+                if (string.IsNullOrWhiteSpace(raw))
+                    return;
+
+                using var doc = JsonDocument.Parse(raw);
+                var root = doc.RootElement;
+                var body = root.TryGetProperty("body", out var bodyEl) ? (bodyEl.GetString() ?? "") : "";
+                bool base64Encoded = false;
+                if (root.TryGetProperty("base64Encoded", out var b64El) &&
+                    (b64El.ValueKind == JsonValueKind.True || b64El.ValueKind == JsonValueKind.False))
+                {
+                    base64Encoded = b64El.GetBoolean();
+                }
+
+                if (base64Encoded && !string.IsNullOrEmpty(body))
+                {
+                    try
+                    {
+                        body = Encoding.UTF8.GetString(Convert.FromBase64String(body));
+                    }
+                    catch
+                    {
+                        Interlocked.Increment(ref _cdpDiagHttpBodyFail);
+                        return;
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(body))
+                    return;
+
+                Interlocked.Increment(ref _cdpDiagHttpBody);
+                TryProcessNetworkHistoryPayload(body, false, candidate.OwnerTag, candidate.Url, "cdp-http");
+
+                if (ShouldLogCdpHttpBodyProbe(candidate, body, out var reason, out var preview))
+                {
+                    Log($"[NETSEQ][HTTP-BODY] src=cdp-http/{candidate.OwnerTag} | reason={reason} | status={candidate.StatusCode} | type={(string.IsNullOrWhiteSpace(candidate.ResourceType) ? "-" : candidate.ResourceType)} | mime={(string.IsNullOrWhiteSpace(candidate.MimeType) ? "-" : candidate.MimeType)} | len={body.Length} | url={Shrink(candidate.Url, 140)} | preview={preview}");
+                    LogPacket("CDP.HTTP.body/" + candidate.OwnerTag + "/" + reason, candidate.Url, Shrink(body.Trim(), 2000), false);
+                }
+            }
+            catch (Exception ex)
+            {
+                Interlocked.Increment(ref _cdpDiagHttpBodyFail);
+                var key = "CDP.HTTP.BODY.FAIL|" + candidate.OwnerTag + "|" + candidate.Url;
+                var msg = ex.Message ?? "";
+                if (!_pktLastPreviewByKey.TryGetValue(key, out var prev) ||
+                    !string.Equals(prev, msg, StringComparison.Ordinal))
+                {
+                    _pktLastPreviewByKey[key] = msg;
+                    Log($"[CDP HTTP body/{candidate.OwnerTag}] {Shrink(candidate.Url, 120)} | {msg}");
+                }
+            }
+        }
+
         private async Task EnableCdpNetworkTapAsync(CoreWebView2 core, string ownerTag)
         {
             if (core == null) return;
@@ -5524,6 +5926,7 @@ try{
                         var opcode = resp.TryGetProperty("opcode", out var op) ? op.GetInt32() : 1;
                         var isBin = opcode != 1;
                         ObserveNetworkGameState(payload, isBin);
+                        TryProcessNetworkHistoryPayload(payload, isBin, ownerTag, url, "ws");
                         TryProcessNetworkWinnerPacket(payload, isBin, ownerTag, url);
                         if (_enableCdpNetworkTap && ShouldLogPacketFrame("WS.recv", url, payload, isBin, out var preview, out var reason))
                             LogPacket("WS.recv/" + ownerTag + "/" + reason, url, preview, isBin);
@@ -5558,6 +5961,95 @@ try{
                     catch (Exception ex) { Log("[CDP wsSend/" + ownerTag + "] " + ex.Message); }
                 };
 
+                var httpRespReceiver = core.GetDevToolsProtocolEventReceiver("Network.responseReceived");
+                httpRespReceiver.DevToolsProtocolEventReceived += (s, e) =>
+                {
+                    try
+                    {
+                        if (!_cdpTapOwnerGeneration.TryGetValue(ownerTag, out var activeGeneration) || activeGeneration != generation)
+                            return;
+
+                        using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
+                        var root = doc.RootElement;
+                        var reqId = root.TryGetProperty("requestId", out var reqEl) ? (reqEl.GetString() ?? "") : "";
+                        if (string.IsNullOrWhiteSpace(reqId))
+                            return;
+
+                        var resourceType = root.TryGetProperty("type", out var typeEl) ? (typeEl.GetString() ?? "") : "";
+                        if (!root.TryGetProperty("response", out var resp) || resp.ValueKind != JsonValueKind.Object)
+                            return;
+
+                        var url = GetJsonStringLoose(resp, "url") ?? "";
+                        var mimeType = GetJsonStringLoose(resp, "mimeType") ?? "";
+                        var statusCode = (int)(GetJsonLongLoose(resp, "status") ?? 0);
+                        if (!ShouldFetchCdpHttpBody(url, resourceType, mimeType, statusCode))
+                            return;
+
+                        var key = CdpRequestKey(ownerTag, reqId);
+                        _httpResponseByRequestKey[key] = new CdpHttpResponseCandidate
+                        {
+                            RequestId = reqId,
+                            OwnerTag = ownerTag ?? "",
+                            Generation = generation,
+                            Url = url,
+                            ResourceType = resourceType,
+                            MimeType = mimeType,
+                            StatusCode = statusCode,
+                            SeenAtUtc = DateTime.UtcNow
+                        };
+
+                        long httpRespCount = Interlocked.Increment(ref _cdpDiagHttpResp);
+                        var dedupeKey = "CDP.HTTP.RESP|" + ownerTag + "|" + url;
+                        var dedupeVal = statusCode.ToString(CultureInfo.InvariantCulture) + "|" + resourceType + "|" + mimeType;
+                        if (!_pktLastPreviewByKey.TryGetValue(dedupeKey, out var prev) ||
+                            !string.Equals(prev, dedupeVal, StringComparison.Ordinal))
+                        {
+                            _pktLastPreviewByKey[dedupeKey] = dedupeVal;
+                            Log($"[NETSEQ][HTTP-RESP] src=cdp/{ownerTag} | status={statusCode} | type={(string.IsNullOrWhiteSpace(resourceType) ? "-" : resourceType)} | mime={(string.IsNullOrWhiteSpace(mimeType) ? "-" : mimeType)} | url={Shrink(url, 160)}");
+                        }
+                        if (httpRespCount % 80 == 0)
+                            LogCdpDiagPulse("http-response");
+                    }
+                    catch (Exception ex) { Log("[CDP httpResp/" + ownerTag + "] " + ex.Message); }
+                };
+
+                var httpFinishedReceiver = core.GetDevToolsProtocolEventReceiver("Network.loadingFinished");
+                httpFinishedReceiver.DevToolsProtocolEventReceived += (s, e) =>
+                {
+                    try
+                    {
+                        if (!_cdpTapOwnerGeneration.TryGetValue(ownerTag, out var activeGeneration) || activeGeneration != generation)
+                            return;
+
+                        using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
+                        var root = doc.RootElement;
+                        var reqId = root.TryGetProperty("requestId", out var reqEl) ? (reqEl.GetString() ?? "") : "";
+                        if (string.IsNullOrWhiteSpace(reqId))
+                            return;
+
+                        var key = CdpRequestKey(ownerTag, reqId);
+                        if (!_httpResponseByRequestKey.TryRemove(key, out var candidate) || candidate == null)
+                            return;
+
+                        _ = FetchCdpResponseBodyAsync(core, candidate);
+                    }
+                    catch (Exception ex) { Log("[CDP httpFinished/" + ownerTag + "] " + ex.Message); }
+                };
+
+                var httpFailedReceiver = core.GetDevToolsProtocolEventReceiver("Network.loadingFailed");
+                httpFailedReceiver.DevToolsProtocolEventReceived += (s, e) =>
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
+                        var root = doc.RootElement;
+                        var reqId = root.TryGetProperty("requestId", out var reqEl) ? (reqEl.GetString() ?? "") : "";
+                        if (!string.IsNullOrWhiteSpace(reqId))
+                            _httpResponseByRequestKey.TryRemove(CdpRequestKey(ownerTag, reqId), out _);
+                    }
+                    catch { }
+                };
+
                 if (isRebind)
                     Log($"[CDP] Network tap rebound | owner={ownerTag} | oldCore={prevCoreHash} | newCore={coreHash}");
 
@@ -5582,6 +6074,7 @@ try{
                 _cdpTapOwnerCoreHash.Clear();
                 _cdpTapOwnerGeneration.Clear();
                 _wsUrlByRequestId.Clear();
+                _httpResponseByRequestKey.Clear();
                 return;
             }
             try
@@ -5597,6 +6090,7 @@ try{
                 _cdpTapOwnerCoreHash.Clear();
                 _cdpTapOwnerGeneration.Clear();
                 _wsUrlByRequestId.Clear();
+                _httpResponseByRequestKey.Clear();
             }
         }
 
@@ -5719,8 +6213,10 @@ try{
 
         private static string KeepLastSeqWindow(string? raw, int maxLen = SeqWindowMax)
         {
-            if (string.IsNullOrEmpty(raw) || maxLen <= 0)
+            if (string.IsNullOrEmpty(raw))
                 return "";
+            if (maxLen <= 0)
+                return raw;
             return raw.Length <= maxLen ? raw : raw.Substring(raw.Length - maxLen, maxLen);
         }
 
@@ -5822,6 +6318,1094 @@ try{
             catch
             {
                 return false;
+            }
+        }
+
+        private static bool IsNetworkHistoryName(string? name)
+        {
+            var n = (name ?? "").Trim().ToLowerInvariant();
+            if (n.Length == 0) return false;
+            return n.Contains("road") ||
+                   n.Contains("history") ||
+                   n.Contains("result") ||
+                   n.Contains("winner") ||
+                   n.Contains("bead") ||
+                   n.Contains("record");
+        }
+
+        private static bool IsWinnerValueName(string? name)
+        {
+            var n = (name ?? "").Trim().ToLowerInvariant();
+            if (n.Length == 0) return false;
+            return n == "winner" ||
+                   n == "win" ||
+                   n == "result" ||
+                   n == "resulttype" ||
+                   n == "roundresult" ||
+                   n == "gameresult" ||
+                   n == "gamewinner" ||
+                   n == "winnercode";
+        }
+
+        private static long ReadLongByAnyName(JsonElement obj, params string[] names)
+        {
+            return TryReadLongByAnyName(obj, out var value, names) ? value : 0;
+        }
+
+        private static bool TryGetJsonPropertyLoose(JsonElement obj, string name, out JsonElement value)
+        {
+            value = default;
+            if (obj.ValueKind != JsonValueKind.Object || string.IsNullOrWhiteSpace(name))
+                return false;
+            if (obj.TryGetProperty(name, out value))
+                return true;
+            foreach (var prop in obj.EnumerateObject())
+            {
+                if (string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = prop.Value;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static bool TryReadLongByAnyName(JsonElement obj, out long value, params string[] names)
+        {
+            value = 0;
+            if (obj.ValueKind != JsonValueKind.Object || names == null || names.Length == 0)
+                return false;
+            foreach (var name in names)
+            {
+                if (!TryGetJsonPropertyLoose(obj, name, out var el))
+                    continue;
+                var parsed = ReadJsonLongLoose(el);
+                if (parsed.HasValue)
+                {
+                    value = parsed.Value;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static bool TextContainsIgnoreCase(string? text, string value)
+        {
+            return !string.IsNullOrEmpty(text) &&
+                   !string.IsNullOrEmpty(value) &&
+                   text.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool LooksLikeCompactSeqText(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return false;
+            var s = raw.Trim();
+            if (s.Length < 3)
+                return false;
+            return Regex.IsMatch(s, @"^[BPTbpt0-3,\|\s_\-\/:;]+$");
+        }
+
+        private static string ParseCompactSeqText(string raw)
+        {
+            if (!LooksLikeCompactSeqText(raw))
+                return "";
+            var sb = new StringBuilder(raw.Length);
+            foreach (var ch in raw)
+            {
+                var u = char.ToUpperInvariant(ch);
+                if (u == 'B' || u == 'P' || u == 'T')
+                {
+                    sb.Append(u);
+                    continue;
+                }
+                if (char.IsDigit(u))
+                {
+                    var side = MapWinnerCodeToSeqChar(u - '0');
+                    if (side.HasValue)
+                        sb.Append(side.Value);
+                }
+            }
+            return FilterResultDisplaySeqWindow(sb.ToString());
+        }
+
+        private static char? MapNetworkSideValue(JsonElement value, bool allowNumeric)
+        {
+            try
+            {
+                if (value.ValueKind == JsonValueKind.Number)
+                {
+                    if (!allowNumeric) return null;
+                    var code = (int)(ReadJsonLongLoose(value) ?? -1);
+                    return MapWinnerCodeToSeqChar(code);
+                }
+
+                var raw = ReadJsonStringLoose(value);
+                if (string.IsNullOrWhiteSpace(raw))
+                    return null;
+
+                var s = raw.Trim();
+                if (s.Length == 1)
+                {
+                    var ch = char.ToUpperInvariant(s[0]);
+                    if (ch == 'B' || ch == 'P' || ch == 'T')
+                        return ch;
+                    if (char.IsDigit(ch) && allowNumeric)
+                        return MapWinnerCodeToSeqChar(ch - '0');
+                }
+
+                var upper = s.ToUpperInvariant();
+                if (upper.Contains("BANKER") || upper == "庄" || upper == "莊")
+                    return 'B';
+                if (upper.Contains("PLAYER") || upper == "闲" || upper == "閒")
+                    return 'P';
+                if (upper.Contains("TIE") || upper == "和")
+                    return 'T';
+                if (allowNumeric && int.TryParse(upper, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCode))
+                    return MapWinnerCodeToSeqChar(parsedCode);
+            }
+            catch
+            {
+            }
+            return null;
+        }
+
+        private static char? TryReadWinnerSideFromObject(JsonElement obj)
+        {
+            if (obj.ValueKind != JsonValueKind.Object)
+                return null;
+
+            foreach (var prop in obj.EnumerateObject())
+            {
+                if (!IsWinnerValueName(prop.Name))
+                    continue;
+                var side = MapNetworkSideValue(prop.Value, allowNumeric: true);
+                if (side.HasValue)
+                    return side;
+            }
+            return null;
+        }
+
+        private static bool TryReadBaccaratWinCounts(JsonElement obj, out int banker, out int player, out int tie)
+        {
+            banker = 0;
+            player = 0;
+            tie = 0;
+            if (!TryGetJsonPropertyLoose(obj, "winCounts", out var countsEl) || countsEl.ValueKind != JsonValueKind.Array)
+                return false;
+
+            var vals = new List<int>(3);
+            foreach (var item in countsEl.EnumerateArray())
+            {
+                var parsed = ReadJsonLongLoose(item);
+                vals.Add(parsed.HasValue ? (int)Math.Max(0, parsed.Value) : 0);
+                if (vals.Count >= 3)
+                    break;
+            }
+
+            if (vals.Count < 3)
+                return false;
+
+            banker = vals[0];
+            player = vals[1];
+            tie = vals[2];
+            return banker + player + tie > 0;
+        }
+
+        private static string BuildMarkerRoadSeqWithBestMapping(
+            List<int> roadCodes,
+            bool hasWinCounts,
+            int targetBanker,
+            int targetPlayer,
+            int targetTie,
+            out int countError,
+            out string mapSummary)
+        {
+            countError = 0;
+            mapSummary = "";
+            if (roadCodes == null || roadCodes.Count == 0)
+                return "";
+
+            static char FallbackSide(int code)
+            {
+                return code switch
+                {
+                    0 => 'B',
+                    1 => 'P',
+                    2 => 'T',
+                    4 => 'P',
+                    7 => 'P',
+                    8 => 'B',
+                    _ => (((code % 3) + 3) % 3) switch
+                    {
+                        0 => 'B',
+                        1 => 'P',
+                        2 => 'T',
+                        _ => 'B'
+                    }
+                };
+            }
+
+            static char? PreferredSide(int code)
+            {
+                return code switch
+                {
+                    0 => 'B',
+                    1 => 'P',
+                    2 => 'T',
+                    4 => 'P',
+                    7 => 'P',
+                    8 => 'B',
+                    _ => null
+                };
+            }
+
+            static int PreferencePenalty(int code, char side)
+            {
+                var preferred = PreferredSide(code);
+                if (preferred.HasValue)
+                    return side == preferred.Value ? 0 : 40;
+
+                return side == FallbackSide(code) ? 4 : 12;
+            }
+
+            static string BuildSummary(IDictionary<int, char> map)
+            {
+                if (map.Count == 0)
+                    return "";
+                return string.Join(",", map.OrderBy(x => x.Key).Select(x => $"{x.Key}->{x.Value}"));
+            }
+
+            var distinctCodes = roadCodes.Distinct().OrderBy(x => x).ToList();
+            var frequencies = roadCodes
+                .GroupBy(x => x)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            var bestMap = distinctCodes.ToDictionary(code => code, FallbackSide);
+            var bestError = int.MaxValue;
+            var bestPenalty = int.MaxValue;
+
+            if (hasWinCounts && distinctCodes.Count <= 12)
+            {
+                var sides = new[] { 'B', 'P', 'T' };
+                var currentMap = new Dictionary<int, char>(distinctCodes.Count);
+
+                void Search(int index, int banker, int player, int tie, int penalty)
+                {
+                    if (index >= distinctCodes.Count)
+                    {
+                        var error =
+                            Math.Abs(banker - targetBanker) +
+                            Math.Abs(player - targetPlayer) +
+                            Math.Abs(tie - targetTie);
+
+                        if (error < bestError || (error == bestError && penalty < bestPenalty))
+                        {
+                            bestError = error;
+                            bestPenalty = penalty;
+                            bestMap = new Dictionary<int, char>(currentMap);
+                        }
+                        return;
+                    }
+
+                    var code = distinctCodes[index];
+                    var freq = frequencies.TryGetValue(code, out var f) ? f : 0;
+                    foreach (var side in sides)
+                    {
+                        currentMap[code] = side;
+                        Search(
+                            index + 1,
+                            banker + (side == 'B' ? freq : 0),
+                            player + (side == 'P' ? freq : 0),
+                            tie + (side == 'T' ? freq : 0),
+                            penalty + PreferencePenalty(code, side));
+                    }
+                    currentMap.Remove(code);
+                }
+
+                Search(0, 0, 0, 0, 0);
+            }
+            else if (hasWinCounts)
+            {
+                int banker = 0;
+                int player = 0;
+                int tie = 0;
+                foreach (var code in roadCodes)
+                {
+                    switch (bestMap.TryGetValue(code, out var side) ? side : FallbackSide(code))
+                    {
+                        case 'B': banker++; break;
+                        case 'P': player++; break;
+                        case 'T': tie++; break;
+                    }
+                }
+                bestError =
+                    Math.Abs(banker - targetBanker) +
+                    Math.Abs(player - targetPlayer) +
+                    Math.Abs(tie - targetTie);
+            }
+
+            string bestSeq = "";
+            var sb = new StringBuilder(roadCodes.Count);
+            foreach (var code in roadCodes)
+            {
+                sb.Append(bestMap.TryGetValue(code, out var side) ? side : FallbackSide(code));
+            }
+
+            bestSeq = FilterResultDisplaySeqWindow(sb.ToString());
+            if (hasWinCounts && bestError == int.MaxValue)
+            {
+                bestError =
+                    Math.Abs(bestSeq.Count(ch => ch == 'B') - targetBanker) +
+                    Math.Abs(bestSeq.Count(ch => ch == 'P') - targetPlayer) +
+                    Math.Abs(bestSeq.Count(ch => ch == 'T') - targetTie);
+            }
+
+            countError = hasWinCounts ? bestError : 0;
+            mapSummary = BuildSummary(bestMap);
+            return bestSeq;
+        }
+
+        private static bool TryBuildNetworkHistoryFromMarkerRoads(
+            JsonElement markerRoadsEl,
+            JsonElement ownerEl,
+            string path,
+            long inheritedTableId,
+            long inheritedGameShoe,
+            long inheritedRound,
+            string source,
+            string ownerTag,
+            string? url,
+            out NetworkHistorySeqCandidate? candidate)
+        {
+            candidate = null;
+            if (markerRoadsEl.ValueKind != JsonValueKind.Array)
+                return false;
+
+            var entries = new List<(int Index, long Stamp, long ShowX, long ShowY, int Road)>();
+            int index = 0;
+            foreach (var item in markerRoadsEl.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.Object &&
+                    TryReadLongByAnyName(item, out var roadValue, "road"))
+                {
+                    TryReadLongByAnyName(item, out var stamp, "stampTime", "time", "ts");
+                    TryReadLongByAnyName(item, out var showX, "showX", "x");
+                    TryReadLongByAnyName(item, out var showY, "showY", "y");
+                    entries.Add((index, stamp, showX, showY, (int)roadValue));
+                }
+                index++;
+            }
+
+            if (entries.Count < 3)
+                return false;
+
+            var stampedCount = entries.Count(x => x.Stamp > 0);
+            var hasUsableStamps = stampedCount >= Math.Max(3, entries.Count / 2);
+            var hasUsableGrid = entries.Count(x => x.ShowX > 0 || x.ShowY > 0) >= Math.Max(3, entries.Count / 2);
+            IEnumerable<(int Index, long Stamp, long ShowX, long ShowY, int Road)> ordered = entries;
+            if (hasUsableStamps)
+                ordered = entries.OrderBy(x => x.Stamp).ThenBy(x => x.Index);
+            else if (hasUsableGrid)
+                ordered = entries.OrderBy(x => x.ShowX).ThenBy(x => x.ShowY).ThenBy(x => x.Index);
+
+            var roadCodes = ordered.Select(x => x.Road).ToList();
+            var hasCounts = TryReadBaccaratWinCounts(ownerEl, out var bankerCount, out var playerCount, out var tieCount);
+            var seq = BuildMarkerRoadSeqWithBestMapping(roadCodes, hasCounts, bankerCount, playerCount, tieCount, out var countError, out var mapSummary);
+            if (seq.Length < 3)
+                return false;
+
+            var table = inheritedTableId;
+            var shoe = inheritedGameShoe;
+            var round = inheritedRound;
+            var ownerTable = ReadLongByAnyName(ownerEl, "tableID", "tableId", "tableNo");
+            var ownerShoe = ReadLongByAnyName(ownerEl, "gameShoe", "currentGameShoe", "shoe", "shoeNo");
+            var ownerRound = ReadLongByAnyName(ownerEl, "gameRound", "currentGameRound", "round", "roundNo", "roundId");
+            if (ownerTable > 0) table = ownerTable;
+            if (ownerShoe > 0) shoe = ownerShoe;
+            if (ownerRound > 0) round = ownerRound;
+
+            var score = seq.Length + 350 + (table > 0 ? 50 : 0) + (shoe > 0 ? 50 : 0) + (round > 0 ? 30 : 0);
+            if (hasCounts)
+                score += countError == 0 ? 700 : Math.Max(0, 150 - countError * 10);
+
+            candidate = new NetworkHistorySeqCandidate
+            {
+                Seq = seq,
+                TableId = table,
+                GameShoe = shoe,
+                LastRound = round > 0 ? round : seq.Length,
+                Source = source,
+                OwnerTag = ownerTag ?? "",
+                Url = url ?? "",
+                Path = path,
+                Score = score,
+                CountError = countError,
+                MapSummary = mapSummary
+            };
+            return true;
+        }
+
+        private static bool TryBuildNetworkHistoryFromArray(
+            JsonElement arrayEl,
+            string propertyName,
+            string path,
+            long inheritedTableId,
+            long inheritedGameShoe,
+            long inheritedRound,
+            bool historyNameHint,
+            string source,
+            string ownerTag,
+            string? url,
+            out NetworkHistorySeqCandidate? candidate)
+        {
+            candidate = null;
+            if (arrayEl.ValueKind != JsonValueKind.Array)
+                return false;
+
+            var items = new List<(int Index, long Round, char Side, long TableId, long Shoe)>();
+            int index = 0;
+            int objectItems = 0;
+            foreach (var item in arrayEl.EnumerateArray())
+            {
+                char? side = null;
+                long tableId = inheritedTableId;
+                long gameShoe = inheritedGameShoe;
+                long gameRound = 0;
+
+                if (item.ValueKind == JsonValueKind.Object)
+                {
+                    objectItems++;
+                    var itemTable = ReadLongByAnyName(item, "tableID", "tableId", "tableNo");
+                    var itemShoe = ReadLongByAnyName(item, "gameShoe", "currentGameShoe", "shoe", "shoeNo");
+                    var itemRound = ReadLongByAnyName(item, "gameRound", "currentGameRound", "round", "roundNo", "roundId");
+                    if (itemTable > 0) tableId = itemTable;
+                    if (itemShoe > 0) gameShoe = itemShoe;
+                    if (itemRound > 0) gameRound = itemRound;
+                    side = TryReadWinnerSideFromObject(item);
+                }
+                else if (item.ValueKind == JsonValueKind.String)
+                {
+                    side = MapNetworkSideValue(item, allowNumeric: historyNameHint);
+                }
+                else if (item.ValueKind == JsonValueKind.Number && historyNameHint)
+                {
+                    side = MapNetworkSideValue(item, allowNumeric: true);
+                }
+
+                if (side.HasValue)
+                    items.Add((index, gameRound, side.Value, tableId, gameShoe));
+                index++;
+            }
+
+            if (items.Count < 3)
+                return false;
+            if (!historyNameHint && objectItems > 0 && items.Count < Math.Max(3, objectItems / 2))
+                return false;
+
+            bool hasRounds = items.Count >= 3 && items.Count(x => x.Round > 0) >= Math.Max(3, items.Count / 2);
+            IEnumerable<(int Index, long Round, char Side, long TableId, long Shoe)> ordered = items;
+            if (hasRounds)
+                ordered = items.OrderBy(x => x.Round).ThenBy(x => x.Index);
+
+            var sb = new StringBuilder(items.Count);
+            long lastRound = 0;
+            long table = inheritedTableId;
+            long shoe = inheritedGameShoe;
+            long lastSeenRound = -1;
+            foreach (var item in ordered)
+            {
+                if (hasRounds && item.Round > 0 && item.Round == lastSeenRound)
+                {
+                    if (sb.Length > 0)
+                        sb[sb.Length - 1] = item.Side;
+                }
+                else
+                {
+                    sb.Append(item.Side);
+                }
+
+                if (item.Round > 0)
+                {
+                    lastRound = Math.Max(lastRound, item.Round);
+                    lastSeenRound = item.Round;
+                }
+                if (item.TableId > 0) table = item.TableId;
+                if (item.Shoe > 0) shoe = item.Shoe;
+            }
+
+            var seq = FilterResultDisplaySeqWindow(sb.ToString());
+            if (seq.Length < 3)
+                return false;
+
+            candidate = new NetworkHistorySeqCandidate
+            {
+                Seq = seq,
+                TableId = table,
+                GameShoe = shoe,
+                LastRound = lastRound > 0 ? lastRound : inheritedRound,
+                Source = source,
+                OwnerTag = ownerTag ?? "",
+                Url = url ?? "",
+                Path = path,
+                Score = seq.Length + (historyNameHint ? 20 : 0) + (hasRounds ? 15 : 0) + (table > 0 ? 10 : 0) + (shoe > 0 ? 10 : 0)
+            };
+            return true;
+        }
+
+        private static void CollectNetworkHistoryCandidates(
+            JsonElement el,
+            string path,
+            string propertyName,
+            long inheritedTableId,
+            long inheritedGameShoe,
+            long inheritedRound,
+            string source,
+            string ownerTag,
+            string? url,
+            List<NetworkHistorySeqCandidate> candidates,
+            int depth)
+        {
+            if (depth > 12)
+                return;
+
+            try
+            {
+                if (el.ValueKind == JsonValueKind.Object)
+                {
+                    var tableId = ReadLongByAnyName(el, "tableID", "tableId", "tableNo");
+                    var gameShoe = ReadLongByAnyName(el, "gameShoe", "currentGameShoe", "shoe", "shoeNo");
+                    var gameRound = ReadLongByAnyName(el, "gameRound", "currentGameRound", "round", "roundNo", "roundId");
+                    if (TryGetJsonPropertyLoose(el, "tableInfo", out var tableInfoEl) && tableInfoEl.ValueKind == JsonValueKind.Object)
+                    {
+                        if (tableId <= 0) tableId = ReadLongByAnyName(tableInfoEl, "tableID", "tableId", "tableNo");
+                        if (gameShoe <= 0) gameShoe = ReadLongByAnyName(tableInfoEl, "gameShoe", "currentGameShoe", "shoe", "shoeNo");
+                        if (gameRound <= 0) gameRound = ReadLongByAnyName(tableInfoEl, "gameRound", "currentGameRound", "round", "roundNo", "roundId");
+                    }
+                    if (tableId <= 0) tableId = inheritedTableId;
+                    if (gameShoe <= 0) gameShoe = inheritedGameShoe;
+                    if (gameRound <= 0) gameRound = inheritedRound;
+
+                    if (TryGetJsonPropertyLoose(el, "markerRoads", out var markerRoadsEl) &&
+                        TryBuildNetworkHistoryFromMarkerRoads(
+                            markerRoadsEl,
+                            el,
+                            (string.IsNullOrWhiteSpace(path) ? "markerRoads" : path + ".markerRoads"),
+                            tableId,
+                            gameShoe,
+                            gameRound,
+                            source,
+                            ownerTag,
+                            url,
+                            out var markerCandidate) &&
+                        markerCandidate != null)
+                    {
+                        candidates.Add(markerCandidate);
+                    }
+
+                    foreach (var prop in el.EnumerateObject())
+                    {
+                        var childPath = string.IsNullOrWhiteSpace(path) ? prop.Name : path + "." + prop.Name;
+                        var historyHint = IsNetworkHistoryName(prop.Name);
+                        if (prop.Value.ValueKind == JsonValueKind.String && historyHint)
+                        {
+                            var raw = prop.Value.GetString() ?? "";
+                            var seq = ParseCompactSeqText(raw);
+                            if (seq.Length >= 3)
+                            {
+                                candidates.Add(new NetworkHistorySeqCandidate
+                                {
+                                    Seq = seq,
+                                    TableId = tableId,
+                                    GameShoe = gameShoe,
+                                    LastRound = gameRound,
+                                    Source = source,
+                                    OwnerTag = ownerTag ?? "",
+                                    Url = url ?? "",
+                                    Path = childPath,
+                                    Score = seq.Length + 35 + (tableId > 0 ? 10 : 0) + (gameShoe > 0 ? 10 : 0)
+                                });
+                            }
+                        }
+                        else if (prop.Value.ValueKind == JsonValueKind.Array &&
+                                 TryBuildNetworkHistoryFromArray(prop.Value, prop.Name, childPath, tableId, gameShoe, gameRound, historyHint, source, ownerTag, url, out var arrayCandidate) &&
+                                 arrayCandidate != null)
+                        {
+                            candidates.Add(arrayCandidate);
+                        }
+
+                        CollectNetworkHistoryCandidates(prop.Value, childPath, prop.Name, tableId, gameShoe, gameRound, source, ownerTag, url, candidates, depth + 1);
+                    }
+                }
+                else if (el.ValueKind == JsonValueKind.Array)
+                {
+                    var historyHint = IsNetworkHistoryName(propertyName);
+                    if (TryBuildNetworkHistoryFromArray(el, propertyName, path, inheritedTableId, inheritedGameShoe, inheritedRound, historyHint, source, ownerTag, url, out var arrayCandidate) &&
+                        arrayCandidate != null)
+                    {
+                        candidates.Add(arrayCandidate);
+                    }
+
+                    int idx = 0;
+                    foreach (var item in el.EnumerateArray())
+                    {
+                        CollectNetworkHistoryCandidates(item, path + "[" + idx.ToString(CultureInfo.InvariantCulture) + "]", propertyName, inheritedTableId, inheritedGameShoe, inheritedRound, source, ownerTag, url, candidates, depth + 1);
+                        idx++;
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static bool IsExactTableHistoryCandidate(NetworkHistorySeqCandidate candidate)
+        {
+            if (candidate == null)
+                return false;
+            return TextContainsIgnoreCase(candidate.Url, "queryInitTableInfo") ||
+                   TextContainsIgnoreCase(candidate.Path, "roadInfo.markerRoads") ||
+                   TextContainsIgnoreCase(candidate.Path, "tableItem.roadInfo");
+        }
+
+        private static bool IsGlobalHallHistoryCandidate(NetworkHistorySeqCandidate candidate)
+        {
+            if (candidate == null)
+                return false;
+            return TextContainsIgnoreCase(candidate.Url, "queryWebGameHallDatas") ||
+                   TextContainsIgnoreCase(candidate.Url, "queryInitWebGameHall") ||
+                   TextContainsIgnoreCase(candidate.Path, "topGoodRoadInfo");
+        }
+
+        private static bool IsMarkerRoadHistoryCandidate(NetworkHistorySeqCandidate candidate)
+        {
+            if (candidate == null)
+                return false;
+            return TextContainsIgnoreCase(candidate.Path, "markerRoads") ||
+                   TextContainsIgnoreCase(candidate.Path, "roadInfo.markerRoads");
+        }
+
+        private static bool CanApplyNetworkHistoryCandidate(NetworkHistorySeqCandidate candidate)
+        {
+            if (candidate == null)
+                return false;
+            if (!UseMarkerRoadHistoryBootstrap && IsMarkerRoadHistoryCandidate(candidate))
+                return false;
+            return true;
+        }
+
+        private static NetworkHistorySeqCandidate CloneNetworkHistoryCandidate(NetworkHistorySeqCandidate candidate)
+        {
+            return new NetworkHistorySeqCandidate
+            {
+                Seq = candidate.Seq ?? "",
+                TableId = candidate.TableId,
+                GameShoe = candidate.GameShoe,
+                LastRound = candidate.LastRound,
+                Source = candidate.Source ?? "",
+                OwnerTag = candidate.OwnerTag ?? "",
+                Url = candidate.Url ?? "",
+                Path = candidate.Path ?? "",
+                Score = candidate.Score,
+                CountError = candidate.CountError,
+                MapSummary = candidate.MapSummary ?? "",
+                SeenAtUtc = candidate.SeenAtUtc == default ? DateTime.UtcNow : candidate.SeenAtUtc
+            };
+        }
+
+        private void PrunePendingNetworkHistoryCandidatesLocked(DateTime nowUtc)
+        {
+            _pendingNetworkHistoryCandidates.RemoveAll(c =>
+                c == null ||
+                c.TableId <= 0 ||
+                string.IsNullOrWhiteSpace(c.Seq) ||
+                (nowUtc - c.SeenAtUtc) > NetworkHistoryCandidateCacheTtl);
+
+            if (_pendingNetworkHistoryCandidates.Count <= 32)
+                return;
+
+            var keep = _pendingNetworkHistoryCandidates
+                .OrderByDescending(c => c.SeenAtUtc)
+                .ThenByDescending(c => c.Seq.Length)
+                .Take(32)
+                .ToList();
+            _pendingNetworkHistoryCandidates.Clear();
+            _pendingNetworkHistoryCandidates.AddRange(keep);
+        }
+
+        private void RememberNetworkHistoryCandidates(List<NetworkHistorySeqCandidate> candidates, string trigger)
+        {
+            if (candidates == null || candidates.Count == 0)
+                return;
+
+            var nowUtc = DateTime.UtcNow;
+            var stored = new List<NetworkHistorySeqCandidate>();
+            lock (_roundStateLock)
+            {
+                PrunePendingNetworkHistoryCandidatesLocked(nowUtc);
+                foreach (var c in candidates)
+                {
+                    if (c == null ||
+                        c.TableId <= 0 ||
+                        c.Seq.Length < 3 ||
+                        !IsExactTableHistoryCandidate(c) ||
+                        !CanApplyNetworkHistoryCandidate(c))
+                    {
+                        continue;
+                    }
+
+                    var copy = CloneNetworkHistoryCandidate(c);
+                    copy.SeenAtUtc = nowUtc;
+                    _pendingNetworkHistoryCandidates.RemoveAll(x =>
+                        x.TableId == copy.TableId &&
+                        x.GameShoe == copy.GameShoe &&
+                        string.Equals(x.Source, copy.Source, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(x.OwnerTag, copy.OwnerTag, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(x.Path, copy.Path, StringComparison.OrdinalIgnoreCase));
+                    _pendingNetworkHistoryCandidates.Add(copy);
+                    stored.Add(copy);
+                }
+                PrunePendingNetworkHistoryCandidatesLocked(nowUtc);
+            }
+
+            foreach (var c in stored)
+            {
+                Log($"[NETSEQ][HISTORY-CACHE] action=store | trigger={trigger} | table={c.TableId} | shoe={c.GameShoe} | round={c.LastRound} | seqLen={c.Seq.Length} | countErr={c.CountError} | map={Shrink(c.MapSummary, 120)} | path={Shrink(c.Path, 120)}");
+            }
+        }
+
+        private NetworkHistorySeqCandidate? PickPendingNetworkHistoryCandidateLocked(long tableId, long gameShoe, string currentSeq)
+        {
+            var nowUtc = DateTime.UtcNow;
+            PrunePendingNetworkHistoryCandidatesLocked(nowUtc);
+            NetworkHistorySeqCandidate? best = null;
+            int bestScore = int.MinValue;
+            foreach (var c in _pendingNetworkHistoryCandidates)
+            {
+                if (c.TableId <= 0 || c.TableId != tableId)
+                    continue;
+                if (!CanApplyNetworkHistoryCandidate(c))
+                    continue;
+                if (gameShoe > 0 && c.GameShoe > 0 && c.GameShoe != gameShoe)
+                    continue;
+                if (!IsCompatibleNetworkHistoryCandidateLocked(c, currentSeq, out _))
+                    continue;
+
+                var score = c.Score + c.Seq.Length;
+                if (gameShoe > 0 && c.GameShoe == gameShoe) score += 300;
+                if (IsExactTableHistoryCandidate(c)) score += 800;
+                if (best == null || score > bestScore)
+                {
+                    best = c;
+                    bestScore = score;
+                }
+            }
+
+            return best == null ? null : CloneNetworkHistoryCandidate(best);
+        }
+
+        private void TryApplyPendingNetworkHistoryForContext(string trigger)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    NetworkHistorySeqCandidate? candidate;
+                    string nextSeq;
+                    long nextVersion;
+                    string prevSeq;
+                    long prevVersion;
+                    string blockReason;
+                    lock (_roundStateLock)
+                    {
+                        var tableId = _netSeqTableId > 0 ? _netSeqTableId : _netObservedTableId;
+                        var gameShoe = _netSeqGameShoe > 0 ? _netSeqGameShoe : _netObservedGameShoe;
+                        if (tableId <= 0)
+                            return;
+
+                        prevSeq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                        prevVersion = _netSeqVersion;
+                        candidate = PickPendingNetworkHistoryCandidateLocked(tableId, gameShoe, prevSeq);
+                        if (candidate == null)
+                            return;
+
+                        if (!ApplyNetworkHistoryBootstrapLocked(candidate, out nextSeq, out nextVersion, out blockReason))
+                        {
+                            if (!string.Equals(blockReason, "not-longer", StringComparison.OrdinalIgnoreCase))
+                                Log($"[NETSEQ][HISTORY-CACHE-BLOCK] reason={blockReason} | trigger={trigger} | table={candidate.TableId} | shoe={candidate.GameShoe} | round={candidate.LastRound} | candLen={candidate.Seq.Length} | curLen={prevSeq.Length} | path={Shrink(candidate.Path, 120)}");
+                            return;
+                        }
+
+                        _pendingNetworkHistoryCandidates.RemoveAll(x =>
+                            x.TableId == candidate.TableId &&
+                            x.GameShoe == candidate.GameShoe &&
+                            string.Equals(x.Path, candidate.Path, StringComparison.OrdinalIgnoreCase));
+                    }
+
+                    lock (_snapLock)
+                    {
+                        var updated = CloneSnapForTasks(_lastSnap) ?? new CwSnapshot();
+                        updated.seq = nextSeq;
+                        updated.rawSeq = nextSeq;
+                        updated.seqVersion = nextVersion;
+                        updated.seqEvent = "net-history-bootstrap";
+                        updated.seqSource = "network-history";
+                        updated.niSeq = _niSeq.ToString();
+                        updated.ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                        _lastSnap = updated;
+                    }
+
+                    UpdateSeqUI(nextSeq);
+                    if (nextSeq.Length > 0)
+                        SetLastResultUI(nextSeq[^1].ToString());
+
+                    Log($"[NETSEQ][HISTORY-CACHE-APPLY] trigger={trigger} | src={candidate.Source}/{candidate.OwnerTag} | table={candidate.TableId} | shoe={candidate.GameShoe} | round={candidate.LastRound} | prevLen={prevSeq.Length} | nextLen={nextSeq.Length} | countErr={candidate.CountError} | prevVer={prevVersion} | nextVer={nextVersion} | tail={(nextSeq.Length > 0 ? nextSeq[^1] : '-')}");
+                }
+                catch (Exception ex)
+                {
+                    Log("[NETSEQ][HISTORY-CACHE-APPLY] " + ex.Message);
+                }
+            }));
+        }
+
+        private bool CanCombineNetworkHistoryWithCurrentTailLocked(NetworkHistorySeqCandidate candidate, string currentSeq, out int tailLen)
+        {
+            tailLen = 0;
+            if (candidate == null || string.IsNullOrEmpty(currentSeq))
+                return false;
+            if (candidate.LastRound <= 0 || _netSeqLastRound <= candidate.LastRound)
+                return false;
+
+            var delta = _netSeqLastRound - candidate.LastRound;
+            if (delta <= 0 || delta > currentSeq.Length || delta > 200)
+                return false;
+
+            tailLen = (int)delta;
+            return true;
+        }
+
+        private bool IsCompatibleNetworkHistoryCandidateLocked(NetworkHistorySeqCandidate candidate, string currentSeq, out string reason)
+        {
+            reason = "";
+            if (candidate == null || string.IsNullOrWhiteSpace(candidate.Seq))
+            {
+                reason = "empty";
+                return false;
+            }
+            if (!CanApplyNetworkHistoryCandidate(candidate))
+            {
+                reason = "history-source-disabled";
+                return false;
+            }
+
+            var seq = FilterResultDisplaySeqWindow(candidate.Seq);
+            if (seq.Length < 3)
+            {
+                reason = "short";
+                return false;
+            }
+            if (candidate.TableId <= 0)
+            {
+                reason = "no-table";
+                return false;
+            }
+
+            long targetTable = _netSeqTableId > 0 ? _netSeqTableId : _netObservedTableId;
+            long targetShoe = _netSeqGameShoe > 0 ? _netSeqGameShoe : _netObservedGameShoe;
+            if (targetTable <= 0 && !IsExactTableHistoryCandidate(candidate))
+            {
+                reason = IsGlobalHallHistoryCandidate(candidate) ? "global-without-table-context" : "no-table-context";
+                return false;
+            }
+            if (targetTable > 0 && candidate.TableId > 0 && candidate.TableId != targetTable)
+            {
+                reason = "table-mismatch";
+                return false;
+            }
+            if (targetShoe > 0 && candidate.GameShoe > 0 && candidate.GameShoe != targetShoe)
+            {
+                reason = "shoe-mismatch";
+                return false;
+            }
+            var canCombineTail = CanCombineNetworkHistoryWithCurrentTailLocked(candidate, currentSeq, out _);
+            if (seq.Length <= currentSeq.Length && !canCombineTail)
+            {
+                reason = "not-longer";
+                return false;
+            }
+            if (currentSeq.Length >= 3 &&
+                !seq.StartsWith(currentSeq, StringComparison.Ordinal) &&
+                !seq.EndsWith(currentSeq, StringComparison.Ordinal) &&
+                !canCombineTail)
+            {
+                reason = "not-compatible";
+                return false;
+            }
+
+            return true;
+        }
+
+        private NetworkHistorySeqCandidate? PickBestNetworkHistoryCandidate(List<NetworkHistorySeqCandidate> candidates)
+        {
+            if (candidates == null || candidates.Count == 0)
+                return null;
+
+            lock (_roundStateLock)
+            {
+                var current = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                NetworkHistorySeqCandidate? best = null;
+                int bestScore = int.MinValue;
+                foreach (var c in candidates)
+                {
+                    if (!CanApplyNetworkHistoryCandidate(c))
+                        continue;
+                    if (!IsCompatibleNetworkHistoryCandidateLocked(c, current, out _))
+                        continue;
+
+                    long targetTable = _netSeqTableId > 0 ? _netSeqTableId : _netObservedTableId;
+                    long targetShoe = _netSeqGameShoe > 0 ? _netSeqGameShoe : _netObservedGameShoe;
+                    int score = c.Score;
+                    if (targetTable > 0 && c.TableId == targetTable) score += 500;
+                    if (targetShoe > 0 && c.GameShoe == targetShoe) score += 300;
+                    if (IsExactTableHistoryCandidate(c)) score += 800;
+                    if (IsGlobalHallHistoryCandidate(c) && targetTable <= 0) score -= 1000;
+                    if (c.Seq.EndsWith(current, StringComparison.Ordinal)) score += 120;
+                    if (c.Seq.StartsWith(current, StringComparison.Ordinal)) score += 60;
+                    score += c.Seq.Length;
+
+                    if (best == null || score > bestScore)
+                    {
+                        best = c;
+                        bestScore = score;
+                    }
+                }
+                return best;
+            }
+        }
+
+        private bool ApplyNetworkHistoryBootstrapLocked(NetworkHistorySeqCandidate candidate, out string nextSeq, out long nextVersion, out string blockReason)
+        {
+            nextSeq = "";
+            nextVersion = 0;
+            blockReason = "";
+
+            var current = FilterResultDisplaySeqWindow(_netSeqDisplay);
+            if (!IsCompatibleNetworkHistoryCandidateLocked(candidate, current, out blockReason))
+                return false;
+
+            var candidateSeq = FilterResultDisplaySeqWindow(candidate.Seq);
+            nextSeq = candidateSeq;
+            if (current.Length > 0 &&
+                !candidateSeq.StartsWith(current, StringComparison.Ordinal) &&
+                !candidateSeq.EndsWith(current, StringComparison.Ordinal) &&
+                CanCombineNetworkHistoryWithCurrentTailLocked(candidate, current, out var tailLen))
+            {
+                var tail = tailLen >= current.Length ? current : current.Substring(current.Length - tailLen, tailLen);
+                nextSeq = FilterResultDisplaySeqWindow(candidateSeq + tail);
+            }
+
+            long suggestedVersion = Math.Max(candidate.LastRound > 0 ? candidate.LastRound : nextSeq.Length, _netSeqLastRound);
+            nextVersion = ComputeNextSyncSeqVersion(_netSeqVersion, current, nextSeq, suggestedVersion);
+
+            _netSeqDisplay = nextSeq;
+            _netSeqVersion = nextVersion;
+            _netSeqEvent = "net-history-bootstrap";
+            _netSeqSource = "network-history";
+            _netSeqWinnerSeedOnly = false;
+            if (candidate.TableId > 0) _netSeqTableId = candidate.TableId;
+            else if (_netSeqTableId <= 0 && _netObservedTableId > 0) _netSeqTableId = _netObservedTableId;
+            if (candidate.GameShoe > 0) _netSeqGameShoe = candidate.GameShoe;
+            else if (_netSeqGameShoe <= 0 && _netObservedGameShoe > 0) _netSeqGameShoe = _netObservedGameShoe;
+            if (candidate.LastRound > 0) _netSeqLastRound = Math.Max(_netSeqLastRound, candidate.LastRound);
+            _baseSeqDisplay = _netSeqDisplay;
+            _baseSeq = FilterPlayableSeq(_netSeqDisplay);
+            _baseSeqVersion = _netSeqVersion;
+            _baseSeqEvent = _netSeqEvent;
+            _baseSeqSource = _netSeqSource;
+            _suppressJsBootstrapAfterObservedReset = false;
+            return true;
+        }
+
+        private void TryProcessNetworkHistoryPayload(string payload, bool isBinary, string ownerTag, string? url, string source)
+        {
+            try
+            {
+                var rawText = DecodePacketText(payload, isBinary);
+                var json = ExtractJsonPayload(rawText);
+                if (string.IsNullOrWhiteSpace(json))
+                    return;
+
+                using var doc = JsonDocument.Parse(json);
+                var candidates = new List<NetworkHistorySeqCandidate>();
+                CollectNetworkHistoryCandidates(doc.RootElement, "$", "", 0, 0, 0, source, ownerTag, url, candidates, 0);
+                RememberNetworkHistoryCandidates(candidates, source);
+                var best = PickBestNetworkHistoryCandidate(candidates);
+                if (best == null)
+                {
+                    TryApplyPendingNetworkHistoryForContext("history-payload");
+                    return;
+                }
+
+                var candidateKey = $"{best.Source}|{best.OwnerTag}|{best.TableId}|{best.GameShoe}|{best.LastRound}|{best.Seq}";
+                var now = DateTime.UtcNow;
+                bool shouldLogCandidate =
+                    !string.Equals(candidateKey, _lastNetworkHistoryCandidateKey, StringComparison.Ordinal) ||
+                    (now - _lastNetworkHistoryCandidateLogUtc) > TimeSpan.FromSeconds(10);
+                if (shouldLogCandidate)
+                {
+                    _lastNetworkHistoryCandidateKey = candidateKey;
+                    _lastNetworkHistoryCandidateLogUtc = now;
+                    Log($"[NETSEQ][HISTORY-CAND] src={best.Source}/{best.OwnerTag} | table={best.TableId} | shoe={best.GameShoe} | round={best.LastRound} | seqLen={best.Seq.Length} | countErr={best.CountError} | map={Shrink(best.MapSummary, 120)} | tail={(best.Seq.Length > 0 ? best.Seq[^1] : '-')} | path={Shrink(best.Path, 120)} | url={Shrink(best.Url, 120)}");
+                }
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        string nextSeq;
+                        long nextVersion;
+                        string blockReason;
+                        string prevSeq;
+                        long prevVersion;
+                        lock (_roundStateLock)
+                        {
+                            prevSeq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                            prevVersion = _netSeqVersion;
+                            if (!ApplyNetworkHistoryBootstrapLocked(best, out nextSeq, out nextVersion, out blockReason))
+                            {
+                                if (!string.Equals(blockReason, "not-longer", StringComparison.OrdinalIgnoreCase))
+                                    Log($"[NETSEQ][HISTORY-BLOCK] reason={blockReason} | src={best.Source}/{best.OwnerTag} | table={best.TableId} | shoe={best.GameShoe} | round={best.LastRound} | candLen={best.Seq.Length} | curLen={prevSeq.Length} | path={Shrink(best.Path, 120)}");
+                                return;
+                            }
+                        }
+
+                        lock (_snapLock)
+                        {
+                            var updated = CloneSnapForTasks(_lastSnap) ?? new CwSnapshot();
+                            updated.seq = nextSeq;
+                            updated.rawSeq = nextSeq;
+                            updated.seqVersion = nextVersion;
+                            updated.seqEvent = "net-history-bootstrap";
+                            updated.seqSource = "network-history";
+                            updated.niSeq = _niSeq.ToString();
+                            updated.ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                            _lastSnap = updated;
+                        }
+
+                        UpdateSeqUI(nextSeq);
+                        if (nextSeq.Length > 0)
+                            SetLastResultUI(nextSeq[^1].ToString());
+
+                        Log($"[NETSEQ][HISTORY-BOOTSTRAP] src={best.Source}/{best.OwnerTag} | table={best.TableId} | shoe={best.GameShoe} | round={best.LastRound} | prevLen={prevSeq.Length} | nextLen={nextSeq.Length} | countErr={best.CountError} | prevVer={prevVersion} | nextVer={nextVersion} | tail={(nextSeq.Length > 0 ? nextSeq[^1] : '-')}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log("[NETSEQ][HISTORY-BOOTSTRAP] " + ex.Message);
+                    }
+                }));
+            }
+            catch
+            {
             }
         }
 
@@ -6196,6 +7780,7 @@ try{
                         _netSeqSource = "";
                         _netSeqWinnerSeedOnly = false;
                         _suppressJsBootstrapAfterObservedReset = true;
+                        ResetJsRawBootstrapProbeLocked();
                     }
                 }
                 else
@@ -6208,13 +7793,14 @@ try{
                     _netSeqSource = "network";
                     _netSeqWinnerSeedOnly = false;
                     _suppressJsBootstrapAfterObservedReset = false;
+                    ResetJsRawBootstrapProbeLocked();
                 }
 
                 _netSeqTableId = tableId;
                 _netSeqGameShoe = gameShoe;
                 _netSeqLastRound = 0;
                 _netLastWinnerKey = "";
-                _baseSeqSource = "js";
+                _baseSeqSource = string.IsNullOrWhiteSpace(_netSeqSource) ? "network" : _netSeqSource;
                 didReset = true;
             }
 
@@ -6223,6 +7809,7 @@ try{
                 void Cleanup() => InvalidatePendingRowsForContextReset(tableId, gameShoe, gameRound);
                 if (Dispatcher.CheckAccess()) Cleanup();
                 else Dispatcher.Invoke(Cleanup);
+                TryApplyPendingNetworkHistoryForContext("obs-reset");
                 LogCdpDiagPulse("obs-reset", force: true);
             }
         }
@@ -6240,207 +7827,109 @@ try{
             if (!winnerChar.HasValue)
                 return result;
 
-            bool tableChanged = _netSeqTableId > 0 && packet.TableId > 0 && packet.TableId != _netSeqTableId;
-            bool shoeChanged = !tableChanged && _netSeqGameShoe > 0 && packet.GameShoe > 0 && packet.GameShoe != _netSeqGameShoe;
+            string winnerText = MapWinnerCharToResultText(winnerChar.Value);
+            string eventKey = $"{packet.TableId}|{packet.GameShoe}|{packet.GameRound}|{packet.WinnerCode}";
+            string prevDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
+            long prevVersion = _netSeqVersion;
 
-            var currentPrefix = tableChanged ? "" : (_syncSeqPrefixDisplay ?? "");
-            if (shoeChanged)
-                currentPrefix = _netSeqDisplay;
+            result.PrevSeq = prevDisplay;
+            result.NextSeq = prevDisplay;
+            result.PrevVersion = prevVersion;
+            result.NextVersion = prevVersion;
+            result.SeqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? "network" : _netSeqEvent;
+            result.ResultChar = winnerChar.Value;
+            result.ResultText = winnerText;
 
-            var currentDisplay = tableChanged ? "" : GetCurrentBoardSeqForSyncLocked();
-            if (shoeChanged)
-                currentDisplay = "";
-
-            var snapRawDisplay = FilterResultDisplaySeqWindow(currentSnap?.rawSeq);
-            var snapSeqDisplay = FilterResultDisplaySeqWindow(currentSnap?.seq);
-            var snapDisplay = FilterResultDisplaySeq(_boardSeqDisplay);
-            if (tableChanged || shoeChanged)
-                snapDisplay = "";
-            var contextResetSeedDisplay = snapRawDisplay;
-            int targetLen = (int)Math.Max(0, packet.GameRound - 1);
-            bool snapNoBoardLike =
-                string.IsNullOrWhiteSpace(currentSnap?.seqEvent) ? false : IsNoBoardSeqEvent(currentSnap?.seqEvent ?? "");
-            bool enteringTableAwaitingAuthority = _tableSwitchRebaseArmed || _initialTableEnterArmed || tableChanged;
-            bool trustedSnapBoardAuthority =
-                !snapNoBoardLike &&
-                !IsChangingShoeStatus(currentSnap?.status ?? "") &&
-                snapRawDisplay.Length > 0 &&
-                string.Equals(snapRawDisplay, snapSeqDisplay, StringComparison.Ordinal) &&
-                (
-                    IsTrustedShortBoardBootstrapSeq(snapSeqDisplay, snapRawDisplay, currentSnap?.status, currentSnap?.seqEvent) ||
-                    IsTrustedBoardRawBootstrapSeq(snapSeqDisplay, snapRawDisplay, currentSnap?.status, currentSnap?.seqEvent)
-                );
-            if (enteringTableAwaitingAuthority && targetLen > 0 && !trustedSnapBoardAuthority)
+            if (string.Equals(_netLastWinnerKey, eventKey, StringComparison.Ordinal))
             {
-                var holdFullDisplay = string.IsNullOrWhiteSpace(currentPrefix)
-                    ? currentDisplay
-                    : currentPrefix + currentDisplay;
-                var holdVersion = Math.Max(_netSeqVersion, Math.Max(_baseSeqVersion, currentSnap?.seqVersion ?? 0));
-                result.Changed = false;
-                result.Appended = false;
-                result.HadGap = true;
-                result.PrevSeq = holdFullDisplay;
-                result.NextSeq = holdFullDisplay;
-                result.PrevVersion = holdVersion;
-                result.NextVersion = holdVersion;
-                result.SeqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? "net-winner-hold" : _netSeqEvent;
-                result.ResultChar = winnerChar.Value;
-                result.ResultText = MapWinnerCharToResultText(winnerChar.Value);
-                result.Action = "hold-table-switch-await-board-authority";
-
-                _netSeqWinnerSeedOnly = false;
-                _netSeqTableId = packet.TableId;
-                _netSeqGameShoe = packet.GameShoe;
-                _netSeqLastRound = packet.GameRound;
-                _netObservedTableId = packet.TableId > 0 ? packet.TableId : _netObservedTableId;
-                _netObservedGameShoe = packet.GameShoe > 0 ? packet.GameShoe : _netObservedGameShoe;
-                _netObservedGameRound = packet.GameRound > 0 ? packet.GameRound : _netObservedGameRound;
-                _suppressJsBootstrapAfterObservedReset = false;
-                _netLastWinnerKey = $"{packet.TableId}|{packet.GameShoe}|{packet.GameRound}|{packet.WinnerCode}";
-                _netLastWinnerAt = DateTime.UtcNow;
-
-                Log($"[NETSEQ][WINNER-HOLD] reason=table-switch-await-board-authority | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={winnerChar.Value} | targetLen={targetLen} | snapLen={snapSeqDisplay.Length} | rawLen={snapRawDisplay.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | tableSwitchArm={(_tableSwitchRebaseArmed ? 1 : 0)} | initialEnter={(_initialTableEnterArmed ? 1 : 0)} | snapEvt={(string.IsNullOrWhiteSpace(currentSnap?.seqEvent) ? "-" : currentSnap?.seqEvent)} | snapSrc={(string.IsNullOrWhiteSpace(currentSnap?.seqSource) ? "-" : currentSnap?.seqSource)}");
+                result.Action = "dup-event";
+                Log($"[NETSEQ][DUP] reason=same-event | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={winnerChar.Value} | seqLen={prevDisplay.Length} | seqVer={prevVersion}");
                 return result;
             }
-            bool canSeedTableChangeFromSnap =
-                tableChanged &&
-                !snapNoBoardLike &&
-                !string.IsNullOrWhiteSpace(contextResetSeedDisplay);
-            if (canSeedTableChangeFromSnap)
+
+            bool tableChanged = _netSeqTableId > 0 && packet.TableId > 0 && packet.TableId != _netSeqTableId;
+            bool shoeChanged = !tableChanged && _netSeqGameShoe > 0 && packet.GameShoe > 0 && packet.GameShoe != _netSeqGameShoe;
+            bool contextReset = tableChanged;
+            if (contextReset)
             {
-                currentDisplay = contextResetSeedDisplay;
-                snapDisplay = contextResetSeedDisplay;
-                Log($"[NETSEQ][WINNER-SEED] reason=table-change-snap | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | snapLen={contextResetSeedDisplay.Length} | rawLen={snapRawDisplay.Length} | seqLen={snapSeqDisplay.Length} | snapEvt={(string.IsNullOrWhiteSpace(currentSnap?.seqEvent) ? "-" : currentSnap?.seqEvent)} | snapSrc={(string.IsNullOrWhiteSpace(currentSnap?.seqSource) ? "-" : currentSnap?.seqSource)}");
+                Log($"[NETSEQ][RESET] reason=table-change | oldTable={_netSeqTableId} | oldShoe={_netSeqGameShoe} | oldRound={_netSeqLastRound} | newTable={packet.TableId} | newShoe={packet.GameShoe} | newRound={packet.GameRound} | oldLen={prevDisplay.Length} | oldVer={prevVersion}");
+                prevDisplay = "";
+                _syncSeqPrefixDisplay = "";
+                _boardSeqDisplay = "";
+                _boardSeqVersion = 0;
+                _boardSeqEvent = "";
+                _baseSeq = "";
+                _baseSeqDisplay = "";
+                _baseSeqVersion = 0;
+                _baseSeqEvent = "";
+                _baseSeqSource = "network";
+                _roundTotalsB = 0;
+                _roundTotalsP = 0;
+                _roundTotalsT = 0;
+                _lockMajorMinorUpdates = false;
+                ResetJsRawBootstrapProbeLocked();
+                ClearTableSwitchRebaseArmLocked();
+                ClearShoeChangeRebaseArmLocked();
             }
-            if (string.IsNullOrWhiteSpace(snapDisplay))
-                snapDisplay = currentDisplay;
-
-            var currentFullDisplay = string.IsNullOrWhiteSpace(currentPrefix)
-                ? currentDisplay
-                : currentPrefix + currentDisplay;
-            var currentVersion = Math.Max(_netSeqVersion, Math.Max(_baseSeqVersion, currentSnap?.seqVersion ?? 0));
-
-            string nextDisplay = currentDisplay;
-            string action = "dup";
-            if (currentDisplay.Length == targetLen)
+            else if (shoeChanged)
             {
-                nextDisplay = currentDisplay + winnerChar.Value;
-                action = "append";
-            }
-            else if (currentDisplay.Length < targetLen)
-            {
-                string baseCandidate = "";
-                if (snapDisplay.Length == targetLen)
-                    baseCandidate = snapDisplay;
-                else if (FilterResultDisplaySeq(_baseSeqDisplay).Length == targetLen)
-                    baseCandidate = FilterResultDisplaySeq(_baseSeqDisplay);
-                else if (FilterResultDisplaySeq(_netSeqDisplay).Length == targetLen)
-                    baseCandidate = FilterResultDisplaySeq(_netSeqDisplay);
-
-                if (!string.IsNullOrWhiteSpace(baseCandidate))
-                {
-                    nextDisplay = baseCandidate + winnerChar.Value;
-                    currentDisplay = baseCandidate;
-                    action = "append-from-base";
-                }
-                else
-                {
-                    bool awaitTrustedBoardBootstrap =
-                        targetLen > 0 &&
-                        string.IsNullOrWhiteSpace(currentFullDisplay) &&
-                        string.IsNullOrWhiteSpace(snapDisplay) &&
-                        string.IsNullOrWhiteSpace(FilterResultDisplaySeq(_baseSeqDisplay)) &&
-                        string.IsNullOrWhiteSpace(FilterResultDisplaySeq(_netSeqDisplay));
-                    if (awaitTrustedBoardBootstrap)
-                    {
-                        result.Changed = false;
-                        result.Appended = false;
-                        result.HadGap = true;
-                        result.PrevSeq = currentFullDisplay;
-                        result.NextSeq = currentFullDisplay;
-                        result.PrevVersion = currentVersion;
-                        result.NextVersion = currentVersion;
-                        result.SeqEvent = string.IsNullOrWhiteSpace(_netSeqEvent) ? "net-winner-hold" : _netSeqEvent;
-                        result.ResultChar = winnerChar.Value;
-                        result.ResultText = MapWinnerCharToResultText(winnerChar.Value);
-                        result.Action = "hold-await-board-bootstrap";
-
-                        _netSeqWinnerSeedOnly = false;
-                        _netSeqTableId = packet.TableId;
-                        _netSeqGameShoe = packet.GameShoe;
-                        _netSeqLastRound = packet.GameRound;
-                        _netObservedTableId = packet.TableId > 0 ? packet.TableId : _netObservedTableId;
-                        _netObservedGameShoe = packet.GameShoe > 0 ? packet.GameShoe : _netObservedGameShoe;
-                        _netObservedGameRound = packet.GameRound > 0 ? packet.GameRound : _netObservedGameRound;
-                        _suppressJsBootstrapAfterObservedReset = false;
-                        _netLastWinnerKey = $"{packet.TableId}|{packet.GameShoe}|{packet.GameRound}|{packet.WinnerCode}";
-                        _netLastWinnerAt = DateTime.UtcNow;
-
-                        Log($"[NETSEQ][WINNER-HOLD] reason=await-trusted-board-bootstrap | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={winnerChar.Value} | targetLen={targetLen} | snapLen={snapDisplay.Length} | rawLen={snapRawDisplay.Length} | netLen={_netSeqDisplay.Length} | netVer={_netSeqVersion} | snapEvt={(string.IsNullOrWhiteSpace(currentSnap?.seqEvent) ? "-" : currentSnap?.seqEvent)} | snapSrc={(string.IsNullOrWhiteSpace(currentSnap?.seqSource) ? "-" : currentSnap?.seqSource)}");
-                        return result;
-                    }
-
-                    nextDisplay = currentDisplay + winnerChar.Value;
-                    action = "append-gap";
-                    result.HadGap = true;
-                }
-            }
-            else
-            {
-                int idx = (int)packet.GameRound - 1;
-                if (idx >= 0 && idx < currentDisplay.Length)
-                {
-                    if (currentDisplay[idx] == winnerChar.Value)
-                    {
-                        nextDisplay = currentDisplay;
-                        action = "dup-round";
-                    }
-                    else
-                    {
-                        var chars = currentDisplay.ToCharArray();
-                        chars[idx] = winnerChar.Value;
-                        nextDisplay = new string(chars);
-                        action = "replace-round";
-                        result.Replaced = true;
-                    }
-                }
-                else
-                {
-                    nextDisplay = currentDisplay + winnerChar.Value;
-                    action = "append-overflow";
-                    result.HadGap = true;
-                }
+                Log($"[NETSEQ][SHOE-KEEP] reason=shoe-change-keep-seq | table={packet.TableId} | oldShoe={_netSeqGameShoe} | newShoe={packet.GameShoe} | oldRound={_netSeqLastRound} | newRound={packet.GameRound} | seqLen={prevDisplay.Length} | seqVer={prevVersion}");
+                _netSeqGameShoe = packet.GameShoe;
+                _netSeqLastRound = 0;
+                _netLastWinnerKey = "";
+                _netSeqWinnerSeedOnly = false;
             }
 
-            long nextVersion = currentVersion;
-            bool changed = !string.Equals(nextDisplay, currentDisplay, StringComparison.Ordinal);
-            var nextFullDisplay = string.IsNullOrWhiteSpace(currentPrefix)
-                ? nextDisplay
-                : currentPrefix + nextDisplay;
-            if (changed || action.StartsWith("replace", StringComparison.Ordinal))
-                nextVersion = ComputeNextSyncSeqVersion(currentVersion, currentFullDisplay, nextFullDisplay, currentVersion + 1);
-            else
-                nextVersion = ComputeNextSyncSeqVersion(currentVersion, currentFullDisplay, nextFullDisplay, currentVersion);
+            bool roundAlreadySeen =
+                !contextReset &&
+                _netSeqLastRound > 0 &&
+                packet.GameRound > 0 &&
+                packet.GameRound <= _netSeqLastRound;
+            if (roundAlreadySeen)
+            {
+                result.Action = "dup-round";
+                _netLastWinnerKey = eventKey;
+                _netLastWinnerAt = DateTime.UtcNow;
+                Log($"[NETSEQ][DUP] reason=round-already-seen | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | lastRound={_netSeqLastRound} | winner={winnerChar.Value} | seqLen={prevDisplay.Length} | seqVer={prevVersion}");
+                return result;
+            }
 
-            result.Changed = changed || action.StartsWith("replace", StringComparison.Ordinal);
-            result.Appended = action.StartsWith("append", StringComparison.Ordinal);
-            result.PrevSeq = currentFullDisplay;
-            result.NextSeq = nextFullDisplay;
-            result.PrevVersion = currentVersion;
+            bool gap =
+                !contextReset &&
+                _netSeqLastRound > 0 &&
+                packet.GameRound > (_netSeqLastRound + 1);
+            bool firstPacketMidShoe =
+                string.IsNullOrWhiteSpace(prevDisplay) &&
+                _netSeqLastRound <= 0 &&
+                packet.GameRound > 1;
+            if (gap || firstPacketMidShoe)
+            {
+                long expectedRound = _netSeqLastRound > 0 ? _netSeqLastRound + 1 : 1;
+                result.HadGap = true;
+                Log($"[NETSEQ][GAP] reason={(gap ? "round-gap" : "first-packet-mid-shoe")} | expectedRound={expectedRound} | gotRound={packet.GameRound} | table={packet.TableId} | shoe={packet.GameShoe} | winner={winnerChar.Value} | currentLen={prevDisplay.Length} | action=append-observed-only");
+            }
+
+            string nextDisplay = prevDisplay + winnerChar.Value;
+            long nextVersion = ComputeNextSyncSeqVersion(prevVersion, prevDisplay, nextDisplay, Math.Max(prevVersion + 1, packet.GameRound));
+            string action = contextReset
+                ? "reset-table-append"
+                : (shoeChanged ? "shoe-keep-append" : (result.HadGap ? "append-gap-network" : "append"));
+
+            result.Changed = true;
+            result.Appended = true;
+            result.PrevSeq = prevDisplay;
+            result.NextSeq = nextDisplay;
+            result.PrevVersion = prevVersion;
             result.NextVersion = nextVersion;
             result.SeqEvent = "net-gp-winner";
-            result.ResultChar = winnerChar.Value;
-            result.ResultText = MapWinnerCharToResultText(winnerChar.Value);
             result.Action = action;
 
-            _netSeqWinnerSeedOnly =
-                string.Equals(action, "append-gap", StringComparison.Ordinal) ||
-                string.Equals(action, "append-overflow", StringComparison.Ordinal);
-            _syncSeqPrefixDisplay = currentPrefix;
+            _netSeqWinnerSeedOnly = result.HadGap;
+            _syncSeqPrefixDisplay = "";
             _boardSeqDisplay = nextDisplay;
-            _boardSeqVersion = Math.Max(_boardSeqVersion, nextDisplay.Length);
+            _boardSeqVersion = nextVersion;
             _boardSeqEvent = result.SeqEvent;
-            _netSeqDisplay = nextFullDisplay;
+            _netSeqDisplay = nextDisplay;
             _netSeqVersion = nextVersion;
             _netSeqEvent = result.SeqEvent;
             _netSeqSource = "network";
@@ -6451,17 +7940,18 @@ try{
             _netObservedGameShoe = packet.GameShoe > 0 ? packet.GameShoe : _netObservedGameShoe;
             _netObservedGameRound = packet.GameRound > 0 ? packet.GameRound : _netObservedGameRound;
             _suppressJsBootstrapAfterObservedReset = false;
-            _netLastWinnerKey = $"{packet.TableId}|{packet.GameShoe}|{packet.GameRound}|{packet.WinnerCode}";
+            _netLastWinnerKey = eventKey;
             _netLastWinnerAt = DateTime.UtcNow;
             _lastJsAppendFingerprint = "";
             _lastJsAppendAppliedUtc = DateTime.MinValue;
 
-            _baseSeqDisplay = nextFullDisplay;
-            _baseSeq = FilterPlayableSeq(nextFullDisplay);
+            _baseSeqDisplay = nextDisplay;
+            _baseSeq = FilterPlayableSeq(nextDisplay);
             _baseSeqVersion = nextVersion;
             _baseSeqEvent = result.SeqEvent;
             _baseSeqSource = "network";
 
+            Log($"[NETSEQ][APPEND] src={packet.OwnerTag} | action={action} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={winnerChar.Value} | prevLen={prevDisplay.Length} | nextLen={nextDisplay.Length} | prevVer={prevVersion} | nextVer={nextVersion} | banker={packet.BankerValue} | player={packet.PlayerValue}");
             return result;
         }
 
@@ -6488,10 +7978,11 @@ try{
                         applied = ApplyNetworkWinnerLocked(packet, currentSnap);
                         if (string.IsNullOrWhiteSpace(applied.ResultText))
                             return;
+                        if (!applied.Appended && !applied.Replaced)
+                            return;
 
-                        var jsSeqForCompare = FilterResultDisplaySeq(currentSnap?.seq);
-                        char jsTail = jsSeqForCompare.Length > 0 ? jsSeqForCompare[^1] : '-';
-                        Log($"[NETSEQ][WINNER] src={packet.OwnerTag} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={applied.ResultChar} | action={applied.Action} | prevLen={applied.PrevSeq.Length} | nextLen={applied.NextSeq.Length} | prevVer={applied.PrevVersion} | nextVer={applied.NextVersion} | seedFromWinnerOnly={(_netSeqWinnerSeedOnly ? 1 : 0)} | jsTail={jsTail} | banker={packet.BankerValue} | player={packet.PlayerValue}");
+                        char prevTail = applied.PrevSeq.Length > 0 ? applied.PrevSeq[^1] : '-';
+                        Log($"[NETSEQ][WINNER] src={packet.OwnerTag} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={applied.ResultChar} | action={applied.Action} | prevLen={applied.PrevSeq.Length} | nextLen={applied.NextSeq.Length} | prevVer={applied.PrevVersion} | nextVer={applied.NextVersion} | seedFromWinnerOnly={(_netSeqWinnerSeedOnly ? 1 : 0)} | prevTail={prevTail} | banker={packet.BankerValue} | player={packet.PlayerValue}");
 
                         double balanceAfter = ResolveHistoryBalance(currentSnap?.totals?.A);
                         if (applied.ResultChar == 'T')
@@ -6547,6 +8038,7 @@ try{
                     {
                         var updated = currentSnap ?? new CwSnapshot();
                         updated.seq = applied.NextSeq;
+                        updated.rawSeq = applied.NextSeq;
                         updated.seqVersion = applied.NextVersion;
                         updated.seqEvent = applied.SeqEvent;
                         updated.seqSource = "network";
@@ -6561,6 +8053,9 @@ try{
                         SetLastResultUI(applied.ResultChar.ToString());
                     }
                     catch { }
+
+                    if (applied.HadGap || applied.PrevSeq.Length <= 2)
+                        TryApplyPendingNetworkHistoryForContext("winner");
                 }
                 catch (Exception ex)
                 {
@@ -6764,6 +8259,149 @@ try{
             _tableSwitchToHref = "";
             _initialTableEnterArmed = false;
             _initialTableEnterArmedAtUtc = DateTime.MinValue;
+        }
+
+        private void ResetJsRawBootstrapProbeLocked()
+        {
+            _jsRawBootstrapStableKey = "";
+            _jsRawBootstrapStableCount = 0;
+        }
+
+        private bool IsTrustedInitialJsRawBootstrap(CwSnapshot snap, string rawDisplay, string statusRaw, string boardSeqEvent, out string reason)
+        {
+            reason = "";
+            if (snap == null)
+            {
+                reason = "null-snap";
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(rawDisplay))
+            {
+                reason = "empty-raw";
+                return false;
+            }
+            if (IsChangingShoeStatus(statusRaw))
+            {
+                reason = "changing-shoe-status";
+                return false;
+            }
+            if (IsNoBoardSeqEvent(boardSeqEvent))
+            {
+                reason = "no-board-event";
+                return false;
+            }
+            if (IsParserUnstableHoldSeqEvent(boardSeqEvent))
+            {
+                reason = "parser-unstable";
+                return false;
+            }
+
+            var which = (snap.seqWhich ?? "").Trim();
+            if (which.IndexOf("hold-managed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                which.IndexOf("managed-hold", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                which.IndexOf("fallback", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                reason = "untrusted-seq-which";
+                return false;
+            }
+
+            if (_netObservedGameRound > 0 && rawDisplay.Length > (_netObservedGameRound + 1))
+            {
+                reason = "raw-ahead-of-observed-round";
+                return false;
+            }
+            if (_netObservedGameRound > 0 && rawDisplay.Length <= 3 && _netObservedGameRound > (rawDisplay.Length + 5))
+            {
+                reason = "tiny-raw-round-mismatch";
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool TryApplyInitialJsRawBootstrapLocked(
+            CwSnapshot snap,
+            string source,
+            string statusRaw,
+            long jsSeqVersion,
+            string boardSeqEvent)
+        {
+            if (!UseNetworkSeqOnly || snap == null)
+                return false;
+
+            var current = FilterResultDisplaySeqWindow(_netSeqDisplay);
+            if (!string.IsNullOrWhiteSpace(current))
+            {
+                ResetJsRawBootstrapProbeLocked();
+                return false;
+            }
+
+            var tableId = _netSeqTableId > 0 ? _netSeqTableId : _netObservedTableId;
+            if (tableId <= 0)
+                return false;
+
+            var rawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
+            if (!IsTrustedInitialJsRawBootstrap(snap, rawDisplay, statusRaw, boardSeqEvent, out var rejectReason))
+            {
+                if ((DateTime.UtcNow - _lastJsRawBootstrapLogUtc) > TimeSpan.FromSeconds(2))
+                {
+                    _lastJsRawBootstrapLogUtc = DateTime.UtcNow;
+                    Log($"[NETSEQ][JS-RAW-BOOTSTRAP-BLOCK] reason={rejectReason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={tableId} | obsShoe={_netObservedGameShoe} | obsRound={_netObservedGameRound} | rawLen={rawDisplay.Length} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | which={(string.IsNullOrWhiteSpace(snap.seqWhich) ? "-" : snap.seqWhich)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+                }
+                ResetJsRawBootstrapProbeLocked();
+                return false;
+            }
+
+            var key = tableId.ToString(CultureInfo.InvariantCulture) + "|" + rawDisplay;
+            if (string.Equals(_jsRawBootstrapStableKey, key, StringComparison.Ordinal))
+                _jsRawBootstrapStableCount++;
+            else
+            {
+                _jsRawBootstrapStableKey = key;
+                _jsRawBootstrapStableCount = 1;
+            }
+
+            if (_jsRawBootstrapStableCount < 2)
+            {
+                if ((DateTime.UtcNow - _lastJsRawBootstrapLogUtc) > TimeSpan.FromSeconds(2))
+                {
+                    _lastJsRawBootstrapLogUtc = DateTime.UtcNow;
+                    Log($"[NETSEQ][JS-RAW-BOOTSTRAP-WAIT] reason=need-stable-2-ticks | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={tableId} | obsShoe={_netObservedGameShoe} | obsRound={_netObservedGameRound} | rawLen={rawDisplay.Length} | stable={_jsRawBootstrapStableCount} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | which={(string.IsNullOrWhiteSpace(snap.seqWhich) ? "-" : snap.seqWhich)}");
+                }
+                return false;
+            }
+
+            var prevVer = _netSeqVersion;
+            _syncSeqPrefixDisplay = "";
+            _boardSeqDisplay = rawDisplay;
+            _boardSeqVersion = Math.Max(jsSeqVersion, rawDisplay.Length);
+            _boardSeqEvent = "js-raw-bootstrap";
+            _netSeqDisplay = rawDisplay;
+            _netSeqVersion = ComputeNextSyncSeqVersion(prevVer, "", rawDisplay, Math.Max(jsSeqVersion, rawDisplay.Length));
+            _netSeqEvent = "js-raw-bootstrap";
+            _netSeqSource = "js-raw-bootstrap";
+            _netSeqTableId = tableId;
+            if (_netObservedGameShoe > 0)
+                _netSeqGameShoe = _netObservedGameShoe;
+            _netSeqLastRound = rawDisplay.Length;
+            _netSeqWinnerSeedOnly = false;
+            _netLastWinnerKey = "";
+            _netLastWinnerAt = DateTime.MinValue;
+            _baseSeqDisplay = rawDisplay;
+            _baseSeq = FilterPlayableSeq(rawDisplay);
+            _baseSeqVersion = _netSeqVersion;
+            _baseSeqEvent = _netSeqEvent;
+            _baseSeqSource = _netSeqSource;
+            _roundTotalsB = 0;
+            _roundTotalsP = 0;
+            _roundTotalsT = 0;
+            _lockMajorMinorUpdates = false;
+            _suppressJsBootstrapAfterObservedReset = false;
+            ClearTableSwitchRebaseArmLocked();
+            ResetJsRawBootstrapProbeLocked();
+
+            Log($"[NETSEQ][JS-RAW-BOOTSTRAP] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={tableId} | shoe={_netSeqGameShoe} | obsRound={_netObservedGameRound} | seqLen={rawDisplay.Length} | seqVer={_netSeqVersion} | lastRound={_netSeqLastRound} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | which={(string.IsNullOrWhiteSpace(snap.seqWhich) ? "-" : snap.seqWhich)} | rawCount={BuildSeqCountText(rawDisplay, includeH: true)}");
+            return true;
         }
 
         private bool TryApplyTableSwitchRebaseLocked(
@@ -7312,6 +8950,13 @@ try{
         private void SyncNetworkSeqFromSnapshot(CwSnapshot snap, string source, string boardDisplay, long boardSeqVersion, string boardSeqEvent, string statusRaw)
         {
             if (snap == null) return;
+            if (UseNetworkSeqOnly)
+            {
+                LogJsSeqIgnoredIfNeeded(source, boardDisplay, snap.rawSeq, boardSeqVersion, boardSeqEvent);
+                ApplyNetworkSeqAuthorityLocked(snap);
+                return;
+            }
+
             var jsDisplay = FilterResultDisplaySeqWindow(boardDisplay);
             var jsSeqVersion = Math.Max(boardSeqVersion, jsDisplay.Length);
             var prevBoardDisplay = _boardSeqDisplay;
@@ -7880,6 +9525,20 @@ try{
         {
             if (snap == null) return;
 
+            if (UseNetworkSeqOnly)
+            {
+                var netDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.seq = netDisplay;
+                snap.rawSeq = netDisplay;
+                snap.seqVersion = _netSeqVersion;
+                snap.seqEvent = string.IsNullOrWhiteSpace(_netSeqEvent)
+                    ? (string.IsNullOrWhiteSpace(netDisplay) ? "network-empty" : "network")
+                    : _netSeqEvent;
+                snap.seqSource = string.IsNullOrWhiteSpace(_netSeqSource) ? "network" : _netSeqSource;
+                snap.niSeq = _niSeq.ToString();
+                return;
+            }
+
             if ((_tableSwitchRebaseArmed || _initialTableEnterArmed) &&
                 (string.Equals(snap.seqSource, "table-switch-wait-bead", StringComparison.OrdinalIgnoreCase) ||
                  (snap.seqEvent ?? "").IndexOf("table-switch-wait-bead", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -8056,6 +9715,7 @@ try{
 
                 if (ShouldLogHttpResponse(url, body, out var preview, out var reason))
                     LogPacket("HTTP.resp/" + reason, url, preview, false);
+                TryProcessNetworkHistoryPayload(body, false, "webresource", url, "http");
             }
             catch (Exception ex)
             {
@@ -10255,7 +11915,7 @@ try{
                 _baseSeqDisplay = "";
                 _baseSeqVersion = 0;
                 _baseSeqEvent = "";
-                _baseSeqSource = "js";
+                _baseSeqSource = UseNetworkSeqOnly ? "network" : "js";
                 _boardSeqDisplay = "";
                 _boardSeqVersion = 0;
                 _boardSeqEvent = "";
@@ -14127,6 +15787,7 @@ try{
                 seqVersion = snap.seqVersion,
                 seqEvent = snap.seqEvent,
                 seqSource = snap.seqSource,
+                seqWhich = snap.seqWhich,
                 niSeq = snap.niSeq,
                 ts = snap.ts,
                 side = snap.side,
@@ -14162,6 +15823,7 @@ try{
                 seqSource = snap.seqSource,
                 seqAppend = snap.seqAppend,
                 seqMode = snap.seqMode,
+                seqWhich = snap.seqWhich,
                 niSeq = snap.niSeq,
                 ts = snap.ts,
                 side = snap.side,
