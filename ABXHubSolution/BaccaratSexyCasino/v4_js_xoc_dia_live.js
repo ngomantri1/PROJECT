@@ -1934,17 +1934,27 @@
         var rect = cardRoot.getBoundingClientRect();
         var texts = domExtractTexts(cardRoot);
         var road = domBuildRoad(cardRoot, rect);
+        var countB = domFindTaggedNumber(texts, 'B');
+        var countP = domFindTaggedNumber(texts, 'P');
+        var countT = domFindTaggedNumber(texts, 'T');
+        var roadSeq = road.seq;
+        var countGuard = brBuildSeqCountGuardFromValues(countB, countP, countT, domCollapse(titleText || ''));
+        if (countGuard) {
+            var guardedRoad = brApplySeqCountGuard(roadSeq, countGuard, 'card-road');
+            if (guardedRoad.changed)
+                roadSeq = guardedRoad.seq;
+        }
         return {
             root: cardRoot,
             title: domCollapse(titleText || ''),
             rect: rect,
             texts: texts,
-            B: domFindTaggedNumber(texts, 'B'),
-            P: domFindTaggedNumber(texts, 'P'),
-            T: domFindTaggedNumber(texts, 'T'),
+            B: countB,
+            P: countP,
+            T: countT,
             amount: domFindMoney(texts),
             countdown: domFindCountdown(texts, rect),
-            seq: road.seq,
+            seq: roadSeq,
             cols: road.cols,
             cells: road.cells
         };
@@ -4268,6 +4278,149 @@
         }
         return { b: b, p: p, t: t, h: h, other: other, bp: b + p };
     }
+    function brBuildSeqCountGuardFromValues(countB, countP, countT, title) {
+        function asCount(v) {
+            if (v == null || v === '')
+                return null;
+            var n = Number(v);
+            if (!isFinite(n) || n < 0 || Math.floor(n) !== n || n > 120)
+                return null;
+            return n;
+        }
+        var b = asCount(countB);
+        var p = asCount(countP);
+        var t = asCount(countT);
+        if (b == null || p == null || t == null)
+            return null;
+        return {
+            b: b,
+            p: p,
+            t: t,
+            total: b + p + t,
+            title: String(title || '')
+        };
+    }
+    function brBuildSeqCountGuardFromCard(card) {
+        if (!card)
+            return null;
+        return brBuildSeqCountGuardFromValues(card.B, card.P, card.T, card.title);
+    }
+    function brSeqMatchesCountsExactly(raw, guard) {
+        if (!guard)
+            return false;
+        var clean = brSanitizeSeq(raw);
+        var st = brSeqStats(clean);
+        return clean.length === Number(guard.total || 0) &&
+            st.b === Number(guard.b || 0) &&
+            st.p === Number(guard.p || 0) &&
+            st.t === Number(guard.t || 0) &&
+            st.h === 0 &&
+            st.other === 0;
+    }
+    function brClampSeqToCounts(raw, guard) {
+        var clean = brSanitizeSeq(raw);
+        if (!guard)
+            return clean;
+        var quota = {
+            B: Number(guard.b || 0),
+            P: Number(guard.p || 0),
+            T: Number(guard.t || 0)
+        };
+        var total = Number(guard.total || 0);
+        if (total <= 0)
+            return '';
+        var out = '';
+        for (var i = 0; i < clean.length; i++) {
+            var ch = clean.charAt(i);
+            if (quota[ch] > 0) {
+                out += ch;
+                quota[ch]--;
+                if (out.length >= total)
+                    break;
+            }
+        }
+        return out;
+    }
+    function brApplySeqCountGuard(raw, guard, sourceTag) {
+        var clean = brSanitizeSeq(raw);
+        if (!guard)
+            return { seq: clean, changed: false, reason: 'no-count-guard' };
+        var total = Number(guard.total || 0);
+        if (!clean)
+            return { seq: '', changed: false, reason: total <= 0 ? 'empty-count-zero' : 'empty' };
+        var st = brSeqStats(clean);
+        var exceeds = clean.length > total ||
+            st.b > Number(guard.b || 0) ||
+            st.p > Number(guard.p || 0) ||
+            st.t > Number(guard.t || 0) ||
+            st.h > 0 ||
+            st.other > 0;
+        if (!exceeds)
+            return { seq: clean, changed: false, reason: 'within-count' };
+        var clamped = brClampSeqToCounts(clean, guard);
+        try {
+            brSeqDiagPost('count-guard-clamp', {
+                source: String(sourceTag || ''),
+                title: String(guard.title || ''),
+                raw: clean,
+                rawLen: clean.length,
+                clamped: clamped,
+                clampedLen: clamped.length,
+                countB: Number(guard.b || 0),
+                countP: Number(guard.p || 0),
+                countT: Number(guard.t || 0),
+                total: total,
+                seqVersion: Number(_domSeqVersion || 0),
+                seqEvent: String(_domSeqEvent || ''),
+                buildId: Number(_cwSnapshotBuildId || 0),
+                buildSource: String(_cwSnapshotBuildSource || '')
+            }, 400, 'count-guard-clamp|' + String(sourceTag || '') + '|' + clean + '|' + clamped + '|' + total);
+        } catch (_) {}
+        return {
+            seq: clamped,
+            changed: clamped !== clean,
+            reason: total <= 0 ? 'count-zero' : 'count-exceeded'
+        };
+    }
+    function brRebaseManagedByCountGuard(seq, guard, sourceTag, beforeSeq) {
+        var clean = brSanitizeSeq(seq);
+        var before = String(beforeSeq != null ? beforeSeq : (_domBeadSeqManaged || ''));
+        if (before === clean)
+            return false;
+        _domBeadSeqManaged = clean;
+        _domBeadSeqPrevRaw = clean;
+        _domTableSwitchWaitBeadPending = false;
+        _domTableSwitchWaitPrevRaw = '';
+        _domSeqAppend = '';
+        _domSeqVersion = Math.max(Number(_domSeqVersion || 0) + 1, clean.length);
+        _domSeqEvent = 'count-guard-rebase';
+        _domShoeResetPending = clean ? false : true;
+        _domShoeResetAt = clean ? 0 : Date.now();
+        brResetSeedTracker();
+        brResetActiveSeedTailTracker();
+        brResetBoardDeltaQueue('count-guard-rebase');
+        try {
+            window.__cw_bead_raw_seq = clean;
+            window.__cw_bead_managed_seq = clean;
+        } catch (_) {}
+        brSeqDiagPost('count-guard-rebase', {
+            source: String(sourceTag || ''),
+            title: String(guard && guard.title || ''),
+            before: before,
+            beforeLen: before.length,
+            seq: clean,
+            seqLen: clean.length,
+            countB: Number(guard && guard.b || 0),
+            countP: Number(guard && guard.p || 0),
+            countT: Number(guard && guard.t || 0),
+            total: Number(guard && guard.total || 0),
+            seqVersion: Number(_domSeqVersion || 0),
+            buildId: Number(_cwSnapshotBuildId || 0),
+            buildSource: String(_cwSnapshotBuildSource || '')
+        }, 0, 'count-guard-rebase|' + String(sourceTag || '') + '|' + before + '|' + clean + '|' + Number(_domSeqVersion || 0));
+        brPublishSeqState();
+        return true;
+    }
     function brIsReliableRoadSeq(raw) {
         var clean = brSanitizeSeq(raw);
         if (!clean)
@@ -4618,7 +4771,7 @@
         var mode = 'hold';
         if (/^append|dom-baccarat-extend|append-delta-queue|append-reconcile-bead/i.test(evt)) {
             mode = append ? 'append' : 'hold';
-        } else if (/table-switch-reset|table-switch-bead-authority|table-switch-tiny-board-bootstrap|short-board-bootstrap-authority|hydrate-init/i.test(evt)) {
+        } else if (/table-switch-reset|table-switch-bead-authority|table-switch-tiny-board-bootstrap|short-board-bootstrap-authority|hydrate-init|count-guard-rebase/i.test(evt)) {
             mode = 'full-rebase';
         } else if (/table-switch-wait-bead|shoe-reset-arm|board-empty|no-board|post-reset-hold|reset-seed-wait|no-change|hold/i.test(evt)) {
             mode = 'hold';
@@ -5853,6 +6006,28 @@
             var active = domPickActiveCard(cards);
             var activeSeq = active ? String(active.seq || '').replace(/H/g, 'T') : '';
             var activeTitle = active && active.title ? String(active.title || '') : '';
+            var activeCountGuard = brBuildSeqCountGuardFromCard(active);
+            if (activeCountGuard) {
+                var managedBeforeCountGuard = String(_domBeadSeqManaged || '');
+                var activeGuarded = brApplySeqCountGuard(activeSeq, activeCountGuard, 'active-card');
+                var beadRawGuarded = brApplySeqCountGuard(beadRawSeq, activeCountGuard, 'bead-raw');
+                var beadSeqGuarded = brApplySeqCountGuard(beadSeq, activeCountGuard, 'bead-managed');
+                if (activeGuarded.changed)
+                    activeSeq = activeGuarded.seq;
+                if (beadRawGuarded.changed)
+                    beadRawSeq = beadRawGuarded.seq;
+                if (beadSeqGuarded.changed)
+                    beadSeq = beadSeqGuarded.seq;
+                var countGuardRebaseSource = '';
+                if (beadSeqGuarded.changed) {
+                    countGuardRebaseSource = 'bead-managed';
+                } else if (!beadSeq && beadRawSeq && brSeqMatchesCountsExactly(beadRawSeq, activeCountGuard)) {
+                    beadSeq = beadRawSeq;
+                    countGuardRebaseSource = 'bead-raw-exact';
+                }
+                if (countGuardRebaseSource)
+                    brRebaseManagedByCountGuard(beadSeq, activeCountGuard, countGuardRebaseSource, managedBeforeCountGuard);
+            }
             _domLastActiveSeq = activeSeq;
             _domLastActiveSeqTitle = activeTitle;
             if (activeTitle && !_domManagedTableTitle)
