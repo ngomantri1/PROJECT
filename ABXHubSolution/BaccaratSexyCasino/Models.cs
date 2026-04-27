@@ -43,11 +43,45 @@ namespace BaccaratSexyCasino
         public string status { get; set; }
         public string? statusSource { get; set; }
         public string? statusTail { get; set; }
+        public string? contextId { get; set; }
+        public string? framePath { get; set; }
+        public string? href { get; set; }
+        public string? topHref { get; set; }
+        public bool? isTop { get; set; }
+        public string? authorityToken { get; set; }
+        public int? contextScore { get; set; }
+        public string? contextConfidence { get; set; }
+        public string? signals { get; set; }
         public long? jsBuildMs { get; set; }
         public long? jsProgMs { get; set; }
         public long? jsTotalsMs { get; set; }
         public long? jsSeqMs { get; set; }
         public int? jsPerfMode { get; set; }
+    }
+
+    public sealed class FrameScoutSnapshot
+    {
+        public string abx { get; set; } = "";
+        public string contextId { get; set; } = "";
+        public string framePath { get; set; } = "";
+        public string href { get; set; } = "";
+        public string topHref { get; set; } = "";
+        public bool isTop { get; set; }
+        public string docKey { get; set; } = "";
+        public int score { get; set; }
+        public string confidence { get; set; } = "";
+        public string signals { get; set; } = "";
+        public bool hasThemeZone { get; set; }
+        public bool hasProcessStatus { get; set; }
+        public bool hasProcessBar { get; set; }
+        public bool hasBeadRoad { get; set; }
+        public bool hasBetBox { get; set; }
+        public bool hasGameMain { get; set; }
+        public bool hasZoneBet { get; set; }
+        public bool hasCocos { get; set; }
+        public int canvasCount { get; set; }
+        public string visibleRect { get; set; } = "";
+        public long ts { get; set; }
     }
 
     public sealed class DecisionState

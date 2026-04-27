@@ -135,12 +135,16 @@ namespace BaccaratSexyCasino
         var s = 0;
         var isSingleTable = /singleBacTable\.jsp/i.test(h);
         var isGameHall = /gamehall\.jsp/i.test(h);
+        var root = item && item.root;
+        var authAttr = root && root.getAttribute && root.getAttribute('data-abx-authority-context');
         var hasDetail = /Trạng thái|Trang thai|CTX\s*:|HUD\s*:|Baccarat DOM cards|Chuỗi kết quả|Chuoi ket qua|SEQ\s*:/i.test(t);
         var hasDomCards = /Baccarat DOM cards/i.test(t);
         var hasRealSeq = /SEQ\s*:\s*[BPT]{2,}|Chuỗi kết quả\s*:\s*[BPT]{2,}|Chuoi ket qua\s*:\s*[BPT]{2,}/i.test(t);
         var hasRealTotals = /B\s*[:=]\s*\d|P\s*[:=]\s*\d|T\s*[:=]\s*\d|BANKER\s*:\s*(?!\s*--)[\d.]/i.test(t);
         var hasUsefulDetail = hasDomCards || hasRealSeq || hasRealTotals;
         s += __abxCwVisibleScore(item);
+        if (authAttr === '1') s += 200000;
+        if (authAttr === '0') s -= 200000;
         if (hasDetail) s += 500;
         if (hasDomCards) s += 100000;
         if (hasRealSeq) s += 70000;

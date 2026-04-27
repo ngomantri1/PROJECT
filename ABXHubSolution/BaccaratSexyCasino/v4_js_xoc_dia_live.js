@@ -230,6 +230,283 @@
         }
     }
 
+    function __abxTrimUrlForContext(url) {
+        try {
+            return String(url || '').replace(/#.*$/, '').slice(0, 260);
+        } catch (_) {
+            return '';
+        }
+    }
+    function __abxTryTopHref() {
+        try {
+            return String(window.top && window.top.location && window.top.location.href || '');
+        } catch (_) {
+            return '';
+        }
+    }
+    function __abxTryFramePath() {
+        try {
+            if (window.top === window)
+                return 'top';
+        } catch (_) {}
+        try {
+            var topWin = window.top;
+            function scan(w, path, depth) {
+                if (!w || depth > 8)
+                    return '';
+                if (w === window)
+                    return path;
+                var frames = w.frames || [];
+                for (var i = 0; i < frames.length; i++) {
+                    var r = scan(frames[i], path + '/frame[' + i + ']', depth + 1);
+                    if (r)
+                        return r;
+                }
+                return '';
+            }
+            var p = scan(topWin, 'top', 0);
+            if (p)
+                return p;
+        } catch (_) {}
+        return 'frame';
+    }
+    function __abxBuildContext() {
+        var href = '';
+        var topHref = '';
+        var isTop = false;
+        var docKey = '';
+        var framePath = '';
+        try { href = String(location.href || ''); } catch (_) {}
+        try { isTop = window.top === window; } catch (_) { isTop = false; }
+        topHref = __abxTryTopHref();
+        framePath = __abxTryFramePath();
+        try { docKey = String((performance && performance.timeOrigin) || ''); } catch (_) { docKey = ''; }
+        var cleanHref = __abxTrimUrlForContext(href);
+        var id = (isTop ? 'top' : 'frame') + '|' + cleanHref + '|' + String(docKey || '');
+        return {
+            contextId: id,
+            framePath: framePath,
+            href: href,
+            topHref: topHref,
+            isTop: isTop ? 1 : 0,
+            docKey: docKey
+        };
+    }
+    function __abxGetGameSignals() {
+        var out = {
+            hasThemeZone: 0,
+            hasProcessStatus: 0,
+            hasProcessBar: 0,
+            hasBeadRoad: 0,
+            hasBetBox: 0,
+            hasGameMain: 0,
+            hasZoneBet: 0,
+            hasCocos: 0,
+            canvasCount: 0,
+            visibleRect: '',
+            score: 0,
+            confidence: 'none',
+            signals: ''
+        };
+        try { out.hasThemeZone = document.querySelector('#themeZone.game, #themeZone.game\\.baccarat_normal, #themeZone') ? 1 : 0; } catch (_) {}
+        try { out.hasProcessStatus = document.querySelector('#processStatus, #processBar.info_status p#processStatus') ? 1 : 0; } catch (_) {}
+        try { out.hasProcessBar = document.querySelector('#processBar, .info_status') ? 1 : 0; } catch (_) {}
+        try { out.hasBeadRoad = document.querySelector('#beadBPRoad, .road_bead, .road_grid') ? 1 : 0; } catch (_) {}
+        try { out.hasBetBox = document.querySelector('#betBoxPlayer, #betBoxBanker, #betBoxTie, [id*=betBox], .zone_bet_bottom') ? 1 : 0; } catch (_) {}
+        try { out.hasGameMain = document.querySelector('.game_main, #themeZone .game_main') ? 1 : 0; } catch (_) {}
+        try { out.hasZoneBet = document.querySelector('.zone_bet, .zone_bet_bottom, .zone_bet_top') ? 1 : 0; } catch (_) {}
+        try { out.hasCocos = __cw_hasCocos() ? 1 : 0; } catch (_) {}
+        try { out.canvasCount = document.querySelectorAll('canvas').length || 0; } catch (_) {}
+        try {
+            var main = document.querySelector('#themeZone, .game_main, body');
+            var r = main && main.getBoundingClientRect ? main.getBoundingClientRect() : null;
+            if (r)
+                out.visibleRect = Math.round(r.width || 0) + 'x' + Math.round(r.height || 0) + '@' + Math.round(r.left || 0) + ',' + Math.round(r.top || 0);
+        } catch (_) {}
+        var score = 0;
+        var sig = [];
+        function add(flag, name, pts) {
+            if (flag) {
+                score += pts;
+                sig.push(name);
+            }
+        }
+        add(out.hasBeadRoad, 'road', 1000);
+        add(out.hasBetBox, 'bet', 1000);
+        add(out.hasProcessStatus, 'status', 700);
+        add(out.hasProcessBar, 'bar', 700);
+        add(out.hasGameMain, 'gameMain', 500);
+        add(out.hasZoneBet, 'zoneBet', 500);
+        add(out.hasThemeZone, 'theme', 350);
+        add(out.hasCocos, 'cocos', 300);
+        if (out.canvasCount > 0) {
+            score += Math.min(500, out.canvasCount * 120);
+            sig.push('canvas' + out.canvasCount);
+        }
+        try {
+            var h = String(location.href || '');
+            if (/about:blank/i.test(h))
+                score -= 2000;
+            if (/singleBacTable\.jsp/i.test(h))
+                score += 300;
+            if (/gamehall\.jsp/i.test(h))
+                score += 80;
+        } catch (_) {}
+        out.score = score;
+        out.signals = sig.join(',');
+        out.confidence = score >= 2500 ? 'strong' : (score >= 1200 ? 'probable' : (score >= 400 ? 'weak' : 'none'));
+        return out;
+    }
+    function __abxPost(obj) {
+        try {
+            if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
+                window.chrome.webview.postMessage(JSON.stringify(obj));
+                return true;
+            }
+        } catch (_) {}
+        try {
+            if (window.parent && window.parent !== window && typeof window.parent.postMessage === 'function') {
+                window.parent.postMessage(obj, '*');
+                return true;
+            }
+        } catch (_) {}
+        return false;
+    }
+    function __abxBuildFrameScout() {
+        var ctx = __abxBuildContext();
+        var sig = __abxGetGameSignals();
+        return {
+            abx: 'frame_scout',
+            contextId: ctx.contextId,
+            framePath: ctx.framePath,
+            href: ctx.href,
+            topHref: ctx.topHref,
+            isTop: ctx.isTop ? 1 : 0,
+            docKey: ctx.docKey,
+            score: sig.score,
+            confidence: sig.confidence,
+            signals: sig.signals,
+            hasThemeZone: sig.hasThemeZone,
+            hasProcessStatus: sig.hasProcessStatus,
+            hasProcessBar: sig.hasProcessBar,
+            hasBeadRoad: sig.hasBeadRoad,
+            hasBetBox: sig.hasBetBox,
+            hasGameMain: sig.hasGameMain,
+            hasZoneBet: sig.hasZoneBet,
+            hasCocos: sig.hasCocos,
+            canvasCount: sig.canvasCount,
+            visibleRect: sig.visibleRect,
+            ts: Date.now()
+        };
+    }
+    function __abxPostFrameScout(reason) {
+        try {
+            var s = __abxBuildFrameScout();
+            s.reason = String(reason || '');
+            __abxPost(s);
+            return s;
+        } catch (_) {
+            return null;
+        }
+    }
+    function __abxStartScoutLoop() {
+        try {
+            if (window.__abx_scout_started)
+                return;
+            window.__abx_scout_started = 1;
+            var n = 0;
+            var lastKey = '';
+            function once(reason) {
+                var s = __abxPostFrameScout(reason);
+                if (!s)
+                    return;
+                lastKey = String(s.contextId || '') + '|' + String(s.score || 0) + '|' + String(s.signals || '');
+            }
+            once('load');
+            var tid = setInterval(function () {
+                try {
+                    n++;
+                    var s = __abxBuildFrameScout();
+                    var key = String(s.contextId || '') + '|' + String(s.score || 0) + '|' + String(s.signals || '');
+                    if (key !== lastKey || n <= 8 || n % 10 === 0) {
+                        s.reason = 'loop';
+                        __abxPost(s);
+                        lastKey = key;
+                    }
+                    if (n >= 40)
+                        clearInterval(tid);
+                } catch (_) {}
+            }, 500);
+        } catch (_) {}
+    }
+    function __abxIsAuthorityContext() {
+        try {
+            if (window.__abx_authority_required !== 1 && window.__abx_authority_required !== true)
+                return true;
+            var ctx = __abxBuildContext();
+            return !!window.__abx_authority_token &&
+                String(window.__abx_authority_context_id || '') === String(ctx.contextId || '');
+        } catch (_) {
+            return false;
+        }
+    }
+    window.__abxStartAuthority = function (token, contextId, tickMs) {
+        try {
+            var ctx = __abxBuildContext();
+            window.__abx_authority_required = 1;
+            if (String(contextId || '') !== String(ctx.contextId || '')) {
+                try {
+                    var wrongRoot = document.getElementById(CW_ROOT_ID);
+                    if (wrongRoot) {
+                        wrongRoot.setAttribute('data-abx-authority-context', '0');
+                        wrongRoot.style.setProperty('display', 'none', 'important');
+                        wrongRoot.style.setProperty('visibility', 'hidden', 'important');
+                    }
+                } catch (_) {}
+                try { if (window.__cw_stopPush) window.__cw_stopPush(); } catch (_) {}
+                return 'skip:not-authority';
+            }
+            window.__abx_authority_token = String(token || '');
+            window.__abx_authority_context_id = String(contextId || '');
+            window.__abx_force_push_start = 1;
+            try {
+                var okRoot = document.getElementById(CW_ROOT_ID);
+                if (okRoot) {
+                    okRoot.setAttribute('data-abx-authority-context', '1');
+                    okRoot.removeAttribute('data-abx-hidden-by-authority');
+                    okRoot.style.setProperty('display', 'block', 'important');
+                    okRoot.style.setProperty('visibility', 'visible', 'important');
+                }
+            } catch (_) {}
+            __abxPost({
+                abx: 'authority_started',
+                contextId: ctx.contextId,
+                framePath: ctx.framePath,
+                href: ctx.href,
+                token: String(token || ''),
+                ts: Date.now()
+            });
+            if (window.__cw_startPush)
+                return window.__cw_startPush(tickMs || window.__abx_push_ms || 360);
+            return 'pending:no-startPush';
+        } catch (e) {
+            return 'fail:' + String(e && e.message || e);
+        }
+    };
+    window.__abxStopAuthority = function (reason) {
+        try {
+            window.__abx_authority_required = 1;
+            window.__abx_authority_token = '';
+            window.__abx_authority_context_id = '';
+            if (window.__cw_stopPush)
+                window.__cw_stopPush();
+            __abxPostFrameScout('authority-stop:' + String(reason || ''));
+            return 'stopped';
+        } catch (_) {
+            return 'fail';
+        }
+    };
+
     function __cw_boot() {
     try {
         cwDbg('BOOT', 'cw boot start', {
@@ -11612,6 +11889,10 @@
                 } catch (_) {
                     statusNow = '';
                 }
+                var ctx = {};
+                var sig = {};
+                try { ctx = __abxBuildContext(); } catch (_) { ctx = {}; }
+                try { sig = __abxGetGameSignals(); } catch (_) { sig = {}; }
                 var snap = {
                     abx: 'tick',
                     prog: cached.prog,
@@ -11626,6 +11907,15 @@
                     status: statusNow,
                     statusSource: String(window.__cw_status_source || ''),
                     statusTail: String(window.__cw_status_tail || ''),
+                    contextId: String(ctx.contextId || ''),
+                    framePath: String(ctx.framePath || ''),
+                    href: String(ctx.href || ''),
+                    topHref: String(ctx.topHref || ''),
+                    isTop: ctx.isTop ? 1 : 0,
+                    authorityToken: String(window.__abx_authority_token || ''),
+                    contextScore: Number(sig.score || 0) || 0,
+                    contextConfidence: String(sig.confidence || ''),
+                    signals: String(sig.signals || ''),
                     ts: Date.now(),
                     origin: 'canvas-panel'
                 };
@@ -12221,6 +12511,10 @@
                 if (t && t.N != null)
                     uname = String(t.N || '');
             } catch (_) {}
+            var ctx = {};
+            var sig = {};
+            try { ctx = __abxBuildContext(); } catch (_) { ctx = {}; }
+            try { sig = __abxGetGameSignals(); } catch (_) { sig = {}; }
 
             return {
                 abx: 'tick',
@@ -12237,6 +12531,15 @@
                 status: String(st || ''),
                 statusSource: String(window.__cw_status_source || ''),
                 statusTail: String(window.__cw_status_tail || ''),
+                contextId: String(ctx.contextId || ''),
+                framePath: String(ctx.framePath || ''),
+                href: String(ctx.href || ''),
+                topHref: String(ctx.topHref || ''),
+                isTop: ctx.isTop ? 1 : 0,
+                authorityToken: String(window.__abx_authority_token || ''),
+                contextScore: Number(sig.score || 0) || 0,
+                contextConfidence: String(sig.confidence || ''),
+                signals: String(sig.signals || ''),
                 ts: Date.now(),
                 jsProgMs: jsProgMs,
                 jsTotalsMs: jsTotalsMs,
@@ -12275,6 +12578,27 @@
                     tickMs = 180;
                 if (tickMs > 1000)
                     tickMs = 1000;
+                if (!__abxIsAuthorityContext()) {
+                    if (_pushTimer) {
+                        clearInterval(_pushTimer);
+                        _pushTimer = null;
+                    }
+                    var denyCtx = {};
+                    try { denyCtx = __abxBuildContext(); } catch (_) { denyCtx = {}; }
+                    cwDbg('PUSH', 'startPush denied (not authority)', {
+                        contextId: String(denyCtx.contextId || ''),
+                        expected: String(window.__abx_authority_context_id || '')
+                    }, 1200, 'startPush-deny-authority|' + String(denyCtx.contextId || ''));
+                    __abxPost({
+                        abx: 'authority_denied',
+                        reason: 'not-authority',
+                        contextId: String(denyCtx.contextId || ''),
+                        expectedContextId: String(window.__abx_authority_context_id || ''),
+                        href: String(denyCtx.href || ''),
+                        ts: Date.now()
+                    });
+                    return 'skip-not-authority';
+                }
                 if (!isLikelyGameContext()) {
                     if (_pushTimer) {
                         clearInterval(_pushTimer);
@@ -12629,6 +12953,8 @@
     })();
 
     }
+
+    __abxStartScoutLoop();
 
     if (__cw_isGamePopupPage()) {
         if (document.body || document.documentElement) {

@@ -501,6 +501,23 @@ namespace BaccaratSexyCasino
         private readonly ConcurrentDictionary<int, string> _frameInjectedDocKeys = new();
         private DateTime _lastMainFramesRearmUtc = DateTime.MinValue;
         private int _popupInjectBusy = 0;
+        private readonly object _frameAuthorityLock = new();
+        private readonly ConcurrentDictionary<string, FrameAuthorityCandidate> _frameAuthorityCandidates = new();
+        private string _authorityContextId = "";
+        private string _authorityToken = "";
+        private string _authorityHref = "";
+        private string _authorityFramePath = "";
+        private int _authorityScore = 0;
+        private string _authorityConfidence = "";
+        private string _authoritySignals = "";
+        private DateTime _authorityLockedAtUtc = DateTime.MinValue;
+        private DateTime _authorityLastSeenUtc = DateTime.MinValue;
+        private string _lastAuthorityBestKey = "";
+        private int _lastAuthorityBestStable = 0;
+        private DateTime _lastScoutLogUtc = DateTime.MinValue;
+        private DateTime _lastAuthLogUtc = DateTime.MinValue;
+        private DateTime _lastTickRouteLogUtc = DateTime.MinValue;
+        private string _lastTickRejectKey = "";
 
         // === License/Trial run state ===
 
@@ -537,6 +554,22 @@ namespace BaccaratSexyCasino
             public string EventType { get; set; } = "";
             public string OwnerTag { get; set; } = "";
             public string Url { get; set; } = "";
+        }
+
+        private sealed class FrameAuthorityCandidate
+        {
+            public string ContextId { get; set; } = "";
+            public string FramePath { get; set; } = "";
+            public string Href { get; set; } = "";
+            public string TopHref { get; set; } = "";
+            public bool IsTop { get; set; }
+            public int Score { get; set; }
+            public string Confidence { get; set; } = "";
+            public string Signals { get; set; } = "";
+            public int SeenCount { get; set; }
+            public DateTime FirstSeenUtc { get; set; } = DateTime.MinValue;
+            public DateTime LastSeenUtc { get; set; } = DateTime.MinValue;
+            public string LastSource { get; set; } = "";
         }
 
         private sealed class NetworkHistorySeqCandidate
@@ -1139,12 +1172,16 @@ Ví dụ không hợp lệ:
         var s = 0;
         var isSingleTable = /singleBacTable\.jsp/i.test(h);
         var isGameHall = /gamehall\.jsp/i.test(h);
+        var root = item && item.root;
+        var authAttr = root && root.getAttribute && root.getAttribute('data-abx-authority-context');
         var hasDetail = /Trạng thái|Trang thai|CTX\s*:|HUD\s*:|Baccarat DOM cards|Chuỗi kết quả|Chuoi ket qua|SEQ\s*:/i.test(t);
         var hasDomCards = /Baccarat DOM cards/i.test(t);
         var hasRealSeq = /SEQ\s*:\s*[BPT]{2,}|Chuỗi kết quả\s*:\s*[BPT]{2,}|Chuoi ket qua\s*:\s*[BPT]{2,}/i.test(t);
         var hasRealTotals = /B\s*[:=]\s*\d|P\s*[:=]\s*\d|T\s*[:=]\s*\d|BANKER\s*:\s*(?!\s*--)[\d.]/i.test(t);
         var hasUsefulDetail = hasDomCards || hasRealSeq || hasRealTotals;
         s += __abxCwVisibleScore(item);
+        if (authAttr === '1') s += 200000;
+        if (authAttr === '0') s -= 200000;
         if (hasDetail) s += 500;
         if (hasDomCards) s += 100000;
         if (hasRealSeq) s += 70000;
@@ -4185,7 +4222,10 @@ try{
             bool isJsSeqDiagRaw = msg.IndexOf("\"abx\":\"seq_diag\"", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isJsConsoleRaw = msg.IndexOf("\"abx\":\"js_console\"", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isTickRaw = msg.IndexOf("\"abx\":\"tick\"", StringComparison.OrdinalIgnoreCase) >= 0;
-            if (!isJsLogBatchRaw && !isJsSeqDiagRaw && !isJsConsoleRaw && !isTickRaw)
+            bool isScoutRaw = msg.IndexOf("\"abx\":\"frame_scout\"", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                              msg.IndexOf("\"abx\":\"authority_started\"", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                              msg.IndexOf("\"abx\":\"authority_denied\"", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!isJsLogBatchRaw && !isJsSeqDiagRaw && !isJsConsoleRaw && !isTickRaw && !isScoutRaw)
                 EnqueueUi($"[JS] {msg}"); // chỉ hiển thị UI, không ghi ra file
 
             try
@@ -4234,11 +4274,30 @@ try{
                     return;
                 }
 
+                if (abxStr == "frame_scout")
+                {
+                    var scout = ParseFrameScoutSnapshot(root);
+                    if (scout != null)
+                        ObserveFrameScout(scout, source);
+                    return;
+                }
+
+                if (abxStr == "authority_started" || abxStr == "authority_denied")
+                {
+                    var ctx = GetJsonStringLoose(root, "contextId") ?? "";
+                    var href = GetJsonStringLoose(root, "href") ?? "";
+                    var reason = GetJsonStringLoose(root, "reason") ?? "";
+                    Log($"[GAMEBOOT][{abxStr}] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={(string.IsNullOrWhiteSpace(ctx) ? "-" : Shrink(ctx, 96))} | reason={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | href={TrimHrefForLog(href)}");
+                    return;
+                }
+
                 if (abxStr == "tick")
                 {
                     var jrootTick = root;
                     var snap = ParseCwSnapshotLoose(jrootTick);
                     if (snap == null)
+                        return;
+                    if (!ShouldAcceptAuthorityTick(snap, source, out _))
                         return;
 
                     CwSnapshot? prevUiSnap;
@@ -4662,7 +4721,9 @@ try{
                         var progTailDiag = string.IsNullOrWhiteSpace(snap?.progTail) ? "-" : Shrink(snap?.progTail, 96);
                         var statusSourceDiag = string.IsNullOrWhiteSpace(snap?.statusSource) ? "-" : Shrink(snap?.statusSource, 48);
                         var statusTailDiag = string.IsNullOrWhiteSpace(snap?.statusTail) ? "-" : Shrink(snap?.statusTail, 96);
-                        Log($"[TickDiag] src={source} | prog={progDiag} | progSrc={progSourceDiag} | progTail={progTailDiag} | seqLen={seqLen} | statusSrc={statusSourceDiag} | statusTail={statusTailDiag} | status={statusDiag}");
+                        var ctxDiag = string.IsNullOrWhiteSpace(snap?.contextId) ? "-" : Shrink(snap?.contextId, 72);
+                        var sigDiag = string.IsNullOrWhiteSpace(snap?.signals) ? "-" : Shrink(snap?.signals, 64);
+                        Log($"[TickDiag] src={source} | ctx={ctxDiag} | score={(snap?.contextScore?.ToString(CultureInfo.InvariantCulture) ?? "-")} | signals={sigDiag} | prog={progDiag} | progSrc={progSourceDiag} | progTail={progTailDiag} | seqLen={seqLen} | statusSrc={statusSourceDiag} | statusTail={statusTailDiag} | status={statusDiag}");
                     }
                     return;
                 }
@@ -5060,6 +5121,15 @@ try{
                     ts = GetJsonLongLoose(root, "ts") ?? 0,
                     statusSource = GetJsonStringLoose(root, "statusSource") ?? "",
                     statusTail = GetJsonStringLoose(root, "statusTail") ?? "",
+                    contextId = GetJsonStringLoose(root, "contextId") ?? "",
+                    framePath = GetJsonStringLoose(root, "framePath") ?? "",
+                    href = GetJsonStringLoose(root, "href") ?? "",
+                    topHref = GetJsonStringLoose(root, "topHref") ?? "",
+                    isTop = GetJsonBoolLoose(root, "isTop"),
+                    authorityToken = GetJsonStringLoose(root, "authorityToken") ?? "",
+                    contextScore = (int?)GetJsonLongLoose(root, "contextScore"),
+                    contextConfidence = GetJsonStringLoose(root, "contextConfidence") ?? "",
+                    signals = GetJsonStringLoose(root, "signals") ?? "",
                     seqAppend = GetJsonStringLoose(root, "seqAppend") ?? "",
                     seqMode = GetJsonStringLoose(root, "seqMode") ?? "",
                     seqWhich = GetJsonStringLoose(root, "seqWhich") ?? "",
@@ -5101,11 +5171,318 @@ try{
             }
         }
 
+        private static FrameScoutSnapshot? ParseFrameScoutSnapshot(JsonElement root)
+        {
+            try
+            {
+                return new FrameScoutSnapshot
+                {
+                    abx = GetJsonStringLoose(root, "abx") ?? "",
+                    contextId = GetJsonStringLoose(root, "contextId") ?? "",
+                    framePath = GetJsonStringLoose(root, "framePath") ?? "",
+                    href = GetJsonStringLoose(root, "href") ?? "",
+                    topHref = GetJsonStringLoose(root, "topHref") ?? "",
+                    isTop = GetJsonBoolLoose(root, "isTop") ?? false,
+                    docKey = GetJsonStringLoose(root, "docKey") ?? "",
+                    score = (int)(GetJsonLongLoose(root, "score") ?? 0),
+                    confidence = GetJsonStringLoose(root, "confidence") ?? "",
+                    signals = GetJsonStringLoose(root, "signals") ?? "",
+                    hasThemeZone = GetJsonBoolLoose(root, "hasThemeZone") ?? false,
+                    hasProcessStatus = GetJsonBoolLoose(root, "hasProcessStatus") ?? false,
+                    hasProcessBar = GetJsonBoolLoose(root, "hasProcessBar") ?? false,
+                    hasBeadRoad = GetJsonBoolLoose(root, "hasBeadRoad") ?? false,
+                    hasBetBox = GetJsonBoolLoose(root, "hasBetBox") ?? false,
+                    hasGameMain = GetJsonBoolLoose(root, "hasGameMain") ?? false,
+                    hasZoneBet = GetJsonBoolLoose(root, "hasZoneBet") ?? false,
+                    hasCocos = GetJsonBoolLoose(root, "hasCocos") ?? false,
+                    canvasCount = (int)(GetJsonLongLoose(root, "canvasCount") ?? 0),
+                    visibleRect = GetJsonStringLoose(root, "visibleRect") ?? "",
+                    ts = GetJsonLongLoose(root, "ts") ?? 0
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string BuildFrameContextKey(string? contextId, string? href, string? framePath)
+        {
+            var ctx = (contextId ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(ctx))
+                return ctx;
+            var h = (href ?? "").Trim();
+            var p = (framePath ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(h) || !string.IsNullOrWhiteSpace(p))
+                return $"{p}|{h}";
+            return "";
+        }
+
+        private void ObserveFrameScout(FrameScoutSnapshot scout, string source)
+        {
+            var key = BuildFrameContextKey(scout.contextId, scout.href, scout.framePath);
+            if (string.IsNullOrWhiteSpace(key))
+                return;
+
+            var now = DateTime.UtcNow;
+            var candidate = _frameAuthorityCandidates.AddOrUpdate(
+                key,
+                _ => new FrameAuthorityCandidate
+                {
+                    ContextId = key,
+                    FramePath = scout.framePath ?? "",
+                    Href = scout.href ?? "",
+                    TopHref = scout.topHref ?? "",
+                    IsTop = scout.isTop,
+                    Score = scout.score,
+                    Confidence = scout.confidence ?? "",
+                    Signals = scout.signals ?? "",
+                    SeenCount = 1,
+                    FirstSeenUtc = now,
+                    LastSeenUtc = now,
+                    LastSource = source ?? ""
+                },
+                (_, old) =>
+                {
+                    old.FramePath = scout.framePath ?? old.FramePath;
+                    old.Href = scout.href ?? old.Href;
+                    old.TopHref = scout.topHref ?? old.TopHref;
+                    old.IsTop = scout.isTop;
+                    old.Score = scout.score;
+                    old.Confidence = scout.confidence ?? "";
+                    old.Signals = scout.signals ?? "";
+                    old.SeenCount++;
+                    old.LastSeenUtc = now;
+                    old.LastSource = source ?? "";
+                    return old;
+                });
+
+            if ((now - _lastScoutLogUtc) > TimeSpan.FromSeconds(2) || scout.score >= 2500)
+            {
+                _lastScoutLogUtc = now;
+                Log($"[SCOUT][FRAME] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={Shrink(key, 96)} | score={scout.score} | conf={(string.IsNullOrWhiteSpace(scout.confidence) ? "-" : scout.confidence)} | top={(scout.isTop ? 1 : 0)} | signals={(string.IsNullOrWhiteSpace(scout.signals) ? "-" : scout.signals)} | rect={(string.IsNullOrWhiteSpace(scout.visibleRect) ? "-" : scout.visibleRect)} | href={TrimHrefForLog(scout.href)}");
+            }
+
+            FrameAuthorityCandidate? best = null;
+            lock (_frameAuthorityLock)
+            {
+                var fresh = _frameAuthorityCandidates.Values
+                    .Where(c => (now - c.LastSeenUtc) <= TimeSpan.FromSeconds(10))
+                    .OrderByDescending(c => c.Score)
+                    .ThenByDescending(c => c.SeenCount)
+                    .ToList();
+                best = fresh.FirstOrDefault();
+                if (best == null)
+                    return;
+
+                if (string.Equals(_lastAuthorityBestKey, best.ContextId, StringComparison.Ordinal))
+                    _lastAuthorityBestStable++;
+                else
+                {
+                    _lastAuthorityBestKey = best.ContextId;
+                    _lastAuthorityBestStable = 1;
+                }
+
+                bool noAuthority = string.IsNullOrWhiteSpace(_authorityContextId);
+                bool authorityLost = !noAuthority && _authorityLastSeenUtc != DateTime.MinValue && (now - _authorityLastSeenUtc) > TimeSpan.FromSeconds(14);
+                bool strongEnough = best.Score >= 2500;
+                bool stableProbable = best.Score >= 1200 && _lastAuthorityBestStable >= 2;
+                bool topGameFast = best.IsTop && best.Score >= 1000;
+                bool betterSwitch = !noAuthority &&
+                                    !string.Equals(_authorityContextId, best.ContextId, StringComparison.Ordinal) &&
+                                    best.Score >= _authorityScore + 900 &&
+                                    _lastAuthorityBestStable >= 2;
+                bool shouldLock = (noAuthority || authorityLost || betterSwitch) &&
+                                  (strongEnough || stableProbable || topGameFast);
+
+                if (!shouldLock)
+                {
+                    if ((now - _lastAuthLogUtc) > TimeSpan.FromSeconds(3))
+                    {
+                        _lastAuthLogUtc = now;
+                        Log($"[AUTH][CANDIDATE] best={Shrink(best.ContextId, 96)} | score={best.Score} | stable={_lastAuthorityBestStable} | conf={(string.IsNullOrWhiteSpace(best.Confidence) ? "-" : best.Confidence)} | signals={(string.IsNullOrWhiteSpace(best.Signals) ? "-" : best.Signals)} | locked={(string.IsNullOrWhiteSpace(_authorityContextId) ? "-" : Shrink(_authorityContextId, 96))}");
+                    }
+                    return;
+                }
+
+                var prev = _authorityContextId;
+                _authorityContextId = best.ContextId;
+                _authorityToken = Guid.NewGuid().ToString("N");
+                _authorityHref = best.Href;
+                _authorityFramePath = best.FramePath;
+                _authorityScore = best.Score;
+                _authorityConfidence = best.Confidence;
+                _authoritySignals = best.Signals;
+                _authorityLockedAtUtc = now;
+                _authorityLastSeenUtc = now;
+
+                var tag = string.IsNullOrWhiteSpace(prev) ? "[AUTH][LOCK]" : (authorityLost ? "[AUTH][RELOCK]" : "[AUTH][SWITCH]");
+                Log($"{tag} ctx={Shrink(_authorityContextId, 120)} | prev={(string.IsNullOrWhiteSpace(prev) ? "-" : Shrink(prev, 96))} | score={_authorityScore} | stable={_lastAuthorityBestStable} | conf={(string.IsNullOrWhiteSpace(_authorityConfidence) ? "-" : _authorityConfidence)} | signals={(string.IsNullOrWhiteSpace(_authoritySignals) ? "-" : _authoritySignals)} | path={(string.IsNullOrWhiteSpace(_authorityFramePath) ? "-" : _authorityFramePath)} | href={TrimHrefForLog(_authorityHref)}");
+                _ = StartAuthorityContextAsync(_authorityContextId, _authorityToken, "lock");
+            }
+        }
+
+        private Task StartAuthorityContextAsync(string contextId, string token, string reason)
+        {
+            return Dispatcher.InvokeAsync(async () =>
+            {
+                if (string.IsNullOrWhiteSpace(contextId) || string.IsNullOrWhiteSpace(token))
+                    return;
+                var js =
+                    "(function(){try{" +
+                    "var ctx=" + JsonSerializer.Serialize(contextId) + ";" +
+                    "var token=" + JsonSerializer.Serialize(token) + ";" +
+                    "window.__abx_authority_required=1;" +
+                    "if(typeof window.__abxStartAuthority==='function') return String(window.__abxStartAuthority(token,ctx,window.__abx_push_ms||360));" +
+                    "window.__abx_authority_context_id=ctx; window.__abx_authority_token=token;" +
+                    "return 'pending:no-authority-api';" +
+                    "}catch(e){return 'err:' + String(e&&e.message?e.message:e);}})();";
+
+                int topSent = 0, frameSent = 0, popupSent = 0;
+                try
+                {
+                    if (Web?.CoreWebView2 != null)
+                    {
+                        topSent++;
+                        _ = Web.ExecuteScriptAsync(js);
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    foreach (var item in GetMainArmedFramesSnapshot())
+                    {
+                        try
+                        {
+                            frameSent++;
+                            _ = item.frame.ExecuteScriptAsync(js);
+                        }
+                        catch (Exception ex)
+                        {
+                            if (IsDisposedFrameException(ex))
+                            {
+                                _mainFrameRefs.TryRemove(item.id, out _);
+                                _mainFrameBridgeArmed.TryRemove(item.id, out _);
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    if (_popupWeb?.CoreWebView2 != null)
+                    {
+                        foreach (var item in GetPopupArmedFramesSnapshot())
+                        {
+                            try
+                            {
+                                popupSent++;
+                                _ = item.frame.ExecuteScriptAsync(js);
+                            }
+                            catch (Exception ex)
+                            {
+                                if (IsDisposedFrameException(ex))
+                                    _popupFrameRefs.TryRemove(item.key, out _);
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                Log($"[GAMEBOOT][COMMAND] reason={reason} | ctx={Shrink(contextId, 120)} | token={Shrink(token, 12)} | top={topSent} | frames={frameSent} | popupFrames={popupSent}");
+                await Task.CompletedTask;
+            }).Task.Unwrap();
+        }
+
+        private bool ShouldAcceptAuthorityTick(CwSnapshot snap, string source, out string routeReason)
+        {
+            routeReason = "legacy-no-authority";
+            var key = BuildFrameContextKey(snap.contextId, snap.href, snap.framePath);
+            var now = DateTime.UtcNow;
+            lock (_frameAuthorityLock)
+            {
+                if (string.IsNullOrWhiteSpace(_authorityContextId))
+                {
+                    if ((now - _lastTickRouteLogUtc) > TimeSpan.FromSeconds(2))
+                    {
+                        _lastTickRouteLogUtc = now;
+                        Log($"[TICK][ACCEPT] reason=no-authority-yet | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={(string.IsNullOrWhiteSpace(key) ? "-" : Shrink(key, 96))} | score={(snap.contextScore?.ToString(CultureInfo.InvariantCulture) ?? "-")} | href={TrimHrefForLog(snap.href)}");
+                    }
+                    return true;
+                }
+
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    routeReason = "legacy-empty-context";
+                    return true;
+                }
+
+                if (string.Equals(key, _authorityContextId, StringComparison.Ordinal))
+                {
+                    _authorityLastSeenUtc = now;
+                    routeReason = "authority";
+                    if ((now - _lastTickRouteLogUtc) > TimeSpan.FromSeconds(2))
+                    {
+                        _lastTickRouteLogUtc = now;
+                        Log($"[TICK][ACCEPT] reason=authority | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={Shrink(key, 96)} | prog={(snap.prog.HasValue ? snap.prog.Value.ToString("0.###", CultureInfo.InvariantCulture) : "-")} | seqLen={(snap.seq ?? "").Length} | score={(snap.contextScore?.ToString(CultureInfo.InvariantCulture) ?? "-")} | signals={(string.IsNullOrWhiteSpace(snap.signals) ? "-" : snap.signals)}");
+                    }
+                    return true;
+                }
+
+                if (_authorityLastSeenUtc != DateTime.MinValue && (now - _authorityLastSeenUtc) > TimeSpan.FromSeconds(14))
+                {
+                    Log($"[AUTH][LOST] reason=tick-from-other-context-after-timeout | old={Shrink(_authorityContextId, 96)} | oldHref={TrimHrefForLog(_authorityHref)} | new={Shrink(key, 96)} | newHref={TrimHrefForLog(snap.href)}");
+                    _authorityContextId = "";
+                    _authorityToken = "";
+                    _authorityHref = "";
+                    _authorityFramePath = "";
+                    _authorityScore = 0;
+                    _authorityConfidence = "";
+                    _authoritySignals = "";
+                    routeReason = "authority-lost-accept";
+                    return true;
+                }
+
+                routeReason = "not-authority";
+                var rejectKey = key + "|" + _authorityContextId;
+                if (!string.Equals(_lastTickRejectKey, rejectKey, StringComparison.Ordinal) ||
+                    (now - _lastTickRouteLogUtc) > TimeSpan.FromSeconds(2))
+                {
+                    _lastTickRejectKey = rejectKey;
+                    _lastTickRouteLogUtc = now;
+                    Log($"[TICK][REJECT] reason=not-authority | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={Shrink(key, 96)} | locked={Shrink(_authorityContextId, 96)} | score={(snap.contextScore?.ToString(CultureInfo.InvariantCulture) ?? "-")} | signals={(string.IsNullOrWhiteSpace(snap.signals) ? "-" : snap.signals)} | href={TrimHrefForLog(snap.href)}");
+                }
+                return false;
+            }
+        }
+
         private static string? GetJsonStringLoose(JsonElement root, string name)
         {
             if (!root.TryGetProperty(name, out var el))
                 return null;
             return ReadJsonStringLoose(el);
+        }
+
+        private static bool? GetJsonBoolLoose(JsonElement root, string name)
+        {
+            if (!root.TryGetProperty(name, out var el))
+                return null;
+            try
+            {
+                if (el.ValueKind == JsonValueKind.True) return true;
+                if (el.ValueKind == JsonValueKind.False) return false;
+                if (el.ValueKind == JsonValueKind.Number && el.TryGetInt64(out var n)) return n != 0;
+                if (el.ValueKind == JsonValueKind.String)
+                {
+                    var s = (el.GetString() ?? "").Trim();
+                    if (string.Equals(s, "true", StringComparison.OrdinalIgnoreCase) || s == "1") return true;
+                    if (string.Equals(s, "false", StringComparison.OrdinalIgnoreCase) || s == "0") return false;
+                }
+            }
+            catch { }
+            return null;
         }
 
         private static long? GetJsonLongLoose(JsonElement root, string name)
@@ -11955,6 +12332,77 @@ try{
             }
         }
 
+        private void ResetSeqSyncStateForPlayStart()
+        {
+            var now = DateTime.UtcNow;
+            CwSnapshot? snap = CloneAuthoritativeRawSnap();
+
+            int netLen;
+            long netVer;
+            string netEvt;
+            string netSrc;
+            int baseLen;
+            long baseVer;
+            string baseEvt;
+            int pendingCount;
+            lock (_roundStateLock)
+            {
+                netLen = _netSeqDisplay?.Length ?? 0;
+                netVer = _netSeqVersion;
+                netEvt = _netSeqEvent ?? "";
+                netSrc = _netSeqSource ?? "";
+                baseLen = _baseSeqDisplay?.Length ?? 0;
+                baseVer = _baseSeqVersion;
+                baseEvt = _baseSeqEvent ?? "";
+                pendingCount = _pendingRows.Count;
+            }
+
+            string authorityContextId;
+            string authorityHref;
+            int authorityScore;
+            DateTime authorityLastSeenUtc;
+            lock (_frameAuthorityLock)
+            {
+                authorityContextId = _authorityContextId;
+                authorityHref = _authorityHref;
+                authorityScore = _authorityScore;
+                authorityLastSeenUtc = _authorityLastSeenUtc;
+            }
+
+            var snapSeq = snap?.seq ?? "";
+            var snapRawSeq = snap?.rawSeq ?? "";
+            var snapSeqLen = snapSeq.Length;
+            var snapRawLen = snapRawSeq.Length;
+            var maxSeqLen = Math.Max(Math.Max(netLen, baseLen), Math.Max(snapSeqLen, snapRawLen));
+
+            bool hasFreshGameTick =
+                _lastGameTickUtc != DateTime.MinValue &&
+                (now - _lastGameTickUtc) <= TimeSpan.FromSeconds(6);
+
+            bool hasFreshAuthority =
+                !string.IsNullOrWhiteSpace(authorityContextId) &&
+                authorityLastSeenUtc != DateTime.MinValue &&
+                (now - authorityLastSeenUtc) <= TimeSpan.FromSeconds(14);
+
+            bool preserve = maxSeqLen > 0 && (hasFreshGameTick || hasFreshAuthority);
+
+            var tickAge = _lastGameTickUtc == DateTime.MinValue
+                ? "-"
+                : Math.Max(0, (now - _lastGameTickUtc).TotalSeconds).ToString("0.0", CultureInfo.InvariantCulture) + "s";
+            var authAge = authorityLastSeenUtc == DateTime.MinValue
+                ? "-"
+                : Math.Max(0, (now - authorityLastSeenUtc).TotalSeconds).ToString("0.0", CultureInfo.InvariantCulture) + "s";
+
+            if (preserve)
+            {
+                Log($"[SEQ][CTX-RESET-SKIP] reason=play-start-preserve-current-seq | maxLen={maxSeqLen} | netLen={netLen} | netVer={netVer} | netEvt={(string.IsNullOrWhiteSpace(netEvt) ? "-" : netEvt)} | netSrc={(string.IsNullOrWhiteSpace(netSrc) ? "-" : netSrc)} | baseLen={baseLen} | baseVer={baseVer} | baseEvt={(string.IsNullOrWhiteSpace(baseEvt) ? "-" : baseEvt)} | snapLen={snapSeqLen} | rawLen={snapRawLen} | tickAge={tickAge} | authAge={authAge} | authScore={authorityScore} | ctx={(string.IsNullOrWhiteSpace(authorityContextId) ? "-" : Shrink(authorityContextId, 96))} | href={TrimHrefForLog(authorityHref)} | pending={pendingCount}");
+                return;
+            }
+
+            Log($"[SEQ][CTX-RESET-ALLOW] reason=play-start-no-fresh-seq | maxLen={maxSeqLen} | netLen={netLen} | netVer={netVer} | baseLen={baseLen} | baseVer={baseVer} | snapLen={snapSeqLen} | rawLen={snapRawLen} | tickAge={tickAge} | authAge={authAge} | ctx={(string.IsNullOrWhiteSpace(authorityContextId) ? "-" : Shrink(authorityContextId, 96))} | pending={pendingCount}");
+            ResetSeqSyncState("play-start", clearPendingRows: false, forceLog: true);
+        }
+
         private async void PopupFrame_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
             try
@@ -12864,7 +13312,7 @@ try{
                         return;
                 }
 
-                ResetSeqSyncState("play-start", clearPendingRows: false, forceLog: true);
+                ResetSeqSyncStateForPlayStart();
                 await LogBridgeProbeAsync("play-start-pre-ensure");
                 await EnsureToolBridgeInjectedAsync();
                 await LogBridgeProbeAsync("play-start-post-ensure");
@@ -15798,6 +16246,15 @@ try{
                 status = snap.status,
                 statusSource = snap.statusSource,
                 statusTail = snap.statusTail,
+                contextId = snap.contextId,
+                framePath = snap.framePath,
+                href = snap.href,
+                topHref = snap.topHref,
+                isTop = snap.isTop,
+                authorityToken = snap.authorityToken,
+                contextScore = snap.contextScore,
+                contextConfidence = snap.contextConfidence,
+                signals = snap.signals,
                 jsBuildMs = snap.jsBuildMs,
                 jsTotalsMs = snap.jsTotalsMs,
                 jsSeqMs = snap.jsSeqMs,
@@ -15834,6 +16291,15 @@ try{
                 status = snap.status,
                 statusSource = snap.statusSource,
                 statusTail = snap.statusTail,
+                contextId = snap.contextId,
+                framePath = snap.framePath,
+                href = snap.href,
+                topHref = snap.topHref,
+                isTop = snap.isTop,
+                authorityToken = snap.authorityToken,
+                contextScore = snap.contextScore,
+                contextConfidence = snap.contextConfidence,
+                signals = snap.signals,
                 jsBuildMs = snap.jsBuildMs,
                 jsTotalsMs = snap.jsTotalsMs,
                 jsSeqMs = snap.jsSeqMs,
