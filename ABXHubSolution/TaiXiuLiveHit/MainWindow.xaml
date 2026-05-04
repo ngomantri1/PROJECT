@@ -1023,7 +1023,9 @@
                                         MaxHeight="120"
                                         Margin="{StaticResource ValueFieldMargin}"
                                         HorizontalAlignment="Stretch"
-                                        Text="0" />
+                                        PreviewTextInput="TxtDecisionSecond_PreviewTextInput"
+                                        LostFocus="TxtDecisionSecond_LostFocus"
+                                        Text="10" />
                                 </Grid>
                                 <!--  HÀNG: CẮT LÃI / CẮT LỖ (đặt ngay sau hàng 'Đặt khi còn (giây)')  -->
                                 <Grid>

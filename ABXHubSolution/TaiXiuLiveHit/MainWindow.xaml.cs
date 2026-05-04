@@ -258,7 +258,7 @@ namespace TaiXiuLiveHit
         private System.Collections.Generic.List<long[]> _stakeChains = new();
         private long[] _stakeChainTotals = Array.Empty<long>();
 
-        private double _decisionPercent = 0.25; // 11s (0.25)
+        private int _decisionSeconds = 10;
 
         // Chống bắn trùng khi vừa cược
         private bool _cooldown = false;
@@ -433,17 +433,16 @@ Ví dụ không hợp lệ:
 • Để trống hoặc 0 = không dùng cắt lỗ.
 • Ví dụ: 150000 (khi lỗ ≥ 150.000đ thì dừng).";
 
-        const string TIP_DECISION_PERCENT_GENERAL =
-        @"ĐẶT KHI CÒN % THỜI GIAN
-• Nhập phần trăm (0–100). Hệ thống quy về 0.00–1.00 nội bộ.
-• Ý nghĩa: chỉ đặt cược khi thanh thời gian còn lại ≤ giá trị % này.
-• Ví dụ: 25 = đặt khi còn ~25% thời gian phiên.";
+        const string TIP_DECISION_SECONDS_GENERAL =
+        @"ĐẶT KHI CÒN GIÂY
+• Nhập số giây còn lại của phiên (1–45).
+• Ý nghĩa: chỉ đặt cược khi đồng hồ còn lại ≤ giá trị này.
+• Ví dụ: 10 = đặt khi còn 10 giây hoặc ít hơn.";
 
-        const string TIP_DECISION_PERCENT_NI =
-        @"ĐẶT KHI CÒN % THỜI GIAN (khuyến nghị cho chiến lược Ít/Nhiều)
-• Nhập phần trăm (0–100), KHÔNG phải giây.
-• Nên để khoảng 15% để bám sát dòng tiền hai cửa.
-• Ví dụ: 15 = đặt khi còn ~15% thời gian phiên.";
+        const string TIP_DECISION_SECONDS_NI =
+        @"ĐẶT KHI CÒN GIÂY (khuyến nghị cho chiến lược Ít/Nhiều)
+• Nhập số giây còn lại của phiên (1–45), KHÔNG phải phần trăm.
+• Nên để khoảng 8–15 giây để bám sát dòng tiền hai cửa.";
 
         const string TIP_SIDE_RATIO =
         @"CUA DAT & TI LE (Chien luoc 17)
@@ -611,7 +610,7 @@ Ví dụ không hợp lệ:
             public long[] RunStakeSeq { get; set; } = Array.Empty<long>();
             public List<long[]> RunStakeChains { get; set; } = new();
             public long[] RunStakeChainTotals { get; set; } = Array.Empty<long>();
-            public double RunDecisionPercent { get; set; } = 0;
+            public int RunDecisionSeconds { get; set; } = -1;
             public bool CutStopTriggered { get; set; } = false;
 
             public CancellationTokenSource? TaskCts { get; set; }
@@ -1002,7 +1001,7 @@ Ví dụ không hợp lệ:
 
             // Các ô dưới đây LUÔN cho phép nhập (kể cả khi đang chạy)
             if (TxtStakeCsv != null) TxtStakeCsv.IsReadOnly = false; // Chuỗi tiền
-            if (TxtDecisionSecond != null) TxtDecisionSecond.IsReadOnly = false; // Đặt khi còn %
+            if (TxtDecisionSecond != null) TxtDecisionSecond.IsReadOnly = false; // Đặt khi còn giây
             if (TxtCutProfit != null) TxtCutProfit.IsReadOnly = false; // Cắt lãi
             if (TxtCutLoss != null) TxtCutLoss.IsReadOnly = false; // Cắt lỗ
         }
@@ -1059,6 +1058,30 @@ Ví dụ không hợp lệ:
         private static string T(TextBox tb, string def = "") => (tb?.Text ?? def).Trim();
         private static string P(PasswordBox? pb, string def = "") => pb?.Password ?? def;
         private static int I(string? s, int def = 0) => int.TryParse(s, out var n) ? n : def;
+        private static int ClampDecisionSeconds(int value) => Math.Clamp(value, 1, 45);
+
+        private void SyncDecisionSecondsFromConfig(AppConfig? cfg)
+        {
+            var sec = ClampDecisionSeconds(cfg?.DecisionSeconds ?? 10);
+            _decisionSeconds = sec;
+            if (cfg != null) cfg.DecisionSeconds = sec;
+        }
+
+        private void SyncDecisionSecondsFromUi(bool normalizeText = true)
+        {
+            var fallback = _cfg?.DecisionSeconds ?? 10;
+            var raw = I(T(TxtDecisionSecond, fallback.ToString(CultureInfo.InvariantCulture)), fallback);
+            var sec = ClampDecisionSeconds(raw);
+            _decisionSeconds = sec;
+            if (_cfg != null) _cfg.DecisionSeconds = sec;
+
+            if (normalizeText && TxtDecisionSecond != null)
+            {
+                var txt = sec.ToString(CultureInfo.InvariantCulture);
+                if (!string.Equals(TxtDecisionSecond.Text?.Trim(), txt, StringComparison.Ordinal))
+                    TxtDecisionSecond.Text = txt;
+            }
+        }
 
         // DPAPI
         private static string ProtectString(string? s)
@@ -1119,7 +1142,8 @@ Ví dụ không hợp lệ:
                 UpdateBetStrategyUi();
 
 
-                if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString();
+                SyncDecisionSecondsFromConfig(_cfg);
+                if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString(CultureInfo.InvariantCulture);
                 if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
                 LoadStakeCsvForCurrentMoneyStrategy();// NEW: nạp chuỗi tiền theo “Quản lý vốn” hiện tại
                 if (ChkS7ResetOnProfit != null) ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
@@ -1170,7 +1194,7 @@ Ví dụ không hợp lệ:
             {
                 _cfg.Url = T(TxtUrl);
                 _cfg.StakeCsv = T(TxtStakeCsv, "1000,2000,4000,8000,16000");
-                _cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
+                SyncDecisionSecondsFromUi();
                 _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? _cfg.BetStrategyIndex;
                 _cfg.BetSeq = T(TxtChuoiCau, _cfg.BetSeq);
                 _cfg.BetPatterns = T(TxtTheCau, _cfg.BetPatterns);
@@ -1560,7 +1584,8 @@ Ví dụ không hợp lệ:
                 UpdateTooltips();
                 UpdateBetStrategyUi();
 
-                if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString();
+                SyncDecisionSecondsFromConfig(_cfg);
+                if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString(CultureInfo.InvariantCulture);
                 if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
                 LoadStakeCsvForCurrentMoneyStrategy();
                 if (ChkS7ResetOnProfit != null) ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
@@ -1609,7 +1634,10 @@ Ví dụ không hợp lệ:
         {
             cfg.Url = T(TxtUrl);
             cfg.StakeCsv = T(TxtStakeCsv, "1000,2000,4000,8000,16000");
-            cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
+            var decisionSeconds = ClampDecisionSeconds(I(T(TxtDecisionSecond, "10"), 10));
+            cfg.DecisionSeconds = decisionSeconds;
+            if (ReferenceEquals(cfg, _cfg))
+                _decisionSeconds = decisionSeconds;
             cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? cfg.BetStrategyIndex;
             cfg.BetSeq = T(TxtChuoiCau, cfg.BetSeq);
             cfg.BetPatterns = T(TxtTheCau, cfg.BetPatterns);
@@ -3088,6 +3116,7 @@ Ví dụ không hợp lệ:
                     if (TxtUser != null) TxtUser.TextChanged += TxtUser_TextChanged;
                     if (TxtPass != null) TxtPass.PasswordChanged += TxtPass_PasswordChanged;
                     if (TxtStakeCsv != null) TxtStakeCsv.TextChanged += TxtStakeCsv_TextChanged;
+                    if (TxtDecisionSecond != null) DataObject.AddPastingHandler(TxtDecisionSecond, TxtDecisionSecond_Pasting);
                     if (CmbBetStrategy != null) CmbBetStrategy.SelectionChanged += CmbBetStrategy_SelectionChanged;
                     if (TxtChuoiCau != null) TxtChuoiCau.TextChanged += TxtChuoiCau_TextChanged;
                     if (TxtTheCau != null) TxtTheCau.TextChanged += TxtTheCau_TextChanged;
@@ -3309,10 +3338,10 @@ Ví dụ không hợp lệ:
             AttachTip(TxtCutProfit, TIP_CUT_PROFIT);
             AttachTip(TxtCutLoss, TIP_CUT_LOSS);
 
-            // % thời gian
+            // Giây còn lại
             int idx = CmbBetStrategy?.SelectedIndex ?? 4;
             AttachTip(TxtDecisionSecond,
-                (idx == 2 || idx == 3) ? TIP_DECISION_PERCENT_NI : TIP_DECISION_PERCENT_GENERAL);
+                (idx == 2 || idx == 3) ? TIP_DECISION_SECONDS_NI : TIP_DECISION_SECONDS_GENERAL);
 
             // Chuỗi/Thế cầu
             AttachTip(TxtChuoiCau,
@@ -4538,7 +4567,9 @@ Ví dụ không hợp lệ:
             var stakeChainTotals = (tab?.RunStakeChainTotals != null && tab.RunStakeChainTotals.Length > 0)
                 ? tab.RunStakeChainTotals
                 : _stakeChainTotals;
-            var decisionPercent = (tab != null && tab.RunDecisionPercent > 0) ? tab.RunDecisionPercent : _decisionPercent;
+            var decisionSeconds = (tab != null && tab.RunDecisionSeconds >= 0)
+                ? tab.RunDecisionSeconds
+                : _decisionSeconds;
 
             var stakeSeqArr = stakeSeq.ToArray();
             var stakeChainsArr = stakeChains.Select(a => a.ToArray()).ToArray();
@@ -4554,7 +4585,7 @@ Ví dụ không hợp lệ:
                 StakeSeq = stakeSeqArr,
                 StakeChains = stakeChainsArr,
                 StakeChainTotals = stakeChainTotalsArr,
-                DecisionPercent = decisionPercent,
+                DecisionSeconds = decisionSeconds,
                 State = tab.DecisionState,
                 UiDispatcher = Dispatcher,
                 GetCooldown = () => tab.Cooldown,
@@ -4706,7 +4737,8 @@ Ví dụ không hợp lệ:
                 activeTab.RunStakeSeq = _stakeSeq.ToArray();
                 activeTab.RunStakeChains = _stakeChains.Select(a => a.ToArray()).ToList();
                 activeTab.RunStakeChainTotals = _stakeChainTotals.ToArray();
-                activeTab.RunDecisionPercent = _decisionPercent;
+                SyncDecisionSecondsFromUi();
+                activeTab.RunDecisionSeconds = _decisionSeconds;
                 activeTab.IsRunning = true;
                 MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
                 _winTotal = activeTab.WinTotal;
@@ -4865,7 +4897,7 @@ Ví dụ không hợp lệ:
                 StakeChains = _stakeChains.Select(a => a.ToArray()).ToArray(),
                 StakeChainTotals = _stakeChainTotals,
 
-                DecisionPercent = _decisionPercent,
+                DecisionSeconds = _decisionSeconds,
                 State = _dec,
                 UiDispatcher = Dispatcher,
                 GetCooldown = () => _cooldown,
@@ -6875,6 +6907,37 @@ Ví dụ không hợp lệ:
                                                                    // Cho phép số âm ở đầu, bỏ dấu ngăn cách
             var cleaned = new string(s.Where(c => char.IsDigit(c) || (c == '-' && s.IndexOf(c) == 0)).ToArray());
             return double.TryParse(cleaned, out var v) ? v : 0;
+        }
+
+        private void TxtDecisionSecond_PreviewTextInput(object sender, TextCompositionEventArgs e)
+        {
+            e.Handled = string.IsNullOrWhiteSpace(e.Text) || e.Text.Any(ch => !char.IsDigit(ch));
+        }
+
+        private void TxtDecisionSecond_Pasting(object sender, DataObjectPastingEventArgs e)
+        {
+            if (!e.SourceDataObject.GetDataPresent(DataFormats.Text))
+            {
+                e.CancelCommand();
+                return;
+            }
+
+            var text = e.SourceDataObject.GetData(DataFormats.Text) as string;
+            if (string.IsNullOrWhiteSpace(text) || text.Any(ch => !char.IsDigit(ch)))
+                e.CancelCommand();
+        }
+
+        private async void TxtDecisionSecond_LostFocus(object sender, RoutedEventArgs e)
+        {
+            var prev = _cfg?.DecisionSeconds ?? 10;
+            SyncDecisionSecondsFromUi();
+            UpdateTooltips();
+
+            if (!_uiReady || _tabSwitching || _cfg == null)
+                return;
+
+            if (prev != _cfg.DecisionSeconds)
+                await SaveConfigAsync();
         }
 
         private async void TxtCut_LostFocus(object sender, RoutedEventArgs e)

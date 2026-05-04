@@ -15,7 +15,7 @@ namespace TaiXiuLiveHit.Tasks
     /// - Sau mỗi KẾT QUẢ (chuỗi 50 đổi — trượt sang phải), lấy “10 phiên mới về” (41..50) để +1.
     /// - Mỗi lần cược: đánh theo CHUỖI có count lớn nhất (hòa → chọn chuỗi mới nhất).
     /// - Khi THẮNG: được phép CHUYỂN sang chuỗi mới nếu count(new) >= count(current).
-    /// - Quản lý vốn: MoneyManager như các task khác; vào cửa theo DecisionPercent.
+    /// - Quản lý vốn: MoneyManager như các task khác; vào cửa theo số giây còn lại.
     /// </summary>
     public sealed class Top10PatternFollowTask : IBetTask
     {
@@ -122,7 +122,7 @@ namespace TaiXiuLiveHit.Tasks
             {
                 ct.ThrowIfCancellationRequested();
 
-                // Vào cửa theo ngưỡng DecisionPercent
+                // Vào cửa theo ngưỡng giây còn lại.
                 await WaitUntilNewRoundStart(ctx, ct);
 
                 var snap = ctx.GetSnap?.Invoke();

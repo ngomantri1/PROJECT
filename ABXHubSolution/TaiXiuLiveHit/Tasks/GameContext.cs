@@ -39,8 +39,8 @@ namespace TaiXiuLiveHit.Tasks
         // tiền thắng đã tích lũy được trong chuỗi hiện tại
         public double MoneyChainProfit { get; set; } = 0;
 
-        // Ngưỡng % còn lại để ra quyết định
-        public double DecisionPercent { get; init; }
+        // Ngưỡng giây còn lại để ra quyết định
+        public int DecisionSeconds { get; init; }
 
         // Trạng thái chiến lược (lưu Step/PreferLarger/.)
         public DecisionState State { get; init; }
