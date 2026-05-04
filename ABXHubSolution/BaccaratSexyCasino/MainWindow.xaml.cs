@@ -447,6 +447,18 @@ namespace BaccaratSexyCasino
         private DateTime _lastNetworkHistoryCandidateLogUtc = DateTime.MinValue;
         private readonly List<NetworkHistorySeqCandidate> _pendingNetworkHistoryCandidates = new();
         private static readonly TimeSpan NetworkHistoryCandidateCacheTtl = TimeSpan.FromSeconds(30);
+        private readonly object _networkBetPoolLock = new();
+        private NetworkBetPoolSnapshot? _networkBetPool;
+        private string _lastNetworkBetPoolKey = "";
+        private DateTime _lastNetworkBetPoolLogUtc = DateTime.MinValue;
+        private string _lastNetworkBetPoolMergeKey = "";
+        private DateTime _lastNetworkBetPoolMergeLogUtc = DateTime.MinValue;
+        private string _lastCanvasAcceptedSeqKey = "";
+        private DateTime _lastCanvasAcceptedSeqPushUtc = DateTime.MinValue;
+        private DateTime _lastCanvasDisplaySkipLogUtc = DateTime.MinValue;
+        private string _lastCanvasPoolBlockKey = "";
+        private DateTime _lastCanvasPoolBlockLogUtc = DateTime.MinValue;
+        private CwTotals? _lastCanvasDisplayTotals;
         private string _jsRawBootstrapStableKey = "";
         private int _jsRawBootstrapStableCount = 0;
         private DateTime _lastJsRawBootstrapLogUtc = DateTime.MinValue;
@@ -518,6 +530,7 @@ namespace BaccaratSexyCasino
         private DateTime _lastAuthLogUtc = DateTime.MinValue;
         private DateTime _lastTickRouteLogUtc = DateTime.MinValue;
         private string _lastTickRejectKey = "";
+        private DateTime _lastAuthFilterLogUtc = DateTime.MinValue;
 
         // === License/Trial run state ===
 
@@ -570,6 +583,10 @@ namespace BaccaratSexyCasino
             public DateTime FirstSeenUtc { get; set; } = DateTime.MinValue;
             public DateTime LastSeenUtc { get; set; } = DateTime.MinValue;
             public string LastSource { get; set; } = "";
+            public string ProxyChildFramePath { get; set; } = "";
+            public string ProxyChildHref { get; set; } = "";
+            public int ProxyChildScore { get; set; }
+            public string ProxyChildSignals { get; set; } = "";
         }
 
         private sealed class NetworkHistorySeqCandidate
@@ -585,6 +602,22 @@ namespace BaccaratSexyCasino
             public int Score { get; set; }
             public int CountError { get; set; }
             public string MapSummary { get; set; } = "";
+            public DateTime SeenAtUtc { get; set; } = DateTime.UtcNow;
+        }
+
+        private sealed class NetworkBetPoolSnapshot
+        {
+            public long? B { get; set; }
+            public long? P { get; set; }
+            public long? T { get; set; }
+            public long TableId { get; set; }
+            public string TableName { get; set; } = "";
+            public string Source { get; set; } = "";
+            public string OwnerTag { get; set; } = "";
+            public string Url { get; set; } = "";
+            public string Path { get; set; } = "";
+            public int Score { get; set; }
+            public bool NumericMapping { get; set; }
             public DateTime SeenAtUtc { get; set; } = DateTime.UtcNow;
         }
 
@@ -1164,6 +1197,57 @@ Ví dụ không hợp lệ:
         for (var i=0;i<frames.length;i++) __abxCwCollect(frames[i], path + '/frame[' + i + ']', out, depth + 1);
       }catch(_){}
     }
+    function __abxCwIsSingleTableItem(item){
+      try{ return /singleBacTable\.jsp/i.test(String((item && item.href) || '')); }catch(_){ return false; }
+    }
+    function __abxCwIsGameHallItem(item){
+      try{ return /gamehall\.jsp/i.test(String((item && item.href) || '')); }catch(_){ return false; }
+    }
+    function __abxCwIsWebMainItem(item){
+      try{ return __abxCwIsWebMain(String((item && item.href) || '')); }catch(_){ return false; }
+    }
+    function __abxCwIsTopItem(item){
+      try{ return String((item && item.path) || '') === 'top'; }catch(_){ return false; }
+    }
+    function __abxCwFindPanelItem(items, predicate){
+      try{
+        for (var i=0;i<items.length;i++){
+          if (predicate(items[i])) return items[i];
+        }
+      }catch(_){}
+      return null;
+    }
+    function __abxCwPickByFrameRoute(items){
+      try{
+        var single = __abxCwFindPanelItem(items, __abxCwIsSingleTableItem);
+        var hall = __abxCwFindPanelItem(items, __abxCwIsGameHallItem);
+        var topWebMain = __abxCwFindPanelItem(items, function(x){ return __abxCwIsTopItem(x) && __abxCwIsWebMainItem(x); });
+        var anyWebMain = __abxCwFindPanelItem(items, __abxCwIsWebMainItem);
+        var topAny = __abxCwFindPanelItem(items, __abxCwIsTopItem);
+        if (single){
+          return {
+            state: 'table',
+            host: topWebMain || anyWebMain || single,
+            data: single
+          };
+        }
+        if (hall){
+          return {
+            state: 'hall',
+            host: hall,
+            data: hall
+          };
+        }
+        if (topWebMain || anyWebMain || topAny){
+          return {
+            state: 'shell',
+            host: topWebMain || anyWebMain || topAny,
+            data: topWebMain || anyWebMain || topAny
+          };
+        }
+      }catch(_){}
+      return null;
+    }
     function __abxCwScore(item){
       try{
         var h = String(item.href || '');
@@ -1228,23 +1312,19 @@ Ví dụ không hợp lệ:
         var items = [];
         __abxCwCollect(start, 'top', items, 0);
         if (!items.length) return;
-        var best = null, bestScore = -999999;
-        var bestData = null, bestDataScore = -999999;
-        var bestHost = null, bestHostScore = -999999;
-        for (var i=0;i<items.length;i++){
-          var score = __abxCwScore(items[i]);
-          if (!best || score > bestScore){ best = items[i]; bestScore = score; }
-          var dataScore = __abxCwDataScore(items[i]);
-          if (!bestData || dataScore > bestDataScore){ bestData = items[i]; bestDataScore = dataScore; }
-          var hostScore = __abxCwHostScore(items[i]);
-          if (!bestHost || hostScore > bestHostScore){ bestHost = items[i]; bestHostScore = hostScore; }
-        }
-        if (bestData && bestDataScore > -999000){
-          var dataVisible = __abxCwVisibleScore(bestData) > 0;
-          best = dataVisible ? bestData : (bestHost || best);
-        }
+        var route = __abxCwPickByFrameRoute(items);
+        if (!route || !route.host) return;
+        var best = route.host;
+        var bestData = route.data || route.host;
         for (var j=0;j<items.length;j++) __abxCwSetVisible(items[j], items[j] === best);
-        if (best && bestData && bestDataScore > -999000 && best !== bestData) __abxCwMirrorPanel(best, bestData);
+        try{
+          if (best && best.root){
+            best.root.setAttribute('data-abx-panel-route', String(route.state || 'unknown'));
+            best.root.setAttribute('data-abx-panel-data-path', String(bestData && bestData.path || ''));
+            best.root.setAttribute('data-abx-panel-data-href', String(bestData && bestData.href || ''));
+          }
+        }catch(_){}
+        if (best && bestData && best !== bestData) __abxCwMirrorPanel(best, bestData);
         else __abxCwMirrorPanel(best, best);
       }catch(_){}
     }
@@ -4342,6 +4422,7 @@ try{
                         snap.status = statusRawForLogic;
                         snap.statusSource = statusSourceForSnap;
                         snap.statusTail = statusTailForSnap;
+                        MergeNetworkBetPoolIntoSnapshot(snap, source);
                         if (UseNetworkSeqOnly)
                         {
                             lock (_roundStateLock)
@@ -4640,6 +4721,7 @@ try{
                             ApplyNetworkSeqAuthorityLocked(snap);
                         }
                         lock (_snapLock) _lastSnap = snap;
+                        PushAcceptedDisplayToCanvas(snap, source);
 
                         _ = Dispatcher.BeginInvoke(new Action(() =>
                         {
@@ -4723,7 +4805,11 @@ try{
                         var statusTailDiag = string.IsNullOrWhiteSpace(snap?.statusTail) ? "-" : Shrink(snap?.statusTail, 96);
                         var ctxDiag = string.IsNullOrWhiteSpace(snap?.contextId) ? "-" : Shrink(snap?.contextId, 72);
                         var sigDiag = string.IsNullOrWhiteSpace(snap?.signals) ? "-" : Shrink(snap?.signals, 64);
-                        Log($"[TickDiag] src={source} | ctx={ctxDiag} | score={(snap?.contextScore?.ToString(CultureInfo.InvariantCulture) ?? "-")} | signals={sigDiag} | prog={progDiag} | progSrc={progSourceDiag} | progTail={progTailDiag} | seqLen={seqLen} | statusSrc={statusSourceDiag} | statusTail={statusTailDiag} | status={statusDiag}");
+                        var dataModeDiag = string.IsNullOrWhiteSpace(snap?.dataMode) ? "-" : Shrink(snap?.dataMode, 32);
+                        var dataFrameDiag = string.IsNullOrWhiteSpace(snap?.dataFramePath) ? "-" : Shrink(snap?.dataFramePath, 64);
+                        var poolSrcDiag = string.IsNullOrWhiteSpace(snap?.totals?.Source) ? "-" : Shrink(snap.totals.Source, 48);
+                        var poolDiag = $"B={(snap?.totals?.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")},P={(snap?.totals?.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")},T={(snap?.totals?.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}";
+                        Log($"[TickDiag] src={source} | ctx={ctxDiag} | score={(snap?.contextScore?.ToString(CultureInfo.InvariantCulture) ?? "-")} | signals={sigDiag} | dataMode={dataModeDiag} | dataFrame={dataFrameDiag} | poolSrc={poolSrcDiag} | pool={poolDiag} | prog={progDiag} | progSrc={progSourceDiag} | progTail={progTailDiag} | seqLen={seqLen} | statusSrc={statusSourceDiag} | statusTail={statusTailDiag} | status={statusDiag}");
                     }
                     return;
                 }
@@ -5130,6 +5216,15 @@ try{
                     contextScore = (int?)GetJsonLongLoose(root, "contextScore"),
                     contextConfidence = GetJsonStringLoose(root, "contextConfidence") ?? "",
                     signals = GetJsonStringLoose(root, "signals") ?? "",
+                    proxyChildFramePath = GetJsonStringLoose(root, "proxyChildFramePath") ?? "",
+                    proxyChildHref = GetJsonStringLoose(root, "proxyChildHref") ?? "",
+                    proxyChildScore = (int?)GetJsonLongLoose(root, "proxyChildScore"),
+                    proxyChildSignals = GetJsonStringLoose(root, "proxyChildSignals") ?? "",
+                    dataMode = GetJsonStringLoose(root, "dataMode") ?? "",
+                    dataFramePath = GetJsonStringLoose(root, "dataFramePath") ?? "",
+                    dataHref = GetJsonStringLoose(root, "dataHref") ?? "",
+                    panelFramePath = GetJsonStringLoose(root, "panelFramePath") ?? "",
+                    panelHref = GetJsonStringLoose(root, "panelHref") ?? "",
                     seqAppend = GetJsonStringLoose(root, "seqAppend") ?? "",
                     seqMode = GetJsonStringLoose(root, "seqMode") ?? "",
                     seqWhich = GetJsonStringLoose(root, "seqWhich") ?? "",
@@ -5156,7 +5251,10 @@ try{
                         TT = GetJsonLongLoose(totalsEl, "TT"),
                         T3T = GetJsonLongLoose(totalsEl, "T3T"),
                         T3D = GetJsonLongLoose(totalsEl, "T3D"),
-                        TD = GetJsonLongLoose(totalsEl, "TD")
+                        TD = GetJsonLongLoose(totalsEl, "TD"),
+                        Source = GetJsonStringLoose(totalsEl, "Source") ??
+                                 GetJsonStringLoose(totalsEl, "source") ??
+                                 GetJsonStringLoose(totalsEl, "BS") ?? ""
                     };
                 }
 
@@ -5197,6 +5295,10 @@ try{
                     hasCocos = GetJsonBoolLoose(root, "hasCocos") ?? false,
                     canvasCount = (int)(GetJsonLongLoose(root, "canvasCount") ?? 0),
                     visibleRect = GetJsonStringLoose(root, "visibleRect") ?? "",
+                    proxyChildFramePath = GetJsonStringLoose(root, "proxyChildFramePath") ?? "",
+                    proxyChildHref = GetJsonStringLoose(root, "proxyChildHref") ?? "",
+                    proxyChildScore = (int)(GetJsonLongLoose(root, "proxyChildScore") ?? 0),
+                    proxyChildSignals = GetJsonStringLoose(root, "proxyChildSignals") ?? "",
                     ts = GetJsonLongLoose(root, "ts") ?? 0
                 };
             }
@@ -5218,11 +5320,64 @@ try{
             return "";
         }
 
+        private static bool IsIgnoredAuthorityFrameUrl(string? url)
+        {
+            var u = (url ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(u))
+                return false;
+            return u.IndexOf("googletagmanager", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   u.IndexOf("google-analytics", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   u.IndexOf("doubleclick", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   u.IndexOf("recaptcha", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   u.IndexOf("google.com/recaptcha", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   u.IndexOf("/ns.html", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void LogAuthorityFilter(string reason, FrameScoutSnapshot scout, string source)
+        {
+            var now = DateTime.UtcNow;
+            if ((now - _lastAuthFilterLogUtc) <= TimeSpan.FromSeconds(4))
+                return;
+            _lastAuthFilterLogUtc = now;
+            Log($"[AUTH][FILTER] reason={reason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | score={scout.score} | signals={(string.IsNullOrWhiteSpace(scout.signals) ? "-" : scout.signals)} | proxy={(scout.proxyChildScore > 0 ? (scout.proxyChildScore.ToString(CultureInfo.InvariantCulture) + ":" + Shrink(scout.proxyChildFramePath, 48)) : "-")} | href={TrimHrefForLog(scout.href)}");
+        }
+
+        private static bool IsSingleBacTableUrl(string? url)
+        {
+            return !string.IsNullOrWhiteSpace(url) &&
+                   url.IndexOf("singleBacTable.jsp", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsWebMainUrl(string? url)
+        {
+            return !string.IsNullOrWhiteSpace(url) &&
+                   url.IndexOf("/player/webMain.jsp", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool HasSingleBacProxy(FrameAuthorityCandidate? c)
+        {
+            return c != null && IsSingleBacTableUrl(c.ProxyChildHref);
+        }
+
         private void ObserveFrameScout(FrameScoutSnapshot scout, string source)
         {
             var key = BuildFrameContextKey(scout.contextId, scout.href, scout.framePath);
             if (string.IsNullOrWhiteSpace(key))
                 return;
+
+            if (IsIgnoredAuthorityFrameUrl(scout.href))
+            {
+                LogAuthorityFilter("tracker-frame", scout, source);
+                return;
+            }
+
+            if ((scout.href ?? "").IndexOf("about:blank", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                scout.score < 400 &&
+                scout.proxyChildScore < 1200)
+            {
+                LogAuthorityFilter("blank-no-game-signal", scout, source);
+                return;
+            }
 
             var now = DateTime.UtcNow;
             var candidate = _frameAuthorityCandidates.AddOrUpdate(
@@ -5240,7 +5395,11 @@ try{
                     SeenCount = 1,
                     FirstSeenUtc = now,
                     LastSeenUtc = now,
-                    LastSource = source ?? ""
+                    LastSource = source ?? "",
+                    ProxyChildFramePath = scout.proxyChildFramePath ?? "",
+                    ProxyChildHref = scout.proxyChildHref ?? "",
+                    ProxyChildScore = scout.proxyChildScore,
+                    ProxyChildSignals = scout.proxyChildSignals ?? ""
                 },
                 (_, old) =>
                 {
@@ -5254,13 +5413,17 @@ try{
                     old.SeenCount++;
                     old.LastSeenUtc = now;
                     old.LastSource = source ?? "";
+                    old.ProxyChildFramePath = scout.proxyChildFramePath ?? "";
+                    old.ProxyChildHref = scout.proxyChildHref ?? "";
+                    old.ProxyChildScore = scout.proxyChildScore;
+                    old.ProxyChildSignals = scout.proxyChildSignals ?? "";
                     return old;
                 });
 
             if ((now - _lastScoutLogUtc) > TimeSpan.FromSeconds(2) || scout.score >= 2500)
             {
                 _lastScoutLogUtc = now;
-                Log($"[SCOUT][FRAME] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={Shrink(key, 96)} | score={scout.score} | conf={(string.IsNullOrWhiteSpace(scout.confidence) ? "-" : scout.confidence)} | top={(scout.isTop ? 1 : 0)} | signals={(string.IsNullOrWhiteSpace(scout.signals) ? "-" : scout.signals)} | rect={(string.IsNullOrWhiteSpace(scout.visibleRect) ? "-" : scout.visibleRect)} | href={TrimHrefForLog(scout.href)}");
+                Log($"[SCOUT][FRAME] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={Shrink(key, 96)} | score={scout.score} | conf={(string.IsNullOrWhiteSpace(scout.confidence) ? "-" : scout.confidence)} | top={(scout.isTop ? 1 : 0)} | signals={(string.IsNullOrWhiteSpace(scout.signals) ? "-" : scout.signals)} | proxy={(scout.proxyChildScore > 0 ? (scout.proxyChildScore.ToString(CultureInfo.InvariantCulture) + ":" + Shrink(scout.proxyChildFramePath, 64)) : "-")} | rect={(string.IsNullOrWhiteSpace(scout.visibleRect) ? "-" : scout.visibleRect)} | href={TrimHrefForLog(scout.href)}");
             }
 
             FrameAuthorityCandidate? best = null;
@@ -5268,12 +5431,19 @@ try{
             {
                 var fresh = _frameAuthorityCandidates.Values
                     .Where(c => (now - c.LastSeenUtc) <= TimeSpan.FromSeconds(10))
-                    .OrderByDescending(c => c.Score)
+                    .OrderByDescending(c => IsSingleBacTableUrl(c.Href) ? 3 : (HasSingleBacProxy(c) ? 2 : (IsWebMainUrl(c.Href) ? 1 : 0)))
+                    .ThenByDescending(c => c.Score)
                     .ThenByDescending(c => c.SeenCount)
                     .ToList();
                 best = fresh.FirstOrDefault();
                 if (best == null)
                     return;
+
+                if (!string.IsNullOrWhiteSpace(_authorityContextId) &&
+                    string.Equals(key, _authorityContextId, StringComparison.Ordinal))
+                {
+                    _authorityLastSeenUtc = now;
+                }
 
                 if (string.Equals(_lastAuthorityBestKey, best.ContextId, StringComparison.Ordinal))
                     _lastAuthorityBestStable++;
@@ -5300,7 +5470,7 @@ try{
                     if ((now - _lastAuthLogUtc) > TimeSpan.FromSeconds(3))
                     {
                         _lastAuthLogUtc = now;
-                        Log($"[AUTH][CANDIDATE] best={Shrink(best.ContextId, 96)} | score={best.Score} | stable={_lastAuthorityBestStable} | conf={(string.IsNullOrWhiteSpace(best.Confidence) ? "-" : best.Confidence)} | signals={(string.IsNullOrWhiteSpace(best.Signals) ? "-" : best.Signals)} | locked={(string.IsNullOrWhiteSpace(_authorityContextId) ? "-" : Shrink(_authorityContextId, 96))}");
+                        Log($"[AUTH][CANDIDATE] best={Shrink(best.ContextId, 96)} | score={best.Score} | stable={_lastAuthorityBestStable} | conf={(string.IsNullOrWhiteSpace(best.Confidence) ? "-" : best.Confidence)} | signals={(string.IsNullOrWhiteSpace(best.Signals) ? "-" : best.Signals)} | proxy={(best.ProxyChildScore > 0 ? (best.ProxyChildScore.ToString(CultureInfo.InvariantCulture) + ":" + Shrink(best.ProxyChildFramePath, 64)) : "-")} | locked={(string.IsNullOrWhiteSpace(_authorityContextId) ? "-" : Shrink(_authorityContextId, 96))}");
                     }
                     return;
                 }
@@ -5317,7 +5487,9 @@ try{
                 _authorityLastSeenUtc = now;
 
                 var tag = string.IsNullOrWhiteSpace(prev) ? "[AUTH][LOCK]" : (authorityLost ? "[AUTH][RELOCK]" : "[AUTH][SWITCH]");
-                Log($"{tag} ctx={Shrink(_authorityContextId, 120)} | prev={(string.IsNullOrWhiteSpace(prev) ? "-" : Shrink(prev, 96))} | score={_authorityScore} | stable={_lastAuthorityBestStable} | conf={(string.IsNullOrWhiteSpace(_authorityConfidence) ? "-" : _authorityConfidence)} | signals={(string.IsNullOrWhiteSpace(_authoritySignals) ? "-" : _authoritySignals)} | path={(string.IsNullOrWhiteSpace(_authorityFramePath) ? "-" : _authorityFramePath)} | href={TrimHrefForLog(_authorityHref)}");
+                if (best.ProxyChildScore >= 1200 && !string.IsNullOrWhiteSpace(best.ProxyChildFramePath))
+                    tag = string.IsNullOrWhiteSpace(prev) ? "[AUTH][LOCK-PROXY]" : (authorityLost ? "[AUTH][RELOCK-PROXY]" : "[AUTH][SWITCH-PROXY]");
+                Log($"{tag} ctx={Shrink(_authorityContextId, 120)} | prev={(string.IsNullOrWhiteSpace(prev) ? "-" : Shrink(prev, 96))} | score={_authorityScore} | stable={_lastAuthorityBestStable} | conf={(string.IsNullOrWhiteSpace(_authorityConfidence) ? "-" : _authorityConfidence)} | signals={(string.IsNullOrWhiteSpace(_authoritySignals) ? "-" : _authoritySignals)} | path={(string.IsNullOrWhiteSpace(_authorityFramePath) ? "-" : _authorityFramePath)} | proxy={(best.ProxyChildScore > 0 ? (best.ProxyChildScore.ToString(CultureInfo.InvariantCulture) + ":" + Shrink(best.ProxyChildFramePath, 80)) : "-")} | proxyHref={TrimHrefForLog(best.ProxyChildHref)} | href={TrimHrefForLog(_authorityHref)}");
                 _ = StartAuthorityContextAsync(_authorityContextId, _authorityToken, "lock");
             }
         }
@@ -6219,6 +6391,7 @@ try{
                     return;
 
                 Interlocked.Increment(ref _cdpDiagHttpBody);
+                TryProcessNetworkBetPoolPayload(body, false, candidate.OwnerTag, candidate.Url, "cdp-http");
                 TryProcessNetworkHistoryPayload(body, false, candidate.OwnerTag, candidate.Url, "cdp-http");
 
                 if (ShouldLogCdpHttpBodyProbe(candidate, body, out var reason, out var preview))
@@ -6302,6 +6475,7 @@ try{
                         var payload = resp.TryGetProperty("payloadData", out var pd) ? (pd.GetString() ?? "") : "";
                         var opcode = resp.TryGetProperty("opcode", out var op) ? op.GetInt32() : 1;
                         var isBin = opcode != 1;
+                        TryProcessNetworkBetPoolPayload(payload, isBin, ownerTag, url, "ws");
                         ObserveNetworkGameState(payload, isBin);
                         TryProcessNetworkHistoryPayload(payload, isBin, ownerTag, url, "ws");
                         TryProcessNetworkWinnerPacket(payload, isBin, ownerTag, url);
@@ -6764,6 +6938,598 @@ try{
                 }
             }
             return false;
+        }
+
+        private static string ReadStringByAnyName(JsonElement obj, params string[] names)
+        {
+            if (obj.ValueKind != JsonValueKind.Object || names == null || names.Length == 0)
+                return "";
+            foreach (var name in names)
+            {
+                if (!TryGetJsonPropertyLoose(obj, name, out var el))
+                    continue;
+                var raw = ReadJsonStringLoose(el);
+                if (!string.IsNullOrWhiteSpace(raw))
+                    return raw.Trim();
+            }
+            return "";
+        }
+
+        private static char? PoolSideFromName(string? name)
+        {
+            var n = (name ?? "").Trim().ToLowerInvariant();
+            if (n.Length == 0) return null;
+            if (Regex.IsMatch(n, @"banker|bank|betbanker|bankerbet|bankeramount|bankertotal|nha.?cai|nhacai|庄|莊", RegexOptions.IgnoreCase) ||
+                string.Equals(n, "b", StringComparison.OrdinalIgnoreCase))
+                return 'B';
+            if (Regex.IsMatch(n, @"player|play|betplayer|playerbet|playeramount|playertotal|tay.?con|taycon|闲|閒", RegexOptions.IgnoreCase) ||
+                string.Equals(n, "p", StringComparison.OrdinalIgnoreCase))
+                return 'P';
+            if (Regex.IsMatch(n, @"tie|draw|bettie|tiebet|tieamount|tietotal|hoa|hòa|和", RegexOptions.IgnoreCase) ||
+                string.Equals(n, "t", StringComparison.OrdinalIgnoreCase))
+                return 'T';
+            return null;
+        }
+
+        private static bool LooksLikePoolAmountName(string? name, string? parentName)
+        {
+            var n = (name ?? "").Trim().ToLowerInvariant();
+            var p = (parentName ?? "").Trim().ToLowerInvariant();
+            if (Regex.IsMatch(n, @"hand|winner|result|round|shoe|count|counts|odds|rate|payout|status|time|timer|width|height|showx|showy", RegexOptions.IgnoreCase))
+                return false;
+            if (Regex.IsMatch(n + " " + p, @"bet|pool|amount|money|stake|total|currentbet|current_bet", RegexOptions.IgnoreCase))
+                return true;
+            return PoolSideFromName(n).HasValue &&
+                   Regex.IsMatch(p, @"bet|pool|amount|money|stake|total|currentbet|current_bet", RegexOptions.IgnoreCase);
+        }
+
+        private static long? ReadPoolAmountLoose(JsonElement el)
+        {
+            try
+            {
+                var parsed = ReadJsonDoubleLoose(el);
+                if (parsed.HasValue && double.IsFinite(parsed.Value) && parsed.Value > 0)
+                    return (long)Math.Round(parsed.Value, MidpointRounding.AwayFromZero);
+
+                var raw = ReadJsonStringLoose(el);
+                if (string.IsNullOrWhiteSpace(raw))
+                    return null;
+                var s = raw.Trim().Replace(" ", "").ToUpperInvariant();
+                double mult = 1;
+                if (s.EndsWith("K", StringComparison.OrdinalIgnoreCase)) { mult = 1000; s = s[..^1]; }
+                else if (s.EndsWith("M", StringComparison.OrdinalIgnoreCase)) { mult = 1000000; s = s[..^1]; }
+                else if (s.EndsWith("B", StringComparison.OrdinalIgnoreCase)) { mult = 1000000000; s = s[..^1]; }
+
+                s = s.Replace(",", "");
+                if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && value > 0)
+                    return (long)Math.Round(value * mult, MidpointRounding.AwayFromZero);
+            }
+            catch
+            {
+            }
+            return null;
+        }
+
+        private static NetworkBetPoolSnapshot? TryBuildPoolFromSideObject(
+            JsonElement obj,
+            string parentName,
+            long inheritedTableId,
+            string inheritedTableName,
+            string source,
+            string ownerTag,
+            string? url,
+            string path)
+        {
+            if (obj.ValueKind != JsonValueKind.Object)
+                return null;
+
+            var snap = new NetworkBetPoolSnapshot
+            {
+                TableId = inheritedTableId,
+                TableName = inheritedTableName ?? "",
+                Source = source,
+                OwnerTag = ownerTag ?? "",
+                Url = url ?? "",
+                Path = path ?? ""
+            };
+
+            var tableId = ReadLongByAnyName(obj, "tableID", "tableId", "tableNo");
+            var tableName = ReadStringByAnyName(obj, "tableName", "table", "tableCode", "tableTitle", "name");
+            if (tableId > 0) snap.TableId = tableId;
+            if (!string.IsNullOrWhiteSpace(tableName)) snap.TableName = tableName;
+
+            int found = 0;
+            var numeric = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            foreach (var prop in obj.EnumerateObject())
+            {
+                var side = PoolSideFromName(prop.Name);
+                if (side.HasValue && LooksLikePoolAmountName(prop.Name, parentName))
+                {
+                    var amount = ReadPoolAmountLoose(prop.Value);
+                    if (amount.HasValue && amount.Value >= 100)
+                    {
+                        switch (side.Value)
+                        {
+                            case 'B': snap.B = amount.Value; break;
+                            case 'P': snap.P = amount.Value; break;
+                            case 'T': snap.T = amount.Value; break;
+                        }
+                        found++;
+                    }
+                }
+
+                if (Regex.IsMatch(prop.Name, @"^\d+$"))
+                {
+                    var amount = ReadPoolAmountLoose(prop.Value);
+                    if (amount.HasValue && amount.Value >= 100)
+                        numeric[prop.Name] = amount.Value;
+                }
+            }
+
+            if (found == 0 &&
+                numeric.Count >= 2 &&
+                Regex.IsMatch(parentName ?? "", @"currentbet|current_bet|betpool|pool|stake|amount", RegexOptions.IgnoreCase))
+            {
+                if (numeric.TryGetValue("1", out var b)) { snap.B = b; found++; }
+                if (numeric.TryGetValue("2", out var p)) { snap.P = p; found++; }
+                if (numeric.TryGetValue("3", out var t) || numeric.TryGetValue("0", out t)) { snap.T = t; found++; }
+                snap.NumericMapping = true;
+            }
+
+            if (found <= 0)
+                return null;
+
+            snap.Score = found * 1000 +
+                         (snap.B.HasValue ? 100 : 0) +
+                         (snap.P.HasValue ? 100 : 0) +
+                         (snap.T.HasValue ? 80 : 0) +
+                         (snap.TableId > 0 ? 100 : 0) +
+                         (!string.IsNullOrWhiteSpace(snap.TableName) ? 100 : 0) -
+                         (snap.NumericMapping ? 120 : 0);
+            return snap;
+        }
+
+        private static void CollectNetworkBetPoolCandidates(
+            JsonElement el,
+            string path,
+            string propertyName,
+            long inheritedTableId,
+            string inheritedTableName,
+            string source,
+            string ownerTag,
+            string? url,
+            List<NetworkBetPoolSnapshot> candidates,
+            int depth)
+        {
+            if (depth > 10)
+                return;
+
+            try
+            {
+                if (el.ValueKind == JsonValueKind.Object)
+                {
+                    var tableId = ReadLongByAnyName(el, "tableID", "tableId", "tableNo");
+                    var tableName = ReadStringByAnyName(el, "tableName", "table", "tableCode", "tableTitle", "name");
+                    if (TryGetJsonPropertyLoose(el, "tableInfo", out var tableInfoEl) && tableInfoEl.ValueKind == JsonValueKind.Object)
+                    {
+                        if (tableId <= 0) tableId = ReadLongByAnyName(tableInfoEl, "tableID", "tableId", "tableNo");
+                        if (string.IsNullOrWhiteSpace(tableName)) tableName = ReadStringByAnyName(tableInfoEl, "tableName", "table", "tableCode", "tableTitle", "name");
+                    }
+                    if (tableId <= 0) tableId = inheritedTableId;
+                    if (string.IsNullOrWhiteSpace(tableName)) tableName = inheritedTableName;
+
+                    var direct = TryBuildPoolFromSideObject(el, propertyName, tableId, tableName, source, ownerTag, url, path);
+                    if (direct != null)
+                        candidates.Add(direct);
+
+                    foreach (var prop in el.EnumerateObject())
+                    {
+                        var childPath = string.IsNullOrWhiteSpace(path) ? prop.Name : path + "." + prop.Name;
+                        if (prop.Value.ValueKind == JsonValueKind.Object &&
+                            Regex.IsMatch(prop.Name, @"currentbet|current_bet|betpool|pool|stake|amount|totalbet", RegexOptions.IgnoreCase))
+                        {
+                            var cand = TryBuildPoolFromSideObject(prop.Value, prop.Name, tableId, tableName, source, ownerTag, url, childPath);
+                            if (cand != null)
+                                candidates.Add(cand);
+                        }
+
+                        CollectNetworkBetPoolCandidates(prop.Value, childPath, prop.Name, tableId, tableName, source, ownerTag, url, candidates, depth + 1);
+                    }
+                }
+                else if (el.ValueKind == JsonValueKind.Array)
+                {
+                    int idx = 0;
+                    foreach (var item in el.EnumerateArray())
+                    {
+                        CollectNetworkBetPoolCandidates(item, path + "[" + idx.ToString(CultureInfo.InvariantCulture) + "]", propertyName, inheritedTableId, inheritedTableName, source, ownerTag, url, candidates, depth + 1);
+                        idx++;
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private void TryProcessNetworkBetPoolPayload(string payload, bool isBinary, string ownerTag, string? url, string source)
+        {
+            try
+            {
+                var rawText = DecodePacketText(payload, isBinary);
+                if (string.IsNullOrWhiteSpace(rawText))
+                    return;
+                if (rawText.IndexOf("currentBet", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    rawText.IndexOf("betPool", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    rawText.IndexOf("banker", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    rawText.IndexOf("player", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    rawText.IndexOf("tie", StringComparison.OrdinalIgnoreCase) < 0)
+                    return;
+
+                var json = ExtractJsonPayload(rawText);
+                if (string.IsNullOrWhiteSpace(json))
+                    return;
+
+                using var doc = JsonDocument.Parse(json);
+                var candidates = new List<NetworkBetPoolSnapshot>();
+                CollectNetworkBetPoolCandidates(doc.RootElement, "", "", 0, "", source, ownerTag, url, candidates, 0);
+                if (candidates.Count == 0)
+                    return;
+
+                long activeTableId;
+                lock (_roundStateLock)
+                    activeTableId = _netObservedTableId > 0 ? _netObservedTableId : _netSeqTableId;
+
+                var best = candidates
+                    .Where(c => c.B.HasValue || c.P.HasValue || c.T.HasValue)
+                    .OrderByDescending(c => activeTableId > 0 && c.TableId == activeTableId ? 100000 : 0)
+                    .ThenByDescending(c => c.Score)
+                    .FirstOrDefault();
+                if (best == null)
+                    return;
+
+                if (activeTableId > 0 && best.TableId > 0 && best.TableId != activeTableId)
+                {
+                    var missKey = $"miss|{activeTableId}|{best.TableId}|{best.B}|{best.P}|{best.T}";
+                    if (!string.Equals(_lastNetworkBetPoolKey, missKey, StringComparison.Ordinal) ||
+                        (DateTime.UtcNow - _lastNetworkBetPoolLogUtc) > TimeSpan.FromSeconds(5))
+                    {
+                        _lastNetworkBetPoolKey = missKey;
+                        _lastNetworkBetPoolLogUtc = DateTime.UtcNow;
+                        Log($"[POOL][NET][SKIP] reason=table-mismatch | active={activeTableId} | candTable={best.TableId} | B={(best.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(best.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(best.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | path={Shrink(best.Path, 96)} | url={TrimHrefForLog(url)}");
+                    }
+                    return;
+                }
+
+                best.SeenAtUtc = DateTime.UtcNow;
+                lock (_networkBetPoolLock)
+                {
+                    if (_networkBetPool == null ||
+                        (DateTime.UtcNow - _networkBetPool.SeenAtUtc) > TimeSpan.FromMilliseconds(900) ||
+                        best.Score >= _networkBetPool.Score ||
+                        (activeTableId > 0 && best.TableId == activeTableId))
+                    {
+                        _networkBetPool = best;
+                    }
+                }
+
+                var key = $"ok|{best.TableId}|{best.B}|{best.P}|{best.T}|{best.Source}|{best.Path}";
+                if (!string.Equals(_lastNetworkBetPoolKey, key, StringComparison.Ordinal) ||
+                    (DateTime.UtcNow - _lastNetworkBetPoolLogUtc) > TimeSpan.FromSeconds(2))
+                {
+                    _lastNetworkBetPoolKey = key;
+                    _lastNetworkBetPoolLogUtc = DateTime.UtcNow;
+                    Log($"[POOL][NET][ACCEPT] src={source}/{ownerTag} | table={(best.TableId > 0 ? best.TableId.ToString(CultureInfo.InvariantCulture) : "-")} | name={(string.IsNullOrWhiteSpace(best.TableName) ? "-" : best.TableName)} | B={(best.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(best.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(best.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | numeric={(best.NumericMapping ? 1 : 0)} | score={best.Score} | path={Shrink(best.Path, 96)} | url={TrimHrefForLog(url)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                var key = "pool-net-error|" + ex.GetType().Name + "|" + ex.Message;
+                if (!string.Equals(_lastNetworkBetPoolKey, key, StringComparison.Ordinal) ||
+                    (DateTime.UtcNow - _lastNetworkBetPoolLogUtc) > TimeSpan.FromSeconds(5))
+                {
+                    _lastNetworkBetPoolKey = key;
+                    _lastNetworkBetPoolLogUtc = DateTime.UtcNow;
+                    Log($"[POOL][NET][ERR] src={source}/{ownerTag} | {ex.GetType().Name}: {Shrink(ex.Message, 120)}");
+                }
+            }
+        }
+
+        private void MergeNetworkBetPoolIntoSnapshot(CwSnapshot snap, string source)
+        {
+            if (snap == null)
+                return;
+
+            NetworkBetPoolSnapshot? pool;
+            lock (_networkBetPoolLock)
+                pool = _networkBetPool;
+
+            if (pool == null)
+                return;
+            var age = DateTime.UtcNow - pool.SeenAtUtc;
+            if (age > TimeSpan.FromSeconds(30))
+            {
+                var staleKey = $"stale|{pool.TableId}|{pool.B}|{pool.P}|{pool.T}|{pool.Source}";
+                if (!string.Equals(_lastNetworkBetPoolMergeKey, staleKey, StringComparison.Ordinal) ||
+                    (DateTime.UtcNow - _lastNetworkBetPoolMergeLogUtc) > TimeSpan.FromSeconds(10))
+                {
+                    _lastNetworkBetPoolMergeKey = staleKey;
+                    _lastNetworkBetPoolMergeLogUtc = DateTime.UtcNow;
+                    Log($"[POOL][LOCK][STALE] ageMs={(long)age.TotalMilliseconds} | poolSrc={(string.IsNullOrWhiteSpace(pool.Source) ? "-" : pool.Source)} | table={(pool.TableId > 0 ? pool.TableId.ToString(CultureInfo.InvariantCulture) : "-")} | B={(pool.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(pool.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(pool.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}");
+                }
+                return;
+            }
+
+            long activeTableId;
+            lock (_roundStateLock)
+                activeTableId = _netObservedTableId > 0 ? _netObservedTableId : _netSeqTableId;
+            if (activeTableId > 0 && pool.TableId > 0 && pool.TableId != activeTableId)
+                return;
+
+            snap.totals ??= new CwTotals { N = "" };
+            bool changed = false;
+            if (pool.B.HasValue && snap.totals.B != pool.B.Value) { snap.totals.B = pool.B.Value; changed = true; }
+            if (pool.P.HasValue && snap.totals.P != pool.P.Value) { snap.totals.P = pool.P.Value; changed = true; }
+            if (pool.T.HasValue && snap.totals.T != pool.T.Value) { snap.totals.T = pool.T.Value; changed = true; }
+            if (!string.IsNullOrWhiteSpace(pool.Source))
+                snap.totals.Source = "network/" + pool.Source + (pool.NumericMapping ? "/numeric123" : "");
+
+            if (changed)
+            {
+                var key = $"{pool.TableId}|{snap.totals.B}|{snap.totals.P}|{snap.totals.T}|{snap.totals.Source}";
+                if (!string.Equals(_lastNetworkBetPoolMergeKey, key, StringComparison.Ordinal) ||
+                    (DateTime.UtcNow - _lastNetworkBetPoolMergeLogUtc) > TimeSpan.FromSeconds(2))
+                {
+                    _lastNetworkBetPoolMergeKey = key;
+                    _lastNetworkBetPoolMergeLogUtc = DateTime.UtcNow;
+                    Log($"[POOL][LOCK][MERGE] tickSrc={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | poolSrc={(string.IsNullOrWhiteSpace(snap.totals.Source) ? "-" : snap.totals.Source)} | ageMs={(long)age.TotalMilliseconds} | table={(pool.TableId > 0 ? pool.TableId.ToString(CultureInfo.InvariantCulture) : "-")} | B={(snap.totals.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(snap.totals.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(snap.totals.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}");
+                }
+            }
+        }
+
+        private static bool HasAnyPoolValue(CwTotals? totals)
+        {
+            return totals != null && (totals.B.HasValue || totals.P.HasValue || totals.T.HasValue);
+        }
+
+        private static bool IsUntrustedNetworkPoolSource(string? source)
+        {
+            var s = (source ?? "").Trim();
+            return s.StartsWith("network/", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private CwTotals? BuildCanvasDisplayIncomingTotals(CwTotals? incoming, string source)
+        {
+            if (incoming == null)
+                return null;
+
+            if (!IsUntrustedNetworkPoolSource(incoming.Source))
+                return incoming;
+
+            var key = $"{incoming.Source}|{incoming.B}|{incoming.P}|{incoming.T}";
+            if (!string.Equals(_lastCanvasPoolBlockKey, key, StringComparison.Ordinal) ||
+                (DateTime.UtcNow - _lastCanvasPoolBlockLogUtc) > TimeSpan.FromSeconds(5))
+            {
+                _lastCanvasPoolBlockKey = key;
+                _lastCanvasPoolBlockLogUtc = DateTime.UtcNow;
+                Log($"[CANVAS][POOL-BLOCK] reason=untrusted-network-display | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | poolSrc={(string.IsNullOrWhiteSpace(incoming.Source) ? "-" : incoming.Source)} | B={(incoming.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(incoming.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(incoming.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}");
+            }
+
+            return new CwTotals
+            {
+                B = null,
+                P = null,
+                T = null,
+                A = incoming.A,
+                N = incoming.N,
+                SD = incoming.SD,
+                TT = incoming.TT,
+                T3T = incoming.T3T,
+                T3D = incoming.T3D,
+                TD = incoming.TD,
+                Source = "network-pool-blocked/" + (incoming.Source ?? "")
+            };
+        }
+
+        private CwTotals? BuildStableCanvasTotals(CwTotals? incoming, string source)
+        {
+            incoming = BuildCanvasDisplayIncomingTotals(incoming, source);
+            if (incoming == null && _lastCanvasDisplayTotals == null)
+                return null;
+
+            var prev = _lastCanvasDisplayTotals;
+            var merged = new CwTotals
+            {
+                B = incoming?.B ?? prev?.B,
+                P = incoming?.P ?? prev?.P,
+                T = incoming?.T ?? prev?.T,
+                A = incoming?.A ?? prev?.A,
+                N = !string.IsNullOrWhiteSpace(incoming?.N) ? incoming!.N : (prev?.N ?? ""),
+                SD = incoming?.SD ?? prev?.SD,
+                TT = incoming?.TT ?? prev?.TT,
+                T3T = incoming?.T3T ?? prev?.T3T,
+                T3D = incoming?.T3D ?? prev?.T3D,
+                TD = incoming?.TD ?? prev?.TD,
+                Source = !string.IsNullOrWhiteSpace(incoming?.Source) ? incoming!.Source : (prev?.Source ?? "csharp-stable")
+            };
+
+            if (HasAnyPoolValue(incoming) ||
+                incoming?.A != null ||
+                !string.IsNullOrWhiteSpace(incoming?.N))
+            {
+                _lastCanvasDisplayTotals = CloneTotalsForTasks(merged);
+            }
+
+            return merged;
+        }
+
+        private void PushAcceptedDisplayToCanvas(CwSnapshot snap, string source)
+        {
+            try
+            {
+                if (snap == null)
+                    return;
+                var seq = FilterResultDisplaySeqWindow(snap.seq);
+                var totals = BuildStableCanvasTotals(snap.totals, source);
+                var totalsSource = totals?.Source ?? "";
+                var key = $"{seq}|{snap.seqVersion}|{snap.seqEvent}|{snap.seqSource}|{snap.prog}|{snap.status}|{totals?.B}|{totals?.P}|{totals?.T}|{totals?.A}|{totals?.N}|{totalsSource}|{snap.framePath}|{snap.dataFramePath}|{snap.dataMode}";
+                var now = DateTime.UtcNow;
+                Log($"[CANVAS][DISPLAY-PUSH-ENTER] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={(string.IsNullOrWhiteSpace(snap.contextId) ? "-" : Shrink(snap.contextId, 80))} | seqLen={seq.Length} | prog={(snap.prog?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")} | status={(string.IsNullOrWhiteSpace(snap.status) ? "-" : Shrink(snap.status, 32))} | poolSrc={(string.IsNullOrWhiteSpace(totalsSource) ? "-" : totalsSource)} | B={(totals?.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(totals?.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(totals?.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}");
+                if (string.Equals(key, _lastCanvasAcceptedSeqKey, StringComparison.Ordinal) &&
+                    (now - _lastCanvasAcceptedSeqPushUtc) < TimeSpan.FromSeconds(1.5))
+                {
+                    if ((now - _lastCanvasDisplaySkipLogUtc) > TimeSpan.FromSeconds(3))
+                    {
+                        _lastCanvasDisplaySkipLogUtc = now;
+                        Log($"[CANVAS][DISPLAY-PUSH-SKIP] reason=throttle-same-snapshot | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | seqLen={seq.Length} | prog={(snap.prog?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")} | status={(string.IsNullOrWhiteSpace(snap.status) ? "-" : Shrink(snap.status, 32))}");
+                    }
+                    return;
+                }
+
+                _lastCanvasAcceptedSeqKey = key;
+                _lastCanvasAcceptedSeqPushUtc = now;
+
+                var payload = new
+                {
+                    seq,
+                    rawSeq = FilterResultDisplaySeqWindow(snap.rawSeq),
+                    seqVersion = snap.seqVersion ?? 0,
+                    seqEvent = snap.seqEvent ?? "",
+                    seqSource = string.IsNullOrWhiteSpace(snap.seqSource) ? "csharp" : snap.seqSource,
+                    seqMode = snap.seqMode ?? "",
+                    seqAppend = snap.seqAppend ?? "",
+                    prog = snap.prog,
+                    status = snap.status ?? "",
+                    statusSource = snap.statusSource ?? "",
+                    statusTail = snap.statusTail ?? "",
+                    contextId = snap.contextId ?? "",
+                    framePath = snap.framePath ?? "",
+                    href = snap.href ?? "",
+                    topHref = snap.topHref ?? "",
+                    isTop = snap.isTop ?? false,
+                    dataMode = snap.dataMode ?? "",
+                    dataFramePath = snap.dataFramePath ?? "",
+                    dataHref = snap.dataHref ?? "",
+                    panelFramePath = snap.panelFramePath ?? snap.framePath ?? "",
+                    panelHref = snap.panelHref ?? snap.href ?? "",
+                    totals = totals == null ? null : new
+                    {
+                        B = totals.B,
+                        P = totals.P,
+                        T = totals.T,
+                        A = totals.A,
+                        N = totals.N ?? "",
+                        Source = string.IsNullOrWhiteSpace(totals.Source) ? "csharp" : totals.Source,
+                        BS = string.IsNullOrWhiteSpace(totals.Source) ? "csharp" : totals.Source
+                    },
+                    source = source ?? "",
+                    ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                };
+                var json = JsonSerializer.Serialize(payload);
+                var js =
+                    "(function(){try{" +
+                    "var snap=" + json + ";" +
+                    "window.__abx_csharp_display_snapshot=snap;" +
+                    "window.__abx_csharp_display_snapshot_at=Date.now();" +
+                    "window.__abx_csharp_display_enabled=1;" +
+                    "if(typeof window.__abx_apply_csharp_display_snapshot==='function') return String(window.__abx_apply_csharp_display_snapshot(snap));" +
+                    "if(typeof window.__abx_apply_csharp_authority_snapshot==='function') return String(window.__abx_apply_csharp_authority_snapshot(snap));" +
+                    "return 'ok';" +
+                    "}catch(e){return 'err:' + String(e&&e.message?e.message:e);}})();";
+
+                _ = Dispatcher.BeginInvoke(new Action(async () =>
+                {
+                    try
+                    {
+                        var mainTopSent = 0;
+                        var mainFrameSent = 0;
+                        var popupTopSent = 0;
+                        var popupFrameSent = 0;
+
+                        var mainWeb = Web;
+                        if (mainWeb?.CoreWebView2 != null)
+                        {
+                            mainTopSent++;
+                            await ExecuteCanvasDisplayScriptTargetAsync("main-top", () => mainWeb.ExecuteScriptAsync(js));
+                        }
+
+                        foreach (var item in GetMainArmedFramesSnapshot())
+                        {
+                            try
+                            {
+                                mainFrameSent++;
+                                await ExecuteCanvasDisplayScriptTargetAsync($"main-frame:{item.id}", () => item.frame.ExecuteScriptAsync(js));
+                            }
+                            catch (Exception ex)
+                            {
+                                if (IsDisposedFrameException(ex))
+                                {
+                                    _mainFrameRefs.TryRemove(item.id, out _);
+                                    _mainFrameBridgeArmed.TryRemove(item.id, out _);
+                                }
+                            }
+                        }
+
+                        var popupWeb = _popupWeb;
+                        if (popupWeb?.CoreWebView2 != null)
+                        {
+                            popupTopSent++;
+                            await ExecuteCanvasDisplayScriptTargetAsync("popup-top", () => popupWeb.ExecuteScriptAsync(js));
+                        }
+
+                        foreach (var item in GetPopupArmedFramesSnapshot())
+                        {
+                            try
+                            {
+                                popupFrameSent++;
+                                await ExecuteCanvasDisplayScriptTargetAsync($"popup-frame:{item.key}", () => item.frame.ExecuteScriptAsync(js));
+                            }
+                            catch (Exception ex)
+                            {
+                                if (IsDisposedFrameException(ex))
+                                    _popupFrameRefs.TryRemove(item.key, out _);
+                            }
+                        }
+
+                        Log($"[CANVAS][DISPLAY-PUSH] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={(string.IsNullOrWhiteSpace(snap.contextId) ? "-" : Shrink(snap.contextId, 80))} | mode={(string.IsNullOrWhiteSpace(snap.dataMode) ? "-" : snap.dataMode)} | data={(string.IsNullOrWhiteSpace(snap.dataFramePath) ? "-" : snap.dataFramePath)} | targets=main:{mainTopSent}/{mainFrameSent},popup:{popupTopSent}/{popupFrameSent} | seqLen={seq.Length} | prog={(snap.prog?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")} | status={(string.IsNullOrWhiteSpace(snap.status) ? "-" : Shrink(snap.status, 32))} | poolSrc={(string.IsNullOrWhiteSpace(totalsSource) ? "-" : totalsSource)} | B={(totals?.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(totals?.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(totals?.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | acc={(string.IsNullOrWhiteSpace(totals?.N) ? "-" : totals!.N)} | bal={(totals?.A?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"[CANVAS][DISPLAY-PUSH-ERR] stage=dispatcher | {ex.GetType().Name}: {Shrink(ex.Message, 160)}");
+                    }
+                }));
+            }
+            catch (Exception ex)
+            {
+                Log($"[CANVAS][DISPLAY-PUSH-ERR] stage=prepare | {ex.GetType().Name}: {Shrink(ex.Message, 160)}");
+            }
+        }
+
+        private static string NormalizeScriptResultForLog(string? result)
+        {
+            var raw = result ?? "";
+            try
+            {
+                if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
+                    return JsonSerializer.Deserialize<string>(raw) ?? raw;
+            }
+            catch
+            {
+            }
+            return raw;
+        }
+
+        private async Task ExecuteCanvasDisplayScriptTargetAsync(string target, Func<Task<string>> execute)
+        {
+            try
+            {
+                var result = await execute();
+                Log($"[CANVAS][DISPLAY-PUSH-RESULT] target={target} | result={Shrink(NormalizeScriptResultForLog(result), 120)}");
+            }
+            catch (Exception ex)
+            {
+                Log($"[CANVAS][DISPLAY-PUSH-ERR] target={target} | {ex.GetType().Name}: {Shrink(ex.Message, 160)}");
+                throw;
+            }
         }
 
         private static bool TextContainsIgnoreCase(string? text, string value)
@@ -10092,6 +10858,7 @@ try{
 
                 if (ShouldLogHttpResponse(url, body, out var preview, out var reason))
                     LogPacket("HTTP.resp/" + reason, url, preview, false);
+                TryProcessNetworkBetPoolPayload(body, false, "webresource", url, "http");
                 TryProcessNetworkHistoryPayload(body, false, "webresource", url, "http");
             }
             catch (Exception ex)
@@ -12107,11 +12874,21 @@ try{
     var els = Array.from(document.querySelectorAll('iframe,frame'));
     var best = '';
     var bestScore = -1;
+    var picks = [];
     for (var i=0;i<els.length;i++){
       var el = els[i];
       var src = String((el && (el.src || el.getAttribute('src'))) || '').trim();
       if (!src) continue;
       var u = src.toLowerCase();
+      if (u.indexOf('googletagmanager') >= 0 ||
+          u.indexOf('google-analytics') >= 0 ||
+          u.indexOf('doubleclick') >= 0 ||
+          u.indexOf('recaptcha') >= 0 ||
+          u.indexOf('google.com/recaptcha') >= 0 ||
+          u.indexOf('/ns.html') >= 0) {
+        picks.push({ i:i, score:-999, skip:'tracker', src:src.slice(0,220) });
+        continue;
+      }
       var s = 0;
       if (u.indexOf('/player/singlebactable.jsp') >= 0) s += 100;
       if (u.indexOf('/player/webmain.jsp') >= 0) s += 90;
@@ -12123,13 +12900,50 @@ try{
       if (u.indexOf('usplaynet.com') >= 0) s += 30;
       if (u.indexOf('balikko.com') >= 0) s += 30;
       if (u.indexOf('barppat.com') >= 0) s += 30;
+      try{
+        var r = el.getBoundingClientRect();
+        if (r.width > 260 && r.height > 180) s += 5;
+        picks.push({ i:i, score:s, rect:Math.round(r.width)+'x'+Math.round(r.height), src:src.slice(0,220) });
+      }catch(_){
+        picks.push({ i:i, score:s, src:src.slice(0,220) });
+      }
       if (s > bestScore){ bestScore = s; best = src; }
     }
-    return best || '';
-  }catch(_){ return ''; }
+    return JSON.stringify({ best: best || '', bestScore: bestScore, picks: picks.slice(0,12) });
+  }catch(e){ return JSON.stringify({ err: String((e && e.message) ? e.message : e) }); }
 })();";
                 var raw = await Web.ExecuteScriptAsync(js);
-                return (JsonSerializer.Deserialize<string>(raw) ?? "").Trim();
+                var text = (JsonSerializer.Deserialize<string>(raw) ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    Log("[VaoXocDia][iframe-url] empty-probe");
+                    return "";
+                }
+
+                if (!text.StartsWith("{", StringComparison.Ordinal))
+                    return text;
+
+                using var doc = JsonDocument.Parse(text);
+                var root = doc.RootElement;
+                var err = GetJsonStringLoose(root, "err") ?? "";
+                if (!string.IsNullOrWhiteSpace(err))
+                {
+                    Log("[VaoXocDia][iframe-url] probe-err=" + Shrink(err, 180));
+                    return "";
+                }
+
+                var best = GetJsonStringLoose(root, "best") ?? "";
+                var bestScore = GetJsonLongLoose(root, "bestScore") ?? -1;
+                var picks = "";
+                if (root.TryGetProperty("picks", out var picksEl))
+                    picks = Shrink(picksEl.GetRawText(), 900);
+                Log("[VaoXocDia][iframe-url] bestScore=" + bestScore.ToString(CultureInfo.InvariantCulture) +
+                    " | best=" + Shrink(best, 220) +
+                    " | picks=" + (string.IsNullOrWhiteSpace(picks) ? "-" : picks));
+
+                if (bestScore < 25)
+                    return "";
+                return best.Trim();
             }
             catch (Exception ex)
             {
@@ -16217,7 +17031,8 @@ try{
                 TT = t.TT,
                 T3T = t.T3T,
                 T3D = t.T3D,
-                TD = t.TD
+                TD = t.TD,
+                Source = t.Source
             };
         }
 
@@ -16255,6 +17070,15 @@ try{
                 contextScore = snap.contextScore,
                 contextConfidence = snap.contextConfidence,
                 signals = snap.signals,
+                proxyChildFramePath = snap.proxyChildFramePath,
+                proxyChildHref = snap.proxyChildHref,
+                proxyChildScore = snap.proxyChildScore,
+                proxyChildSignals = snap.proxyChildSignals,
+                dataMode = snap.dataMode,
+                dataFramePath = snap.dataFramePath,
+                dataHref = snap.dataHref,
+                panelFramePath = snap.panelFramePath,
+                panelHref = snap.panelHref,
                 jsBuildMs = snap.jsBuildMs,
                 jsTotalsMs = snap.jsTotalsMs,
                 jsSeqMs = snap.jsSeqMs,
@@ -16300,6 +17124,15 @@ try{
                 contextScore = snap.contextScore,
                 contextConfidence = snap.contextConfidence,
                 signals = snap.signals,
+                proxyChildFramePath = snap.proxyChildFramePath,
+                proxyChildHref = snap.proxyChildHref,
+                proxyChildScore = snap.proxyChildScore,
+                proxyChildSignals = snap.proxyChildSignals,
+                dataMode = snap.dataMode,
+                dataFramePath = snap.dataFramePath,
+                dataHref = snap.dataHref,
+                panelFramePath = snap.panelFramePath,
+                panelHref = snap.panelHref,
                 jsBuildMs = snap.jsBuildMs,
                 jsTotalsMs = snap.jsTotalsMs,
                 jsSeqMs = snap.jsSeqMs,

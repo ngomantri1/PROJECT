@@ -292,7 +292,20 @@
             docKey: docKey
         };
     }
-    function __abxGetGameSignals() {
+    function __abxIsIgnoredFrameUrl(url) {
+        try {
+            var u = String(url || '').toLowerCase();
+            return u.indexOf('googletagmanager') >= 0 ||
+                u.indexOf('google-analytics') >= 0 ||
+                u.indexOf('doubleclick') >= 0 ||
+                u.indexOf('recaptcha') >= 0 ||
+                u.indexOf('google.com/recaptcha') >= 0 ||
+                u.indexOf('/ns.html') >= 0;
+        } catch (_) {
+            return false;
+        }
+    }
+    function __abxScoreGameDocument(doc, href, framePath) {
         var out = {
             hasThemeZone: 0,
             hasProcessStatus: 0,
@@ -306,19 +319,32 @@
             visibleRect: '',
             score: 0,
             confidence: 'none',
-            signals: ''
+            signals: '',
+            href: String(href || ''),
+            framePath: String(framePath || ''),
+            ignored: 0
         };
-        try { out.hasThemeZone = document.querySelector('#themeZone.game, #themeZone.game\\.baccarat_normal, #themeZone') ? 1 : 0; } catch (_) {}
-        try { out.hasProcessStatus = document.querySelector('#processStatus, #processBar.info_status p#processStatus') ? 1 : 0; } catch (_) {}
-        try { out.hasProcessBar = document.querySelector('#processBar, .info_status') ? 1 : 0; } catch (_) {}
-        try { out.hasBeadRoad = document.querySelector('#beadBPRoad, .road_bead, .road_grid') ? 1 : 0; } catch (_) {}
-        try { out.hasBetBox = document.querySelector('#betBoxPlayer, #betBoxBanker, #betBoxTie, [id*=betBox], .zone_bet_bottom') ? 1 : 0; } catch (_) {}
-        try { out.hasGameMain = document.querySelector('.game_main, #themeZone .game_main') ? 1 : 0; } catch (_) {}
-        try { out.hasZoneBet = document.querySelector('.zone_bet, .zone_bet_bottom, .zone_bet_top') ? 1 : 0; } catch (_) {}
-        try { out.hasCocos = __cw_hasCocos() ? 1 : 0; } catch (_) {}
-        try { out.canvasCount = document.querySelectorAll('canvas').length || 0; } catch (_) {}
+        if (!doc) return out;
+        if (__abxIsIgnoredFrameUrl(href)) {
+            out.ignored = 1;
+            out.score = -5000;
+            out.signals = 'ignored';
+            return out;
+        }
+        try { out.hasThemeZone = doc.querySelector('#themeZone.game, #themeZone.game.baccarat_normal, #themeZone.game\\.baccarat_normal, #themeZone') ? 1 : 0; } catch (_) {}
+        try { out.hasProcessStatus = doc.querySelector('#processStatus, #processBar.info_status p#processStatus') ? 1 : 0; } catch (_) {}
+        try { out.hasProcessBar = doc.querySelector('#processBar, .info_status') ? 1 : 0; } catch (_) {}
+        try { out.hasBeadRoad = doc.querySelector('#beadBPRoad, .road_bead, .road_grid') ? 1 : 0; } catch (_) {}
+        try { out.hasBetBox = doc.querySelector('#betBoxPlayer, #betBoxBanker, #betBoxTie, [id*=betBox], .zone_bet_bottom') ? 1 : 0; } catch (_) {}
+        try { out.hasGameMain = doc.querySelector('.game_main, #themeZone .game_main') ? 1 : 0; } catch (_) {}
+        try { out.hasZoneBet = doc.querySelector('.zone_bet, .zone_bet_bottom, .zone_bet_top') ? 1 : 0; } catch (_) {}
         try {
-            var main = document.querySelector('#themeZone, .game_main, body');
+            var w = doc.defaultView;
+            out.hasCocos = (w && w.cc && w.cc.director && w.cc.director.getScene) ? 1 : 0;
+        } catch (_) {}
+        try { out.canvasCount = doc.querySelectorAll('canvas').length || 0; } catch (_) {}
+        try {
+            var main = doc.querySelector('#themeZone, .game_main, body');
             var r = main && main.getBoundingClientRect ? main.getBoundingClientRect() : null;
             if (r)
                 out.visibleRect = Math.round(r.width || 0) + 'x' + Math.round(r.height || 0) + '@' + Math.round(r.left || 0) + ',' + Math.round(r.top || 0);
@@ -344,7 +370,7 @@
             sig.push('canvas' + out.canvasCount);
         }
         try {
-            var h = String(location.href || '');
+            var h = String(href || '');
             if (/about:blank/i.test(h))
                 score -= 2000;
             if (/singleBacTable\.jsp/i.test(h))
@@ -355,6 +381,62 @@
         out.score = score;
         out.signals = sig.join(',');
         out.confidence = score >= 2500 ? 'strong' : (score >= 1200 ? 'probable' : (score >= 400 ? 'weak' : 'none'));
+        return out;
+    }
+    function __abxScanChildGameFrames(maxDepth) {
+        var best = null;
+        var seen = 0;
+        var basePath = '';
+        try { basePath = __abxTryFramePath(); } catch (_) { basePath = ''; }
+        if (!basePath) basePath = 'top';
+        function scan(win, path, depth) {
+            if (!win || depth >= maxDepth || seen >= 24)
+                return;
+            var frames = [];
+            try { frames = win.frames || []; } catch (_) { return; }
+            for (var i = 0; i < frames.length && seen < 24; i++) {
+                var child = null;
+                try { child = frames[i]; } catch (_) { child = null; }
+                if (!child) continue;
+                seen++;
+                var childPath = path + '/frame[' + i + ']';
+                var href = '';
+                var doc = null;
+                try { href = String(child.location && child.location.href || ''); } catch (_) { href = ''; }
+                try { doc = child.document; } catch (_) { doc = null; }
+                if (doc) {
+                    var sig = __abxScoreGameDocument(doc, href, childPath);
+                    if (!sig.ignored && sig.score > 0) {
+                        sig.framePath = childPath;
+                        sig.href = href;
+                        if (!best || sig.score > best.score)
+                            best = sig;
+                    }
+                    try { scan(child, childPath, depth + 1); } catch (_) {}
+                }
+            }
+        }
+        try { scan(window, basePath, 0); } catch (_) {}
+        return best;
+    }
+    function __abxGetGameSignals() {
+        var href = '';
+        var framePath = '';
+        try { href = String(location.href || ''); } catch (_) {}
+        try { framePath = __abxTryFramePath(); } catch (_) {}
+        var out = __abxScoreGameDocument(document, href, framePath);
+        try {
+            var child = __abxScanChildGameFrames(7);
+            if (child && child.score >= 1200 && child.score > (Number(out.score || 0) + 250)) {
+                out.proxyChildFramePath = String(child.framePath || '');
+                out.proxyChildHref = String(child.href || '');
+                out.proxyChildScore = Number(child.score || 0) || 0;
+                out.proxyChildSignals = String(child.signals || '');
+                out.score = Math.max(Number(out.score || 0), Math.max(0, Number(child.score || 0) - 120));
+                out.signals = (out.signals ? (out.signals + ',') : '') + 'proxyChild:' + String(child.signals || '');
+                out.confidence = out.score >= 2500 ? 'strong' : (out.score >= 1200 ? 'probable' : (out.score >= 400 ? 'weak' : 'none'));
+            }
+        } catch (_) {}
         return out;
     }
     function __abxPost(obj) {
@@ -396,6 +478,10 @@
             hasCocos: sig.hasCocos,
             canvasCount: sig.canvasCount,
             visibleRect: sig.visibleRect,
+            proxyChildFramePath: String(sig.proxyChildFramePath || ''),
+            proxyChildHref: String(sig.proxyChildHref || ''),
+            proxyChildScore: Number(sig.proxyChildScore || 0) || 0,
+            proxyChildSignals: String(sig.proxyChildSignals || ''),
             ts: Date.now()
         };
     }
@@ -2385,6 +2471,69 @@
         }
         return out;
     }
+    function domParsePoolMoneyToken(tok) {
+        try {
+            var raw = String(tok || '').trim();
+            if (!raw)
+                return null;
+            var compact = raw.replace(/\s+/g, '').toUpperCase();
+            if (/[KMB]$/.test(compact))
+                return moneyOf(compact);
+            if (/^\d{1,3}(?:[.,\s]\d{3})+(?:[.,]\d+)?$/.test(raw)) {
+                var grouped = raw.replace(/\s/g, '');
+                if (/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(grouped))
+                    return parseFloat(grouped.replace(/,/g, ''));
+                if (/^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(grouped))
+                    return parseFloat(grouped.replace(/\./g, '').replace(',', '.'));
+            }
+            if (/^\d+(?:[.,]\d+)?$/.test(compact)) {
+                var decimal = parseFloat(compact.replace(',', '.'));
+                return isFinite(decimal) ? decimal : null;
+            }
+            return null;
+        } catch (_) {
+            return null;
+        }
+    }
+    function domExtractPoolStakeFromText(text) {
+        try {
+            var s = String(text || '').replace(/\u00A0/g, ' ');
+            if (!s)
+                return { value: null, token: null };
+            var re = /\d+(?:[.,]\d+)?\s*[KMB]\b|\d{1,3}(?:[.,\s]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?/ig;
+            var best = null;
+            var m;
+            while ((m = re.exec(s)) !== null) {
+                var tok = String(m[0] || '').trim();
+                if (!tok)
+                    continue;
+                var idx = Number(m.index || 0);
+                var prev = idx > 0 ? s.charAt(idx - 1) : '';
+                var next = s.charAt(idx + tok.length);
+                // Bỏ odds như 1:1, 1:8, 1:0.95.
+                if (prev === ':' || next === ':')
+                    continue;
+                var val = domParsePoolMoneyToken(tok);
+                if (!(val > 0))
+                    continue;
+                var hasUnit = /[KMB]\b/i.test(tok);
+                // Các số nhỏ không đơn vị thường là số người/chip count, không phải tổng cược.
+                if (!hasUnit && val < 100)
+                    continue;
+                var score = 0;
+                if (hasUnit)
+                    score += 10000;
+                if (String(tok).indexOf('.') >= 0 || String(tok).indexOf(',') >= 0)
+                    score += 300;
+                score += Math.min(5000, Math.round(Number(val) || 0));
+                if (!best || score > best.score)
+                    best = { value: val, token: tok, score: score, hasUnit: hasUnit };
+            }
+            return best ? { value: best.value, token: best.token } : { value: null, token: null };
+        } catch (_) {
+            return { value: null, token: null };
+        }
+    }
     function domResolveBetSideFromHost(host, textFallback) {
         var side = domBetSideOfText(textFallback || domTextOf(host));
         if (side)
@@ -2416,6 +2565,9 @@
                 value: null,
                 token: null
             };
+        var directStake = domExtractPoolStakeFromText(domTextOf(host));
+        if (directStake && directStake.value != null)
+            return directStake;
         var tokens = domExtractMoneyTokens(domTextOf(host));
         if (!tokens.length && host.querySelectorAll) {
             var leaves = [];
@@ -2431,9 +2583,18 @@
                 var txt = domTextOf(el);
                 if (!txt || txt.length > 32)
                     continue;
-                var add = domExtractMoneyTokens(txt);
-                for (var j = 0; j < add.length; j++)
-                    tokens.push(add[j]);
+                var loose = domExtractPoolStakeFromText(txt);
+                if (loose && loose.value != null) {
+                    tokens.push({
+                        token: loose.token,
+                        value: loose.value,
+                        hasUnit: /[KMB]\b/i.test(String(loose.token || ''))
+                    });
+                } else {
+                    var add = domExtractMoneyTokens(txt);
+                    for (var j = 0; j < add.length; j++)
+                        tokens.push(add[j]);
+                }
             }
         }
         if (!tokens.length)
@@ -2453,9 +2614,453 @@
             token: tokens[0].token
         };
     }
+    var _abxPoolProvider = {
+        at: 0,
+        data: null,
+        installed: false,
+        lastKey: ''
+    };
+    function poolProviderSideFromName(name) {
+        var n = String(name || '').toLowerCase();
+        if (!n)
+            return null;
+        if (/(banker|bank|banca|nha.?cai|nhacai|庄|莊)/i.test(n))
+            return 'B';
+        if (/(player|play|tay.?con|taycon|闲|閒)/i.test(n))
+            return 'P';
+        if (/(tie|draw|hoa|hòa|和)/i.test(n))
+            return 'T';
+        if (/^(b|bankerbet|betbanker|bankeramount|bankertotal)$/i.test(n))
+            return 'B';
+        if (/^(p|playerbet|betplayer|playeramount|playertotal)$/i.test(n))
+            return 'P';
+        if (/^(t|tiebet|bettie|tieamount|tietotal)$/i.test(n))
+            return 'T';
+        return null;
+    }
+    function poolProviderMoney(v) {
+        try {
+            if (v == null || v === '')
+                return null;
+            if (typeof v === 'number')
+                return isFinite(v) && v > 0 ? Math.round(v) : null;
+            if (typeof v === 'string') {
+                var parsed = domParsePoolMoneyToken(v);
+                if (parsed != null && isFinite(parsed) && parsed > 0)
+                    return Math.round(parsed);
+                var raw = v.replace(/[, ]/g, '');
+                if (/^\d+(?:\.\d+)?$/.test(raw)) {
+                    var n = Number(raw);
+                    return isFinite(n) && n > 0 ? Math.round(n) : null;
+                }
+            }
+        } catch (_) {}
+        return null;
+    }
+    function poolProviderTableNameOf(obj) {
+        try {
+            var names = ['tableName', 'table', 'tableNo', 'tableCode', 'tableTitle', 'name'];
+            for (var i = 0; i < names.length; i++) {
+                var v = obj && obj[names[i]];
+                if (v != null && String(v).trim())
+                    return String(v).trim();
+            }
+            if (obj && obj.tableInfo)
+                return poolProviderTableNameOf(obj.tableInfo);
+        } catch (_) {}
+        return '';
+    }
+    function poolProviderTableIdOf(obj) {
+        try {
+            var names = ['tableID', 'tableId', 'tableNo'];
+            for (var i = 0; i < names.length; i++) {
+                var v = obj && obj[names[i]];
+                var n = poolProviderMoney(v);
+                if (n != null)
+                    return n;
+            }
+            if (obj && obj.tableInfo)
+                return poolProviderTableIdOf(obj.tableInfo);
+        } catch (_) {}
+        return 0;
+    }
+    function poolProviderLooksLikePoolName(name, parentName) {
+        var n = String(name || '').toLowerCase();
+        var p = String(parentName || '').toLowerCase();
+        if (/(hand|winner|result|round|shoe|count|counts|odds|rate|payout|status|time|timer|x|y|width|height)/.test(n))
+            return false;
+        if (/(bet|pool|amount|money|stake|total|currentbet|current_bet)/.test(n + ' ' + p))
+            return true;
+        return poolProviderSideFromName(n) != null && /(bet|pool|amount|money|stake|total|currentbet|current_bet)/.test(p);
+    }
+    function poolProviderSetSide(out, side, value, raw) {
+        var n = poolProviderMoney(value);
+        if (n == null || n < 100)
+            return false;
+        if (side === 'B' && (out.B == null || n > 0)) {
+            out.B = n;
+            out.rawB = raw != null ? String(raw) : String(value);
+            return true;
+        }
+        if (side === 'P' && (out.P == null || n > 0)) {
+            out.P = n;
+            out.rawP = raw != null ? String(raw) : String(value);
+            return true;
+        }
+        if (side === 'T' && (out.T == null || n > 0)) {
+            out.T = n;
+            out.rawT = raw != null ? String(raw) : String(value);
+            return true;
+        }
+        return false;
+    }
+    function poolProviderReadSideObject(obj, parentName, inherited) {
+        var out = {
+            B: null,
+            P: null,
+            T: null,
+            rawB: null,
+            rawP: null,
+            rawT: null,
+            tableId: inherited && inherited.tableId || 0,
+            tableName: inherited && inherited.tableName || '',
+            found: 0,
+            numericOnly: false
+        };
+        if (!obj || typeof obj !== 'object')
+            return null;
+        var tableId = poolProviderTableIdOf(obj);
+        var tableName = poolProviderTableNameOf(obj);
+        if (tableId > 0) out.tableId = tableId;
+        if (tableName) out.tableName = tableName;
+        var numeric = {};
+        for (var k in obj) {
+            if (!Object.prototype.hasOwnProperty.call(obj, k))
+                continue;
+            var val = obj[k];
+            var side = poolProviderSideFromName(k);
+            if (side && poolProviderLooksLikePoolName(k, parentName) && poolProviderSetSide(out, side, val, val))
+                out.found++;
+            if (/^[0-9]+$/.test(String(k))) {
+                var mv = poolProviderMoney(val);
+                if (mv != null)
+                    numeric[String(k)] = mv;
+            }
+        }
+        if (!out.found && Object.keys(numeric).length >= 2 && /currentbet|current_bet|betpool|pool|stake|amount/i.test(String(parentName || ''))) {
+            // Sexy Baccarat payloads commonly use numeric bet-area keys. Keep the
+            // source label explicit so a wrong mapping is easy to spot in logs.
+            if (numeric['1'] != null) { out.B = numeric['1']; out.rawB = String(numeric['1']); out.found++; }
+            if (numeric['2'] != null) { out.P = numeric['2']; out.rawP = String(numeric['2']); out.found++; }
+            if (numeric['3'] != null || numeric['0'] != null) { out.T = numeric['3'] != null ? numeric['3'] : numeric['0']; out.rawT = String(out.T); out.found++; }
+            out.numericOnly = true;
+        }
+        return out.found ? out : null;
+    }
+    function poolProviderAcceptCandidate(cand, source, path) {
+        try {
+            if (!cand || !cand.found)
+                return;
+            var now = Date.now();
+            var score = Number(cand.found || 0) * 1000;
+            if (cand.B != null) score += 100;
+            if (cand.P != null) score += 100;
+            if (cand.T != null) score += 80;
+            if (cand.tableId > 0) score += 100;
+            if (cand.tableName) score += 100;
+            if (cand.numericOnly) score -= 120;
+            var prev = _abxPoolProvider.data;
+            if (prev && (now - Number(_abxPoolProvider.at || 0)) < 1200 && Number(prev.score || 0) > score)
+                return;
+            var src = String(source || 'network') + (cand.numericOnly ? '/numeric123' : '');
+            var data = {
+                B: cand.B,
+                P: cand.P,
+                T: cand.T,
+                C: cand.B,
+                L: cand.P,
+                rawB: cand.rawB,
+                rawP: cand.rawP,
+                rawT: cand.rawT,
+                rawC: cand.rawB,
+                rawL: cand.rawP,
+                BS: src,
+                source: src,
+                tableId: cand.tableId || 0,
+                TB: cand.tableName || null,
+                score: score,
+                path: String(path || '')
+            };
+            _abxPoolProvider.at = now;
+            _abxPoolProvider.data = data;
+            try {
+                window.__abx_pool_authority = data;
+                window.__abx_pool_authority_at = now;
+            } catch (_) {}
+            var key = [data.B, data.P, data.T, data.tableId, data.TB, data.source].join('|');
+            if (key !== _abxPoolProvider.lastKey) {
+                _abxPoolProvider.lastKey = key;
+                cwDbg('POOL', 'js-provider-accept', {
+                    B: data.B,
+                    P: data.P,
+                    T: data.T,
+                    tableId: data.tableId,
+                    table: data.TB,
+                    source: data.source,
+                    path: data.path
+                }, 0, 'pool-js-provider|' + key);
+            }
+        } catch (_) {}
+    }
+    function poolProviderWalkJson(el, source, path, parentName, inherited, depth) {
+        if (depth > 10 || el == null)
+            return;
+        if (typeof el !== 'object')
+            return;
+        var inheritedNext = {
+            tableId: inherited && inherited.tableId || 0,
+            tableName: inherited && inherited.tableName || ''
+        };
+        var tableId = poolProviderTableIdOf(el);
+        var tableName = poolProviderTableNameOf(el);
+        if (tableId > 0) inheritedNext.tableId = tableId;
+        if (tableName) inheritedNext.tableName = tableName;
+        var direct = poolProviderReadSideObject(el, parentName, inheritedNext);
+        if (direct)
+            poolProviderAcceptCandidate(direct, source, path);
+        for (var k in el) {
+            if (!Object.prototype.hasOwnProperty.call(el, k))
+                continue;
+            var v = el[k];
+            if (!v || typeof v !== 'object')
+                continue;
+            var childPath = path ? (path + '.' + k) : k;
+            if (/currentbet|current_bet|betpool|pool|stake|amount|totalbet/i.test(String(k))) {
+                var cand = poolProviderReadSideObject(v, k, inheritedNext);
+                if (cand)
+                    poolProviderAcceptCandidate(cand, source, childPath);
+            }
+            if (Object.prototype.toString.call(v) === '[object Array]') {
+                for (var i = 0; i < v.length && i < 80; i++)
+                    poolProviderWalkJson(v[i], source, childPath + '[' + i + ']', k, inheritedNext, depth + 1);
+            } else {
+                poolProviderWalkJson(v, source, childPath, k, inheritedNext, depth + 1);
+            }
+        }
+    }
+    function poolProviderObserveText(text, source) {
+        try {
+            if (!text || typeof text !== 'string')
+                return;
+            if (!/(currentBet|current_bet|betPool|banker|player|tie|betAmount|totalBet|stake|pool)/i.test(text))
+                return;
+            var raw = text.trim();
+            var candidates = [];
+            candidates.push(raw);
+            var idxObj = raw.indexOf('{');
+            var idxArr = raw.indexOf('[');
+            var idx = idxObj >= 0 && idxArr >= 0 ? Math.min(idxObj, idxArr) : Math.max(idxObj, idxArr);
+            if (idx > 0)
+                candidates.push(raw.slice(idx));
+            for (var i = 0; i < candidates.length; i++) {
+                try {
+                    var json = JSON.parse(candidates[i]);
+                    poolProviderWalkJson(json, source, '', '', { tableId: 0, tableName: '' }, 0);
+                    return;
+                } catch (_) {}
+            }
+        } catch (_) {}
+    }
+    function poolProviderReadFresh(maxAgeMs) {
+        try {
+            var data = window.__abx_pool_authority || _abxPoolProvider.data;
+            var at = Number(window.__abx_pool_authority_at || _abxPoolProvider.at || 0) || 0;
+            var src = data ? String(data.BS || data.source || data.Source || '') : '';
+            var holdMs = /network|cdp|ws|fetch|xhr|provider/i.test(src) ? 30000 : (maxAgeMs || 5000);
+            if (data && at > 0 && (Date.now() - at) <= holdMs)
+                return data;
+        } catch (_) {}
+        return null;
+    }
+    function poolProviderInstallHooks() {
+        try {
+            if (_abxPoolProvider.installed)
+                return;
+            _abxPoolProvider.installed = true;
+            if (window.WebSocket && window.WebSocket.prototype && !window.WebSocket.__abxPoolHooked) {
+                var NativeWebSocket = window.WebSocket;
+                var WrappedWebSocket = function (url, protocols) {
+                    var ws = protocols !== undefined ? new NativeWebSocket(url, protocols) : new NativeWebSocket(url);
+                    try {
+                        ws.addEventListener('message', function (ev) {
+                            try { poolProviderObserveText(String(ev && ev.data || ''), 'ws'); } catch (_) {}
+                        });
+                    } catch (_) {}
+                    return ws;
+                };
+                for (var p in NativeWebSocket) {
+                    try { WrappedWebSocket[p] = NativeWebSocket[p]; } catch (_) {}
+                }
+                WrappedWebSocket.prototype = NativeWebSocket.prototype;
+                WrappedWebSocket.__abxPoolHooked = true;
+                window.WebSocket = WrappedWebSocket;
+            }
+            if (window.fetch && !window.fetch.__abxPoolHooked) {
+                var nativeFetch = window.fetch;
+                var wrappedFetch = function () {
+                    return nativeFetch.apply(this, arguments).then(function (resp) {
+                        try {
+                            var c = resp && resp.clone ? resp.clone() : null;
+                            if (c && c.text)
+                                c.text().then(function (txt) { poolProviderObserveText(txt, 'fetch'); })['catch'](function () {});
+                        } catch (_) {}
+                        return resp;
+                    });
+                };
+                wrappedFetch.__abxPoolHooked = true;
+                window.fetch = wrappedFetch;
+            }
+            if (window.XMLHttpRequest && window.XMLHttpRequest.prototype && !window.XMLHttpRequest.prototype.__abxPoolHooked) {
+                var nativeOpen = window.XMLHttpRequest.prototype.open;
+                var nativeSend = window.XMLHttpRequest.prototype.send;
+                window.XMLHttpRequest.prototype.open = function () {
+                    try { this.__abxPoolUrl = arguments && arguments.length > 1 ? String(arguments[1] || '') : ''; } catch (_) {}
+                    return nativeOpen.apply(this, arguments);
+                };
+                window.XMLHttpRequest.prototype.send = function () {
+                    try {
+                        this.addEventListener('loadend', function () {
+                            try { poolProviderObserveText(String(this.responseText || ''), 'xhr'); } catch (_) {}
+                        });
+                    } catch (_) {}
+                    return nativeSend.apply(this, arguments);
+                };
+                window.XMLHttpRequest.prototype.__abxPoolHooked = true;
+            }
+            cwDbg('POOL', 'js-provider-hooks-ready', {
+                href: String(location.href || ''),
+                top: window.top === window ? 1 : 0
+            }, 0, 'pool-hooks-ready|' + String(location.href || '').replace(/[?#].*$/, ''));
+        } catch (e) {
+            try { cwDbg('POOL', 'js-provider-hooks-error', { err: String(e && e.message || e) }, 0, 'pool-hooks-error'); } catch (_) {}
+        }
+    }
+    poolProviderInstallHooks();
+    function domScanBetStakeTotalsFromVisibleText(contexts) {
+        try {
+            var best = null;
+            contexts = contexts || [];
+            for (var ci = 0; ci < contexts.length; ci++) {
+                var ctx = contexts[ci];
+                var doc = ctx && ctx.doc ? ctx.doc : null;
+                var win = ctx && ctx.win ? ctx.win : null;
+                if (!doc || !win || !doc.querySelectorAll)
+                    continue;
+                var nodes = [];
+                try {
+                    nodes = doc.querySelectorAll("li[id^='betBox'], [id*='betBox'], .zone_bet_bottom li, .zone_bet_bottom div, .zone_bet_bottom span, .zone_bet_bottom p, body *");
+                } catch (_) {
+                    nodes = [];
+                }
+                var bySide = {};
+                var maxNodes = Math.min(nodes.length, 1200);
+                for (var ni = 0; ni < maxNodes; ni++) {
+                    var el = nodes[ni];
+                    if (!el || !domVisible(el))
+                        continue;
+                    var rect = null;
+                    try { rect = el.getBoundingClientRect(); } catch (_) { rect = null; }
+                    if (!rect || rect.width < 18 || rect.height < 8)
+                        continue;
+                    if (rect.bottom < 0 || rect.top > win.innerHeight || rect.right < 0 || rect.left > win.innerWidth)
+                        continue;
+                    if (rect.top < win.innerHeight * 0.50)
+                        continue;
+                    var txt = domTextOf(el);
+                    if (!txt || txt.length > 180)
+                        continue;
+                    var side = domBetSideOfText(txt);
+                    var host = null;
+                    try {
+                        host = el.closest("li[id^='betBox'], [id*='betBox'], .zone_bet_bottom > li, .zone_bet_bottom > div");
+                    } catch (_) {
+                        host = null;
+                    }
+                    if (!side && host)
+                        side = domResolveBetSideFromHost(host, domTextOf(host));
+                    if (!side)
+                        continue;
+                    var stake = domExtractPoolStakeFromText(txt);
+                    if ((!stake || stake.value == null) && host)
+                        stake = domExtractPoolStakeFromText(domTextOf(host));
+                    if (!stake || stake.value == null)
+                        continue;
+                    var tail = '';
+                    try { tail = domTailOf(host || el); } catch (_) { tail = ''; }
+                    var score = 0;
+                    score += Number(ctx && ctx._betScore || 0);
+                    if (/singlebactable\.jsp/i.test(String(ctx.href || '')))
+                        score += 600;
+                    if (String(ctx.source || '') === 'top/frame[1]')
+                        score += 300;
+                    if (/zone_bet_bottom|betbox/i.test(tail))
+                        score += 700;
+                    if (host && host !== el)
+                        score += 180;
+                    if (/[KMB]\b/i.test(String(stake.token || '')))
+                        score += 280;
+                    score += Math.min(220, Math.round((rect.width * rect.height) / 250));
+                    var prev = bySide[side];
+                    if (!prev || score > prev._score) {
+                        bySide[side] = {
+                            amount: stake.value,
+                            raw: stake.token,
+                            source: String(ctx.source || 'top'),
+                            _score: score
+                        };
+                    }
+                }
+                var found = 0;
+                var totalScore = 0;
+                var sides = ['BANKER', 'PLAYER', 'TIE'];
+                for (var si = 0; si < sides.length; si++) {
+                    var hit = bySide[sides[si]];
+                    if (!hit)
+                        continue;
+                    found++;
+                    totalScore += Number(hit._score || 0);
+                }
+                if (!found)
+                    continue;
+                var pack = {
+                    B: bySide.BANKER ? bySide.BANKER.amount : null,
+                    P: bySide.PLAYER ? bySide.PLAYER.amount : null,
+                    T: bySide.TIE ? bySide.TIE.amount : null,
+                    rawB: bySide.BANKER ? bySide.BANKER.raw : null,
+                    rawP: bySide.PLAYER ? bySide.PLAYER.raw : null,
+                    rawT: bySide.TIE ? bySide.TIE.raw : null,
+                    source: String((bySide.BANKER || bySide.PLAYER || bySide.TIE || {}).source || ctx.source || 'top') + '/text',
+                    score: totalScore + found * 900
+                };
+                if (!best || pack.score > best.score)
+                    best = pack;
+            }
+            return best;
+        } catch (_) {
+            return null;
+        }
+    }
     function domScanBetStakeTotals(force) {
         try {
             var now = Date.now();
+            var providerPool = poolProviderReadFresh(force ? 3500 : 6000);
+            if (providerPool && (providerPool.B != null || providerPool.P != null || providerPool.T != null)) {
+                _domBetStakeCache.at = now;
+                _domBetStakeCache.data = providerPool;
+                _domBetStakeCache.goodAt = now;
+                _domBetStakeCache.good = providerPool;
+                return providerPool;
+            }
             var betHot = false;
             try {
                 betHot = (now - Number(window.__cw_last_bet_touch_at || 0)) < 2800;
@@ -2603,10 +3208,46 @@
                 source: null,
                 score: 0
             };
+            try {
+                if (!(out && (out.B != null || out.P != null || out.T != null))) {
+                    var textPack = domScanBetStakeTotalsFromVisibleText(contexts);
+                    if (textPack && (textPack.B != null || textPack.P != null || textPack.T != null))
+                        out = textPack;
+                }
+            } catch (_) {}
+            try {
+                var hasPoolValue = out && (out.B != null || out.P != null || out.T != null);
+                if (hasPoolValue) {
+                    _domBetStakeCache.goodAt = now;
+                    _domBetStakeCache.good = out;
+                } else if (_domBetStakeCache.good && (now - Number(_domBetStakeCache.goodAt || 0)) < 8000) {
+                    out = _domBetStakeCache.good;
+                }
+            } catch (_) {}
+            try {
+                var ctxBrief = [];
+                for (var bi = 0; bi < contexts.length && bi < 6; bi++) {
+                    ctxBrief.push(String(contexts[bi].source || 'top') + ':' + String(contexts[bi]._betScore || 0) + ':' + String(contexts[bi].href || '').split('?')[0].split('/').pop());
+                }
+                cwDbg('BETPOOL', 'dom-scan', {
+                    force: !!force,
+                    contexts: ctxBrief.join(' | '),
+                    B: out.B,
+                    P: out.P,
+                    T: out.T,
+                    source: String(out.source || ''),
+                    score: Number(out.score || 0) || 0
+                }, 2500, 'betpool|' + String(out.source || 'none') + '|' + String(out.B) + '|' + String(out.P) + '|' + String(out.T));
+            } catch (_) {}
             _domBetStakeCache.at = now;
             _domBetStakeCache.data = out;
             return out;
         } catch (_) {
+            try {
+                var now2 = Date.now();
+                if (_domBetStakeCache.good && (now2 - Number(_domBetStakeCache.goodAt || 0)) < 8000)
+                    return _domBetStakeCache.good;
+            } catch (_) {}
             return {
                 B: null,
                 P: null,
@@ -4308,7 +4949,7 @@
     var _cwSnapshotBuildSource = '';
     var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     var _cwSeqLastPubSyncAt = 0;
-    var _cwSeqScriptRev = 'SEQFIX-20260426-r31';
+    var _cwSeqScriptRev = 'SEQFIX-20260428-r33-pool-provider';
     var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
@@ -8313,8 +8954,87 @@
             rawTB: null,
             rawTA: null
         };
+        var authSnap = null;
+        var authAge = 999999;
+        var useAuthSnap = false;
+        var useCsharpDisplaySnap = false;
+        var displayEnabled = false;
+        var localAuthoritySnap = null;
+        var localAuthorityAge = 999999;
+        var waitingCsharpDisplay = false;
+        try {
+            displayEnabled = window.__abx_csharp_display_enabled === 1 || window.__abx_csharp_display_enabled === true;
+            authSnap = window.__abx_csharp_display_snapshot || window.__abx_csharp_authority_snapshot || null;
+            var authAt = Number(window.__abx_csharp_display_snapshot_at || window.__abx_csharp_authority_snapshot_at || 0) || 0;
+            authAge = authAt > 0 ? (Date.now() - authAt) : 999999;
+            useAuthSnap = !!(displayEnabled && authSnap);
+            useCsharpDisplaySnap = useAuthSnap;
+            localAuthoritySnap = window.__abx_last_authority_snapshot || null;
+            var localAuthorityAt = Number(window.__abx_last_authority_snapshot_at || 0) || 0;
+            localAuthorityAge = localAuthorityAt > 0 ? (Date.now() - localAuthorityAt) : 999999;
+            waitingCsharpDisplay = !!(!useAuthSnap && localAuthoritySnap && localAuthorityAge < 3000);
+        } catch (_) {
+            authSnap = null;
+            authAge = 999999;
+            useAuthSnap = false;
+            useCsharpDisplaySnap = false;
+            displayEnabled = false;
+            localAuthoritySnap = null;
+            localAuthorityAge = 999999;
+            waitingCsharpDisplay = false;
+        }
+        if (useAuthSnap) {
+            try {
+                var snapTotals = mergeTotalsSnapshot(authSnap.totals, t);
+                if (snapTotals)
+                    t = snapTotals;
+            } catch (_) {}
+        } else if (waitingCsharpDisplay) {
+            t = {
+                B: null,
+                P: null,
+                C: null,
+                L: null,
+                A: null,
+                N: null,
+                cards: [],
+                rawB: null,
+                rawP: null,
+                rawC: null,
+                rawL: null,
+                rawA: null,
+                rawN: null,
+                TB: null,
+                TA: null,
+                rawTB: null,
+                rawTA: null
+            };
+        }
+        var csharpSeqSnap = null;
+        var csharpSeqAge = 999999;
+        var useCsharpSeqSnap = false;
+        try {
+            csharpSeqSnap = authSnap || window.__abx_csharp_display_snapshot || window.__abx_csharp_authority_snapshot || null;
+            var csharpSeqAt = Number(window.__abx_csharp_display_snapshot_at || window.__abx_csharp_authority_snapshot_at || 0) || 0;
+            csharpSeqAge = csharpSeqAt > 0 ? (Date.now() - csharpSeqAt) : 999999;
+            useCsharpSeqSnap = !!(useCsharpDisplaySnap && csharpSeqSnap);
+        } catch (_) {
+            csharpSeqSnap = null;
+            csharpSeqAge = 999999;
+            useCsharpSeqSnap = false;
+        }
+        if (useCsharpSeqSnap && csharpSeqSnap && csharpSeqSnap.totals) {
+            try {
+                var csharpTotals = mergeTotalsSnapshot(csharpSeqSnap.totals, t);
+                if (csharpTotals)
+                    t = csharpTotals;
+            } catch (_) {}
+        }
         var f = S.focus;
-        var progText = (S.prog == null ? '--' : (S._progIsSec ? (S.prog + 's') : (((S.prog * 100) | 0) + '%')));
+        var displayProg = useAuthSnap ? authSnap.prog : (waitingCsharpDisplay ? null : S.prog);
+        var displayStatus = useAuthSnap ? String(authSnap.status || '') : (waitingCsharpDisplay ? 'waiting-csharp-display' : String(S.status || ''));
+        var displayProgIsSec = useAuthSnap ? true : !!S._progIsSec;
+        var progText = (displayProg == null ? '--' : (displayProgIsSec ? (displayProg + 's') : (((displayProg * 100) | 0) + '%')));
         var bankerVal = (t.B != null ? t.B : t.C);
         var playerVal = (t.P != null ? t.P : t.L);
         var cards = t.cards || [];
@@ -8335,10 +9055,60 @@
                 hrefShort = hrefShort.slice(lastSlash + 1);
             ctxText = String(domCtx.source || 'top') + ' | ' + (hrefShort || String(domCtx.href || '--'));
         }
+        function panelShortHref(h) {
+            try {
+                var s = String(h || '').split('?')[0];
+                var p = s.lastIndexOf('/');
+                return p >= 0 ? s.slice(p + 1) : (s || '--');
+            } catch (_) {
+                return '--';
+            }
+        }
+        var panelLine = ctxText;
+        var dataLine = 'self';
+        var dataModeLine = waitingCsharpDisplay ? ('waiting-csharp-display | age=' + localAuthorityAge + 'ms') : 'legacy-local';
+        if (useAuthSnap) {
+            var panelPath = String(authSnap.panelFramePath || authSnap.framePath || '');
+            var panelHref = String(authSnap.panelHref || authSnap.href || '');
+            var dataPath = String(authSnap.dataFramePath || authSnap.proxyChildFramePath || authSnap.framePath || '');
+            var dataHref = String(authSnap.dataHref || authSnap.proxyChildHref || authSnap.href || '');
+            var dataMode = String(authSnap.dataMode || (authSnap.proxyChildFramePath ? 'proxy-child' : 'self'));
+            panelLine = (panelPath || String(authSnap.framePath || 'top')) + ' | ' + panelShortHref(panelHref);
+            dataLine = (dataMode === 'proxy-child' ? 'proxy -> ' : '') + (dataPath || '--') + ' | ' + panelShortHref(dataHref);
+            dataModeLine = (useCsharpDisplaySnap ? 'csharp-display/' : 'authority-snapshot/') + dataMode + ' | age=' + authAge + 'ms';
+        }
+        function shouldShowBaccaratDomCardsOnPanel() {
+            try {
+                if (!cards || !cards.length)
+                    return false;
+                var debugEnabled = window.__cw_show_baccarat_dom_cards === 1 || window.__cw_show_baccarat_dom_cards === true;
+                if (!debugEnabled)
+                    return false;
+                var parts = [];
+                if (useAuthSnap && authSnap) {
+                    parts.push(authSnap.dataHref, authSnap.proxyChildHref, authSnap.panelHref, authSnap.href);
+                    parts.push(authSnap.dataFramePath, authSnap.proxyChildFramePath, authSnap.panelFramePath, authSnap.framePath);
+                }
+                if (domCtx) {
+                    parts.push(domCtx.href, domCtx.source);
+                }
+                parts.push(location.href);
+                var joined = parts.map(function (x) { return String(x || '').toLowerCase(); }).join(' ');
+                if (joined.indexOf('singlebactable.jsp') >= 0)
+                    return false;
+                if (joined.indexOf('gamehall.jsp') >= 0)
+                    return true;
+                return false;
+            } catch (_) {
+                return false;
+            }
+        }
         var hudSource = (t.rawHS != null && String(t.rawHS).trim()) ? String(t.rawHS).trim() : '--';
         var base =
-            ' Trạng thái: ' + S.status + ' | Prog: ' + progText + '\n' +
-            '• CTX : ' + ctxText + '\n' +
+            ' Trạng thái: ' + displayStatus + ' | Prog: ' + progText + '\n' +
+            '• PANEL : ' + panelLine + '\n' +
+            '• DATA : ' + dataLine + '\n' +
+            '• MODE : ' + dataModeLine + '\n' +
             '• HUD : ' + hudSource + '\n' +
             '• TÀI KHOẢN : ' + accountName + ' | SỐ DƯ : ' + fmt(t.A) + '\n' +
             '• BÀN : ' + tableName + ' | TIỀN BÀN : ' + tableAmount + ' | BANKER: ' + fmt(bankerVal) + ' | PLAYER: ' + fmt(playerVal) + ' | TIE: ' + fmt(t.T) + '\n' +
@@ -8351,7 +9121,8 @@
             '  x,y,w,h: ' + (f && f.rect ? (Math.round(f.rect.x) + ',' + Math.round(f.rect.y) + ',' + Math.round(f.rect.w) + ',' + Math.round(f.rect.h)) : '-') + '\n' +
             '  val : ' + (f && f.val != null ? fmt(f.val) : '-');
 
-        if (cards.length) {
+        var showBaccaratDomCards = shouldShowBaccaratDomCardsOnPanel();
+        if (showBaccaratDomCards) {
             var lines = [];
             for (var ci = 0; ci < cards.length && ci < 6; ci++) {
                 var card = cards[ci];
@@ -8366,10 +9137,24 @@
             base += '\n• Baccarat DOM cards:\n' + lines.join('\n');
         }
 
-        var tk = readTKSeq();
-        S.seq = tk.seq || '';
-        S.seqVersion = Number(tk && tk.seqVersion != null ? tk.seqVersion : (window.__cw_seq_version || 0)) || 0;
-        S.seqEvent = String(tk && tk.seqEvent ? tk.seqEvent : (window.__cw_seq_event || ''));
+        if (useCsharpSeqSnap) {
+            S.seq = String(csharpSeqSnap.seq || '');
+            S.seqVersion = Number(csharpSeqSnap.seqVersion != null ? csharpSeqSnap.seqVersion : (window.__cw_seq_version || 0)) || 0;
+            S.seqEvent = String(csharpSeqSnap.seqEvent || (window.__cw_seq_event || ''));
+        } else if (useAuthSnap) {
+            S.seq = String(authSnap.seq || '');
+            S.seqVersion = Number(authSnap.seqVersion != null ? authSnap.seqVersion : (window.__cw_seq_version || 0)) || 0;
+            S.seqEvent = String(authSnap.seqEvent || (window.__cw_seq_event || ''));
+        } else if (waitingCsharpDisplay) {
+            S.seq = '';
+            S.seqVersion = Number(window.__cw_seq_version || 0) || 0;
+            S.seqEvent = 'waiting-csharp-display';
+        } else {
+            var tk = readTKSeq();
+            S.seq = tk.seq || '';
+            S.seqVersion = Number(tk && tk.seqVersion != null ? tk.seqVersion : (window.__cw_seq_version || 0)) || 0;
+            S.seqEvent = String(tk && tk.seqEvent ? tk.seqEvent : (window.__cw_seq_event || ''));
+        }
         var seqHtml = 'Chuỗi kết quả : <i>--</i>';
         if (S.seq && S.seq.length) {
             var head = esc(S.seq.slice(0, -1));
@@ -8378,30 +9163,74 @@
         }
         try {
             var panelStatus = '';
-            try {
-                panelStatus = (typeof readStatusTextByTail === 'function') ? String(readStatusTextByTail() || '') : String(S.status || '');
-            } catch (_) {
-                panelStatus = String(S.status || '');
+            if (useAuthSnap) {
+                panelStatus = displayStatus;
+            } else {
+                try {
+                    panelStatus = (typeof readStatusTextByTail === 'function') ? String(readStatusTextByTail() || '') : String(S.status || '');
+                } catch (_) {
+                    panelStatus = String(S.status || '');
+                }
             }
             window.__cw_last_panel_snapshot = {
-                prog: S.prog,
+                prog: displayProg,
                 status: panelStatus,
                 statusSource: String(window.__cw_status_source || ''),
                 statusTail: String(window.__cw_status_tail || ''),
                 seq: String(S.seq || ''),
+                rawSeq: useCsharpSeqSnap ? String(csharpSeqSnap.rawSeq || '') : (useAuthSnap ? String(authSnap.rawSeq || '') : String(window.__cw_bead_raw_seq || '')),
                 seqVersion: Number(S.seqVersion || 0),
                 seqEvent: String(S.seqEvent || ''),
+                seqMode: useCsharpSeqSnap ? String(csharpSeqSnap.seqMode || '') : (useAuthSnap ? String(authSnap.seqMode || '') : ''),
+                seqAppend: useCsharpSeqSnap ? String(csharpSeqSnap.seqAppend || '') : (useAuthSnap ? String(authSnap.seqAppend || '') : ''),
+                seqSource: useCsharpSeqSnap ? String(csharpSeqSnap.seqSource || 'csharp') : (useAuthSnap ? String(authSnap.seqSource || '') : ''),
                 totals: normalizeTotalsSnapshot(t),
                 username: (t.N != null ? String(t.N) : ''),
+                dataMode: useAuthSnap ? String(authSnap.dataMode || '') : '',
+                dataFramePath: useAuthSnap ? String(authSnap.dataFramePath || '') : '',
+                dataHref: useAuthSnap ? String(authSnap.dataHref || '') : '',
                 ts: Date.now()
             };
         } catch (_) {}
         try {
-            if (window.__cw_pushPanelSnapshot)
+            cwDbg('CANVAS', 'render', {
+                mode: useAuthSnap ? 'authority-snapshot' : (waitingCsharpDisplay ? 'waiting-csharp-display' : 'legacy-local'),
+                age: useAuthSnap ? authAge : localAuthorityAge,
+                dataMode: useAuthSnap ? String(authSnap.dataMode || '') : '',
+                panel: useAuthSnap ? String(authSnap.panelFramePath || authSnap.framePath || '') : ctxText,
+                data: useAuthSnap ? String(authSnap.dataFramePath || authSnap.proxyChildFramePath || '') : '',
+                poolB: bankerVal,
+                poolP: playerVal,
+                poolT: t.T,
+                poolSrc: String(t.BS || t.source || ''),
+                cards: cards.length,
+                cardsVisible: showBaccaratDomCards,
+                seqLen: String(S.seq || '').length,
+                prog: displayProg,
+                status: displayStatus
+            }, 2500, 'canvas-render|' + (useAuthSnap ? 'authority' : (waitingCsharpDisplay ? 'waiting' : 'legacy')) + '|' + String(S.seq || '').length + '|' + String(displayProg));
+        } catch (_) {}
+        try {
+            if (!useCsharpDisplaySnap && !waitingCsharpDisplay && window.__cw_pushPanelSnapshot)
                 window.__cw_pushPanelSnapshot();
         } catch (_) {}
         panel.querySelector('#cwInfo').innerHTML = esc(base) + '\n' + seqHtml;
     }
+
+    try {
+        window.__abx_apply_csharp_display_snapshot = function (snap) {
+            try {
+                window.__abx_csharp_display_snapshot = snap || null;
+                window.__abx_csharp_display_snapshot_at = Date.now();
+                window.__abx_csharp_display_enabled = 1;
+                updatePanel();
+                return 'ok';
+            } catch (e) {
+                return 'err:' + String(e && e.message ? e.message : e);
+            }
+        };
+        window.__abx_apply_csharp_authority_snapshot = window.__abx_apply_csharp_display_snapshot;
+    } catch (_) {}
 
     /* ---------------- scan tools ---------------- */
     function scan200Money() {
@@ -11451,6 +12280,9 @@
             S.prog = p;
         S.status = st;
         var T = totals(S);
+        try {
+            T = mergeTotalsSnapshot(T, S._lastTotals) || T;
+        } catch (_) {}
         S._lastTotals = T;
 
         // TK sequence
@@ -11878,6 +12710,16 @@
 
         window.__cw_pushPanelSnapshot = function () {
             try {
+                try {
+                    if (window.__abx_csharp_display_enabled === 1 || window.__abx_csharp_display_enabled === true)
+                        return 'skip-csharp-display-authority';
+                } catch (_) {}
+                try {
+                    var authSnap = window.__abx_last_authority_snapshot;
+                    var authAt = Number(window.__abx_last_authority_snapshot_at || 0) || 0;
+                    if (authSnap && authAt > 0 && (Date.now() - authAt) < 2500)
+                        return 'skip-authority-snapshot-managed';
+                } catch (_) {}
                 var cached = window.__cw_last_panel_snapshot;
                 if (!cached)
                     return 'no-panel-snapshot';
@@ -11916,6 +12758,10 @@
                     contextScore: Number(sig.score || 0) || 0,
                     contextConfidence: String(sig.confidence || ''),
                     signals: String(sig.signals || ''),
+                    proxyChildFramePath: String(sig.proxyChildFramePath || ''),
+                    proxyChildHref: String(sig.proxyChildHref || ''),
+                    proxyChildScore: Number(sig.proxyChildScore || 0) || 0,
+                    proxyChildSignals: String(sig.proxyChildSignals || ''),
                     ts: Date.now(),
                     origin: 'canvas-panel'
                 };
@@ -12149,23 +12995,128 @@
             try {
                 if (!src)
                     return null;
+                function numOrNull(v) {
+                    if (v == null || v === '')
+                        return null;
+                    var n = Number(v);
+                    return isFinite(n) ? n : null;
+                }
+                function rawOrNull(v) {
+                    return v != null ? v : null;
+                }
+                var b = numOrNull(src.B != null ? src.B : src.C);
+                var p = numOrNull(src.P != null ? src.P : src.L);
+                var c = numOrNull(src.C != null ? src.C : src.B);
+                var l = numOrNull(src.L != null ? src.L : src.P);
+                var cards = [];
+                try {
+                    if (src.cards && src.cards.length)
+                        cards = Array.prototype.slice.call(src.cards, 0, 12);
+                } catch (_) {
+                    cards = [];
+                }
                 return {
-                    B: (src.B != null ? Number(src.B) : (src.C != null ? Number(src.C) : null)),
-                    P: (src.P != null ? Number(src.P) : (src.L != null ? Number(src.L) : null)),
-                    T: (src.T != null ? Number(src.T) : null),
-                    A: (src.A != null ? Number(src.A) : null),
+                    B: b,
+                    P: p,
+                    T: numOrNull(src.T),
+                    A: numOrNull(src.A),
                     N: (src.N != null ? String(src.N) : null),
-                    C: (src.C != null ? Number(src.C) : (src.B != null ? Number(src.B) : null)),
-                    L: (src.L != null ? Number(src.L) : (src.P != null ? Number(src.P) : null)),
-                    rawA: (src.rawA != null ? src.rawA : null),
-                    rawN: (src.rawN != null ? src.rawN : null),
-                    rawHS: (src.rawHS != null ? src.rawHS : null),
-                    TB: (src.TB != null ? src.TB : null),
-                    TA: (src.TA != null ? src.TA : null)
+                    C: c,
+                    L: l,
+                    rawB: rawOrNull(src.rawB != null ? src.rawB : src.rawC),
+                    rawP: rawOrNull(src.rawP != null ? src.rawP : src.rawL),
+                    rawT: rawOrNull(src.rawT),
+                    rawC: rawOrNull(src.rawC != null ? src.rawC : src.rawB),
+                    rawL: rawOrNull(src.rawL != null ? src.rawL : src.rawP),
+                    rawA: rawOrNull(src.rawA),
+                    rawN: rawOrNull(src.rawN),
+                    rawHS: rawOrNull(src.rawHS),
+                    TB: rawOrNull(src.TB),
+                    TA: numOrNull(src.TA),
+                    rawTB: rawOrNull(src.rawTB != null ? src.rawTB : src.TB),
+                    rawTA: rawOrNull(src.rawTA != null ? src.rawTA : src.TA),
+                    BS: rawOrNull(src.BS != null ? src.BS : (src.source != null ? src.source : src.Source)),
+                    source: rawOrNull(src.source != null ? src.source : (src.BS != null ? src.BS : src.Source)),
+                    score: numOrNull(src.score),
+                    cards: cards
                 };
             } catch (_) {
                 return null;
             }
+        }
+
+        function mergeTotalsSnapshot(primary, fallback) {
+            var p = normalizeTotalsSnapshot(primary);
+            var f = normalizeTotalsSnapshot(fallback);
+            if (!p)
+                return f;
+            if (!f)
+                return p;
+            function hasText(v) {
+                return v != null && String(v).trim() !== '';
+            }
+            function fill(k) {
+                if (p[k] == null && f[k] != null)
+                    p[k] = f[k];
+            }
+            function poolSourceRank(t) {
+                try {
+                    var s = String((t && (t.BS || t.source || t.Source)) || '').toLowerCase();
+                    if (!s)
+                        return 0;
+                    if (s.indexOf('csharp') >= 0 || s.indexOf('network') >= 0 || s.indexOf('cdp') >= 0 ||
+                        s.indexOf('ws') >= 0 || s.indexOf('fetch') >= 0 || s.indexOf('xhr') >= 0 ||
+                        s.indexOf('provider') >= 0 || s.indexOf('numeric123') >= 0)
+                        return 3;
+                    if (s.indexOf('dom') >= 0 || s.indexOf('text') >= 0 || s.indexOf('frame') >= 0 ||
+                        s.indexOf('top') >= 0 || s.indexOf('scan') >= 0)
+                        return 1;
+                } catch (_) {}
+                return 0;
+            }
+            function hasPoolValue(t) {
+                return !!(t && (t.B != null || t.P != null || t.T != null || t.C != null || t.L != null));
+            }
+            var pTable = hasText(p.TB) ? String(p.TB).trim() : '';
+            var fTable = hasText(f.TB) ? String(f.TB).trim() : '';
+            var sameTableOrUnknown = !pTable || !fTable || pTable === fTable;
+            var pPoolRank = poolSourceRank(p);
+            var pLocksPool = pPoolRank >= 3 && hasPoolValue(p);
+
+            fill('A');
+            fill('N');
+            fill('rawA');
+            fill('rawN');
+            fill('rawHS');
+            fill('TB');
+            fill('TA');
+            fill('rawTB');
+            fill('rawTA');
+
+            if (sameTableOrUnknown) {
+                if (!pLocksPool) {
+                    fill('B');
+                    fill('P');
+                    fill('T');
+                    fill('C');
+                    fill('L');
+                    fill('rawB');
+                    fill('rawP');
+                    fill('rawT');
+                    fill('rawC');
+                    fill('rawL');
+                    fill('BS');
+                    fill('source');
+                    fill('score');
+                }
+                if ((!p.cards || !p.cards.length) && f.cards && f.cards.length)
+                    p.cards = f.cards;
+            }
+            if (p.B != null && p.C == null) p.C = p.B;
+            if (p.P != null && p.L == null) p.L = p.P;
+            if (p.C != null && p.B == null) p.B = p.C;
+            if (p.L != null && p.P == null) p.P = p.L;
+            return p;
         }
 
         function buildSnapshotNow(sourceTag) {
@@ -12182,6 +13133,7 @@
             var seqWhich = '';
             var cached = null;
             var buildSource = String(sourceTag || 'auto');
+            var allowPanelSnapshotFallback = buildSource !== 'push' && buildSource !== 'pull';
             var perfMode = isPerfMode();
             var nowTs = Date.now();
             var jsProgMs = 0, jsTotalsMs = 0, jsSeqMs = 0;
@@ -12196,7 +13148,7 @@
             } catch (_) {}
 
             try {
-                if (window.__cw_last_panel_snapshot)
+                if (allowPanelSnapshotFallback && window.__cw_last_panel_snapshot)
                     cached = window.__cw_last_panel_snapshot;
             } catch (_) {}
 
@@ -12290,24 +13242,46 @@
             }
             try {
                 if (cached && cached.totals)
-                    t = normalizeTotalsSnapshot(cached.totals);
+                    t = mergeTotalsSnapshot(cached.totals, t);
             } catch (_) {}
             try {
                 if (!t && S && S._lastTotals)
                     t = normalizeTotalsSnapshot(S._lastTotals);
+                else if (t && S && S._lastTotals)
+                    t = mergeTotalsSnapshot(t, S._lastTotals);
             } catch (_) {}
             if (useTotalsCache) {
-                t = normalizeTotalsSnapshot(_abxSnapCache.totals) || t;
+                t = mergeTotalsSnapshot(_abxSnapCache.totals, t) || t;
             } else {
                 var tt0 = Date.now();
                 var totalsFresh = readTotalsSafe(perfMode && buildSource === 'push');
                 jsTotalsMs += (Date.now() - tt0);
                 if (totalsFresh) {
-                    _abxSnapCache.totals = totalsFresh;
+                    var totalsMerged = mergeTotalsSnapshot(totalsFresh, t);
+                    _abxSnapCache.totals = totalsMerged || totalsFresh;
                     _abxSnapCache.totalsAt = Date.now();
+                    t = totalsMerged || t;
+                } else {
+                    t = normalizeTotalsSnapshot(t) || t;
                 }
-                t = normalizeTotalsSnapshot(totalsFresh) || t;
             }
+            try {
+                if (buildSource === 'push') {
+                    var poolDiag = normalizeTotalsSnapshot(t);
+                    cwDbg('TOTALS', 'snapshot-pool', {
+                        source: buildSource,
+                        useCache: !!useTotalsCache,
+                        B: poolDiag ? poolDiag.B : null,
+                        P: poolDiag ? poolDiag.P : null,
+                        T: poolDiag ? poolDiag.T : null,
+                        BS: poolDiag ? String(poolDiag.BS || poolDiag.source || '') : '',
+                        cards: poolDiag && poolDiag.cards ? poolDiag.cards.length : 0,
+                        table: poolDiag ? String(poolDiag.TB || '') : '',
+                        freshHadPool: !!(totalsFresh && (totalsFresh.B != null || totalsFresh.P != null || totalsFresh.T != null || totalsFresh.C != null || totalsFresh.L != null)),
+                        fallbackHadPool: !!(S && S._lastTotals && (S._lastTotals.B != null || S._lastTotals.P != null || S._lastTotals.T != null || S._lastTotals.C != null || S._lastTotals.L != null))
+                    }, 2500, 'totals-pool|' + buildSource + '|' + String(poolDiag && (poolDiag.BS || poolDiag.source || '')) + '|' + String(poolDiag && poolDiag.B) + '|' + String(poolDiag && poolDiag.P) + '|' + String(poolDiag && poolDiag.T));
+                }
+            } catch (_) {}
 
             try {
                 if (cached && cached.seq)
@@ -12515,8 +13489,12 @@
             var sig = {};
             try { ctx = __abxBuildContext(); } catch (_) { ctx = {}; }
             try { sig = __abxGetGameSignals(); } catch (_) { sig = {}; }
-
-            return {
+            var dataMode = String(sig.proxyChildFramePath || '') ? 'proxy-child' : 'self';
+            var dataFramePath = String(sig.proxyChildFramePath || ctx.framePath || '');
+            var dataHref = String(sig.proxyChildHref || ctx.href || '');
+            var panelFramePath = String(ctx.framePath || '');
+            var panelHref = String(ctx.href || '');
+            var snap = {
                 abx: 'tick',
                 prog: p,
                 totals: t,
@@ -12540,12 +13518,51 @@
                 contextScore: Number(sig.score || 0) || 0,
                 contextConfidence: String(sig.confidence || ''),
                 signals: String(sig.signals || ''),
+                proxyChildFramePath: String(sig.proxyChildFramePath || ''),
+                proxyChildHref: String(sig.proxyChildHref || ''),
+                proxyChildScore: Number(sig.proxyChildScore || 0) || 0,
+                proxyChildSignals: String(sig.proxyChildSignals || ''),
+                dataMode: dataMode,
+                dataFramePath: dataFramePath,
+                dataHref: dataHref,
+                panelFramePath: panelFramePath,
+                panelHref: panelHref,
                 ts: Date.now(),
                 jsProgMs: jsProgMs,
                 jsTotalsMs: jsTotalsMs,
                 jsSeqMs: jsSeqMs,
                 jsPerfMode: perfMode ? 1 : 0
             };
+            try {
+                window.__abx_last_authority_snapshot = snap;
+                window.__abx_last_authority_snapshot_at = Date.now();
+                window.__abx_last_authority_snapshot_source = buildSource;
+            } catch (_) {}
+            try {
+                if (buildSource === 'push' && typeof updatePanel === 'function' &&
+                    !(window.__abx_csharp_display_enabled === 1 || window.__abx_csharp_display_enabled === true)) {
+                    var lastCanvasRender = Number(window.__abx_last_canvas_render_at || 0) || 0;
+                    if ((Date.now() - lastCanvasRender) >= 450) {
+                        window.__abx_last_canvas_render_at = Date.now();
+                        setTimeout(function () {
+                            try { updatePanel(); } catch (_) {}
+                        }, 0);
+                    }
+                }
+            } catch (_) {}
+            try {
+                cwDbg('SNAPSHOT', 'source', {
+                    buildSource: buildSource,
+                    dataMode: dataMode,
+                    panel: panelFramePath,
+                    data: dataFramePath,
+                    seqLen: String(seq || '').length,
+                    rawLen: String(rawSeq || '').length,
+                    prog: p,
+                    status: String(st || '')
+                }, 2500, 'snapshot-source|' + buildSource + '|' + dataMode + '|' + dataFramePath + '|' + String(seq || '').length + '|' + String(st || ''));
+            } catch (_) {}
+            return snap;
         }
 
         window.__cw_readSnapshot = function () {

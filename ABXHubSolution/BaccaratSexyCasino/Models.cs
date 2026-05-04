@@ -16,6 +16,7 @@ namespace BaccaratSexyCasino
         public long? T3T { get; set; }
         public long? T3D { get; set; }
         public long? TD { get; set; }
+        public string? Source { get; set; }
     }
 
     public sealed class CwSnapshot
@@ -52,6 +53,15 @@ namespace BaccaratSexyCasino
         public int? contextScore { get; set; }
         public string? contextConfidence { get; set; }
         public string? signals { get; set; }
+        public string? proxyChildFramePath { get; set; }
+        public string? proxyChildHref { get; set; }
+        public int? proxyChildScore { get; set; }
+        public string? proxyChildSignals { get; set; }
+        public string? dataMode { get; set; }
+        public string? dataFramePath { get; set; }
+        public string? dataHref { get; set; }
+        public string? panelFramePath { get; set; }
+        public string? panelHref { get; set; }
         public long? jsBuildMs { get; set; }
         public long? jsProgMs { get; set; }
         public long? jsTotalsMs { get; set; }
@@ -81,6 +91,10 @@ namespace BaccaratSexyCasino
         public bool hasCocos { get; set; }
         public int canvasCount { get; set; }
         public string visibleRect { get; set; } = "";
+        public string proxyChildFramePath { get; set; } = "";
+        public string proxyChildHref { get; set; } = "";
+        public int proxyChildScore { get; set; }
+        public string proxyChildSignals { get; set; } = "";
         public long ts { get; set; }
     }
 
