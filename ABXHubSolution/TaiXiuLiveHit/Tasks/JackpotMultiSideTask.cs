@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -122,32 +122,9 @@ namespace TaiXiuLiveHit.Tasks
                     }
                 }
 
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(delta));
+                await TaskUtil.ApplyPostRoundMoneyAsync(ctx, money, winAny, delta, ct);
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiFinalizeMultiBet?.Invoke(winners, resultDisplay));
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiWinLoss?.Invoke(winAny));
-
-                if (ctx.MoneyStrategyId == "MultiChain")
-                {
-                    int chainIndex = ctx.MoneyChainIndex;
-                    int chainStep = ctx.MoneyChainStep;
-                    double chainProfit = ctx.MoneyChainProfit;
-
-                    MoneyHelper.UpdateAfterRoundMultiChain(
-                        ctx.StakeChains,
-                        ctx.StakeChainTotals,
-                        ref chainIndex,
-                        ref chainStep,
-                        ref chainProfit,
-                        winAny);
-
-                    ctx.MoneyChainIndex = chainIndex;
-                    ctx.MoneyChainStep = chainStep;
-                    ctx.MoneyChainProfit = chainProfit;
-                }
-                else
-                {
-                    money.OnRoundResult(winAny);
-                }
             }
         }
     }

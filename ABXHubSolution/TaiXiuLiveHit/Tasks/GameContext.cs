@@ -41,6 +41,8 @@ namespace TaiXiuLiveHit.Tasks
 
         // Ngưỡng giây còn lại để ra quyết định
         public int DecisionSeconds { get; init; }
+        public bool AutoResetStakeOnNonNegativeWin { get; init; } = false;
+        public Func<bool>? ConsumeAutoResetStakeRequest { get; init; }
 
         // Trạng thái chiến lược (lưu Step/PreferLarger/.)
         public DecisionState State { get; init; }
