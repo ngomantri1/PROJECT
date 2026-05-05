@@ -77,6 +77,7 @@
         if (window[NS] && window[NS].teardown) {
             window[NS].teardown();
         }
+        window.__cw_boot_done = 0;
     } catch (e) {}
 
     // === CW host/DOM command bridge (clear_autostart) =====================
@@ -223,6 +224,13 @@
             // vipbet389 có thể giữ URL apiLogin trong iframe nhưng render game nội bộ theo flow SPA.
             if (isApiLogin && !__cw_isTopDocument())
                 return true;
+
+            // Prefer live document signals over provider-specific URL shapes so
+            // wrapper pages with different paths can still boot the bridge.
+            try {
+                if (typeof __abxLooksLikeGameBySignals === 'function' && __abxLooksLikeGameBySignals(1200))
+                    return true;
+            } catch (_) {}
 
             return false;
         } catch (_) {
@@ -439,6 +447,24 @@
         } catch (_) {}
         return out;
     }
+    function __abxLooksLikeGameBySignals(minScore) {
+        try {
+            var sig = __abxGetGameSignals();
+            if (!sig || sig.ignored)
+                return false;
+            var score = Number(sig.score || 0) || 0;
+            var min = Number(minScore || 1200) || 1200;
+            if (score >= min)
+                return true;
+            if (sig.hasCocos && sig.canvasCount > 0 && score >= 400)
+                return true;
+            if ((sig.hasBeadRoad || sig.hasBetBox) && (sig.hasProcessStatus || sig.hasProcessBar))
+                return true;
+            if (Number(sig.proxyChildScore || 0) >= min)
+                return true;
+        } catch (_) {}
+        return false;
+    }
     function __abxPost(obj) {
         try {
             if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
@@ -594,6 +620,11 @@
     };
 
     function __cw_boot() {
+    try {
+        if (window.__cw_boot_done)
+            return;
+        window.__cw_boot_done = 1;
+    } catch (_) {}
     try {
         cwDbg('BOOT', 'cw boot start', {
             href: String(location.href || ''),
@@ -877,9 +908,19 @@
         try {
             var seqOn = (window.__cw_debug_seq === 1 || window.__cw_debug_seq === true);
             var pushOn = (window.__cw_debug_seq_push === 1 || window.__cw_debug_seq_push === true);
+            var fileOn = (window.__cw_file_log_enable === 1 || window.__cw_file_log_enable === true);
             var t = String(tag || '').toUpperCase();
             var isPushTag = (t === 'SEQPUSH' || t === 'PUSH' || t === 'POST');
-            if (!seqOn && !(pushOn && isPushTag))
+            var fileDiagOn = fileOn && (
+                isPushTag ||
+                t === 'CANVAS' ||
+                t === 'BETPOOL' ||
+                t === 'POOL' ||
+                t === 'TOTALS' ||
+                t === 'STATUS' ||
+                t === 'SNAPSHOT'
+            );
+            if (!seqOn && !(pushOn && isPushTag) && !fileDiagOn)
                 return;
             var now = Date.now();
             var k = String(key || (tag + '|' + msg));
@@ -2303,9 +2344,7 @@
         var roadSeq = road.seq;
         var countGuard = brBuildSeqCountGuardFromValues(countB, countP, countT, domCollapse(titleText || ''));
         if (countGuard) {
-            var guardedRoad = brApplySeqCountGuard(roadSeq, countGuard, 'card-road');
-            if (guardedRoad.changed)
-                roadSeq = guardedRoad.seq;
+            brReportSeqCountGuardOnly(roadSeq, countGuard, 'card-road');
         }
         return {
             root: cardRoot,
@@ -2431,7 +2470,9 @@
     }
     var _domBetStakeCache = {
         at: 0,
-        data: null
+        data: null,
+        hostsAt: 0,
+        hosts: []
     };
     var _domBetCtxCache = {
         at: 0,
@@ -2958,7 +2999,7 @@
                     continue;
                 var nodes = [];
                 try {
-                    nodes = doc.querySelectorAll("li[id^='betBox'], [id*='betBox'], .zone_bet_bottom li, .zone_bet_bottom div, .zone_bet_bottom span, .zone_bet_bottom p, body *");
+                    nodes = doc.querySelectorAll("li[id^='betBox'], [id*='betBox'], .zone_bet_bottom li, .zone_bet_bottom div, .zone_bet_bottom span, .zone_bet_bottom p");
                 } catch (_) {
                     nodes = [];
                 }
@@ -3050,17 +3091,98 @@
             return null;
         }
     }
+    function domPoolValueCount(pool) {
+        try {
+            var n = 0;
+            if (pool && pool.B != null) n++;
+            if (pool && pool.P != null) n++;
+            if (pool && pool.T != null) n++;
+            return n;
+        } catch (_) {
+            return 0;
+        }
+    }
+    function domPoolSourceIsDisplayAuthority(pool) {
+        try {
+            var s = String((pool && (pool.source || pool.BS || pool.Source)) || '').toLowerCase();
+            if (!s)
+                return false;
+            if (/\/text(?:$|[/?#])/.test(s))
+                return false;
+            if (/network|cdp|ws|fetch|xhr|provider|numeric123/.test(s))
+                return false;
+            return /frame|top|dom|betbox|zone/.test(s);
+        } catch (_) {
+            return false;
+        }
+    }
+    function domReadCachedBetStakeHosts(now, force) {
+        try {
+            var rows = _domBetStakeCache.hosts || [];
+            var age = now - Number(_domBetStakeCache.hostsAt || 0);
+            var ttl = force ? 1400 : 2800;
+            if (!rows.length || age < 0 || age > ttl)
+                return null;
+            var bySide = {};
+            for (var i = 0; i < rows.length; i++) {
+                var row = rows[i] || {};
+                var host = row.host;
+                var side = row.side;
+                if (!host || !side)
+                    continue;
+                if (host.isConnected === false)
+                    continue;
+                if (!domVisible(host))
+                    continue;
+                var rect = null;
+                try { rect = host.getBoundingClientRect(); } catch (_) { rect = null; }
+                if (!rect || rect.width < 35 || rect.height < 18)
+                    continue;
+                var win = row.win || window;
+                try {
+                    if (rect.bottom < 0 || rect.top > win.innerHeight || rect.right < 0 || rect.left > win.innerWidth)
+                        continue;
+                } catch (_) {}
+                var txt = domTextOf(host);
+                var stake = domExtractStakeFromHost(host);
+                if (!stake || stake.value == null)
+                    continue;
+                bySide[side] = {
+                    amount: stake.value,
+                    raw: stake.token,
+                    source: String(row.source || 'top'),
+                    _score: 4000 + Math.min(300, Math.round(Number(stake.value || 0) / 1000))
+                };
+            }
+            var found = 0, sum = 0;
+            var keys = ['BANKER', 'PLAYER', 'TIE'];
+            for (var ki = 0; ki < keys.length; ki++) {
+                var it = bySide[keys[ki]];
+                if (!it)
+                    continue;
+                found++;
+                sum += Number(it._score || 0);
+            }
+            if (!found)
+                return null;
+            return {
+                B: bySide.BANKER ? bySide.BANKER.amount : null,
+                P: bySide.PLAYER ? bySide.PLAYER.amount : null,
+                T: bySide.TIE ? bySide.TIE.amount : null,
+                rawB: bySide.BANKER ? bySide.BANKER.raw : null,
+                rawP: bySide.PLAYER ? bySide.PLAYER.raw : null,
+                rawT: bySide.TIE ? bySide.TIE.raw : null,
+                source: String((bySide.BANKER || bySide.PLAYER || bySide.TIE || {}).source || 'top') + '/cached-host',
+                score: sum + found * 900
+            };
+        } catch (_) {
+            return null;
+        }
+    }
     function domScanBetStakeTotals(force) {
         try {
             var now = Date.now();
             var providerPool = poolProviderReadFresh(force ? 3500 : 6000);
-            if (providerPool && (providerPool.B != null || providerPool.P != null || providerPool.T != null)) {
-                _domBetStakeCache.at = now;
-                _domBetStakeCache.data = providerPool;
-                _domBetStakeCache.goodAt = now;
-                _domBetStakeCache.good = providerPool;
-                return providerPool;
-            }
             var betHot = false;
             try {
                 betHot = (now - Number(window.__cw_last_bet_touch_at || 0)) < 2800;
@@ -3068,12 +3190,26 @@
                 betHot = false;
             }
             var cacheMs = betHot ? 180 : 900;
-            if (!force && _domBetStakeCache.data && (now - Number(_domBetStakeCache.at || 0)) < cacheMs)
+            var goodPoolFresh = _domBetStakeCache.good && (now - Number(_domBetStakeCache.goodAt || 0)) < 30000;
+            if (!force && _domBetStakeCache.data && (now - Number(_domBetStakeCache.at || 0)) < cacheMs &&
+                (domPoolSourceIsDisplayAuthority(_domBetStakeCache.data) || domPoolValueCount(_domBetStakeCache.data) === 0)) {
+                if (domPoolValueCount(_domBetStakeCache.data) === 0 && goodPoolFresh)
+                    return _domBetStakeCache.good;
                 return _domBetStakeCache.data;
+            }
             var contexts = domGetBetContexts(false);
             if ((!contexts || !contexts.length) && force)
                 contexts = domGetBetContexts(true);
+            var cachedHostPool = domReadCachedBetStakeHosts(now, force);
+            if (cachedHostPool && domPoolValueCount(cachedHostPool) >= 2 && domPoolSourceIsDisplayAuthority(cachedHostPool)) {
+                _domBetStakeCache.at = now;
+                _domBetStakeCache.data = cachedHostPool;
+                _domBetStakeCache.goodAt = now;
+                _domBetStakeCache.good = cachedHostPool;
+                return cachedHostPool;
+            }
             var best = null;
+            var bestHostRows = null;
             for (var ci = 0; ci < contexts.length; ci++) {
                 var ctx = contexts[ci];
                 var doc = ctx && ctx.doc ? ctx.doc : null;
@@ -3167,7 +3303,10 @@
                             amount: row.amount,
                             raw: row.rawAmount,
                             _score: score,
-                            source: row.source
+                            source: row.source,
+                            host: row.host,
+                            win: win,
+                            href: String(ctx.href || '')
                         };
                 }
                 var found = 0;
@@ -3193,10 +3332,32 @@
                     source: String(ctx.source || 'top'),
                     score: ctxScore
                 };
-                if (!best || pack.score > best.score)
+                if (!best || pack.score > best.score) {
                     best = pack;
+                    bestHostRows = [];
+                    for (var ck = 0; ck < keys.length; ck++) {
+                        var sideKey = keys[ck];
+                        var sideHit = bySide[sideKey];
+                        if (sideHit && sideHit.host) {
+                            bestHostRows.push({
+                                host: sideHit.host,
+                                side: sideKey,
+                                source: sideHit.source,
+                                href: sideHit.href,
+                                win: sideHit.win
+                            });
+                        }
+                    }
+                }
                 if (pack.B != null && pack.P != null && found >= 2 && pack.score >= 2800)
                     break;
+            }
+            var textFallback = null;
+            try {
+                if (!(best && (best.B != null || best.P != null || best.T != null)))
+                    textFallback = domScanBetStakeTotalsFromVisibleText(contexts);
+            } catch (_) {
+                textFallback = null;
             }
             var out = best || {
                 B: null,
@@ -3209,18 +3370,16 @@
                 score: 0
             };
             try {
-                if (!(out && (out.B != null || out.P != null || out.T != null))) {
-                    var textPack = domScanBetStakeTotalsFromVisibleText(contexts);
-                    if (textPack && (textPack.B != null || textPack.P != null || textPack.T != null))
-                        out = textPack;
-                }
-            } catch (_) {}
-            try {
                 var hasPoolValue = out && (out.B != null || out.P != null || out.T != null);
-                if (hasPoolValue) {
+                var isDisplayAuthority = hasPoolValue && domPoolSourceIsDisplayAuthority(out);
+                if (isDisplayAuthority) {
                     _domBetStakeCache.goodAt = now;
                     _domBetStakeCache.good = out;
-                } else if (_domBetStakeCache.good && (now - Number(_domBetStakeCache.goodAt || 0)) < 8000) {
+                    if (bestHostRows && bestHostRows.length >= 2) {
+                        _domBetStakeCache.hostsAt = now;
+                        _domBetStakeCache.hosts = bestHostRows;
+                    }
+                } else if (!hasPoolValue && goodPoolFresh) {
                     out = _domBetStakeCache.good;
                 }
             } catch (_) {}
@@ -3236,16 +3395,26 @@
                     P: out.P,
                     T: out.T,
                     source: String(out.source || ''),
-                    score: Number(out.score || 0) || 0
+                    score: Number(out.score || 0) || 0,
+                    textB: textFallback ? textFallback.B : null,
+                    textP: textFallback ? textFallback.P : null,
+                    textT: textFallback ? textFallback.T : null,
+                    textSource: textFallback ? String(textFallback.source || '') : '',
+                    textScore: textFallback ? Number(textFallback.score || 0) || 0 : 0,
+                    providerB: providerPool ? providerPool.B : null,
+                    providerP: providerPool ? providerPool.P : null,
+                    providerT: providerPool ? providerPool.T : null,
+                    providerSource: providerPool ? String(providerPool.source || providerPool.BS || providerPool.Source || '') : ''
                 }, 2500, 'betpool|' + String(out.source || 'none') + '|' + String(out.B) + '|' + String(out.P) + '|' + String(out.T));
             } catch (_) {}
             _domBetStakeCache.at = now;
-            _domBetStakeCache.data = out;
+            if (domPoolSourceIsDisplayAuthority(out) || (domPoolValueCount(out) === 0 && !goodPoolFresh))
+                _domBetStakeCache.data = out;
             return out;
         } catch (_) {
             try {
                 var now2 = Date.now();
-                if (_domBetStakeCache.good && (now2 - Number(_domBetStakeCache.goodAt || 0)) < 8000)
+                if (_domBetStakeCache.good && (now2 - Number(_domBetStakeCache.goodAt || 0)) < 30000)
                     return _domBetStakeCache.good;
             } catch (_) {}
             return {
@@ -5259,7 +5428,7 @@
         }
         return out;
     }
-    function brApplySeqCountGuard(raw, guard, sourceTag) {
+    function brReportSeqCountGuardOnly(raw, guard, sourceTag) {
         var clean = brSanitizeSeq(raw);
         if (!guard)
             return { seq: clean, changed: false, reason: 'no-count-guard' };
@@ -5275,15 +5444,12 @@
             st.other > 0;
         if (!exceeds)
             return { seq: clean, changed: false, reason: 'within-count' };
-        var clamped = brClampSeqToCounts(clean, guard);
         try {
-            brSeqDiagPost('count-guard-clamp', {
+            brSeqDiagPost('count-guard-disabled', {
                 source: String(sourceTag || ''),
                 title: String(guard.title || ''),
                 raw: clean,
                 rawLen: clean.length,
-                clamped: clamped,
-                clampedLen: clamped.length,
                 countB: Number(guard.b || 0),
                 countP: Number(guard.p || 0),
                 countT: Number(guard.t || 0),
@@ -5292,13 +5458,16 @@
                 seqEvent: String(_domSeqEvent || ''),
                 buildId: Number(_cwSnapshotBuildId || 0),
                 buildSource: String(_cwSnapshotBuildSource || '')
-            }, 400, 'count-guard-clamp|' + String(sourceTag || '') + '|' + clean + '|' + clamped + '|' + total);
+            }, 1200, 'count-guard-disabled|' + String(sourceTag || '') + '|' + clean + '|' + total);
         } catch (_) {}
         return {
-            seq: clamped,
-            changed: clamped !== clean,
-            reason: total <= 0 ? 'count-zero' : 'count-exceeded'
+            seq: clean,
+            changed: false,
+            reason: 'count-guard-disabled'
         };
+    }
+    function brApplySeqCountGuard(raw, guard, sourceTag) {
+        return brReportSeqCountGuardOnly(raw, guard, sourceTag);
     }
     function brRebaseManagedByCountGuard(seq, guard, sourceTag, beforeSeq) {
         var clean = brSanitizeSeq(seq);
@@ -8393,10 +8562,10 @@
             };
         }
     }
-    function sampleTotalsLiteNow() {
+    function sampleTotalsLiteNow(forceFast) {
         try {
             if (__cw_hasCocos())
-                return sampleTotalsNow();
+                return sampleTotalsNow(!!forceFast);
             var now = Date.now();
             var betHot = false;
             try {
@@ -8404,7 +8573,7 @@
             } catch (_) {
                 betHot = false;
             }
-            var stake = domScanBetStakeTotals(false);
+            var stake = domScanBetStakeTotals(!!forceFast);
             var hud = null;
             var hudCacheMs = betHot ? 1400 : 4600;
             if (_domHudCache.data && (now - Number(_domHudCache.at || 0)) < hudCacheMs) {
@@ -8985,9 +9154,26 @@
         }
         if (useAuthSnap) {
             try {
-                var snapTotals = mergeTotalsSnapshot(authSnap.totals, t);
-                if (snapTotals)
-                    t = snapTotals;
+                var snapTotals = normalizeTotalsSnapshot(authSnap.totals);
+                t = snapTotals || {
+                    B: null,
+                    P: null,
+                    C: null,
+                    L: null,
+                    A: null,
+                    N: null,
+                    cards: [],
+                    rawB: null,
+                    rawP: null,
+                    rawC: null,
+                    rawL: null,
+                    rawA: null,
+                    rawN: null,
+                    TB: null,
+                    TA: null,
+                    rawTB: null,
+                    rawTA: null
+                };
             } catch (_) {}
         } else if (waitingCsharpDisplay) {
             t = {
@@ -9025,9 +9211,63 @@
         }
         if (useCsharpSeqSnap && csharpSeqSnap && csharpSeqSnap.totals) {
             try {
-                var csharpTotals = mergeTotalsSnapshot(csharpSeqSnap.totals, t);
-                if (csharpTotals)
+                var csharpTotals = normalizeTotalsSnapshot(csharpSeqSnap.totals);
+                if (csharpTotals) {
                     t = csharpTotals;
+                    if (csharpTotals.B != null || csharpTotals.P != null || csharpTotals.T != null)
+                        window.__abx_csharp_display_pool_totals = csharpTotals;
+                }
+            } catch (_) {}
+        }
+        if (useAuthSnap && t && (t.B == null || t.P == null || t.T == null)) {
+            try {
+                var csharpPoolTotals = normalizeTotalsSnapshot(window.__abx_csharp_display_pool_totals);
+                if (csharpPoolTotals) {
+                    if (t.B == null && csharpPoolTotals.B != null) t.B = csharpPoolTotals.B;
+                    if (t.P == null && csharpPoolTotals.P != null) t.P = csharpPoolTotals.P;
+                    if (t.T == null && csharpPoolTotals.T != null) t.T = csharpPoolTotals.T;
+                    if (t.C == null && csharpPoolTotals.C != null) t.C = csharpPoolTotals.C;
+                    if (t.L == null && csharpPoolTotals.L != null) t.L = csharpPoolTotals.L;
+                    if (!t.BS && (csharpPoolTotals.BS || csharpPoolTotals.source))
+                        t.BS = csharpPoolTotals.BS || csharpPoolTotals.source;
+                    if (!t.source && (csharpPoolTotals.source || csharpPoolTotals.BS))
+                        t.source = csharpPoolTotals.source || csharpPoolTotals.BS;
+                }
+            } catch (_) {}
+        }
+        if (useAuthSnap && t && (t.B == null || t.P == null || t.T == null || t.TB == null || t.TA == null)) {
+            try {
+                var localPoolFillAllowed = false;
+                var localCtx = {};
+                try { localCtx = (typeof __abxBuildContext === 'function') ? (__abxBuildContext() || {}) : {}; } catch (_) { localCtx = {}; }
+                var localPath = String(localCtx.framePath || '');
+                var dataPathForSnap = String(authSnap.dataFramePath || authSnap.proxyChildFramePath || authSnap.framePath || '');
+                if (localPath && dataPathForSnap && localPath === dataPathForSnap)
+                    localPoolFillAllowed = true;
+                if (!localPoolFillAllowed && localPath && String(authSnap.framePath || '') === localPath)
+                    localPoolFillAllowed = true;
+
+                if (localPoolFillAllowed) {
+                    var localTotalsForPool = normalizeTotalsSnapshot(S._lastTotals);
+                    if (localTotalsForPool) {
+                        if (t.B == null && localTotalsForPool.B != null) t.B = localTotalsForPool.B;
+                        if (t.P == null && localTotalsForPool.P != null) t.P = localTotalsForPool.P;
+                        if (t.T == null && localTotalsForPool.T != null) t.T = localTotalsForPool.T;
+                        if (t.C == null && localTotalsForPool.C != null) t.C = localTotalsForPool.C;
+                        if (t.L == null && localTotalsForPool.L != null) t.L = localTotalsForPool.L;
+                        if (t.rawB == null && localTotalsForPool.rawB != null) t.rawB = localTotalsForPool.rawB;
+                        if (t.rawP == null && localTotalsForPool.rawP != null) t.rawP = localTotalsForPool.rawP;
+                        if (t.rawT == null && localTotalsForPool.rawT != null) t.rawT = localTotalsForPool.rawT;
+                        if (t.TB == null && localTotalsForPool.TB != null) t.TB = localTotalsForPool.TB;
+                        if (t.TA == null && localTotalsForPool.TA != null) t.TA = localTotalsForPool.TA;
+                        if (t.rawTB == null && localTotalsForPool.rawTB != null) t.rawTB = localTotalsForPool.rawTB;
+                        if (t.rawTA == null && localTotalsForPool.rawTA != null) t.rawTA = localTotalsForPool.rawTA;
+                        if (!t.BS && (localTotalsForPool.BS || localTotalsForPool.source))
+                            t.BS = String(localTotalsForPool.BS || localTotalsForPool.source || '') + '/pool-fill';
+                        if (!t.source && (localTotalsForPool.source || localTotalsForPool.BS))
+                            t.source = String(localTotalsForPool.source || localTotalsForPool.BS || '') + '/pool-fill';
+                    }
+                }
             } catch (_) {}
         }
         var f = S.focus;
@@ -9223,13 +9463,80 @@
                 window.__abx_csharp_display_snapshot = snap || null;
                 window.__abx_csharp_display_snapshot_at = Date.now();
                 window.__abx_csharp_display_enabled = 1;
+                try {
+                    var poolTotals = normalizeTotalsSnapshot(snap && snap.totals);
+                    if (poolTotals && (poolTotals.B != null || poolTotals.P != null || poolTotals.T != null))
+                        window.__abx_csharp_display_pool_totals = poolTotals;
+                } catch (_) {}
+                updatePanel();
+                try {
+                    if (typeof window.__abxCwEnforceSinglePanel === 'function') window.__abxCwEnforceSinglePanel();
+                } catch (_) {}
+                try {
+                    var roots = Array.prototype.slice.call(document.querySelectorAll('#__cw_root_allin'));
+                    var infos = Array.prototype.slice.call(document.querySelectorAll('#__cw_root_allin #cwInfo, #cwInfo'));
+                    var info = document.querySelector('#cwInfo');
+                    var txt = info ? String(info.innerText || info.textContent || '') : '';
+                    var totals = normalizeTotalsSnapshot(snap && snap.totals);
+                    var hasPoolText = /BANKER\s*:\s*(?!\s*--)[\d.,KMB]+/i.test(txt) ||
+                                      /BET POOL DOM\s*:\s*B\s*=\s*(?!\s*--)[\d.,KMB]+/i.test(txt);
+                    var poolInfoCount = 0;
+                    for (var i = 0; i < infos.length; i++) {
+                        var itxt = String(infos[i].innerText || infos[i].textContent || '');
+                        if (/BANKER\s*:\s*(?!\s*--)[\d.,KMB]+/i.test(itxt) ||
+                            /BET POOL DOM\s*:\s*B\s*=\s*(?!\s*--)[\d.,KMB]+/i.test(itxt)) poolInfoCount++;
+                    }
+                    var visiblePool = 0, route = '', dataPath = '', mirroredFrom = '';
+                    for (var rix = 0; rix < roots.length; rix++) {
+                        var root = roots[rix];
+                        var cs = null;
+                        try { cs = window.getComputedStyle ? window.getComputedStyle(root) : null; } catch (_) { cs = null; }
+                        var isVisible = !cs || (cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity || 1) > 0.02);
+                        if (!isVisible) continue;
+                        var rtxt = String(root.innerText || root.textContent || '');
+                        if (/BANKER\s*:\s*(?!\s*--)[\d.,KMB]+/i.test(rtxt) ||
+                            /BET POOL DOM\s*:\s*B\s*=\s*(?!\s*--)[\d.,KMB]+/i.test(rtxt)) visiblePool = 1;
+                        route = String(root.getAttribute('data-abx-panel-route') || '');
+                        dataPath = String(root.getAttribute('data-abx-panel-data-path') || '');
+                        mirroredFrom = String(root.getAttribute('data-abx-mirrored-from') || '');
+                        break;
+                    }
+                    return 'ok|B=' + (totals && totals.B != null ? totals.B : '-') +
+                        '|P=' + (totals && totals.P != null ? totals.P : '-') +
+                        '|T=' + (totals && totals.T != null ? totals.T : '-') +
+                        '|table=' + (totals && totals.TB != null ? String(totals.TB).replace(/\|/g, '/') : '-') +
+                        '|tableAmount=' + (totals && totals.TA != null ? totals.TA : '-') +
+                        '|root=' + roots.length +
+                        '|info=' + infos.length +
+                        '|poolInfo=' + poolInfoCount +
+                        '|panelPool=' + (hasPoolText ? '1' : '0') +
+                        '|visiblePool=' + visiblePool +
+                        '|route=' + route +
+                        '|dataPath=' + dataPath +
+                        '|mir=' + mirroredFrom +
+                        '|href=' + String(location.href || '').replace(/\|/g, '/');
+                } catch (_) {
+                    return 'ok';
+                }
+            } catch (e) {
+                return 'err:' + String(e && e.message ? e.message : e);
+            }
+        };
+        window.__abx_apply_csharp_authority_snapshot = window.__abx_apply_csharp_display_snapshot;
+        window.__abx_clear_csharp_display_snapshot = function () {
+            try {
+                window.__abx_csharp_display_snapshot = null;
+                window.__abx_csharp_authority_snapshot = null;
+                window.__abx_csharp_display_pool_totals = null;
+                window.__abx_csharp_display_snapshot_at = 0;
+                window.__abx_csharp_authority_snapshot_at = 0;
+                window.__abx_csharp_display_enabled = 0;
                 updatePanel();
                 return 'ok';
             } catch (e) {
                 return 'err:' + String(e && e.message ? e.message : e);
             }
         };
-        window.__abx_apply_csharp_authority_snapshot = window.__abx_apply_csharp_display_snapshot;
     } catch (_) {}
 
     /* ---------------- scan tools ---------------- */
@@ -12783,6 +13090,7 @@
         var _lastJson = '';
         var _lastStableJson = '';
         var _forcePushOnce = false;
+        var _lastPushPoolKey = '';
         var _lastPullSeqVersion = 0;
         var _lastPushSeqVersion = 0;
         var _abxSnapCache = {
@@ -12934,11 +13242,11 @@
             return null;
         }
 
-        function readTotalsSafe(preferLite) {
+        function readTotalsSafe(preferLite, forceFast) {
             try {
                 if (preferLite && typeof sampleTotalsLiteNow === 'function')
-                    return sampleTotalsLiteNow();
-                return (typeof sampleTotalsNow === 'function') ? sampleTotalsNow() : null;
+                    return sampleTotalsLiteNow(!!forceFast);
+                return (typeof sampleTotalsNow === 'function') ? sampleTotalsNow(!!forceFast) : null;
             } catch (_) {
                 return null;
             }
@@ -13188,28 +13496,29 @@
             try { betProcessing = !!_processingBetQueue; } catch (_) { betProcessing = false; }
             try { recentBetAge = nowTs - Number(window.__cw_last_bet_touch_at || 0); } catch (_) { recentBetAge = 999999; }
             var betHot = betProcessing || betQueueLen > 0 || recentBetAge < 2600;
+            var poolFastPhase = progNum != null && progNum > 1.0 && progNum <= 18.5;
             if (perfMode && buildSource === 'push') {
                 if (progNum == null) {
-                    totalsCacheMs = betHot ? 700 : 1900;
+                    totalsCacheMs = betHot ? 450 : 1200;
                     seqCacheMs = 900;
                 } else if (progNum <= 1.0 || progNum >= 15.5) {
-                    // Pha mở bài/chờ ván mới: tiền ít đổi -> cache lâu hơn.
-                    totalsCacheMs = betHot ? 900 : 3200;
+                    // Cuối ván/đầu ván vẫn quét pool tương đối nhanh vì DOM có thể chốt muộn.
+                    totalsCacheMs = (progNum > 1.0) ? (betHot ? 180 : 280) : (betHot ? 420 : 900);
                     seqCacheMs = 1200;
                 } else if (progNum <= 6.5) {
-                    // Pha cược: giữ cập nhật nhanh hơn.
-                    totalsCacheMs = betHot ? 500 : 1200;
+                    // Pha cược cuối: ưu tiên DOM pool, giảm độ trễ hiển thị.
+                    totalsCacheMs = betHot ? 140 : 220;
                     seqCacheMs = 650;
                 } else {
-                    totalsCacheMs = betHot ? 750 : 1800;
+                    totalsCacheMs = betHot ? 160 : 260;
                     seqCacheMs = 900;
                 }
                 if (_forcePushOnce) {
                     seqCacheMs = Math.min(seqCacheMs, 320);
                     if (betHot)
-                        totalsCacheMs = Math.min(totalsCacheMs, 550);
+                        totalsCacheMs = Math.min(totalsCacheMs, 160);
                     else
-                        totalsCacheMs = Math.min(totalsCacheMs, 1200);
+                        totalsCacheMs = Math.min(totalsCacheMs, poolFastPhase ? 240 : 700);
                 }
             }
 
@@ -13230,8 +13539,8 @@
                 var seqAge = _abxSnapCache.seqAt > 0 ? (nowTs - _abxSnapCache.seqAt) : 999999;
                 var hasTotalsFallback = !!(_abxSnapCache.totals || (cached && cached.totals) || (S && S._lastTotals));
                 var hasSeqFallback = !!(_abxSnapCache.seqState || (cached && cached.seq) || (S && S.seq) || window.__cw_seq);
-                var preferTotalsRefresh = betHot || (progNum != null && progNum <= 6.5);
-                var canDeferTotals = hasTotalsFallback && totalsAge < (totalsCacheMs + 2600);
+                var preferTotalsRefresh = betHot || poolFastPhase || (progNum != null && progNum <= 6.5);
+                var canDeferTotals = hasTotalsFallback && totalsAge < (totalsCacheMs + (poolFastPhase ? 450 : 2600));
                 var canDeferSeq = hasSeqFallback && seqAge < (seqCacheMs + 2200);
                 // Tránh dồn 2 phép quét nặng vào cùng tick -> giảm spike jsBuildMs.
                 if (preferTotalsRefresh && canDeferSeq) {
@@ -13254,7 +13563,7 @@
                 t = mergeTotalsSnapshot(_abxSnapCache.totals, t) || t;
             } else {
                 var tt0 = Date.now();
-                var totalsFresh = readTotalsSafe(perfMode && buildSource === 'push');
+                var totalsFresh = readTotalsSafe(perfMode && buildSource === 'push', poolFastPhase || betHot || _forcePushOnce);
                 jsTotalsMs += (Date.now() - tt0);
                 if (totalsFresh) {
                     var totalsMerged = mergeTotalsSnapshot(totalsFresh, t);
@@ -13683,9 +13992,27 @@
                         }, 0, 'seqflow-push-jump|' + _lastPushSeqVersion + '|' + curVer);
                     }
                     var changed = shallowChanged(snap);
+                    var poolChanged = false;
+                    try {
+                        var pt = normalizeTotalsSnapshot(snap && snap.totals);
+                        var poolKey = [
+                            pt && pt.B != null ? pt.B : '',
+                            pt && pt.P != null ? pt.P : '',
+                            pt && pt.T != null ? pt.T : '',
+                            pt && (pt.BS || pt.source) ? (pt.BS || pt.source) : ''
+                        ].join('|');
+                        poolChanged = !!(poolKey && poolKey !== _lastPushPoolKey);
+                        if (poolChanged)
+                            _lastPushPoolKey = poolKey;
+                    } catch (_) {
+                        poolChanged = false;
+                    }
+                    if (poolChanged)
+                        changed = true;
                     if (_forcePushOnce || changed) {
                         cwDbg('SEQPUSH', 'tick-send', {
                             changed: changed ? 1 : 0,
+                            poolChanged: poolChanged ? 1 : 0,
                             forced: _forcePushOnce ? 1 : 0,
                             seqLen: snap && snap.seq ? String(snap.seq || '').length : 0,
                             seqVersion: snap && snap.seqVersion != null ? snap.seqVersion : null,
@@ -13695,6 +14022,7 @@
                         }, 800, 'seqpush-tick-send|' + (snap && snap.seqVersion != null ? snap.seqVersion : '') + '|' + ev + '|' + (changed ? '1' : '0') + '|' + (_forcePushOnce ? '1' : '0'));
                         cwDbg('PUSH', 'send tick', {
                             changed: changed ? 1 : 0,
+                            poolChanged: poolChanged ? 1 : 0,
                             forced: _forcePushOnce ? 1 : 0,
                             seqLen: snap && snap.seq ? String(snap.seq || '').length : 0,
                             seqVersion: snap && snap.seqVersion != null ? snap.seqVersion : null,
@@ -13973,15 +14301,40 @@
 
     __abxStartScoutLoop();
 
+    function __cw_tryBootFromSignals(reason) {
+        try {
+            if (window.__cw_boot_done)
+                return true;
+            if (__cw_isGamePopupPage() ||
+                (typeof __abxLooksLikeGameBySignals === 'function' && __abxLooksLikeGameBySignals(1200))) {
+                __cw_boot();
+                return true;
+            }
+        } catch (_) {}
+        return false;
+    }
+
     if (__cw_isGamePopupPage()) {
         if (document.body || document.documentElement) {
             __cw_boot();
         } else {
             document.addEventListener('DOMContentLoaded', function () {
-                if (__cw_isGamePopupPage())
-                    __cw_boot();
+                __cw_tryBootFromSignals('dom-ready');
             }, { once: true });
         }
+    } else {
+        try {
+            var __cw_signal_boot_tries = 0;
+            var __cw_signal_boot_timer = setInterval(function () {
+                try {
+                    __cw_signal_boot_tries++;
+                    if (__cw_tryBootFromSignals('signal-loop') || __cw_signal_boot_tries >= 80)
+                        clearInterval(__cw_signal_boot_timer);
+                } catch (_) {
+                    try { clearInterval(__cw_signal_boot_timer); } catch (_) {}
+                }
+            }, 500);
+        } catch (_) {}
     }
 
 })();

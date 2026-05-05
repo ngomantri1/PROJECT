@@ -386,9 +386,9 @@ namespace BaccaratSexyCasino
         private IBetTask _activeTask;
         private const int NiSeqMax = 50;
         private const int SeqWindowMax = 0; // 0 = no display cap; CDP history can contain the full shoe.
-        // Chuỗi nghiệp vụ: JS rawSeq chỉ seed ban đầu; sau đó CDP GP_WINNER append.
+        // Chuỗi nghiệp vụ: DOM authority rawSeq seed ban đầu; sau đó CDP GP_WINNER append.
         // markerRoads là dữ liệu vẽ road map, không dùng làm nguồn authoritative.
-        private static readonly bool UseNetworkSeqOnly = true;
+        private static readonly bool UseDomBootstrapCdpAppendSeq = true;
         private static readonly bool UseMarkerRoadHistoryBootstrap = false;
         private static readonly string[] StatusAuthorityTails =
         {
@@ -458,7 +458,13 @@ namespace BaccaratSexyCasino
         private DateTime _lastCanvasDisplaySkipLogUtc = DateTime.MinValue;
         private string _lastCanvasPoolBlockKey = "";
         private DateTime _lastCanvasPoolBlockLogUtc = DateTime.MinValue;
+        private string _lastCanvasPoolAcceptKey = "";
+        private DateTime _lastCanvasPoolAcceptLogUtc = DateTime.MinValue;
         private CwTotals? _lastCanvasDisplayTotals;
+        private readonly ConcurrentDictionary<string, CanvasDisplayTargetState> _canvasDisplayTargetStates = new();
+        private readonly ConcurrentDictionary<string, DateTime> _canvasDisplayDropLogUtc = new();
+        private string _lastCanvasPrimaryTarget = "";
+        private DateTime _lastCanvasDisplayFullFanoutUtc = DateTime.MinValue;
         private string _jsRawBootstrapStableKey = "";
         private int _jsRawBootstrapStableCount = 0;
         private DateTime _lastJsRawBootstrapLogUtc = DateTime.MinValue;
@@ -1166,6 +1172,16 @@ Ví dụ không hợp lệ:
         return s;
       }catch(_){ return -999999; }
     }
+    function __abxCwHasDisplayPoolText(text){
+      try{
+        var t = String(text || '');
+        return /BANKER\s*:\s*(?!\s*--)[\d.,KMB]+/i.test(t) ||
+               /PLAYER\s*:\s*(?!\s*--)[\d.,KMB]+/i.test(t) ||
+               /TIE\s*:\s*(?!\s*--)[\d.,KMB]+/i.test(t) ||
+               /BET POOL DOM\s*:\s*B\s*=\s*(?!\s*--)[\d.,KMB]+/i.test(t) ||
+               /\bB\s*=\s*(?!\s*--)[\d.,KMB]+\s*\|\s*P\s*=\s*(?!\s*--)[\d.,KMB]+/i.test(t);
+      }catch(_){ return false; }
+    }
     function __abxCwMirrorPanel(host, source){
       try{
         if (!host || !source || !host.root || !source.root || host === source){
@@ -1176,7 +1192,8 @@ Ví dụ không hợp lệ:
         var dstInfo = host.root.querySelector && host.root.querySelector('#cwInfo');
         if (srcInfo && dstInfo){
           var txt = String(srcInfo.innerText || srcInfo.textContent || '').trim();
-          if (txt) dstInfo.innerHTML = srcInfo.innerHTML;
+          var dstTxt = String(dstInfo.innerText || dstInfo.textContent || '').trim();
+          if (txt && (!__abxCwHasDisplayPoolText(dstTxt) || __abxCwHasDisplayPoolText(txt))) dstInfo.innerHTML = srcInfo.innerHTML;
         }
         var srcState = source.root.querySelector && source.root.querySelector('#cwState');
         var dstState = host.root.querySelector && host.root.querySelector('#cwState');
@@ -1217,13 +1234,29 @@ Ví dụ không hợp lệ:
       }catch(_){}
       return null;
     }
+    function __abxCwFindBestPanelItem(items, predicate){
+      try{
+        var best = null, bestScore = -999999999;
+        for (var i=0;i<items.length;i++){
+          var item = items[i];
+          if (!predicate(item)) continue;
+          var s = __abxCwDataScore(item) + __abxCwVisibleScore(item);
+          if (__abxCwHasDisplayPoolText(item.text)) s += 500000;
+          if (!best || s > bestScore){
+            best = item;
+            bestScore = s;
+          }
+        }
+        return best;
+      }catch(_){ return null; }
+    }
     function __abxCwPickByFrameRoute(items){
       try{
-        var single = __abxCwFindPanelItem(items, __abxCwIsSingleTableItem);
-        var hall = __abxCwFindPanelItem(items, __abxCwIsGameHallItem);
-        var topWebMain = __abxCwFindPanelItem(items, function(x){ return __abxCwIsTopItem(x) && __abxCwIsWebMainItem(x); });
-        var anyWebMain = __abxCwFindPanelItem(items, __abxCwIsWebMainItem);
-        var topAny = __abxCwFindPanelItem(items, __abxCwIsTopItem);
+        var single = __abxCwFindBestPanelItem(items, __abxCwIsSingleTableItem);
+        var hall = __abxCwFindBestPanelItem(items, __abxCwIsGameHallItem);
+        var topWebMain = __abxCwFindBestPanelItem(items, function(x){ return __abxCwIsTopItem(x) && __abxCwIsWebMainItem(x); });
+        var anyWebMain = __abxCwFindBestPanelItem(items, __abxCwIsWebMainItem);
+        var topAny = __abxCwFindBestPanelItem(items, __abxCwIsTopItem);
         if (single){
           return {
             state: 'table',
@@ -1395,6 +1428,13 @@ Ví dụ không hợp lệ:
         if (typeof w.__cw_isGamePopupPage === 'function'){
           try{ if (w.__cw_isGamePopupPage()) return true; }catch(_){}
         }
+        if (typeof w.__abxGetGameSignals === 'function'){
+          try{
+            var sig = w.__abxGetGameSignals();
+            if (sig && !sig.ignored && Number(sig.score || 0) >= 1200) return true;
+            if (sig && !sig.ignored && sig.hasCocos && sig.canvasCount > 0 && Number(sig.score || 0) >= 400) return true;
+          }catch(_){}
+        }
         if (typeof w.__cw_hasCocos === 'function'){
           try{ if (w.__cw_hasCocos()) return true; }catch(_){}
         }
@@ -1433,6 +1473,13 @@ Ví dụ không hợp lệ:
         if (/\/player\/login\/apiLogin/i.test(href)) return true;
         if (typeof w.__cw_isGamePopupPage === 'function'){
           try{ if (w.__cw_isGamePopupPage()) return true; }catch(_){}
+        }
+        if (typeof w.__abxGetGameSignals === 'function'){
+          try{
+            var sig = w.__abxGetGameSignals();
+            if (sig && !sig.ignored && Number(sig.score || 0) >= 1200) return true;
+            if (sig && !sig.ignored && sig.hasCocos && sig.canvasCount > 0 && Number(sig.score || 0) >= 400) return true;
+          }catch(_){}
         }
         if (typeof w.__cw_hasCocos === 'function'){
           try{ if (w.__cw_hasCocos()) return true; }catch(_){}
@@ -1487,6 +1534,16 @@ Ví dụ không hợp lệ:
                 w.__cw_startPush){
               try{ w.__cw_startPush(__abxPushMs()); }catch(_){}
               return;
+            }
+            if (w && w.__cw_startPush && typeof w.__abxGetGameSignals === 'function'){
+              try{
+                var sig = w.__abxGetGameSignals();
+                if (sig && !sig.ignored && (Number(sig.score || 0) >= 1200 ||
+                    (sig.hasCocos && sig.canvasCount > 0 && Number(sig.score || 0) >= 400))){
+                  w.__cw_startPush(__abxPushMs());
+                  return;
+                }
+              }catch(_){}
             }
           }catch(_){}
         }
@@ -1586,11 +1643,11 @@ try{
                 bal = parseMoney(mHud[2]);
               }
 
-              var mTotals = text.match(/BANKER:\s*([0-9]+)\s*\|\s*PLAYER:\s*([0-9]+)\s*\|\s*TIE:\s*([0-9]+)/i);
+              var mTotals = text.match(/BANKER:\s*([0-9.,KMB]+)\s*\|\s*PLAYER:\s*([0-9.,KMB]+)\s*\|\s*TIE:\s*([0-9.,KMB]+)/i);
               if (mTotals){
-                banker = Number(mTotals[1] || 0);
-                player = Number(mTotals[2] || 0);
-                tie = Number(mTotals[3] || 0);
+                banker = parseMoney(mTotals[1]);
+                player = parseMoney(mTotals[2]);
+                tie = parseMoney(mTotals[3]);
               }
 
               var seqMatches = text.match(/SEQ:([BPT0-4]+)/ig);
@@ -1673,6 +1730,14 @@ try{
           var hasHud = !!(uname || (t && t.A != null));
           var href = '';
           try{ href = String((win.location && win.location.href) || ''); }catch(_){}
+          var topHref = '';
+          try{ topHref = String((win.top && win.top.location && win.top.location.href) || ''); }catch(_){}
+          var isTop = false;
+          try{ isTop = win.top === win; }catch(_){}
+          var ctx = {};
+          try{ if (typeof win.__abxBuildContext === 'function') ctx = win.__abxBuildContext() || {}; }catch(_){ ctx = {}; }
+          var sig = {};
+          try{ if (typeof win.__abxGetGameSignals === 'function') sig = win.__abxGetGameSignals() || {}; }catch(_){ sig = {}; }
           return {
             abx:'tick',
             prog:p,
@@ -1684,6 +1749,24 @@ try{
             status:String(st || ''),
             statusSource:statusSource,
             statusTail:statusTail,
+            contextId:String((snap && snap.contextId) || ctx.contextId || ''),
+            framePath:String((snap && snap.framePath) || ctx.framePath || ''),
+            href:String((snap && snap.href) || ctx.href || href || ''),
+            topHref:String((snap && snap.topHref) || ctx.topHref || topHref || ''),
+            isTop:(snap && snap.isTop != null) ? snap.isTop : (isTop ? 1 : 0),
+            authorityToken:String((snap && snap.authorityToken) || win.__abx_authority_token || ''),
+            contextScore:Number((snap && snap.contextScore != null) ? snap.contextScore : (sig.score || 0)) || 0,
+            contextConfidence:String((snap && snap.contextConfidence) || sig.confidence || ''),
+            signals:String((snap && snap.signals) || sig.signals || ''),
+            proxyChildFramePath:String((snap && snap.proxyChildFramePath) || sig.proxyChildFramePath || ''),
+            proxyChildHref:String((snap && snap.proxyChildHref) || sig.proxyChildHref || ''),
+            proxyChildScore:Number((snap && snap.proxyChildScore != null) ? snap.proxyChildScore : (sig.proxyChildScore || 0)) || 0,
+            proxyChildSignals:String((snap && snap.proxyChildSignals) || sig.proxyChildSignals || ''),
+            dataMode:String((snap && snap.dataMode) || (sig.proxyChildFramePath ? 'proxy-child' : 'self')),
+            dataFramePath:String((snap && snap.dataFramePath) || sig.proxyChildFramePath || ctx.framePath || ''),
+            dataHref:String((snap && snap.dataHref) || sig.proxyChildHref || ctx.href || href || ''),
+            panelFramePath:String((snap && snap.panelFramePath) || ctx.framePath || ''),
+            panelHref:String((snap && snap.panelHref) || ctx.href || href || ''),
             ts:Date.now(),
             __score:(hasSeq?100:0) + (hasHud?10:0) + (/singleBacTable\.jsp/i.test(href)?500:0)
           };
@@ -2033,7 +2116,7 @@ try{
             }
         }
 
-        private void LogJsSeqIgnoredIfNeeded(string source, string? jsSeq, string? rawSeq, long? seqVersion, string? seqEvent)
+        private void LogDomSeqObservedIfNeeded(string source, string? jsSeq, string? rawSeq, long? seqVersion, string? seqEvent)
         {
             var jsDisplay = FilterResultDisplaySeqWindow(jsSeq);
             var rawDisplay = FilterResultDisplaySeqWindow(rawSeq);
@@ -2053,7 +2136,7 @@ try{
 
             char jsTail = jsLen > 0 ? jsDisplay[^1] : '-';
             char rawTail = rawLen > 0 ? rawDisplay[^1] : '-';
-            Log($"[SEQ][JS-IGNORED] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | jsLen={jsLen} | jsTail={jsTail} | rawLen={rawLen} | rawTail={rawTail} | jsVer={(seqVersion?.ToString(CultureInfo.InvariantCulture) ?? "-")} | jsEvt={(string.IsNullOrWhiteSpace(seqEvent) ? "-" : seqEvent)} | authority=network");
+            Log($"[SEQ][DOM-OBSERVED] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | jsLen={jsLen} | jsTail={jsTail} | rawLen={rawLen} | rawTail={rawTail} | jsVer={(seqVersion?.ToString(CultureInfo.InvariantCulture) ?? "-")} | jsEvt={(string.IsNullOrWhiteSpace(seqEvent) ? "-" : seqEvent)} | policy=dom-bootstrap-cdp-append | action=hold-after-bootstrap");
         }
 
         private void SetModeUi(bool isGame)
@@ -2450,7 +2533,7 @@ try{
 
         private bool ShouldAttachCdpNetworkTap()
         {
-            return UseNetworkSeqOnly || _enableCdpObservedContextTap || _enableCdpNetworkTap;
+            return UseDomBootstrapCdpAppendSeq || _enableCdpObservedContextTap || _enableCdpNetworkTap;
         }
 
         private static string FormatDiagAgeSeconds(long ticksUtc, DateTime nowUtc)
@@ -2547,8 +2630,8 @@ try{
 
             _enableCdpNetworkTap = isDebug;
             _enableCdpObservedContextTap = true;
-            _enableHttpResponseBodyTap = UseNetworkSeqOnly || isDebug;
-            _enableJsFileLog = isDebug;
+            _enableHttpResponseBodyTap = UseDomBootstrapCdpAppendSeq || isDebug;
+            _enableJsFileLog = true;
             _enableJsPushDebug = isDebug;
             _enablePerfTimingLog = isDebug || _cfg.EnablePerfTimingLog;
 
@@ -2586,6 +2669,7 @@ try{
         w.__abx_push_ms = {_cwPushMs};
         w.__abx_perf_mode = {(_enableJsPushDebug ? 0 : 1)};
         w.__cw_file_log_enable = {(_enableJsFileLog ? 1 : 0)};
+        w.__cw_file_log_push_only = 0;
         w.__cw_debug_seq_push = {(_enableJsPushDebug ? 1 : 0)};
         w.__cw_debug_seq = {(_enableJsPushDebug ? 1 : 0)};
         w.__cw_seq_diag = 1;
@@ -4423,13 +4507,13 @@ try{
                         snap.statusSource = statusSourceForSnap;
                         snap.statusTail = statusTailForSnap;
                         MergeNetworkBetPoolIntoSnapshot(snap, source);
-                        if (UseNetworkSeqOnly)
+                        if (UseDomBootstrapCdpAppendSeq)
                         {
                             lock (_roundStateLock)
                             {
                                 var bootstrapped = TryApplyInitialJsRawBootstrapLocked(snap, source, statusRawForLogic, boardSeqVersion, boardSeqEvent);
                                 if (!bootstrapped)
-                                    LogJsSeqIgnoredIfNeeded(source, boardSeqDisplay, snap.rawSeq, boardSeqVersion, boardSeqEvent);
+                                    LogDomSeqObservedIfNeeded(source, boardSeqDisplay, snap.rawSeq, boardSeqVersion, boardSeqEvent);
                                 ApplyNetworkSeqAuthorityLocked(snap);
                             }
                         }
@@ -4809,7 +4893,9 @@ try{
                         var dataFrameDiag = string.IsNullOrWhiteSpace(snap?.dataFramePath) ? "-" : Shrink(snap?.dataFramePath, 64);
                         var poolSrcDiag = string.IsNullOrWhiteSpace(snap?.totals?.Source) ? "-" : Shrink(snap.totals.Source, 48);
                         var poolDiag = $"B={(snap?.totals?.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")},P={(snap?.totals?.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")},T={(snap?.totals?.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}";
-                        Log($"[TickDiag] src={source} | ctx={ctxDiag} | score={(snap?.contextScore?.ToString(CultureInfo.InvariantCulture) ?? "-")} | signals={sigDiag} | dataMode={dataModeDiag} | dataFrame={dataFrameDiag} | poolSrc={poolSrcDiag} | pool={poolDiag} | prog={progDiag} | progSrc={progSourceDiag} | progTail={progTailDiag} | seqLen={seqLen} | statusSrc={statusSourceDiag} | statusTail={statusTailDiag} | status={statusDiag}");
+                        var tableDiag = string.IsNullOrWhiteSpace(snap?.totals?.TB) ? "-" : Shrink(snap.totals.TB, 48);
+                        var tableAmountDiag = snap?.totals?.TA?.ToString("N0", CultureInfo.InvariantCulture) ?? "-";
+                        Log($"[TickDiag] src={source} | ctx={ctxDiag} | score={(snap?.contextScore?.ToString(CultureInfo.InvariantCulture) ?? "-")} | signals={sigDiag} | dataMode={dataModeDiag} | dataFrame={dataFrameDiag} | table={tableDiag} | tableAmount={tableAmountDiag} | poolSrc={poolSrcDiag} | pool={poolDiag} | prog={progDiag} | progSrc={progSourceDiag} | progTail={progTailDiag} | seqLen={seqLen} | statusSrc={statusSourceDiag} | statusTail={statusTailDiag} | status={statusDiag}");
                     }
                     return;
                 }
@@ -5252,6 +5338,10 @@ try{
                         T3T = GetJsonLongLoose(totalsEl, "T3T"),
                         T3D = GetJsonLongLoose(totalsEl, "T3D"),
                         TD = GetJsonLongLoose(totalsEl, "TD"),
+                        TB = GetJsonStringLoose(totalsEl, "TB"),
+                        TA = GetJsonDoubleLoose(totalsEl, "TA"),
+                        rawTB = GetJsonStringLoose(totalsEl, "rawTB") ?? GetJsonStringLoose(totalsEl, "TB"),
+                        rawTA = GetJsonStringLoose(totalsEl, "rawTA") ?? GetJsonStringLoose(totalsEl, "TA"),
                         Source = GetJsonStringLoose(totalsEl, "Source") ??
                                  GetJsonStringLoose(totalsEl, "source") ??
                                  GetJsonStringLoose(totalsEl, "BS") ?? ""
@@ -5490,6 +5580,8 @@ try{
                 if (best.ProxyChildScore >= 1200 && !string.IsNullOrWhiteSpace(best.ProxyChildFramePath))
                     tag = string.IsNullOrWhiteSpace(prev) ? "[AUTH][LOCK-PROXY]" : (authorityLost ? "[AUTH][RELOCK-PROXY]" : "[AUTH][SWITCH-PROXY]");
                 Log($"{tag} ctx={Shrink(_authorityContextId, 120)} | prev={(string.IsNullOrWhiteSpace(prev) ? "-" : Shrink(prev, 96))} | score={_authorityScore} | stable={_lastAuthorityBestStable} | conf={(string.IsNullOrWhiteSpace(_authorityConfidence) ? "-" : _authorityConfidence)} | signals={(string.IsNullOrWhiteSpace(_authoritySignals) ? "-" : _authoritySignals)} | path={(string.IsNullOrWhiteSpace(_authorityFramePath) ? "-" : _authorityFramePath)} | proxy={(best.ProxyChildScore > 0 ? (best.ProxyChildScore.ToString(CultureInfo.InvariantCulture) + ":" + Shrink(best.ProxyChildFramePath, 80)) : "-")} | proxyHref={TrimHrefForLog(best.ProxyChildHref)} | href={TrimHrefForLog(_authorityHref)}");
+                if (!string.Equals(prev, _authorityContextId, StringComparison.Ordinal))
+                    ClearAcceptedDisplayOnCanvas("authority-change");
                 _ = StartAuthorityContextAsync(_authorityContextId, _authorityToken, "lock");
             }
         }
@@ -5587,8 +5679,13 @@ try{
 
                 if (string.IsNullOrWhiteSpace(key))
                 {
-                    routeReason = "legacy-empty-context";
-                    return true;
+                    routeReason = "empty-context-not-authority";
+                    if ((now - _lastTickRouteLogUtc) > TimeSpan.FromSeconds(2))
+                    {
+                        _lastTickRouteLogUtc = now;
+                        Log($"[TICK][REJECT] reason=empty-context-not-authority | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | locked={Shrink(_authorityContextId, 96)} | score={(snap.contextScore?.ToString(CultureInfo.InvariantCulture) ?? "-")} | href={TrimHrefForLog(snap.href)}");
+                    }
+                    return false;
                 }
 
                 if (string.Equals(key, _authorityContextId, StringComparison.Ordinal))
@@ -5613,6 +5710,7 @@ try{
                     _authorityScore = 0;
                     _authorityConfidence = "";
                     _authoritySignals = "";
+                    ClearAcceptedDisplayOnCanvas("authority-lost");
                     routeReason = "authority-lost-accept";
                     return true;
                 }
@@ -7265,30 +7363,34 @@ try{
             if (activeTableId > 0 && pool.TableId > 0 && pool.TableId != activeTableId)
                 return;
 
-            snap.totals ??= new CwTotals { N = "" };
-            bool changed = false;
-            if (pool.B.HasValue && snap.totals.B != pool.B.Value) { snap.totals.B = pool.B.Value; changed = true; }
-            if (pool.P.HasValue && snap.totals.P != pool.P.Value) { snap.totals.P = pool.P.Value; changed = true; }
-            if (pool.T.HasValue && snap.totals.T != pool.T.Value) { snap.totals.T = pool.T.Value; changed = true; }
-            if (!string.IsNullOrWhiteSpace(pool.Source))
-                snap.totals.Source = "network/" + pool.Source + (pool.NumericMapping ? "/numeric123" : "");
+            var incomingSource = snap.totals?.Source ?? "";
+            var hasTrustedDomPool =
+                HasAnyPoolValue(snap.totals) &&
+                IsDisplayAuthorityPoolSource(incomingSource);
 
-            if (changed)
+            var diagKey = $"diag|{pool.TableId}|{pool.B}|{pool.P}|{pool.T}|{pool.Source}|dom={hasTrustedDomPool}";
+            if (!string.Equals(_lastNetworkBetPoolMergeKey, diagKey, StringComparison.Ordinal) ||
+                (DateTime.UtcNow - _lastNetworkBetPoolMergeLogUtc) > TimeSpan.FromSeconds(5))
             {
-                var key = $"{pool.TableId}|{snap.totals.B}|{snap.totals.P}|{snap.totals.T}|{snap.totals.Source}";
-                if (!string.Equals(_lastNetworkBetPoolMergeKey, key, StringComparison.Ordinal) ||
-                    (DateTime.UtcNow - _lastNetworkBetPoolMergeLogUtc) > TimeSpan.FromSeconds(2))
-                {
-                    _lastNetworkBetPoolMergeKey = key;
-                    _lastNetworkBetPoolMergeLogUtc = DateTime.UtcNow;
-                    Log($"[POOL][LOCK][MERGE] tickSrc={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | poolSrc={(string.IsNullOrWhiteSpace(snap.totals.Source) ? "-" : snap.totals.Source)} | ageMs={(long)age.TotalMilliseconds} | table={(pool.TableId > 0 ? pool.TableId.ToString(CultureInfo.InvariantCulture) : "-")} | B={(snap.totals.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(snap.totals.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(snap.totals.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}");
-                }
+                _lastNetworkBetPoolMergeKey = diagKey;
+                _lastNetworkBetPoolMergeLogUtc = DateTime.UtcNow;
+                Log($"[POOL][LOCK][DIAG] reason=network-display-disabled | tickSrc={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | domSrc={(string.IsNullOrWhiteSpace(incomingSource) ? "-" : incomingSource)} | hasDom={(hasTrustedDomPool ? 1 : 0)} | netSrc={(string.IsNullOrWhiteSpace(pool.Source) ? "-" : pool.Source)} | ageMs={(long)age.TotalMilliseconds} | table={(pool.TableId > 0 ? pool.TableId.ToString(CultureInfo.InvariantCulture) : "-")} | B={(pool.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(pool.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(pool.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}");
             }
+            return;
         }
 
         private static bool HasAnyPoolValue(CwTotals? totals)
         {
             return totals != null && (totals.B.HasValue || totals.P.HasValue || totals.T.HasValue);
+        }
+
+        private static bool HasAnyTableValue(CwTotals? totals)
+        {
+            return totals != null &&
+                   (!string.IsNullOrWhiteSpace(totals.TB) ||
+                    totals.TA.HasValue ||
+                    !string.IsNullOrWhiteSpace(totals.rawTB) ||
+                    !string.IsNullOrWhiteSpace(totals.rawTA));
         }
 
         private static bool IsUntrustedNetworkPoolSource(string? source)
@@ -7297,21 +7399,36 @@ try{
             return s.StartsWith("network/", StringComparison.OrdinalIgnoreCase);
         }
 
-        private CwTotals? BuildCanvasDisplayIncomingTotals(CwTotals? incoming, string source)
+        private static bool IsTextFallbackPoolSource(string? source)
         {
-            if (incoming == null)
-                return null;
+            var s = (source ?? "").Trim();
+            return s.EndsWith("/text", StringComparison.OrdinalIgnoreCase) ||
+                   s.Contains("/text/", StringComparison.OrdinalIgnoreCase);
+        }
 
-            if (!IsUntrustedNetworkPoolSource(incoming.Source))
-                return incoming;
+        private static bool IsDisplayAuthorityPoolSource(string? source)
+        {
+            var s = (source ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(s))
+                return false;
+            if (IsUntrustedNetworkPoolSource(s) || IsTextFallbackPoolSource(s))
+                return false;
+            return s.Contains("frame", StringComparison.OrdinalIgnoreCase) ||
+                   s.Equals("top", StringComparison.OrdinalIgnoreCase) ||
+                   s.Contains("dom", StringComparison.OrdinalIgnoreCase) ||
+                   s.Contains("betbox", StringComparison.OrdinalIgnoreCase) ||
+                   s.Contains("zone", StringComparison.OrdinalIgnoreCase);
+        }
 
-            var key = $"{incoming.Source}|{incoming.B}|{incoming.P}|{incoming.T}";
+        private CwTotals BuildPoolBlockedTotals(CwTotals incoming, string source, string reason)
+        {
+            var key = $"{reason}|{incoming.Source}|{incoming.B}|{incoming.P}|{incoming.T}";
             if (!string.Equals(_lastCanvasPoolBlockKey, key, StringComparison.Ordinal) ||
                 (DateTime.UtcNow - _lastCanvasPoolBlockLogUtc) > TimeSpan.FromSeconds(5))
             {
                 _lastCanvasPoolBlockKey = key;
                 _lastCanvasPoolBlockLogUtc = DateTime.UtcNow;
-                Log($"[CANVAS][POOL-BLOCK] reason=untrusted-network-display | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | poolSrc={(string.IsNullOrWhiteSpace(incoming.Source) ? "-" : incoming.Source)} | B={(incoming.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(incoming.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(incoming.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}");
+                Log($"[POOL][DISPLAY-REJECT] reason={reason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | poolSrc={(string.IsNullOrWhiteSpace(incoming.Source) ? "-" : incoming.Source)} | B={(incoming.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(incoming.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(incoming.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}");
             }
 
             return new CwTotals
@@ -7326,8 +7443,32 @@ try{
                 T3T = incoming.T3T,
                 T3D = incoming.T3D,
                 TD = incoming.TD,
-                Source = "network-pool-blocked/" + (incoming.Source ?? "")
+                TB = incoming.TB,
+                TA = incoming.TA,
+                rawTB = incoming.rawTB,
+                rawTA = incoming.rawTA,
+                Source = "pool-blocked/" + reason + "/" + (incoming.Source ?? "")
             };
+        }
+
+        private CwTotals? BuildCanvasDisplayIncomingTotals(CwTotals? incoming, string source)
+        {
+            if (incoming == null)
+                return null;
+
+            if (HasAnyPoolValue(incoming) && IsTextFallbackPoolSource(incoming.Source))
+                return BuildPoolBlockedTotals(incoming, source, "text-fallback");
+
+            if (HasAnyPoolValue(incoming) && IsUntrustedNetworkPoolSource(incoming.Source))
+                return BuildPoolBlockedTotals(incoming, source, "untrusted-network");
+
+            if (HasAnyPoolValue(incoming) && !IsDisplayAuthorityPoolSource(incoming.Source))
+                return BuildPoolBlockedTotals(incoming, source, "non-authority-source");
+
+            if (!IsUntrustedNetworkPoolSource(incoming.Source))
+                return incoming;
+
+            return BuildPoolBlockedTotals(incoming, source, "untrusted-network");
         }
 
         private CwTotals? BuildStableCanvasTotals(CwTotals? incoming, string source)
@@ -7337,6 +7478,11 @@ try{
                 return null;
 
             var prev = _lastCanvasDisplayTotals;
+            var incomingHasPool = HasAnyPoolValue(incoming);
+            var prevHasPool = HasAnyPoolValue(prev);
+            var poolSource = incomingHasPool
+                ? (incoming?.Source ?? "")
+                : (prevHasPool ? (prev?.Source ?? "") : (incoming?.Source ?? prev?.Source ?? "csharp-stable"));
             var merged = new CwTotals
             {
                 B = incoming?.B ?? prev?.B,
@@ -7349,17 +7495,125 @@ try{
                 T3T = incoming?.T3T ?? prev?.T3T,
                 T3D = incoming?.T3D ?? prev?.T3D,
                 TD = incoming?.TD ?? prev?.TD,
-                Source = !string.IsNullOrWhiteSpace(incoming?.Source) ? incoming!.Source : (prev?.Source ?? "csharp-stable")
+                TB = !string.IsNullOrWhiteSpace(incoming?.TB) ? incoming!.TB : (prev?.TB ?? ""),
+                TA = incoming?.TA ?? prev?.TA,
+                rawTB = !string.IsNullOrWhiteSpace(incoming?.rawTB) ? incoming!.rawTB : (prev?.rawTB ?? ""),
+                rawTA = !string.IsNullOrWhiteSpace(incoming?.rawTA) ? incoming!.rawTA : (prev?.rawTA ?? ""),
+                Source = string.IsNullOrWhiteSpace(poolSource) ? "csharp-stable" : poolSource
             };
 
-            if (HasAnyPoolValue(incoming) ||
+            if (incomingHasPool)
+            {
+                var key = $"{merged.Source}|{merged.B}|{merged.P}|{merged.T}";
+                if (!string.Equals(_lastCanvasPoolAcceptKey, key, StringComparison.Ordinal) ||
+                    (DateTime.UtcNow - _lastCanvasPoolAcceptLogUtc) > TimeSpan.FromSeconds(5))
+                {
+                    _lastCanvasPoolAcceptKey = key;
+                    _lastCanvasPoolAcceptLogUtc = DateTime.UtcNow;
+                    Log($"[POOL][DISPLAY-ACCEPT] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={(string.IsNullOrWhiteSpace(merged.TB) ? "-" : Shrink(merged.TB, 48))} | tableAmount={(merged.TA?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | poolSrc={(string.IsNullOrWhiteSpace(merged.Source) ? "-" : merged.Source)} | B={(merged.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(merged.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(merged.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}");
+                }
+            }
+
+            if (incomingHasPool ||
                 incoming?.A != null ||
-                !string.IsNullOrWhiteSpace(incoming?.N))
+                !string.IsNullOrWhiteSpace(incoming?.N) ||
+                HasAnyTableValue(incoming))
             {
                 _lastCanvasDisplayTotals = CloneTotalsForTasks(merged);
             }
 
             return merged;
+        }
+
+        private void ClearAcceptedDisplayOnCanvas(string reason)
+        {
+            try
+            {
+                _lastCanvasAcceptedSeqKey = "";
+                _lastCanvasAcceptedSeqPushUtc = DateTime.MinValue;
+                _lastCanvasDisplayTotals = null;
+
+                var js =
+                    "(function(){try{" +
+                    "if(typeof window.__abx_clear_csharp_display_snapshot==='function') return String(window.__abx_clear_csharp_display_snapshot());" +
+                    "window.__abx_csharp_display_snapshot=null;" +
+                    "window.__abx_csharp_authority_snapshot=null;" +
+                    "window.__abx_csharp_display_snapshot_at=0;" +
+                    "window.__abx_csharp_authority_snapshot_at=0;" +
+                    "window.__abx_csharp_display_enabled=0;" +
+                    "if(typeof window.updatePanel==='function') window.updatePanel();" +
+                    "return 'ok';" +
+                    "}catch(e){return 'err:' + String(e&&e.message?e.message:e);}})();";
+
+                _ = Dispatcher.BeginInvoke(new Action(async () =>
+                {
+                    try
+                    {
+                        int mainTopSent = 0, mainFrameSent = 0, popupTopSent = 0, popupFrameSent = 0;
+                        var mainWeb = Web;
+                        if (mainWeb?.CoreWebView2 != null)
+                        {
+                            mainTopSent++;
+                            await ExecuteCanvasDisplayScriptTargetAsync("main-top:clear", () => mainWeb.ExecuteScriptAsync(js));
+                        }
+
+                        foreach (var item in GetMainArmedFramesSnapshot())
+                        {
+                            try
+                            {
+                                mainFrameSent++;
+                                await ExecuteCanvasDisplayScriptTargetAsync($"main-frame:{item.id}:clear", () => item.frame.ExecuteScriptAsync(js), () =>
+                                {
+                                    _mainFrameRefs.TryRemove(item.id, out _);
+                                    _mainFrameBridgeArmed.TryRemove(item.id, out _);
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                if (IsDisposedFrameException(ex))
+                                {
+                                    _mainFrameRefs.TryRemove(item.id, out _);
+                                    _mainFrameBridgeArmed.TryRemove(item.id, out _);
+                                }
+                            }
+                        }
+
+                        var popupWeb = _popupWeb;
+                        if (popupWeb?.CoreWebView2 != null)
+                        {
+                            popupTopSent++;
+                            await ExecuteCanvasDisplayScriptTargetAsync("popup-top:clear", () => popupWeb.ExecuteScriptAsync(js));
+                        }
+
+                        foreach (var item in GetPopupArmedFramesSnapshot())
+                        {
+                            try
+                            {
+                                popupFrameSent++;
+                                await ExecuteCanvasDisplayScriptTargetAsync($"popup-frame:{item.key}:clear", () => item.frame.ExecuteScriptAsync(js), () =>
+                                {
+                                    _popupFrameRefs.TryRemove(item.key, out _);
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                if (IsDisposedFrameException(ex))
+                                    _popupFrameRefs.TryRemove(item.key, out _);
+                            }
+                        }
+
+                        Log($"[CANVAS][DISPLAY-CLEAR] reason={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | targets=main:{mainTopSent}/{mainFrameSent},popup:{popupTopSent}/{popupFrameSent}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"[CANVAS][DISPLAY-CLEAR-ERR] reason={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | {ex.GetType().Name}: {Shrink(ex.Message, 160)}");
+                    }
+                }));
+            }
+            catch (Exception ex)
+            {
+                Log($"[CANVAS][DISPLAY-CLEAR-ERR] stage=prepare | reason={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | {ex.GetType().Name}: {Shrink(ex.Message, 160)}");
+            }
         }
 
         private void PushAcceptedDisplayToCanvas(CwSnapshot snap, string source)
@@ -7371,9 +7625,9 @@ try{
                 var seq = FilterResultDisplaySeqWindow(snap.seq);
                 var totals = BuildStableCanvasTotals(snap.totals, source);
                 var totalsSource = totals?.Source ?? "";
-                var key = $"{seq}|{snap.seqVersion}|{snap.seqEvent}|{snap.seqSource}|{snap.prog}|{snap.status}|{totals?.B}|{totals?.P}|{totals?.T}|{totals?.A}|{totals?.N}|{totalsSource}|{snap.framePath}|{snap.dataFramePath}|{snap.dataMode}";
+                var key = $"{seq}|{snap.seqVersion}|{snap.seqEvent}|{snap.seqSource}|{snap.prog}|{snap.status}|{totals?.B}|{totals?.P}|{totals?.T}|{totals?.A}|{totals?.N}|{totals?.TB}|{totals?.TA}|{totalsSource}|{snap.framePath}|{snap.dataFramePath}|{snap.dataMode}";
                 var now = DateTime.UtcNow;
-                Log($"[CANVAS][DISPLAY-PUSH-ENTER] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={(string.IsNullOrWhiteSpace(snap.contextId) ? "-" : Shrink(snap.contextId, 80))} | seqLen={seq.Length} | prog={(snap.prog?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")} | status={(string.IsNullOrWhiteSpace(snap.status) ? "-" : Shrink(snap.status, 32))} | poolSrc={(string.IsNullOrWhiteSpace(totalsSource) ? "-" : totalsSource)} | B={(totals?.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(totals?.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(totals?.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}");
+                Log($"[CANVAS][DISPLAY-PUSH-ENTER] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={(string.IsNullOrWhiteSpace(snap.contextId) ? "-" : Shrink(snap.contextId, 80))} | seqLen={seq.Length} | prog={(snap.prog?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")} | status={(string.IsNullOrWhiteSpace(snap.status) ? "-" : Shrink(snap.status, 32))} | table={(string.IsNullOrWhiteSpace(totals?.TB) ? "-" : Shrink(totals!.TB, 48))} | tableAmount={(totals?.TA?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | poolSrc={(string.IsNullOrWhiteSpace(totalsSource) ? "-" : totalsSource)} | B={(totals?.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(totals?.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(totals?.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}");
                 if (string.Equals(key, _lastCanvasAcceptedSeqKey, StringComparison.Ordinal) &&
                     (now - _lastCanvasAcceptedSeqPushUtc) < TimeSpan.FromSeconds(1.5))
                 {
@@ -7418,6 +7672,10 @@ try{
                         T = totals.T,
                         A = totals.A,
                         N = totals.N ?? "",
+                        TB = totals.TB ?? "",
+                        TA = totals.TA,
+                        rawTB = totals.rawTB ?? totals.TB ?? "",
+                        rawTA = totals.rawTA ?? (totals.TA?.ToString("0.###", CultureInfo.InvariantCulture) ?? ""),
                         Source = string.IsNullOrWhiteSpace(totals.Source) ? "csharp" : totals.Source,
                         BS = string.IsNullOrWhiteSpace(totals.Source) ? "csharp" : totals.Source
                     },
@@ -7431,9 +7689,27 @@ try{
                     "window.__abx_csharp_display_snapshot=snap;" +
                     "window.__abx_csharp_display_snapshot_at=Date.now();" +
                     "window.__abx_csharp_display_enabled=1;" +
-                    "if(typeof window.__abx_apply_csharp_display_snapshot==='function') return String(window.__abx_apply_csharp_display_snapshot(snap));" +
-                    "if(typeof window.__abx_apply_csharp_authority_snapshot==='function') return String(window.__abx_apply_csharp_authority_snapshot(snap));" +
-                    "return 'ok';" +
+                    "window.__abx_csharp_display_pool_totals=(snap&&snap.totals)||null;" +
+                    "var r='ok';" +
+                    "if(typeof window.__abx_apply_csharp_display_snapshot==='function') r=String(window.__abx_apply_csharp_display_snapshot(snap));" +
+                    "else if(typeof window.__abx_apply_csharp_authority_snapshot==='function') r=String(window.__abx_apply_csharp_authority_snapshot(snap));" +
+                    "try{" +
+                    "var roots=[].slice.call(document.querySelectorAll('#__cw_root_allin'));" +
+                    "var infos=[].slice.call(document.querySelectorAll('#__cw_root_allin #cwInfo,#cwInfo'));" +
+                    "function fmt(v){if(v==null||v==='')return '--';var n=Number(v);if(!isFinite(n))return String(v);try{return n.toLocaleString('en-US');}catch(_){return String(n);}}" +
+                    "function patchInfo(info,tt){if(!info||!tt)return 0;var b=tt.B,p=tt.P,t=tt.T,tb=tt.TB,ta=tt.TA;var has=(b!=null&&b!=='')||(p!=null&&p!=='')||(t!=null&&t!=='');var hasTable=(tb!=null&&String(tb).trim()!=='')||(ta!=null&&ta!=='');if(!has&&!hasTable)return 0;var html=String(info.innerHTML||'');var next=html;if(hasTable){var tableLine='BÀN : '+(tb!=null&&String(tb).trim()?String(tb).trim():'--')+' | TIỀN BÀN : '+fmt(ta);next=next.replace(/BÀN\\s*:\\s*[^|\\n<]*\\s*\\|\\s*TIỀN BÀN\\s*:\\s*(?:--|[\\d.,KMB]+)/i,tableLine);}if(has){var poolLine='BANKER: '+fmt(b)+' | PLAYER: '+fmt(p)+' | TIE: '+fmt(t);next=next.replace(/BANKER\\s*:\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*PLAYER\\s*:\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*TIE\\s*:\\s*(?:--|[\\d.,KMB]+)/i,poolLine);var src=String(tt.BS||tt.Source||tt.source||'csharp');var domLine='BET POOL DOM : B='+fmt(b)+' | P='+fmt(p)+' | T='+fmt(t)+' | SRC='+src;next=next.replace(/BET POOL DOM\\s*:\\s*B\\s*=\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*P\\s*=\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*T\\s*=\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*SRC\\s*=\\s*[^\\n<]*/i,domLine);}if(next!==html){info.innerHTML=next;return 1;}return 0;}" +
+                    "window.__abx_patch_csharp_pool_lines=function(){try{if(!(window.__abx_csharp_display_enabled===1||window.__abx_csharp_display_enabled===true))return 'disabled';var at=Number(window.__abx_csharp_display_snapshot_at||0)||0;if(at&&Date.now()-at>6000)return 'stale';var ss=window.__abx_csharp_display_snapshot||{};var tt=window.__abx_csharp_display_pool_totals||(ss&&ss.totals)||{};var list=[].slice.call(document.querySelectorAll('#__cw_root_allin #cwInfo,#cwInfo'));var n=0;for(var i=0;i<list.length;i++)n+=patchInfo(list[i],tt);return 'patched='+n;}catch(e){return 'err:'+String(e&&e.message?e.message:e);}};" +
+                    "var patchRes=window.__abx_patch_csharp_pool_lines();r+='|patch='+patchRes;" +
+                    "if(!window.__abx_csharp_pool_patch_timer){window.__abx_csharp_pool_patch_timer=setInterval(function(){try{var rr=window.__abx_patch_csharp_pool_lines&&window.__abx_patch_csharp_pool_lines();if(rr==='disabled'||rr==='stale'){clearInterval(window.__abx_csharp_pool_patch_timer);window.__abx_csharp_pool_patch_timer=0;}}catch(_){clearInterval(window.__abx_csharp_pool_patch_timer);window.__abx_csharp_pool_patch_timer=0;}},120);}" +
+                    "var poolInfos=0,visiblePool=0,route='',dataPath='',mir='';" +
+                    "for(var ii=0;ii<infos.length;ii++){var it=String(infos[ii].innerText||infos[ii].textContent||'');if(/BANKER\\s*:\\s*(?!\\s*--)[\\d.,KMB]+/i.test(it)||/BET POOL DOM\\s*:\\s*B\\s*=\\s*(?!\\s*--)[\\d.,KMB]+/i.test(it))poolInfos++;}" +
+                    "for(var ri=0;ri<roots.length;ri++){var root=roots[ri],cs=null;try{cs=window.getComputedStyle?window.getComputedStyle(root):null;}catch(_){cs=null;}var vis=!cs||(cs.display!=='none'&&cs.visibility!=='hidden'&&Number(cs.opacity||1)>0.02);if(!vis)continue;var rt=String(root.innerText||root.textContent||'');if(/BANKER\\s*:\\s*(?!\\s*--)[\\d.,KMB]+/i.test(rt)||/BET POOL DOM\\s*:\\s*B\\s*=\\s*(?!\\s*--)[\\d.,KMB]+/i.test(rt))visiblePool=1;route=String(root.getAttribute('data-abx-panel-route')||'');dataPath=String(root.getAttribute('data-abx-panel-data-path')||'');mir=String(root.getAttribute('data-abx-mirrored-from')||'');break;}" +
+                    "var tt=(snap&&snap.totals)||{};var b=tt.B,p=tt.P,t=tt.T;var tb=tt.TB,ta=tt.TA;" +
+                    "r+='|B='+fmt(b)+'|P='+fmt(p)+'|T='+fmt(t);" +
+                    "r+='|table='+(tb!=null&&String(tb).trim()?String(tb).trim().replace(/\\|/g,'/'):'-')+'|tableAmount='+fmt(ta);" +
+                    "r+='|root='+roots.length+'|info='+infos.length+'|poolInfo='+poolInfos+'|visiblePool='+visiblePool+'|route='+route+'|dataPath='+dataPath+'|mir='+mir+'|href='+String(location.href||'').replace(/\\|/g,'/');" +
+                    "}catch(_){r+='|inlinePoolErr';}" +
+                    "return r;" +
                     "}catch(e){return 'err:' + String(e&&e.message?e.message:e);}})();";
 
                 _ = Dispatcher.BeginInvoke(new Action(async () =>
@@ -7444,53 +7720,64 @@ try{
                         var mainFrameSent = 0;
                         var popupTopSent = 0;
                         var popupFrameSent = 0;
+                        var targets = new List<(string target, Func<Task<string>> exec, Action? drop)>();
 
                         var mainWeb = Web;
                         if (mainWeb?.CoreWebView2 != null)
                         {
-                            mainTopSent++;
-                            await ExecuteCanvasDisplayScriptTargetAsync("main-top", () => mainWeb.ExecuteScriptAsync(js));
+                            targets.Add(("main-top", () => mainWeb.ExecuteScriptAsync(js), null));
                         }
 
                         foreach (var item in GetMainArmedFramesSnapshot())
                         {
-                            try
+                            var frameId = item.id;
+                            var frame = item.frame;
+                            targets.Add(($"main-frame:{frameId}", () => frame.ExecuteScriptAsync(js), () =>
                             {
-                                mainFrameSent++;
-                                await ExecuteCanvasDisplayScriptTargetAsync($"main-frame:{item.id}", () => item.frame.ExecuteScriptAsync(js));
-                            }
-                            catch (Exception ex)
-                            {
-                                if (IsDisposedFrameException(ex))
-                                {
-                                    _mainFrameRefs.TryRemove(item.id, out _);
-                                    _mainFrameBridgeArmed.TryRemove(item.id, out _);
-                                }
-                            }
+                                _mainFrameRefs.TryRemove(frameId, out _);
+                                _mainFrameBridgeArmed.TryRemove(frameId, out _);
+                            }));
                         }
 
                         var popupWeb = _popupWeb;
                         if (popupWeb?.CoreWebView2 != null)
                         {
-                            popupTopSent++;
-                            await ExecuteCanvasDisplayScriptTargetAsync("popup-top", () => popupWeb.ExecuteScriptAsync(js));
+                            targets.Add(("popup-top", () => popupWeb.ExecuteScriptAsync(js), null));
                         }
 
                         foreach (var item in GetPopupArmedFramesSnapshot())
                         {
-                            try
+                            var frameKey = item.key;
+                            var frame = item.frame;
+                            targets.Add(($"popup-frame:{frameKey}", () => frame.ExecuteScriptAsync(js), () =>
                             {
-                                popupFrameSent++;
-                                await ExecuteCanvasDisplayScriptTargetAsync($"popup-frame:{item.key}", () => item.frame.ExecuteScriptAsync(js));
-                            }
-                            catch (Exception ex)
+                                _popupFrameRefs.TryRemove(frameKey, out _);
+                            }));
+                        }
+
+                        var fanoutNow = string.IsNullOrWhiteSpace(_lastCanvasPrimaryTarget) ||
+                                        (DateTime.UtcNow - _lastCanvasDisplayFullFanoutUtc) > TimeSpan.FromSeconds(2.5);
+                        if (fanoutNow)
+                            _lastCanvasDisplayFullFanoutUtc = DateTime.UtcNow;
+
+                        foreach (var target in targets.OrderByDescending(t => ScoreCanvasDisplayTarget(t.target)).ToList())
+                        {
+                            if (target.target.StartsWith("main-top", StringComparison.OrdinalIgnoreCase)) mainTopSent++;
+                            else if (target.target.StartsWith("main-frame:", StringComparison.OrdinalIgnoreCase)) mainFrameSent++;
+                            else if (target.target.StartsWith("popup-top", StringComparison.OrdinalIgnoreCase)) popupTopSent++;
+                            else if (target.target.StartsWith("popup-frame:", StringComparison.OrdinalIgnoreCase)) popupFrameSent++;
+
+                            var normalized = await ExecuteCanvasDisplayScriptTargetAsync(target.target, target.exec, target.drop);
+                            if (!fanoutNow &&
+                                !string.IsNullOrWhiteSpace(normalized) &&
+                                (ParseCanvasResultInt(normalized, "visiblePool") > 0 ||
+                                 (ParseCanvasResultInt(normalized, "root") > 0 && TextContainsIgnoreCase(normalized, "singleBacTable.jsp"))))
                             {
-                                if (IsDisposedFrameException(ex))
-                                    _popupFrameRefs.TryRemove(item.key, out _);
+                                break;
                             }
                         }
 
-                        Log($"[CANVAS][DISPLAY-PUSH] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={(string.IsNullOrWhiteSpace(snap.contextId) ? "-" : Shrink(snap.contextId, 80))} | mode={(string.IsNullOrWhiteSpace(snap.dataMode) ? "-" : snap.dataMode)} | data={(string.IsNullOrWhiteSpace(snap.dataFramePath) ? "-" : snap.dataFramePath)} | targets=main:{mainTopSent}/{mainFrameSent},popup:{popupTopSent}/{popupFrameSent} | seqLen={seq.Length} | prog={(snap.prog?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")} | status={(string.IsNullOrWhiteSpace(snap.status) ? "-" : Shrink(snap.status, 32))} | poolSrc={(string.IsNullOrWhiteSpace(totalsSource) ? "-" : totalsSource)} | B={(totals?.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(totals?.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(totals?.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | acc={(string.IsNullOrWhiteSpace(totals?.N) ? "-" : totals!.N)} | bal={(totals?.A?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")}");
+                        Log($"[CANVAS][DISPLAY-PUSH] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={(string.IsNullOrWhiteSpace(snap.contextId) ? "-" : Shrink(snap.contextId, 80))} | mode={(string.IsNullOrWhiteSpace(snap.dataMode) ? "-" : snap.dataMode)} | data={(string.IsNullOrWhiteSpace(snap.dataFramePath) ? "-" : snap.dataFramePath)} | targets=main:{mainTopSent}/{mainFrameSent},popup:{popupTopSent}/{popupFrameSent} | seqLen={seq.Length} | prog={(snap.prog?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")} | status={(string.IsNullOrWhiteSpace(snap.status) ? "-" : Shrink(snap.status, 32))} | table={(string.IsNullOrWhiteSpace(totals?.TB) ? "-" : Shrink(totals!.TB, 48))} | tableAmount={(totals?.TA?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | poolSrc={(string.IsNullOrWhiteSpace(totalsSource) ? "-" : totalsSource)} | B={(totals?.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(totals?.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(totals?.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | acc={(string.IsNullOrWhiteSpace(totals?.N) ? "-" : totals!.N)} | bal={(totals?.A?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")}");
                     }
                     catch (Exception ex)
                     {
@@ -7502,6 +7789,16 @@ try{
             {
                 Log($"[CANVAS][DISPLAY-PUSH-ERR] stage=prepare | {ex.GetType().Name}: {Shrink(ex.Message, 160)}");
             }
+        }
+
+        private sealed class CanvasDisplayTargetState
+        {
+            public DateTime LastOkUtc { get; set; }
+            public bool HasRoot { get; set; }
+            public bool VisiblePool { get; set; }
+            public bool PoolInfo { get; set; }
+            public string Href { get; set; } = "";
+            public string Route { get; set; } = "";
         }
 
         private static string NormalizeScriptResultForLog(string? result)
@@ -7518,17 +7815,121 @@ try{
             return raw;
         }
 
-        private async Task ExecuteCanvasDisplayScriptTargetAsync(string target, Func<Task<string>> execute)
+        private static int ParseCanvasResultInt(string result, string key)
+        {
+            try
+            {
+                var m = Regex.Match(result ?? "", @"(?:^|\|)" + Regex.Escape(key) + @"=([^|]*)", RegexOptions.IgnoreCase);
+                if (m.Success && int.TryParse(m.Groups[1].Value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+                    return n;
+            }
+            catch { }
+            return 0;
+        }
+
+        private static string ParseCanvasResultText(string result, string key)
+        {
+            try
+            {
+                var m = Regex.Match(result ?? "", @"(?:^|\|)" + Regex.Escape(key) + @"=([^|]*)", RegexOptions.IgnoreCase);
+                if (m.Success)
+                    return m.Groups[1].Value.Trim();
+            }
+            catch { }
+            return "";
+        }
+
+        private void UpdateCanvasDisplayTargetState(string target, string normalizedResult)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(target))
+                    return;
+                var state = new CanvasDisplayTargetState
+                {
+                    LastOkUtc = DateTime.UtcNow,
+                    HasRoot = ParseCanvasResultInt(normalizedResult, "root") > 0,
+                    VisiblePool = ParseCanvasResultInt(normalizedResult, "visiblePool") > 0,
+                    PoolInfo = ParseCanvasResultInt(normalizedResult, "poolInfo") > 0,
+                    Href = ParseCanvasResultText(normalizedResult, "href"),
+                    Route = ParseCanvasResultText(normalizedResult, "route")
+                };
+                _canvasDisplayTargetStates[target] = state;
+                if (state.VisiblePool || (state.HasRoot && TextContainsIgnoreCase(state.Href, "singleBacTable.jsp")))
+                    _lastCanvasPrimaryTarget = target;
+            }
+            catch { }
+        }
+
+        private int ScoreCanvasDisplayTarget(string target)
+        {
+            try
+            {
+                var score = 0;
+                if (string.Equals(target, _lastCanvasPrimaryTarget, StringComparison.Ordinal))
+                    score += 1_000_000;
+                if (_canvasDisplayTargetStates.TryGetValue(target, out var state))
+                {
+                    if (state.VisiblePool) score += 500_000;
+                    if (state.HasRoot) score += 250_000;
+                    if (state.PoolInfo) score += 100_000;
+                    if (TextContainsIgnoreCase(state.Href, "singleBacTable.jsp")) score += 80_000;
+                    if (TextContainsIgnoreCase(state.Href, "about:blank")) score -= 40_000;
+                    var ageMs = (DateTime.UtcNow - state.LastOkUtc).TotalMilliseconds;
+                    if (ageMs < 10_000) score += Math.Max(0, 20_000 - (int)ageMs);
+                }
+                if (target.StartsWith("popup-frame:", StringComparison.OrdinalIgnoreCase)) score += 10_000;
+                else if (target.StartsWith("main-frame:", StringComparison.OrdinalIgnoreCase)) score += 4_000;
+                else score -= 2_000;
+                return score;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private bool ShouldLogCanvasDisplayTargetResult(string target, string normalizedResult)
+        {
+            if (ParseCanvasResultInt(normalizedResult, "visiblePool") > 0)
+                return true;
+            if (ParseCanvasResultInt(normalizedResult, "root") > 0)
+                return true;
+            if (string.Equals(target, _lastCanvasPrimaryTarget, StringComparison.Ordinal))
+                return true;
+            if (TextContainsIgnoreCase(normalizedResult, "err:"))
+                return true;
+            return false;
+        }
+
+        private async Task<string?> ExecuteCanvasDisplayScriptTargetAsync(string target, Func<Task<string>> execute, Action? dropDisposed = null)
         {
             try
             {
                 var result = await execute();
-                Log($"[CANVAS][DISPLAY-PUSH-RESULT] target={target} | result={Shrink(NormalizeScriptResultForLog(result), 120)}");
+                var normalized = NormalizeScriptResultForLog(result);
+                UpdateCanvasDisplayTargetState(target, normalized);
+                if (ShouldLogCanvasDisplayTargetResult(target, normalized))
+                    Log($"[CANVAS][DISPLAY-PUSH-RESULT] target={target} | result={Shrink(normalized, 360)}");
+                return normalized;
             }
             catch (Exception ex)
             {
+                if (IsDisposedFrameException(ex))
+                {
+                    try { dropDisposed?.Invoke(); } catch { }
+                    _canvasDisplayTargetStates.TryRemove(target, out _);
+                    var now = DateTime.UtcNow;
+                    var last = _canvasDisplayDropLogUtc.TryGetValue(target, out var prev) ? prev : DateTime.MinValue;
+                    if ((now - last) > TimeSpan.FromSeconds(10))
+                    {
+                        _canvasDisplayDropLogUtc[target] = now;
+                        Log($"[CANVAS][DISPLAY-PUSH-DROP] target={target} | reason=disposed-frame | {ex.GetType().Name}: {Shrink(ex.Message, 120)}");
+                    }
+                    return null;
+                }
                 Log($"[CANVAS][DISPLAY-PUSH-ERR] target={target} | {ex.GetType().Name}: {Shrink(ex.Message, 160)}");
-                throw;
+                return null;
             }
         }
 
@@ -9049,14 +9450,28 @@ try{
             {
                 long expectedRound = _netSeqLastRound > 0 ? _netSeqLastRound + 1 : 1;
                 result.HadGap = true;
-                Log($"[NETSEQ][GAP] reason={(gap ? "round-gap" : "first-packet-mid-shoe")} | expectedRound={expectedRound} | gotRound={packet.GameRound} | table={packet.TableId} | shoe={packet.GameShoe} | winner={winnerChar.Value} | currentLen={prevDisplay.Length} | action=append-observed-only");
+                string gapAction = firstPacketMidShoe ? "wait-dom-bootstrap" : "append-cdp-after-dom-base";
+                Log($"[NETSEQ][GAP] reason={(gap ? "round-gap" : "first-packet-mid-shoe")} | expectedRound={expectedRound} | gotRound={packet.GameRound} | table={packet.TableId} | shoe={packet.GameShoe} | winner={winnerChar.Value} | currentLen={prevDisplay.Length} | action={gapAction}");
+            }
+
+            if (firstPacketMidShoe)
+            {
+                result.Action = "wait-dom-bootstrap";
+                _netSeqTableId = packet.TableId > 0 ? packet.TableId : _netSeqTableId;
+                _netSeqGameShoe = packet.GameShoe > 0 ? packet.GameShoe : _netSeqGameShoe;
+                _netObservedTableId = packet.TableId > 0 ? packet.TableId : _netObservedTableId;
+                _netObservedGameShoe = packet.GameShoe > 0 ? packet.GameShoe : _netObservedGameShoe;
+                _netObservedGameRound = packet.GameRound > 0 ? packet.GameRound : _netObservedGameRound;
+                _netLastWinnerAt = DateTime.UtcNow;
+                Log($"[NETSEQ][SEED-BLOCK] reason=cdp-first-packet-mid-shoe | action=wait-dom-bootstrap | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={winnerChar.Value} | seqLen=0 | policy=dom-bootstrap-cdp-append");
+                return result;
             }
 
             string nextDisplay = prevDisplay + winnerChar.Value;
             long nextVersion = ComputeNextSyncSeqVersion(prevVersion, prevDisplay, nextDisplay, Math.Max(prevVersion + 1, packet.GameRound));
             string action = contextReset
                 ? "reset-table-append"
-                : (shoeChanged ? "shoe-keep-append" : (result.HadGap ? "append-gap-network" : "append"));
+                : (shoeChanged ? "shoe-keep-append" : (result.HadGap ? "append-gap-cdp" : "append-cdp"));
 
             result.Changed = true;
             result.Appended = true;
@@ -9067,7 +9482,7 @@ try{
             result.SeqEvent = "net-gp-winner";
             result.Action = action;
 
-            _netSeqWinnerSeedOnly = result.HadGap;
+            _netSeqWinnerSeedOnly = false;
             _syncSeqPrefixDisplay = "";
             _boardSeqDisplay = nextDisplay;
             _boardSeqVersion = nextVersion;
@@ -9075,7 +9490,7 @@ try{
             _netSeqDisplay = nextDisplay;
             _netSeqVersion = nextVersion;
             _netSeqEvent = result.SeqEvent;
-            _netSeqSource = "network";
+            _netSeqSource = "cdp-append";
             _netSeqTableId = packet.TableId;
             _netSeqGameShoe = packet.GameShoe;
             _netSeqLastRound = packet.GameRound;
@@ -9092,7 +9507,7 @@ try{
             _baseSeq = FilterPlayableSeq(nextDisplay);
             _baseSeqVersion = nextVersion;
             _baseSeqEvent = result.SeqEvent;
-            _baseSeqSource = "network";
+            _baseSeqSource = "cdp-append";
 
             Log($"[NETSEQ][APPEND] src={packet.OwnerTag} | action={action} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={winnerChar.Value} | prevLen={prevDisplay.Length} | nextLen={nextDisplay.Length} | prevVer={prevVersion} | nextVer={nextVersion} | banker={packet.BankerValue} | player={packet.PlayerValue}");
             return result;
@@ -9125,7 +9540,7 @@ try{
                             return;
 
                         char prevTail = applied.PrevSeq.Length > 0 ? applied.PrevSeq[^1] : '-';
-                        Log($"[NETSEQ][WINNER] src={packet.OwnerTag} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={applied.ResultChar} | action={applied.Action} | prevLen={applied.PrevSeq.Length} | nextLen={applied.NextSeq.Length} | prevVer={applied.PrevVersion} | nextVer={applied.NextVersion} | seedFromWinnerOnly={(_netSeqWinnerSeedOnly ? 1 : 0)} | prevTail={prevTail} | banker={packet.BankerValue} | player={packet.PlayerValue}");
+                        Log($"[NETSEQ][WINNER] src={packet.OwnerTag} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={applied.ResultChar} | action={applied.Action} | prevLen={applied.PrevSeq.Length} | nextLen={applied.NextSeq.Length} | prevVer={applied.PrevVersion} | nextVer={applied.NextVersion} | domBase={(applied.PrevSeq.Length > 0 ? 1 : 0)} | seedFromWinnerOnly={(_netSeqWinnerSeedOnly ? 1 : 0)} | policy=dom-bootstrap-cdp-append | prevTail={prevTail} | banker={packet.BankerValue} | player={packet.PlayerValue}");
 
                         double balanceAfter = ResolveHistoryBalance(currentSnap?.totals?.A);
                         if (applied.ResultChar == 'T')
@@ -9469,7 +9884,7 @@ try{
             long jsSeqVersion,
             string boardSeqEvent)
         {
-            if (!UseNetworkSeqOnly || snap == null)
+            if (!UseDomBootstrapCdpAppendSeq || snap == null)
                 return false;
 
             var current = FilterResultDisplaySeqWindow(_netSeqDisplay);
@@ -9489,7 +9904,7 @@ try{
                 if ((DateTime.UtcNow - _lastJsRawBootstrapLogUtc) > TimeSpan.FromSeconds(2))
                 {
                     _lastJsRawBootstrapLogUtc = DateTime.UtcNow;
-                    Log($"[NETSEQ][JS-RAW-BOOTSTRAP-BLOCK] reason={rejectReason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={tableId} | obsShoe={_netObservedGameShoe} | obsRound={_netObservedGameRound} | rawLen={rawDisplay.Length} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | which={(string.IsNullOrWhiteSpace(snap.seqWhich) ? "-" : snap.seqWhich)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+                    Log($"[SEQ][DOM-BOOTSTRAP-BLOCK] reason={rejectReason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={tableId} | obsShoe={_netObservedGameShoe} | obsRound={_netObservedGameRound} | rawLen={rawDisplay.Length} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | which={(string.IsNullOrWhiteSpace(snap.seqWhich) ? "-" : snap.seqWhich)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | policy=dom-bootstrap-cdp-append");
                 }
                 ResetJsRawBootstrapProbeLocked();
                 return false;
@@ -9509,7 +9924,7 @@ try{
                 if ((DateTime.UtcNow - _lastJsRawBootstrapLogUtc) > TimeSpan.FromSeconds(2))
                 {
                     _lastJsRawBootstrapLogUtc = DateTime.UtcNow;
-                    Log($"[NETSEQ][JS-RAW-BOOTSTRAP-WAIT] reason=need-stable-2-ticks | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={tableId} | obsShoe={_netObservedGameShoe} | obsRound={_netObservedGameRound} | rawLen={rawDisplay.Length} | stable={_jsRawBootstrapStableCount} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | which={(string.IsNullOrWhiteSpace(snap.seqWhich) ? "-" : snap.seqWhich)}");
+                    Log($"[SEQ][DOM-BOOTSTRAP-WAIT] reason=need-stable-2-ticks | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={tableId} | obsShoe={_netObservedGameShoe} | obsRound={_netObservedGameRound} | rawLen={rawDisplay.Length} | stable={_jsRawBootstrapStableCount} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | which={(string.IsNullOrWhiteSpace(snap.seqWhich) ? "-" : snap.seqWhich)} | policy=dom-bootstrap-cdp-append");
                 }
                 return false;
             }
@@ -9518,11 +9933,11 @@ try{
             _syncSeqPrefixDisplay = "";
             _boardSeqDisplay = rawDisplay;
             _boardSeqVersion = Math.Max(jsSeqVersion, rawDisplay.Length);
-            _boardSeqEvent = "js-raw-bootstrap";
+            _boardSeqEvent = "dom-bootstrap";
             _netSeqDisplay = rawDisplay;
             _netSeqVersion = ComputeNextSyncSeqVersion(prevVer, "", rawDisplay, Math.Max(jsSeqVersion, rawDisplay.Length));
-            _netSeqEvent = "js-raw-bootstrap";
-            _netSeqSource = "js-raw-bootstrap";
+            _netSeqEvent = "dom-bootstrap";
+            _netSeqSource = "dom-bootstrap";
             _netSeqTableId = tableId;
             if (_netObservedGameShoe > 0)
                 _netSeqGameShoe = _netObservedGameShoe;
@@ -9543,7 +9958,7 @@ try{
             ClearTableSwitchRebaseArmLocked();
             ResetJsRawBootstrapProbeLocked();
 
-            Log($"[NETSEQ][JS-RAW-BOOTSTRAP] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={tableId} | shoe={_netSeqGameShoe} | obsRound={_netObservedGameRound} | seqLen={rawDisplay.Length} | seqVer={_netSeqVersion} | lastRound={_netSeqLastRound} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | which={(string.IsNullOrWhiteSpace(snap.seqWhich) ? "-" : snap.seqWhich)} | rawCount={BuildSeqCountText(rawDisplay, includeH: true)}");
+            Log($"[SEQ][DOM-BOOTSTRAP] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={tableId} | shoe={_netSeqGameShoe} | obsRound={_netObservedGameRound} | seqLen={rawDisplay.Length} | seqVer={_netSeqVersion} | lastRound={_netSeqLastRound} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | which={(string.IsNullOrWhiteSpace(snap.seqWhich) ? "-" : snap.seqWhich)} | rawCount={BuildSeqCountText(rawDisplay, includeH: true)} | policy=dom-bootstrap-cdp-append");
             return true;
         }
 
@@ -10093,9 +10508,9 @@ try{
         private void SyncNetworkSeqFromSnapshot(CwSnapshot snap, string source, string boardDisplay, long boardSeqVersion, string boardSeqEvent, string statusRaw)
         {
             if (snap == null) return;
-            if (UseNetworkSeqOnly)
+            if (UseDomBootstrapCdpAppendSeq)
             {
-                LogJsSeqIgnoredIfNeeded(source, boardDisplay, snap.rawSeq, boardSeqVersion, boardSeqEvent);
+                LogDomSeqObservedIfNeeded(source, boardDisplay, snap.rawSeq, boardSeqVersion, boardSeqEvent);
                 ApplyNetworkSeqAuthorityLocked(snap);
                 return;
             }
@@ -10668,7 +11083,7 @@ try{
         {
             if (snap == null) return;
 
-            if (UseNetworkSeqOnly)
+            if (UseDomBootstrapCdpAppendSeq)
             {
                 var netDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
                 snap.seq = netDisplay;
@@ -13106,7 +13521,7 @@ try{
                 _baseSeqDisplay = "";
                 _baseSeqVersion = 0;
                 _baseSeqEvent = "";
-                _baseSeqSource = UseNetworkSeqOnly ? "network" : "js";
+                _baseSeqSource = UseDomBootstrapCdpAppendSeq ? "dom-bootstrap-cdp-append" : "js";
                 _boardSeqDisplay = "";
                 _boardSeqVersion = 0;
                 _boardSeqEvent = "";
@@ -15614,6 +16029,8 @@ try{
             public string Href { get; set; } = "";
             public string DocKey { get; set; } = "";
             public bool HasCocos { get; set; }
+            public int SignalScore { get; set; }
+            public string Signals { get; set; } = "";
         }
 
         private static bool IsLikelyGameFrameHref(string? hrefRaw)
@@ -15741,8 +16158,21 @@ try{
                     "var href=String(location.href||'');" +
                     "var key=String((performance&&performance.timeOrigin)||Date.now());" +
                     "var hasCC=!!(window.cc&&cc.director&&cc.director.getScene);" +
-                    "return JSON.stringify({href:href,key:key,hasCC:hasCC});" +
-                    "}catch(_){return JSON.stringify({href:'',key:'',hasCC:false});}})();");
+                    "var score=0, sig=[];" +
+                    "function add(ok,name,pts){if(ok){score+=pts;sig.push(name);}}" +
+                    "var q=function(s){try{return !!document.querySelector(s);}catch(_){return false;}};" +
+                    "var qc=function(s){try{return document.querySelectorAll(s).length||0;}catch(_){return 0;}};" +
+                    "add(q('#beadBPRoad,.road_bead,.road_grid'),'road',1000);" +
+                    "add(q('#betBoxPlayer,#betBoxBanker,#betBoxTie,[id*=betBox],.zone_bet_bottom'),'bet',1000);" +
+                    "add(q('#processStatus,#processBar.info_status p#processStatus'),'status',700);" +
+                    "add(q('#processBar,.info_status'),'bar',700);" +
+                    "add(q('.game_main,#themeZone .game_main'),'gameMain',500);" +
+                    "add(q('.zone_bet,.zone_bet_bottom,.zone_bet_top'),'zoneBet',500);" +
+                    "add(q('#themeZone.game,#themeZone.game.baccarat_normal,#themeZone.game\\\\.baccarat_normal,#themeZone'),'theme',350);" +
+                    "if(hasCC){score+=300;sig.push('cocos');}" +
+                    "var ccnt=qc('canvas'); if(ccnt>0){score+=Math.min(500,ccnt*120);sig.push('canvas'+ccnt);}" +
+                    "return JSON.stringify({href:href,key:key,hasCC:hasCC,score:score,signals:sig.join(',')});" +
+                    "}catch(_){return JSON.stringify({href:'',key:'',hasCC:false,score:0,signals:''});}})();");
                 var json = JsonSerializer.Deserialize<string>(raw) ?? "";
                 if (string.IsNullOrWhiteSpace(json))
                     return null;
@@ -15765,7 +16195,9 @@ try{
                 {
                     Href = GetJsonStringLoose(root, "href") ?? "",
                     DocKey = GetJsonStringLoose(root, "key") ?? "",
-                    HasCocos = hasCC
+                    HasCocos = hasCC,
+                    SignalScore = (int)(GetJsonLongLoose(root, "score") ?? 0),
+                    Signals = GetJsonStringLoose(root, "signals") ?? ""
                 };
             }
             catch (Exception ex)
@@ -15781,7 +16213,7 @@ try{
             var probe = await ReadFrameDocProbeAsync(frame);
             if (probe == null) return false;
 
-            bool looksGame = probe.HasCocos || IsLikelyGameFrameHref(probe.Href);
+            bool looksGame = probe.HasCocos || probe.SignalScore >= 1200 || IsLikelyGameFrameHref(probe.Href);
             if (!looksGame)
                 return false;
             ObserveTableSwitchFromFrameHref(probe.Href, stage);
@@ -15806,7 +16238,7 @@ try{
             var hrefLog = probe.Href ?? "";
             if (hrefLog.Length > 160)
                 hrefLog = hrefLog.Substring(0, 160) + "...";
-            Log("[Bridge] Frame " + stage + " -> injected game frame + autostart. | href=" + hrefLog);
+            Log("[Bridge] Frame " + stage + " -> injected game frame + autostart. | score=" + probe.SignalScore.ToString(CultureInfo.InvariantCulture) + " | signals=" + (string.IsNullOrWhiteSpace(probe.Signals) ? "-" : probe.Signals) + " | href=" + hrefLog);
             ProbeFrameBridgeAsync(frame, "Frame", stage + "-inject");
             return true;
         }
@@ -17032,6 +17464,10 @@ try{
                 T3T = t.T3T,
                 T3D = t.T3D,
                 TD = t.TD,
+                TB = t.TB,
+                TA = t.TA,
+                rawTB = t.rawTB,
+                rawTA = t.rawTA,
                 Source = t.Source
             };
         }

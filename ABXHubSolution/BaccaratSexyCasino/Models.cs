@@ -16,6 +16,10 @@ namespace BaccaratSexyCasino
         public long? T3T { get; set; }
         public long? T3D { get; set; }
         public long? TD { get; set; }
+        public string? TB { get; set; }
+        public double? TA { get; set; }
+        public string? rawTB { get; set; }
+        public string? rawTA { get; set; }
         public string? Source { get; set; }
     }
 
