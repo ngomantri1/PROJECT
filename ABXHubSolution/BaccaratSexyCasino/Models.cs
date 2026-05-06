@@ -30,6 +30,12 @@ namespace BaccaratSexyCasino
         public string? progSource { get; set; }
         public string? progTail { get; set; }
         public CwTotals totals { get; set; }
+        public string? tableName { get; set; }
+        public long? tableId { get; set; }
+        public string? tableSource { get; set; }
+        public string? seqTableName { get; set; }
+        public long? seqTableId { get; set; }
+        public string? seqTableSource { get; set; }
         public string seq { get; set; }
         public string rawSeq { get; set; }
         public long? seqVersion { get; set; }

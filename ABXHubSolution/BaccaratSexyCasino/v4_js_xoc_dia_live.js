@@ -13099,7 +13099,9 @@
             totals: null,
             totalsAt: 0,
             seqState: null,
-            seqAt: 0
+            seqAt: 0,
+            tableCtx: null,
+            tableCtxAt: 0
         };
 
         function readCfgNumber(key, fallback) {
@@ -13299,6 +13301,72 @@
             return r && r.seq ? r.seq : '';
         }
 
+        function inferBaccaratTableIdFromName(name) {
+            try {
+                var m = /(?:^|\b)C\s*0*(\d{1,3})(?:\b|$)/i.exec(String(name || ''));
+                if (!m)
+                    return 0;
+                var n = parseInt(m[1], 10);
+                return isFinite(n) && n > 0 ? 1000 + n : 0;
+            } catch (_) {
+                return 0;
+            }
+        }
+
+        function readTableContextSafe(existingTotals, forceFresh) {
+            var now = Date.now();
+            try {
+                if (!forceFresh && _abxSnapCache.tableCtx && _abxSnapCache.tableCtxAt > 0 && (now - _abxSnapCache.tableCtxAt) < 220)
+                    return _abxSnapCache.tableCtx;
+            } catch (_) {}
+
+            var name = '';
+            var amount = null;
+            var source = '';
+            try {
+                if (!__cw_hasCocos()) {
+                    var cards = domScanBaccaratCards(true);
+                    var active = domPickActiveCard(cards);
+                    if (active && active.title) {
+                        name = String(active.title || '').trim();
+                        if (active.amount != null)
+                            amount = active.amount;
+                        source = 'dom-active-card';
+                    }
+                }
+            } catch (_) {}
+            if (!name) {
+                try {
+                    name = String(_domLastActiveSeqTitle || _domLastActiveTitle || _domManagedTableTitle || '').trim();
+                    if (name)
+                        source = 'dom-seq-title';
+                } catch (_) {}
+            }
+            if (!name && existingTotals) {
+                try {
+                    name = String(existingTotals.TB || existingTotals.rawTB || '').trim();
+                    if (name)
+                        source = 'totals-table';
+                    if (amount == null && existingTotals.TA != null)
+                        amount = existingTotals.TA;
+                } catch (_) {}
+            }
+
+            var ctx = {
+                name: name,
+                id: inferBaccaratTableIdFromName(name),
+                amount: amount,
+                source: source
+            };
+            try {
+                if (name) {
+                    _abxSnapCache.tableCtx = ctx;
+                    _abxSnapCache.tableCtxAt = now;
+                }
+            } catch (_) {}
+            return ctx;
+        }
+
         function normalizeTotalsSnapshot(src) {
             try {
                 if (!src)
@@ -13439,6 +13507,9 @@
             var seqMode = '';
             var seqAppend = '';
             var seqWhich = '';
+            var seqTableName = '';
+            var seqTableId = 0;
+            var seqTableSource = '';
             var cached = null;
             var buildSource = String(sourceTag || 'auto');
             var allowPanelSnapshotFallback = buildSource !== 'push' && buildSource !== 'pull';
@@ -13460,26 +13531,35 @@
                     cached = window.__cw_last_panel_snapshot;
             } catch (_) {}
 
-            try {
-                if (cached && cached.prog != null)
-                    p = cached.prog;
-            } catch (_) {}
-            try {
-                if (p == null && S && S.prog != null)
-                    p = S.prog;
-            } catch (_) {}
-            if (p == null) {
+            var preferFreshProg = buildSource === 'push' || buildSource === 'pull';
+            if (!preferFreshProg) {
+                try {
+                    if (cached && cached.prog != null)
+                        p = cached.prog;
+                } catch (_) {}
+                try {
+                    if (p == null && S && S.prog != null)
+                        p = S.prog;
+                } catch (_) {}
+            }
+            if (preferFreshProg || p == null) {
                 var tp0 = Date.now();
-                var useProgCache = perfMode && buildSource === 'push' && _abxSnapCache.progAt > 0 && (nowTs - _abxSnapCache.progAt) < 420;
+                var useProgCache = perfMode && preferFreshProg && _abxSnapCache.progAt > 0 && (nowTs - _abxSnapCache.progAt) < 180;
                 if (useProgCache) {
                     p = _abxSnapCache.prog;
                 } else {
-                    p = readProgressVal();
+                    var freshProg = readProgressVal();
+                    if (typeof freshProg === 'number' && isFinite(freshProg))
+                        p = freshProg;
                     _abxSnapCache.prog = p;
                     _abxSnapCache.progAt = Date.now();
                 }
                 jsProgMs += (Date.now() - tp0);
             }
+            try {
+                if (p == null && S && S.prog != null)
+                    p = S.prog;
+            } catch (_) {}
 
             try {
                 st = (typeof readStatusTextByTail === 'function') ? String(readStatusTextByTail() || '') : '';
@@ -13618,6 +13698,9 @@
                 seqEvent = String((seqState && seqState.seqEvent) ? seqState.seqEvent : (window.__cw_seq_event || ''));
                 seqMode = String((seqState && seqState.seqMode) || '');
                 seqAppend = String((seqState && seqState.seqAppend) || '');
+                seqTableName = String((seqState && seqState.tableName) || _domLastActiveSeqTitle || _domLastActiveTitle || _domManagedTableTitle || '').trim();
+                seqTableId = inferBaccaratTableIdFromName(seqTableName);
+                seqTableSource = seqTableName ? String((seqState && seqState.tableSource) || 'dom-seq-title') : '';
             } catch (_) {
                 seqFresh = '';
                 rawSeq = '';
@@ -13625,6 +13708,9 @@
                 seqEvent = String(window.__cw_seq_event || '');
                 seqMode = '';
                 seqAppend = '';
+                seqTableName = '';
+                seqTableId = 0;
+                seqTableSource = '';
             }
             if (seqFresh) {
                 if (!seq ||
@@ -13803,10 +13889,41 @@
             var dataHref = String(sig.proxyChildHref || ctx.href || '');
             var panelFramePath = String(ctx.framePath || '');
             var panelHref = String(ctx.href || '');
+            var tableCtx = readTableContextSafe(t, buildSource === 'push' || useTotalsCache || useSeqCache);
+            try {
+                if (tableCtx && tableCtx.name) {
+                    if (!t)
+                        t = {};
+                    var prevTotalsTable = String(t.TB || t.rawTB || '').trim();
+                    if (prevTotalsTable && prevTotalsTable !== tableCtx.name) {
+                        t.B = null;
+                        t.P = null;
+                        t.T = null;
+                        t.C = null;
+                        t.L = null;
+                        t.rawB = null;
+                        t.rawP = null;
+                        t.rawT = null;
+                        t.rawC = null;
+                        t.rawL = null;
+                        t.BS = 'table-context-wait-pool';
+                        t.source = 'table-context-wait-pool';
+                    }
+                    t.TB = tableCtx.name;
+                    t.rawTB = tableCtx.name;
+                    if (t.TA == null && tableCtx.amount != null)
+                        t.TA = tableCtx.amount;
+                    if (t.rawTA == null && tableCtx.amount != null)
+                        t.rawTA = String(tableCtx.amount);
+                }
+            } catch (_) {}
             var snap = {
                 abx: 'tick',
                 prog: p,
                 totals: t,
+                tableName: tableCtx && tableCtx.name ? String(tableCtx.name || '') : '',
+                tableId: tableCtx && tableCtx.id ? Number(tableCtx.id || 0) || 0 : 0,
+                tableSource: tableCtx && tableCtx.source ? String(tableCtx.source || '') : '',
                 seq: seq,
                 rawSeq: rawSeq,
                 seqVersion: seqVersion,
@@ -13814,6 +13931,9 @@
                 seqMode: seqMode,
                 seqAppend: seqAppend,
                 seqWhich: seqWhich,
+                seqTableName: seqTableName,
+                seqTableId: seqTableId,
+                seqTableSource: seqTableSource,
                 username: uname,
                 status: String(st || ''),
                 statusSource: String(window.__cw_status_source || ''),

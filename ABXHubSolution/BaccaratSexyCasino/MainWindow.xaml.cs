@@ -426,6 +426,12 @@ namespace BaccaratSexyCasino
         private long _netObservedTableId = 0;
         private long _netObservedGameShoe = 0;
         private long _netObservedGameRound = 0;
+        private long _activeTableId = 0;
+        private long _activeGameShoe = 0;
+        private long _activeGameRound = 0;
+        private string _activeTableName = "";
+        private string _activeContextSource = "";
+        private DateTime _activeContextUpdatedAtUtc = DateTime.MinValue;
         private bool _suppressJsBootstrapAfterObservedReset = false;
         private readonly ConcurrentDictionary<long, HallRoundSnapshot> _hallRoundCache = new();
         private string _netLastWinnerKey = "";
@@ -486,6 +492,8 @@ namespace BaccaratSexyCasino
         private string _tableSwitchToHref = "";
         private bool _initialTableEnterArmed = false;
         private DateTime _initialTableEnterArmedAtUtc = DateTime.MinValue;
+        private DateTime _suppressNonFrameEmptyDisplayUntilUtc = DateTime.MinValue;
+        private string _suppressNonFrameEmptyDisplayReason = "";
 
         private DecisionState _dec = new();
         private long[] _stakeSeq = Array.Empty<long>();
@@ -4501,7 +4509,16 @@ try{
                         {
                             if (!progUi.HasValue && prevUiSnap?.prog.HasValue == true)
                                 progUi = prevUiSnap.prog;
+                            if (statusAuthorityMissing &&
+                                string.IsNullOrWhiteSpace(statusUiDisplay) &&
+                                !string.IsNullOrWhiteSpace(prevUiSnap?.status))
+                            {
+                                statusUiDisplay = prevUiSnap.status ?? "";
+                                statusSourceForSnap = prevUiSnap.statusSource ?? statusSourceForSnap;
+                                statusTailForSnap = prevUiSnap.statusTail ?? statusTailForSnap;
+                            }
                         }
+                        snap.prog = progUi;
                         string statusRawForLogic = statusUiDisplay;
                         snap.status = statusRawForLogic;
                         snap.statusSource = statusSourceForSnap;
@@ -4511,6 +4528,7 @@ try{
                         {
                             lock (_roundStateLock)
                             {
+                                ObserveDomAuthorityContextLocked(snap, source, boardSeqEvent, statusRawForLogic);
                                 var bootstrapped = TryApplyInitialJsRawBootstrapLocked(snap, source, statusRawForLogic, boardSeqVersion, boardSeqEvent);
                                 if (!bootstrapped)
                                     LogDomSeqObservedIfNeeded(source, boardSeqDisplay, snap.rawSeq, boardSeqVersion, boardSeqEvent);
@@ -4804,8 +4822,20 @@ try{
                         {
                             ApplyNetworkSeqAuthorityLocked(snap);
                         }
+                        bool skipDisplayPush;
+                        string skipDisplayReason;
+                        lock (_roundStateLock)
+                            skipDisplayPush = ShouldSkipAcceptedDisplayPushLocked(snap, source, out skipDisplayReason);
+
                         lock (_snapLock) _lastSnap = snap;
-                        PushAcceptedDisplayToCanvas(snap, source);
+                        if (skipDisplayPush)
+                        {
+                            Log($"[CANVAS][DISPLAY-PUSH-SKIP] reason={skipDisplayReason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | seqLen={(snap.seq ?? "").Length} | table={(string.IsNullOrWhiteSpace(GetTableNameFromSnapshot(snap)) ? "-" : Shrink(GetTableNameFromSnapshot(snap), 48))} | untilMs={(long)Math.Max(0, (_suppressNonFrameEmptyDisplayUntilUtc - DateTime.UtcNow).TotalMilliseconds)}");
+                        }
+                        else
+                        {
+                            PushAcceptedDisplayToCanvas(snap, source);
+                        }
 
                         _ = Dispatcher.BeginInvoke(new Action(() =>
                         {
@@ -5281,6 +5311,15 @@ try{
                     prog = GetJsonDoubleLoose(root, "prog"),
                     progSource = GetJsonStringLoose(root, "progSource") ?? "",
                     progTail = GetJsonStringLoose(root, "progTail") ?? "",
+                    tableName = GetJsonStringLoose(root, "tableName") ??
+                                GetJsonStringLoose(root, "tableTitle") ??
+                                GetJsonStringLoose(root, "table") ?? "",
+                    tableId = GetJsonLongLoose(root, "tableId") ??
+                              GetJsonLongLoose(root, "tableID"),
+                    tableSource = GetJsonStringLoose(root, "tableSource") ?? "",
+                    seqTableName = GetJsonStringLoose(root, "seqTableName") ?? "",
+                    seqTableId = GetJsonLongLoose(root, "seqTableId"),
+                    seqTableSource = GetJsonStringLoose(root, "seqTableSource") ?? "",
                     seq = FilterResultDisplaySeqWindow(GetJsonStringLoose(root, "seq") ?? ""),
                     rawSeq = GetJsonStringLoose(root, "rawSeq") ?? "",
                     seqVersion = GetJsonLongLoose(root, "seqVersion"),
@@ -5350,6 +5389,8 @@ try{
 
                 if (string.IsNullOrWhiteSpace(snap.username) && !string.IsNullOrWhiteSpace(snap.totals?.N))
                     snap.username = snap.totals.N;
+
+                ApplyDirectTableContextToSnapshot(snap);
 
                 return snap;
             }
@@ -7406,6 +7447,132 @@ try{
                    s.Contains("/text/", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static bool IsCachedHostPoolSource(string? source)
+        {
+            return (source ?? "").IndexOf("cached-host", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string StripStableHoldSourcePrefix(string? source)
+        {
+            var s = (source ?? "").Trim();
+            const string prefix = "stable-hold/";
+            while (s.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                s = s[prefix.Length..].Trim();
+            return string.IsNullOrWhiteSpace(s) ? "csharp-stable" : s;
+        }
+
+        private static long PoolSum(CwTotals? totals)
+        {
+            if (totals == null) return 0;
+            return Math.Max(0, totals.B ?? 0) +
+                   Math.Max(0, totals.P ?? 0) +
+                   Math.Max(0, totals.T ?? 0);
+        }
+
+        private static bool IsSameDisplayTable(CwTotals? a, CwTotals? b)
+        {
+            var ta = ((a?.TB ?? a?.rawTB) ?? "").Trim();
+            var tb = ((b?.TB ?? b?.rawTB) ?? "").Trim();
+            return string.IsNullOrWhiteSpace(ta) ||
+                   string.IsNullOrWhiteSpace(tb) ||
+                   string.Equals(ta, tb, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static int PoolValueCount(CwTotals? totals)
+        {
+            if (totals == null) return 0;
+            var n = 0;
+            if (totals.B.HasValue) n++;
+            if (totals.P.HasValue) n++;
+            if (totals.T.HasValue) n++;
+            return n;
+        }
+
+        private static bool HasPoolSideDecrease(CwTotals incoming, CwTotals prev)
+        {
+            return (incoming.B.HasValue && prev.B.HasValue && incoming.B.Value < prev.B.Value) ||
+                   (incoming.P.HasValue && prev.P.HasValue && incoming.P.Value < prev.P.Value) ||
+                   (incoming.T.HasValue && prev.T.HasValue && incoming.T.Value < prev.T.Value);
+        }
+
+        private static string GetPoolRegressionHoldReason(CwSnapshot? snap, CwTotals incoming, CwTotals prev)
+        {
+            if (!HasPoolSideDecrease(incoming, prev))
+                return "";
+            if (LooksLikeNewBetRoundPoolReset(snap, incoming, prev))
+                return "";
+
+            var prevSum = PoolSum(prev);
+            var incomingSum = PoolSum(incoming);
+            if (prevSum <= 0 || incomingSum <= 0)
+                return "";
+
+            // DOM bet boxes can refresh each side at slightly different moments.
+            // If the aggregate pool is growing, the authority DOM snapshot is newer.
+            if (incomingSum >= prevSum)
+                return "";
+
+            // Accept small aggregate dips to avoid Canvas bouncing back to stale values.
+            if (incomingSum >= (prevSum * 85 / 100))
+                return "";
+
+            if (PoolValueCount(incoming) < PoolValueCount(prev))
+                return "pool-partial-regress";
+
+            return IsCachedHostPoolSource(incoming.Source) ? "cached-pool-regress" : "pool-regress-same-round";
+        }
+
+        private static bool LooksLikeNewBetRoundPoolReset(CwSnapshot? snap, CwTotals incoming, CwTotals prev)
+        {
+            var prevSum = PoolSum(prev);
+            var incomingSum = PoolSum(incoming);
+            if (prevSum <= 0 || incomingSum <= 0)
+                return false;
+            if (incomingSum > (prevSum * 55 / 100))
+                return false;
+
+            var status = (snap?.status ?? "").Trim();
+            var bettingStatus =
+                status.IndexOf("chúc may", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                status.IndexOf("chuc may", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                status.IndexOf("nắm giữ", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                status.IndexOf("nam giu", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                status.IndexOf("bet", StringComparison.OrdinalIgnoreCase) >= 0;
+            var highProgress = snap?.prog.HasValue == true && snap.prog.Value >= 10;
+            return bettingStatus || highProgress;
+        }
+
+        private CwTotals HoldPreviousPoolTotals(CwTotals incoming, CwTotals prev, string source, string reason)
+        {
+            var key = $"{reason}|{incoming.Source}|{incoming.B}|{incoming.P}|{incoming.T}|{prev.Source}|{prev.B}|{prev.P}|{prev.T}";
+            if (!string.Equals(_lastCanvasPoolBlockKey, key, StringComparison.Ordinal) ||
+                (DateTime.UtcNow - _lastCanvasPoolBlockLogUtc) > TimeSpan.FromSeconds(3))
+            {
+                _lastCanvasPoolBlockKey = key;
+                _lastCanvasPoolBlockLogUtc = DateTime.UtcNow;
+                Log($"[POOL][DISPLAY-HOLD] reason={reason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={(string.IsNullOrWhiteSpace(incoming.TB) ? "-" : Shrink(incoming.TB, 48))} | incomingSrc={(string.IsNullOrWhiteSpace(incoming.Source) ? "-" : incoming.Source)} | incomingB={(incoming.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | incomingP={(incoming.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | incomingT={(incoming.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | keepSrc={(string.IsNullOrWhiteSpace(prev.Source) ? "-" : prev.Source)} | keepB={(prev.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | keepP={(prev.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | keepT={(prev.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}");
+            }
+
+            return new CwTotals
+            {
+                B = prev.B,
+                P = prev.P,
+                T = prev.T,
+                A = incoming.A ?? prev.A,
+                N = !string.IsNullOrWhiteSpace(incoming.N) ? incoming.N : (prev.N ?? ""),
+                SD = incoming.SD ?? prev.SD,
+                TT = incoming.TT ?? prev.TT,
+                T3T = incoming.T3T ?? prev.T3T,
+                T3D = incoming.T3D ?? prev.T3D,
+                TD = incoming.TD ?? prev.TD,
+                TB = !string.IsNullOrWhiteSpace(incoming.TB) ? incoming.TB : prev.TB,
+                TA = incoming.TA ?? prev.TA,
+                rawTB = !string.IsNullOrWhiteSpace(incoming.rawTB) ? incoming.rawTB : prev.rawTB,
+                rawTA = !string.IsNullOrWhiteSpace(incoming.rawTA) ? incoming.rawTA : prev.rawTA,
+                Source = "stable-hold/" + StripStableHoldSourcePrefix(prev.Source)
+            };
+        }
+
         private static bool IsDisplayAuthorityPoolSource(string? source)
         {
             var s = (source ?? "").Trim();
@@ -7471,8 +7638,10 @@ try{
             return BuildPoolBlockedTotals(incoming, source, "untrusted-network");
         }
 
-        private CwTotals? BuildStableCanvasTotals(CwTotals? incoming, string source)
+        private CwTotals? BuildStableCanvasTotals(CwSnapshot snap, string source)
         {
+            var incomingRaw = snap?.totals;
+            var incoming = incomingRaw;
             incoming = BuildCanvasDisplayIncomingTotals(incoming, source);
             if (incoming == null && _lastCanvasDisplayTotals == null)
                 return null;
@@ -7480,6 +7649,24 @@ try{
             var prev = _lastCanvasDisplayTotals;
             var incomingHasPool = HasAnyPoolValue(incoming);
             var prevHasPool = HasAnyPoolValue(prev);
+            var holdReason = (incoming != null &&
+                              prev != null &&
+                              incomingHasPool &&
+                              prevHasPool &&
+                              IsSameDisplayTable(incoming, prev))
+                ? GetPoolRegressionHoldReason(snap, incoming, prev)
+                : "";
+            if (incoming != null &&
+                prev != null &&
+                incomingHasPool &&
+                prevHasPool &&
+                IsSameDisplayTable(incoming, prev) &&
+                !string.IsNullOrWhiteSpace(holdReason))
+            {
+                incoming = HoldPreviousPoolTotals(incoming, prev, source, holdReason);
+                incomingHasPool = HasAnyPoolValue(incoming);
+            }
+
             var poolSource = incomingHasPool
                 ? (incoming?.Source ?? "")
                 : (prevHasPool ? (prev?.Source ?? "") : (incoming?.Source ?? prev?.Source ?? "csharp-stable"));
@@ -7623,9 +7810,9 @@ try{
                 if (snap == null)
                     return;
                 var seq = FilterResultDisplaySeqWindow(snap.seq);
-                var totals = BuildStableCanvasTotals(snap.totals, source);
+                var totals = BuildStableCanvasTotals(snap, source);
                 var totalsSource = totals?.Source ?? "";
-                var key = $"{seq}|{snap.seqVersion}|{snap.seqEvent}|{snap.seqSource}|{snap.prog}|{snap.status}|{totals?.B}|{totals?.P}|{totals?.T}|{totals?.A}|{totals?.N}|{totals?.TB}|{totals?.TA}|{totalsSource}|{snap.framePath}|{snap.dataFramePath}|{snap.dataMode}";
+                var key = $"{seq}|{snap.seqVersion}|{snap.seqEvent}|{snap.seqSource}|{snap.prog}|{snap.status}|{snap.tableName}|{snap.tableId}|{snap.seqTableName}|{snap.seqTableId}|{totals?.B}|{totals?.P}|{totals?.T}|{totals?.A}|{totals?.N}|{totals?.TB}|{totals?.TA}|{totalsSource}|{snap.framePath}|{snap.dataFramePath}|{snap.dataMode}";
                 var now = DateTime.UtcNow;
                 Log($"[CANVAS][DISPLAY-PUSH-ENTER] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={(string.IsNullOrWhiteSpace(snap.contextId) ? "-" : Shrink(snap.contextId, 80))} | seqLen={seq.Length} | prog={(snap.prog?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")} | status={(string.IsNullOrWhiteSpace(snap.status) ? "-" : Shrink(snap.status, 32))} | table={(string.IsNullOrWhiteSpace(totals?.TB) ? "-" : Shrink(totals!.TB, 48))} | tableAmount={(totals?.TA?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | poolSrc={(string.IsNullOrWhiteSpace(totalsSource) ? "-" : totalsSource)} | B={(totals?.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(totals?.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(totals?.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}");
                 if (string.Equals(key, _lastCanvasAcceptedSeqKey, StringComparison.Ordinal) &&
@@ -7655,6 +7842,12 @@ try{
                     status = snap.status ?? "",
                     statusSource = snap.statusSource ?? "",
                     statusTail = snap.statusTail ?? "",
+                    tableName = snap.tableName ?? totals?.TB ?? "",
+                    tableId = snap.tableId ?? 0,
+                    tableSource = snap.tableSource ?? "",
+                    seqTableName = snap.seqTableName ?? "",
+                    seqTableId = snap.seqTableId ?? 0,
+                    seqTableSource = snap.seqTableSource ?? "",
                     contextId = snap.contextId ?? "",
                     framePath = snap.framePath ?? "",
                     href = snap.href ?? "",
@@ -7789,6 +7982,38 @@ try{
             {
                 Log($"[CANVAS][DISPLAY-PUSH-ERR] stage=prepare | {ex.GetType().Name}: {Shrink(ex.Message, 160)}");
             }
+        }
+
+        private void SuppressNonFrameEmptyDisplayBrieflyLocked(string reason, int milliseconds = 900)
+        {
+            _suppressNonFrameEmptyDisplayUntilUtc = DateTime.UtcNow.AddMilliseconds(Math.Max(100, milliseconds));
+            _suppressNonFrameEmptyDisplayReason = string.IsNullOrWhiteSpace(reason) ? "context-switch" : reason;
+        }
+
+        private static bool SourceLooksFrameAuthority(string? source)
+        {
+            return !string.IsNullOrWhiteSpace(source) &&
+                   source.IndexOf("frame", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private bool ShouldSkipAcceptedDisplayPushLocked(CwSnapshot? snap, string source, out string reason)
+        {
+            reason = "";
+            if (!UseDomBootstrapCdpAppendSeq || snap == null)
+                return false;
+            if (SourceLooksFrameAuthority(source))
+                return false;
+            if (DateTime.UtcNow > _suppressNonFrameEmptyDisplayUntilUtc)
+                return false;
+
+            var seqLen = FilterResultDisplaySeqWindow(snap.seq).Length;
+            if (seqLen > 0)
+                return false;
+
+            reason = string.IsNullOrWhiteSpace(_suppressNonFrameEmptyDisplayReason)
+                ? "prefer-frame-after-context-switch"
+                : _suppressNonFrameEmptyDisplayReason;
+            return true;
         }
 
         private sealed class CanvasDisplayTargetState
@@ -9240,7 +9465,9 @@ try{
             gameRound = 0;
             reason = "";
 
-            if (!TryInferTableIdFromStatus(snap?.status, out var inferredTableId))
+            var tableText = GetTableNameFromSnapshot(snap);
+            if (!TryInferTableIdFromStatus(tableText, out var inferredTableId) &&
+                !TryInferTableIdFromStatus(snap?.status, out inferredTableId))
                 return false;
             if (!_hallRoundCache.TryGetValue(inferredTableId, out var hall) || hall == null)
                 return false;
@@ -9248,14 +9475,321 @@ try{
                 return false;
             if ((DateTime.UtcNow - hall.SeenAtUtc) > TimeSpan.FromMinutes(3))
                 return false;
-            if (seqLen > 0 && hall.GameRound > 0 && Math.Abs(seqLen - (int)hall.GameRound) > 2)
-                return false;
-
             tableId = hall.TableId;
             gameShoe = hall.GameShoe;
             gameRound = hall.GameRound;
             reason = "status-hall-cache";
             return true;
+        }
+
+        private static string GetTableNameFromSnapshot(CwSnapshot? snap)
+        {
+            try
+            {
+                return (snap?.tableName ??
+                        snap?.totals?.TB ??
+                        snap?.totals?.rawTB ??
+                        "").Trim();
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static long GetTableIdFromSnapshot(CwSnapshot? snap)
+        {
+            var direct = snap?.tableId ?? 0;
+            if (direct > 0)
+                return direct;
+
+            var tableName = GetTableNameFromSnapshot(snap);
+            return TryInferTableIdFromStatus(tableName, out var inferred) ? inferred : 0;
+        }
+
+        private static string GetSeqTableNameFromSnapshot(CwSnapshot? snap)
+        {
+            try
+            {
+                return (snap?.seqTableName ?? "").Trim();
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static long GetSeqTableIdFromSnapshot(CwSnapshot? snap)
+        {
+            var direct = snap?.seqTableId ?? 0;
+            if (direct > 0)
+                return direct;
+
+            var tableName = GetSeqTableNameFromSnapshot(snap);
+            return TryInferTableIdFromStatus(tableName, out var inferred) ? inferred : 0;
+        }
+
+        private static bool IsFrameSingleBacAuthoritySnapshot(CwSnapshot? snap, string source)
+        {
+            var sourceLooksFrame = !string.IsNullOrWhiteSpace(source) &&
+                                   source.IndexOf("frame", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!sourceLooksFrame)
+                return false;
+
+            return TextContainsIgnoreCase(snap?.href, "singleBacTable.jsp") ||
+                   TextContainsIgnoreCase(snap?.dataHref, "singleBacTable.jsp") ||
+                   TextContainsIgnoreCase(snap?.contextId, "singleBacTable.jsp") ||
+                   TextContainsIgnoreCase(snap?.signals, "gameMain") ||
+                   TextContainsIgnoreCase(snap?.signals, "zoneBet");
+        }
+
+        private bool TryResolveDomAuthorityTableContext(
+            CwSnapshot? snap,
+            string source,
+            out long tableId,
+            out string tableName,
+            out string tableSource,
+            out bool usedSeqTable)
+        {
+            tableName = GetTableNameFromSnapshot(snap);
+            tableId = GetTableIdFromSnapshot(snap);
+            tableSource = string.IsNullOrWhiteSpace(snap?.tableSource) ? "dom-table" : snap!.tableSource!;
+            usedSeqTable = false;
+
+            var seqName = GetSeqTableNameFromSnapshot(snap);
+            var seqId = GetSeqTableIdFromSnapshot(snap);
+            var seqSource = string.IsNullOrWhiteSpace(snap?.seqTableSource) ? "dom-seq-title" : snap!.seqTableSource!;
+            if (seqId <= 0 || string.IsNullOrWhiteSpace(seqName) || !IsFrameSingleBacAuthoritySnapshot(snap, source))
+                return tableId > 0 && !string.IsNullOrWhiteSpace(tableName);
+
+            var missingSnapshotTable = tableId <= 0 || string.IsNullOrWhiteSpace(tableName);
+            var seqOverridesStaleActiveTable =
+                _activeTableId > 0 &&
+                tableId == _activeTableId &&
+                tableId != seqId;
+            if (!missingSnapshotTable && !seqOverridesStaleActiveTable)
+                return tableId > 0 && !string.IsNullOrWhiteSpace(tableName);
+
+            tableId = seqId;
+            tableName = seqName;
+            tableSource = seqSource;
+            usedSeqTable = true;
+            return true;
+        }
+
+        private static void ApplyDirectTableContextToSnapshot(CwSnapshot? snap)
+        {
+            if (snap == null)
+                return;
+
+            var tableName = (snap.tableName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(tableName))
+                return;
+
+            snap.totals ??= new CwTotals();
+            snap.totals.TB = tableName;
+            snap.totals.rawTB = tableName;
+        }
+
+        private long ResolveActiveTableIdLocked()
+        {
+            if (_activeTableId > 0) return _activeTableId;
+            if (_netSeqTableId > 0) return _netSeqTableId;
+            if (_netObservedTableId > 0) return _netObservedTableId;
+            return 0;
+        }
+
+        private void FillActiveContextFromHallCacheLocked(long tableId, string reason)
+        {
+            if (tableId <= 0) return;
+            if (!_hallRoundCache.TryGetValue(tableId, out var hall) || hall == null)
+                return;
+            if (hall.GameShoe <= 0 || hall.GameRound <= 0)
+                return;
+            if ((DateTime.UtcNow - hall.SeenAtUtc) > TimeSpan.FromMinutes(3))
+                return;
+
+            bool changed = _activeGameShoe != hall.GameShoe || _activeGameRound != hall.GameRound;
+            _activeGameShoe = hall.GameShoe;
+            _activeGameRound = hall.GameRound;
+            _netObservedTableId = hall.TableId;
+            _netObservedGameShoe = hall.GameShoe;
+            _netObservedGameRound = hall.GameRound;
+            if (_netSeqTableId == tableId && _netSeqGameShoe <= 0)
+                _netSeqGameShoe = hall.GameShoe;
+
+            if (changed)
+                Log($"[CTX][CDP-FILL] reason={reason} | table={hall.TableId} | shoe={hall.GameShoe} | round={hall.GameRound} | activeName={(string.IsNullOrWhiteSpace(_activeTableName) ? "-" : Shrink(_activeTableName, 48))}");
+        }
+
+        private void ArmDomTableSwitchLocked(long newTableId, string tableName, string source, string boardSeqEvent, string statusRaw)
+        {
+            var prevTableId = ResolveActiveTableIdLocked();
+            var prevLen = _netSeqDisplay.Length;
+            var prevVer = _netSeqVersion;
+            var prevEvt = _netSeqEvent;
+
+            _tableSwitchRebaseArmed = true;
+            _tableSwitchRebaseArmedAtUtc = DateTime.UtcNow;
+            _tableSwitchFromKey = prevTableId > 0 ? ("dom:" + prevTableId.ToString(CultureInfo.InvariantCulture)) : (_lastBaccaratFrameKey ?? "");
+            _tableSwitchToKey = "dom:" + newTableId.ToString(CultureInfo.InvariantCulture);
+            _tableSwitchFromHref = _lastBaccaratFrameHref ?? "";
+            _tableSwitchToHref = _lastBaccaratFrameHref ?? "";
+            _initialTableEnterArmed = false;
+            _initialTableEnterArmedAtUtc = DateTime.MinValue;
+            SuppressNonFrameEmptyDisplayBrieflyLocked("prefer-frame-after-dom-table-change");
+
+            _syncSeqPrefixDisplay = "";
+            _boardSeqDisplay = "";
+            _boardSeqVersion = 0;
+            _boardSeqEvent = "dom-table-switch";
+            _netSeqDisplay = "";
+            _netSeqVersion = 0;
+            _netSeqEvent = "dom-table-switch";
+            _netSeqSource = "dom-table-switch";
+            _netSeqWinnerSeedOnly = false;
+            _netSeqTableId = newTableId;
+            _netSeqGameShoe = 0;
+            _netSeqLastRound = 0;
+            _netObservedTableId = newTableId;
+            _netObservedGameShoe = 0;
+            _netObservedGameRound = 0;
+            _activeGameShoe = 0;
+            _activeGameRound = 0;
+            _netLastWinnerKey = "";
+            _netLastWinnerAt = DateTime.MinValue;
+            _lastJsAppendFingerprint = "";
+            _lastJsAppendAppliedUtc = DateTime.MinValue;
+            _baseSeq = "";
+            _baseSeqDisplay = "";
+            _baseSeqVersion = 0;
+            _baseSeqEvent = "dom-table-switch";
+            _baseSeqSource = "dom-table-switch";
+            _roundTotalsB = 0;
+            _roundTotalsP = 0;
+            _roundTotalsT = 0;
+            _lockMajorMinorUpdates = false;
+            _suppressJsBootstrapAfterObservedReset = false;
+            ResetJsRawBootstrapProbeLocked();
+            ClearShoeChangeRebaseArmLocked();
+            _lastCanvasAcceptedSeqKey = "";
+            _lastCanvasAcceptedSeqPushUtc = DateTime.MinValue;
+            _lastCanvasDisplayTotals = null;
+
+            Log($"[CTX][SWITCH-ARM] reason=dom-table-change | prev={prevTableId} | next={newTableId} | table={Shrink(tableName, 48)} | prevLen={prevLen} | prevVer={prevVer} | prevEvt={(string.IsNullOrWhiteSpace(prevEvt) ? "-" : prevEvt)} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+        }
+
+        private void ArmDomShoeSwitchLocked(long tableId, long newShoe, long newRound, string reason, string source)
+        {
+            if (tableId <= 0)
+                return;
+
+            var prevLen = _netSeqDisplay.Length;
+            var prevVer = _netSeqVersion;
+            var prevShoe = _netSeqGameShoe > 0 ? _netSeqGameShoe : _netObservedGameShoe;
+            var prevRound = _netSeqLastRound > 0 ? _netSeqLastRound : _netObservedGameRound;
+
+            _tableSwitchRebaseArmed = true;
+            _tableSwitchRebaseArmedAtUtc = DateTime.UtcNow;
+            _tableSwitchFromKey = $"shoe:{tableId}/{prevShoe}";
+            _tableSwitchToKey = $"shoe:{tableId}/{newShoe}";
+            _tableSwitchFromHref = _lastBaccaratFrameHref ?? "";
+            _tableSwitchToHref = _lastBaccaratFrameHref ?? "";
+            _initialTableEnterArmed = false;
+            _initialTableEnterArmedAtUtc = DateTime.MinValue;
+            SuppressNonFrameEmptyDisplayBrieflyLocked("prefer-frame-after-dom-shoe-change");
+
+            _syncSeqPrefixDisplay = "";
+            _boardSeqDisplay = "";
+            _boardSeqVersion = 0;
+            _boardSeqEvent = "dom-shoe-switch";
+            _netSeqDisplay = "";
+            _netSeqVersion = 0;
+            _netSeqEvent = "dom-shoe-switch";
+            _netSeqSource = "dom-shoe-switch";
+            _netSeqWinnerSeedOnly = false;
+            _netSeqTableId = tableId;
+            _netSeqGameShoe = newShoe;
+            _netSeqLastRound = 0;
+            _netObservedTableId = tableId;
+            _netObservedGameShoe = newShoe;
+            _netObservedGameRound = newRound;
+            _activeTableId = tableId;
+            _activeGameShoe = newShoe;
+            _activeGameRound = newRound;
+            _activeContextSource = "cdp-observed-shoe";
+            _activeContextUpdatedAtUtc = DateTime.UtcNow;
+            _netLastWinnerKey = "";
+            _netLastWinnerAt = DateTime.MinValue;
+            _lastJsAppendFingerprint = "";
+            _lastJsAppendAppliedUtc = DateTime.MinValue;
+            _baseSeq = "";
+            _baseSeqDisplay = "";
+            _baseSeqVersion = 0;
+            _baseSeqEvent = "dom-shoe-switch";
+            _baseSeqSource = "dom-shoe-switch";
+            _roundTotalsB = 0;
+            _roundTotalsP = 0;
+            _roundTotalsT = 0;
+            _lockMajorMinorUpdates = false;
+            _suppressJsBootstrapAfterObservedReset = false;
+            ResetJsRawBootstrapProbeLocked();
+            ClearShoeChangeRebaseArmLocked();
+            _lastCanvasAcceptedSeqKey = "";
+            _lastCanvasAcceptedSeqPushUtc = DateTime.MinValue;
+            _lastCanvasDisplayTotals = null;
+
+            Log($"[CTX][SHOE-ARM] reason={reason} | table={tableId} | oldShoe={prevShoe} | newShoe={newShoe} | oldRound={prevRound} | newRound={newRound} | prevLen={prevLen} | prevVer={prevVer} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | action=wait-dom-bootstrap");
+        }
+
+        private void ObserveDomAuthorityContextLocked(CwSnapshot? snap, string source, string boardSeqEvent, string statusRaw)
+        {
+            if (!TryResolveDomAuthorityTableContext(snap, source, out var tableId, out var tableName, out var tableSource, out var usedSeqTable))
+                return;
+
+            var prevActive = _activeTableId;
+            bool changed = prevActive > 0 && prevActive != tableId;
+            bool seqTableChanged = _netSeqTableId > 0 && _netSeqTableId != tableId;
+
+            if (usedSeqTable)
+            {
+                var oldTable = GetTableNameFromSnapshot(snap);
+                if (changed || seqTableChanged)
+                    Log($"[CTX][SEQ-TABLE] reason=dom-seq-title-authority | prev={(prevActive > 0 ? prevActive.ToString(CultureInfo.InvariantCulture) : "-")} | next={tableId} | old={(string.IsNullOrWhiteSpace(oldTable) ? "-" : Shrink(oldTable, 48))} | seq={Shrink(tableName, 48)} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)}");
+
+                if (snap != null)
+                {
+                    snap.tableName = tableName;
+                    snap.tableId = tableId;
+                    snap.tableSource = tableSource;
+                    snap.totals ??= new CwTotals();
+                    snap.totals.TB = tableName;
+                    snap.totals.rawTB = tableName;
+                    if (changed || seqTableChanged)
+                    {
+                        snap.totals.B = null;
+                        snap.totals.P = null;
+                        snap.totals.T = null;
+                        snap.totals.Source = "seq-table-context-wait-pool";
+                    }
+                }
+            }
+
+            if (changed || seqTableChanged)
+                ArmDomTableSwitchLocked(tableId, tableName, source, boardSeqEvent, statusRaw);
+
+            _activeTableId = tableId;
+            _activeTableName = tableName;
+            _activeContextSource = usedSeqTable ? "dom-seq-authority" : "dom-authority";
+            _activeContextUpdatedAtUtc = DateTime.UtcNow;
+            _netObservedTableId = tableId;
+            if (_netSeqTableId <= 0)
+                _netSeqTableId = tableId;
+
+            FillActiveContextFromHallCacheLocked(tableId, changed || seqTableChanged ? "dom-table-change" : "dom-table");
+
+            if (changed || seqTableChanged)
+                Log($"[CTX][DOM-TABLE] prev={(prevActive > 0 ? prevActive.ToString(CultureInfo.InvariantCulture) : "-")} | next={tableId} | table={Shrink(tableName, 48)} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | activeShoe={(_activeGameShoe > 0 ? _activeGameShoe.ToString(CultureInfo.InvariantCulture) : "-")} | activeRound={(_activeGameRound > 0 ? _activeGameRound.ToString(CultureInfo.InvariantCulture) : "-")}");
         }
 
         private void ObserveNetworkGameState(string payload, bool isBinary)
@@ -9269,12 +9803,23 @@ try{
             bool didReset = false;
             lock (_roundStateLock)
             {
+                if (_activeTableId > 0 && tableId > 0 && tableId != _activeTableId)
+                {
+                    Log($"[CTX][CDP-BLOCK] reason=observed-table-mismatch | active={_activeTableId} | packet={tableId} | shoe={gameShoe} | round={gameRound} | activeSrc={(string.IsNullOrWhiteSpace(_activeContextSource) ? "-" : _activeContextSource)} | activeAgeMs={(_activeContextUpdatedAtUtc == DateTime.MinValue ? -1 : (long)(DateTime.UtcNow - _activeContextUpdatedAtUtc).TotalMilliseconds)}");
+                    return;
+                }
+
                 bool tableChanged = _netObservedTableId > 0 && tableId != _netObservedTableId;
                 bool shoeChanged = !tableChanged && _netObservedGameShoe > 0 && gameShoe != _netObservedGameShoe;
 
                 _netObservedTableId = tableId;
                 _netObservedGameShoe = gameShoe;
                 _netObservedGameRound = gameRound;
+                if (_activeTableId == tableId)
+                {
+                    _activeGameShoe = gameShoe;
+                    _activeGameRound = gameRound;
+                }
 
                 if (!tableChanged && !shoeChanged)
                     return;
@@ -9329,15 +9874,7 @@ try{
                 }
                 else
                 {
-                    _boardSeqDisplay = "";
-                    _boardSeqVersion = 0;
-                    _boardSeqEvent = "";
-                    _syncSeqPrefixDisplay = _netSeqDisplay;
-                    _netSeqEvent = "net-observed-shoe-reset";
-                    _netSeqSource = "network";
-                    _netSeqWinnerSeedOnly = false;
-                    _suppressJsBootstrapAfterObservedReset = false;
-                    ResetJsRawBootstrapProbeLocked();
+                    ArmDomShoeSwitchLocked(tableId, gameShoe, gameRound, "observed-shoe-change", "cdp-observed");
                 }
 
                 _netSeqTableId = tableId;
@@ -9391,6 +9928,23 @@ try{
                 return result;
             }
 
+            var activeTableId = ResolveActiveTableIdLocked();
+            if (activeTableId > 0 && packet.TableId > 0 && packet.TableId != activeTableId)
+            {
+                result.Action = "context-mismatch";
+                _netLastWinnerAt = DateTime.UtcNow;
+                Log($"[CTX][CDP-BLOCK] reason=winner-table-mismatch | active={activeTableId} | packet={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={winnerChar.Value} | seqLen={prevDisplay.Length} | seqVer={prevVersion} | policy=dom-bootstrap-cdp-append");
+                return result;
+            }
+
+            if (_activeGameShoe > 0 && packet.GameShoe > 0 && packet.GameShoe != _activeGameShoe)
+            {
+                result.Action = "shoe-mismatch";
+                _netLastWinnerAt = DateTime.UtcNow;
+                Log($"[CTX][CDP-BLOCK] reason=winner-shoe-mismatch | activeTable={activeTableId} | activeShoe={_activeGameShoe} | packetTable={packet.TableId} | packetShoe={packet.GameShoe} | round={packet.GameRound} | winner={winnerChar.Value} | seqLen={prevDisplay.Length} | seqVer={prevVersion}");
+                return result;
+            }
+
             bool tableChanged = _netSeqTableId > 0 && packet.TableId > 0 && packet.TableId != _netSeqTableId;
             bool shoeChanged = !tableChanged && _netSeqGameShoe > 0 && packet.GameShoe > 0 && packet.GameShoe != _netSeqGameShoe;
             bool contextReset = tableChanged;
@@ -9417,11 +9971,16 @@ try{
             }
             else if (shoeChanged)
             {
-                Log($"[NETSEQ][SHOE-KEEP] reason=shoe-change-keep-seq | table={packet.TableId} | oldShoe={_netSeqGameShoe} | newShoe={packet.GameShoe} | oldRound={_netSeqLastRound} | newRound={packet.GameRound} | seqLen={prevDisplay.Length} | seqVer={prevVersion}");
-                _netSeqGameShoe = packet.GameShoe;
-                _netSeqLastRound = 0;
-                _netLastWinnerKey = "";
-                _netSeqWinnerSeedOnly = false;
+                var oldShoe = _netSeqGameShoe;
+                var oldRound = _netSeqLastRound;
+                ArmDomShoeSwitchLocked(packet.TableId, packet.GameShoe, packet.GameRound, "winner-shoe-change", packet.OwnerTag);
+                result.Action = "wait-dom-bootstrap";
+                result.NextSeq = "";
+                result.NextVersion = _netSeqVersion;
+                result.SeqEvent = _netSeqEvent;
+                _netLastWinnerAt = DateTime.UtcNow;
+                Log($"[NETSEQ][SEED-BLOCK] reason=cdp-winner-new-shoe | action=wait-dom-bootstrap | table={packet.TableId} | oldShoe={oldShoe} | newShoe={packet.GameShoe} | oldRound={oldRound} | newRound={packet.GameRound} | winner={winnerChar.Value} | oldLen={prevDisplay.Length} | oldVer={prevVersion} | policy=dom-bootstrap-cdp-append");
+                return result;
             }
 
             bool roundAlreadySeen =
@@ -9444,7 +10003,7 @@ try{
                 packet.GameRound > (_netSeqLastRound + 1);
             bool firstPacketMidShoe =
                 string.IsNullOrWhiteSpace(prevDisplay) &&
-                _netSeqLastRound <= 0 &&
+                (contextReset || _netSeqLastRound <= 0) &&
                 packet.GameRound > 1;
             if (gap || firstPacketMidShoe)
             {
@@ -9497,6 +10056,11 @@ try{
             _netObservedTableId = packet.TableId > 0 ? packet.TableId : _netObservedTableId;
             _netObservedGameShoe = packet.GameShoe > 0 ? packet.GameShoe : _netObservedGameShoe;
             _netObservedGameRound = packet.GameRound > 0 ? packet.GameRound : _netObservedGameRound;
+            _activeTableId = packet.TableId > 0 ? packet.TableId : _activeTableId;
+            _activeGameShoe = packet.GameShoe > 0 ? packet.GameShoe : _activeGameShoe;
+            _activeGameRound = packet.GameRound > 0 ? packet.GameRound : _activeGameRound;
+            _activeContextSource = "cdp-append";
+            _activeContextUpdatedAtUtc = DateTime.UtcNow;
             _suppressJsBootstrapAfterObservedReset = false;
             _netLastWinnerKey = eventKey;
             _netLastWinnerAt = DateTime.UtcNow;
@@ -9894,7 +10458,7 @@ try{
                 return false;
             }
 
-            var tableId = _netSeqTableId > 0 ? _netSeqTableId : _netObservedTableId;
+            var tableId = ResolveActiveTableIdLocked();
             if (tableId <= 0)
                 return false;
 
@@ -9919,7 +10483,11 @@ try{
                 _jsRawBootstrapStableCount = 1;
             }
 
-            if (_jsRawBootstrapStableCount < 2)
+            bool fastTrustedFrameBootstrap =
+                rawDisplay.Length >= 8 &&
+                !string.IsNullOrWhiteSpace(source) &&
+                source.IndexOf("frame", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!fastTrustedFrameBootstrap && _jsRawBootstrapStableCount < 2)
             {
                 if ((DateTime.UtcNow - _lastJsRawBootstrapLogUtc) > TimeSpan.FromSeconds(2))
                 {
@@ -9939,7 +10507,12 @@ try{
             _netSeqEvent = "dom-bootstrap";
             _netSeqSource = "dom-bootstrap";
             _netSeqTableId = tableId;
-            if (_netObservedGameShoe > 0)
+            _activeTableId = tableId;
+            _activeContextSource = "dom-bootstrap";
+            _activeContextUpdatedAtUtc = DateTime.UtcNow;
+            if (_activeGameShoe > 0)
+                _netSeqGameShoe = _activeGameShoe;
+            else if (_netObservedGameShoe > 0)
                 _netSeqGameShoe = _netObservedGameShoe;
             _netSeqLastRound = rawDisplay.Length;
             _netSeqWinnerSeedOnly = false;
@@ -13534,6 +14107,12 @@ try{
                 _netSeqTableId = 0;
                 _netSeqGameShoe = 0;
                 _netSeqLastRound = 0;
+                _activeTableId = 0;
+                _activeGameShoe = 0;
+                _activeGameRound = 0;
+                _activeTableName = "";
+                _activeContextSource = "";
+                _activeContextUpdatedAtUtc = DateTime.MinValue;
                 _netLastWinnerKey = "";
                 _netLastWinnerAt = DateTime.MinValue;
                 _roundTotalsB = 0;
@@ -14257,9 +14836,9 @@ try{
             long issuedObservedRound;
             lock (_roundStateLock)
             {
-                issuedTableId = _netObservedTableId > 0 ? _netObservedTableId : _netSeqTableId;
-                issuedGameShoe = _netObservedGameShoe > 0 ? _netObservedGameShoe : _netSeqGameShoe;
-                issuedObservedRound = _netObservedGameRound > 0 ? _netObservedGameRound : _netSeqLastRound;
+                issuedTableId = _activeTableId > 0 ? _activeTableId : (_netObservedTableId > 0 ? _netObservedTableId : _netSeqTableId);
+                issuedGameShoe = _activeGameShoe > 0 ? _activeGameShoe : (_netObservedGameShoe > 0 ? _netObservedGameShoe : _netSeqGameShoe);
+                issuedObservedRound = _activeGameRound > 0 ? _activeGameRound : (_netObservedGameRound > 0 ? _netObservedGameRound : _netSeqLastRound);
             }
 
             bool hasIssuedContext = issuedTableId > 0 && issuedGameShoe > 0 && issuedObservedRound > 0;
@@ -14292,6 +14871,11 @@ try{
                         _netObservedTableId = reboundTableId;
                         _netObservedGameShoe = reboundGameShoe;
                         _netObservedGameRound = reboundObservedRound;
+                        _activeTableId = reboundTableId;
+                        _activeGameShoe = reboundGameShoe;
+                        _activeGameRound = reboundObservedRound;
+                        _activeContextSource = "status-hall-cache";
+                        _activeContextUpdatedAtUtc = DateTime.UtcNow;
                     }
 
                     issuedTableId = reboundTableId;
@@ -14363,7 +14947,9 @@ try{
                         : roundId;
                 }
 
-                if (issuedTableId <= 0 && TryInferTableIdFromStatus(issuedSnap?.status, out var inferredTableId))
+                if (issuedTableId <= 0 &&
+                    (TryInferTableIdFromStatus(GetTableNameFromSnapshot(issuedSnap), out var inferredTableId) ||
+                     TryInferTableIdFromStatus(issuedSnap?.status, out inferredTableId)))
                     issuedTableId = inferredTableId;
 
                 pendingReason = isTableSwitchResetIssue ? "table-switch-reset-recorded" : "missing-context-recorded";
@@ -17482,6 +18068,12 @@ try{
                 progSource = snap.progSource,
                 progTail = snap.progTail,
                 totals = CloneTotalsForTasks(snap.totals),
+                tableName = snap.tableName,
+                tableId = snap.tableId,
+                tableSource = snap.tableSource,
+                seqTableName = snap.seqTableName,
+                seqTableId = snap.seqTableId,
+                seqTableSource = snap.seqTableSource,
                 seq = FilterPlayableSeq(snap.seq),
                 seqVersion = snap.seqVersion,
                 seqEvent = snap.seqEvent,
@@ -17533,6 +18125,12 @@ try{
                 progSource = snap.progSource,
                 progTail = snap.progTail,
                 totals = CloneTotalsForTasks(snap.totals),
+                tableName = snap.tableName,
+                tableId = snap.tableId,
+                tableSource = snap.tableSource,
+                seqTableName = snap.seqTableName,
+                seqTableId = snap.seqTableId,
+                seqTableSource = snap.seqTableSource,
                 seq = snap.seq,
                 rawSeq = snap.rawSeq,
                 seqVersion = snap.seqVersion,
