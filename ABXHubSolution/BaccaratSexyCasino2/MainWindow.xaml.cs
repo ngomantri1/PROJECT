@@ -13,8 +13,8 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using static System.Net.Mime.MediaTypeNames;
 using static System.Runtime.InteropServices.JavaScript.JSType;
-using BaccaratSexyCasino;
-using BaccaratSexyCasino.Tasks;
+using BaccaratSexyCasino2;
+using BaccaratSexyCasino2.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Globalization;
@@ -31,7 +31,7 @@ using System.Linq;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Windows.Data;
-using static BaccaratSexyCasino.MainWindow;
+using static BaccaratSexyCasino2.MainWindow;
 using System.Windows.Input;
 using Microsoft.Win32;
 using System.Net.NetworkInformation;
@@ -39,7 +39,7 @@ using System.Net.NetworkInformation;
 
 
 
-namespace BaccaratSexyCasino
+namespace BaccaratSexyCasino2
 {
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Assets (pack URI).
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Resources (pack URI).
@@ -327,7 +327,7 @@ namespace BaccaratSexyCasino
         private const double TabStripRightInset = 16;
 
 
-        private const string AppLocalDirName = "BaccaratSexyCasino"; // đổi thành tên bạn muốn
+        private const string AppLocalDirName = "BaccaratSexyCasino2"; // đổi thành tên bạn muốn
         // ====== App paths ======
         private readonly string _appDataDir;
         private readonly string _cfgPath;
@@ -438,6 +438,9 @@ namespace BaccaratSexyCasino
         private DateTime _netLastWinnerAt = DateTime.MinValue;
         private string _lastJsAppendFingerprint = "";
         private DateTime _lastJsAppendAppliedUtc = DateTime.MinValue;
+        private string _lastDomAppendFallbackKey = "";
+        private int _lastDomAppendFallbackStableCount = 0;
+        private DateTime _lastDomAppendFallbackLogUtc = DateTime.MinValue;
         private DateTime _lastHistAlertUtc = DateTime.MinValue;
         private int _lastSeqRxLen = -1;
         private long _lastSeqRxVer = -1;
@@ -718,7 +721,6 @@ namespace BaccaratSexyCasino
 
         // 3) Giữ pending bet để chờ kết quả
         private readonly List<BetRow> _pendingRows = new();
-        private const int PendingFinalWinnerGraceSeconds = 180;
         private const int MaxHistory = 1000;   // tổng số bản ghi giữ trong bộ nhớ & khi load
 
 
@@ -851,7 +853,7 @@ Ví dụ không hợp lệ:
 
         const string TIP_SIDE_RATIO =
         @"CỬA ĐẶT & TỈ LỆ
-- Logic nhiều cửa đã bị loại bỏ khỏi BaccaratSexyCasino.
+- Logic nhiều cửa đã bị loại bỏ khỏi BaccaratSexyCasino2.
 - Trường này chỉ còn để tương thích cấu hình cũ và hiện không dùng trong Baccarat.";
         // =========================================================
 
@@ -1005,7 +1007,7 @@ Ví dụ không hợp lệ:
 
             public CancellationTokenSource? TaskCts { get; set; }
             public Task? RunningTask { get; set; }
-            public BaccaratSexyCasino.Tasks.IBetTask? ActiveTask { get; set; }
+            public BaccaratSexyCasino2.Tasks.IBetTask? ActiveTask { get; set; }
             public DecisionState DecisionState { get; set; } = new DecisionState();
             public bool Cooldown { get; set; } = false;
             public TabStats Stats { get; set; } = new TabStats();
@@ -1017,7 +1019,6 @@ Ví dụ không hợp lệ:
         // 1) Model 1 dòng log đặt cược
         private sealed class BetRow
         {
-            public string BetId { get; set; } = "";
             public DateTime At { get; set; }                 // Thời gian đặt
             public string Game { get; set; } = "Xóc đĩa live";
             public long Stake { get; set; }                  // Tiền cược
@@ -1035,7 +1036,6 @@ Ví dụ không hợp lệ:
             public long IssuedObservedRound { get; set; }
             public string IssuedSeqSource { get; set; } = "";
             public bool SawClosedAfterIssue { get; set; }
-            public DateTime LastAwaitFinalWinnerKeepLogUtc { get; set; } = DateTime.MinValue;
         }
 
         public static class SharedIcons
@@ -1110,7 +1110,7 @@ Ví dụ không hợp lệ:
         private string _lastPlayerFlowGameUrl = "";
         private DateTime _lastPlayerFlowGameAtUtc = DateTime.MinValue;
         private string _lastPlayerFlowSourceHost = "";
-        private const string Wv2ZipResNameX64 = "BaccaratSexyCasino.ThirdParty.WebView2Fixed_win-x64.zip";
+        private const string Wv2ZipResNameX64 = "BaccaratSexyCasino2.ThirdParty.WebView2Fixed_win-x64.zip";
         // Thư mục cache bền vững cho runtime (không bị dọn như %TEMP%)
         private static string Wv2BaseDir =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -1196,6 +1196,57 @@ Ví dụ không hợp lệ:
                /\bB\s*=\s*(?!\s*--)[\d.,KMB]+\s*\|\s*P\s*=\s*(?!\s*--)[\d.,KMB]+/i.test(t);
       }catch(_){ return false; }
     }
+    function __abxCwNormHudText(text){
+      try{ return String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+      catch(_){ return String(text || '').toLowerCase(); }
+    }
+    function __abxCwExtractHudLine(text){
+      try{
+        var lines = String(text || '').split(/\r?\n/);
+        for (var i=0;i<lines.length;i++){
+          var n = __abxCwNormHudText(lines[i]);
+          if (n.indexOf('tai khoan') >= 0 && (n.indexOf('so du') >= 0 || n.indexOf('balance') >= 0))
+            return String(lines[i] || '').trim();
+        }
+      }catch(_){}
+      return '';
+    }
+    function __abxCwHudLineHasValue(line){
+      try{
+        var raw = String(line || '');
+        if (!raw) return false;
+        var n = __abxCwNormHudText(raw);
+        var acc = '';
+        var bal = '';
+        var ma = n.match(/tai\s*khoan\s*:\s*([^|\n]+)/);
+        var mb = n.match(/(?:so\s*du|balance)\s*:\s*([^|\n]+)/);
+        if (ma && ma[1]) acc = String(ma[1] || '').trim();
+        if (mb && mb[1]) bal = String(mb[1] || '').trim();
+        return (!!acc && acc !== '--') || (!!bal && bal !== '--');
+      }catch(_){ return false; }
+    }
+    function __abxCwEscHtml(text){
+      return String(text == null ? '' : text)
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/""/g,'&quot;')
+        .replace(/'/g,'&#39;');
+    }
+    function __abxCwReplaceHudLineHtml(html, hudLine){
+      try{
+        if (!__abxCwHudLineHasValue(hudLine)) return html;
+        var lines = String(html || '').split(/\n/);
+        for (var i=0;i<lines.length;i++){
+          var n = __abxCwNormHudText(lines[i]);
+          if (n.indexOf('tai khoan') >= 0 && (n.indexOf('so du') >= 0 || n.indexOf('balance') >= 0)){
+            lines[i] = __abxCwEscHtml(hudLine);
+            return lines.join('\n');
+          }
+        }
+      }catch(_){}
+      return html;
+    }
     function __abxCwMirrorPanel(host, source){
       try{
         if (!host || !source || !host.root || !source.root || host === source){
@@ -1207,7 +1258,14 @@ Ví dụ không hợp lệ:
         if (srcInfo && dstInfo){
           var txt = String(srcInfo.innerText || srcInfo.textContent || '').trim();
           var dstTxt = String(dstInfo.innerText || dstInfo.textContent || '').trim();
-          if (txt && (!__abxCwHasDisplayPoolText(dstTxt) || __abxCwHasDisplayPoolText(txt))) dstInfo.innerHTML = srcInfo.innerHTML;
+          if (txt && (!__abxCwHasDisplayPoolText(dstTxt) || __abxCwHasDisplayPoolText(txt))) {
+            var nextHtml = srcInfo.innerHTML;
+            var keepHudLine = __abxCwExtractHudLine(dstTxt);
+            var srcHudLine = __abxCwExtractHudLine(txt);
+            if (__abxCwHudLineHasValue(keepHudLine) && !__abxCwHudLineHasValue(srcHudLine))
+              nextHtml = __abxCwReplaceHudLineHtml(nextHtml, keepHudLine);
+            dstInfo.innerHTML = nextHtml;
+          }
         }
         var srcState = source.root.querySelector && source.root.querySelector('#cwState');
         var dstState = host.root.querySelector && host.root.querySelector('#cwState');
@@ -2199,7 +2257,7 @@ try{
 
         private string GetAiNGramStatePath()
         {
-            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\BaccaratSexyCasino
+            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\BaccaratSexyCasino22
             var aiDir = System.IO.Path.Combine(_appDataDir, "ai");
             System.IO.Directory.CreateDirectory(aiDir);
             return System.IO.Path.Combine(aiDir, "ngram_state_v1.json");
@@ -4115,7 +4173,7 @@ try{
             if (!_uiReady || _tabSwitching) return;
             _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
             if (!IsAnyTabRunning() || IsActiveTabRunning())
-                BaccaratSexyCasino.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
+                BaccaratSexyCasino2.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             // NEW: mỗi “Quản lý vốn” có chuỗi tiền riêng → nạp lại ô StakeCsv
             LoadStakeCsvForCurrentMoneyStrategy();
             UpdateS7ResetOptionUI();
@@ -4167,7 +4225,7 @@ try{
                 13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
                 14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
                 15 => "16) TOP10 TÍCH LŨY (khởi từ 50 B/P). Khởi tạo thống kê từ 50 kết quả đầu vào (B/P). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 'mới về'. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm >= hiện tại.",
-                16 => "17) Logic nhiều cửa đã bị loại bỏ khỏi BaccaratSexyCasino.",
+                16 => "17) Logic nhiều cửa đã bị loại bỏ khỏi BaccaratSexyCasino2.",
                 17 => "18) Chuỗi cầu B/P hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
                 _ => "Chiến lược chưa xác định."
             };
@@ -4206,7 +4264,7 @@ try{
                 13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
                 14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
                 15 => "16) TOP10 TÍCH LŨY (khởi từ 50 B/P). Khởi tạo thống kê từ 50 kết quả đầu vào (B/P). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 'mới về'. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm >= hiện tại.",
-                16 => "17) Logic nhiều cửa đã bị loại bỏ khỏi BaccaratSexyCasino.",
+                16 => "17) Logic nhiều cửa đã bị loại bỏ khỏi BaccaratSexyCasino2.",
                 17 => "18) Chuỗi cầu B/P hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
                 _ => "Chiến lược chưa xác định."
             };
@@ -4536,7 +4594,13 @@ try{
                             {
                                 ObserveDomAuthorityContextLocked(snap, source, boardSeqEvent, statusRawForLogic);
                                 var bootstrapped = TryApplyInitialJsRawBootstrapLocked(snap, source, statusRawForLogic, boardSeqVersion, boardSeqEvent);
+                                var repairedTinyBootstrap = false;
                                 if (!bootstrapped)
+                                    repairedTinyBootstrap = TryRepairTinyDomBootstrapLocked(snap, source, statusRawForLogic, boardSeqDisplay, boardSeqVersion, boardSeqEvent);
+                                var appendedFallback = false;
+                                if (!bootstrapped && !repairedTinyBootstrap)
+                                    appendedFallback = TryApplyDomAppendFallbackLocked(snap, source, statusRawForLogic, boardSeqVersion, boardSeqEvent);
+                                if (!bootstrapped && !repairedTinyBootstrap && !appendedFallback)
                                     LogDomSeqObservedIfNeeded(source, boardSeqDisplay, snap.rawSeq, boardSeqVersion, boardSeqEvent);
                                 ApplyNetworkSeqAuthorityLocked(snap);
                             }
@@ -6941,8 +7005,75 @@ try{
             int arr = rawText.IndexOf('[');
             int idx = obj >= 0 && arr >= 0 ? Math.Min(obj, arr) : Math.Max(obj, arr);
             if (idx < 0 || idx >= rawText.Length) return null;
-            var json = rawText.Substring(idx).Trim();
+            int end = FindBalancedJsonEnd(rawText, idx);
+            var json = (end > idx ? rawText.Substring(idx, end - idx + 1) : rawText.Substring(idx)).Trim();
             return string.IsNullOrWhiteSpace(json) ? null : json;
+        }
+
+        private static int FindBalancedJsonEnd(string text, int start)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(text) || start < 0 || start >= text.Length)
+                    return -1;
+
+                var open = text[start];
+                var close = open == '{' ? '}' : open == '[' ? ']' : '\0';
+                if (close == '\0')
+                    return -1;
+
+                var stack = new Stack<char>();
+                bool inString = false;
+                bool escaped = false;
+                for (int i = start; i < text.Length; i++)
+                {
+                    var ch = text[i];
+                    if (inString)
+                    {
+                        if (escaped)
+                        {
+                            escaped = false;
+                            continue;
+                        }
+                        if (ch == '\\')
+                        {
+                            escaped = true;
+                            continue;
+                        }
+                        if (ch == '"')
+                            inString = false;
+                        continue;
+                    }
+
+                    if (ch == '"')
+                    {
+                        inString = true;
+                        continue;
+                    }
+                    if (ch == '{')
+                    {
+                        stack.Push('}');
+                        continue;
+                    }
+                    if (ch == '[')
+                    {
+                        stack.Push(']');
+                        continue;
+                    }
+                    if ((ch == '}' || ch == ']') && stack.Count > 0)
+                    {
+                        var expected = stack.Pop();
+                        if (ch != expected)
+                            return -1;
+                        if (stack.Count == 0)
+                            return i;
+                    }
+                }
+            }
+            catch
+            {
+            }
+            return -1;
         }
 
         private static char? MapWinnerCodeToSeqChar(int winnerCode)
@@ -6968,6 +7099,101 @@ try{
             };
         }
 
+        private static bool TryBuildWinnerPacketFromObject(JsonElement obj, string ownerTag, string? url, out NetworkWinnerPacket? packet)
+        {
+            packet = null;
+            if (obj.ValueKind != JsonValueKind.Object)
+                return false;
+
+            var eventText = ReadStringByAnyName(obj, "eventType", "event", "type", "name", "action", "cmd");
+            bool eventLooksWinner =
+                eventText.IndexOf("GP_WINNER", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                eventText.IndexOf("WINNER", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                eventText.IndexOf("RESULT", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                eventText.IndexOf("SETTLE", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool hasWinnerHandValues =
+                TryReadLongByAnyName(obj, out _, "bankerHandValue", "bankerPoint", "bankerValue") &&
+                TryReadLongByAnyName(obj, out _, "playerHandValue", "playerPoint", "playerValue");
+
+            var winnerSide = TryReadWinnerSideFromObject(obj);
+            if (!winnerSide.HasValue)
+                return false;
+
+            if (!eventLooksWinner && !hasWinnerHandValues)
+                return false;
+
+            var tableId = ReadLongByAnyName(obj, "tableID", "tableId", "tableNo");
+            var gameShoe = ReadLongByAnyName(obj, "gameShoe", "currentGameShoe", "shoe", "shoeNo");
+            var gameRound = ReadLongByAnyName(obj, "gameRound", "currentGameRound", "round", "roundNo", "roundId");
+            if (tableId <= 0 || gameRound <= 0)
+                return false;
+
+            var winnerCode = WinnerCharToCode(winnerSide.Value);
+            if (winnerCode < 0)
+                return false;
+
+            packet = new NetworkWinnerPacket
+            {
+                TableId = tableId,
+                GameShoe = gameShoe,
+                GameRound = gameRound,
+                WinnerCode = winnerCode,
+                BankerValue = (int)ReadLongByAnyName(obj, "bankerHandValue", "bankerPoint", "bankerValue"),
+                PlayerValue = (int)ReadLongByAnyName(obj, "playerHandValue", "playerPoint", "playerValue"),
+                EventType = string.IsNullOrWhiteSpace(eventText) ? "winner-generic" : eventText,
+                OwnerTag = ownerTag ?? "",
+                Url = url ?? ""
+            };
+            return true;
+        }
+
+        private static bool TryFindNetworkWinnerPacket(JsonElement el, string ownerTag, string? url, int depth, out NetworkWinnerPacket? packet)
+        {
+            packet = null;
+            if (depth > 8)
+                return false;
+
+            if (el.ValueKind == JsonValueKind.Object)
+            {
+                if (TryBuildWinnerPacketFromObject(el, ownerTag, url, out packet) && packet != null)
+                    return true;
+
+                foreach (var prop in el.EnumerateObject())
+                {
+                    if (TryFindNetworkWinnerPacket(prop.Value, ownerTag, url, depth + 1, out packet) && packet != null)
+                        return true;
+
+                    if (prop.Value.ValueKind == JsonValueKind.String)
+                    {
+                        var raw = prop.Value.GetString() ?? "";
+                        var nested = ExtractJsonPayload(raw);
+                        if (!string.IsNullOrWhiteSpace(nested))
+                        {
+                            try
+                            {
+                                using var nestedDoc = JsonDocument.Parse(nested);
+                                if (TryFindNetworkWinnerPacket(nestedDoc.RootElement, ownerTag, url, depth + 1, out packet) && packet != null)
+                                    return true;
+                            }
+                            catch
+                            {
+                            }
+                        }
+                    }
+                }
+            }
+            else if (el.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in el.EnumerateArray())
+                {
+                    if (TryFindNetworkWinnerPacket(item, ownerTag, url, depth + 1, out packet) && packet != null)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
         private bool TryParseNetworkWinnerPacket(string payload, bool isBinary, string ownerTag, string? url, out NetworkWinnerPacket? packet)
         {
             packet = null;
@@ -6979,6 +7205,9 @@ try{
 
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
+                if (TryFindNetworkWinnerPacket(root, ownerTag, url, 0, out packet) && packet != null)
+                    return packet.GameRound > 0;
+
                 var msgType = GetJsonStringLoose(root, "messageType") ?? "";
                 if (!string.Equals(msgType, "GameInfo", StringComparison.OrdinalIgnoreCase))
                     return false;
@@ -7637,6 +7866,17 @@ try{
             };
         }
 
+        private static int WinnerCharToCode(char winnerChar)
+        {
+            return char.ToUpperInvariant(winnerChar) switch
+            {
+                'B' => 1,
+                'P' => 2,
+                'T' => 0,
+                _ => -1
+            };
+        }
+
         private static bool IsDisplayAuthorityPoolSource(string? source)
         {
             var s = (source ?? "").Trim();
@@ -7994,7 +8234,7 @@ try{
                     "var roots=[].slice.call(document.querySelectorAll('#__cw_root_allin'));" +
                     "var infos=[].slice.call(document.querySelectorAll('#__cw_root_allin #cwInfo,#cwInfo'));" +
                     "function fmt(v){if(v==null||v==='')return '--';var n=Number(v);if(!isFinite(n))return String(v);try{return n.toLocaleString('en-US');}catch(_){return String(n);}}" +
-                    "function patchInfo(info,tt){if(!info||!tt)return 0;var b=tt.B,p=tt.P,t=tt.T,tb=tt.TB,ta=tt.TA;var has=(b!=null&&b!=='')||(p!=null&&p!=='')||(t!=null&&t!=='');var hasTable=(tb!=null&&String(tb).trim()!=='')||(ta!=null&&ta!=='');if(!has&&!hasTable)return 0;var html=String(info.innerHTML||'');var next=html;if(hasTable){var tableLine='BÀN : '+(tb!=null&&String(tb).trim()?String(tb).trim():'--')+' | TIỀN BÀN : '+fmt(ta);next=next.replace(/BÀN\\s*:\\s*[^|\\n<]*\\s*\\|\\s*TIỀN BÀN\\s*:\\s*(?:--|[\\d.,KMB]+)/i,tableLine);}if(has){var poolLine='BANKER: '+fmt(b)+' | PLAYER: '+fmt(p)+' | TIE: '+fmt(t);next=next.replace(/BANKER\\s*:\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*PLAYER\\s*:\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*TIE\\s*:\\s*(?:--|[\\d.,KMB]+)/i,poolLine);var src=String(tt.BS||tt.Source||tt.source||'csharp');var domLine='BET POOL DOM : B='+fmt(b)+' | P='+fmt(p)+' | T='+fmt(t)+' | SRC='+src;next=next.replace(/BET POOL DOM\\s*:\\s*B\\s*=\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*P\\s*=\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*T\\s*=\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*SRC\\s*=\\s*[^\\n<]*/i,domLine);}if(next!==html){info.innerHTML=next;return 1;}return 0;}" +
+                    "function patchInfo(info,tt){if(!info||!tt)return 0;var b=tt.B,p=tt.P,t=tt.T,tb=tt.TB,ta=tt.TA,acc=tt.N,bal=tt.A;var has=(b!=null&&b!=='')||(p!=null&&p!=='')||(t!=null&&t!=='');var hasTable=(tb!=null&&String(tb).trim()!=='')||(ta!=null&&ta!=='');var hasHud=(acc!=null&&String(acc).trim()!=='')||(bal!=null&&bal!=='');if(!has&&!hasTable&&!hasHud)return 0;var html=String(info.innerHTML||'');var next=html;if(hasHud){var hudLine='TÀI KHOẢN : '+(acc!=null&&String(acc).trim()?String(acc).trim():'--')+' | SỐ DƯ : '+fmt(bal);next=next.replace(/TÀI\\s*KHOẢN\\s*:\\s*[^|\\n<]*\\s*\\|\\s*SỐ\\s*DƯ\\s*:\\s*(?:--|[\\d.,KMB]+)/i,hudLine);}if(hasTable){var tableLine='BÀN : '+(tb!=null&&String(tb).trim()?String(tb).trim():'--')+' | TIỀN BÀN : '+fmt(ta);next=next.replace(/BÀN\\s*:\\s*[^|\\n<]*\\s*\\|\\s*TIỀN BÀN\\s*:\\s*(?:--|[\\d.,KMB]+)/i,tableLine);}if(has){var poolLine='BANKER: '+fmt(b)+' | PLAYER: '+fmt(p)+' | TIE: '+fmt(t);next=next.replace(/BANKER\\s*:\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*PLAYER\\s*:\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*TIE\\s*:\\s*(?:--|[\\d.,KMB]+)/i,poolLine);var src=String(tt.BS||tt.Source||tt.source||'csharp');var domLine='BET POOL DOM : B='+fmt(b)+' | P='+fmt(p)+' | T='+fmt(t)+' | SRC='+src;next=next.replace(/BET POOL DOM\\s*:\\s*B\\s*=\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*P\\s*=\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*T\\s*=\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*SRC\\s*=\\s*[^\\n<]*/i,domLine);}if(next!==html){info.innerHTML=next;return 1;}return 0;}" +
                     "window.__abx_patch_csharp_pool_lines=function(){try{if(!(window.__abx_csharp_display_enabled===1||window.__abx_csharp_display_enabled===true))return 'disabled';var at=Number(window.__abx_csharp_display_snapshot_at||0)||0;if(at&&Date.now()-at>6000)return 'stale';var ss=window.__abx_csharp_display_snapshot||{};var tt=window.__abx_csharp_display_pool_totals||(ss&&ss.totals)||{};var list=[].slice.call(document.querySelectorAll('#__cw_root_allin #cwInfo,#cwInfo'));var n=0;for(var i=0;i<list.length;i++)n+=patchInfo(list[i],tt);return 'patched='+n;}catch(e){return 'err:'+String(e&&e.message?e.message:e);}};" +
                     "var patchRes=window.__abx_patch_csharp_pool_lines();r+='|patch='+patchRes;" +
                     "if(!window.__abx_csharp_pool_patch_timer){window.__abx_csharp_pool_patch_timer=setInterval(function(){try{var rr=window.__abx_patch_csharp_pool_lines&&window.__abx_patch_csharp_pool_lines();if(rr==='disabled'||rr==='stale'){clearInterval(window.__abx_csharp_pool_patch_timer);window.__abx_csharp_pool_patch_timer=0;}}catch(_){clearInterval(window.__abx_csharp_pool_patch_timer);window.__abx_csharp_pool_patch_timer=0;}},120);}" +
@@ -8004,6 +8244,7 @@ try{
                     "var tt=(snap&&snap.totals)||{};var b=tt.B,p=tt.P,t=tt.T;var tb=tt.TB,ta=tt.TA;" +
                     "r+='|B='+fmt(b)+'|P='+fmt(p)+'|T='+fmt(t);" +
                     "r+='|table='+(tb!=null&&String(tb).trim()?String(tb).trim().replace(/\\|/g,'/'):'-')+'|tableAmount='+fmt(ta);" +
+                    "r+='|acc='+(tt.N!=null&&String(tt.N).trim()?String(tt.N).trim().replace(/\\|/g,'/'):'-')+'|bal='+fmt(tt.A);" +
                     "r+='|root='+roots.length+'|info='+infos.length+'|poolInfo='+poolInfos+'|visiblePool='+visiblePool+'|route='+route+'|dataPath='+dataPath+'|mir='+mir+'|href='+String(location.href||'').replace(/\\|/g,'/');" +
                     "}catch(_){r+='|inlinePoolErr';}" +
                     "return r;" +
@@ -9282,6 +9523,45 @@ try{
             }
         }
 
+        private static bool TryFindObservedGameInfo(JsonElement el, int depth, out long tableId, out long gameShoe, out long gameRound)
+        {
+            tableId = 0;
+            gameShoe = 0;
+            gameRound = 0;
+            if (depth > 8)
+                return false;
+
+            if (el.ValueKind == JsonValueKind.Object)
+            {
+                var t = ReadLongByAnyName(el, "tableID", "tableId", "tableNo");
+                var s = ReadLongByAnyName(el, "gameShoe", "currentGameShoe", "shoe", "shoeNo");
+                var r = ReadLongByAnyName(el, "gameRound", "currentGameRound", "round", "roundNo", "roundId");
+                if (t > 0 && r > 0)
+                {
+                    tableId = t;
+                    gameShoe = Math.Max(0, s);
+                    gameRound = r;
+                    return true;
+                }
+
+                foreach (var prop in el.EnumerateObject())
+                {
+                    if (TryFindObservedGameInfo(prop.Value, depth + 1, out tableId, out gameShoe, out gameRound))
+                        return true;
+                }
+            }
+            else if (el.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in el.EnumerateArray())
+                {
+                    if (TryFindObservedGameInfo(item, depth + 1, out tableId, out gameShoe, out gameRound))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
         private bool TryParseObservedGameInfoPacket(string payload, bool isBinary, out long tableId, out long gameShoe, out long gameRound)
         {
             tableId = 0;
@@ -9295,6 +9575,9 @@ try{
 
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
+                if (TryFindObservedGameInfo(root, 0, out tableId, out gameShoe, out gameRound))
+                    return tableId > 0 && gameRound > 0;
+
                 var msgType = GetJsonStringLoose(root, "messageType") ?? "";
                 if (!string.Equals(msgType, "GameInfo", StringComparison.OrdinalIgnoreCase))
                     return false;
@@ -9315,7 +9598,7 @@ try{
                 tableId = GetJsonLongLoose(dataEl, "tableID") ?? 0;
                 gameShoe = GetJsonLongLoose(dataEl, "gameShoe") ?? 0;
                 gameRound = GetJsonLongLoose(dataEl, "gameRound") ?? 0;
-                return tableId > 0 && gameShoe > 0 && gameRound > 0;
+                return tableId > 0 && gameRound > 0;
             }
             catch
             {
@@ -9369,7 +9652,7 @@ try{
                 var tableId = GetJsonLongLoose(dataEl, "tableID") ?? 0;
                 var gameShoe = GetJsonLongLoose(dataEl, "gameShoe") ?? 0;
                 var gameRound = GetJsonLongLoose(dataEl, "gameRound") ?? 0;
-                if (tableId <= 0 || gameShoe <= 0 || gameRound <= 0)
+                if (tableId <= 0 || gameRound <= 0)
                     return;
 
                 _hallRoundCache[tableId] = new HallRoundSnapshot
@@ -9775,6 +10058,7 @@ try{
             _lockMajorMinorUpdates = false;
             _suppressJsBootstrapAfterObservedReset = false;
             ResetJsRawBootstrapProbeLocked();
+            ResetDomAppendFallbackProbeLocked();
             ClearShoeChangeRebaseArmLocked();
             _lastCanvasAcceptedSeqKey = "";
             _lastCanvasAcceptedSeqPushUtc = DateTime.MinValue;
@@ -9838,6 +10122,7 @@ try{
             _lockMajorMinorUpdates = false;
             _suppressJsBootstrapAfterObservedReset = false;
             ResetJsRawBootstrapProbeLocked();
+            ResetDomAppendFallbackProbeLocked();
             ClearShoeChangeRebaseArmLocked();
             _lastCanvasAcceptedSeqKey = "";
             _lastCanvasAcceptedSeqPushUtc = DateTime.MinValue;
@@ -9974,6 +10259,7 @@ try{
                         _netSeqWinnerSeedOnly = false;
                         _suppressJsBootstrapAfterObservedReset = true;
                         ResetJsRawBootstrapProbeLocked();
+                        ResetDomAppendFallbackProbeLocked();
                     }
                 }
                 else
@@ -10070,6 +10356,7 @@ try{
                 _roundTotalsT = 0;
                 _lockMajorMinorUpdates = false;
                 ResetJsRawBootstrapProbeLocked();
+                ResetDomAppendFallbackProbeLocked();
                 ClearTableSwitchRebaseArmLocked();
                 ClearShoeChangeRebaseArmLocked();
             }
@@ -10205,53 +10492,7 @@ try{
                         if (string.IsNullOrWhiteSpace(applied.ResultText))
                             return;
                         if (!applied.Appended && !applied.Replaced)
-                        {
-                            if (_pendingRows.Count > 0 &&
-                                !HasJackpotMultiSideRunning() &&
-                                IsLateContextWinnerAction(applied.Action) &&
-                                HasPendingWinnerCandidate(packet.TableId, packet.GameShoe, packet.GameRound))
-                            {
-                                double lateBalanceAfter = ResolveHistoryBalance(currentSnap?.totals?.A);
-                                long lateSettleVersion = packet.GameRound > 0
-                                    ? packet.GameRound
-                                    : Math.Max(applied.NextVersion, applied.PrevVersion + 1);
-
-                                Log($"[BET][HIST][LATE-WINNER] action={applied.Action} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={applied.ResultChar} | pending={_pendingRows.Count} | settleVer={lateSettleVersion} | reason=settle-without-seq-append");
-
-                                if (applied.ResultChar == 'T')
-                                {
-                                    FinalizeLastBet(
-                                        "TIE",
-                                        lateBalanceAfter,
-                                        new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-                                        "TIE",
-                                        applied.NextSeq,
-                                        lateSettleVersion,
-                                        "net-gp-winner",
-                                        "net-gp-winner-late-context",
-                                        packet.TableId,
-                                        packet.GameShoe,
-                                        packet.GameRound);
-                                }
-                                else
-                                {
-                                    FinalizeLastBet(
-                                        applied.ResultText,
-                                        lateBalanceAfter,
-                                        null,
-                                        null,
-                                        applied.NextSeq,
-                                        lateSettleVersion,
-                                        "net-gp-winner",
-                                        "net-gp-winner-late-context",
-                                        packet.TableId,
-                                        packet.GameShoe,
-                                        packet.GameRound);
-                                }
-                            }
-
                             return;
-                        }
 
                         char prevTail = applied.PrevSeq.Length > 0 ? applied.PrevSeq[^1] : '-';
                         Log($"[NETSEQ][WINNER] src={packet.OwnerTag} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={applied.ResultChar} | action={applied.Action} | prevLen={applied.PrevSeq.Length} | nextLen={applied.NextSeq.Length} | prevVer={applied.PrevVersion} | nextVer={applied.NextVersion} | domBase={(applied.PrevSeq.Length > 0 ? 1 : 0)} | seedFromWinnerOnly={(_netSeqWinnerSeedOnly ? 1 : 0)} | policy=dom-bootstrap-cdp-append | prevTail={prevTail} | banker={packet.BankerValue} | player={packet.PlayerValue}");
@@ -10366,7 +10607,18 @@ try{
             var evt = seqEventRaw ?? "";
             return evt.IndexOf("waiting-board-bootstrap", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    evt.IndexOf("table-switch-wait-bead", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   evt.IndexOf("short-board-bootstrap-wait", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    IsNoBoardSeqEvent(evt);
+        }
+
+        private static bool IsTinyBoardBootstrapWaitSeqEvent(string? seqEventRaw)
+        {
+            var evt = (seqEventRaw ?? "").Trim();
+            if (evt.Length == 0)
+                return false;
+
+            return evt.IndexOf("short-board-bootstrap-wait", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   evt.IndexOf("table-switch-wait-bead", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static string BuildCanvasSeqDisplayState(CwSnapshot? snap, string seqDisplay)
@@ -10558,6 +10810,12 @@ try{
             _jsRawBootstrapStableCount = 0;
         }
 
+        private void ResetDomAppendFallbackProbeLocked()
+        {
+            _lastDomAppendFallbackKey = "";
+            _lastDomAppendFallbackStableCount = 0;
+        }
+
         private bool IsTrustedInitialJsRawBootstrap(CwSnapshot snap, string rawDisplay, string statusRaw, string boardSeqEvent, out string reason)
         {
             reason = "";
@@ -10584,6 +10842,11 @@ try{
             if (IsParserUnstableHoldSeqEvent(boardSeqEvent))
             {
                 reason = "parser-unstable";
+                return false;
+            }
+            if (rawDisplay.Length <= 3 && IsTinyBoardBootstrapWaitSeqEvent(boardSeqEvent))
+            {
+                reason = "tiny-board-wait-event";
                 return false;
             }
 
@@ -10699,8 +10962,218 @@ try{
             _suppressJsBootstrapAfterObservedReset = false;
             ClearTableSwitchRebaseArmLocked();
             ResetJsRawBootstrapProbeLocked();
+            ResetDomAppendFallbackProbeLocked();
 
             Log($"[SEQ][DOM-BOOTSTRAP] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={tableId} | shoe={_netSeqGameShoe} | obsRound={_netObservedGameRound} | seqLen={rawDisplay.Length} | seqVer={_netSeqVersion} | lastRound={_netSeqLastRound} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | which={(string.IsNullOrWhiteSpace(snap.seqWhich) ? "-" : snap.seqWhich)} | rawCount={BuildSeqCountText(rawDisplay, includeH: true)} | policy=dom-bootstrap-cdp-append");
+            return true;
+        }
+
+        private bool TryRepairTinyDomBootstrapLocked(
+            CwSnapshot snap,
+            string source,
+            string statusRaw,
+            string boardDisplay,
+            long jsSeqVersion,
+            string boardSeqEvent)
+        {
+            if (!UseDomBootstrapCdpAppendSeq || snap == null)
+                return false;
+            if (_tableSwitchRebaseArmed || _initialTableEnterArmed || _shoeChangeRebaseArmed)
+                return false;
+
+            var prevDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
+            if (prevDisplay.Length <= 0 || prevDisplay.Length > 3)
+                return false;
+            if (IsChangingShoeStatus(statusRaw))
+                return false;
+
+            var jsDisplay = FilterResultDisplaySeqWindow(boardDisplay);
+            var rawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
+            if (rawDisplay.Length < 8)
+                return false;
+            if (!IsTrustedRawBoardSnapshotSeq(jsDisplay, rawDisplay, statusRaw, boardSeqEvent))
+                return false;
+
+            var tableId = ResolveActiveTableIdLocked();
+            var prevVer = _netSeqVersion;
+            var prevEvt = _netSeqEvent;
+            var prevSrc = _netSeqSource;
+
+            _syncSeqPrefixDisplay = "";
+            _boardSeqDisplay = rawDisplay;
+            _boardSeqVersion = Math.Max(jsSeqVersion, rawDisplay.Length);
+            _boardSeqEvent = string.IsNullOrWhiteSpace(boardSeqEvent) ? "dom-bootstrap-repair" : boardSeqEvent;
+            _netSeqDisplay = rawDisplay;
+            _netSeqVersion = ComputeNextSyncSeqVersion(prevVer, prevDisplay, rawDisplay, Math.Max(jsSeqVersion, rawDisplay.Length));
+            _netSeqEvent = "dom-bootstrap-repair";
+            _netSeqSource = "dom-bootstrap-repair";
+            if (tableId > 0)
+            {
+                _netSeqTableId = tableId;
+                _activeTableId = tableId;
+                _activeContextSource = "dom-bootstrap-repair";
+                _activeContextUpdatedAtUtc = DateTime.UtcNow;
+            }
+            if (_activeGameShoe > 0)
+                _netSeqGameShoe = _activeGameShoe;
+            else if (_netObservedGameShoe > 0)
+                _netSeqGameShoe = _netObservedGameShoe;
+            _netSeqLastRound = rawDisplay.Length;
+            _netSeqWinnerSeedOnly = false;
+            _netLastWinnerKey = "";
+            _netLastWinnerAt = DateTime.MinValue;
+            _baseSeqDisplay = rawDisplay;
+            _baseSeq = FilterPlayableSeq(rawDisplay);
+            _baseSeqVersion = _netSeqVersion;
+            _baseSeqEvent = _netSeqEvent;
+            _baseSeqSource = _netSeqSource;
+            _roundTotalsB = 0;
+            _roundTotalsP = 0;
+            _roundTotalsT = 0;
+            _lockMajorMinorUpdates = false;
+            _suppressJsBootstrapAfterObservedReset = false;
+            ResetJsRawBootstrapProbeLocked();
+            ResetDomAppendFallbackProbeLocked();
+
+            snap.seq = rawDisplay;
+            snap.rawSeq = rawDisplay;
+            snap.seqVersion = _netSeqVersion;
+            snap.seqEvent = _netSeqEvent;
+            snap.seqSource = _netSeqSource;
+
+            Log($"[SEQ][DOM-BOOTSTRAP-REPAIR] reason=replace-tiny-bootstrap | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={(tableId > 0 ? tableId.ToString(CultureInfo.InvariantCulture) : "-")} | shoe={_netSeqGameShoe} | prevLen={prevDisplay.Length} | prevVer={prevVer} | prevEvt={(string.IsNullOrWhiteSpace(prevEvt) ? "-" : prevEvt)} | prevSrc={(string.IsNullOrWhiteSpace(prevSrc) ? "-" : prevSrc)} | jsLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | seqVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | rawCount={BuildSeqCountText(rawDisplay, includeH: true)} | policy=dom-bootstrap-cdp-append");
+            return true;
+        }
+
+        private bool TryApplyDomAppendFallbackLocked(
+            CwSnapshot snap,
+            string source,
+            string statusRaw,
+            long jsSeqVersion,
+            string boardSeqEvent)
+        {
+            if (!UseDomBootstrapCdpAppendSeq || snap == null)
+                return false;
+
+            var prevDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
+            if (string.IsNullOrWhiteSpace(prevDisplay))
+                return false;
+            if (_tableSwitchRebaseArmed || _initialTableEnterArmed || _shoeChangeRebaseArmed)
+                return false;
+            if (IsChangingShoeStatus(statusRaw))
+                return false;
+
+            var rawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
+            if (string.IsNullOrWhiteSpace(rawDisplay) || rawDisplay.Length <= prevDisplay.Length)
+            {
+                ResetDomAppendFallbackProbeLocked();
+                return false;
+            }
+
+            var rawCombinedDisplay = BuildSyncSeqFromBoardLocked(rawDisplay);
+            if (!TryExtractSeqAdvanceDelta(prevDisplay, rawCombinedDisplay, out var delta) ||
+                string.IsNullOrWhiteSpace(delta))
+            {
+                if ((DateTime.UtcNow - _lastDomAppendFallbackLogUtc) > TimeSpan.FromSeconds(3))
+                {
+                    _lastDomAppendFallbackLogUtc = DateTime.UtcNow;
+                    Log($"[NETSEQ][DOM-APPEND-FALLBACK-BLOCK] reason=raw-not-prefix | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | rawLen={rawDisplay.Length} | rawCombinedLen={rawCombinedDisplay.Length} | netLen={prevDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+                }
+                ResetDomAppendFallbackProbeLocked();
+                return false;
+            }
+
+            if (delta.Length > 8)
+            {
+                if ((DateTime.UtcNow - _lastDomAppendFallbackLogUtc) > TimeSpan.FromSeconds(3))
+                {
+                    _lastDomAppendFallbackLogUtc = DateTime.UtcNow;
+                    Log($"[NETSEQ][DOM-APPEND-FALLBACK-BLOCK] reason=delta-too-long | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | deltaLen={delta.Length} | delta={Shrink(delta, 40)} | rawLen={rawDisplay.Length} | netLen={prevDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)}");
+                }
+                ResetDomAppendFallbackProbeLocked();
+                return false;
+            }
+
+            var activeTableId = ResolveActiveTableIdLocked();
+            var snapTableId = snap.seqTableId.GetValueOrDefault() > 0
+                ? snap.seqTableId.GetValueOrDefault()
+                : snap.tableId.GetValueOrDefault();
+            if (activeTableId > 0 && snapTableId > 0 && snapTableId != activeTableId)
+            {
+                ResetDomAppendFallbackProbeLocked();
+                return false;
+            }
+            if (_netSeqTableId > 0 && snapTableId > 0 && snapTableId != _netSeqTableId)
+            {
+                ResetDomAppendFallbackProbeLocked();
+                return false;
+            }
+
+            var recentWinnerAgeSec = _netLastWinnerAt == DateTime.MinValue
+                ? double.MaxValue
+                : (DateTime.UtcNow - _netLastWinnerAt).TotalSeconds;
+            bool recentWinnerActive =
+                _netLastWinnerAt != DateTime.MinValue &&
+                recentWinnerAgeSec <= 8 &&
+                !string.IsNullOrWhiteSpace(_netLastWinnerKey);
+            if (recentWinnerActive)
+            {
+                ResetDomAppendFallbackProbeLocked();
+                return false;
+            }
+
+            var key = $"{activeTableId}|{prevDisplay}|{rawCombinedDisplay}|{delta}|{boardSeqEvent}";
+            if (string.Equals(_lastDomAppendFallbackKey, key, StringComparison.Ordinal))
+                _lastDomAppendFallbackStableCount++;
+            else
+            {
+                _lastDomAppendFallbackKey = key;
+                _lastDomAppendFallbackStableCount = 1;
+            }
+
+            bool needsStableConfirm = delta.Length > 1 || IsParserUnstableHoldSeqEvent(boardSeqEvent);
+            if (needsStableConfirm && _lastDomAppendFallbackStableCount < 2)
+            {
+                if ((DateTime.UtcNow - _lastDomAppendFallbackLogUtc) > TimeSpan.FromSeconds(2))
+                {
+                    _lastDomAppendFallbackLogUtc = DateTime.UtcNow;
+                    Log($"[NETSEQ][DOM-APPEND-FALLBACK-WAIT] reason=need-stable-2-ticks | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={(activeTableId > 0 ? activeTableId.ToString(CultureInfo.InvariantCulture) : "-")} | delta={delta} | stable={_lastDomAppendFallbackStableCount} | rawLen={rawDisplay.Length} | netLen={prevDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+                }
+                return false;
+            }
+
+            var nextDisplay = FilterResultDisplaySeqWindow(rawCombinedDisplay);
+            var prevVer = _netSeqVersion;
+            var nextVer = ComputeNextSyncSeqVersion(prevVer, prevDisplay, nextDisplay, Math.Max(jsSeqVersion, prevVer + delta.Length));
+            _boardSeqDisplay = rawDisplay;
+            _boardSeqVersion = Math.Max(jsSeqVersion, rawDisplay.Length);
+            _boardSeqEvent = "dom-append-fallback";
+            _netSeqDisplay = nextDisplay;
+            _netSeqVersion = nextVer;
+            _netSeqEvent = "dom-append-fallback";
+            _netSeqSource = "dom-append-fallback";
+            _netSeqWinnerSeedOnly = false;
+            _netSeqTableId = activeTableId > 0 ? activeTableId : _netSeqTableId;
+            if (_netSeqLastRound > 0)
+                _netSeqLastRound += delta.Length;
+            else
+                _netSeqLastRound = nextDisplay.Length;
+            _baseSeqDisplay = nextDisplay;
+            _baseSeq = FilterPlayableSeq(nextDisplay);
+            _baseSeqVersion = nextVer;
+            _baseSeqEvent = _netSeqEvent;
+            _baseSeqSource = _netSeqSource;
+            _lastJsAppendFingerprint = "";
+            _lastJsAppendAppliedUtc = DateTime.UtcNow;
+            ResetDomAppendFallbackProbeLocked();
+
+            snap.seq = nextDisplay;
+            snap.rawSeq = rawDisplay;
+            snap.seqVersion = nextVer;
+            snap.seqEvent = _netSeqEvent;
+            snap.seqSource = _netSeqSource;
+
+            Log($"[NETSEQ][DOM-APPEND-FALLBACK] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={(activeTableId > 0 ? activeTableId.ToString(CultureInfo.InvariantCulture) : "-")} | delta={delta} | prevLen={prevDisplay.Length} | nextLen={nextDisplay.Length} | rawLen={rawDisplay.Length} | prevVer={prevVer} | nextVer={nextVer} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | policy=cdp-first-dom-fallback");
             return true;
         }
 
@@ -10810,10 +11283,9 @@ try{
                 int prevLenWait = netDisplay.Length;
                 long prevVerWait = _netSeqVersion;
                 string prevEvtWait = _netSeqEvent;
-                int pendingDropWait = DropPendingRowsForSeqRebaseReset(
-                    "table-switch-wait-bead",
-                    IsShoeSwitchRebaseArmed(),
-                    out var pendingKeepWait);
+                int pendingDropWait = _pendingRows.Count;
+                if (pendingDropWait > 0)
+                    _pendingRows.Clear();
 
                 if (!string.IsNullOrWhiteSpace(netDisplay))
                 {
@@ -10841,7 +11313,7 @@ try{
                     string waitReason =
                         tableSwitchChangingShoeEmptyLike ? "switch-changing-shoe-empty" :
                         (staleRawDuringNoBoard ? "stale-raw-no-board" : "unknown");
-                    Log($"[SEQ][TABLE-SWITCH-WAIT-BEAD] reason={waitReason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | jsLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | prevLen={prevLenWait} | prevVer={prevVerWait} | prevEvt={(string.IsNullOrWhiteSpace(prevEvtWait) ? "-" : prevEvtWait)} | pendingDrop={pendingDropWait} | pendingKeep={pendingKeepWait} | from={_tableSwitchFromKey} | to={_tableSwitchToKey}");
+                    Log($"[SEQ][TABLE-SWITCH-WAIT-BEAD] reason={waitReason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | jsLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | prevLen={prevLenWait} | prevVer={prevVerWait} | prevEvt={(string.IsNullOrWhiteSpace(prevEvtWait) ? "-" : prevEvtWait)} | pendingDrop={pendingDropWait} | from={_tableSwitchFromKey} | to={_tableSwitchToKey}");
                 }
 
                 snap.seq = "";
@@ -10936,10 +11408,9 @@ try{
 
             if (string.IsNullOrWhiteSpace(netDisplay))
             {
-                int pendingBeforeBoot = DropPendingRowsForSeqRebaseReset(
-                    "table-switch-boot-apply",
-                    IsShoeSwitchRebaseArmed(),
-                    out var pendingKeepBoot);
+                int pendingBeforeBoot = _pendingRows.Count;
+                if (pendingBeforeBoot > 0)
+                    _pendingRows.Clear();
 
                 _syncSeqPrefixDisplay = "";
                 _boardSeqDisplay = rebaseDisplay;
@@ -10968,7 +11439,7 @@ try{
                 snap.seqEvent = _netSeqEvent;
                 snap.seqSource = "table-switch-reset";
 
-                Log($"[SEQ][TABLE-SWITCH-BOOT-APPLY] rawLen={rawDisplay.Length} | jsLen={jsDisplay.Length} | seqLen={rebaseDisplay.Length} | seqVer={_netSeqVersion} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | picked={(string.Equals(rebaseDisplay, rawDisplay, StringComparison.Ordinal) ? "raw" : "js")} | from={_tableSwitchFromKey} | to={_tableSwitchToKey} | pendingDrop={pendingBeforeBoot} | pendingKeep={pendingKeepBoot}");
+                Log($"[SEQ][TABLE-SWITCH-BOOT-APPLY] rawLen={rawDisplay.Length} | jsLen={jsDisplay.Length} | seqLen={rebaseDisplay.Length} | seqVer={_netSeqVersion} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | picked={(string.Equals(rebaseDisplay, rawDisplay, StringComparison.Ordinal) ? "raw" : "js")} | from={_tableSwitchFromKey} | to={_tableSwitchToKey} | pendingDrop={pendingBeforeBoot}");
                 ClearTableSwitchRebaseArmLocked();
                 return true;
             }
@@ -10993,10 +11464,9 @@ try{
             int prevLen = netDisplay.Length;
             long prevVer = _netSeqVersion;
             string prevEvt = _netSeqEvent;
-            int pendingBefore = DropPendingRowsForSeqRebaseReset(
-                "table-switch-rebase-apply",
-                IsShoeSwitchRebaseArmed(),
-                out var pendingKeep);
+            int pendingBefore = _pendingRows.Count;
+            if (pendingBefore > 0)
+                _pendingRows.Clear();
 
             _syncSeqPrefixDisplay = "";
             _boardSeqDisplay = rebaseDisplay;
@@ -11024,7 +11494,7 @@ try{
             snap.seqEvent = _netSeqEvent;
             snap.seqSource = "table-switch-reset";
 
-            Log($"[SEQ][TABLE-SWITCH-REBASE-APPLY] rawLen={rawDisplay.Length} | jsLen={jsDisplay.Length} | seqLen={rebaseDisplay.Length} | seqVer={_netSeqVersion} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | picked={(string.Equals(rebaseDisplay, rawDisplay, StringComparison.Ordinal) ? "raw" : "js")} | prevLen={prevLen} | prevVer={prevVer} | prevEvt={(string.IsNullOrWhiteSpace(prevEvt) ? "-" : prevEvt)} | from={_tableSwitchFromKey} | to={_tableSwitchToKey} | pendingDrop={pendingBefore} | pendingKeep={pendingKeep}");
+            Log($"[SEQ][TABLE-SWITCH-REBASE-APPLY] rawLen={rawDisplay.Length} | jsLen={jsDisplay.Length} | seqLen={rebaseDisplay.Length} | seqVer={_netSeqVersion} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | picked={(string.Equals(rebaseDisplay, rawDisplay, StringComparison.Ordinal) ? "raw" : "js")} | prevLen={prevLen} | prevVer={prevVer} | prevEvt={(string.IsNullOrWhiteSpace(prevEvt) ? "-" : prevEvt)} | from={_tableSwitchFromKey} | to={_tableSwitchToKey} | pendingDrop={pendingBefore}");
             ClearTableSwitchRebaseArmLocked();
             return true;
         }
@@ -14252,7 +14722,7 @@ try{
                 Log($"[Loop][AUTO-STOP] tab={tab.Name} | run={tab.RunId}");
                 StopTask(tab);
             }
-            BaccaratSexyCasino.Tasks.TaskUtil.ClearBetCooldown();
+            BaccaratSexyCasino2.Tasks.TaskUtil.ClearBetCooldown();
             SetPlayButtonState(_activeTab?.IsRunning == true);
         }
 
@@ -15091,8 +15561,7 @@ try{
                 issuedSeqCalc))
                 return;
 
-            string betId = NewBetHistoryId();
-            Log($"[BET] id={betId} | {side} {amount:N0} | round={roundId}");
+            Log($"[BET] {side} {amount:N0} | round={roundId}");
 
             betTab ??= ResolveBetTab(tabId);
             if (betTab != null)
@@ -15145,12 +15614,11 @@ try{
                     issuedTableId = inferredTableId;
 
                 pendingReason = isTableSwitchResetIssue ? "table-switch-reset-recorded" : "missing-context-recorded";
-                Log($"[BET][HIST][INFO] id={betId} | reason={pendingReason} | action=record-pending | at={DateTime.Now:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqEvt={(string.IsNullOrWhiteSpace(issuedSeqEvent) ? "-" : issuedSeqEvent)} | seqLen={issuedSeqDisplay.Length}");
+                Log($"[BET][HIST][INFO] reason={pendingReason} | action=record-pending | at={DateTime.Now:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqEvt={(string.IsNullOrWhiteSpace(issuedSeqEvent) ? "-" : issuedSeqEvent)} | seqLen={issuedSeqDisplay.Length}");
             }
 
             var row = new BetRow
             {
-                BetId = betId,
                 At = DateTime.Now,
                 Game = "Baccarat Sexy",
                 Stake = amount,
@@ -15171,10 +15639,10 @@ try{
             };
 
             char issueTail = issuedSeqDisplay.Length > 0 ? issuedSeqDisplay[^1] : '-';
-            Log($"[BET][HIST][PENDING] id={row.BetId} | {row.At:HH:mm:ss} | {side} | {amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqLen={issuedSeqDisplay.Length} | seqVer={(issuedSeqVersion?.ToString() ?? "-")} | seqEvt={issuedSeqEvent} | seqSrc={(string.IsNullOrWhiteSpace(issuedSeqSource) ? "-" : issuedSeqSource)} | tail={issueTail} | acc={row.Account:#,0.##}");
+            Log($"[BET][HIST][PENDING] {row.At:HH:mm:ss} | {side} | {amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqLen={issuedSeqDisplay.Length} | seqVer={(issuedSeqVersion?.ToString() ?? "-")} | seqEvt={issuedSeqEvent} | seqSrc={(string.IsNullOrWhiteSpace(issuedSeqSource) ? "-" : issuedSeqSource)} | tail={issueTail} | acc={row.Account:#,0.##}");
             if (issuedTableId <= 0 || issuedGameShoe <= 0 || roundId <= 0)
             {
-                Log($"[BET][HIST][INFO] id={row.BetId} | pending-recorded-without-context | at={row.At:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound}");
+                Log($"[BET][HIST][INFO] pending-recorded-without-context | at={row.At:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound}");
                 LogMissingContextDiagnostics(
                     string.IsNullOrWhiteSpace(pendingReason) ? "pending-recorded-without-context" : pendingReason,
                     side,
@@ -15200,7 +15668,7 @@ try{
             tab.ActiveTask = task;
             _dec = new DecisionState(); // reset trạng thái cho task mới
             tab.DecisionState = new DecisionState();
-            BaccaratSexyCasino.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
+            BaccaratSexyCasino2.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             var ctx = BuildContext(tab, runId, useRawWinAmount);
             ctx.Log?.Invoke($"[TASK][RUN] start | tab={tab.Id} | run={runId} | task={task.DisplayName}");
             // === Preflight: chờ __cw_bet sẵn sàng trước khi chạy chiến lược ===
@@ -15260,7 +15728,7 @@ try{
         private void StopAllTasksAndRelease()
         {
             StopAllTasks();
-            BaccaratSexyCasino.Tasks.TaskUtil.ClearBetCooldown();
+            BaccaratSexyCasino2.Tasks.TaskUtil.ClearBetCooldown();
             SetPlayButtonState(_activeTab?.IsRunning == true);
             StopExpiryCountdown();
             StopLeaseHeartbeat();
@@ -15419,26 +15887,26 @@ try{
                 activeTab.TaskCts = new CancellationTokenSource();
 
                 bool useRawWinAmount = false;
-                BaccaratSexyCasino.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
+                BaccaratSexyCasino2.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
                 {
-                    0 => new BaccaratSexyCasino.Tasks.SeqParityFollowTask(),     // 1
-                    1 => new BaccaratSexyCasino.Tasks.PatternParityTask(),       // 2
-                    2 => new BaccaratSexyCasino.Tasks.SeqMajorMinorTask(),       // 3
-                    3 => new BaccaratSexyCasino.Tasks.PatternMajorMinorTask(),   // 4
-                    4 => new BaccaratSexyCasino.Tasks.SmartPrevTask(),           // 5
-                    5 => new BaccaratSexyCasino.Tasks.RandomParityTask(),        // 6
-                    6 => new BaccaratSexyCasino.Tasks.AiStatParityTask(),        // 7
-                    7 => new BaccaratSexyCasino.Tasks.StateTransitionBiasTask(), // 8
-                    8 => new BaccaratSexyCasino.Tasks.RunLengthBiasTask(),       // 9
-                    9 => new BaccaratSexyCasino.Tasks.EnsembleMajorityTask(),    // 10
-                    10 => new BaccaratSexyCasino.Tasks.TimeSlicedHedgeTask(),    // 11
-                    11 => new BaccaratSexyCasino.Tasks.KnnSubsequenceTask(),     // 12
-                    12 => new BaccaratSexyCasino.Tasks.DualScheduleHedgeTask(),  // 13
-                    13 => new BaccaratSexyCasino.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
-                    14 => new BaccaratSexyCasino.Tasks.AiExpertPanelTask(), // 15
-                    15 => new BaccaratSexyCasino.Tasks.Top10PatternFollowTask(), // 16
-                    16 => new BaccaratSexyCasino.Tasks.SeqParityHotBackTask(), // 17
-                    _ => new BaccaratSexyCasino.Tasks.SmartPrevTask(),
+                    0 => new BaccaratSexyCasino2.Tasks.SeqParityFollowTask(),     // 1
+                    1 => new BaccaratSexyCasino2.Tasks.PatternParityTask(),       // 2
+                    2 => new BaccaratSexyCasino2.Tasks.SeqMajorMinorTask(),       // 3
+                    3 => new BaccaratSexyCasino2.Tasks.PatternMajorMinorTask(),   // 4
+                    4 => new BaccaratSexyCasino2.Tasks.SmartPrevTask(),           // 5
+                    5 => new BaccaratSexyCasino2.Tasks.RandomParityTask(),        // 6
+                    6 => new BaccaratSexyCasino2.Tasks.AiStatParityTask(),        // 7
+                    7 => new BaccaratSexyCasino2.Tasks.StateTransitionBiasTask(), // 8
+                    8 => new BaccaratSexyCasino2.Tasks.RunLengthBiasTask(),       // 9
+                    9 => new BaccaratSexyCasino2.Tasks.EnsembleMajorityTask(),    // 10
+                    10 => new BaccaratSexyCasino2.Tasks.TimeSlicedHedgeTask(),    // 11
+                    11 => new BaccaratSexyCasino2.Tasks.KnnSubsequenceTask(),     // 12
+                    12 => new BaccaratSexyCasino2.Tasks.DualScheduleHedgeTask(),  // 13
+                    13 => new BaccaratSexyCasino2.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
+                    14 => new BaccaratSexyCasino2.Tasks.AiExpertPanelTask(), // 15
+                    15 => new BaccaratSexyCasino2.Tasks.Top10PatternFollowTask(), // 16
+                    16 => new BaccaratSexyCasino2.Tasks.SeqParityHotBackTask(), // 17
+                    _ => new BaccaratSexyCasino2.Tasks.SmartPrevTask(),
                 };
 
                 activeTab.ActiveTask = task;
@@ -15526,7 +15994,7 @@ try{
 
                 if (!IsAnyTabRunning())
                 {
-                    BaccaratSexyCasino.Tasks.TaskUtil.ClearBetCooldown();
+                    BaccaratSexyCasino2.Tasks.TaskUtil.ClearBetCooldown();
                     Log($"[Loop] stopped | run={activeTab.RunId}");
                     StopExpiryCountdown();
                     StopLeaseHeartbeat();
@@ -15699,7 +16167,7 @@ try{
             return (s.Length <= take) ? s : s.Substring(s.Length - take, take);
         }
 
-        // đặt trong MainWindow.xaml.cs (project BaccaratSexyCasino)
+        // đặt trong MainWindow.xaml.cs (project BaccaratSexyCasino2)
 
         // load thử lần lượt các uri, cái nào được thì dùng, không được thì trả về null
         private static ImageSource? LoadImgSafe(params string[] uris)
@@ -15927,7 +16395,7 @@ try{
 
             try
             {
-                BaccaratSexyCasino.Tasks.MoneyHelper.NotifyTempProfit(moneyStrategyId, net);
+                BaccaratSexyCasino2.Tasks.MoneyHelper.NotifyTempProfit(moneyStrategyId, net);
             }
             catch { /* ignore */ }
 
@@ -16383,7 +16851,7 @@ try{
             {
                 // Đọc thẳng từ embedded (KHÔNG thử đọc từ đĩa)
                 var resName = FindResourceName("v4_js_xoc_dia_live.js")
-                              ?? "BaccaratSexyCasino.v4_js_xoc_dia_live.js";
+                              ?? "BaccaratSexyCasino2.v4_js_xoc_dia_live.js";
                 var text = ReadEmbeddedText(resName);
                 text = RemoveUtf8Bom(text);
 
@@ -17628,150 +18096,15 @@ try{
                 row.SawClosedAfterIssue = true;
         }
 
-        private static string NewBetHistoryId()
-        {
-            return Guid.NewGuid().ToString("N").Substring(0, 12);
-        }
-
-        private static string BetIdForLog(BetRow? row)
-        {
-            return row == null || string.IsNullOrWhiteSpace(row.BetId) ? "-" : row.BetId;
-        }
-
-        private static double PendingAgeSeconds(BetRow row)
-        {
-            var age = DateTime.Now - row.At;
-            return Math.Max(0, age.TotalSeconds);
-        }
-
-        private static bool IsAwaitingFinalWinnerCandidate(BetRow row, out double ageSec)
-        {
-            ageSec = PendingAgeSeconds(row);
-            if (ageSec > PendingFinalWinnerGraceSeconds)
-                return false;
-
-            return row.IssuedObservedRound > 0 ||
-                   row.SawClosedAfterIssue ||
-                   row.IssuedRoundId > 0;
-        }
-
-        private void LogPendingKeepAwaitFinalWinner(BetRow row, string source, long tableId, long gameShoe, long gameRound, double ageSec)
-        {
-            var nowUtc = DateTime.UtcNow;
-            if ((nowUtc - row.LastAwaitFinalWinnerKeepLogUtc).TotalSeconds < 5)
-                return;
-
-            row.LastAwaitFinalWinnerKeepLogUtc = nowUtc;
-            Log($"[BET][HIST][KEEP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | issueObsRound={row.IssuedObservedRound} | newTable={(tableId > 0 ? tableId.ToString() : "-")} | newShoe={(gameShoe > 0 ? gameShoe.ToString() : "-")} | newRound={(gameRound > 0 ? gameRound.ToString() : "-")} | ageSec={ageSec:0} | reason=await-final-winner-after-shoe-reset | source={source}");
-        }
-
-        private bool IsShoeSwitchRebaseArmed()
-        {
-            return (!string.IsNullOrWhiteSpace(_tableSwitchFromKey) &&
-                    _tableSwitchFromKey.StartsWith("shoe:", StringComparison.OrdinalIgnoreCase)) ||
-                   (!string.IsNullOrWhiteSpace(_tableSwitchToKey) &&
-                    _tableSwitchToKey.StartsWith("shoe:", StringComparison.OrdinalIgnoreCase));
-        }
-
-        private int DropPendingRowsForSeqRebaseReset(string reason, bool keepAwaitingFinalWinner, out int keptCount)
-        {
-            keptCount = 0;
-            if (_pendingRows.Count == 0)
-                return 0;
-
-            var rowsToDrop = new List<BetRow>();
-            foreach (var row in _pendingRows.ToList())
-            {
-                if (keepAwaitingFinalWinner &&
-                    IsAwaitingFinalWinnerCandidate(row, out var ageSec))
-                {
-                    keptCount++;
-                    LogPendingKeepAwaitFinalWinner(row, reason, _activeTableId, _activeGameShoe, _activeGameRound, ageSec);
-                    continue;
-                }
-
-                rowsToDrop.Add(row);
-            }
-
-            if (rowsToDrop.Count == 0)
-                return 0;
-
-            double balance = ResolveHistoryBalance();
-            foreach (var row in rowsToDrop)
-            {
-                row.Result = "RESET-CONTEXT";
-                row.WinLose = "Bỏ qua";
-                row.Account = balance;
-                Log($"[BET][HIST][DROP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | issueObsRound={row.IssuedObservedRound} | reason={reason}");
-            }
-
-            foreach (var row in rowsToDrop)
-                _pendingRows.Remove(row);
-
-            return rowsToDrop.Count;
-        }
-
-        private static bool IsNetworkWinnerRoundMatch(BetRow row, long settleGameRound, long? settleSeqVersion)
-        {
-            if (settleGameRound > 0)
-            {
-                if (row.IssuedObservedRound > 0 && row.IssuedObservedRound == settleGameRound)
-                    return true;
-                if (row.IssuedRoundId > 0 && row.IssuedRoundId + 1 == settleGameRound)
-                    return true;
-            }
-
-            if ((settleSeqVersion ?? 0) > 0 &&
-                (row.IssuedSeqVersion ?? 0) > 0 &&
-                row.IssuedSeqVersion!.Value + 1 == settleSeqVersion!.Value)
-                return true;
-
-            return false;
-        }
-
-        private bool HasPendingWinnerCandidate(long tableId, long gameShoe, long gameRound)
-        {
-            if (_pendingRows.Count == 0 || gameRound <= 0)
-                return false;
-
-            return _pendingRows.Any(row =>
-            {
-                if (tableId > 0 && row.IssuedTableId > 0 && row.IssuedTableId != tableId)
-                    return false;
-                if (gameShoe > 0 && row.IssuedGameShoe > 0 && row.IssuedGameShoe != gameShoe)
-                    return false;
-                return IsNetworkWinnerRoundMatch(row, gameRound, gameRound);
-            });
-        }
-
-        private static bool IsLateContextWinnerAction(string? action)
-        {
-            return string.Equals(action, "shoe-mismatch", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(action, "context-mismatch", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(action, "dup-round", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(action, "dup-event", StringComparison.OrdinalIgnoreCase);
-        }
-
         private void InvalidatePendingRowsForContextReset(long tableId, long gameShoe, long gameRound)
         {
             if (_pendingRows.Count == 0) return;
 
-            var staleRows = new List<BetRow>();
-            foreach (var row in _pendingRows.ToList())
-            {
-                bool tableMismatch = tableId > 0 && row.IssuedTableId > 0 && row.IssuedTableId != tableId;
-                bool shoeMismatch = !tableMismatch && gameShoe > 0 && row.IssuedGameShoe > 0 && row.IssuedGameShoe != gameShoe;
-                if (!tableMismatch && !shoeMismatch)
-                    continue;
-
-                if (shoeMismatch && IsAwaitingFinalWinnerCandidate(row, out var ageSec))
-                {
-                    LogPendingKeepAwaitFinalWinner(row, "context-reset", tableId, gameShoe, gameRound, ageSec);
-                    continue;
-                }
-
-                staleRows.Add(row);
-            }
+            var staleRows = _pendingRows
+                .Where(row =>
+                    ((tableId > 0 && row.IssuedTableId > 0 && row.IssuedTableId != tableId) ||
+                     (gameShoe > 0 && row.IssuedGameShoe > 0 && row.IssuedGameShoe != gameShoe)))
+                .ToList();
             if (staleRows.Count == 0) return;
 
             double balance = ResolveHistoryBalance();
@@ -17780,7 +18113,7 @@ try{
                 row.Result = "RESET-CONTEXT";
                 row.WinLose = "Bỏ qua";
                 row.Account = balance;
-                Log($"[BET][HIST][DROP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | newTable={tableId} | newShoe={gameShoe} | newRound={gameRound} | reason=context-reset");
+                Log($"[BET][HIST][DROP] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | newTable={tableId} | newShoe={gameShoe} | newRound={gameRound} | reason=context-reset");
             }
 
             foreach (var row in staleRows)
@@ -17790,8 +18123,6 @@ try{
                 ShowFirstPage();
             else
                 RefreshCurrentPage();
-
-            Log($"[BET][HIST][UI-REFRESH] reason=context-reset | dropped={staleRows.Count} | pending={_pendingRows.Count} | all={_betAll.Count} | autoFollow={(_autoFollowNewest ? 1 : 0)} | page={_pageIndex + 1}");
         }
 
         private void LogHistAlertThrottled(string message, int minSeconds = 5)
@@ -17902,18 +18233,13 @@ try{
                 if (isNetworkWinnerSettle &&
                     settleGameRound > 0 &&
                     IsRowContextMatch(row) &&
-                    IsNetworkWinnerRoundMatch(row, settleGameRound, settleSeqVersion))
+                    row.IssuedObservedRound > 0 &&
+                    row.IssuedObservedRound == settleGameRound)
                 {
                     if (!advFallbackLogged)
                     {
-                        string advReason =
-                            row.IssuedObservedRound > 0 && row.IssuedObservedRound == settleGameRound
-                                ? "winner-round-confirmed"
-                                : (row.IssuedRoundId > 0 && row.IssuedRoundId + 1 == settleGameRound
-                                    ? "winner-round-plus-one"
-                                    : "winner-version-plus-one");
                         advFallbackLogged = true;
-                        Log($"[BET][HIST][ADV-FALLBACK] id={BetIdForLog(row)} | reason={advReason} | issueRound={row.IssuedRoundId} | issueObsRound={row.IssuedObservedRound} | settleRound={settleGameRound} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(settleSeqVersion?.ToString() ?? "-")} | issueEvt={(string.IsNullOrWhiteSpace(row.IssuedSeqEvent) ? "-" : row.IssuedSeqEvent)} | settleEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)}");
+                        Log($"[BET][HIST][ADV-FALLBACK] reason=winner-round-confirmed | issueObsRound={row.IssuedObservedRound} | settleRound={settleGameRound} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(settleSeqVersion?.ToString() ?? "-")} | issueEvt={(string.IsNullOrWhiteSpace(row.IssuedSeqEvent) ? "-" : row.IssuedSeqEvent)} | settleEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)}");
                     }
                     return true;
                 }
@@ -17930,7 +18256,7 @@ try{
                         if (!advFallbackLogged)
                         {
                             advFallbackLogged = true;
-                            Log($"[BET][HIST][ADV-FALLBACK] id={BetIdForLog(row)} | reason=version-regress-display | issueVer={row.IssuedSeqVersion} | settleVer={settleSeqVersion} | issueLen={row.IssuedSeqDisplay.Length} | settleLen={settleDisplay.Length} | settleEvt={(settleSeqEvent ?? "-")}");
+                            Log($"[BET][HIST][ADV-FALLBACK] reason=version-regress-display | issueVer={row.IssuedSeqVersion} | settleVer={settleSeqVersion} | issueLen={row.IssuedSeqDisplay.Length} | settleLen={settleDisplay.Length} | settleEvt={(settleSeqEvent ?? "-")}");
                         }
                         return true;
                     }
@@ -17959,7 +18285,7 @@ try{
                             row.IssuedObservedRound = settleGameRound;
                         if (string.IsNullOrWhiteSpace(row.IssuedSeqSource))
                             row.IssuedSeqSource = "late-bind";
-                        Log($"[BET][HIST][BIND] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | bindTable={(hasSettleTable ? settleTableId.ToString() : "-")} | bindShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | bindRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=context-late-bind");
+                        Log($"[BET][HIST][BIND] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | bindTable={(hasSettleTable ? settleTableId.ToString() : "-")} | bindShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | bindRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=context-late-bind");
                     }
 
                     pendingSnapshot = _pendingRows.ToList();
@@ -17975,7 +18301,7 @@ try{
                 {
                     foreach (var row in unboundRows)
                     {
-                        Log($"[BET][HIST][INFO] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=keep-pending-without-context");
+                        Log($"[BET][HIST][INFO] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=keep-pending-without-context");
                     }
                 }
             }
@@ -17997,7 +18323,7 @@ try{
                         row.Result = "RESET-DUP";
                         row.WinLose = "Bỏ qua";
                         row.Account = balanceAfter;
-                        Log($"[BET][HIST][DROP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=multi-match-guard");
+                        Log($"[BET][HIST][DROP] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=multi-match-guard");
                         _pendingRows.Remove(row);
                     }
                 }
@@ -18014,7 +18340,7 @@ try{
                 bool contextMatch = IsRowContextMatch(row);
                 bool advanced = IsRowSeqAdvanced(row);
                 char issueTail = row.IssuedSeqDisplay.Length > 0 ? row.IssuedSeqDisplay[^1] : '-';
-                Log($"[BET][HIST][CHECK][ROW] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | issueObsRound={row.IssuedObservedRound} | issueLen={row.IssuedSeqDisplay.Length} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | issueEvt={row.IssuedSeqEvent} | issueSrc={(string.IsNullOrWhiteSpace(row.IssuedSeqSource) ? "-" : row.IssuedSeqSource)} | issueTail={issueTail} | ctxMatch={contextMatch} | advanced={advanced}");
+                Log($"[BET][HIST][CHECK][ROW] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | issueObsRound={row.IssuedObservedRound} | issueLen={row.IssuedSeqDisplay.Length} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | issueEvt={row.IssuedSeqEvent} | issueSrc={(string.IsNullOrWhiteSpace(row.IssuedSeqSource) ? "-" : row.IssuedSeqSource)} | issueTail={issueTail} | ctxMatch={contextMatch} | advanced={advanced}");
             }
 
             if (rowsToFinalize.Count == 0)
@@ -18031,7 +18357,7 @@ try{
                 var oldestHold = pendingSnapshot.FirstOrDefault(r => IsRowContextMatch(r) && !rowsToFinalize.Contains(r));
                 if (oldestHold != null)
                 {
-                    Log($"[BET][HIST][HOLD] id={BetIdForLog(oldestHold)} | count={holdCount} | oldestAt={oldestHold.At:HH:mm:ss} | oldestRound={oldestHold.IssuedRoundId} | oldestIssueVer={(oldestHold.IssuedSeqVersion?.ToString() ?? "-")} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleVer={(hasSettleVersion ? settleSeqVersion!.Value.ToString() : "-")} | settleEvt={(settleSeqEvent ?? "-")}");
+                    Log($"[BET][HIST][HOLD] count={holdCount} | oldestAt={oldestHold.At:HH:mm:ss} | oldestRound={oldestHold.IssuedRoundId} | oldestIssueVer={(oldestHold.IssuedSeqVersion?.ToString() ?? "-")} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleVer={(hasSettleVersion ? settleSeqVersion!.Value.ToString() : "-")} | settleEvt={(settleSeqEvent ?? "-")}");
                 }
             }
 
@@ -18041,17 +18367,9 @@ try{
                 bool win = !isTieResult && winSet.Contains(row.Side);
                 row.WinLose = isTieResult ? "Hòa" : (win ? "Thắng" : "Thua");
                 row.Account = balanceAfter;
-                Log($"[BET][HIST][FINAL] id={BetIdForLog(row)} | {row.At:HH:mm:ss} | {row.Side} | {row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | result={row.Result} | wl={row.WinLose} | acc={row.Account:#,0.##} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(hasSettleVersion ? settleSeqVersion!.Value.ToString() : "-")}");
+                Log($"[BET][HIST][FINAL] {row.At:HH:mm:ss} | {row.Side} | {row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | result={row.Result} | wl={row.WinLose} | acc={row.Account:#,0.##} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(hasSettleVersion ? settleSeqVersion!.Value.ToString() : "-")}");
 
-                try
-                {
-                    AppendBetCsv(row);
-                    Log($"[BET][HIST][PERSIST][OK] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | result={row.Result} | wl={row.WinLose}");
-                }
-                catch (Exception ex)
-                {
-                    Log($"[BET][HIST][PERSIST][ERR] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | result={row.Result} | err={Shrink(ex.Message, 160)}");
-                }
+                try { AppendBetCsv(row); } catch { }
             }
             foreach (var row in rowsToFinalize)
                 _pendingRows.Remove(row);
@@ -18064,8 +18382,6 @@ try{
             {
                 RefreshCurrentPage();
             }
-
-            Log($"[BET][HIST][UI-REFRESH] reason={(string.IsNullOrWhiteSpace(settleReason) ? "finalize" : settleReason)} | finalized={rowsToFinalize.Count} | pending={_pendingRows.Count} | all={_betAll.Count} | autoFollow={(_autoFollowNewest ? 1 : 0)} | page={_pageIndex + 1}");
         }
 
         public void FinalizePendingBetsWithWinners(HashSet<string> winners, string? displayResult = null)
@@ -18265,13 +18581,17 @@ try{
 
         private void AppendBetCsv(BetRow r)
         {
-            var file = Path.Combine(_logDir, $"bets-{DateTime.Today:yyyyMMdd}.csv");
-            bool exists = File.Exists(file);
-            using var sw = new StreamWriter(file, append: true, Encoding.UTF8);
-            if (!exists)
-                sw.WriteLine("At,Game,Stake,Side,Result,WinLose,Account");
-            // CSV đơn giản, At lưu ISO để dễ parse
-            sw.WriteLine($"{r.At:O},{r.Game},{r.Stake},{r.Side},{r.Result},{r.WinLose},{r.Account.ToString(CultureInfo.InvariantCulture)}");
+            try
+            {
+                var file = Path.Combine(_logDir, $"bets-{DateTime.Today:yyyyMMdd}.csv");
+                bool exists = File.Exists(file);
+                using var sw = new StreamWriter(file, append: true, Encoding.UTF8);
+                if (!exists)
+                    sw.WriteLine("At,Game,Stake,Side,Result,WinLose,Account");
+                // CSV đơn giản, At lưu ISO để dễ parse
+                sw.WriteLine($"{r.At:O},{r.Game},{r.Stake},{r.Side},{r.Result},{r.WinLose},{r.Account}");
+            }
+            catch { }
         }
 
         private async void MainWindow_Loaded(object? sender, RoutedEventArgs e)

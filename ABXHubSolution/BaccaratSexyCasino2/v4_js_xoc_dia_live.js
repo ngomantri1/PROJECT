@@ -23,6 +23,9 @@
     function __cw_isWebMainHref(href) {
         return String(href || '').toLowerCase().indexOf('/player/webmain.jsp') >= 0;
     }
+    function __cw_isSingleBacHref(href) {
+        return String(href || '').toLowerCase().indexOf('/player/singlebactable.jsp') >= 0;
+    }
     function __cw_isPanelDisplayOwner() {
         try {
             var href = __cw_hrefLowerOf(window);
@@ -46,6 +49,27 @@
                 return !__cw_isWebMainHref(topHref);
             }
 
+            if (__cw_isSingleBacHref(href)) {
+                if (isTop)
+                    return true;
+
+                var parentHref = '';
+                try {
+                    parentHref = __cw_hrefLowerOf(window.parent);
+                } catch (_) {
+                    parentHref = '';
+                }
+
+                var topHref2 = '';
+                try {
+                    topHref2 = __cw_hrefLowerOf(window.top);
+                } catch (_) {
+                    topHref2 = '';
+                }
+
+                return !__cw_isWebMainHref(parentHref) && !__cw_isWebMainHref(topHref2);
+            }
+
             return false;
         } catch (_) {
             return false;
@@ -58,15 +82,25 @@
             var show = __cw_isPanelDisplayOwner();
             rootEl.setAttribute('data-abx-panel-owner', show ? '1' : '0');
             rootEl.setAttribute('data-abx-panel-owner-href', String(location.href || '').replace(/[?#].*$/, ''));
-            if (rootEl.getAttribute('data-abx-controlled-by-top') === '1')
-                return show;
+            if (rootEl.getAttribute('data-abx-controlled-by-top') === '1') {
+                var hrefForControlled = __cw_hrefLowerOf(window);
+                var topAlreadyHid = rootEl.getAttribute('data-abx-hidden-by-top') === '1' ||
+                    rootEl.getAttribute('data-abx-authority-context') === '0';
+                if (show && !topAlreadyHid)
+                    return show;
+                if (!show && hrefForControlled.indexOf('about:blank') < 0 && !topAlreadyHid)
+                    return show;
+            }
 
-            // Do not self-hide frame panels. The top controller scores every frame
-            // and keeps exactly one root visible; self-hiding here can hide the
-            // only panel that has live baccarat details.
             rootEl.removeAttribute('data-abx-hidden-by-owner');
-            rootEl.style.setProperty('display', 'block', 'important');
-            rootEl.style.setProperty('visibility', 'visible', 'important');
+            if (show) {
+                rootEl.style.setProperty('display', 'block', 'important');
+                rootEl.style.setProperty('visibility', 'visible', 'important');
+            } else {
+                rootEl.setAttribute('data-abx-hidden-by-owner', '1');
+                rootEl.style.setProperty('display', 'none', 'important');
+                rootEl.style.setProperty('visibility', 'hidden', 'important');
+            }
             rootEl.style.setProperty('pointer-events', 'none', 'important');
             return show;
         } catch (_) {
@@ -8783,7 +8817,7 @@
         '</div>' +
         '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    root.style.display='none';
+    //root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];

@@ -8,7 +8,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 
-namespace BaccaratSexyCasino.Tasks
+namespace BaccaratSexyCasino2.Tasks
 {
     internal static class TaskUtil
     {
