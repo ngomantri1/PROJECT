@@ -721,6 +721,7 @@ namespace BaccaratSexyCasino2
 
         // 3) Giữ pending bet để chờ kết quả
         private readonly List<BetRow> _pendingRows = new();
+        private const int PendingFinalWinnerGraceSeconds = 180;
         private const int MaxHistory = 1000;   // tổng số bản ghi giữ trong bộ nhớ & khi load
 
 
@@ -1019,6 +1020,7 @@ Ví dụ không hợp lệ:
         // 1) Model 1 dòng log đặt cược
         private sealed class BetRow
         {
+            public string BetId { get; set; } = "";
             public DateTime At { get; set; }                 // Thời gian đặt
             public string Game { get; set; } = "Xóc đĩa live";
             public long Stake { get; set; }                  // Tiền cược
@@ -1036,6 +1038,7 @@ Ví dụ không hợp lệ:
             public long IssuedObservedRound { get; set; }
             public string IssuedSeqSource { get; set; } = "";
             public bool SawClosedAfterIssue { get; set; }
+            public DateTime LastAwaitFinalWinnerKeepLogUtc { get; set; } = DateTime.MinValue;
         }
 
         public static class SharedIcons
@@ -10492,7 +10495,53 @@ try{
                         if (string.IsNullOrWhiteSpace(applied.ResultText))
                             return;
                         if (!applied.Appended && !applied.Replaced)
+                        {
+                            if (_pendingRows.Count > 0 &&
+                                !HasJackpotMultiSideRunning() &&
+                                IsLateContextWinnerAction(applied.Action) &&
+                                HasPendingWinnerCandidate(packet.TableId, packet.GameShoe, packet.GameRound))
+                            {
+                                double lateBalanceAfter = ResolveHistoryBalance(currentSnap?.totals?.A);
+                                long lateSettleVersion = packet.GameRound > 0
+                                    ? packet.GameRound
+                                    : Math.Max(applied.NextVersion, applied.PrevVersion + 1);
+
+                                Log($"[BET][HIST][LATE-WINNER] action={applied.Action} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={applied.ResultChar} | pending={_pendingRows.Count} | settleVer={lateSettleVersion} | reason=settle-without-seq-append");
+
+                                if (applied.ResultChar == 'T')
+                                {
+                                    FinalizeLastBet(
+                                        "TIE",
+                                        lateBalanceAfter,
+                                        new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                                        "TIE",
+                                        applied.NextSeq,
+                                        lateSettleVersion,
+                                        "net-gp-winner",
+                                        "net-gp-winner-late-context",
+                                        packet.TableId,
+                                        packet.GameShoe,
+                                        packet.GameRound);
+                                }
+                                else
+                                {
+                                    FinalizeLastBet(
+                                        applied.ResultText,
+                                        lateBalanceAfter,
+                                        null,
+                                        null,
+                                        applied.NextSeq,
+                                        lateSettleVersion,
+                                        "net-gp-winner",
+                                        "net-gp-winner-late-context",
+                                        packet.TableId,
+                                        packet.GameShoe,
+                                        packet.GameRound);
+                                }
+                            }
+
                             return;
+                        }
 
                         char prevTail = applied.PrevSeq.Length > 0 ? applied.PrevSeq[^1] : '-';
                         Log($"[NETSEQ][WINNER] src={packet.OwnerTag} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={applied.ResultChar} | action={applied.Action} | prevLen={applied.PrevSeq.Length} | nextLen={applied.NextSeq.Length} | prevVer={applied.PrevVersion} | nextVer={applied.NextVersion} | domBase={(applied.PrevSeq.Length > 0 ? 1 : 0)} | seedFromWinnerOnly={(_netSeqWinnerSeedOnly ? 1 : 0)} | policy=dom-bootstrap-cdp-append | prevTail={prevTail} | banker={packet.BankerValue} | player={packet.PlayerValue}");
@@ -11283,9 +11332,10 @@ try{
                 int prevLenWait = netDisplay.Length;
                 long prevVerWait = _netSeqVersion;
                 string prevEvtWait = _netSeqEvent;
-                int pendingDropWait = _pendingRows.Count;
-                if (pendingDropWait > 0)
-                    _pendingRows.Clear();
+                int pendingDropWait = DropPendingRowsForSeqRebaseReset(
+                    "table-switch-wait-bead",
+                    IsShoeSwitchRebaseArmed(),
+                    out var pendingKeepWait);
 
                 if (!string.IsNullOrWhiteSpace(netDisplay))
                 {
@@ -11313,7 +11363,7 @@ try{
                     string waitReason =
                         tableSwitchChangingShoeEmptyLike ? "switch-changing-shoe-empty" :
                         (staleRawDuringNoBoard ? "stale-raw-no-board" : "unknown");
-                    Log($"[SEQ][TABLE-SWITCH-WAIT-BEAD] reason={waitReason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | jsLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | prevLen={prevLenWait} | prevVer={prevVerWait} | prevEvt={(string.IsNullOrWhiteSpace(prevEvtWait) ? "-" : prevEvtWait)} | pendingDrop={pendingDropWait} | from={_tableSwitchFromKey} | to={_tableSwitchToKey}");
+                    Log($"[SEQ][TABLE-SWITCH-WAIT-BEAD] reason={waitReason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | jsLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | prevLen={prevLenWait} | prevVer={prevVerWait} | prevEvt={(string.IsNullOrWhiteSpace(prevEvtWait) ? "-" : prevEvtWait)} | pendingDrop={pendingDropWait} | pendingKeep={pendingKeepWait} | from={_tableSwitchFromKey} | to={_tableSwitchToKey}");
                 }
 
                 snap.seq = "";
@@ -11408,9 +11458,10 @@ try{
 
             if (string.IsNullOrWhiteSpace(netDisplay))
             {
-                int pendingBeforeBoot = _pendingRows.Count;
-                if (pendingBeforeBoot > 0)
-                    _pendingRows.Clear();
+                int pendingBeforeBoot = DropPendingRowsForSeqRebaseReset(
+                    "table-switch-boot-apply",
+                    IsShoeSwitchRebaseArmed(),
+                    out var pendingKeepBoot);
 
                 _syncSeqPrefixDisplay = "";
                 _boardSeqDisplay = rebaseDisplay;
@@ -11439,7 +11490,7 @@ try{
                 snap.seqEvent = _netSeqEvent;
                 snap.seqSource = "table-switch-reset";
 
-                Log($"[SEQ][TABLE-SWITCH-BOOT-APPLY] rawLen={rawDisplay.Length} | jsLen={jsDisplay.Length} | seqLen={rebaseDisplay.Length} | seqVer={_netSeqVersion} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | picked={(string.Equals(rebaseDisplay, rawDisplay, StringComparison.Ordinal) ? "raw" : "js")} | from={_tableSwitchFromKey} | to={_tableSwitchToKey} | pendingDrop={pendingBeforeBoot}");
+                Log($"[SEQ][TABLE-SWITCH-BOOT-APPLY] rawLen={rawDisplay.Length} | jsLen={jsDisplay.Length} | seqLen={rebaseDisplay.Length} | seqVer={_netSeqVersion} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | picked={(string.Equals(rebaseDisplay, rawDisplay, StringComparison.Ordinal) ? "raw" : "js")} | from={_tableSwitchFromKey} | to={_tableSwitchToKey} | pendingDrop={pendingBeforeBoot} | pendingKeep={pendingKeepBoot}");
                 ClearTableSwitchRebaseArmLocked();
                 return true;
             }
@@ -11464,9 +11515,10 @@ try{
             int prevLen = netDisplay.Length;
             long prevVer = _netSeqVersion;
             string prevEvt = _netSeqEvent;
-            int pendingBefore = _pendingRows.Count;
-            if (pendingBefore > 0)
-                _pendingRows.Clear();
+            int pendingBefore = DropPendingRowsForSeqRebaseReset(
+                "table-switch-rebase-apply",
+                IsShoeSwitchRebaseArmed(),
+                out var pendingKeep);
 
             _syncSeqPrefixDisplay = "";
             _boardSeqDisplay = rebaseDisplay;
@@ -11494,7 +11546,7 @@ try{
             snap.seqEvent = _netSeqEvent;
             snap.seqSource = "table-switch-reset";
 
-            Log($"[SEQ][TABLE-SWITCH-REBASE-APPLY] rawLen={rawDisplay.Length} | jsLen={jsDisplay.Length} | seqLen={rebaseDisplay.Length} | seqVer={_netSeqVersion} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | picked={(string.Equals(rebaseDisplay, rawDisplay, StringComparison.Ordinal) ? "raw" : "js")} | prevLen={prevLen} | prevVer={prevVer} | prevEvt={(string.IsNullOrWhiteSpace(prevEvt) ? "-" : prevEvt)} | from={_tableSwitchFromKey} | to={_tableSwitchToKey} | pendingDrop={pendingBefore}");
+            Log($"[SEQ][TABLE-SWITCH-REBASE-APPLY] rawLen={rawDisplay.Length} | jsLen={jsDisplay.Length} | seqLen={rebaseDisplay.Length} | seqVer={_netSeqVersion} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | picked={(string.Equals(rebaseDisplay, rawDisplay, StringComparison.Ordinal) ? "raw" : "js")} | prevLen={prevLen} | prevVer={prevVer} | prevEvt={(string.IsNullOrWhiteSpace(prevEvt) ? "-" : prevEvt)} | from={_tableSwitchFromKey} | to={_tableSwitchToKey} | pendingDrop={pendingBefore} | pendingKeep={pendingKeep}");
             ClearTableSwitchRebaseArmLocked();
             return true;
         }
@@ -15561,7 +15613,8 @@ try{
                 issuedSeqCalc))
                 return;
 
-            Log($"[BET] {side} {amount:N0} | round={roundId}");
+            string betId = NewBetHistoryId();
+            Log($"[BET] id={betId} | {side} {amount:N0} | round={roundId}");
 
             betTab ??= ResolveBetTab(tabId);
             if (betTab != null)
@@ -15614,11 +15667,12 @@ try{
                     issuedTableId = inferredTableId;
 
                 pendingReason = isTableSwitchResetIssue ? "table-switch-reset-recorded" : "missing-context-recorded";
-                Log($"[BET][HIST][INFO] reason={pendingReason} | action=record-pending | at={DateTime.Now:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqEvt={(string.IsNullOrWhiteSpace(issuedSeqEvent) ? "-" : issuedSeqEvent)} | seqLen={issuedSeqDisplay.Length}");
+                Log($"[BET][HIST][INFO] id={betId} | reason={pendingReason} | action=record-pending | at={DateTime.Now:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqEvt={(string.IsNullOrWhiteSpace(issuedSeqEvent) ? "-" : issuedSeqEvent)} | seqLen={issuedSeqDisplay.Length}");
             }
 
             var row = new BetRow
             {
+                BetId = betId,
                 At = DateTime.Now,
                 Game = "Baccarat Sexy",
                 Stake = amount,
@@ -15639,10 +15693,10 @@ try{
             };
 
             char issueTail = issuedSeqDisplay.Length > 0 ? issuedSeqDisplay[^1] : '-';
-            Log($"[BET][HIST][PENDING] {row.At:HH:mm:ss} | {side} | {amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqLen={issuedSeqDisplay.Length} | seqVer={(issuedSeqVersion?.ToString() ?? "-")} | seqEvt={issuedSeqEvent} | seqSrc={(string.IsNullOrWhiteSpace(issuedSeqSource) ? "-" : issuedSeqSource)} | tail={issueTail} | acc={row.Account:#,0.##}");
+            Log($"[BET][HIST][PENDING] id={row.BetId} | {row.At:HH:mm:ss} | {side} | {amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound} | seqLen={issuedSeqDisplay.Length} | seqVer={(issuedSeqVersion?.ToString() ?? "-")} | seqEvt={issuedSeqEvent} | seqSrc={(string.IsNullOrWhiteSpace(issuedSeqSource) ? "-" : issuedSeqSource)} | tail={issueTail} | acc={row.Account:#,0.##}");
             if (issuedTableId <= 0 || issuedGameShoe <= 0 || roundId <= 0)
             {
-                Log($"[BET][HIST][INFO] pending-recorded-without-context | at={row.At:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound}");
+                Log($"[BET][HIST][INFO] id={row.BetId} | pending-recorded-without-context | at={row.At:HH:mm:ss} | side={side} | stake={amount:N0} | round={roundId} | table={issuedTableId} | shoe={issuedGameShoe} | obsRound={issuedObservedRound}");
                 LogMissingContextDiagnostics(
                     string.IsNullOrWhiteSpace(pendingReason) ? "pending-recorded-without-context" : pendingReason,
                     side,
@@ -18096,15 +18150,150 @@ try{
                 row.SawClosedAfterIssue = true;
         }
 
+        private static string NewBetHistoryId()
+        {
+            return Guid.NewGuid().ToString("N").Substring(0, 12);
+        }
+
+        private static string BetIdForLog(BetRow? row)
+        {
+            return row == null || string.IsNullOrWhiteSpace(row.BetId) ? "-" : row.BetId;
+        }
+
+        private static double PendingAgeSeconds(BetRow row)
+        {
+            var age = DateTime.Now - row.At;
+            return Math.Max(0, age.TotalSeconds);
+        }
+
+        private static bool IsAwaitingFinalWinnerCandidate(BetRow row, out double ageSec)
+        {
+            ageSec = PendingAgeSeconds(row);
+            if (ageSec > PendingFinalWinnerGraceSeconds)
+                return false;
+
+            return row.IssuedObservedRound > 0 ||
+                   row.SawClosedAfterIssue ||
+                   row.IssuedRoundId > 0;
+        }
+
+        private void LogPendingKeepAwaitFinalWinner(BetRow row, string source, long tableId, long gameShoe, long gameRound, double ageSec)
+        {
+            var nowUtc = DateTime.UtcNow;
+            if ((nowUtc - row.LastAwaitFinalWinnerKeepLogUtc).TotalSeconds < 5)
+                return;
+
+            row.LastAwaitFinalWinnerKeepLogUtc = nowUtc;
+            Log($"[BET][HIST][KEEP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | issueObsRound={row.IssuedObservedRound} | newTable={(tableId > 0 ? tableId.ToString() : "-")} | newShoe={(gameShoe > 0 ? gameShoe.ToString() : "-")} | newRound={(gameRound > 0 ? gameRound.ToString() : "-")} | ageSec={ageSec:0} | reason=await-final-winner-after-shoe-reset | source={source}");
+        }
+
+        private bool IsShoeSwitchRebaseArmed()
+        {
+            return (!string.IsNullOrWhiteSpace(_tableSwitchFromKey) &&
+                    _tableSwitchFromKey.StartsWith("shoe:", StringComparison.OrdinalIgnoreCase)) ||
+                   (!string.IsNullOrWhiteSpace(_tableSwitchToKey) &&
+                    _tableSwitchToKey.StartsWith("shoe:", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private int DropPendingRowsForSeqRebaseReset(string reason, bool keepAwaitingFinalWinner, out int keptCount)
+        {
+            keptCount = 0;
+            if (_pendingRows.Count == 0)
+                return 0;
+
+            var rowsToDrop = new List<BetRow>();
+            foreach (var row in _pendingRows.ToList())
+            {
+                if (keepAwaitingFinalWinner &&
+                    IsAwaitingFinalWinnerCandidate(row, out var ageSec))
+                {
+                    keptCount++;
+                    LogPendingKeepAwaitFinalWinner(row, reason, _activeTableId, _activeGameShoe, _activeGameRound, ageSec);
+                    continue;
+                }
+
+                rowsToDrop.Add(row);
+            }
+
+            if (rowsToDrop.Count == 0)
+                return 0;
+
+            double balance = ResolveHistoryBalance();
+            foreach (var row in rowsToDrop)
+            {
+                row.Result = "RESET-CONTEXT";
+                row.WinLose = "Bỏ qua";
+                row.Account = balance;
+                Log($"[BET][HIST][DROP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | issueObsRound={row.IssuedObservedRound} | reason={reason}");
+            }
+
+            foreach (var row in rowsToDrop)
+                _pendingRows.Remove(row);
+
+            return rowsToDrop.Count;
+        }
+
+        private static bool IsNetworkWinnerRoundMatch(BetRow row, long settleGameRound, long? settleSeqVersion)
+        {
+            if (settleGameRound > 0)
+            {
+                if (row.IssuedObservedRound > 0 && row.IssuedObservedRound == settleGameRound)
+                    return true;
+                if (row.IssuedRoundId > 0 && row.IssuedRoundId + 1 == settleGameRound)
+                    return true;
+            }
+
+            if ((settleSeqVersion ?? 0) > 0 &&
+                (row.IssuedSeqVersion ?? 0) > 0 &&
+                row.IssuedSeqVersion!.Value + 1 == settleSeqVersion!.Value)
+                return true;
+
+            return false;
+        }
+
+        private bool HasPendingWinnerCandidate(long tableId, long gameShoe, long gameRound)
+        {
+            if (_pendingRows.Count == 0 || gameRound <= 0)
+                return false;
+
+            return _pendingRows.Any(row =>
+            {
+                if (tableId > 0 && row.IssuedTableId > 0 && row.IssuedTableId != tableId)
+                    return false;
+                if (gameShoe > 0 && row.IssuedGameShoe > 0 && row.IssuedGameShoe != gameShoe)
+                    return false;
+                return IsNetworkWinnerRoundMatch(row, gameRound, gameRound);
+            });
+        }
+
+        private static bool IsLateContextWinnerAction(string? action)
+        {
+            return string.Equals(action, "shoe-mismatch", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(action, "context-mismatch", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(action, "dup-round", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(action, "dup-event", StringComparison.OrdinalIgnoreCase);
+        }
+
         private void InvalidatePendingRowsForContextReset(long tableId, long gameShoe, long gameRound)
         {
             if (_pendingRows.Count == 0) return;
 
-            var staleRows = _pendingRows
-                .Where(row =>
-                    ((tableId > 0 && row.IssuedTableId > 0 && row.IssuedTableId != tableId) ||
-                     (gameShoe > 0 && row.IssuedGameShoe > 0 && row.IssuedGameShoe != gameShoe)))
-                .ToList();
+            var staleRows = new List<BetRow>();
+            foreach (var row in _pendingRows.ToList())
+            {
+                bool tableMismatch = tableId > 0 && row.IssuedTableId > 0 && row.IssuedTableId != tableId;
+                bool shoeMismatch = !tableMismatch && gameShoe > 0 && row.IssuedGameShoe > 0 && row.IssuedGameShoe != gameShoe;
+                if (!tableMismatch && !shoeMismatch)
+                    continue;
+
+                if (shoeMismatch && IsAwaitingFinalWinnerCandidate(row, out var ageSec))
+                {
+                    LogPendingKeepAwaitFinalWinner(row, "context-reset", tableId, gameShoe, gameRound, ageSec);
+                    continue;
+                }
+
+                staleRows.Add(row);
+            }
             if (staleRows.Count == 0) return;
 
             double balance = ResolveHistoryBalance();
@@ -18113,7 +18302,7 @@ try{
                 row.Result = "RESET-CONTEXT";
                 row.WinLose = "Bỏ qua";
                 row.Account = balance;
-                Log($"[BET][HIST][DROP] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | newTable={tableId} | newShoe={gameShoe} | newRound={gameRound} | reason=context-reset");
+                Log($"[BET][HIST][DROP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | newTable={tableId} | newShoe={gameShoe} | newRound={gameRound} | reason=context-reset");
             }
 
             foreach (var row in staleRows)
@@ -18123,6 +18312,8 @@ try{
                 ShowFirstPage();
             else
                 RefreshCurrentPage();
+
+            Log($"[BET][HIST][UI-REFRESH] reason=context-reset | dropped={staleRows.Count} | pending={_pendingRows.Count} | all={_betAll.Count} | autoFollow={(_autoFollowNewest ? 1 : 0)} | page={_pageIndex + 1}");
         }
 
         private void LogHistAlertThrottled(string message, int minSeconds = 5)
@@ -18233,13 +18424,18 @@ try{
                 if (isNetworkWinnerSettle &&
                     settleGameRound > 0 &&
                     IsRowContextMatch(row) &&
-                    row.IssuedObservedRound > 0 &&
-                    row.IssuedObservedRound == settleGameRound)
+                    IsNetworkWinnerRoundMatch(row, settleGameRound, settleSeqVersion))
                 {
                     if (!advFallbackLogged)
                     {
+                        string advReason =
+                            row.IssuedObservedRound > 0 && row.IssuedObservedRound == settleGameRound
+                                ? "winner-round-confirmed"
+                                : (row.IssuedRoundId > 0 && row.IssuedRoundId + 1 == settleGameRound
+                                    ? "winner-round-plus-one"
+                                    : "winner-version-plus-one");
                         advFallbackLogged = true;
-                        Log($"[BET][HIST][ADV-FALLBACK] reason=winner-round-confirmed | issueObsRound={row.IssuedObservedRound} | settleRound={settleGameRound} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(settleSeqVersion?.ToString() ?? "-")} | issueEvt={(string.IsNullOrWhiteSpace(row.IssuedSeqEvent) ? "-" : row.IssuedSeqEvent)} | settleEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)}");
+                        Log($"[BET][HIST][ADV-FALLBACK] id={BetIdForLog(row)} | reason={advReason} | issueRound={row.IssuedRoundId} | issueObsRound={row.IssuedObservedRound} | settleRound={settleGameRound} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(settleSeqVersion?.ToString() ?? "-")} | issueEvt={(string.IsNullOrWhiteSpace(row.IssuedSeqEvent) ? "-" : row.IssuedSeqEvent)} | settleEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)}");
                     }
                     return true;
                 }
@@ -18256,7 +18452,7 @@ try{
                         if (!advFallbackLogged)
                         {
                             advFallbackLogged = true;
-                            Log($"[BET][HIST][ADV-FALLBACK] reason=version-regress-display | issueVer={row.IssuedSeqVersion} | settleVer={settleSeqVersion} | issueLen={row.IssuedSeqDisplay.Length} | settleLen={settleDisplay.Length} | settleEvt={(settleSeqEvent ?? "-")}");
+                            Log($"[BET][HIST][ADV-FALLBACK] id={BetIdForLog(row)} | reason=version-regress-display | issueVer={row.IssuedSeqVersion} | settleVer={settleSeqVersion} | issueLen={row.IssuedSeqDisplay.Length} | settleLen={settleDisplay.Length} | settleEvt={(settleSeqEvent ?? "-")}");
                         }
                         return true;
                     }
@@ -18285,7 +18481,7 @@ try{
                             row.IssuedObservedRound = settleGameRound;
                         if (string.IsNullOrWhiteSpace(row.IssuedSeqSource))
                             row.IssuedSeqSource = "late-bind";
-                        Log($"[BET][HIST][BIND] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | bindTable={(hasSettleTable ? settleTableId.ToString() : "-")} | bindShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | bindRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=context-late-bind");
+                        Log($"[BET][HIST][BIND] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | bindTable={(hasSettleTable ? settleTableId.ToString() : "-")} | bindShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | bindRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=context-late-bind");
                     }
 
                     pendingSnapshot = _pendingRows.ToList();
@@ -18301,7 +18497,7 @@ try{
                 {
                     foreach (var row in unboundRows)
                     {
-                        Log($"[BET][HIST][INFO] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=keep-pending-without-context");
+                        Log($"[BET][HIST][INFO] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=keep-pending-without-context");
                     }
                 }
             }
@@ -18323,7 +18519,7 @@ try{
                         row.Result = "RESET-DUP";
                         row.WinLose = "Bỏ qua";
                         row.Account = balanceAfter;
-                        Log($"[BET][HIST][DROP] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=multi-match-guard");
+                        Log($"[BET][HIST][DROP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=multi-match-guard");
                         _pendingRows.Remove(row);
                     }
                 }
@@ -18340,7 +18536,7 @@ try{
                 bool contextMatch = IsRowContextMatch(row);
                 bool advanced = IsRowSeqAdvanced(row);
                 char issueTail = row.IssuedSeqDisplay.Length > 0 ? row.IssuedSeqDisplay[^1] : '-';
-                Log($"[BET][HIST][CHECK][ROW] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | issueObsRound={row.IssuedObservedRound} | issueLen={row.IssuedSeqDisplay.Length} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | issueEvt={row.IssuedSeqEvent} | issueSrc={(string.IsNullOrWhiteSpace(row.IssuedSeqSource) ? "-" : row.IssuedSeqSource)} | issueTail={issueTail} | ctxMatch={contextMatch} | advanced={advanced}");
+                Log($"[BET][HIST][CHECK][ROW] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | issueObsRound={row.IssuedObservedRound} | issueLen={row.IssuedSeqDisplay.Length} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | issueEvt={row.IssuedSeqEvent} | issueSrc={(string.IsNullOrWhiteSpace(row.IssuedSeqSource) ? "-" : row.IssuedSeqSource)} | issueTail={issueTail} | ctxMatch={contextMatch} | advanced={advanced}");
             }
 
             if (rowsToFinalize.Count == 0)
@@ -18357,7 +18553,7 @@ try{
                 var oldestHold = pendingSnapshot.FirstOrDefault(r => IsRowContextMatch(r) && !rowsToFinalize.Contains(r));
                 if (oldestHold != null)
                 {
-                    Log($"[BET][HIST][HOLD] count={holdCount} | oldestAt={oldestHold.At:HH:mm:ss} | oldestRound={oldestHold.IssuedRoundId} | oldestIssueVer={(oldestHold.IssuedSeqVersion?.ToString() ?? "-")} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleVer={(hasSettleVersion ? settleSeqVersion!.Value.ToString() : "-")} | settleEvt={(settleSeqEvent ?? "-")}");
+                    Log($"[BET][HIST][HOLD] id={BetIdForLog(oldestHold)} | count={holdCount} | oldestAt={oldestHold.At:HH:mm:ss} | oldestRound={oldestHold.IssuedRoundId} | oldestIssueVer={(oldestHold.IssuedSeqVersion?.ToString() ?? "-")} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleVer={(hasSettleVersion ? settleSeqVersion!.Value.ToString() : "-")} | settleEvt={(settleSeqEvent ?? "-")}");
                 }
             }
 
@@ -18367,9 +18563,17 @@ try{
                 bool win = !isTieResult && winSet.Contains(row.Side);
                 row.WinLose = isTieResult ? "Hòa" : (win ? "Thắng" : "Thua");
                 row.Account = balanceAfter;
-                Log($"[BET][HIST][FINAL] {row.At:HH:mm:ss} | {row.Side} | {row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | result={row.Result} | wl={row.WinLose} | acc={row.Account:#,0.##} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(hasSettleVersion ? settleSeqVersion!.Value.ToString() : "-")}");
+                Log($"[BET][HIST][FINAL] id={BetIdForLog(row)} | {row.At:HH:mm:ss} | {row.Side} | {row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | result={row.Result} | wl={row.WinLose} | acc={row.Account:#,0.##} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(hasSettleVersion ? settleSeqVersion!.Value.ToString() : "-")}");
 
-                try { AppendBetCsv(row); } catch { }
+                try
+                {
+                    AppendBetCsv(row);
+                    Log($"[BET][HIST][PERSIST][OK] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | result={row.Result} | wl={row.WinLose}");
+                }
+                catch (Exception ex)
+                {
+                    Log($"[BET][HIST][PERSIST][ERR] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | result={row.Result} | err={Shrink(ex.Message, 160)}");
+                }
             }
             foreach (var row in rowsToFinalize)
                 _pendingRows.Remove(row);
@@ -18382,6 +18586,8 @@ try{
             {
                 RefreshCurrentPage();
             }
+
+            Log($"[BET][HIST][UI-REFRESH] reason={(string.IsNullOrWhiteSpace(settleReason) ? "finalize" : settleReason)} | finalized={rowsToFinalize.Count} | pending={_pendingRows.Count} | all={_betAll.Count} | autoFollow={(_autoFollowNewest ? 1 : 0)} | page={_pageIndex + 1}");
         }
 
         public void FinalizePendingBetsWithWinners(HashSet<string> winners, string? displayResult = null)
@@ -18581,17 +18787,13 @@ try{
 
         private void AppendBetCsv(BetRow r)
         {
-            try
-            {
-                var file = Path.Combine(_logDir, $"bets-{DateTime.Today:yyyyMMdd}.csv");
-                bool exists = File.Exists(file);
-                using var sw = new StreamWriter(file, append: true, Encoding.UTF8);
-                if (!exists)
-                    sw.WriteLine("At,Game,Stake,Side,Result,WinLose,Account");
-                // CSV đơn giản, At lưu ISO để dễ parse
-                sw.WriteLine($"{r.At:O},{r.Game},{r.Stake},{r.Side},{r.Result},{r.WinLose},{r.Account}");
-            }
-            catch { }
+            var file = Path.Combine(_logDir, $"bets-{DateTime.Today:yyyyMMdd}.csv");
+            bool exists = File.Exists(file);
+            using var sw = new StreamWriter(file, append: true, Encoding.UTF8);
+            if (!exists)
+                sw.WriteLine("At,Game,Stake,Side,Result,WinLose,Account");
+            // CSV đơn giản, At lưu ISO để dễ parse
+            sw.WriteLine($"{r.At:O},{r.Game},{r.Stake},{r.Side},{r.Result},{r.WinLose},{r.Account.ToString(CultureInfo.InvariantCulture)}");
         }
 
         private async void MainWindow_Loaded(object? sender, RoutedEventArgs e)
