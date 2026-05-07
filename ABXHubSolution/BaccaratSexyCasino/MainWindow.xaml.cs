@@ -1126,6 +1126,69 @@ Ví dụ không hợp lệ:
     if (!window.__abxTopForward) window.__abxTopForward = 1;
     function __abxCwHref(w){ try{ return String((w.location && w.location.href) || ''); }catch(_){ return ''; } }
     function __abxCwIsWebMain(h){ return /\/player\/webMain\.jsp/i.test(String(h || '')); }
+    var __abxCwVisibleKey = 'abx.canvasWatch.visible';
+    var __abxCwVisibleDefaultKey = 'abx.canvasWatch.visible.default';
+    var __abxCwVisibleDefaultFallback = false;
+    function __abxCwFlagToBool(v, fallback){
+      try{
+        if (typeof v === 'boolean') return v;
+        if (typeof v === 'number') return v !== 0;
+        var s = String(v == null ? '' : v).toLowerCase().trim();
+        if (!s) return !!fallback;
+        if (s === '1' || s === 'true' || s === 'show' || s === 'visible' || s === 'on') return true;
+        if (s === '0' || s === 'false' || s === 'hide' || s === 'hidden' || s === 'off') return false;
+      }catch(_){}
+      return !!fallback;
+    }
+    function __abxCwDefaultVisible(){
+      try{
+        if (typeof window.__abx_canvas_watch_default !== 'undefined')
+          return __abxCwFlagToBool(window.__abx_canvas_watch_default, __abxCwVisibleDefaultFallback);
+      }catch(_){}
+      return !!__abxCwVisibleDefaultFallback;
+    }
+    function __abxCwReadStoredVisible(defaultVisible){
+      try{
+        if (!window.localStorage) return null;
+        var currentDefault = defaultVisible ? '1' : '0';
+        var storedDefault = window.localStorage.getItem(__abxCwVisibleDefaultKey);
+        if (storedDefault !== currentDefault){
+          window.localStorage.setItem(__abxCwVisibleDefaultKey, currentDefault);
+          window.localStorage.removeItem(__abxCwVisibleKey);
+          return null;
+        }
+        var stored = window.localStorage.getItem(__abxCwVisibleKey);
+        if (stored !== null && typeof stored !== 'undefined') return stored;
+      }catch(_){}
+      return null;
+    }
+    function __abxCwIsDebugVisible(){
+      var defaultVisible = __abxCwDefaultVisible();
+      try{
+        if (typeof window.__abx_canvas_watch_visible !== 'undefined')
+          return __abxCwFlagToBool(window.__abx_canvas_watch_visible, defaultVisible);
+      }catch(_){}
+      var stored = __abxCwReadStoredVisible(defaultVisible);
+      if (stored !== null && typeof stored !== 'undefined')
+        return __abxCwFlagToBool(stored, defaultVisible);
+      return defaultVisible;
+    }
+    function __abxCwSetDebugVisible(show){
+      var visible = !!show;
+      try{ window.__abx_canvas_watch_visible = visible ? 1 : 0; }catch(_){}
+      try{
+        if (window.localStorage){
+          window.localStorage.setItem(__abxCwVisibleDefaultKey, __abxCwDefaultVisible() ? '1' : '0');
+          window.localStorage.setItem(__abxCwVisibleKey, visible ? '1' : '0');
+        }
+      }catch(_){}
+      try{ if (typeof window.__abxCwEnforceSinglePanel === 'function') window.__abxCwEnforceSinglePanel(); }catch(_){}
+      return visible ? 'Canvas Watch visible' : 'Canvas Watch hidden';
+    }
+    window.__abx_set_canvas_watch_visible = __abxCwSetDebugVisible;
+    window.__abx_show_canvas_watch = function(){ return __abxCwSetDebugVisible(true); };
+    window.__abx_hide_canvas_watch = function(){ return __abxCwSetDebugVisible(false); };
+    window.__abx_toggle_canvas_watch = function(){ return __abxCwSetDebugVisible(!__abxCwIsDebugVisible()); };
     function __abxCwVisibleScore(item){
       try{
         var s = 0;
@@ -1339,13 +1402,19 @@ Ví dụ không hợp lệ:
         root.setAttribute('data-abx-single-panel-path', String(item.path || ''));
         root.setAttribute('data-abx-single-panel-score', String(__abxCwScore(item)));
         root.setAttribute('data-abx-single-panel-visible-score', String(__abxCwVisibleScore(item)));
+        var debugVisible = __abxCwIsDebugVisible();
+        root.setAttribute('data-abx-debug-visible', debugVisible ? '1' : '0');
+        show = !!show && debugVisible;
         if (show){
           root.removeAttribute('data-abx-hidden-by-top');
+          root.removeAttribute('data-abx-hidden-by-debug-flag');
           root.style.setProperty('display','block','important');
           root.style.setProperty('visibility','visible','important');
           root.style.setProperty('pointer-events','none','important');
         } else {
           root.setAttribute('data-abx-hidden-by-top','1');
+          if (!debugVisible) root.setAttribute('data-abx-hidden-by-debug-flag','1');
+          else root.removeAttribute('data-abx-hidden-by-debug-flag');
           root.style.setProperty('display','none','important');
           root.style.setProperty('visibility','hidden','important');
           root.style.setProperty('pointer-events','none','important');
@@ -1382,6 +1451,7 @@ Ví dụ không hợp lệ:
       window.addEventListener('message', function(ev){
         try{
           var d = ev && ev.data; if(!d) return;
+          try{ if (d && d.__cw_cmd === 'canvas_watch_visible') __abxCwSetDebugVisible(!!d.visible); }catch(_){}
           var s = (typeof d==='string') ? d : JSON.stringify(d);
           if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage){
             window.chrome.webview.postMessage(s);
