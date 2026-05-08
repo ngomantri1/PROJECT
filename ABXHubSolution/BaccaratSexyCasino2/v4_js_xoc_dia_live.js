@@ -8,11 +8,107 @@
     tail = 'XDLive/Canvas/Bg/footer/listLabel/totalBet'
     + STANDARDIZED EXPORTS: moneyTailList(), pickByXTail()
     ========================================================= */
-    //root.style.display='none';  //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
     var CW_ROOT_ID = '__cw_root_allin';
     var CW_FALLBACK_PANEL_ID = '__cw_wait_panel';
+    var CW_PANEL_VISIBLE_KEY = 'abx.canvasWatch.visible';
+    var CW_PANEL_VISIBLE_DEFAULT_KEY = 'abx.canvasWatch.visible.default';
+    var CW_PANEL_VISIBLE_DEFAULT = true; // false = hidden by default; set true to show Canvas Watch by default.
+    try { window.__abx_canvas_watch_default = CW_PANEL_VISIBLE_DEFAULT ? 1 : 0; } catch (_) {}
+    function __cw_flagToBool(v, fallback) {
+        try {
+            if (typeof v === 'boolean') return v;
+            if (typeof v === 'number') return v !== 0;
+            var s = String(v == null ? '' : v).toLowerCase().trim();
+            if (!s) return !!fallback;
+            if (s === '1' || s === 'true' || s === 'show' || s === 'visible' || s === 'on') return true;
+            if (s === '0' || s === 'false' || s === 'hide' || s === 'hidden' || s === 'off') return false;
+        } catch (_) {}
+        return !!fallback;
+    }
+    function __cw_readStoredCanvasWatchVisible() {
+        try {
+            if (!window.localStorage)
+                return null;
+            var currentDefault = CW_PANEL_VISIBLE_DEFAULT ? '1' : '0';
+            var storedDefault = window.localStorage.getItem(CW_PANEL_VISIBLE_DEFAULT_KEY);
+            if (storedDefault !== currentDefault) {
+                window.localStorage.setItem(CW_PANEL_VISIBLE_DEFAULT_KEY, currentDefault);
+                window.localStorage.removeItem(CW_PANEL_VISIBLE_KEY);
+                return null;
+            }
+            var stored = window.localStorage.getItem(CW_PANEL_VISIBLE_KEY);
+            if (stored !== null && typeof stored !== 'undefined')
+                return stored;
+        } catch (_) {}
+        return null;
+    }
+    function __cw_isCanvasWatchVisible() {
+        try {
+            if (typeof window.__abx_canvas_watch_visible !== 'undefined')
+                return __cw_flagToBool(window.__abx_canvas_watch_visible, CW_PANEL_VISIBLE_DEFAULT);
+        } catch (_) {}
+        var stored = __cw_readStoredCanvasWatchVisible();
+        if (stored !== null && typeof stored !== 'undefined')
+            return __cw_flagToBool(stored, CW_PANEL_VISIBLE_DEFAULT);
+        return !!CW_PANEL_VISIBLE_DEFAULT;
+    }
+    function __cw_forceCanvasWatchRoot(rootEl, visible) {
+        try {
+            if (!rootEl) return;
+            rootEl.setAttribute('data-abx-debug-visible', visible ? '1' : '0');
+            if (visible) {
+                rootEl.removeAttribute('data-abx-hidden-by-debug-flag');
+                rootEl.style.setProperty('display', 'block', 'important');
+                rootEl.style.setProperty('visibility', 'visible', 'important');
+                rootEl.style.setProperty('pointer-events', 'none', 'important');
+            } else {
+                rootEl.setAttribute('data-abx-hidden-by-debug-flag', '1');
+                rootEl.style.setProperty('display', 'none', 'important');
+                rootEl.style.setProperty('visibility', 'hidden', 'important');
+                rootEl.style.setProperty('pointer-events', 'none', 'important');
+            }
+        } catch (_) {}
+    }
+    function __cw_applyCanvasWatchVisibilityNow() {
+        try {
+            var visible = __cw_isCanvasWatchVisible();
+            var roots = document.querySelectorAll ? document.querySelectorAll('#' + CW_ROOT_ID) : [];
+            for (var i = 0; i < roots.length; i++) {
+                if (visible) __cw_applyPanelDisplayOwner(roots[i]);
+                else __cw_forceCanvasWatchRoot(roots[i], false);
+            }
+            try {
+                if (typeof window.__abxCwEnforceSinglePanel === 'function')
+                    window.__abxCwEnforceSinglePanel();
+            } catch (_) {}
+            return visible;
+        } catch (_) {
+            return false;
+        }
+    }
+    function __cw_setCanvasWatchVisible(show) {
+        var visible = !!show;
+        try { window.__abx_canvas_watch_visible = visible ? 1 : 0; } catch (_) {}
+        try {
+            if (window.localStorage) {
+                window.localStorage.setItem(CW_PANEL_VISIBLE_DEFAULT_KEY, CW_PANEL_VISIBLE_DEFAULT ? '1' : '0');
+                window.localStorage.setItem(CW_PANEL_VISIBLE_KEY, visible ? '1' : '0');
+            }
+        } catch (_) {}
+        __cw_applyCanvasWatchVisibilityNow();
+        try {
+            if (window.top && window.top !== window)
+                window.top.postMessage({ __cw_cmd: 'canvas_watch_visible', visible: visible ? 1 : 0 }, '*');
+        } catch (_) {}
+        return visible ? 'Canvas Watch visible' : 'Canvas Watch hidden';
+    }
+    try {
+        window.__abx_set_canvas_watch_visible = __cw_setCanvasWatchVisible;
+        window.__abx_show_canvas_watch = function () { return __cw_setCanvasWatchVisible(true); };
+        window.__abx_hide_canvas_watch = function () { return __cw_setCanvasWatchVisible(false); };
+        window.__abx_toggle_canvas_watch = function () { return __cw_setCanvasWatchVisible(!__cw_isCanvasWatchVisible()); };
+    } catch (_) {}
     function __cw_hrefLowerOf(w) {
         try {
             return String((w.location && w.location.href) || '').toLowerCase();
@@ -92,6 +188,11 @@
                     return show;
             }
 
+            if (!__cw_isCanvasWatchVisible()) {
+                __cw_forceCanvasWatchRoot(rootEl, false);
+                return false;
+            }
+
             rootEl.removeAttribute('data-abx-hidden-by-owner');
             if (show) {
                 rootEl.style.setProperty('display', 'block', 'important');
@@ -140,6 +241,9 @@
                         window.__cw_autostart = 0;
                         window.__cw_autostart_href = '';
                     }
+                    if (d && d.__cw_cmd === 'canvas_watch_visible') {
+                        __cw_setCanvasWatchVisible(!!d.visible);
+                    }
                 } catch (_) {}
             }
             try {
@@ -164,7 +268,7 @@
                 root = document.createElement('div');
                 root.id = CW_ROOT_ID;
                 root.setAttribute('data-cw-mode', 'fallback');
-                root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
+                root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;display:none!important;visibility:hidden!important;';
                 host.appendChild(root);
             }
             __cw_applyPanelDisplayOwner(root);
@@ -514,6 +618,377 @@
         } catch (_) {}
         return false;
     }
+    function __abxNetProbeShort(s, maxLen) {
+        try {
+            s = String(s == null ? '' : s).replace(/[\r\n\t]+/g, ' ').trim();
+            maxLen = Number(maxLen || 700) || 700;
+            return s.length > maxLen ? s.slice(0, maxLen) + '...' : s;
+        } catch (_) {
+            return '';
+        }
+    }
+    function __abxNetProbeHref() {
+        try { return String(location.href || ''); } catch (_) { return ''; }
+    }
+    function __abxNetProbeFramePath() {
+        try { return __abxTryFramePath(); } catch (_) { return ''; }
+    }
+    function __abxNetProbeIsGameFrame() {
+        try {
+            var href = __abxNetProbeHref().toLowerCase();
+            if (href.indexOf('/player/') >= 0 || href.indexOf('singlebactable') >= 0 || href.indexOf('webmain') >= 0)
+                return true;
+            if (typeof __abxLooksLikeGameBySignals === 'function' && __abxLooksLikeGameBySignals(400))
+                return true;
+        } catch (_) {}
+        return false;
+    }
+    function __abxNetProbeUrlInteresting(url) {
+        try {
+            var u = String(url || '').toLowerCase();
+            return u.indexOf('singlebactable') >= 0 ||
+                u.indexOf('/player/') >= 0 ||
+                u.indexOf('game') >= 0 ||
+                u.indexOf('road') >= 0 ||
+                u.indexOf('history') >= 0 ||
+                u.indexOf('winner') >= 0 ||
+                u.indexOf('result') >= 0 ||
+                u.indexOf('socket') >= 0 ||
+                u.indexOf('baccarat') >= 0;
+        } catch (_) {
+            return false;
+        }
+    }
+    function __abxNetProbePayloadInteresting(text) {
+        try {
+            var s = String(text || '').toLowerCase();
+            return s.indexOf('gp_winner') >= 0 ||
+                s.indexOf('gameinfo') >= 0 ||
+                s.indexOf('messagetype') >= 0 ||
+                s.indexOf('winner') >= 0 ||
+                s.indexOf('gameround') >= 0 ||
+                s.indexOf('gameshoe') >= 0 ||
+                s.indexOf('eventtype') >= 0 ||
+                s.indexOf('result') >= 0 ||
+                s.indexOf('road') >= 0 ||
+                s.indexOf('history') >= 0 ||
+                s.indexOf('bankerhand') >= 0 ||
+                s.indexOf('playerhand') >= 0;
+        } catch (_) {
+            return false;
+        }
+    }
+    function __abxNetProbeSampleAllowed(key, limit) {
+        try {
+            var now = Date.now();
+            if (!window.__abx_net_probe_counts)
+                window.__abx_net_probe_counts = {};
+            if (!window.__abx_net_probe_last)
+                window.__abx_net_probe_last = {};
+            key = String(key || '-');
+            var n = Number(window.__abx_net_probe_counts[key] || 0) || 0;
+            if (n < Number(limit || 3)) {
+                window.__abx_net_probe_counts[key] = n + 1;
+                return true;
+            }
+            var last = Number(window.__abx_net_probe_last[key] || 0) || 0;
+            if (now - last > 5000) {
+                window.__abx_net_probe_last[key] = now;
+                return true;
+            }
+        } catch (_) {}
+        return false;
+    }
+    function __abxNetProbeExtractRoadInfo(text) {
+        try {
+            var raw = String(text || '');
+            if (raw.indexOf('winCounts') < 0)
+                return null;
+            var startObj = raw.indexOf('{');
+            var startArr = raw.indexOf('[');
+            var start = startObj >= 0 ? startObj : startArr;
+            if (startArr >= 0 && startArr < start)
+                start = startArr;
+            if (start < 0)
+                return null;
+            var parsed = JSON.parse(raw.slice(start));
+            var root = parsed || {};
+            var road = null;
+            if (root.roadInfo && root.roadInfo.winCounts)
+                road = root.roadInfo;
+            else if (root.message && root.message.roadInfo && root.message.roadInfo.winCounts)
+                road = root.message.roadInfo;
+            else if (root.message && typeof root.message === 'string') {
+                try {
+                    var nested = JSON.parse(root.message);
+                    if (nested && nested.roadInfo && nested.roadInfo.winCounts)
+                        road = nested.roadInfo;
+                    else if (nested && nested.message && nested.message.roadInfo && nested.message.roadInfo.winCounts)
+                        road = nested.message.roadInfo;
+                } catch (_) {}
+            } else if (root.winCounts)
+                road = root;
+            if (!road || !road.winCounts || !road.winCounts.length)
+                return null;
+            function latestMarkerRoadCode(r) {
+                try {
+                    var arr = r && r.markerRoads;
+                    if (!arr || !arr.length)
+                        return null;
+                    var best = null;
+                    for (var i = 0; i < arr.length; i++) {
+                        var it = arr[i] || {};
+                        var code = Number(it.road);
+                        if (!isFinite(code))
+                            continue;
+                        var stamp = Number(it.stampTime || it.time || it.ts || 0) || 0;
+                        if (!best || stamp > best.stamp || (stamp === best.stamp && i > best.index))
+                            best = { code: code, stamp: stamp, index: i };
+                    }
+                    return best ? best.code : null;
+                } catch (_) {
+                    return null;
+                }
+            }
+            return {
+                messageType: String(root.messageType || ''),
+                handler: Number(root.handler || -1),
+                roadInfo: {
+                    tableID: Number(road.tableID || road.tableId || road.tableNo || 0),
+                    gameShoe: Number(road.gameShoe || road.currentGameShoe || road.shoe || road.shoeNo || 0),
+                    gameRound: Number(road.gameRound || road.currentGameRound || road.round || road.roundNo || road.roundId || 0),
+                    winCounts: Array.prototype.slice.call(road.winCounts || [], 0, 18),
+                    latestRoad: latestMarkerRoadCode(road)
+                }
+            };
+        } catch (_) {
+            return null;
+        }
+    }
+    function __abxNetProbePost(kind, url, preview, meta) {
+        try {
+            var href = __abxNetProbeHref();
+            var framePath = __abxNetProbeFramePath();
+            var roadInfoCompact = __abxNetProbeExtractRoadInfo(preview);
+            var payload = {
+                abx: 'net_probe',
+                kind: String(kind || ''),
+                url: __abxNetProbeShort(url || '', 260),
+                href: __abxNetProbeShort(href, 260),
+                framePath: __abxNetProbeShort(framePath, 120),
+                isGameFrame: __abxNetProbeIsGameFrame() ? 1 : 0,
+                preview: __abxNetProbeShort(preview || '', 900),
+                ts: Date.now()
+            };
+            if (roadInfoCompact) {
+                payload.messageType = roadInfoCompact.messageType;
+                payload.handler = roadInfoCompact.handler;
+                payload.roadInfo = roadInfoCompact.roadInfo;
+            }
+            meta = meta || {};
+            for (var k in meta) {
+                if (Object.prototype.hasOwnProperty.call(meta, k))
+                    payload[k] = meta[k];
+            }
+            __abxPost(payload);
+        } catch (_) {}
+    }
+    function __abxNetProbePreviewData(data, cb) {
+        try {
+            if (typeof data === 'string') {
+                cb(data, 'string', data.length);
+                return;
+            }
+            if (data && typeof ArrayBuffer !== 'undefined' && data instanceof ArrayBuffer) {
+                var text = '';
+                try { text = new TextDecoder('utf-8').decode(new Uint8Array(data.slice(0, 4096))); } catch (_) {}
+                cb(text || ('ArrayBuffer(' + data.byteLength + ')'), 'arraybuffer', data.byteLength || 0);
+                return;
+            }
+            if (data && data.buffer && typeof ArrayBuffer !== 'undefined' && data.buffer instanceof ArrayBuffer) {
+                var bytes = data.byteLength || data.length || 0;
+                var slice = data.slice ? data.slice(0, 4096) : data;
+                var text2 = '';
+                try { text2 = new TextDecoder('utf-8').decode(slice); } catch (_) {}
+                cb(text2 || ('TypedArray(' + bytes + ')'), 'typedarray', bytes);
+                return;
+            }
+            if (data && typeof Blob !== 'undefined' && data instanceof Blob) {
+                var blobSize = data.size || 0;
+                try {
+                    var reader = new FileReader();
+                    reader.onload = function () {
+                        cb(String(reader.result || ''), 'blob', blobSize);
+                    };
+                    reader.onerror = function () {
+                        cb('Blob(' + blobSize + ',' + String(data.type || '') + ')', 'blob', blobSize);
+                    };
+                    reader.readAsText(data.slice(0, 4096));
+                    return;
+                } catch (_) {
+                    cb('Blob(' + blobSize + ',' + String(data.type || '') + ')', 'blob', blobSize);
+                    return;
+                }
+            }
+            cb(String(data == null ? '' : data), typeof data, 0);
+        } catch (e) {
+            try { cb(String(e && e.message ? e.message : e), 'error', 0); } catch (_) {}
+        }
+    }
+    function __abxInstallNetworkProbe() {
+        try {
+            if (window.__abx_net_probe_installed)
+                return;
+            window.__abx_net_probe_installed = 1;
+            var frameInteresting = __abxNetProbeIsGameFrame();
+
+            if (typeof WebSocket !== 'undefined' && WebSocket && WebSocket.prototype) {
+                var OrigWebSocket = WebSocket;
+                var origAdd = WebSocket.prototype.addEventListener;
+                var origSend = WebSocket.prototype.send;
+                if (!OrigWebSocket.__abx_net_probe_wrapped) {
+                    var WrappedWebSocket = function (url, protocols) {
+                        var ws = protocols !== undefined ? new OrigWebSocket(url, protocols) : new OrigWebSocket(url);
+                        try {
+                            var wsUrl = String(url || '');
+                            if (frameInteresting || __abxNetProbeUrlInteresting(wsUrl))
+                                __abxNetProbePost('ws-open', wsUrl, '', { reason: 'created' });
+                            ws.addEventListener('message', function (ev) {
+                                try {
+                                    __abxNetProbePreviewData(ev && ev.data, function (text, dataType, byteLen) {
+                                        var hint = __abxNetProbePayloadInteresting(text);
+                                        var key = 'ws-recv|' + wsUrl + '|' + dataType;
+                                        if (!hint && !(frameInteresting || __abxNetProbeUrlInteresting(wsUrl)))
+                                            return;
+                                        if (!hint && !__abxNetProbeSampleAllowed(key, 3))
+                                            return;
+                                        __abxNetProbePost('ws-recv', wsUrl, text, {
+                                            reason: hint ? 'payload-hint' : 'sample',
+                                            dataType: dataType,
+                                            byteLen: Number(byteLen || 0) || 0
+                                        });
+                                    });
+                                } catch (_) {}
+                            });
+                        } catch (_) {}
+                        return ws;
+                    };
+                    try {
+                        WrappedWebSocket.prototype = OrigWebSocket.prototype;
+                        WrappedWebSocket.CONNECTING = OrigWebSocket.CONNECTING;
+                        WrappedWebSocket.OPEN = OrigWebSocket.OPEN;
+                        WrappedWebSocket.CLOSING = OrigWebSocket.CLOSING;
+                        WrappedWebSocket.CLOSED = OrigWebSocket.CLOSED;
+                        WrappedWebSocket.__abx_net_probe_wrapped = 1;
+                        window.WebSocket = WrappedWebSocket;
+                    } catch (_) {}
+                }
+                if (origAdd && !WebSocket.prototype.__abx_net_probe_add_wrapped) {
+                    WebSocket.prototype.addEventListener = function (type, listener, options) {
+                        return origAdd.call(this, type, listener, options);
+                    };
+                    WebSocket.prototype.__abx_net_probe_add_wrapped = 1;
+                }
+                if (origSend && !WebSocket.prototype.__abx_net_probe_send_wrapped) {
+                    WebSocket.prototype.send = function (data) {
+                        try {
+                            var wsUrl = String(this && this.url || '');
+                            __abxNetProbePreviewData(data, function (text, dataType, byteLen) {
+                                var hint = __abxNetProbePayloadInteresting(text);
+                                var key = 'ws-send|' + wsUrl + '|' + dataType;
+                                if ((hint || __abxNetProbeSampleAllowed(key, 2)) && (frameInteresting || __abxNetProbeUrlInteresting(wsUrl) || hint)) {
+                                    __abxNetProbePost('ws-send', wsUrl, text, {
+                                        reason: hint ? 'payload-hint' : 'sample',
+                                        dataType: dataType,
+                                        byteLen: Number(byteLen || 0) || 0
+                                    });
+                                }
+                            });
+                        } catch (_) {}
+                        return origSend.apply(this, arguments);
+                    };
+                    WebSocket.prototype.__abx_net_probe_send_wrapped = 1;
+                }
+            }
+
+            if (typeof fetch === 'function' && !window.fetch.__abx_net_probe_wrapped) {
+                var origFetch = window.fetch;
+                var wrappedFetch = function () {
+                    var args = arguments;
+                    var url = '';
+                    try { url = String(args[0] && args[0].url ? args[0].url : args[0]); } catch (_) {}
+                    return origFetch.apply(this, args).then(function (resp) {
+                        try {
+                            var ct = '';
+                            try { ct = String(resp && resp.headers && resp.headers.get ? (resp.headers.get('content-type') || '') : ''); } catch (_) {}
+                            if (frameInteresting || __abxNetProbeUrlInteresting(url) || /json|text|javascript|html/i.test(ct)) {
+                                resp.clone().text().then(function (text) {
+                                    var hint = __abxNetProbePayloadInteresting(text);
+                                    var key = 'fetch|' + url;
+                                    if (hint || (__abxNetProbeUrlInteresting(url) && __abxNetProbeSampleAllowed(key, 2))) {
+                                        __abxNetProbePost('fetch', url, text, {
+                                            reason: hint ? 'payload-hint' : 'sample',
+                                            status: resp.status || 0,
+                                            contentType: __abxNetProbeShort(ct, 80),
+                                            byteLen: String(text || '').length
+                                        });
+                                    }
+                                }).catch(function () {});
+                            }
+                        } catch (_) {}
+                        return resp;
+                    });
+                };
+                wrappedFetch.__abx_net_probe_wrapped = 1;
+                window.fetch = wrappedFetch;
+            }
+
+            if (typeof XMLHttpRequest !== 'undefined' && XMLHttpRequest && XMLHttpRequest.prototype && !XMLHttpRequest.prototype.__abx_net_probe_wrapped) {
+                var origOpen = XMLHttpRequest.prototype.open;
+                var origSendXhr = XMLHttpRequest.prototype.send;
+                XMLHttpRequest.prototype.open = function (method, url) {
+                    try {
+                        this.__abx_net_probe_method = String(method || '');
+                        this.__abx_net_probe_url = String(url || '');
+                    } catch (_) {}
+                    return origOpen.apply(this, arguments);
+                };
+                XMLHttpRequest.prototype.send = function () {
+                    try {
+                        var xhr = this;
+                        xhr.addEventListener('load', function () {
+                            try {
+                                var url = String(xhr.__abx_net_probe_url || '');
+                                var text = '';
+                                try {
+                                    if (typeof xhr.responseText === 'string')
+                                        text = xhr.responseText;
+                                } catch (_) {}
+                                var hint = __abxNetProbePayloadInteresting(text);
+                                var key = 'xhr|' + url;
+                                if (hint || (__abxNetProbeUrlInteresting(url) && __abxNetProbeSampleAllowed(key, 2))) {
+                                    __abxNetProbePost('xhr', url, text, {
+                                        reason: hint ? 'payload-hint' : 'sample',
+                                        method: String(xhr.__abx_net_probe_method || ''),
+                                        status: xhr.status || 0,
+                                        byteLen: String(text || '').length
+                                    });
+                                }
+                            } catch (_) {}
+                        });
+                    } catch (_) {}
+                    return origSendXhr.apply(this, arguments);
+                };
+                XMLHttpRequest.prototype.__abx_net_probe_wrapped = 1;
+            }
+
+            if (frameInteresting)
+                __abxNetProbePost('probe-installed', '', '', { reason: 'game-frame' });
+        } catch (e) {
+            try { __abxNetProbePost('probe-error', '', String(e && e.message ? e.message : e), { reason: 'install-failed' }); } catch (_) {}
+        }
+    }
+    try { __abxInstallNetworkProbe(); } catch (_) {}
     function __abxBuildFrameScout() {
         var ctx = __abxBuildContext();
         var sig = __abxGetGameSignals();
@@ -8775,7 +9250,7 @@
     var root = document.createElement('div');
     root.id = ROOT;
     root.setAttribute('data-cw-mode', 'full');
-    root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
+    root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;display:none!important;visibility:hidden!important;';
     document.body.appendChild(root);
     var _panelOwnerTimer = null;
     try {
@@ -8816,8 +9291,6 @@
         '<span id="cwLogHint" style="color:#7aa"></span>' +
         '</div>' +
         '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
-    //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
